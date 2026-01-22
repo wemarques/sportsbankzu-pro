@@ -7,8 +7,20 @@ import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
 from backend.summary_report import generate_summary_report
+from auth import Authenticator
 
+# Configurar página
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
+
+# ============================================
+# SISTEMA DE AUTENTICAÇÃO
+# ============================================
+authenticator = Authenticator('config.yaml')
+
+if not authenticator.login():
+    st.stop()  # Para a execução se não estiver autenticado
+
+authenticator.logout()  # Adiciona botão de logout na sidebar
 
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
 

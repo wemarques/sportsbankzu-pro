@@ -1,99 +1,400 @@
-# SportsBank Pro - Deploy Streamlit
-Calculo de prognosticos esportivos com backend FastAPI e Streamlit.
+# SportsBank Pro
 
-## Visão Geral
-- Frontend Streamlit (app.py) consome o backend FastAPI (fixtures, decision/pre, quadro-resumo).
-- O backend pode usar CSVs locais ou fontes externas e expõe probabilidades (1X2, O/U, BTTS), lambdas e estatísticas.
-- O Quadro-Resumo Profissional gera um texto formatado com mercados, duplas/triplas e governança.
-- Revisão desta documentação: 2026-01-18.
+> Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit e dashboard Next.js
 
-## Pré-requisitos
-- Python 3.10+
-- Backend FastAPI acessível publicamente ou local (http://localhost:5001)
-- Secrets configurados para o Streamlit (BACKEND_URL)
-- Para uso em produção, defina `FUTEBOL_ROOT` (ou `DATA_ROOT`) e/ou `FUTEBOL_DATA_DIR` no backend para apontar para o storage correto.
-- Node.js 18+ (para o dashboard Next)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green.svg)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Latest-red.svg)](https://streamlit.io/)
+[![Next.js](https://img.shields.io/badge/Next.js-18+-black.svg)](https://nextjs.org/)
 
-## Rodar localmente
-1) Inicie o backend:
+**Última revisão:** 2026-01-22
+
+---
+
+## 📊 Visão Geral
+
+O **SportsBank Pro** é um sistema completo de análise e prognósticos esportivos que combina modelos estatísticos avançados com uma interface intuitiva e profissional.
+
+### Arquitetura
+
+O sistema é composto por três componentes principais que trabalham de forma integrada:
+
+**Backend FastAPI** processa dados de jogos (CSVs locais ou fontes externas) e expõe endpoints REST com probabilidades para diferentes mercados (1X2, Over/Under, BTTS), valores de lambda (λ) e estatísticas detalhadas. O **Frontend Streamlit** consome a API do backend e apresenta os prognósticos em formato tabular e gráfico, incluindo o Quadro-Resumo Profissional formatado para compartilhamento. O **Dashboard Next.js** oferece uma interface moderna e responsiva com seleção de ligas, análise de jogos e visualização de picks recomendados.
+
+### Funcionalidades Principais
+
+O sistema oferece análise estatística baseada em modelos de Poisson, Expected Goals (xG) e lambda dinâmico. Gera prognósticos para múltiplos mercados incluindo Money Line, Over/Under, BTTS e Double Chance. O Quadro-Resumo Profissional apresenta mercados sugeridos, duplas e triplas SAFE com correlação controlada, além de regras de governança por regime de liga. Inclui sistema de autenticação com login e senha para controle de acesso, suporta múltiplas ligas europeias e internacionais, e permite deploy em Streamlit Cloud com configuração simplificada.
+
+---
+
+## 🔐 Sistema de Autenticação
+
+O SportsBank Pro inclui um sistema completo de autenticação que protege o acesso ao sistema através de login com usuário e senha.
+
+### Características
+
+O sistema oferece autenticação baseada em usuário e senha com senhas criptografadas usando hash SHA-256. Suporta múltiplos usuários com credenciais individuais, mantém sessão ativa durante o uso, possui botão de logout na sidebar, e é compatível com Streamlit Cloud através de Secrets.
+
+### Arquivos Necessários
+
+Para implementar a autenticação, você precisará dos seguintes arquivos na raiz do projeto:
+
+**auth.py** é o módulo principal de autenticação que gerencia login, logout e verificação de credenciais. **config.yaml** armazena as credenciais dos usuários com senhas em hash SHA-256. **gerar_hash_senha.py** (opcional) é um script auxiliar para gerar hash de novas senhas.
+
+### Instalação Rápida
+
+Para adicionar autenticação ao sistema, siga estes passos. Primeiro, copie os arquivos `auth.py` e `config.yaml` para a raiz do projeto (junto com `app.py`). Em seguida, instale a dependência necessária executando `pip install PyYAML`. Depois, modifique o arquivo `app.py` adicionando o código de autenticação no início do arquivo, conforme mostrado abaixo:
+
+```python
+import streamlit as st
+from auth import Authenticator
+
+# Configurar página
+st.set_page_config(
+    page_title="SportsBank Pro",
+    page_icon="⚽",
+    layout="wide"
+)
+
+# Sistema de autenticação
+authenticator = Authenticator('config.yaml')
+
+if not authenticator.login():
+    st.stop()  # Para a execução se não estiver logado
+
+authenticator.logout()  # Adiciona botão de logout na sidebar
+
+# ============================================
+# RESTO DO CÓDIGO ORIGINAL CONTINUA AQUI
+# ============================================
+```
+
+Por fim, teste localmente executando `streamlit run app.py`.
+
+### Credenciais de Teste
+
+O sistema vem pré-configurado com duas contas de teste:
+
+| Usuário | Senha | Nome |
+|---------|-------|------|
+| `admin` | `admin` | Administrador |
+| `usuario1` | `password` | Usuário Teste |
+
+### Gerar Nova Senha
+
+Para criar hash de uma nova senha, execute o script auxiliar:
 
 ```bash
+python gerar_hash_senha.py
+```
+
+Digite sua senha quando solicitado e copie o hash gerado. Cole o hash no arquivo `config.yaml` no campo `password` do usuário correspondente.
+
+---
+
+## 🛠️ Pré-requisitos
+
+Antes de iniciar, certifique-se de ter os seguintes requisitos instalados:
+
+O sistema requer **Python 3.10 ou superior** com as bibliotecas FastAPI, Uvicorn, Pandas, Numpy, Streamlit e PyYAML. O **Backend FastAPI** deve estar acessível publicamente ou localmente em `http://localhost:5001`. Os **Secrets** devem estar configurados para o Streamlit com a variável `BACKEND_URL`. Para uso em produção, defina as variáveis de ambiente `FUTEBOL_ROOT` (ou `DATA_ROOT`) e/ou `FUTEBOL_DATA_DIR` no backend para apontar para o storage correto. Além disso, é necessário **Node.js 18 ou superior** para o dashboard Next.js.
+
+---
+
+## 🚀 Rodar Localmente
+
+### 1. Backend FastAPI
+
+Primeiro, inicie o servidor backend que processa os dados e expõe a API:
+
+```bash
+# Criar ambiente virtual
 python -m venv venv
-venv\Scripts\activate
+
+# Ativar ambiente virtual
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+
+# Instalar dependências
 pip install fastapi uvicorn pandas numpy
+
+# Iniciar servidor
 uvicorn backend.main:app --reload --port 5001
 ```
 
-2) Inicie o Streamlit:
+O backend estará disponível em `http://localhost:5001`.
+
+### 2. Frontend Streamlit
+
+Em seguida, inicie a interface Streamlit:
 
 ```bash
+# Instalar dependências (incluindo autenticação)
 pip install -r requirements.txt
-set BACKEND_URL=http://localhost:5001
+
+# Configurar URL do backend
+set BACKEND_URL=http://localhost:5001  # Windows
+export BACKEND_URL=http://localhost:5001  # Linux/Mac
+
+# Iniciar Streamlit
 streamlit run app.py
 ```
 
-3) Acesse:
-- http://localhost:8501/
+Acesse a interface em `http://localhost:8501/`.
 
-4) Inicie o dashboard (Next):
+**Tela de Login:** Ao acessar, você verá a tela de autenticação. Use as credenciais de teste (`admin` / `admin`) para entrar.
+
+### 3. Dashboard Next.js
+
+Por fim, inicie o dashboard moderno:
 
 ```bash
+# Instalar dependências
 npm i
+
+# Iniciar servidor de desenvolvimento
 npm run dev
 ```
 
-5) Acesse:
-- http://localhost:3000/
+Acesse o dashboard em `http://localhost:3000/`.
 
-## Configuração de Secrets (local)
-- Crie o arquivo .streamlit/secrets.toml na raiz:
+---
+
+## ⚙️ Configuração
+
+### Secrets do Streamlit (Local)
+
+Para configuração local, crie o arquivo `.streamlit/secrets.toml` na raiz do projeto:
 
 ```toml
 BACKEND_URL = "http://localhost:5001"
 ```
 
-## Variáveis do dashboard (Next)
-- Crie `src/.env.local` (ou `.env.local` na raiz):
+### Autenticação (Local)
+
+O arquivo `config.yaml` já vem pré-configurado com usuários de teste. Para produção, você deve:
+
+1. Gerar hash das suas senhas usando `python gerar_hash_senha.py`
+2. Atualizar o `config.yaml` com os hashes gerados
+3. **IMPORTANTE:** Adicionar `config.yaml` ao `.gitignore`
+
+Exemplo de `config.yaml`:
+
+```yaml
+credentials:
+  usernames:
+    seu_usuario:
+      name: "Seu Nome Completo"
+      password: "hash_sha256_da_sua_senha_aqui"
+    
+    outro_usuario:
+      name: "Outro Usuário"
+      password: "hash_sha256_da_outra_senha_aqui"
+```
+
+### Variáveis do Dashboard Next.js
+
+Crie o arquivo `src/.env.local` (ou `.env.local` na raiz):
 
 ```bash
 PY_BACKEND_URL=http://localhost:5001
 ```
 
-## Deploy no Streamlit Cloud
-1) Suba este repositório no GitHub/GitLab.
-2) Crie um novo app apontando para app.py na raiz.
-3) Em Settings → Secrets, adicione:
+---
 
-```toml
-BACKEND_URL = "https://seu-backend-publico:5001"
+## 🔒 Segurança
+
+### Proteção de Credenciais
+
+Para manter suas credenciais seguras, siga estas práticas recomendadas:
+
+**Nunca faça commit do `config.yaml` com senhas reais.** Adicione o arquivo ao `.gitignore` executando `echo "config.yaml" >> .gitignore`. **Use Streamlit Secrets para produção** em vez de arquivos locais. **Gere senhas fortes** e armazene apenas os hashes SHA-256. **Mantenha credenciais de teste separadas** das credenciais de produção.
+
+### Arquivo .gitignore
+
+Certifique-se de que seu `.gitignore` inclui:
+
+```
+# Credenciais
+config.yaml
+.env
+.env.local
+
+# Dados sensíveis
+*.csv
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Node
+node_modules/
+.next/
 ```
 
-4) Aguarde a build; o app estará disponível em:
-- https://{nome-do-app}-{seu-usuario}.streamlit.app
+---
 
-## Variáveis de ambiente do backend
-- `FUTEBOL_ROOT` (ou `DATA_ROOT`): raiz do projeto/dados (ex: `/data/futebol`).
-- `FUTEBOL_DATA_DIR`: caminho direto para a pasta `data` (ex: `/data/futebol/data`).
+## ☁️ Deploy no Streamlit Cloud
 
-## Verificações rápidas
-- Backend:
-  - `GET http://localhost:5001/fixtures?leagues=premier-league,la-liga&date=today`
-  - `GET http://localhost:5001/discover`
-  - `GET http://localhost:5001/quadro-resumo?league=premier-league&date=week&incluir_simples=true&incluir_duplas=true&incluir_triplas=false&incluir_governanca=true`
-- Streamlit:
-  - A tabela mostra jogos e o gráfico exibe probabilidades e `λ` nas tooltips.
-  - O Quadro-Resumo Profissional aparece acima da tabela e permite copiar/baixar.
-- Dashboard:
-  - Página inicial carrega `MultiLeagueSelector` e `MatchesList`.
-  - Botão “Analisar” chama `/api/decision/pre` e exibe picks.
+### 1. Preparar Repositório
 
-## Ajustes opcionais
-- CORS no FastAPI caso o backend seja público:
-  - Adicione middleware permitindo origem do Streamlit Cloud.
-- CSVs remotos:
-  - Se o backend não tiver acesso local aos CSVs, use storage público ou um endpoint.
+Antes de fazer deploy, prepare seu repositório:
 
-## Observações
-- Se CSVs forem usados pelo backend, eles precisam estar acessíveis para o servidor (ou migrados para storage público/endpoint).
-- Quando BACKEND_URL não responder, o app exibirá tabelas vazias; verifique logs e conectividade.
-- A tela mostra a "Última atualização (fonte)" quando o backend fornece `lastUpdated`.
+```bash
+# Adicionar config.yaml ao .gitignore
+echo "config.yaml" >> .gitignore
+
+# Fazer commit das alterações
+git add .
+git commit -m "feat: adiciona sistema de autenticação"
+git push
+```
+
+### 2. Criar App no Streamlit Cloud
+
+Acesse [streamlit.io/cloud](https://streamlit.io/cloud) e crie um novo app apontando para `app.py` na raiz do seu repositório GitHub.
+
+### 3. Configurar Secrets
+
+Em **Settings → Secrets**, adicione as seguintes configurações:
+
+```toml
+# URL do Backend
+BACKEND_URL = "https://seu-backend-publico:5001"
+
+# Credenciais de Autenticação
+[credentials.usernames.admin]
+name = "Administrador"
+password = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+
+[credentials.usernames.seu_usuario]
+name = "Seu Nome"
+password = "seu_hash_sha256_aqui"
+```
+
+**Nota:** O hash mostrado acima é da senha "admin" (apenas para exemplo).
+
+### 4. Aguardar Build
+
+Aguarde a conclusão da build. O app estará disponível em:
+
+```
+https://{nome-do-app}-{seu-usuario}.streamlit.app
+```
+
+---
+
+## 🌍 Variáveis de Ambiente do Backend
+
+O backend utiliza as seguintes variáveis de ambiente para localizar os dados:
+
+**FUTEBOL_ROOT** (ou **DATA_ROOT**) define a raiz do projeto/dados (ex: `/data/futebol`). **FUTEBOL_DATA_DIR** especifica o caminho direto para a pasta `data` (ex: `/data/futebol/data`).
+
+Se não definidas, o sistema usa o padrão `C:\Users\wxamb\futebol\data` (Windows) ou `/home/ubuntu/futebol/data` (Linux).
+
+---
+
+## ✅ Verificações Rápidas
+
+### Backend
+
+Teste os endpoints principais da API:
+
+```bash
+# Listar jogos de múltiplas ligas
+GET http://localhost:5001/fixtures?leagues=premier-league,la-liga&date=today
+
+# Descobrir ligas disponíveis
+GET http://localhost:5001/discover
+
+# Gerar quadro-resumo profissional
+GET http://localhost:5001/quadro-resumo?league=premier-league&date=week&incluir_simples=true&incluir_duplas=true&incluir_triplas=false&incluir_governanca=true
+```
+
+### Streamlit
+
+Verifique se a interface está funcionando corretamente:
+
+A **tela de login** deve aparecer ao acessar pela primeira vez. Após autenticação, a **tabela de jogos** deve mostrar os prognósticos com probabilidades e valores de λ nas tooltips. O **Quadro-Resumo Profissional** deve aparecer acima da tabela com opções para copiar e baixar. O **gráfico interativo** deve exibir as probabilidades de forma visual.
+
+### Dashboard Next.js
+
+Confirme o funcionamento do dashboard:
+
+A **página inicial** deve carregar o `MultiLeagueSelector` e `MatchesList`. O **botão "Analisar"** deve chamar `/api/decision/pre` e exibir os picks recomendados. A **navegação** deve ser fluida e responsiva.
+
+---
+
+## 🔧 Ajustes Opcionais
+
+### CORS no FastAPI
+
+Se o backend for público e acessado de diferentes origens, adicione middleware CORS:
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://seu-app.streamlit.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### CSVs Remotos
+
+Se o backend não tiver acesso local aos CSVs, considere usar storage público (AWS S3, Google Cloud Storage) ou criar um endpoint específico para upload/download de dados.
+
+---
+
+## 📝 Observações Importantes
+
+### Dados CSV
+
+Se CSVs forem usados pelo backend, eles precisam estar acessíveis para o servidor. Para deploy em produção, considere migrar para storage público ou criar um endpoint dedicado.
+
+### Conectividade
+
+Quando a variável `BACKEND_URL` não responder, o app exibirá tabelas vazias. Verifique os logs do Streamlit e a conectividade com o backend.
+
+### Última Atualização
+
+A tela mostra a "Última atualização (fonte)" quando o backend fornece o campo `lastUpdated` na resposta da API.
+
+### Autenticação
+
+O sistema de autenticação é obrigatório por padrão. Se desejar desabilitar temporariamente para testes, comente as linhas de autenticação no `app.py`.
+
+---
+
+## 📚 Documentação Adicional
+
+Para informações mais detalhadas sobre componentes específicos, consulte:
+
+- **Sistema de Autenticação:** `solucao_autenticacao_streamlit.md`
+- **Quadro-Resumo Profissional:** `PROMPT_IMPLEMENTACAO_QUADRO_RESUMO_FINAL.md`
+- **API do Backend:** Acesse `http://localhost:5001/docs` para documentação interativa (Swagger)
+
+---
+
+## 🤝 Suporte
+
+Para dúvidas, problemas ou sugestões:
+
+1. Consulte a documentação completa na pasta do projeto
+2. Verifique os logs do Streamlit e do backend
+3. Teste os endpoints da API diretamente
+4. Revise as configurações de Secrets e variáveis de ambiente
+
+---
+
+## 📄 Licença
+
+Este projeto é proprietário e confidencial. Todos os direitos reservados.
+
+---
+
+**Desenvolvido com ⚽ para análise profissional de prognósticos esportivos**

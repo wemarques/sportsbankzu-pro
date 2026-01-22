@@ -16,3 +16,13 @@ dist/
 build/
 .DS_Store
 Thumbs.db
+
+# Credenciais de autenticação
+config.yaml
+
+# Backups e arquivos temporários
+*-OLD.md
+*_OLD.*
+ARQUIVOS OLDS/
+auth_code_reference.py
+app_com_autenticacao.py
