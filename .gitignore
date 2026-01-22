@@ -1,3 +1,6 @@
+decisions.log
+*.log
+*.exe
 __pycache__/
 *.pyc
 .venv/
