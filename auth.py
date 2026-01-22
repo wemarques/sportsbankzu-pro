@@ -4,11 +4,13 @@ Autor: SportsBank Team
 Data: 2026-01-22
 """
 
+
 import yaml
 import streamlit as st
 from yaml.loader import SafeLoader
 import hashlib
 import os
+
 
 def load_config(file_path='config.yaml'):
     """
@@ -20,20 +22,44 @@ def load_config(file_path='config.yaml'):
     Returns:
         dict: Configuração carregada
     """
-    # Tentar carregar do arquivo local primeiro
+    # Primeiro, tentar carregar do Streamlit secrets (produção)
+    try:
+        if 'credentials' in st.secrets:
+            # Converter secrets TOML para formato dict
+            config = {
+                'credentials': {
+                    'usernames': {}
+                }
+            }
+            
+            # Reconstruir estrutura de credentials
+            if hasattr(st.secrets, 'credentials'):
+                credentials_data = st.secrets['credentials']
+                if hasattr(credentials_data, 'usernames'):
+                    for username in credentials_data['usernames']:
+                        user_data = credentials_data['usernames'][username]
+                        config['credentials']['usernames'][username] = {
+                            'name': user_data['name'],
+                            'password': user_data['password']
+                        }
+            
+            return config
+    except Exception as e:
+        # Se falhar ao ler secrets, continuar para arquivo local
+        pass
+    
+    # Fallback: tentar carregar do arquivo local (desenvolvimento)
     if os.path.exists(file_path):
-        with open(file_path, encoding='utf-8') as file:  # ✅ CORREÇÃO: Adicionado encoding='utf-8'
+        with open(file_path, encoding='utf-8') as file:
             config = yaml.load(file, Loader=SafeLoader)
             return config
     
-    # Se não existir, tentar carregar do Streamlit secrets
-    try:
-        return dict(st.secrets)
-    except:
-        raise FileNotFoundError(
-            f"Arquivo {file_path} não encontrado e Streamlit secrets não configurado. "
-            "Por favor, crie o arquivo config.yaml ou configure os secrets no Streamlit Cloud."
-        )
+    # Se nenhum dos dois funcionar, lançar erro
+    raise FileNotFoundError(
+        f"Arquivo {file_path} não encontrado e Streamlit secrets não configurado. "
+        "Por favor, crie o arquivo config.yaml ou configure os secrets no Streamlit Cloud."
+    )
+
 
 def hash_password(password):
     """
@@ -46,6 +72,7 @@ def hash_password(password):
         str: Hash SHA256 da senha
     """
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 def check_login(username, password, config):
     """
@@ -67,6 +94,7 @@ def check_login(username, password, config):
             return True, credentials[username]['name']
     
     return False, None
+
 
 class Authenticator:
     """
@@ -181,6 +209,7 @@ class Authenticator:
         st.session_state['name'] = None
         st.session_state['username'] = None
 
+
 def gerar_hash_senha(senha):
     """
     Função auxiliar para gerar hash de senha
@@ -197,6 +226,7 @@ def gerar_hash_senha(senha):
         '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
     """
     return hash_password(senha)
+
 
 # Exemplo de uso (comentado)
 if __name__ == "__main__":
