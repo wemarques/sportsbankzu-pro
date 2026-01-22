@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0f;
+  --card: #12121a;
+  --border: #1e1e2e;
+  --primary: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --accent: #8b5cf6;
+  --info: #3b82f6;
+  --text: #ffffff;
+  --text2: #71717a;
+}
+
+html, body, #__next { height: 100%; }
+body { background: var(--bg); color: var(--text); }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+.muted { color: var(--text2); }
+.badge { border-radius: 9999px; padding: 2px 8px; font-size: .75rem; }
