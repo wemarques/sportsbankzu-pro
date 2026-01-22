@@ -22,7 +22,7 @@ def load_config(file_path='config.yaml'):
     """
     # Tentar carregar do arquivo local primeiro
     if os.path.exists(file_path):
-        with open(file_path) as file:
+        with open(file_path, encoding='utf-8') as file:  # ✅ CORREÇÃO: Adicionado encoding='utf-8'
             config = yaml.load(file, Loader=SafeLoader)
             return config
     
