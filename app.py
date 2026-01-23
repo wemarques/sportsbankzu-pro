@@ -7,7 +7,6 @@ import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
 from backend.summary_report import generate_summary_report
-from backend.main import gerar_quadro_resumo as backend_gerar_quadro_resumo, load_fixtures_from_csv
 from auth import Authenticator
 
 # Configurar página
@@ -295,35 +294,30 @@ if "quadro_resumo_meta" not in st.session_state:
 if gerar_btn and leagues:
   with st.spinner("Gerando quadro-resumo personalizado..."):
     try:
-      # Carregar jogos do CSV/S3
-      jogos = load_fixtures_from_csv(leagues[0], date_filter)
-      
-      if not jogos:
-        st.warning("⚠️ Nenhum jogo encontrado para a liga e data selecionadas.")
-        st.info("💡 Tente selecionar outra liga ou data.")
-      else:
-        # Gerar quadro-resumo diretamente (sem HTTP)
-        quadro_texto = backend_gerar_quadro_resumo(
-          jogos=jogos,
-          incluir_simples=incluir_simples,
-          incluir_duplas=incluir_duplas,
-          incluir_triplas=incluir_triplas,
-          incluir_governanca=incluir_governanca,
-        )
-        
-        # Salvar no session_state
-        st.session_state["quadro_resumo_texto"] = quadro_texto
-        st.session_state["quadro_resumo_meta"] = {
-          "jogos_count": len(jogos),
+      response = requests.get(
+        f"{BACKEND_URL}/quadro-resumo",
+        params={
           "league": leagues[0],
           "date": date_filter,
-        }
-        
-    except Exception as e:
+          "incluir_simples": incluir_simples,
+          "incluir_duplas": incluir_duplas,
+          "incluir_triplas": incluir_triplas,
+          "incluir_governanca": incluir_governanca,
+        },
+        timeout=30,
+      )
+      response.raise_for_status()
+      data = response.json()
+      st.session_state["quadro_resumo_texto"] = data.get("quadro_texto")
+      st.session_state["quadro_resumo_meta"] = data
+    except requests.exceptions.Timeout:
+      st.error("❌ Timeout: O backend demorou muito para responder.")
+      st.info("💡 Tente novamente ou selecione menos jogos.")
+    except requests.exceptions.RequestException as e:
       st.error(f"❌ Erro ao gerar quadro-resumo: {str(e)}")
-      st.info("💡 Verifique se há dados disponíveis para a liga selecionada.")
-      import traceback
-      st.code(traceback.format_exc())
+      st.info("💡 Verifique se o backend está rodando e se há jogos disponíveis.")
+    except Exception as e:
+      st.error(f"❌ Erro inesperado: {str(e)}")
 elif gerar_btn and not leagues:
   st.warning("⚠️ Selecione pelo menos uma liga antes de gerar o quadro-resumo!")
 
@@ -336,11 +330,10 @@ if quadro_texto:
     criar_botao_copiar(quadro_texto, button_id="copy-quadro-resumo")
   with col2:
     meta = st.session_state.get("quadro_resumo_meta", {})
-    league_name = meta.get("league", leagues[0] if leagues else "unknown")
     st.download_button(
-      "📋 Baixar",
+      "📥 Baixar",
       data=quadro_texto,
-      file_name=f"quadro_{league_name}_{date_filter}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+      file_name=f"quadro_{leagues[0]}_{date_filter}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
       mime="text/plain",
       use_container_width=True,
       key="download_quadro",
