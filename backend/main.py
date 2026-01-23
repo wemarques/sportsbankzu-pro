@@ -670,6 +670,12 @@ def formatar_nome_liga(liga: str) -> str:
     }
     return mapeamento.get(liga, liga.upper().replace("-", " "))
 
+def formatar_liga_curta(liga: str) -> str:
+    nome = formatar_nome_liga(liga)
+    if "—" in nome:
+        return nome.split("—", 1)[1].strip()
+    return nome.strip()
+
 def _normalize_prob(value: Optional[float]) -> Optional[float]:
     if value is None:
         return None
@@ -1071,6 +1077,57 @@ def gerar_quadro_resumo(
     linhas.append(sep)
     return "\n".join(linhas)
 
+def gerar_quadro_resumo_whatsapp(
+    liga: str,
+    jogos: List[Dict[str, Any]],
+    regime: str,
+    volatilidade: str,
+    incluir_simples: bool = True,
+    incluir_duplas: bool = True,
+) -> str:
+    linhas: List[str] = []
+    if not jogos:
+        return "Nenhum jogo encontrado para os filtros selecionados."
+    try:
+        dt = datetime.fromisoformat(jogos[0].get("datetime"))
+        data_ref = dt.strftime("%d/%m")
+    except Exception:
+        data_ref = datetime.utcnow().strftime("%d/%m")
+
+    liga_curta = formatar_liga_curta(liga)
+    linhas.append(f"{liga_curta} – {data_ref}")
+    linhas.append("────────────────────────────")
+
+    if incluir_simples:
+        for jogo in jogos:
+            home = jogo.get("homeTeam")
+            away = jogo.get("awayTeam")
+            linhas.append(f"{home} x {away}")
+            mercados = selecionar_mercados_jogo(jogo, regime, volatilidade)
+            if mercados:
+                mercado = mercados[0]
+                odd = mercado.get("odd_minima")
+                odd_txt = f" @{odd}" if odd else ""
+                status = mercado.get("status", "NEUTRO")
+                linhas.append(f"→ {mercado.get('mercado')}{odd_txt}  [{status}]")
+            else:
+                linhas.append("→ Sem mercado sugerido")
+            linhas.append("")
+
+    if incluir_duplas:
+        duplas, motivo_duplas = identificar_duplas_safe(jogos)
+        if duplas:
+            linhas.append("🔗 DUPLA SAFE SUGERIDA (intra-liga)")
+            linhas.append("")
+            dupla = duplas[0]
+            linhas.append(f"{dupla['jogo1']} → {dupla['mercado1']}")
+            linhas.append(f"{dupla['jogo2']} → {dupla['mercado2']}")
+            linhas.append(f"Odd combinada ≈ {dupla['odd_minima']}")
+            modo = motivo_duplas.get("modo")
+            classe = "SAFE" if modo == "SAFE" else "NEUTRO"
+            linhas.append(f"Classificação: {classe} (perfil conservador)")
+    return "\n".join(linhas)
+
 @app.get("/quadro-resumo")
 def quadro_resumo(
     league: str = Query("", description="Nome da liga (ex: premier-league)"),
@@ -1079,6 +1136,7 @@ def quadro_resumo(
     incluir_duplas: bool = Query(True, description="Incluir duplas SAFE"),
     incluir_triplas: bool = Query(False, description="Incluir triplas SAFE"),
     incluir_governanca: bool = Query(True, description="Incluir seção de governança"),
+    formato: str = Query("detalhado", description="detalhado|whatsapp"),
 ) -> Dict[str, Any]:
     try:
         jogos = load_fixtures_from_csv(league, date)
@@ -1092,16 +1150,26 @@ def quadro_resumo(
                 "volatilidade": "N/A",
             }
         regime, volatilidade = calcular_regime_e_volatilidade(league, jogos)
-        quadro_texto = gerar_quadro_resumo(
-            liga=league,
-            jogos=jogos,
-            regime=regime,
-            volatilidade=volatilidade,
-            incluir_simples=incluir_simples,
-            incluir_duplas=incluir_duplas,
-            incluir_triplas=incluir_triplas,
-            incluir_governanca=incluir_governanca,
-        )
+        if formato == "whatsapp":
+            quadro_texto = gerar_quadro_resumo_whatsapp(
+                liga=league,
+                jogos=jogos,
+                regime=regime,
+                volatilidade=volatilidade,
+                incluir_simples=incluir_simples,
+                incluir_duplas=incluir_duplas,
+            )
+        else:
+            quadro_texto = gerar_quadro_resumo(
+                liga=league,
+                jogos=jogos,
+                regime=regime,
+                volatilidade=volatilidade,
+                incluir_simples=incluir_simples,
+                incluir_duplas=incluir_duplas,
+                incluir_triplas=incluir_triplas,
+                incluir_governanca=incluir_governanca,
+            )
         duplas, motivo_duplas = identificar_duplas_safe(jogos) if incluir_duplas else ([], {})
         triplas, motivo_triplas = identificar_triplas_safe(jogos) if incluir_triplas else ([], {})
         return {

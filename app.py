@@ -256,6 +256,7 @@ with col2:
   gerar_btn = st.button("🔄 Gerar Quadro", use_container_width=True, key="gerar_quadro")
 
 st.markdown("**Selecione o que deseja visualizar:**")
+formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
 col_a, col_b, col_c, col_d = st.columns(4)
 with col_a:
   incluir_simples = st.checkbox(
@@ -303,6 +304,7 @@ if gerar_btn and leagues:
           "incluir_duplas": incluir_duplas,
           "incluir_triplas": incluir_triplas,
           "incluir_governanca": incluir_governanca,
+          "formato": "whatsapp" if formato == "WhatsApp" else "detalhado",
         },
         timeout=30,
       )
