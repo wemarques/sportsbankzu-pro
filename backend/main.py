@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
 import math
+import random
 import importlib.util
 import logging
 from io import BytesIO
@@ -47,6 +48,43 @@ def mock_match(league_id: str, i: int) -> Dict[str, Any]:
         "source": "packball",
         "lastUpdated": now,
     }
+
+def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, Any]]:
+    """Gera dados mock realistas para demonstração quando S3/CSV não estão disponíveis."""
+    teams_by_league = {
+        "premier-league": [
+            ("Manchester City", "Wolverhampton Wanderers"),
+            ("Arsenal", "Manchester United"),
+            ("Liverpool", "Chelsea"),
+            ("Tottenham Hotspur", "Newcastle United"),
+            ("Brighton & Hove Albion", "Fulham"),
+            ("West Ham United", "Sunderland"),
+            ("Burnley", "AFC Bournemouth"),
+            ("Brentford", "Nottingham Forest"),
+            ("Crystal Palace", "Aston Villa"),
+            ("Everton", "Leeds United"),
+        ],
+    }
+    teams = teams_by_league.get(league_id, [("Team A", "Team B"), ("Team C", "Team D")])
+    now = datetime.utcnow()
+    start_date = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    fixtures = []
+    for i, (home, away) in enumerate(teams[:10]):
+        game_time = start_date + timedelta(hours=(i % 3) * 3)
+        fixtures.append({
+            "id": f"{league_id}-mock-{i}",
+            "leagueId": league_id,
+            "leagueName": league_id.replace("-", " ").title(),
+            "homeTeam": home,
+            "awayTeam": away,
+            "datetime": game_time.isoformat(),
+            "stadium": f"{home} Stadium",
+            "status": "scheduled",
+            "odds": {"home": 1.9, "draw": 3.4, "away": 2.2, "over15": 1.15, "over25": 1.85, "over35": 3.50, "over45": 7.00, "under25": 1.95, "bttsYes": 1.80, "bttsNo": 2.00},
+            "stats": {"homeWinProb": 52.0, "drawProb": 24.0, "awayWinProb": 24.0, "avgGoals": 2.6, "bttsProb": 55.0, "over05Prob": 95.0, "over15Prob": 87.0, "over25Prob": 57.0, "over35Prob": 28.0, "over45Prob": 14.0, "under15Prob": 13.0, "under25Prob": 43.0, "under35Prob": 72.0, "under45Prob": 86.0, "lambdaHome": 1.4, "lambdaAway": 1.2, "lambdaTotal": 2.6, "leagueAvgGoals": 2.7, "totalGoals": None, "leagueRegime": "NORMAL", "leagueVolatility": "BAIXA", "homePossession": 52.0, "awayPossession": 48.0, "homeXG": 1.4, "awayXG": 1.2, "homeForm": ["W", "D", "W", "W", "L"], "awayForm": ["L", "W", "D", "L", "W"]}
+        })
+    return fixtures
+
 
 def date_range(filter_type: str) -> Tuple[datetime, datetime]:
     now = datetime.utcnow()
@@ -226,7 +264,10 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         return []
 
     bucket = os.getenv("S3_BUCKET")
-    if bucket and boto3 is not None:
+    use_s3 = bucket and boto3 is not None
+    
+    # Se S3 não estiver configurado, tentar usar dados locais ou retornar mock
+    if use_s3:
         prefix = (os.getenv("S3_PREFIX") or "data").strip("/")
         base = f"{prefix}/{league_id}"
         s3 = boto3.client("s3")
@@ -298,7 +339,13 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         league_df = read_csv_s3(league_key) if league_key else None
         players = read_csv_s3(players_key) if players_key else None
     else:
+        # S3 não configurado - tentar dados locais se existirem
         base = get_data_dir()
+        if not os.path.exists(base):
+            # Diretório local não existe - retornar dados mock para demonstração
+            logger.warning(f"S3 não configurado e diretório local {base} não existe. Retornando dados mock.")
+            return generate_mock_fixtures(league_id, date_filter)
+        
         league_dir = resolve_league_dir(base, league_id)
         matches_path = os.path.join(league_dir, "matches.csv")
         teams_path = os.path.join(league_dir, "teams.csv")
@@ -306,15 +353,17 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         league_path = os.path.join(league_dir, "league.csv")
         players_path = os.path.join(league_dir, "players.csv")
         if not os.path.exists(matches_path):
-            return []
+            logger.warning(f"Arquivo {matches_path} não encontrado. Retornando dados mock.")
+            return generate_mock_fixtures(league_id, date_filter)
         try:
             matches = pd.read_csv(matches_path)
             teams = pd.read_csv(teams_path) if os.path.exists(teams_path) else None
             teams2 = pd.read_csv(teams2_path) if os.path.exists(teams2_path) else None
             league_df = pd.read_csv(league_path) if os.path.exists(league_path) else None
             players = pd.read_csv(players_path) if os.path.exists(players_path) else None
-        except Exception:
-            return []
+        except Exception as e:
+            logger.error(f"Erro ao ler CSVs: {e}. Retornando dados mock.")
+            return generate_mock_fixtures(league_id, date_filter)
     # normalize date column
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
     def row_date(r) -> Optional[datetime]:
