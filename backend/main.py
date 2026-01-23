@@ -704,6 +704,16 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     prob_under35 = _normalize_prob(stats.get("under35Prob"))
     prob_under45 = _normalize_prob(stats.get("under45Prob"))
     
+    # DEBUG: Log valores para diagnóstico
+    home = jogo.get("homeTeam", "?")
+    away = jogo.get("awayTeam", "?")
+    logger.info(f"[DEBUG] {home} vs {away}:")
+    logger.info(f"  under35Prob raw={stats.get('under35Prob')}, normalized={prob_under35}")
+    logger.info(f"  under45Prob raw={stats.get('under45Prob')}, normalized={prob_under45}")
+    logger.info(f"  regime={regime}, volatilidade={volatilidade}")
+    logger.info(f"  leagueAvgGoals={stats.get('leagueAvgGoals')}")
+    logger.info(f"  odds: over35={odds.get('over35')}, over45={odds.get('over45')}")
+    
     prob_dc = None
     if stats.get("homeWinProb") is not None and stats.get("drawProb") is not None:
         prob_dc = _normalize_prob(float(stats.get("homeWinProb", 0)) + float(stats.get("drawProb", 0)))
@@ -744,6 +754,10 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     else:
         threshold_u35 = 0.65
         threshold_u45 = 0.75
+    
+    logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
+    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={prob_under35 >= threshold_u35 if prob_under35 else False}")
+    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={prob_under45 >= threshold_u45 if prob_under45 else False}")
     
     # Priorizar Under 3.5 sobre Under 4.5
     if regime in ["NORMAL", "DEFENSIVA"]:
