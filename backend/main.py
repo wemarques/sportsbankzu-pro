@@ -315,17 +315,35 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             players = pd.read_csv(players_path) if os.path.exists(players_path) else None
         except Exception:
             return []
-    start, end = date_range(date_filter)
     # normalize date column
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
     def row_date(r) -> Optional[datetime]:
         return parse_date(r.get(date_col))
+    def build_records(start: datetime, end: datetime) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for _, r in matches.iterrows():
+            dt = row_date(r)
+            if dt is None:
+                continue
+            if not (start <= dt <= end):
+                continue
+            items.append(r)
+        return items
+
+    start, end = date_range(date_filter)
+    rows = build_records(start, end)
+    if not rows and date_filter in ("today", "tomorrow"):
+        start, end = date_range("week")
+        rows = build_records(start, end)
+    if not rows and date_filter == "week":
+        start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=30) - timedelta(milliseconds=1)
+        rows = build_records(start, end)
+
     records: List[Dict[str, Any]] = []
-    for _, r in matches.iterrows():
+    for r in rows:
         dt = row_date(r)
         if dt is None:
-            continue
-        if not (start <= dt <= end):
             continue
         home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "")
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
@@ -443,6 +461,7 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         except Exception:
             btts_pct = None
         league_goal_avg = league_avgs["avg_goals"] if league_avgs["avg_goals"] else 2.7
+        league_regime = "HIPER-OFENSIVA" if league_goal_avg > 3.0 else "NORMAL"
         def safe(val: Optional[float], default: float) -> float:
             return float(val) if val is not None and val > 0 else default
         home_attack = safe(teams.iloc[0].get("goals_scored_per_match_home", None) if teams is not None else None, 1.3)
@@ -453,12 +472,24 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         xg_away_team = aggregate_team_xg(players, away)
         lam_home, lam_away = expected_goals(home_attack, away_defense, away_attack, home_defense, league_goal_avg / 2.0, xg_home_team, xg_away_team)
         lam_total = lam_home + lam_away
+        if lam_total < 2.2:
+            league_volatility = "BAIXA"
+        elif lam_total < 3.0:
+            league_volatility = "MODERADA"
+        else:
+            league_volatility = "ALTA"
         btts_poisson = (1.0 - poisson_pmf(0, lam_home)) * (1.0 - poisson_pmf(0, lam_away))
         over05 = 1.0 - poisson_cdf(0, lam_total)
         over15 = 1.0 - poisson_cdf(1, lam_total)
         over25 = 1.0 - poisson_cdf(2, lam_total)
         over35 = 1.0 - poisson_cdf(3, lam_total)
 
+        data_source = "s3" if bucket else "local"
+        total_gols = r.get("total_goal_count", None)
+        try:
+            total_gols = float(total_gols) if total_gols is not None else None
+        except Exception:
+            total_gols = None
         records.append({
             "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
             "leagueId": league_id,
@@ -490,6 +521,10 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 "lambdaHome": round(lam_home, 3),
                 "lambdaAway": round(lam_away, 3),
                 "lambdaTotal": round(lam_total, 3),
+                "leagueAvgGoals": league_avgs["avg_goals"],
+                "totalGoals": total_gols,
+                "leagueRegime": league_regime,
+                "leagueVolatility": league_volatility,
                 "homePossession": home_poss,
                 "awayPossession": away_poss,
                 "homeCornersPerMatch": home_corners_pm,
@@ -511,6 +546,7 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             "ratings": { "home": round(homeRating, 1), "away": round(awayRating, 1) },
             "xg": { "home": xg_home_team, "away": xg_away_team },
             "source": "footystats",
+            "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
     return records
@@ -689,6 +725,7 @@ def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 def calcular_regime_e_volatilidade(liga: str, jogos: List[Dict[str, Any]]) -> Tuple[str, str]:
     totais = []
+    league_avgs = []
     for j in jogos:
         stats = j.get("stats", {})
         total = stats.get("lambdaTotal") or stats.get("avgGoals")
@@ -698,11 +735,19 @@ def calcular_regime_e_volatilidade(liga: str, jogos: List[Dict[str, Any]]) -> Tu
             total = None
         if total is not None:
             totais.append(total)
-    media_gols = sum(totais) / len(totais) if totais else 0
+        avg_goal = stats.get("leagueAvgGoals")
+        try:
+            avg_goal = float(avg_goal) if avg_goal is not None else None
+        except Exception:
+            avg_goal = None
+        if avg_goal is not None:
+            league_avgs.append(avg_goal)
+    media_gols = sum(league_avgs) / len(league_avgs) if league_avgs else (sum(totais) / len(totais) if totais else 0)
     regime = "HIPER-OFENSIVA" if media_gols > 3.0 else "NORMAL"
-    if len(totais) > 1:
-        media = sum(totais) / len(totais)
-        variancia = sum((g - media) ** 2 for g in totais) / len(totais)
+    volatilidade_base = totais if len(totais) > 1 else league_avgs
+    if len(volatilidade_base) > 1:
+        media = sum(volatilidade_base) / len(volatilidade_base)
+        variancia = sum((g - media) ** 2 for g in volatilidade_base) / len(volatilidade_base)
         desvio = variancia ** 0.5
         if desvio < 1.0:
             volatilidade = "BAIXA"

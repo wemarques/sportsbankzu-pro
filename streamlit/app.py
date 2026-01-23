@@ -9,6 +9,22 @@ from datetime import datetime
 from backend.summary_report import generate_summary_report
 
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
+st.markdown(
+  """
+  <style>
+  @media (max-width: 768px) {
+    div[data-testid="stHorizontalBlock"] {
+      flex-wrap: wrap;
+    }
+    div[data-testid="column"] {
+      min-width: 100% !important;
+      flex: 1 1 100% !important;
+    }
+  }
+  </style>
+  """,
+  unsafe_allow_html=True,
+)
 
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
 
@@ -296,6 +312,9 @@ if matches:
     st.caption(f"Última atualização (fonte): {last_update} UTC")
   else:
     st.caption("Última atualização: não informada pela fonte.")
+  data_source = matches[0].get("dataSource") if matches else None
+  if data_source:
+    st.caption(f"Origem dos dados: {data_source}")
   # Regime/volatilidade por liga (se disponível)
   regimes = {m.get("stats", {}).get("leagueRegime") for m in matches if m.get("stats", {}).get("leagueRegime")}
   vols = {m.get("stats", {}).get("leagueVolatility") for m in matches if m.get("stats", {}).get("leagueVolatility")}
