@@ -818,13 +818,26 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     
     return mercados
 
-def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     duplas: List[Dict[str, Any]] = []
-    jogos_safe = [j for j in jogos if j.get("stats", {}).get("status") == "SAFE"]
-    for i in range(len(jogos_safe)):
-        for j in range(i + 1, len(jogos_safe)):
-            jogo1 = jogos_safe[i]
-            jogo2 = jogos_safe[j]
+    status_map = {j.get("id"): j.get("stats", {}).get("status") for j in jogos}
+    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) == "SAFE"]
+    jogos_neutro = [j for j in jogos if status_map.get(j.get("id")) in ("NEUTRO", "NEUTRAL")]
+    pool = jogos_safe if jogos_safe else jogos_neutro
+
+    missing_market = 0
+    missing_odd = 0
+    for j in pool:
+        stats = j.get("stats", {})
+        if not stats.get("mercado_principal"):
+            missing_market += 1
+        if not stats.get("odd_minima"):
+            missing_odd += 1
+
+    for i in range(len(pool)):
+        for j in range(i + 1, len(pool)):
+            jogo1 = pool[i]
+            jogo2 = pool[j]
             mercado1 = jogo1.get("stats", {}).get("mercado_principal")
             mercado2 = jogo2.get("stats", {}).get("mercado_principal")
             if mercado1 and mercado2 and mercado1 == mercado2:
@@ -838,17 +851,36 @@ def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     "odd_minima": round(odd1 * odd2, 2),
                 })
     duplas.sort(key=lambda x: x["odd_minima"])
-    return duplas[:4]
+    motivo = {
+        "modo": "SAFE" if jogos_safe else ("NEUTRO" if jogos_neutro else "NENHUM"),
+        "missing_market": missing_market,
+        "missing_odd": missing_odd,
+        "total_pool": len(pool),
+    }
+    return duplas[:4], motivo
 
-def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     triplas: List[Dict[str, Any]] = []
-    jogos_safe = [j for j in jogos if j.get("stats", {}).get("status") == "SAFE"]
-    for i in range(len(jogos_safe)):
-        for j in range(i + 1, len(jogos_safe)):
-            for k in range(j + 1, len(jogos_safe)):
-                jogo1 = jogos_safe[i]
-                jogo2 = jogos_safe[j]
-                jogo3 = jogos_safe[k]
+    status_map = {j.get("id"): j.get("stats", {}).get("status") for j in jogos}
+    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) == "SAFE"]
+    jogos_neutro = [j for j in jogos if status_map.get(j.get("id")) in ("NEUTRO", "NEUTRAL")]
+    pool = jogos_safe if jogos_safe else jogos_neutro
+
+    missing_market = 0
+    missing_odd = 0
+    for j in pool:
+        stats = j.get("stats", {})
+        if not stats.get("mercado_principal"):
+            missing_market += 1
+        if not stats.get("odd_minima"):
+            missing_odd += 1
+
+    for i in range(len(pool)):
+        for j in range(i + 1, len(pool)):
+            for k in range(j + 1, len(pool)):
+                jogo1 = pool[i]
+                jogo2 = pool[j]
+                jogo3 = pool[k]
                 mercado1 = jogo1.get("stats", {}).get("mercado_principal")
                 mercado2 = jogo2.get("stats", {}).get("mercado_principal")
                 mercado3 = jogo3.get("stats", {}).get("mercado_principal")
@@ -866,7 +898,13 @@ def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]
                         "odd_minima": round(odd1 * odd2 * odd3, 2),
                     })
     triplas.sort(key=lambda x: x["odd_minima"])
-    return triplas[:3]
+    motivo = {
+        "modo": "SAFE" if jogos_safe else ("NEUTRO" if jogos_neutro else "NENHUM"),
+        "missing_market": missing_market,
+        "missing_odd": missing_odd,
+        "total_pool": len(pool),
+    }
+    return triplas[:3], motivo
 
 def calcular_regime_e_volatilidade(liga: str, jogos: List[Dict[str, Any]]) -> Tuple[str, str]:
     totais = []
@@ -952,24 +990,36 @@ def gerar_quadro_resumo(
             linhas.append("")
 
     if incluir_duplas:
-        duplas = identificar_duplas_safe(jogos)
+        duplas, motivo_duplas = identificar_duplas_safe(jogos)
         if duplas:
             linhas.append(sep)
             linhas.append("")
             linhas.append("DUPLAS SAFE (v5.5 — correlação controlada)")
+            if motivo_duplas.get("modo") == "NEUTRO":
+                linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
             linhas.append("")
             for dupla in duplas:
                 linhas.append(f"• {dupla['jogo1']} → {dupla['mercado1']}")
                 linhas.append(f"  + {dupla['jogo2']} → {dupla['mercado2']}")
                 linhas.append(f"  Odd mín. EV+ ≈ {dupla['odd_minima']}")
                 linhas.append("")
+        else:
+            linhas.append(sep)
+            linhas.append("")
+            linhas.append("DUPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("")
+            linhas.append("Nenhuma dupla gerada.")
+            linhas.append(f"Motivo: modo={motivo_duplas.get('modo')}, sem mercado={motivo_duplas.get('missing_market')}, sem odd={motivo_duplas.get('missing_odd')}")
+            linhas.append("")
 
     if incluir_triplas:
-        triplas = identificar_triplas_safe(jogos)
+        triplas, motivo_triplas = identificar_triplas_safe(jogos)
         if triplas:
             linhas.append(sep)
             linhas.append("")
             linhas.append("TRIPLAS SAFE (v5.5 — correlação controlada)")
+            if motivo_triplas.get("modo") == "NEUTRO":
+                linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
             linhas.append("")
             for tripla in triplas:
                 linhas.append(f"• {tripla['jogo1']} → {tripla['mercado1']}")
@@ -977,6 +1027,14 @@ def gerar_quadro_resumo(
                 linhas.append(f"  + {tripla['jogo3']} → {tripla['mercado3']}")
                 linhas.append(f"  Odd mín. EV+ ≈ {tripla['odd_minima']}")
                 linhas.append("")
+        else:
+            linhas.append(sep)
+            linhas.append("")
+            linhas.append("TRIPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("")
+            linhas.append("Nenhuma tripla gerada.")
+            linhas.append(f"Motivo: modo={motivo_triplas.get('modo')}, sem mercado={motivo_triplas.get('missing_market')}, sem odd={motivo_triplas.get('missing_odd')}")
+            linhas.append("")
 
     if incluir_governanca:
         linhas.append(sep)
@@ -1044,8 +1102,8 @@ def quadro_resumo(
             incluir_triplas=incluir_triplas,
             incluir_governanca=incluir_governanca,
         )
-        duplas = identificar_duplas_safe(jogos) if incluir_duplas else []
-        triplas = identificar_triplas_safe(jogos) if incluir_triplas else []
+        duplas, motivo_duplas = identificar_duplas_safe(jogos) if incluir_duplas else ([], {})
+        triplas, motivo_triplas = identificar_triplas_safe(jogos) if incluir_triplas else ([], {})
         return {
             "quadro_texto": quadro_texto,
             "jogos_count": len(jogos) if incluir_simples else 0,
@@ -1053,6 +1111,8 @@ def quadro_resumo(
             "triplas_count": len(triplas),
             "regime": regime,
             "volatilidade": volatilidade,
+            "duplas_motivo": motivo_duplas,
+            "triplas_motivo": motivo_triplas,
         }
     except Exception as e:
         logger.error("Erro ao gerar quadro-resumo: %s", str(e))
