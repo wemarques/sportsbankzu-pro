@@ -826,10 +826,22 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
 
 def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     duplas: List[Dict[str, Any]] = []
-    status_map = {j.get("id"): j.get("stats", {}).get("status") for j in jogos}
-    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) == "SAFE"]
+    status_map = {j.get("id"): (j.get("stats", {}).get("status") or "").upper() for j in jogos}
+    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) in ("SAFE", "SAFE*")]
     jogos_neutro = [j for j in jogos if status_map.get(j.get("id")) in ("NEUTRO", "NEUTRAL")]
-    pool = jogos_safe if jogos_safe else jogos_neutro
+    jogos_com_mercado = [j for j in jogos if j.get("stats", {}).get("mercado_principal")]
+    if jogos_safe:
+        pool = jogos_safe
+        modo = "SAFE"
+    elif jogos_neutro:
+        pool = jogos_neutro
+        modo = "NEUTRO"
+    elif jogos_com_mercado:
+        pool = jogos_com_mercado
+        modo = "QUALQUER"
+    else:
+        pool = []
+        modo = "NENHUM"
 
     missing_market = 0
     missing_odd = 0
@@ -858,7 +870,7 @@ def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str,
                 })
     duplas.sort(key=lambda x: x["odd_minima"])
     motivo = {
-        "modo": "SAFE" if jogos_safe else ("NEUTRO" if jogos_neutro else "NENHUM"),
+        "modo": modo,
         "missing_market": missing_market,
         "missing_odd": missing_odd,
         "total_pool": len(pool),
@@ -867,10 +879,22 @@ def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str,
 
 def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     triplas: List[Dict[str, Any]] = []
-    status_map = {j.get("id"): j.get("stats", {}).get("status") for j in jogos}
-    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) == "SAFE"]
+    status_map = {j.get("id"): (j.get("stats", {}).get("status") or "").upper() for j in jogos}
+    jogos_safe = [j for j in jogos if status_map.get(j.get("id")) in ("SAFE", "SAFE*")]
     jogos_neutro = [j for j in jogos if status_map.get(j.get("id")) in ("NEUTRO", "NEUTRAL")]
-    pool = jogos_safe if jogos_safe else jogos_neutro
+    jogos_com_mercado = [j for j in jogos if j.get("stats", {}).get("mercado_principal")]
+    if jogos_safe:
+        pool = jogos_safe
+        modo = "SAFE"
+    elif jogos_neutro:
+        pool = jogos_neutro
+        modo = "NEUTRO"
+    elif jogos_com_mercado:
+        pool = jogos_com_mercado
+        modo = "QUALQUER"
+    else:
+        pool = []
+        modo = "NENHUM"
 
     missing_market = 0
     missing_odd = 0
@@ -905,7 +929,7 @@ def identificar_triplas_safe(jogos: List[Dict[str, Any]]) -> Tuple[List[Dict[str
                     })
     triplas.sort(key=lambda x: x["odd_minima"])
     motivo = {
-        "modo": "SAFE" if jogos_safe else ("NEUTRO" if jogos_neutro else "NENHUM"),
+        "modo": modo,
         "missing_market": missing_market,
         "missing_odd": missing_odd,
         "total_pool": len(pool),
@@ -1003,6 +1027,8 @@ def gerar_quadro_resumo(
             linhas.append("DUPLAS SAFE (v5.5 — correlação controlada)")
             if motivo_duplas.get("modo") == "NEUTRO":
                 linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
+            if motivo_duplas.get("modo") == "QUALQUER":
+                linhas.append("⚠️ Sem SAFE/NEUTRO; usando qualquer jogo com mercado")
             linhas.append("")
             for dupla in duplas:
                 linhas.append(f"• {dupla['jogo1']} → {dupla['mercado1']}")
@@ -1026,6 +1052,8 @@ def gerar_quadro_resumo(
             linhas.append("TRIPLAS SAFE (v5.5 — correlação controlada)")
             if motivo_triplas.get("modo") == "NEUTRO":
                 linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
+            if motivo_triplas.get("modo") == "QUALQUER":
+                linhas.append("⚠️ Sem SAFE/NEUTRO; usando qualquer jogo com mercado")
             linhas.append("")
             for tripla in triplas:
                 linhas.append(f"• {tripla['jogo1']} → {tripla['mercado1']}")
