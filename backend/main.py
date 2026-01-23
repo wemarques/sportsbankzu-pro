@@ -450,15 +450,26 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         home_cards_pm = team_cards_per_match(home)
         away_cards_pm = team_cards_per_match(away)
         # quick O/U and BTTS from pre percentages if present
-        over25_pct = r.get("over_25_percentage_pre", None)
-        btts_pct = r.get("btts_percentage_pre", None)
+        over15_pct = r.get("over_15_percentage_pre_match", None)
+        over25_pct = r.get("over_25_percentage_pre_match", None)
+        over35_pct = r.get("over_35_percentage_pre_match", None)
+        over45_pct = r.get("over_45_percentage_pre_match", None)
+        btts_pct = r.get("btts_percentage_pre_match", None)
+        # Read odds
+        odds_over15 = r.get("odds_ft_over15", None)
+        odds_over35 = r.get("odds_ft_over35", None)
+        odds_over45 = r.get("odds_ft_over45", None)
         try:
+            over15_pct = float(over15_pct) if over15_pct is not None else None
             over25_pct = float(over25_pct) if over25_pct is not None else None
-        except Exception:
-            over25_pct = None
-        try:
+            over35_pct = float(over35_pct) if over35_pct is not None else None
+            over45_pct = float(over45_pct) if over45_pct is not None else None
             btts_pct = float(btts_pct) if btts_pct is not None else None
         except Exception:
+            over15_pct = None
+            over25_pct = None
+            over35_pct = None
+            over45_pct = None
             btts_pct = None
         league_goal_avg = league_avgs["avg_goals"] if league_avgs["avg_goals"] else 2.7
         league_regime = "HIPER-OFENSIVA" if league_goal_avg > 3.0 else "NORMAL"
@@ -503,7 +514,10 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 "home": float(odds_home) if odds_home else None,
                 "draw": float(odds_draw) if odds_draw else None,
                 "away": float(odds_away) if odds_away else None,
+                "over15": float(odds_over15) if odds_over15 else None,
                 "over25": float(odds_over25) if odds_over25 else None,
+                "over35": float(odds_over35) if odds_over35 else None,
+                "over45": float(odds_over45) if odds_over45 else None,
                 "under25": float(odds_under25) if odds_under25 else None,
                 "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
@@ -514,10 +528,15 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 "awayWinProb": round(awayProb, 1),
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
                 "bttsProb": float(btts_pct) if btts_pct is not None else round(btts_poisson * 100.0, 1),
-                "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),
                 "over05Prob": round(over05 * 100.0, 1),
-                "over15Prob": round(over15 * 100.0, 1),
-                "over35Prob": round(over35 * 100.0, 1),
+                "over15Prob": float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1),
+                "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),
+                "over35Prob": float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1),
+                "over45Prob": float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1),
+                "under15Prob": 100.0 - (float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1)),
+                "under25Prob": 100.0 - (float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1)),
+                "under35Prob": 100.0 - (float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1)),
+                "under45Prob": 100.0 - (float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1)),
                 "lambdaHome": round(lam_home, 3),
                 "lambdaAway": round(lam_away, 3),
                 "lambdaTotal": round(lam_total, 3),
@@ -615,62 +634,125 @@ def _normalize_prob(value: Optional[float]) -> Optional[float]:
         return None
     return min(max(v, 0.0), 1.0)
 
+def calcular_odd_under(odd_over: float) -> Optional[float]:
+    """Calcula odd Under aproximada a partir da odd Over."""
+    if not odd_over or odd_over <= 1.0:
+        return None
+    prob_over = 1.0 / odd_over
+    prob_under = 1.0 - prob_over
+    if prob_under <= 0:
+        return None
+    return round(1.0 / prob_under, 2)
+
 def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str) -> List[Dict[str, Any]]:
     mercados: List[Dict[str, Any]] = []
     stats = jogo.get("stats", {})
+    odds = jogo.get("odds", {})
+    
+    # Usar dados pré-calculados do CSV (já em %)
     prob_over25 = _normalize_prob(stats.get("over25Prob"))
     prob_btts = _normalize_prob(stats.get("bttsProb"))
+    prob_under35 = _normalize_prob(stats.get("under35Prob"))
+    prob_under45 = _normalize_prob(stats.get("under45Prob"))
+    
     prob_dc = None
     if stats.get("homeWinProb") is not None and stats.get("drawProb") is not None:
         prob_dc = _normalize_prob(float(stats.get("homeWinProb", 0)) + float(stats.get("drawProb", 0)))
-
-    lam_total = stats.get("lambdaTotal")
-    try:
-        lam_total = float(lam_total) if lam_total is not None else None
-    except Exception:
-        lam_total = None
-
-    prob_under45 = poisson_cdf(4, lam_total) if lam_total and lam_total > 0 else None
-    prob_under35 = poisson_cdf(3, lam_total) if lam_total and lam_total > 0 else None
-
-    def add_mercado(nome: str, status: str, prob: float, alerta: Optional[str] = None) -> None:
+    
+    # Obter odds reais
+    odd_over35 = odds.get("over35")
+    odd_over45 = odds.get("over45")
+    odd_btts_yes = odds.get("bttsYes")
+    
+    # Calcular odds Under
+    odd_under35 = calcular_odd_under(odd_over35) if odd_over35 else None
+    odd_under45 = calcular_odd_under(odd_over45) if odd_over45 else None
+    
+    def add_mercado(nome: str, status: str, prob: float, odd_real: Optional[float] = None, alerta: Optional[str] = None) -> None:
         prob_min = max(0, int(prob * 100) - 2)
         prob_max = max(0, int(prob * 100))
         odd_minima = round(1.0 / prob, 2) if prob > 0 else None
+        odd_display = odd_real if odd_real else odd_minima
         item: Dict[str, Any] = {
             "mercado": nome,
             "status": status,
             "prob_min": prob_min,
             "prob_max": prob_max,
-            "odd_minima": odd_minima,
+            "odd_minima": odd_display,
         }
         if alerta:
             item["alerta"] = alerta
         mercados.append(item)
-
-    if regime == "NORMAL":
-        if prob_under45 is not None and prob_under45 >= 0.75:
-            add_mercado("Under 4.5 gols", "SAFE", prob_under45)
-        if prob_under35 is not None and prob_under35 >= 0.70:
-            add_mercado("Under 3.5 gols", "SAFE*", prob_under35, alerta="EV-")
+    
+    # Thresholds dinâmicos baseados na liga
+    league_avg_goals = stats.get("leagueAvgGoals", 2.7)
+    if league_avg_goals < 2.5:
+        threshold_u35 = 0.55
+        threshold_u45 = 0.65
+    elif league_avg_goals < 3.0:
+        threshold_u35 = 0.60
+        threshold_u45 = 0.70
     else:
+        threshold_u35 = 0.65
+        threshold_u45 = 0.75
+    
+    # Priorizar Under 3.5 sobre Under 4.5
+    if regime in ["NORMAL", "DEFENSIVA"]:
+        # 1º: Under 3.5 (melhor EV)
+        if prob_under35 is not None and prob_under35 >= threshold_u35:
+            if odd_under35 and odd_under35 >= 1.25:
+                add_mercado("Under 3.5 gols", "SAFE", prob_under35, odd_under35)
+            elif odd_under35 and odd_under35 >= 1.20:
+                add_mercado("Under 3.5 gols", "SAFE*", prob_under35, odd_under35, alerta="Odd baixa")
+            else:
+                add_mercado("Under 3.5 gols", "SAFE*", prob_under35, odd_under35, alerta="Odd muito baixa")
+        # 2º: Se Under 3.5 não foi adicionado, tentar Under 4.5
+        elif prob_under45 is not None and prob_under45 >= threshold_u45:
+            if odd_under45 and odd_under45 >= 1.15:
+                add_mercado("Under 4.5 gols", "SAFE", prob_under45, odd_under45)
+            elif odd_under45 and odd_under45 >= 1.10:
+                add_mercado("Under 4.5 gols", "SAFE*", prob_under45, odd_under45, alerta="Odd baixa")
+            else:
+                add_mercado("Under 4.5 gols", "SAFE*", prob_under45, odd_under45, alerta="Odd muito baixa")
+    else:  # HIPER-OFENSIVA
         if prob_over25 is not None and prob_over25 >= 0.72:
-            add_mercado("Over 2.5 gols", "SAFE", prob_over25)
-
+            add_mercado("Over 2.5 gols", "SAFE", prob_over25, odds.get("over25"))
+    
+    # BTTS
     if prob_btts is not None and prob_btts >= 0.60:
         status = "SAFE" if prob_btts >= 0.68 else "NEUTRO"
-        add_mercado("BTTS — SIM", status, prob_btts)
-
+        add_mercado("BTTS — SIM", status, prob_btts, odd_btts_yes)
+    
+    # Double Chance
     if prob_dc is not None and prob_dc >= 0.65:
         home = str(jogo.get("homeTeam", ""))[:3].upper()
         add_mercado(f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc)
-
+    
+    # Fallback: se nenhum mercado foi adicionado
+    if not mercados:
+        candidatos = []
+        if prob_under35:
+            candidatos.append(("Under 3.5 gols", "NEUTRO", prob_under35, odd_under35))
+        if prob_under45:
+            candidatos.append(("Under 4.5 gols", "NEUTRO", prob_under45, odd_under45))
+        if prob_over25:
+            candidatos.append(("Over 2.5 gols", "NEUTRO", prob_over25, odds.get("over25")))
+        if prob_btts and prob_btts >= 0.50:
+            candidatos.append(("BTTS — SIM", "NEUTRO", prob_btts, odd_btts_yes))
+        if prob_dc and prob_dc >= 0.60:
+            home = str(jogo.get("homeTeam", ""))[:3].upper()
+            candidatos.append((f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc, None))
+        candidatos.sort(key=lambda x: x[2], reverse=True)
+        for nome, status, prob, odd in candidatos[:3]:
+            add_mercado(nome, status, prob, odd)
+    
+    # Atualizar stats do jogo
     if mercados:
         principal = mercados[0]
         stats["status"] = "SAFE" if principal.get("status") == "SAFE" else principal.get("status", "NEUTRO")
         stats["mercado_principal"] = principal.get("mercado")
         stats["odd_minima"] = principal.get("odd_minima")
-
+    
     return mercados
 
 def identificar_duplas_safe(jogos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
