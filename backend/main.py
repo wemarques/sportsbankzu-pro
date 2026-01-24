@@ -17,6 +17,9 @@ from backend.modeling.market_validator import (
     validar_prognostico,
     filtrar_mercados_permitidos,
 )
+from backend.modeling.chaos_detector import (
+    detectar_caos_jogo,
+)
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -589,6 +592,29 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                         return val
             return None
 
+        def parse_series(value: Any) -> List[float]:
+            if value is None:
+                return []
+            if isinstance(value, (list, tuple)):
+                series = []
+                for item in value:
+                    try:
+                        series.append(float(item))
+                    except Exception:
+                        continue
+                return series
+            if isinstance(value, str):
+                cleaned = value.replace("[", "").replace("]", "").replace(";", ",")
+                parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+                series = []
+                for part in parts:
+                    try:
+                        series.append(float(part))
+                    except Exception:
+                        continue
+                return series
+            return []
+
         home_row = get_team_row(home)
         away_row = get_team_row(away)
 
@@ -609,6 +635,11 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         away_goals_last5 = safe(get_stat(away_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if away_row is not None else None, away_goals_avg)
         away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
         away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
+
+        home_xg_series = parse_series(get_stat(home_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if home_row is not None else None)
+        away_xg_series = parse_series(get_stat(away_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if away_row is not None else None)
+        home_goals_series = parse_series(get_stat(home_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if home_row is not None else None)
+        away_goals_series = parse_series(get_stat(away_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if away_row is not None else None)
 
         home_games_played = safe(get_stat(home_row, ["matches_played", "games_played", "matches"]) if home_row is not None else None, None)
         away_games_played = safe(get_stat(away_row, ["matches_played", "games_played", "matches"]) if away_row is not None else None, None)
@@ -644,6 +675,8 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             "goals_scored": home_goals_scored_total,
             "xg": home_xg_total,
             "games_played": home_games_played,
+            "xg_per_game": home_xg_series,
+            "goals_per_game": home_goals_series,
         }
         away_team_data = {
             "team_name": away,
@@ -655,6 +688,8 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             "goals_scored": away_goals_scored_total,
             "xg": away_xg_total,
             "games_played": away_games_played,
+            "xg_per_game": away_xg_series,
+            "goals_per_game": away_goals_series,
         }
         league_data = {
             "league_name": league_name,
@@ -682,6 +717,19 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             xg_metadata.get("home", {}).get("adjustment_applied", False),
             xg_metadata.get("away", {}).get("adjustment_applied", False),
         )
+
+        has_chaos, chaos_metadata = detectar_caos_jogo(
+            home_team_data=home_team_data,
+            away_team_data=away_team_data,
+        )
+        if has_chaos:
+            logger.warning(
+                "Caos detectado | Home: %s (CV: %.2f) | Away: %s (CV: %.2f)",
+                chaos_metadata.get("home", {}).get("classification"),
+                chaos_metadata.get("home", {}).get("cv_xg", 0.0),
+                chaos_metadata.get("away", {}).get("classification"),
+                chaos_metadata.get("away", {}).get("cv_xg", 0.0),
+            )
         lam_total = lam_home + lam_away
         if lam_total < 2.2:
             league_volatility = "BAIXA"
@@ -744,6 +792,11 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 "totalGoals": total_gols,
                 "leagueRegime": league_regime,
                 "leagueVolatility": league_volatility,
+                "chaosDetected": has_chaos,
+                "chaosHome": chaos_metadata.get("home", {}).get("classification"),
+                "chaosAway": chaos_metadata.get("away", {}).get("classification"),
+                "chaosHomeCv": round(chaos_metadata.get("home", {}).get("cv_xg", 0.0), 3),
+                "chaosAwayCv": round(chaos_metadata.get("away", {}).get("cv_xg", 0.0), 3),
                 "homePossession": home_poss,
                 "awayPossession": away_poss,
                 "homeCornersPerMatch": home_corners_pm,
