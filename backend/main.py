@@ -12,6 +12,7 @@ from backend.modeling.lambda_calculator import (
     calcular_lambda_jogo,
     calcular_lambda_legado,
 )
+from backend.modeling.xg_filter import aplicar_filtro_completo
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -605,6 +606,28 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
         away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
 
+        home_games_played = safe(get_stat(home_row, ["matches_played", "games_played", "matches"]) if home_row is not None else None, None)
+        away_games_played = safe(get_stat(away_row, ["matches_played", "games_played", "matches"]) if away_row is not None else None, None)
+
+        home_goals_scored_total = safe(get_stat(home_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if home_row is not None else None, None)
+        away_goals_scored_total = safe(get_stat(away_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if away_row is not None else None, None)
+
+        home_xg_total = safe(get_stat(home_row, ["xg_for_total", "xg_total", "xg_for", "xg"]) if home_row is not None else None, None)
+        away_xg_total = safe(get_stat(away_row, ["xg_for_total", "xg_total", "xg_for", "xg"]) if away_row is not None else None, None)
+
+        home_xg_avg = safe(get_stat(home_row, ["xg_for_avg", "xg_avg", "xg_for_per_match"]) if home_row is not None else None, None)
+        away_xg_avg = safe(get_stat(away_row, ["xg_for_avg", "xg_avg", "xg_for_per_match"]) if away_row is not None else None, None)
+
+        if home_xg_total is None and home_xg_avg is not None and home_games_played:
+            home_xg_total = home_xg_avg * home_games_played
+        if away_xg_total is None and away_xg_avg is not None and away_games_played:
+            away_xg_total = away_xg_avg * away_games_played
+
+        if home_goals_scored_total is None and home_goals_avg is not None and home_games_played:
+            home_goals_scored_total = home_goals_avg * home_games_played
+        if away_goals_scored_total is None and away_goals_avg is not None and away_games_played:
+            away_goals_scored_total = away_goals_avg * away_games_played
+
         league_name = league_df.iloc[0].get("league_name", league_id) if league_df is not None else league_id
 
         home_team_data = {
@@ -614,6 +637,9 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             "goals_scored_avg_last_5": home_goals_last5,
             "goals_conceded_avg_overall": home_conceded_avg,
             "goals_conceded_avg_home": home_conceded_avg_home,
+            "goals_scored": home_goals_scored_total,
+            "xg": home_xg_total,
+            "games_played": home_games_played,
         }
         away_team_data = {
             "team_name": away,
@@ -622,6 +648,9 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             "goals_scored_avg_last_5": away_goals_last5,
             "goals_conceded_avg_overall": away_conceded_avg,
             "goals_conceded_avg_away": away_conceded_avg_away,
+            "goals_scored": away_goals_scored_total,
+            "xg": away_xg_total,
+            "games_played": away_games_played,
         }
         league_data = {
             "league_name": league_name,
@@ -635,6 +664,19 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
             regime=league_regime,
             xg_home=xg_home_team,
             xg_away=xg_away_team,
+        )
+
+        lam_home, lam_away, xg_metadata = aplicar_filtro_completo(
+            lambda_home=lam_home,
+            lambda_away=lam_away,
+            home_team_data=home_team_data,
+            away_team_data=away_team_data,
+            enable_filter=True,
+        )
+        logger.info(
+            "Filtro xG | Home ajustado: %s | Away ajustado: %s",
+            xg_metadata.get("home", {}).get("adjustment_applied", False),
+            xg_metadata.get("away", {}).get("adjustment_applied", False),
         )
         lam_total = lam_home + lam_away
         if lam_total < 2.2:
