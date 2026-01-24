@@ -1,6 +1,9 @@
 decisions.log
 *.log
 *.exe
+backend/main.py.backup
+.coverage
+htmlcov/
 __pycache__/
 *.pyc
 .venv/

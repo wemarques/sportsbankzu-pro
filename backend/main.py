@@ -7,6 +7,11 @@ import random
 import importlib.util
 import logging
 from io import BytesIO
+from backend.modeling.lambda_calculator import (
+    calcular_lambda_dinamico,
+    calcular_lambda_jogo,
+    calcular_lambda_legado,
+)
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -125,6 +130,40 @@ def poisson_cdf(k: int, lam: float) -> float:
     for i in range(0, k + 1):
         s += poisson_pmf(i, lam)
     return s
+
+def expected_goals_v2(
+    home_team_data: Dict[str, Any],
+    away_team_data: Dict[str, Any],
+    league_data: Dict[str, Any],
+    regime: str,
+    xg_home: Optional[float] = None,
+    xg_away: Optional[float] = None
+) -> Tuple[float, float]:
+    """
+    Calcula lambda usando metodo v5.5-ML (Peso Dinamico).
+    """
+    lam_home, lam_away = calcular_lambda_jogo(
+        home_team_data=home_team_data,
+        away_team_data=away_team_data,
+        league_data=league_data,
+        regime=regime,
+    )
+
+    if xg_home is not None and xg_home > 0:
+        lam_home = 0.7 * lam_home + 0.3 * xg_home
+    if xg_away is not None and xg_away > 0:
+        lam_away = 0.7 * lam_away + 0.3 * xg_away
+
+    lam_home = max(0.2, min(4.5, lam_home))
+    lam_away = max(0.2, min(4.5, lam_away))
+
+    logger.info(
+        "Lambda v5.5 | Home: %.3f | Away: %.3f | Regime: %s",
+        lam_home,
+        lam_away,
+        regime,
+    )
+    return lam_home, lam_away
 
 def expected_goals(home_attack: float, away_defense: float, away_attack: float, home_defense: float, league_avg: float, xg_home: Optional[float], xg_away: Optional[float]) -> Tuple[float, float]:
     lam_home = league_avg * home_attack * away_defense
@@ -524,13 +563,79 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         league_regime = "HIPER-OFENSIVA" if league_goal_avg > 3.0 else "NORMAL"
         def safe(val: Optional[float], default: float) -> float:
             return float(val) if val is not None and val > 0 else default
-        home_attack = safe(teams.iloc[0].get("goals_scored_per_match_home", None) if teams is not None else None, 1.3)
-        away_defense = safe(teams.iloc[0].get("goals_conceded_per_match_away", None) if teams is not None else None, 1.2)
-        away_attack = safe(teams.iloc[0].get("goals_scored_per_match_away", None) if teams is not None else None, 1.2)
-        home_defense = safe(teams.iloc[0].get("goals_conceded_per_match_home", None) if teams is not None else None, 1.1)
+        def get_team_row(name: str) -> Optional["pd.Series"]:
+            if teams is None:
+                return None
+            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+            if not name_col:
+                return None
+            row = teams[teams[name_col] == name]
+            if len(row) == 0:
+                return None
+            return row.iloc[0]
+
+        def get_stat(row: Optional["pd.Series"], keys: List[str]) -> Optional[float]:
+            if row is None:
+                return None
+            for key in keys:
+                if key in row:
+                    val = row.get(key)
+                    if val is not None:
+                        return val
+            return None
+
+        home_row = get_team_row(home)
+        away_row = get_team_row(away)
+
+        home_attack = safe(get_stat(home_row, ["goals_scored_per_match_home", "goals_scored_avg_home"]) if home_row is not None else None, 1.3)
+        away_defense = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, 1.2)
+        away_attack = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, 1.2)
+        home_defense = safe(get_stat(home_row, ["goals_conceded_per_match_home", "goals_conceded_avg_home"]) if home_row is not None else None, 1.1)
         xg_home_team = aggregate_team_xg(players, home)
         xg_away_team = aggregate_team_xg(players, away)
-        lam_home, lam_away = expected_goals(home_attack, away_defense, away_attack, home_defense, league_goal_avg / 2.0, xg_home_team, xg_away_team)
+        home_goals_avg = safe(get_stat(home_row, ["goals_scored_per_match_overall", "goals_scored_per_match", "goals_scored_avg_overall"]) if home_row is not None else None, home_attack)
+        home_goals_avg_home = safe(get_stat(home_row, ["goals_scored_per_match_home", "goals_scored_avg_home"]) if home_row is not None else None, home_attack)
+        home_goals_last5 = safe(get_stat(home_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if home_row is not None else None, home_goals_avg)
+        home_conceded_avg = safe(get_stat(home_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if home_row is not None else None, home_defense)
+        home_conceded_avg_home = safe(get_stat(home_row, ["goals_conceded_per_match_home", "goals_conceded_avg_home"]) if home_row is not None else None, home_defense)
+
+        away_goals_avg = safe(get_stat(away_row, ["goals_scored_per_match_overall", "goals_scored_per_match", "goals_scored_avg_overall"]) if away_row is not None else None, away_attack)
+        away_goals_avg_away = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, away_attack)
+        away_goals_last5 = safe(get_stat(away_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if away_row is not None else None, away_goals_avg)
+        away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
+        away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
+
+        league_name = league_df.iloc[0].get("league_name", league_id) if league_df is not None else league_id
+
+        home_team_data = {
+            "team_name": home,
+            "goals_scored_avg_overall": home_goals_avg,
+            "goals_scored_avg_home": home_goals_avg_home,
+            "goals_scored_avg_last_5": home_goals_last5,
+            "goals_conceded_avg_overall": home_conceded_avg,
+            "goals_conceded_avg_home": home_conceded_avg_home,
+        }
+        away_team_data = {
+            "team_name": away,
+            "goals_scored_avg_overall": away_goals_avg,
+            "goals_scored_avg_away": away_goals_avg_away,
+            "goals_scored_avg_last_5": away_goals_last5,
+            "goals_conceded_avg_overall": away_conceded_avg,
+            "goals_conceded_avg_away": away_conceded_avg_away,
+        }
+        league_data = {
+            "league_name": league_name,
+            "average_goals_per_match": league_goal_avg,
+        }
+
+        lam_home, lam_away = expected_goals_v2(
+            home_team_data=home_team_data,
+            away_team_data=away_team_data,
+            league_data=league_data,
+            regime=league_regime,
+            xg_home=xg_home_team,
+            xg_away=xg_away_team,
+        )
         lam_total = lam_home + lam_away
         if lam_total < 2.2:
             league_volatility = "BAIXA"
