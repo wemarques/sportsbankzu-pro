@@ -13,6 +13,10 @@ from backend.modeling.lambda_calculator import (
     calcular_lambda_legado,
 )
 from backend.modeling.xg_filter import aplicar_filtro_completo
+from backend.modeling.market_validator import (
+    validar_prognostico,
+    filtrar_mercados_permitidos,
+)
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -961,6 +965,39 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         candidatos.sort(key=lambda x: x[2], reverse=True)
         for nome, status, prob, odd in candidatos[:3]:
             add_mercado(nome, status, prob, odd)
+
+    def normalizar_mercado(nome: str) -> str:
+        base = nome.replace(" gols", "").strip()
+        if base.startswith("DC 1X"):
+            return "Double Chance 1X"
+        if base.startswith("DC X2"):
+            return "Double Chance X2"
+        if base.startswith("DC 12"):
+            return "Double Chance 12"
+        if base.startswith("BTTS"):
+            return "BTTS"
+        return base
+
+    if mercados:
+        mercados_normalizados = [normalizar_mercado(m.get("mercado", "")) for m in mercados]
+        is_valid, invalidos = validar_prognostico({"markets": mercados_normalizados}, regime)
+        if not is_valid:
+            permitidos = filtrar_mercados_permitidos(mercados_normalizados, regime)
+            mercados = [
+                m for m, nome_norm in zip(mercados, mercados_normalizados)
+                if nome_norm in permitidos
+            ]
+            logger.warning(
+                "Prognóstico removido por mercados inválidos: %s | Regime: %s",
+                invalidos,
+                regime,
+            )
+        logger.info(
+            "Validação de mercados | Total: %s | Válidos: %s | Removidos: %s",
+            len(mercados_normalizados),
+            len(mercados),
+            len(mercados_normalizados) - len(mercados),
+        )
     
     # Atualizar stats do jogo
     if mercados:
