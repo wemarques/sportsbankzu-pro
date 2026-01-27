@@ -52,6 +52,18 @@ def decision_pre(payload: dict):
     return r.json().get("picks", [])
   except:
     return []
+def ai_analyze_context(home_team: str, away_team: str, news_summary: str | None):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/analyze-context", json={"home_team": home_team, "away_team": away_team, "news_summary": news_summary or ""}, timeout=30)
+    return r.json().get("analysis")
+  except:
+    return None
+def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str, classification: str, probability: float):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/generate-report", json={"home_team": home_team, "away_team": away_team, "stats": stats, "market": market, "classification": classification, "probability": probability}, timeout=30)
+    return r.json().get("report")
+  except:
+    return None
 
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
@@ -388,3 +400,41 @@ if st.button("Analisar Selecionados") and selected_games:
     st.dataframe(pdf, use_container_width=True)
   else:
     st.info("Sem picks retornados")
+st.subheader("Análise de Contexto (AI)")
+ai_col1, ai_col2 = st.columns([2, 1])
+with ai_col1:
+  if matches:
+    jogo_ai = st.selectbox("Jogo", options=[f"{m.get('homeTeam')} vs {m.get('awayTeam')}" for m in matches])
+  else:
+    jogo_ai = None
+  news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
+  market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
+with ai_col2:
+  run_ai = st.button("Analisar Contexto", use_container_width=True)
+if run_ai and jogo_ai:
+  for m in matches:
+    if f"{m.get('homeTeam')} vs {m.get('awayTeam')}" == jogo_ai:
+      analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
+      if analysis:
+        st.json(analysis, expanded=True)
+        st.download_button("📥 Baixar análise (JSON)", data=json.dumps(analysis, ensure_ascii=False, indent=2), file_name="analysis.json", mime="application/json", use_container_width=True)
+        stats = m.get("stats") or {}
+        market = market_choice
+        prob_map = {
+          "Over 0.5": stats.get("over05Prob") or 0,
+          "Over 1.5": stats.get("over15Prob") or 0,
+          "Over 2.5": stats.get("over25Prob") or 0,
+          "Over 3.5": stats.get("over35Prob") or 0,
+          "BTTS": stats.get("bttsProb") or 0,
+        }
+        prob = float((prob_map.get(market) or 0) * 100)
+        classification = "SAFE" if prob >= 60 else "NEUTRO"
+        report = ai_generate_report(m.get('homeTeam'), m.get('awayTeam'), stats, market, classification, prob)
+        if report:
+          st.markdown("---")
+          st.subheader("Relatório do Mercado (AI)")
+          st.write(report)
+          st.download_button("📥 Baixar relatório (TXT)", data=report, file_name="report.txt", mime="text/plain", use_container_width=True)
+      else:
+        st.info("Sem análise retornada")
+      break
