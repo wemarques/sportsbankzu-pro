@@ -27,6 +27,12 @@ st.markdown(
 )
 
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
+def get_health():
+  try:
+    r = requests.get(f"{BACKEND_URL}/health", timeout=5)
+    return r.json()
+  except:
+    return None
 
 def get_discover():
   try:
@@ -177,6 +183,11 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
 
 st.title("SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
+health = get_health()
+if health:
+  st.success("Backend conectado")
+else:
+  st.warning("Backend indisponível. Verifique BACKEND_URL nos Secrets.")
 
 col_a, col_b, col_c = st.columns([2, 2, 1])
 
