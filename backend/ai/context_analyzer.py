@@ -20,8 +20,18 @@ class ContextAnalyzer:
             }}
         }}
         """
-        resp = self.client.simple_prompt(prompt)
+        system = "Você é um gerador estrito de JSON. Responda somente JSON válido, sem texto adicional."
+        resp = self.client.simple_prompt(prompt, system_prompt=system)
+        def _strip_fences(s: str) -> str:
+            if s.strip().startswith("```"):
+                s2 = s.strip().strip("`")
+                if s2.lower().startswith("json"):
+                    s2 = s2[4:]
+                return s2.strip()
+            return s
+        raw = resp
+        text = _strip_fences(raw)
         try:
-            return json.loads(resp)
+            return json.loads(text)
         except Exception:
-            return {"error": "invalid_json", "raw": resp}
+            return {"error": "invalid_json", "raw": raw}
