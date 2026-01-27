@@ -58,6 +58,18 @@ def decision_pre(payload: dict):
     return r.json().get("picks", [])
   except:
     return []
+def ai_analyze_context(home_team: str, away_team: str, news_summary: str | None):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/analyze-context", json={"home_team": home_team, "away_team": away_team, "news_summary": news_summary or ""}, timeout=30)
+    return r.json().get("analysis")
+  except:
+    return None
+def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str, classification: str, probability: float):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/generate-report", json={"home_team": home_team, "away_team": away_team, "stats": stats, "market": market, "classification": classification, "probability": probability}, timeout=30)
+    return r.json().get("report")
+  except:
+    return None
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   texto_escapado = (
@@ -385,3 +397,31 @@ if st.button("Analisar Selecionados") and selected_games:
     st.dataframe(pdf, use_container_width=True)
   else:
     st.info("Sem picks retornados")
+st.subheader("Análise de Contexto (AI)")
+ai_col1, ai_col2 = st.columns([2, 1])
+with ai_col1:
+  if matches:
+    jogo_ai = st.selectbox("Jogo", options=[f"{m.get('homeTeam')} vs {m.get('awayTeam')}" for m in matches])
+  else:
+    jogo_ai = None
+  news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
+with ai_col2:
+  run_ai = st.button("Analisar Contexto", use_container_width=True)
+if run_ai and jogo_ai:
+  for m in matches:
+    if f\"{m.get('homeTeam')} vs {m.get('awayTeam')}\" == jogo_ai:
+      analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
+      if analysis:
+        st.json(analysis, expanded=True)
+        stats = m.get("stats") or {}
+        market = "Over 2.5"
+        classification = "SAFE" if (stats.get("over25Prob") or 0) >= 0.6 else "NEUTRO"
+        prob = float((stats.get("over25Prob") or 0) * 100)
+        report = ai_generate_report(m.get('homeTeam'), m.get('awayTeam'), stats, market, classification, prob)
+        if report:
+          st.markdown("---")
+          st.subheader("Relatório do Mercado (AI)")
+          st.write(report)
+      else:
+        st.info("Sem análise retornada")
+      break
