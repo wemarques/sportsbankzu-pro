@@ -1,31 +1,5 @@
-decisions.log
-*.log
-*.exe
-backend/main.py.backup
-.coverage
-htmlcov/
-__pycache__/
 *.pyc
-.venv/
-venv/
+__pycache__/
 .env
-.env.*
-.streamlit/secrets.toml
-data/
-deploy/
-node_modules/
-.next/
-dist/
-build/
-.DS_Store
-Thumbs.db
-
-# Credenciais de autenticação
-config.yaml
-
-# Backups e arquivos temporários
-*-OLD.md
-*_OLD.*
-ARQUIVOS OLDS/
-auth_code_reference.py
-app_com_autenticacao.py
+htmlcov/
+.pytest_cache/

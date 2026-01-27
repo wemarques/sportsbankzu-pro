@@ -12,6 +12,14 @@
 - POST /probabilities
 - POST /ml/predict
 - GET /discover
+ 
+### POST /ai/analyze-context
+- Payload: { "home_team": "Arsenal", "away_team": "Chelsea", "news_summary": "..." }
+- Resposta: { "analysis": { "injuries_key_players": {"home": "str", "away": "str"}, "pressure_level": {"home": "ALTA|MEDIA|BAIXA", "away": "ALTA|MEDIA|BAIXA"}, "confidence_adjustment": {"recommendation": "AUMENTAR|MANTER|REDUZIR", "reason": "str"} } }
+ 
+### POST /ai/generate-report
+- Payload: { "home_team": "Arsenal", "away_team": "Chelsea", "stats": { "lambda_home": 1.2, "lambda_away": 1.0 }, "market": "Over 2.5", "classification": "SAFE", "probability": 65 }
+- Resposta: { "report": "texto" }
 
 ## Notas
 
