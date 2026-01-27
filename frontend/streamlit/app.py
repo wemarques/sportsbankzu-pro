@@ -9,7 +9,6 @@ from datetime import datetime
 from backend.summary_report import generate_summary_report
 from backend.auth.authenticator import Authenticator
 
-# Configurar página
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
 st.markdown(
   """
@@ -28,15 +27,10 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
-# ============================================
-# SISTEMA DE AUTENTICAÇÃO
-# ============================================
 authenticator = Authenticator('config.yaml')
-
 if not authenticator.login():
-    st.stop()  # Para a execução se não estiver autenticado
-
-authenticator.logout()  # Adiciona botão de logout na sidebar
+    st.stop()
+authenticator.logout()
 
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
 
@@ -66,9 +60,6 @@ def decision_pre(payload: dict):
     return []
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
-  """
-  Cria botao de copiar que funciona em desktop e mobile.
-  """
   texto_escapado = (
     texto.replace("\\", "\\\\")
       .replace("'", "\\'")
@@ -107,31 +98,27 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           animation: fadeIn 0.3s;
       "></div>
   </div>
-
   <style>
       @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-10px); }
           to { opacity: 1; transform: translateY(0); }
       }
   </style>
-
   <script>
       const textoParaCopiar = '__TEXTO__';
-
       function copyToClipboard() {
           if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(textoParaCopiar)
                   .then(() => {
                       mostrarFeedback('✅ Copiado com sucesso!', 'success');
                   })
-                  .catch(err => {
+                  .catch(() => {
                       tentarMetodoAntigo();
                   });
           } else {
               tentarMetodoAntigo();
           }
       }
-
       function tentarMetodoAntigo() {
           const textarea = document.createElement('textarea');
           textarea.value = textoParaCopiar;
@@ -139,7 +126,6 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           textarea.style.left = '-9999px';
           textarea.style.top = '0';
           document.body.appendChild(textarea);
-
           if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
               const range = document.createRange();
               range.selectNodeContents(textarea);
@@ -150,7 +136,6 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           } else {
               textarea.select();
           }
-
           try {
               const successful = document.execCommand('copy');
               if (successful) {
@@ -161,10 +146,8 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           } catch (err) {
               mostrarFeedback('❌ Erro ao copiar. Tente baixar o arquivo.', 'error');
           }
-
           document.body.removeChild(textarea);
       }
-
       function mostrarFeedback(mensagem, tipo) {
           const feedback = document.getElementById('feedback-__BUTTON_ID__');
           feedback.textContent = mensagem;
@@ -172,18 +155,13 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           feedback.style.backgroundColor = tipo === 'success' ? '#d4edda' : '#f8d7da';
           feedback.style.color = tipo === 'success' ? '#155724' : '#721c24';
           feedback.style.border = tipo === 'success' ? '1px solid #c3e6cb' : '1px solid #f5c6cb';
-
           setTimeout(() => {
               feedback.style.display = 'none';
           }, 3000);
       }
   </script>
   """
-  html_code = (
-    html_template
-      .replace("__BUTTON_ID__", button_id)
-      .replace("__TEXTO__", texto_escapado)
-  )
+  html_code = html_template.replace('__BUTTON_ID__', button_id).replace('__TEXTO__', texto_escapado)
   components.html(html_code, height=120)
 
 def get_last_update(matches: list[dict]) -> str | None:
@@ -259,33 +237,13 @@ st.markdown("**Selecione o que deseja visualizar:**")
 formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
 col_a, col_b, col_c, col_d = st.columns(4)
 with col_a:
-  incluir_simples = st.checkbox(
-    "🎯 Jogos Simples",
-    value=True,
-    help="Prognósticos individuais para cada jogo",
-    key="check_simples",
-  )
+  incluir_simples = st.checkbox("🎯 Jogos Simples", value=True, help="Prognósticos individuais para cada jogo", key="check_simples")
 with col_b:
-  incluir_duplas = st.checkbox(
-    "🔗 Duplas SAFE",
-    value=True,
-    help="Combinações de 2 jogos com alta confiança",
-    key="check_duplas",
-  )
+  incluir_duplas = st.checkbox("🔗 Duplas SAFE", value=True, help="Combinações de 2 jogos com alta confiança", key="check_duplas")
 with col_c:
-  incluir_triplas = st.checkbox(
-    "🎲 Triplas SAFE",
-    value=False,
-    help="Combinações de 3 jogos (maior risco)",
-    key="check_triplas",
-  )
+  incluir_triplas = st.checkbox("🎲 Triplas SAFE", value=False, help="Combinações de 3 jogos (maior risco)", key="check_triplas")
 with col_d:
-  incluir_governanca = st.checkbox(
-    "📋 Governança",
-    value=True,
-    help="Regras e alertas do sistema",
-    key="check_governanca",
-  )
+  incluir_governanca = st.checkbox("📋 Governança", value=True, help="Regras e alertas do sistema", key="check_governanca")
 
 if "quadro_resumo_texto" not in st.session_state:
   st.session_state["quadro_resumo_texto"] = None
@@ -326,7 +284,6 @@ elif gerar_btn and not leagues:
 quadro_texto = st.session_state.get("quadro_resumo_texto")
 if quadro_texto:
   st.code(quadro_texto, language="text")
-
   col1, col2 = st.columns(2)
   with col1:
     criar_botao_copiar(quadro_texto, button_id="copy-quadro-resumo")
@@ -340,7 +297,6 @@ if quadro_texto:
       use_container_width=True,
       key="download_quadro",
     )
-
   st.markdown("---")
   meta = st.session_state.get("quadro_resumo_meta", {})
   cols = st.columns(4)
@@ -358,7 +314,6 @@ if matches:
   st.subheader("Quadro Resumo de Jogos")
   summary_report = generate_summary_report(matches)
   st.dataframe(summary_report, hide_index=True, use_container_width=True)
-
   last_update = get_last_update(matches)
   if last_update:
     st.caption(f"Última atualização (fonte): {last_update} UTC")
@@ -367,26 +322,18 @@ if matches:
   data_source = matches[0].get("dataSource") if matches else None
   if data_source:
     st.caption(f"Origem dos dados: {data_source}")
-  # Regime/volatilidade por liga (se disponível)
   regimes = {m.get("stats", {}).get("leagueRegime") for m in matches if m.get("stats", {}).get("leagueRegime")}
   vols = {m.get("stats", {}).get("leagueVolatility") for m in matches if m.get("stats", {}).get("leagueVolatility")}
   if regimes or vols:
     st.caption(f"Regime da Liga: {', '.join(sorted(regimes)) or '-'} | Volatilidade: {', '.join(sorted(vols)) or '-'}")
   df = pd.DataFrame([format_match_row(m) for m in matches])
   st.dataframe(df, use_container_width=True, height=400)
-
   st.subheader("Gráfico de Probabilidades")
   chart_rows = []
   for m in matches:
     game = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
     stats = m.get("stats", {})
-    for key,label in [
-      ("over05Prob","Over 0.5"),
-      ("over15Prob","Over 1.5"),
-      ("over25Prob","Over 2.5"),
-      ("over35Prob","Over 3.5"),
-      ("bttsProb","BTTS"),
-    ]:
+    for key,label in [("over05Prob","Over 0.5"),("over15Prob","Over 1.5"),("over25Prob","Over 2.5"),("over35Prob","Over 3.5"),("bttsProb","BTTS")]:
       val = stats.get(key)
       if val is not None:
         chart_rows.append({"Jogo": game, "Métrica": label, "Prob%": float(val), "λH": stats.get("lambdaHome"), "λA": stats.get("lambdaAway"), "λT": stats.get("lambdaTotal")})
