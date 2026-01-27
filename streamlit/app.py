@@ -1,11 +1,18 @@
 import os
 import json
+import sys
+from pathlib import Path
 import requests
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
+
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+  sys.path.insert(0, str(project_root))
+
 from backend.summary_report import generate_summary_report
 
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
