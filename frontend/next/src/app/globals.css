@@ -14,6 +14,18 @@
   --text: #ffffff;
   --text2: #71717a;
 }
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --card: #f8f9fa;
+  --border: #e5e7eb;
+  --primary: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --accent: #8b5cf6;
+  --info: #2563eb;
+  --text: #1f2937;
+  --text2: #6b7280;
+}
 
 html, body, #__next { height: 100%; }
 body { background: var(--bg); color: var(--text); }

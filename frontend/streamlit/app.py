@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
 from backend.summary_report import generate_summary_report
+from backend.auth.authenticator import Authenticator
 
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
 st.markdown(
@@ -26,6 +27,11 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
+authenticator = Authenticator('config.yaml')
+if not authenticator.login():
+    st.stop()
+authenticator.logout()
+
 _general = st.secrets.get("general") or {}
 BACKEND_URL = (
   st.secrets.get("BACKEND_URL")
@@ -33,12 +39,6 @@ BACKEND_URL = (
   or os.getenv("BACKEND_URL")
   or "http://localhost:5001"
 )
-def get_health():
-  try:
-    r = requests.get(f"{BACKEND_URL}/health", timeout=5)
-    return r.json()
-  except:
-    return None
 
 def get_discover():
   try:
@@ -77,11 +77,7 @@ def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str,
   except:
     return None
 
-
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
-  """
-  Cria botao de copiar que funciona em desktop e mobile.
-  """
   texto_escapado = (
     texto.replace("\\", "\\\\")
       .replace("'", "\\'")
@@ -186,14 +182,36 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   html_code = html_template.replace('__BUTTON_ID__', button_id).replace('__TEXTO__', texto_escapado)
   components.html(html_code, height=120)
 
+def get_last_update(matches: list[dict]) -> str | None:
+  for m in matches:
+    val = m.get("lastUpdated") or m.get("last_updated") or m.get("updatedAt")
+    if val:
+      return str(val)
+  return None
+
+def format_match_row(m: dict):
+  return {
+    "Liga": m.get("leagueName"),
+    "Jogo": f"{m.get('homeTeam')} vs {m.get('awayTeam')}",
+    "Data": m.get("datetime"),
+    "Odds Home": m.get("odds", {}).get("home"),
+    "Odds Draw": m.get("odds", {}).get("draw"),
+    "Odds Away": m.get("odds", {}).get("away"),
+    "BTTS%": m.get("stats", {}).get("bttsProb"),
+    "Over0.5%": m.get("stats", {}).get("over05Prob"),
+    "Over1.5%": m.get("stats", {}).get("over15Prob"),
+    "Over2.5%": m.get("stats", {}).get("over25Prob"),
+    "Over3.5%": m.get("stats", {}).get("over35Prob"),
+    "λH": m.get("stats", {}).get("lambdaHome"),
+    "λA": m.get("stats", {}).get("lambdaAway"),
+    "λT": m.get("stats", {}).get("lambdaTotal"),
+    "Posse": f"{m.get('stats', {}).get('homePossession') or '-'} / {m.get('stats', {}).get('awayPossession') or '-'}",
+    "Escanteios/Partida": f"{m.get('stats', {}).get('homeCornersPerMatch') or '-'} / {m.get('stats', {}).get('awayCornersPerMatch') or '-'}",
+    "Cartões/Partida": f"{m.get('stats', {}).get('homeCardsPerMatch') or '-'} / {m.get('stats', {}).get('awayCardsPerMatch') or '-'}",
+  }
 
 st.title("SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
-health = get_health()
-if health:
-  st.success("Backend conectado")
-else:
-  st.warning("Backend indisponível. Verifique BACKEND_URL nos Secrets.")
 
 col_a, col_b, col_c = st.columns([2, 2, 1])
 
@@ -237,33 +255,13 @@ st.markdown("**Selecione o que deseja visualizar:**")
 formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
 col_a, col_b, col_c, col_d = st.columns(4)
 with col_a:
-  incluir_simples = st.checkbox(
-    "🎯 Jogos Simples",
-    value=True,
-    help="Prognósticos individuais para cada jogo",
-    key="check_simples",
-  )
+  incluir_simples = st.checkbox("🎯 Jogos Simples", value=True, help="Prognósticos individuais para cada jogo", key="check_simples")
 with col_b:
-  incluir_duplas = st.checkbox(
-    "🔗 Duplas SAFE",
-    value=True,
-    help="Combinações de 2 jogos com alta confiança",
-    key="check_duplas",
-  )
+  incluir_duplas = st.checkbox("🔗 Duplas SAFE", value=True, help="Combinações de 2 jogos com alta confiança", key="check_duplas")
 with col_c:
-  incluir_triplas = st.checkbox(
-    "🎲 Triplas SAFE",
-    value=False,
-    help="Combinações de 3 jogos (maior risco)",
-    key="check_triplas",
-  )
+  incluir_triplas = st.checkbox("🎲 Triplas SAFE", value=False, help="Combinações de 3 jogos (maior risco)", key="check_triplas")
 with col_d:
-  incluir_governanca = st.checkbox(
-    "📋 Governança",
-    value=True,
-    help="Regras e alertas do sistema",
-    key="check_governanca",
-  )
+  incluir_governanca = st.checkbox("📋 Governança", value=True, help="Regras e alertas do sistema", key="check_governanca")
 
 if "quadro_resumo_texto" not in st.session_state:
   st.session_state["quadro_resumo_texto"] = None
@@ -304,7 +302,6 @@ elif gerar_btn and not leagues:
 quadro_texto = st.session_state.get("quadro_resumo_texto")
 if quadro_texto:
   st.code(quadro_texto, language="text")
-
   col1, col2 = st.columns(2)
   with col1:
     criar_botao_copiar(quadro_texto, button_id="copy-quadro-resumo")
@@ -318,7 +315,6 @@ if quadro_texto:
       use_container_width=True,
       key="download_quadro",
     )
-
   st.markdown("---")
   meta = st.session_state.get("quadro_resumo_meta", {})
   cols = st.columns(4)
@@ -333,11 +329,9 @@ if quadro_texto:
 
 st.subheader("Jogos")
 if matches:
-
   st.subheader("Quadro Resumo de Jogos")
   summary_report = generate_summary_report(matches)
   st.dataframe(summary_report, hide_index=True, use_container_width=True)
-
   last_update = get_last_update(matches)
   if last_update:
     st.caption(f"Última atualização (fonte): {last_update} UTC")
@@ -346,26 +340,18 @@ if matches:
   data_source = matches[0].get("dataSource") if matches else None
   if data_source:
     st.caption(f"Origem dos dados: {data_source}")
-  # Regime/volatilidade por liga (se disponível)
   regimes = {m.get("stats", {}).get("leagueRegime") for m in matches if m.get("stats", {}).get("leagueRegime")}
   vols = {m.get("stats", {}).get("leagueVolatility") for m in matches if m.get("stats", {}).get("leagueVolatility")}
   if regimes or vols:
     st.caption(f"Regime da Liga: {', '.join(sorted(regimes)) or '-'} | Volatilidade: {', '.join(sorted(vols)) or '-'}")
   df = pd.DataFrame([format_match_row(m) for m in matches])
   st.dataframe(df, use_container_width=True, height=400)
-
   st.subheader("Gráfico de Probabilidades")
   chart_rows = []
   for m in matches:
     game = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
     stats = m.get("stats", {})
-    for key,label in [
-      ("over05Prob","Over 0.5"),
-      ("over15Prob","Over 1.5"),
-      ("over25Prob","Over 2.5"),
-      ("over35Prob","Over 3.5"),
-      ("bttsProb","BTTS"),
-    ]:
+    for key,label in [("over05Prob","Over 0.5"),("over15Prob","Over 1.5"),("over25Prob","Over 2.5"),("over35Prob","Over 3.5"),("bttsProb","BTTS")]:
       val = stats.get(key)
       if val is not None:
         chart_rows.append({"Jogo": game, "Métrica": label, "Prob%": float(val), "λH": stats.get("lambdaHome"), "λA": stats.get("lambdaAway"), "λT": stats.get("lambdaTotal")})
@@ -430,7 +416,7 @@ with ai_col2:
   run_ai = st.button("Analisar Contexto", use_container_width=True)
 if run_ai and jogo_ai:
   for m in matches:
-    if f"{m.get('homeTeam')} vs {m.get('awayTeam')}" == jogo_ai:
+    if f\"{m.get('homeTeam')} vs {m.get('awayTeam')}\" == jogo_ai:
       analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
       if analysis:
         st.json(analysis, expanded=True)

@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Query, HTTPException
-from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
@@ -8,6 +7,7 @@ import random
 import importlib.util
 import logging
 from io import BytesIO
+from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
 from backend.modeling.lambda_calculator import (
     calcular_lambda_dinamico,
     calcular_lambda_jogo,
@@ -21,8 +21,6 @@ from backend.modeling.market_validator import (
 from backend.modeling.chaos_detector import (
     detectar_caos_jogo,
 )
-from backend.ai.context_analyzer import ContextAnalyzer
-from backend.ai.report_generator import ReportGenerator
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -40,6 +38,51 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbank")
 
 app = FastAPI(title="SportsBank Pro Backend", version="0.1.0")
+try:
+    from backend.routes import matches as _r_matches
+    app.include_router(_r_matches.router)
+except Exception:
+    pass
+try:
+    from backend.routes import predictions as _r_predictions
+    app.include_router(_r_predictions.router)
+except Exception:
+    pass
+try:
+    from backend.routes import health as _r_health
+    app.include_router(_r_health.router)
+except Exception:
+    pass
+try:
+    from backend.routes import leagues as _r_leagues
+    app.include_router(_r_leagues.router)
+except Exception:
+    pass
+try:
+    from backend.routes import fixtures as _r_fixtures
+    app.include_router(_r_fixtures.router)
+except Exception:
+    pass
+try:
+    from backend.routes import decision as _r_decision
+    app.include_router(_r_decision.router)
+except Exception:
+    pass
+try:
+    from backend.routes import quadro as _r_quadro
+    app.include_router(_r_quadro.router)
+except Exception:
+    pass
+try:
+    from backend.routes import discover as _r_discover
+    app.include_router(_r_discover.router)
+except Exception:
+    pass
+try:
+    from backend.routes import ai as _r_ai
+    app.include_router(_r_ai.router)
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"
@@ -116,31 +159,7 @@ def date_range(filter_type: str) -> Tuple[datetime, datetime]:
     end = start + timedelta(days=7) - timedelta(milliseconds=1)
     return start, end
 
-def implied_probs(home: Optional[float], draw: Optional[float], away: Optional[float]) -> Tuple[float, float, float]:
-    vals = []
-    for o in (home, draw, away):
-        if o and o > 1:
-            vals.append(1.0 / o)
-        else:
-            vals.append(0.0)
-    total = sum(vals)
-    if total <= 0:
-        return 0.0, 0.0, 0.0
-    return (vals[0] / total * 100.0, vals[1] / total * 100.0, vals[2] / total * 100.0)
-
-def poisson_pmf(k: int, lam: float) -> float:
-    if lam <= 0:
-        return 0.0 if k > 0 else 1.0
-    try:
-        return math.exp(-lam) * (lam ** k) / math.factorial(k)
-    except Exception:
-        return 0.0
-
-def poisson_cdf(k: int, lam: float) -> float:
-    s = 0.0
-    for i in range(0, k + 1):
-        s += poisson_pmf(i, lam)
-    return s
+ 
 
 def expected_goals_v2(
     home_team_data: Dict[str, Any],
@@ -228,86 +247,7 @@ def aggregate_team_xg(players_df: Optional["pd.DataFrame"], team_name: str) -> O
     except Exception:
         return None
 
-def status_map(s: str) -> str:
-    sl = (s or "").lower()
-    if sl in ("complete", "finished", "ft"):
-        return "finished"
-    if sl in ("live", "inplay"):
-        return "live"
-    if sl in ("postponed", "ppd"):
-        return "postponed"
-    return "scheduled"
-
-def parse_date(value: Any) -> Optional[datetime]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        try:
-            # FootyStats timestamp is often seconds since epoch
-            return datetime.utcfromtimestamp(int(value))
-        except Exception:
-            return None
-    if isinstance(value, str):
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%b %d %Y - %I:%M%p"):
-            try:
-                return datetime.strptime(value, fmt)
-            except Exception:
-                continue
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except Exception:
-            return None
-    return None
-
-def pick_column(df: "pd.DataFrame", candidates: List[str]) -> Optional[str]:
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-def compute_form(matches_df: "pd.DataFrame", team: str, max_len: int = 5) -> List[str]:
-    if pd is None or matches_df is None:
-        return ["W", "D", "L", "W", "D"][:max_len]
-    df = matches_df.copy()
-    df["date_parsed"] = df.get("date_gmt") if "date_gmt" in df.columns else df.get("date_GMT")
-    df["date_parsed"] = df["date_parsed"].apply(parse_date)
-    df = df.dropna(subset=["date_parsed"])
-    df = df.sort_values("date_parsed", ascending=False)
-    home_col = pick_column(df, ["home_team", "home_team_name", "team_a_name"])
-    away_col = pick_column(df, ["away_team", "away_team_name", "team_b_name"])
-    if not home_col or not away_col:
-        return ["D", "W", "L", "D", "W"][:max_len]
-    rows = df[(df[home_col] == team) | (df[away_col] == team)].head(20)
-    form: List[str] = []
-    for _, r in rows.iterrows():
-        hg = r.get("home_goals", r.get("home_team_goal_count", None))
-        ag = r.get("away_goals", r.get("away_team_goal_count", None))
-        if hg is None or ag is None:
-            continue
-        try:
-            hg = int(hg)
-            ag = int(ag)
-        except Exception:
-            continue
-        if r.get(home_col) == team:
-            if hg > ag:
-                form.append("W")
-            elif hg == ag:
-                form.append("D")
-            else:
-                form.append("L")
-        else:
-            if ag > hg:
-                form.append("W")
-            elif ag == hg:
-                form.append("D")
-            else:
-                form.append("L")
-        if len(form) >= max_len:
-            break
-    if not form:
-        form = ["D", "W", "L", "D", "W"][:max_len]
-    return form
+ 
 
 def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, Any]]:
     if pd is None:
@@ -414,485 +354,16 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         except Exception as e:
             logger.error(f"Erro ao ler CSVs: {e}. Retornando dados mock.")
             return generate_mock_fixtures(league_id, date_filter)
-    # normalize date column
-    date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
-    def row_date(r) -> Optional[datetime]:
-        return parse_date(r.get(date_col))
-    def build_records(start: datetime, end: datetime) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        for _, r in matches.iterrows():
-            dt = row_date(r)
-            if dt is None:
-                continue
-            if not (start <= dt <= end):
-                continue
-            items.append(r)
-        return items
-
-    start, end = date_range(date_filter)
-    rows = build_records(start, end)
-    if not rows and date_filter in ("today", "tomorrow"):
-        start, end = date_range("week")
-        rows = build_records(start, end)
-    if not rows and date_filter == "week":
-        start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=30) - timedelta(milliseconds=1)
-        rows = build_records(start, end)
-
-    home_col = pick_column(matches, ["home_team", "home_team_name", "team_a_name"])
-    away_col = pick_column(matches, ["away_team", "away_team_name", "team_b_name"])
-    goals_home_col = pick_column(matches, ["home_team_goal_count", "home_goals", "home_score", "home_team_goals"])
-    goals_away_col = pick_column(matches, ["away_team_goal_count", "away_goals", "away_score", "away_team_goals"])
-    xg_home_col = pick_column(matches, ["team_a_xg", "home_team_xg", "home_xg", "xg_home"])
-    xg_away_col = pick_column(matches, ["team_b_xg", "away_team_xg", "away_xg", "xg_away"])
-
-    def recent_team_series(team_name: str, cutoff_dt: Optional[datetime], max_len: int = 5) -> Dict[str, List[float]]:
-        series = {"goals_for": [], "goals_against": [], "xg_for": []}
-        if not team_name or home_col is None or away_col is None:
-            return series
-        rows = []
-        for _, rr in matches.iterrows():
-            status_val = str(rr.get("status", "")).lower()
-            if status_val and status_val not in ("complete", "completed", "finished"):
-                continue
-            dt_row = row_date(rr)
-            if dt_row is None:
-                continue
-            if cutoff_dt and dt_row > cutoff_dt:
-                continue
-            is_home = rr.get(home_col) == team_name
-            is_away = rr.get(away_col) == team_name
-            if not (is_home or is_away):
-                continue
-            rows.append((dt_row, rr, is_home))
-        rows.sort(key=lambda x: x[0], reverse=True)
-        for _, rr, is_home in rows[:max_len]:
-            try:
-                hg = float(rr.get(goals_home_col, 0)) if goals_home_col else 0.0
-                ag = float(rr.get(goals_away_col, 0)) if goals_away_col else 0.0
-            except Exception:
-                hg = 0.0
-                ag = 0.0
-            goals_for = hg if is_home else ag
-            goals_against = ag if is_home else hg
-            series["goals_for"].append(goals_for)
-            series["goals_against"].append(goals_against)
-            if xg_home_col and xg_away_col:
-                try:
-                    hxg = float(rr.get(xg_home_col, 0))
-                    axg = float(rr.get(xg_away_col, 0))
-                    series["xg_for"].append(hxg if is_home else axg)
-                except Exception:
-                    pass
-        return series
-
-    records: List[Dict[str, Any]] = []
-    for r in rows:
-        dt = row_date(r)
-        if dt is None:
-            continue
-        home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "")
-        away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
-        stadium = str(r.get("stadium", "")) if "stadium" in r else ""
-        status = status_map(str(r.get("status", "scheduled")))
-        home_series = recent_team_series(home, dt, 5)
-        away_series = recent_team_series(away, dt, 5)
-        odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
-        odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
-        odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
-        odds_over25 = r.get("odds_over_25", r.get("odds_ft_over25", None))
-        odds_under25 = r.get("odds_under_25", None)
-        odds_btts_yes = r.get("odds_btts_yes", None)
-        odds_btts_no = r.get("odds_btts_no", None)
-        homeProb, drawProb, awayProb = implied_probs(odds_home, odds_draw, odds_away)
-        # compute H2H simple summary
-        if home_col and away_col:
-            h2h_df = matches[((matches[home_col] == home) & (matches[away_col] == away)) |
-                             ((matches[home_col] == away) & (matches[away_col] == home))]
-        else:
-            h2h_df = matches.head(0)
-        totalMatches = int(len(h2h_df))
-        homeWins = 0
-        awayWins = 0
-        draws = 0
-        avgGoals = 0.0
-        if totalMatches > 0:
-            tsum = 0
-            for _, rr in h2h_df.iterrows():
-                hg = rr.get("home_goals", rr.get("home_team_goal_count", 0)) or 0
-                ag = rr.get("away_goals", rr.get("away_team_goal_count", 0)) or 0
-                try:
-                    hg = int(hg); ag = int(ag)
-                except Exception:
-                    continue
-                tsum += (hg + ag)
-                if rr.get(home_col, "") == home:
-                    if hg > ag: homeWins += 1
-                    elif hg == ag: draws += 1
-                    else: awayWins += 1
-                else:
-                    if ag > hg: awayWins += 1
-                    elif ag == hg: draws += 1
-                    else: homeWins += 1
-            avgGoals = tsum / totalMatches if totalMatches > 0 else 0.0
-        # team forms
-        homeForm = compute_form(matches, home, 5)
-        awayForm = compute_form(matches, away, 5)
-        # simple rating from PPG or league data
-        def team_rating(name: str) -> float:
-            if teams is not None:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    ppg = float(row.iloc[0].get("points_per_game", row.iloc[0].get("points_per_game_overall", 1.5)) or 1.5)
-                    return max(0.0, min(10.0, ppg * 4.0))
-            return 6.5
-        # possession, corners, cards from team/league CSVs
-        def team_possession(name: str) -> Optional[float]:
-            if teams is not None and "average_possession" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("average_possession", None)
-                    try:
-                        return float(val)
-                    except Exception:
-                        return None
-            return None
-        def team_corners_per_match(name: str) -> Optional[float]:
-            if teams is not None and "corners_per_match" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("corners_per_match", None)
-                    try:
-                        return float(val)
-                    except Exception:
-                        return None
-            return None
-        def team_cards_per_match(name: str) -> Optional[float]:
-            if teams is not None and "cards_per_match" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("cards_per_match", None)
-                    try:
-                        return float(val)
-                    except Exception:
-                        return None
-            return None
-        league_avgs = {
-            "avg_goals": None,
-            "avg_corners": None,
-            "avg_cards": None,
-        }
-        if league_df is not None:
-            league_avgs["avg_goals"] = float(league_df.iloc[0].get("average_goals_per_match", 2.5) or 2.5)
-            league_avgs["avg_corners"] = float(league_df.iloc[0].get("average_corners_per_match", 10.0) or 10.0)
-            league_avgs["avg_cards"] = float(league_df.iloc[0].get("average_cards_per_match", 4.0) or 4.0)
-        homeRating = team_rating(home)
-        awayRating = team_rating(away)
-        # enrich stats
-        home_poss = team_possession(home)
-        away_poss = team_possession(away)
-        home_corners_pm = team_corners_per_match(home)
-        away_corners_pm = team_corners_per_match(away)
-        home_cards_pm = team_cards_per_match(home)
-        away_cards_pm = team_cards_per_match(away)
-        # quick O/U and BTTS from pre percentages if present
-        over15_pct = r.get("over_15_percentage_pre_match", None)
-        over25_pct = r.get("over_25_percentage_pre_match", None)
-        over35_pct = r.get("over_35_percentage_pre_match", None)
-        over45_pct = r.get("over_45_percentage_pre_match", None)
-        btts_pct = r.get("btts_percentage_pre_match", None)
-        # Read odds
-        odds_over15 = r.get("odds_ft_over15", None)
-        odds_over35 = r.get("odds_ft_over35", None)
-        odds_over45 = r.get("odds_ft_over45", None)
-        try:
-            over15_pct = float(over15_pct) if over15_pct is not None else None
-            over25_pct = float(over25_pct) if over25_pct is not None else None
-            over35_pct = float(over35_pct) if over35_pct is not None else None
-            over45_pct = float(over45_pct) if over45_pct is not None else None
-            btts_pct = float(btts_pct) if btts_pct is not None else None
-        except Exception:
-            over15_pct = None
-            over25_pct = None
-            over35_pct = None
-            over45_pct = None
-            btts_pct = None
-        league_goal_avg = league_avgs["avg_goals"] if league_avgs["avg_goals"] else 2.7
-        league_regime = "HIPER-OFENSIVA" if league_goal_avg > 3.0 else "NORMAL"
-        def safe(val: Optional[float], default: float) -> float:
-            return float(val) if val is not None and val > 0 else default
-        def get_team_row(name: str) -> Optional["pd.Series"]:
-            if teams is None:
-                return None
-            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-            if not name_col:
-                return None
-            row = teams[teams[name_col] == name]
-            if len(row) == 0:
-                return None
-            return row.iloc[0]
-
-        def get_stat(row: Optional["pd.Series"], keys: List[str]) -> Optional[float]:
-            if row is None:
-                return None
-            for key in keys:
-                if key in row:
-                    val = row.get(key)
-                    if val is not None:
-                        return val
-            return None
-
-        def parse_series(value: Any) -> List[float]:
-            if value is None:
-                return []
-            if isinstance(value, (list, tuple)):
-                series = []
-                for item in value:
-                    try:
-                        series.append(float(item))
-                    except Exception:
-                        continue
-                return series
-            if isinstance(value, str):
-                cleaned = value.replace("[", "").replace("]", "").replace(";", ",")
-                parts = [p.strip() for p in cleaned.split(",") if p.strip()]
-                series = []
-                for part in parts:
-                    try:
-                        series.append(float(part))
-                    except Exception:
-                        continue
-                return series
-            return []
-
-        home_row = get_team_row(home)
-        away_row = get_team_row(away)
-
-        home_attack = safe(get_stat(home_row, ["goals_scored_per_match_home", "goals_scored_avg_home"]) if home_row is not None else None, 1.3)
-        away_defense = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, 1.2)
-        away_attack = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, 1.2)
-        home_defense = safe(get_stat(home_row, ["goals_conceded_per_match_home", "goals_conceded_avg_home"]) if home_row is not None else None, 1.1)
-        xg_home_team = aggregate_team_xg(players, home)
-        xg_away_team = aggregate_team_xg(players, away)
-        home_goals_avg = safe(get_stat(home_row, ["goals_scored_per_match_overall", "goals_scored_per_match", "goals_scored_avg_overall"]) if home_row is not None else None, home_attack)
-        home_goals_avg_home = safe(get_stat(home_row, ["goals_scored_per_match_home", "goals_scored_avg_home"]) if home_row is not None else None, home_attack)
-        home_goals_last5 = safe(get_stat(home_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if home_row is not None else None, home_goals_avg)
-        home_conceded_avg = safe(get_stat(home_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if home_row is not None else None, home_defense)
-        home_conceded_avg_home = safe(get_stat(home_row, ["goals_conceded_per_match_home", "goals_conceded_avg_home"]) if home_row is not None else None, home_defense)
-
-        away_goals_avg = safe(get_stat(away_row, ["goals_scored_per_match_overall", "goals_scored_per_match", "goals_scored_avg_overall"]) if away_row is not None else None, away_attack)
-        away_goals_avg_away = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, away_attack)
-        away_goals_last5 = safe(get_stat(away_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if away_row is not None else None, away_goals_avg)
-        away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
-        away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
-
-        home_xg_series = home_series["xg_for"] if home_series["xg_for"] else parse_series(get_stat(home_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if home_row is not None else None)
-        away_xg_series = away_series["xg_for"] if away_series["xg_for"] else parse_series(get_stat(away_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if away_row is not None else None)
-        home_goals_series = home_series["goals_for"] if home_series["goals_for"] else parse_series(get_stat(home_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if home_row is not None else None)
-        away_goals_series = away_series["goals_for"] if away_series["goals_for"] else parse_series(get_stat(away_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if away_row is not None else None)
-        home_conceded_series = home_series["goals_against"] if home_series["goals_against"] else parse_series(get_stat(home_row, ["goals_conceded_per_game", "goals_conceded_last_5", "goals_conceded_last5", "goals_against_last_5", "goals_against_last5"]) if home_row is not None else None)
-        away_conceded_series = away_series["goals_against"] if away_series["goals_against"] else parse_series(get_stat(away_row, ["goals_conceded_per_game", "goals_conceded_last_5", "goals_conceded_last5", "goals_against_last_5", "goals_against_last5"]) if away_row is not None else None)
-
-        if not home_goals_series and home_goals_avg:
-            home_goals_series = [home_goals_avg] * 5
-        if not away_goals_series and away_goals_avg:
-            away_goals_series = [away_goals_avg] * 5
-        if not home_xg_series and xg_home_team:
-            home_xg_series = [xg_home_team] * 5
-        if not away_xg_series and xg_away_team:
-            away_xg_series = [xg_away_team] * 5
-        if not home_conceded_series and home_conceded_avg:
-            home_conceded_series = [home_conceded_avg] * 5
-        if not away_conceded_series and away_conceded_avg:
-            away_conceded_series = [away_conceded_avg] * 5
-
-        home_games_played = safe(get_stat(home_row, ["matches_played", "games_played", "matches"]) if home_row is not None else None, None)
-        away_games_played = safe(get_stat(away_row, ["matches_played", "games_played", "matches"]) if away_row is not None else None, None)
-
-        home_goals_scored_total = safe(get_stat(home_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if home_row is not None else None, None)
-        away_goals_scored_total = safe(get_stat(away_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if away_row is not None else None, None)
-
-        home_xg_total = safe(get_stat(home_row, ["xg_for_total", "xg_total", "xg_for", "xg"]) if home_row is not None else None, None)
-        away_xg_total = safe(get_stat(away_row, ["xg_for_total", "xg_total", "xg_for", "xg"]) if away_row is not None else None, None)
-
-        home_xg_avg = safe(get_stat(home_row, ["xg_for_avg", "xg_avg", "xg_for_per_match"]) if home_row is not None else None, None)
-        away_xg_avg = safe(get_stat(away_row, ["xg_for_avg", "xg_avg", "xg_for_per_match"]) if away_row is not None else None, None)
-
-        if home_xg_total is None and home_xg_avg is not None and home_games_played:
-            home_xg_total = home_xg_avg * home_games_played
-        if away_xg_total is None and away_xg_avg is not None and away_games_played:
-            away_xg_total = away_xg_avg * away_games_played
-
-        if home_goals_scored_total is None and home_goals_avg is not None and home_games_played:
-            home_goals_scored_total = home_goals_avg * home_games_played
-        if away_goals_scored_total is None and away_goals_avg is not None and away_games_played:
-            away_goals_scored_total = away_goals_avg * away_games_played
-
-        league_name = league_df.iloc[0].get("league_name", league_id) if league_df is not None else league_id
-
-        home_team_data = {
-            "team_name": home,
-            "goals_scored_avg_overall": home_goals_avg,
-            "goals_scored_avg_home": home_goals_avg_home,
-            "goals_scored_avg_last_5": home_goals_last5,
-            "goals_conceded_avg_overall": home_conceded_avg,
-            "goals_conceded_avg_home": home_conceded_avg_home,
-            "goals_scored": home_goals_scored_total,
-            "xg": home_xg_total,
-            "games_played": home_games_played,
-            "xg_per_game": home_xg_series,
-            "goals_per_game": home_goals_series,
-        }
-        away_team_data = {
-            "team_name": away,
-            "goals_scored_avg_overall": away_goals_avg,
-            "goals_scored_avg_away": away_goals_avg_away,
-            "goals_scored_avg_last_5": away_goals_last5,
-            "goals_conceded_avg_overall": away_conceded_avg,
-            "goals_conceded_avg_away": away_conceded_avg_away,
-            "goals_scored": away_goals_scored_total,
-            "xg": away_xg_total,
-            "games_played": away_games_played,
-            "xg_per_game": away_xg_series,
-            "goals_per_game": away_goals_series,
-        }
-        league_data = {
-            "league_name": league_name,
-            "average_goals_per_match": league_goal_avg,
-        }
-
-        lam_home, lam_away = expected_goals_v2(
-            home_team_data=home_team_data,
-            away_team_data=away_team_data,
-            league_data=league_data,
-            regime=league_regime,
-            xg_home=xg_home_team,
-            xg_away=xg_away_team,
-        )
-
-        lam_home, lam_away, xg_metadata = aplicar_filtro_completo(
-            lambda_home=lam_home,
-            lambda_away=lam_away,
-            home_team_data=home_team_data,
-            away_team_data=away_team_data,
-            enable_filter=True,
-        )
-        logger.info(
-            "Filtro xG | Home ajustado: %s | Away ajustado: %s",
-            xg_metadata.get("home", {}).get("adjustment_applied", False),
-            xg_metadata.get("away", {}).get("adjustment_applied", False),
-        )
-
-        has_chaos, chaos_metadata = detectar_caos_jogo(
-            home_team_data=home_team_data,
-            away_team_data=away_team_data,
-        )
-        if has_chaos:
-            logger.warning(
-                "Caos detectado | Home: %s (CV: %.2f) | Away: %s (CV: %.2f)",
-                chaos_metadata.get("home", {}).get("classification"),
-                chaos_metadata.get("home", {}).get("cv_xg", 0.0),
-                chaos_metadata.get("away", {}).get("classification"),
-                chaos_metadata.get("away", {}).get("cv_xg", 0.0),
-            )
-        lam_total = lam_home + lam_away
-        if lam_total < 2.2:
-            league_volatility = "BAIXA"
-        elif lam_total < 3.0:
-            league_volatility = "MODERADA"
-        else:
-            league_volatility = "ALTA"
-        btts_poisson = (1.0 - poisson_pmf(0, lam_home)) * (1.0 - poisson_pmf(0, lam_away))
-        over05 = 1.0 - poisson_cdf(0, lam_total)
-        over15 = 1.0 - poisson_cdf(1, lam_total)
-        over25 = 1.0 - poisson_cdf(2, lam_total)
-        over35 = 1.0 - poisson_cdf(3, lam_total)
-
-        data_source = "s3" if bucket else "local"
-        total_gols = r.get("total_goal_count", None)
-        try:
-            total_gols = float(total_gols) if total_gols is not None else None
-        except Exception:
-            total_gols = None
-        records.append({
-            "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
-            "leagueId": league_id,
-            "leagueName": league_id.replace("-", " ").title(),
-            "homeTeam": home,
-            "awayTeam": away,
-            "datetime": dt.isoformat(),
-            "stadium": stadium,
-            "status": status,
-            "odds": {
-                "home": float(odds_home) if odds_home else None,
-                "draw": float(odds_draw) if odds_draw else None,
-                "away": float(odds_away) if odds_away else None,
-                "over15": float(odds_over15) if odds_over15 else None,
-                "over25": float(odds_over25) if odds_over25 else None,
-                "over35": float(odds_over35) if odds_over35 else None,
-                "over45": float(odds_over45) if odds_over45 else None,
-                "under25": float(odds_under25) if odds_under25 else None,
-                "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
-                "bttsNo": float(odds_btts_no) if odds_btts_no else None,
-            },
-            "stats": {
-                "homeWinProb": round(homeProb, 1),
-                "drawProb": round(drawProb, 1),
-                "awayWinProb": round(awayProb, 1),
-                "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
-                "bttsProb": float(btts_pct) if btts_pct is not None else round(btts_poisson * 100.0, 1),
-                "over05Prob": round(over05 * 100.0, 1),
-                "over15Prob": float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1),
-                "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),
-                "over35Prob": float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1),
-                "over45Prob": float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1),
-                "under15Prob": 100.0 - (float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1)),
-                "under25Prob": 100.0 - (float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1)),
-                "under35Prob": 100.0 - (float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1)),
-                "under45Prob": 100.0 - (float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1)),
-                "lambdaHome": round(lam_home, 3),
-                "lambdaAway": round(lam_away, 3),
-                "lambdaTotal": round(lam_total, 3),
-                "leagueAvgGoals": league_avgs["avg_goals"],
-                "totalGoals": total_gols,
-                "leagueRegime": league_regime,
-                "leagueVolatility": league_volatility,
-                "chaosDetected": has_chaos,
-                "chaosHome": chaos_metadata.get("home", {}).get("classification"),
-                "chaosAway": chaos_metadata.get("away", {}).get("classification"),
-                "chaosHomeCv": round(chaos_metadata.get("home", {}).get("cv_xg", 0.0), 3),
-                "chaosAwayCv": round(chaos_metadata.get("away", {}).get("cv_xg", 0.0), 3),
-                "homePossession": home_poss,
-                "awayPossession": away_poss,
-                "homeCornersPerMatch": home_corners_pm,
-                "awayCornersPerMatch": away_corners_pm,
-                "homeCardsPerMatch": home_cards_pm,
-                "awayCardsPerMatch": away_cards_pm,
-                "leagueAvgCorners": league_avgs["avg_corners"],
-                "leagueAvgCards": league_avgs["avg_cards"],
-                "homeGoalsPerGame": home_goals_series,
-                "awayGoalsPerGame": away_goals_series,
-                "homeXgPerGame": home_xg_series,
-                "awayXgPerGame": away_xg_series,
-                "homeGoalsConcededPerGame": home_conceded_series,
-                "awayGoalsConcededPerGame": away_conceded_series,
-            },
-            "h2h": {
-                "totalMatches": totalMatches,
-                "homeWins": homeWins,
-                "draws": draws,
-                "awayWins": awayWins,
-                "avgGoals": round(avgGoals, 2),
-            },
-            "homeForm": homeForm,
-            "awayForm": awayForm,
-            "ratings": { "home": round(homeRating, 1), "away": round(awayRating, 1) },
-            "xg": { "home": xg_home_team, "away": xg_away_team },
-            "source": "footystats",
-            "dataSource": data_source,
-            "lastUpdated": datetime.utcnow().isoformat(),
-        })
-    return records
+    from backend.services.fixtures_service import build_records_from_matches
+    return build_records_from_matches(
+        league_id=league_id,
+        matches=matches,
+        teams=teams,
+        teams2=teams2,
+        league_df=league_df,
+        players=players,
+        date_filter=date_filter,
+    )
 
 def load_config_module() -> Optional[Any]:
     cfg_path = os.path.join(get_base_root(), "config.py")
@@ -982,7 +453,6 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     # Usar dados pré-calculados do CSV (já em %)
     prob_over25 = _normalize_prob(stats.get("over25Prob"))
     prob_btts = _normalize_prob(stats.get("bttsProb"))
-    prob_under25 = _normalize_prob(stats.get("under25Prob"))
     prob_under35 = _normalize_prob(stats.get("under35Prob"))
     prob_under45 = _normalize_prob(stats.get("under45Prob"))
     
@@ -1130,49 +600,6 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         stats["status"] = "SAFE" if principal.get("status") == "SAFE" else principal.get("status", "NEUTRO")
         stats["mercado_principal"] = principal.get("mercado")
         stats["odd_minima"] = principal.get("odd_minima")
-
-    # CALIBRAÇÃO: Aplicar ajustes de calibração
-    try:
-        from backend.modeling.calibration import aplicar_calibracao_completa, ConfigCalibration
-
-        # Preparar dados para calibração
-        xg_projetado = stats.get("lambdaHome", 0) + stats.get("lambdaAway", 0)
-
-        home_team_data = {
-            "goals_per_game": stats.get("homeGoalsPerGame", []),
-            "xg_per_game": stats.get("homeXgPerGame", []),
-            "goals_conceded_per_game": stats.get("homeGoalsConcededPerGame", []),
-        }
-
-        away_team_data = {
-            "goals_per_game": stats.get("awayGoalsPerGame", []),
-            "xg_per_game": stats.get("awayXgPerGame", []),
-            "goals_conceded_per_game": stats.get("awayGoalsConcededPerGame", []),
-        }
-
-        probabilidades = {
-            "Under 2.5": prob_under25 if prob_under25 else 0,
-            "Under 3.5": prob_under35 if prob_under35 else 0,
-            "Under 4.5": prob_under45 if prob_under45 else 0,
-        }
-
-        config = ConfigCalibration()
-
-        mercados_calibrados, probs_calibradas = aplicar_calibracao_completa(
-            mercados=mercados,
-            probabilidades=probabilidades,
-            regime=regime,
-            xg_projetado=xg_projetado,
-            home_team_data=home_team_data,
-            away_team_data=away_team_data,
-            config=config,
-        )
-
-        mercados = mercados_calibrados
-        logger.info("Calibração aplicada com sucesso")
-
-    except Exception as e:
-        logger.error(f"Erro ao aplicar calibração: {e}")
     
     return mercados
 
@@ -1358,7 +785,8 @@ def gerar_quadro_resumo(
             dt = datetime.fromisoformat(jogo.get("datetime"))
             data_hora = dt.strftime("%d/%m — %H:%M")
             linhas.append(f"{home} vs {away} ({data_hora})")
-            mercados = selecionar_mercados_jogo(jogo, regime, volatilidade)
+            from backend.services.market_service import selecionar_mercados_jogo as _sel_merc
+            mercados = _sel_merc(jogo, regime, volatilidade)
             for i, mercado in enumerate(mercados):
                 simbolo = "├─" if i < len(mercados) - 1 else "└─"
                 mercado_nome = str(mercado["mercado"]).ljust(20)
@@ -1457,27 +885,6 @@ def gerar_quadro_resumo(
     linhas.append(sep)
     return "\n".join(linhas)
 
-
-class AnalyzeContextRequest(BaseModel):
-    home_team: str
-    away_team: str
-    news_summary: Optional[str] = None
-
-
-class GenerateReportRequest(BaseModel):
-    home_team: str
-    away_team: str
-    stats: Dict[str, Any]
-    market: str
-    classification: str
-    probability: float
-
-
-_ai_context_model = os.getenv("MISTRAL_CONTEXT_MODEL", "mistral-medium-latest")
-_ai_report_model = os.getenv("MISTRAL_REPORT_MODEL", "mistral-medium-latest")
-context_analyzer = ContextAnalyzer(model=_ai_context_model)
-report_generator = ReportGenerator(model=_ai_report_model)
-
 def gerar_quadro_resumo_whatsapp(
     liga: str,
     jogos: List[Dict[str, Any]],
@@ -1529,91 +936,9 @@ def gerar_quadro_resumo_whatsapp(
             linhas.append(f"Classificação: {classe} (perfil conservador)")
     return "\n".join(linhas)
 
-@app.get("/quadro-resumo")
-def quadro_resumo(
-    league: str = Query("", description="Nome da liga (ex: premier-league)"),
-    date: str = Query("today", description="Filtro de data: today, tomorrow, week"),
-    incluir_simples: bool = Query(True, description="Incluir jogos simples"),
-    incluir_duplas: bool = Query(True, description="Incluir duplas SAFE"),
-    incluir_triplas: bool = Query(False, description="Incluir triplas SAFE"),
-    incluir_governanca: bool = Query(True, description="Incluir seção de governança"),
-    formato: str = Query("detalhado", description="detalhado|whatsapp"),
-) -> Dict[str, Any]:
-    try:
-        jogos = load_fixtures_from_csv(league, date)
-        if not jogos:
-            return {
-                "quadro_texto": "Nenhum jogo encontrado para os filtros selecionados.",
-                "jogos_count": 0,
-                "duplas_count": 0,
-                "triplas_count": 0,
-                "regime": "N/A",
-                "volatilidade": "N/A",
-            }
-        regime, volatilidade = calcular_regime_e_volatilidade(league, jogos)
-        if formato == "whatsapp":
-            quadro_texto = gerar_quadro_resumo_whatsapp(
-                liga=league,
-                jogos=jogos,
-                regime=regime,
-                volatilidade=volatilidade,
-                incluir_simples=incluir_simples,
-                incluir_duplas=incluir_duplas,
-            )
-        else:
-            quadro_texto = gerar_quadro_resumo(
-                liga=league,
-                jogos=jogos,
-                regime=regime,
-                volatilidade=volatilidade,
-                incluir_simples=incluir_simples,
-                incluir_duplas=incluir_duplas,
-                incluir_triplas=incluir_triplas,
-                incluir_governanca=incluir_governanca,
-            )
-        duplas, motivo_duplas = identificar_duplas_safe(jogos) if incluir_duplas else ([], {})
-        triplas, motivo_triplas = identificar_triplas_safe(jogos) if incluir_triplas else ([], {})
-        return {
-            "quadro_texto": quadro_texto,
-            "jogos_count": len(jogos) if incluir_simples else 0,
-            "duplas_count": len(duplas),
-            "triplas_count": len(triplas),
-            "regime": regime,
-            "volatilidade": volatilidade,
-            "duplas_motivo": motivo_duplas,
-            "triplas_motivo": motivo_triplas,
-        }
-    except Exception as e:
-        logger.error("Erro ao gerar quadro-resumo: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar quadro-resumo: {str(e)}")
+ 
 
-@app.get("/fixtures")
-def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, Any]:
-    league_ids = [s for s in leagues.split(",") if s]
-    matches: List[Dict[str, Any]] = []
-    for lid in league_ids:
-        csv_records = load_fixtures_from_csv(lid, date)
-        if csv_records:
-            matches.extend(csv_records)
-        else:
-            matches.append(mock_match(lid, 1))
-            matches.append(mock_match(lid, 2))
-    # Garantir exposição dos campos *PerGame no stats
-    per_game_keys = [
-        "homeGoalsPerGame",
-        "awayGoalsPerGame",
-        "homeXgPerGame",
-        "awayXgPerGame",
-        "homeGoalsConcededPerGame",
-        "awayGoalsConcededPerGame",
-    ]
-    for match in matches:
-        stats = match.get("stats", {}) or {}
-        for key in per_game_keys:
-            if key not in stats:
-                stats[key] = []
-        match["stats"] = stats
-    return { "matches": matches }
+ 
 
 @app.get("/odds")
 def odds(league: str) -> Dict[str, Any]:
@@ -1630,35 +955,7 @@ def probabilities(payload: Dict[str, Any]) -> Dict[str, Any]:
     # placeholder combining Poisson/heuristics later
     return { "probs": { "homeWin": 0.52, "draw": 0.24, "awayWin": 0.24, "bttsYes": 0.55, "over25": 0.57 } }
 
-@app.post("/decision/pre")
-def decision_pre(payload: Dict[str, Any]) -> Dict[str, Any]:
-    # placeholder applying conservative gates
-    picks = [
-        { "market": "ML_HOME", "prob": 0.52, "odds": 1.95, "ev": (0.52*1.95)-1, "risk": "SAFE" },
-        { "market": "BTTS_YES", "prob": 0.55, "odds": 1.80, "ev": (0.55*1.80)-1, "risk": "NEUTRAL" },
-    ]
-    return { "picks": picks }
-
-@app.post("/ai/analyze-context")
-def analyze_context(payload: AnalyzeContextRequest) -> Dict[str, Any]:
-    analysis = context_analyzer.analyze_match_context(
-        home_team=payload.home_team,
-        away_team=payload.away_team,
-        news_summary=payload.news_summary,
-    )
-    return { "analysis": analysis }
-
-@app.post("/ai/generate-report")
-def generate_report(payload: GenerateReportRequest) -> Dict[str, Any]:
-    report = report_generator.generate_match_report(
-        home_team=payload.home_team,
-        away_team=payload.away_team,
-        stats=payload.stats,
-        market=payload.market,
-        classification=payload.classification,
-        probability=payload.probability,
-    )
-    return { "report": report }
+ 
 
 @app.post("/ml/predict")
 def ml_predict(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1669,33 +966,7 @@ def ml_predict(payload: Dict[str, Any]) -> Dict[str, Any]:
         "btts": { "prediction": "YES", "probability": 0.60 },
     }
 
-@app.get("/discover")
-def discover() -> Dict[str, Any]:
-    base_root = get_base_root()
-    items: Dict[str, Any] = {
-        "root": base_root,
-        "exists": os.path.isdir(base_root),
-        "data_dirs": [],
-        "files": [],
-    }
-    if not os.path.isdir(base_root):
-        return items
-    # list top-level files that can improve the model
-    for name in os.listdir(base_root):
-        path = os.path.join(base_root, name)
-        if os.path.isfile(path) and (name.endswith(".py") or name.endswith(".txt")):
-            items["files"].append(name)
-    data_dir = get_data_dir()
-    if os.path.isdir(data_dir):
-        for league in os.listdir(data_dir):
-            ldir = os.path.join(data_dir, league)
-            if os.path.isdir(ldir):
-                present = []
-                for fname in ("matches.csv", "teams.csv", "teams2.csv", "league.csv", "players.csv"):
-                    if os.path.exists(os.path.join(ldir, fname)):
-                        present.append(fname)
-                items["data_dirs"].append({ "league": league, "present": present })
-    return items
+ 
 
 if Mangum is not None:
     handler = Mangum(app)

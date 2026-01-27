@@ -1,6 +1,5 @@
-import json
 import os
-import time
+import json
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -9,7 +8,6 @@ try:
     from mistralai import Mistral
 except Exception:
     Mistral = None
-
 
 class MistralClient:
     def __init__(self, model: str = "mistral-medium-latest"):
@@ -24,16 +22,14 @@ class MistralClient:
             return json.dumps({
                 "injuries_key_players": {"home": None, "away": None},
                 "pressure_level": {"home": "BAIXA", "away": "ALTA"},
-                "confidence_adjustment": {"recommendation": "MANTER", "reason": "stub"},
+                "confidence_adjustment": {"recommendation": "MANTER", "reason": "stub"}
             })
-        started = time.time()
         r = self.client.chat.complete(
             model=self.model,
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens
         )
-        _elapsed = time.time() - started
         return r.choices[0].message.content
 
     def simple_prompt(self, prompt: str, system_prompt: str | None = None) -> str:

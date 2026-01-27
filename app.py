@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
 from backend.summary_report import generate_summary_report
-from auth import Authenticator
+from backend.auth.authenticator import Authenticator
 
 # Configurar página
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
