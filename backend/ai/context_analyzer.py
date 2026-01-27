@@ -5,6 +5,15 @@ class ContextAnalyzer:
     def __init__(self, model: str = "mistral-medium-latest", client: MistralClient | None = None):
         self.client = client or MistralClient(model=model)
 
+    def _fix_obj_strings(self, obj):
+        if isinstance(obj, str):
+            return self.client._fix_mojibake(obj)
+        if isinstance(obj, list):
+            return [self._fix_obj_strings(item) for item in obj]
+        if isinstance(obj, dict):
+            return {k: self._fix_obj_strings(v) for k, v in obj.items()}
+        return obj
+
     def analyze_match_context(self, home_team: str, away_team: str, news_summary: str | None = None) -> dict:
         prompt = f"""
         Analise o contexto do jogo {home_team} vs {away_team}:
@@ -32,6 +41,7 @@ class ContextAnalyzer:
         raw = resp
         text = _strip_fences(raw)
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            return self._fix_obj_strings(parsed)
         except Exception:
             return {"error": "invalid_json", "raw": raw}

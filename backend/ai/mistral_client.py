@@ -17,6 +17,16 @@ class MistralClient:
         self.model = model
         self.client = Mistral(api_key=self.api_key) if (self.api_key and Mistral) else None
 
+    def _fix_mojibake(self, text: str) -> str:
+        if not text:
+            return text
+        if "�" in text or "Ã" in text:
+            try:
+                return text.encode("latin1").decode("utf-8")
+            except Exception:
+                return text
+        return text
+
     def chat_complete(self, messages, temperature: float = 0.3, max_tokens: int = 600) -> str:
         if self.client is None:
             return json.dumps({
@@ -30,7 +40,7 @@ class MistralClient:
             temperature=temperature,
             max_tokens=max_tokens
         )
-        return r.choices[0].message.content
+        return self._fix_mojibake(r.choices[0].message.content)
 
     def simple_prompt(self, prompt: str, system_prompt: str | None = None) -> str:
         msgs = []
