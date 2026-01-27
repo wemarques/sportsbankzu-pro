@@ -1,11 +1,9 @@
 import React from "react";
 
-type Props = React.PropsWithChildren<{
-  className?: string;
-}>;
+type Props = React.PropsWithChildren<React.HTMLAttributes<HTMLDivElement>>;
 
-export function Card({ children, className }: Props) {
-  return <div className={`card ${className ?? ""}`}>{children}</div>;
+export function Card({ children, className, ...rest }: Props) {
+  return <div className={`card ${className ?? ""}`} role="region" {...rest}>{children}</div>;
 }
 
 export function CardHeader({ children }: Props) {
