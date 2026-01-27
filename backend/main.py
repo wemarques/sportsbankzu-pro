@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Query, HTTPException
+from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
@@ -20,6 +21,8 @@ from backend.modeling.market_validator import (
 from backend.modeling.chaos_detector import (
     detectar_caos_jogo,
 )
+from backend.ai.context_analyzer import ContextAnalyzer
+from backend.ai.report_generator import ReportGenerator
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -436,6 +439,53 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         end = start + timedelta(days=30) - timedelta(milliseconds=1)
         rows = build_records(start, end)
 
+    home_col = pick_column(matches, ["home_team", "home_team_name", "team_a_name"])
+    away_col = pick_column(matches, ["away_team", "away_team_name", "team_b_name"])
+    goals_home_col = pick_column(matches, ["home_team_goal_count", "home_goals", "home_score", "home_team_goals"])
+    goals_away_col = pick_column(matches, ["away_team_goal_count", "away_goals", "away_score", "away_team_goals"])
+    xg_home_col = pick_column(matches, ["team_a_xg", "home_team_xg", "home_xg", "xg_home"])
+    xg_away_col = pick_column(matches, ["team_b_xg", "away_team_xg", "away_xg", "xg_away"])
+
+    def recent_team_series(team_name: str, cutoff_dt: Optional[datetime], max_len: int = 5) -> Dict[str, List[float]]:
+        series = {"goals_for": [], "goals_against": [], "xg_for": []}
+        if not team_name or home_col is None or away_col is None:
+            return series
+        rows = []
+        for _, rr in matches.iterrows():
+            status_val = str(rr.get("status", "")).lower()
+            if status_val and status_val not in ("complete", "completed", "finished"):
+                continue
+            dt_row = row_date(rr)
+            if dt_row is None:
+                continue
+            if cutoff_dt and dt_row > cutoff_dt:
+                continue
+            is_home = rr.get(home_col) == team_name
+            is_away = rr.get(away_col) == team_name
+            if not (is_home or is_away):
+                continue
+            rows.append((dt_row, rr, is_home))
+        rows.sort(key=lambda x: x[0], reverse=True)
+        for _, rr, is_home in rows[:max_len]:
+            try:
+                hg = float(rr.get(goals_home_col, 0)) if goals_home_col else 0.0
+                ag = float(rr.get(goals_away_col, 0)) if goals_away_col else 0.0
+            except Exception:
+                hg = 0.0
+                ag = 0.0
+            goals_for = hg if is_home else ag
+            goals_against = ag if is_home else hg
+            series["goals_for"].append(goals_for)
+            series["goals_against"].append(goals_against)
+            if xg_home_col and xg_away_col:
+                try:
+                    hxg = float(rr.get(xg_home_col, 0))
+                    axg = float(rr.get(xg_away_col, 0))
+                    series["xg_for"].append(hxg if is_home else axg)
+                except Exception:
+                    pass
+        return series
+
     records: List[Dict[str, Any]] = []
     for r in rows:
         dt = row_date(r)
@@ -445,6 +495,8 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
+        home_series = recent_team_series(home, dt, 5)
+        away_series = recent_team_series(away, dt, 5)
         odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
         odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
         odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
@@ -454,8 +506,6 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         odds_btts_no = r.get("odds_btts_no", None)
         homeProb, drawProb, awayProb = implied_probs(odds_home, odds_draw, odds_away)
         # compute H2H simple summary
-        home_col = pick_column(matches, ["home_team", "home_team_name", "team_a_name"])
-        away_col = pick_column(matches, ["away_team", "away_team_name", "team_b_name"])
         if home_col and away_col:
             h2h_df = matches[((matches[home_col] == home) & (matches[away_col] == away)) |
                              ((matches[home_col] == away) & (matches[away_col] == home))]
@@ -636,10 +686,25 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
         away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
         away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
 
-        home_xg_series = parse_series(get_stat(home_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if home_row is not None else None)
-        away_xg_series = parse_series(get_stat(away_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if away_row is not None else None)
-        home_goals_series = parse_series(get_stat(home_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if home_row is not None else None)
-        away_goals_series = parse_series(get_stat(away_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if away_row is not None else None)
+        home_xg_series = home_series["xg_for"] if home_series["xg_for"] else parse_series(get_stat(home_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if home_row is not None else None)
+        away_xg_series = away_series["xg_for"] if away_series["xg_for"] else parse_series(get_stat(away_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if away_row is not None else None)
+        home_goals_series = home_series["goals_for"] if home_series["goals_for"] else parse_series(get_stat(home_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if home_row is not None else None)
+        away_goals_series = away_series["goals_for"] if away_series["goals_for"] else parse_series(get_stat(away_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if away_row is not None else None)
+        home_conceded_series = home_series["goals_against"] if home_series["goals_against"] else parse_series(get_stat(home_row, ["goals_conceded_per_game", "goals_conceded_last_5", "goals_conceded_last5", "goals_against_last_5", "goals_against_last5"]) if home_row is not None else None)
+        away_conceded_series = away_series["goals_against"] if away_series["goals_against"] else parse_series(get_stat(away_row, ["goals_conceded_per_game", "goals_conceded_last_5", "goals_conceded_last5", "goals_against_last_5", "goals_against_last5"]) if away_row is not None else None)
+
+        if not home_goals_series and home_goals_avg:
+            home_goals_series = [home_goals_avg] * 5
+        if not away_goals_series and away_goals_avg:
+            away_goals_series = [away_goals_avg] * 5
+        if not home_xg_series and xg_home_team:
+            home_xg_series = [xg_home_team] * 5
+        if not away_xg_series and xg_away_team:
+            away_xg_series = [xg_away_team] * 5
+        if not home_conceded_series and home_conceded_avg:
+            home_conceded_series = [home_conceded_avg] * 5
+        if not away_conceded_series and away_conceded_avg:
+            away_conceded_series = [away_conceded_avg] * 5
 
         home_games_played = safe(get_stat(home_row, ["matches_played", "games_played", "matches"]) if home_row is not None else None, None)
         away_games_played = safe(get_stat(away_row, ["matches_played", "games_played", "matches"]) if away_row is not None else None, None)
@@ -805,6 +870,12 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 "awayCardsPerMatch": away_cards_pm,
                 "leagueAvgCorners": league_avgs["avg_corners"],
                 "leagueAvgCards": league_avgs["avg_cards"],
+                "homeGoalsPerGame": home_goals_series,
+                "awayGoalsPerGame": away_goals_series,
+                "homeXgPerGame": home_xg_series,
+                "awayXgPerGame": away_xg_series,
+                "homeGoalsConcededPerGame": home_conceded_series,
+                "awayGoalsConcededPerGame": away_conceded_series,
             },
             "h2h": {
                 "totalMatches": totalMatches,
@@ -911,6 +982,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     # Usar dados pré-calculados do CSV (já em %)
     prob_over25 = _normalize_prob(stats.get("over25Prob"))
     prob_btts = _normalize_prob(stats.get("bttsProb"))
+    prob_under25 = _normalize_prob(stats.get("under25Prob"))
     prob_under35 = _normalize_prob(stats.get("under35Prob"))
     prob_under45 = _normalize_prob(stats.get("under45Prob"))
     
@@ -1058,6 +1130,49 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         stats["status"] = "SAFE" if principal.get("status") == "SAFE" else principal.get("status", "NEUTRO")
         stats["mercado_principal"] = principal.get("mercado")
         stats["odd_minima"] = principal.get("odd_minima")
+
+    # CALIBRAÇÃO: Aplicar ajustes de calibração
+    try:
+        from backend.modeling.calibration import aplicar_calibracao_completa, ConfigCalibration
+
+        # Preparar dados para calibração
+        xg_projetado = stats.get("lambdaHome", 0) + stats.get("lambdaAway", 0)
+
+        home_team_data = {
+            "goals_per_game": stats.get("homeGoalsPerGame", []),
+            "xg_per_game": stats.get("homeXgPerGame", []),
+            "goals_conceded_per_game": stats.get("homeGoalsConcededPerGame", []),
+        }
+
+        away_team_data = {
+            "goals_per_game": stats.get("awayGoalsPerGame", []),
+            "xg_per_game": stats.get("awayXgPerGame", []),
+            "goals_conceded_per_game": stats.get("awayGoalsConcededPerGame", []),
+        }
+
+        probabilidades = {
+            "Under 2.5": prob_under25 if prob_under25 else 0,
+            "Under 3.5": prob_under35 if prob_under35 else 0,
+            "Under 4.5": prob_under45 if prob_under45 else 0,
+        }
+
+        config = ConfigCalibration()
+
+        mercados_calibrados, probs_calibradas = aplicar_calibracao_completa(
+            mercados=mercados,
+            probabilidades=probabilidades,
+            regime=regime,
+            xg_projetado=xg_projetado,
+            home_team_data=home_team_data,
+            away_team_data=away_team_data,
+            config=config,
+        )
+
+        mercados = mercados_calibrados
+        logger.info("Calibração aplicada com sucesso")
+
+    except Exception as e:
+        logger.error(f"Erro ao aplicar calibração: {e}")
     
     return mercados
 
@@ -1342,6 +1457,27 @@ def gerar_quadro_resumo(
     linhas.append(sep)
     return "\n".join(linhas)
 
+
+class AnalyzeContextRequest(BaseModel):
+    home_team: str
+    away_team: str
+    news_summary: Optional[str] = None
+
+
+class GenerateReportRequest(BaseModel):
+    home_team: str
+    away_team: str
+    stats: Dict[str, Any]
+    market: str
+    classification: str
+    probability: float
+
+
+_ai_context_model = os.getenv("MISTRAL_CONTEXT_MODEL", "mistral-medium-latest")
+_ai_report_model = os.getenv("MISTRAL_REPORT_MODEL", "mistral-medium-latest")
+context_analyzer = ContextAnalyzer(model=_ai_context_model)
+report_generator = ReportGenerator(model=_ai_report_model)
+
 def gerar_quadro_resumo_whatsapp(
     liga: str,
     jogos: List[Dict[str, Any]],
@@ -1462,6 +1598,21 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
         else:
             matches.append(mock_match(lid, 1))
             matches.append(mock_match(lid, 2))
+    # Garantir exposição dos campos *PerGame no stats
+    per_game_keys = [
+        "homeGoalsPerGame",
+        "awayGoalsPerGame",
+        "homeXgPerGame",
+        "awayXgPerGame",
+        "homeGoalsConcededPerGame",
+        "awayGoalsConcededPerGame",
+    ]
+    for match in matches:
+        stats = match.get("stats", {}) or {}
+        for key in per_game_keys:
+            if key not in stats:
+                stats[key] = []
+        match["stats"] = stats
     return { "matches": matches }
 
 @app.get("/odds")
@@ -1487,6 +1638,27 @@ def decision_pre(payload: Dict[str, Any]) -> Dict[str, Any]:
         { "market": "BTTS_YES", "prob": 0.55, "odds": 1.80, "ev": (0.55*1.80)-1, "risk": "NEUTRAL" },
     ]
     return { "picks": picks }
+
+@app.post("/ai/analyze-context")
+def analyze_context(payload: AnalyzeContextRequest) -> Dict[str, Any]:
+    analysis = context_analyzer.analyze_match_context(
+        home_team=payload.home_team,
+        away_team=payload.away_team,
+        news_summary=payload.news_summary,
+    )
+    return { "analysis": analysis }
+
+@app.post("/ai/generate-report")
+def generate_report(payload: GenerateReportRequest) -> Dict[str, Any]:
+    report = report_generator.generate_match_report(
+        home_team=payload.home_team,
+        away_team=payload.away_team,
+        stats=payload.stats,
+        market=payload.market,
+        classification=payload.classification,
+        probability=payload.probability,
+    )
+    return { "report": report }
 
 @app.post("/ml/predict")
 def ml_predict(payload: Dict[str, Any]) -> Dict[str, Any]:
