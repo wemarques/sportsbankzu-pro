@@ -4,3 +4,5 @@ __pycache__/
 htmlcov/
 .pytest_cache/
 .streamlit/secrets.toml
+dashboard-financeiro/
+sportsbankzu-pro/
