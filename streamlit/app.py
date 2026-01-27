@@ -26,7 +26,13 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
-BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
+_general = st.secrets.get("general") or {}
+BACKEND_URL = (
+  st.secrets.get("BACKEND_URL")
+  or _general.get("BACKEND_URL")
+  or os.getenv("BACKEND_URL")
+  or "http://localhost:5001"
+)
 def get_health():
   try:
     r = requests.get(f"{BACKEND_URL}/health", timeout=5)

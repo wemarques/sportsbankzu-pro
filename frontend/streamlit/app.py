@@ -32,7 +32,13 @@ if not authenticator.login():
     st.stop()
 authenticator.logout()
 
-BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
+_general = st.secrets.get("general") or {}
+BACKEND_URL = (
+  st.secrets.get("BACKEND_URL")
+  or _general.get("BACKEND_URL")
+  or os.getenv("BACKEND_URL")
+  or "http://localhost:5001"
+)
 
 def get_discover():
   try:
