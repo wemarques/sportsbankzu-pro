@@ -14,6 +14,7 @@ if str(project_root) not in sys.path:
   sys.path.insert(0, str(project_root))
 
 from backend.summary_report import generate_summary_report
+from auth import Authenticator
 
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
 st.markdown(
@@ -32,6 +33,17 @@ st.markdown(
   """,
   unsafe_allow_html=True,
 )
+
+# ============================================
+# SISTEMA DE AUTENTICAÇÃO
+# ============================================
+authenticator = Authenticator('config.yaml')
+
+if not authenticator.login():
+  st.stop()  # Para a execução se não estiver autenticado
+
+authenticator.logout()  # Adiciona botão de logout na sidebar
+
 
 _general = st.secrets.get("general") or {}
 BACKEND_URL = (
