@@ -5,9 +5,13 @@ Data: 2026-01-22
 """
 
 
-import yaml
+try:
+    import yaml
+    from yaml.loader import SafeLoader
+except Exception:
+    yaml = None
+    SafeLoader = None
 import streamlit as st
-from yaml.loader import SafeLoader
 import hashlib
 import os
 
@@ -50,6 +54,10 @@ def load_config(file_path='config.yaml'):
     
     # Fallback: tentar carregar do arquivo local (desenvolvimento)
     if os.path.exists(file_path):
+        if yaml is None:
+            raise ModuleNotFoundError(
+                "PyYAML nao esta instalado. Instale PyYAML ou use Secrets do Streamlit."
+            )
         with open(file_path, encoding='utf-8') as file:
             config = yaml.load(file, Loader=SafeLoader)
             return config
