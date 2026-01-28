@@ -1,7 +1,10 @@
 /* ========================================
-   SPORTSBANK PRO - TEMA CUSTOMIZADO
-   Design System Completo
+   SPORTSBANK PRO - TEMA CUSTOMIZADO CORRIGIDO
+   Versão: 1.1 (Corrigido)
    Data: 28 de Janeiro de 2026
+   
+   CORREÇÃO: Removido reset global que estava
+   escondendo todo o conteúdo do Streamlit
    ======================================== */
 
 /* ========================================
@@ -39,15 +42,6 @@
   --text-dark-secondary: #cbd5e1;
   --text-dark-tertiary: #94a3b8;
   
-  /* Cores Neutras - Light Mode */
-  --bg-light: #ffffff;
-  --bg-light-secondary: #f8f9fa;
-  --bg-light-tertiary: #e5e7eb;
-  --border-light: #d1d5db;
-  --text-light-primary: #1f2937;
-  --text-light-secondary: #6b7280;
-  --text-light-tertiary: #9ca3af;
-  
   /* Espaçamento */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -57,13 +51,10 @@
   --space-2xl: 24px;
   --space-3xl: 32px;
   --space-4xl: 48px;
-  --space-5xl: 64px;
   
   /* Tipografia */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --font-mono: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
   
-  --font-size-xs: 10px;
   --font-size-sm: 12px;
   --font-size-base: 14px;
   --font-size-md: 16px;
@@ -71,108 +62,61 @@
   --font-size-xl: 20px;
   --font-size-2xl: 24px;
   --font-size-3xl: 32px;
-  --font-size-4xl: 40px;
   
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   
-  --line-height-tight: 1.25;
-  --line-height-normal: 1.5;
-  --line-height-relaxed: 1.75;
-  
   /* Sombras */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   
   /* Raios de Borda */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-full: 9999px;
   
   /* Transições */
   --transition-fast: 150ms ease;
   --transition-normal: 300ms ease;
-  --transition-slow: 500ms ease;
-  
-  /* Z-index */
-  --z-dropdown: 1000;
-  --z-sticky: 1020;
-  --z-fixed: 1030;
-  --z-modal-backdrop: 1040;
-  --z-modal: 1050;
-  --z-popover: 1060;
-  --z-tooltip: 1070;
 }
 
 /* ========================================
-   2. RESET E BASE
+   2. ESTILOS BASE (SEM RESET AGRESSIVO)
    ======================================== */
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* Aplicação principal do Streamlit */
+.stApp {
+  background-color: var(--bg-dark) !important;
 }
 
-html {
-  font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-normal);
-  color: var(--text-dark-primary);
-  background-color: var(--bg-dark);
-}
-
-/* ========================================
-   3. LAYOUT PRINCIPAL
-   ======================================== */
-
-/* Container Principal */
+/* Container principal */
 .main .block-container {
-  max-width: 1400px;
-  padding: var(--space-3xl) var(--space-2xl);
-  margin: 0 auto;
-}
-
-/* Header Customizado */
-.stApp > header {
-  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
-  border-bottom: 1px solid var(--border-dark);
-  backdrop-filter: blur(10px);
-  box-shadow: var(--shadow-md);
+  max-width: 1400px !important;
+  padding: var(--space-3xl) var(--space-2xl) !important;
 }
 
 /* ========================================
-   4. TIPOGRAFIA
+   3. TIPOGRAFIA
    ======================================== */
 
-h1, .stTitle {
+/* Títulos */
+h1 {
   font-size: var(--font-size-3xl) !important;
   font-weight: var(--font-weight-bold) !important;
   color: var(--text-dark-primary) !important;
   margin-bottom: var(--space-2xl) !important;
-  line-height: var(--line-height-tight) !important;
-  letter-spacing: -0.02em;
 }
 
-h2, .stSubheader {
+h2 {
   font-size: var(--font-size-2xl) !important;
   font-weight: var(--font-weight-semibold) !important;
   color: var(--text-dark-primary) !important;
   margin-bottom: var(--space-xl) !important;
-  line-height: var(--line-height-tight) !important;
 }
 
 h3 {
@@ -182,855 +126,301 @@ h3 {
   margin-bottom: var(--space-lg) !important;
 }
 
-p, .stMarkdown p {
-  font-size: var(--font-size-base);
-  color: var(--text-dark-secondary);
-  line-height: var(--line-height-relaxed);
-  margin-bottom: var(--space-md);
-}
-
-.stCaption {
-  font-size: var(--font-size-sm) !important;
-  color: var(--text-dark-tertiary) !important;
-  line-height: var(--line-height-normal) !important;
+/* Parágrafos e texto */
+p, .stMarkdown p, .stText {
+  color: var(--text-dark-secondary) !important;
+  line-height: 1.6 !important;
 }
 
 /* ========================================
-   5. CARDS E CONTAINERS
+   4. BOTÕES
    ======================================== */
 
-/* Card Base */
-div[data-testid="stVerticalBlock"] > div {
-  background: var(--bg-dark-secondary);
-  border: 1px solid var(--border-dark);
-  border-radius: var(--radius-lg);
-  padding: var(--space-2xl);
-  margin-bottom: var(--space-xl);
-  box-shadow: var(--shadow-md);
-  transition: all var(--transition-normal);
-}
-
-div[data-testid="stVerticalBlock"] > div:hover {
-  border-color: var(--primary-green);
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-
-/* Seção de Destaque */
-.section-highlight {
-  background: linear-gradient(135deg, var(--primary-green) 0%, var(--primary-green-dark) 100%);
-  border: none !important;
-  color: white !important;
-  box-shadow: var(--shadow-xl);
-}
-
-.section-highlight h2,
-.section-highlight h3,
-.section-highlight p {
-  color: white !important;
-}
-
-/* ========================================
-   6. BOTÕES
-   ======================================== */
-
-/* Botão Primário */
-button[kind="primary"],
+/* Botão primário */
 .stButton > button {
-  background: linear-gradient(135deg, var(--primary-green) 0%, var(--primary-green-hover) 100%) !important;
+  background: linear-gradient(135deg, var(--primary-green) 0%, var(--primary-green-dark) 100%) !important;
   color: white !important;
   border: none !important;
   border-radius: var(--radius-md) !important;
   padding: var(--space-md) var(--space-2xl) !important;
-  font-size: var(--font-size-base) !important;
   font-weight: var(--font-weight-semibold) !important;
-  box-shadow: var(--shadow-md) !important;
+  font-size: var(--font-size-base) !important;
   transition: all var(--transition-normal) !important;
-  cursor: pointer !important;
-  text-transform: none !important;
-  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-md) !important;
 }
 
-button[kind="primary"]:hover,
 .stButton > button:hover {
   background: linear-gradient(135deg, var(--primary-green-hover) 0%, var(--primary-green-dark) 100%) !important;
   box-shadow: var(--shadow-lg) !important;
   transform: translateY(-2px) !important;
 }
 
-button[kind="primary"]:active,
-.stButton > button:active {
-  transform: translateY(0) !important;
-  box-shadow: var(--shadow-sm) !important;
-}
-
-/* Botão Secundário */
-button[kind="secondary"] {
-  background: var(--bg-dark-tertiary) !important;
-  color: var(--text-dark-primary) !important;
-  border: 1px solid var(--border-dark) !important;
-}
-
-button[kind="secondary"]:hover {
-  background: var(--border-dark) !important;
-  border-color: var(--primary-green) !important;
-}
-
 /* ========================================
-   7. INPUTS E FORMULÁRIOS
+   5. INPUTS E FORMULÁRIOS
    ======================================== */
 
-/* Input Base */
-input[type="text"],
-input[type="number"],
-input[type="email"],
-textarea,
-.stTextInput > div > div > input,
-.stNumberInput > div > div > input,
-.stTextArea > div > div > textarea {
-  background: var(--bg-dark-tertiary) !important;
+/* Input text */
+.stTextInput > div > div > input {
+  background-color: var(--bg-dark-secondary) !important;
   border: 1px solid var(--border-dark) !important;
   border-radius: var(--radius-md) !important;
   color: var(--text-dark-primary) !important;
-  padding: var(--space-md) var(--space-lg) !important;
+  padding: var(--space-md) !important;
   font-size: var(--font-size-base) !important;
-  transition: all var(--transition-normal) !important;
 }
 
-input:focus,
-textarea:focus,
-.stTextInput > div > div > input:focus,
-.stNumberInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
+.stTextInput > div > div > input:focus {
   border-color: var(--primary-green) !important;
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
-  outline: none !important;
 }
 
-/* Label */
-label {
-  font-size: var(--font-size-sm) !important;
-  font-weight: var(--font-weight-medium) !important;
-  color: var(--text-dark-secondary) !important;
-  margin-bottom: var(--space-sm) !important;
-  display: block;
-}
-
-/* ========================================
-   8. SELECTBOX E MULTISELECT
-   ======================================== */
-
-.stSelectbox > div > div,
-.stMultiSelect > div > div {
-  background: var(--bg-dark-tertiary) !important;
+/* Select box */
+.stSelectbox > div > div {
+  background-color: var(--bg-dark-secondary) !important;
   border: 1px solid var(--border-dark) !important;
   border-radius: var(--radius-md) !important;
-  transition: all var(--transition-normal) !important;
-}
-
-.stSelectbox > div > div:hover,
-.stMultiSelect > div > div:hover {
-  border-color: var(--primary-green) !important;
-}
-
-/* Dropdown Options */
-div[data-baseweb="popover"] {
-  background: var(--bg-dark-secondary) !important;
-  border: 1px solid var(--border-dark) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-xl) !important;
-}
-
-div[data-baseweb="popover"] li {
-  background: transparent !important;
-  color: var(--text-dark-primary) !important;
-  padding: var(--space-md) var(--space-lg) !important;
-  transition: all var(--transition-fast) !important;
-}
-
-div[data-baseweb="popover"] li:hover {
-  background: var(--bg-dark-tertiary) !important;
-  color: var(--primary-green) !important;
-}
-
-/* ========================================
-   9. CHECKBOX E RADIO
-   ======================================== */
-
-.stCheckbox,
-.stRadio {
-  padding: var(--space-sm) 0;
-}
-
-.stCheckbox label,
-.stRadio label {
-  font-size: var(--font-size-base) !important;
-  color: var(--text-dark-secondary) !important;
-  cursor: pointer;
-  transition: color var(--transition-fast);
-}
-
-.stCheckbox label:hover,
-.stRadio label:hover {
   color: var(--text-dark-primary) !important;
 }
 
-/* Checkbox customizado */
-input[type="checkbox"] {
-  width: 20px !important;
-  height: 20px !important;
-  border: 2px solid var(--border-dark) !important;
-  border-radius: var(--radius-sm) !important;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-input[type="checkbox"]:checked {
-  background-color: var(--primary-green) !important;
-  border-color: var(--primary-green) !important;
+/* Date input */
+.stDateInput > div > div > input {
+  background-color: var(--bg-dark-secondary) !important;
+  border: 1px solid var(--border-dark) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-dark-primary) !important;
 }
 
 /* ========================================
-   10. TABELAS (DATAFRAME)
+   6. MÉTRICAS
    ======================================== */
 
-div[data-testid="stDataFrame"] {
-  background: var(--bg-dark-secondary) !important;
+.stMetric {
+  background-color: var(--bg-dark-secondary) !important;
   border: 1px solid var(--border-dark) !important;
   border-radius: var(--radius-lg) !important;
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
+  padding: var(--space-xl) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
-/* Header da Tabela */
-div[data-testid="stDataFrame"] thead {
-  background: var(--bg-dark-tertiary) !important;
+.stMetric label {
+  color: var(--text-dark-tertiary) !important;
+  font-size: var(--font-size-sm) !important;
+  font-weight: var(--font-weight-medium) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
 }
 
-div[data-testid="stDataFrame"] thead th {
+.stMetric [data-testid="stMetricValue"] {
+  color: var(--text-dark-primary) !important;
+  font-size: var(--font-size-3xl) !important;
+  font-weight: var(--font-weight-bold) !important;
+}
+
+/* ========================================
+   7. TABELAS
+   ======================================== */
+
+.stDataFrame {
+  border-radius: var(--radius-lg) !important;
+  overflow: hidden !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.stDataFrame table {
+  background-color: var(--bg-dark-secondary) !important;
+}
+
+.stDataFrame thead tr th {
+  background-color: var(--bg-dark-tertiary) !important;
   color: var(--text-dark-primary) !important;
   font-weight: var(--font-weight-semibold) !important;
-  font-size: var(--font-size-sm) !important;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: var(--space-lg) var(--space-md) !important;
-  border-bottom: 2px solid var(--border-dark) !important;
+  padding: var(--space-md) !important;
+  border-bottom: 2px solid var(--primary-green) !important;
 }
 
-/* Células da Tabela */
-div[data-testid="stDataFrame"] tbody td {
+.stDataFrame tbody tr td {
   color: var(--text-dark-secondary) !important;
-  font-size: var(--font-size-sm) !important;
   padding: var(--space-md) !important;
   border-bottom: 1px solid var(--border-dark) !important;
 }
 
-/* Linha Hover */
-div[data-testid="stDataFrame"] tbody tr:hover {
-  background: var(--bg-dark-tertiary) !important;
-}
-
-/* Linha Alternada */
-div[data-testid="stDataFrame"] tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02) !important;
+.stDataFrame tbody tr:hover {
+  background-color: var(--bg-dark-tertiary) !important;
 }
 
 /* ========================================
-   11. GRÁFICOS (ALTAIR/PLOTLY)
+   8. CARDS E CONTAINERS
    ======================================== */
 
-.stPlotlyChart,
-.stVegaLiteChart {
-  background: var(--bg-dark-secondary) !important;
-  border: 1px solid var(--border-dark) !important;
-  border-radius: var(--radius-lg) !important;
-  padding: var(--space-xl) !important;
-  box-shadow: var(--shadow-md);
+.element-container {
+  background-color: transparent !important;
 }
 
-/* ========================================
-   12. ALERTAS E MENSAGENS
-   ======================================== */
-
-/* Success */
-.stSuccess,
-div[data-testid="stSuccess"] {
-  background: rgba(16, 185, 129, 0.1) !important;
-  border-left: 4px solid var(--success-green) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-lg) !important;
-  color: var(--success-green) !important;
-}
-
-/* Error */
-.stError,
-div[data-testid="stError"] {
-  background: rgba(239, 68, 68, 0.1) !important;
-  border-left: 4px solid var(--danger-red) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-lg) !important;
-  color: var(--danger-red) !important;
-}
-
-/* Warning */
-.stWarning,
-div[data-testid="stWarning"] {
-  background: rgba(245, 158, 11, 0.1) !important;
-  border-left: 4px solid var(--warning-yellow) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-lg) !important;
-  color: var(--warning-yellow) !important;
-}
-
-/* Info */
-.stInfo,
-div[data-testid="stInfo"] {
-  background: rgba(59, 130, 246, 0.1) !important;
-  border-left: 4px solid var(--info-blue) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-lg) !important;
-  color: var(--info-blue) !important;
-}
-
-/* ========================================
-   13. CÓDIGO E PRÉ-FORMATADO
-   ======================================== */
-
-code,
-pre,
-.stCode {
-  background: var(--bg-dark-tertiary) !important;
-  border: 1px solid var(--border-dark) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-md) !important;
-  font-family: var(--font-mono) !important;
-  font-size: var(--font-size-sm) !important;
-  color: var(--primary-green-light) !important;
-  overflow-x: auto;
-}
-
-/* ========================================
-   14. SEÇÃO MISTRAL AI (ANÁLISE)
-   ======================================== */
-
-/* Container de Análise AI */
-.ai-analysis-section {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
-  border: 2px solid var(--secondary-purple);
-  border-radius: var(--radius-xl);
-  padding: var(--space-3xl);
-  margin: var(--space-3xl) 0;
-  box-shadow: var(--shadow-xl);
-  position: relative;
-  overflow: hidden;
-}
-
-.ai-analysis-section::before {
-  content: '🤖';
-  position: absolute;
-  top: var(--space-lg);
-  right: var(--space-lg);
-  font-size: var(--font-size-4xl);
-  opacity: 0.1;
-}
-
-/* Header da Análise AI */
-.ai-analysis-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  margin-bottom: var(--space-2xl);
-  padding-bottom: var(--space-lg);
-  border-bottom: 2px solid var(--secondary-purple);
-}
-
-.ai-analysis-header h2 {
-  color: var(--secondary-purple) !important;
-  margin: 0 !important;
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.ai-badge {
-  background: var(--secondary-purple);
-  color: white;
-  padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Conteúdo da Análise */
-.ai-analysis-content {
-  background: var(--bg-dark-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--space-2xl);
-  margin-top: var(--space-xl);
-}
-
-.ai-analysis-content h3 {
-  color: var(--secondary-purple) !important;
-  margin-top: var(--space-xl) !important;
-  margin-bottom: var(--space-md) !important;
-  font-size: var(--font-size-lg) !important;
-}
-
-.ai-analysis-content p {
-  color: var(--text-dark-secondary) !important;
-  line-height: var(--line-height-relaxed) !important;
-  margin-bottom: var(--space-lg) !important;
-}
-
-.ai-analysis-content ul,
-.ai-analysis-content ol {
-  color: var(--text-dark-secondary);
-  padding-left: var(--space-2xl);
-  margin-bottom: var(--space-lg);
-}
-
-.ai-analysis-content li {
-  margin-bottom: var(--space-sm);
-  line-height: var(--line-height-relaxed);
-}
-
-/* Destaque de Insights */
-.ai-insight {
-  background: rgba(139, 92, 246, 0.15);
-  border-left: 4px solid var(--secondary-purple);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
-  margin: var(--space-xl) 0;
-}
-
-.ai-insight-title {
-  color: var(--secondary-purple) !important;
-  font-weight: var(--font-weight-semibold) !important;
-  margin-bottom: var(--space-sm) !important;
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-/* Métricas da Análise */
-.ai-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-lg);
-  margin-top: var(--space-xl);
-}
-
-.ai-metric-card {
-  background: var(--bg-dark-tertiary);
-  border: 1px solid var(--border-dark);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
-  text-align: center;
-  transition: all var(--transition-normal);
-}
-
-.ai-metric-card:hover {
-  border-color: var(--secondary-purple);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.ai-metric-value {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--secondary-purple);
-  margin-bottom: var(--space-sm);
-}
-
-.ai-metric-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-dark-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Loading State para AI */
-.ai-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4xl);
-  gap: var(--space-xl);
-}
-
-.ai-loading-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid var(--bg-dark-tertiary);
-  border-top-color: var(--secondary-purple);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.ai-loading-text {
-  color: var(--text-dark-secondary);
-  font-size: var(--font-size-base);
-  text-align: center;
-}
-
-/* ========================================
-   15. EXPANDER/ACCORDION
-   ======================================== */
-
+/* Expander */
 .streamlit-expanderHeader {
-  background: var(--bg-dark-tertiary) !important;
+  background-color: var(--bg-dark-secondary) !important;
   border: 1px solid var(--border-dark) !important;
   border-radius: var(--radius-md) !important;
-  padding: var(--space-lg) !important;
-  font-weight: var(--font-weight-semibold) !important;
   color: var(--text-dark-primary) !important;
-  transition: all var(--transition-normal) !important;
-}
-
-.streamlit-expanderHeader:hover {
-  background: var(--border-dark) !important;
-  border-color: var(--primary-green) !important;
+  font-weight: var(--font-weight-semibold) !important;
 }
 
 .streamlit-expanderContent {
-  background: var(--bg-dark-secondary) !important;
+  background-color: var(--bg-dark-secondary) !important;
   border: 1px solid var(--border-dark) !important;
   border-top: none !important;
   border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
-  padding: var(--space-xl) !important;
 }
 
 /* ========================================
-   16. TABS
+   9. SEÇÃO MISTRAL AI
    ======================================== */
 
-.stTabs [data-baseweb="tab-list"] {
-  gap: var(--space-md);
-  background: var(--bg-dark-secondary);
-  padding: var(--space-sm);
-  border-radius: var(--radius-md);
+.ai-analysis-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%) !important;
+  border: 2px solid var(--secondary-purple) !important;
+  border-radius: var(--radius-xl) !important;
+  padding: var(--space-3xl) !important;
+  margin: var(--space-2xl) 0 !important;
+  box-shadow: var(--shadow-xl) !important;
+  position: relative !important;
 }
 
-.stTabs [data-baseweb="tab"] {
-  background: transparent !important;
-  border: none !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-md) var(--space-xl) !important;
-  color: var(--text-dark-secondary) !important;
-  font-weight: var(--font-weight-medium) !important;
-  transition: all var(--transition-normal) !important;
+.ai-analysis-section::before {
+  content: "🤖" !important;
+  position: absolute !important;
+  top: var(--space-xl) !important;
+  right: var(--space-xl) !important;
+  font-size: 48px !important;
+  opacity: 0.1 !important;
 }
 
-.stTabs [data-baseweb="tab"]:hover {
-  background: var(--bg-dark-tertiary) !important;
-  color: var(--text-dark-primary) !important;
-}
-
-.stTabs [aria-selected="true"] {
-  background: var(--primary-green) !important;
+.ai-badge {
+  display: inline-block !important;
+  background-color: var(--secondary-purple) !important;
   color: white !important;
-}
-
-/* ========================================
-   17. MÉTRICAS (st.metric)
-   ======================================== */
-
-div[data-testid="stMetric"] {
-  background: var(--bg-dark-secondary);
-  border: 1px solid var(--border-dark);
-  border-radius: var(--radius-lg);
-  padding: var(--space-xl);
-  box-shadow: var(--shadow-md);
-  transition: all var(--transition-normal);
-}
-
-div[data-testid="stMetric"]:hover {
-  border-color: var(--primary-green);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-div[data-testid="stMetric"] label {
+  padding: var(--space-xs) var(--space-md) !important;
+  border-radius: var(--radius-full) !important;
   font-size: var(--font-size-sm) !important;
-  color: var(--text-dark-tertiary) !important;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   font-weight: var(--font-weight-semibold) !important;
+  margin-bottom: var(--space-lg) !important;
 }
 
-div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-  font-size: var(--font-size-3xl) !important;
-  font-weight: var(--font-weight-bold) !important;
-  color: var(--primary-green) !important;
+.ai-insight {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+  border-left: 4px solid var(--secondary-purple) !important;
+  padding: var(--space-lg) !important;
+  margin: var(--space-lg) 0 !important;
+  border-radius: var(--radius-md) !important;
 }
 
-div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-  font-size: var(--font-size-sm) !important;
-  font-weight: var(--font-weight-medium) !important;
+.ai-insight p {
+  color: var(--text-dark-primary) !important;
+  margin: 0 !important;
 }
 
 /* ========================================
-   18. SIDEBAR
+   10. GRÁFICOS
    ======================================== */
 
-section[data-testid="stSidebar"] {
-  background: var(--bg-dark-secondary) !important;
+.js-plotly-plot {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+  overflow: hidden !important;
+}
+
+/* ========================================
+   11. SIDEBAR
+   ======================================== */
+
+[data-testid="stSidebar"] {
+  background-color: var(--bg-dark-secondary) !important;
   border-right: 1px solid var(--border-dark) !important;
-  padding: var(--space-2xl) !important;
 }
 
-section[data-testid="stSidebar"] .stButton > button {
-  width: 100% !important;
-  margin-bottom: var(--space-md) !important;
+[data-testid="stSidebar"] .stMarkdown {
+  color: var(--text-dark-secondary) !important;
 }
 
 /* ========================================
-   19. RESPONSIVIDADE
+   12. ALERTAS E NOTIFICAÇÕES
    ======================================== */
 
-/* Tablet (768px - 1024px) */
-@media (min-width: 768px) and (max-width: 1024px) {
+.stAlert {
+  border-radius: var(--radius-md) !important;
+  border-left-width: 4px !important;
+  padding: var(--space-lg) !important;
+}
+
+.stSuccess {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  border-left-color: var(--success-green) !important;
+}
+
+.stError {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border-left-color: var(--danger-red) !important;
+}
+
+.stWarning {
+  background-color: rgba(245, 158, 11, 0.1) !important;
+  border-left-color: var(--warning-yellow) !important;
+}
+
+.stInfo {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  border-left-color: var(--info-blue) !important;
+}
+
+/* ========================================
+   13. SPINNER E LOADING
+   ======================================== */
+
+.stSpinner > div {
+  border-color: var(--primary-green) !important;
+  border-right-color: transparent !important;
+}
+
+/* ========================================
+   14. RESPONSIVIDADE
+   ======================================== */
+
+@media (max-width: 768px) {
   .main .block-container {
-    padding: var(--space-2xl) var(--space-xl);
+    padding: var(--space-xl) var(--space-md) !important;
   }
   
-  h1, .stTitle {
+  h1 {
     font-size: var(--font-size-2xl) !important;
   }
   
-  h2, .stSubheader {
+  h2 {
     font-size: var(--font-size-xl) !important;
   }
   
-  div[data-testid="column"] {
-    min-width: 48% !important;
-    flex: 1 1 48% !important;
-  }
-}
-
-/* Mobile (até 768px) */
-@media (max-width: 768px) {
-  :root {
-    --space-3xl: 24px;
-    --space-4xl: 32px;
-  }
-  
-  .main .block-container {
-    padding: var(--space-xl) var(--space-lg);
-  }
-  
-  h1, .stTitle {
-    font-size: var(--font-size-xl) !important;
-  }
-  
-  h2, .stSubheader {
-    font-size: var(--font-size-lg) !important;
-  }
-  
-  h3 {
-    font-size: var(--font-size-base) !important;
-  }
-  
-  /* Colunas empilhadas */
-  div[data-testid="stHorizontalBlock"] {
-    flex-wrap: wrap;
-  }
-  
-  div[data-testid="column"] {
-    min-width: 100% !important;
-    flex: 1 1 100% !important;
-  }
-  
-  /* Botões full-width */
-  button,
   .stButton > button {
     width: 100% !important;
-    margin-bottom: var(--space-md) !important;
-  }
-  
-  /* Tabelas com scroll horizontal */
-  div[data-testid="stDataFrame"] {
-    font-size: var(--font-size-xs) !important;
-    overflow-x: auto !important;
-  }
-  
-  /* Inputs maiores para touch */
-  input,
-  textarea,
-  button {
-    min-height: 44px !important;
-    font-size: 16px !important; /* Previne zoom no iOS */
-  }
-  
-  /* Seção AI mais compacta */
-  .ai-analysis-section {
-    padding: var(--space-xl);
-  }
-  
-  .ai-metrics {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Mobile Pequeno (até 480px) */
-@media (max-width: 480px) {
-  .main .block-container {
-    padding: var(--space-md);
-  }
-  
-  div[data-testid="stVerticalBlock"] > div {
-    padding: var(--space-lg);
-  }
-  
-  .ai-analysis-section {
-    padding: var(--space-lg);
   }
 }
 
 /* ========================================
-   20. ANIMAÇÕES E TRANSIÇÕES
+   15. SCROLLBAR CUSTOMIZADO
    ======================================== */
 
-/* Fade In */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
 }
 
-.fade-in {
-  animation: fadeIn var(--transition-normal) ease;
+::-webkit-scrollbar-track {
+  background: var(--bg-dark-secondary) !important;
 }
 
-/* Pulse (para loading) */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+::-webkit-scrollbar-thumb {
+  background: var(--border-dark) !important;
+  border-radius: var(--radius-full) !important;
 }
 
-.pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-green) !important;
 }
-
-/* Slide In */
-@keyframes slideIn {
-  from {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.slide-in {
-  animation: slideIn var(--transition-normal) ease;
-}
-
-/* ========================================
-   21. UTILITÁRIOS
-   ======================================== */
-
-/* Espaçamento */
-.mt-sm { margin-top: var(--space-sm) !important; }
-.mt-md { margin-top: var(--space-md) !important; }
-.mt-lg { margin-top: var(--space-lg) !important; }
-.mt-xl { margin-top: var(--space-xl) !important; }
-.mt-2xl { margin-top: var(--space-2xl) !important; }
-.mt-3xl { margin-top: var(--space-3xl) !important; }
-
-.mb-sm { margin-bottom: var(--space-sm) !important; }
-.mb-md { margin-bottom: var(--space-md) !important; }
-.mb-lg { margin-bottom: var(--space-lg) !important; }
-.mb-xl { margin-bottom: var(--space-xl) !important; }
-.mb-2xl { margin-bottom: var(--space-2xl) !important; }
-.mb-3xl { margin-bottom: var(--space-3xl) !important; }
-
-/* Cores de Texto */
-.text-primary { color: var(--primary-green) !important; }
-.text-secondary { color: var(--secondary-purple) !important; }
-.text-danger { color: var(--danger-red) !important; }
-.text-warning { color: var(--warning-yellow) !important; }
-.text-info { color: var(--info-blue) !important; }
-.text-success { color: var(--success-green) !important; }
-
-/* Backgrounds */
-.bg-primary { background-color: var(--primary-green) !important; }
-.bg-secondary { background-color: var(--secondary-purple) !important; }
-.bg-dark { background-color: var(--bg-dark-secondary) !important; }
-
-/* Bordas */
-.border-primary { border-color: var(--primary-green) !important; }
-.border-secondary { border-color: var(--secondary-purple) !important; }
-
-/* Sombras */
-.shadow-sm { box-shadow: var(--shadow-sm) !important; }
-.shadow-md { box-shadow: var(--shadow-md) !important; }
-.shadow-lg { box-shadow: var(--shadow-lg) !important; }
-.shadow-xl { box-shadow: var(--shadow-xl) !important; }
-
-/* ========================================
-   22. MODO CLARO (OPCIONAL)
-   ======================================== */
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-primary: var(--bg-light);
-    --bg-secondary: var(--bg-light-secondary);
-    --bg-tertiary: var(--bg-light-tertiary);
-    --border-color: var(--border-light);
-    --text-primary: var(--text-light-primary);
-    --text-secondary: var(--text-light-secondary);
-    --text-tertiary: var(--text-light-tertiary);
-  }
-  
-  body {
-    background-color: var(--bg-light);
-    color: var(--text-light-primary);
-  }
-}
-
-/* ========================================
-   23. PRINT STYLES
-   ======================================== */
-
-@media print {
-  .stButton,
-  button,
-  input,
-  select,
-  textarea {
-    display: none !important;
-  }
-  
-  * {
-    box-shadow: none !important;
-    text-shadow: none !important;
-  }
-  
-  body {
-    background: white;
-    color: black;
-  }
-}
-
-/* ========================================
-   FIM DO CSS CUSTOMIZADO
-   ======================================== */
