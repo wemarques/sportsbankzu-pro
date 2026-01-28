@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import subprocess
 from pathlib import Path
 import requests
 import pandas as pd
@@ -9,17 +10,17 @@ import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
   sys.path.insert(0, str(project_root))
 
 from backend.summary_report import generate_summary_report
-from auth import Authenticator
 
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
 st.markdown(
   """
   <style>
+  /* Ajustes para Mobile (até 768px) */
   @media (max-width: 768px) {
     div[data-testid="stHorizontalBlock"] {
       flex-wrap: wrap;
@@ -28,6 +29,38 @@ st.markdown(
       min-width: 100% !important;
       flex: 1 1 100% !important;
     }
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.3rem !important; }
+    h3 { font-size: 1.1rem !important; }
+    .main .block-container {
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
+    }
+    div[data-testid="stDataFrame"] {
+      font-size: 0.8rem !important;
+    }
+    div[data-testid="stDataFrame"] > div {
+      overflow-x: auto !important;
+    }
+    button {
+      width: 100% !important;
+      margin-bottom: 0.5rem !important;
+    }
+  }
+
+  /* Ajustes para Tablet (768px - 1024px) */
+  @media (min-width: 768px) and (max-width: 1024px) {
+    div[data-testid="column"] {
+      min-width: 48% !important;
+      flex: 1 1 48% !important;
+    }
+    h1 { font-size: 1.8rem !important; }
+  }
+
+  /* Melhorar espaçamento geral */
+  .main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
   }
   </style>
   """,
@@ -37,12 +70,22 @@ st.markdown(
 # ============================================
 # SISTEMA DE AUTENTICAÇÃO
 # ============================================
-authenticator = Authenticator('config.yaml')
+def setup_auth():
+  try:
+    from auth import Authenticator
+    authenticator = Authenticator("config.yaml")
+    if not authenticator.login():
+      st.stop()
+    authenticator.logout()
+    return True
+  except FileNotFoundError as e:
+    st.warning(f"⚠️ Autenticação não configurada: {e}")
+    st.info("💡 Configure config.yaml ou Secrets no Streamlit para habilitar.")
+  except Exception as e:
+    st.warning(f"⚠️ Falha na autenticação: {e}")
+  return False
 
-if not authenticator.login():
-  st.stop()  # Para a execução se não estiver autenticado
-
-authenticator.logout()  # Adiciona botão de logout na sidebar
+setup_auth()
 
 
 _general = st.secrets.get("general") or {}
@@ -236,11 +279,61 @@ def format_match_row(m: dict):
 
 st.title("SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
+
+def get_git_info():
+  try:
+    commit_hash = subprocess.check_output(
+      ["git", "rev-parse", "--short", "HEAD"],
+      stderr=subprocess.DEVNULL,
+    ).decode("ascii").strip()
+    branch = subprocess.check_output(
+      ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+      stderr=subprocess.DEVNULL,
+    ).decode("ascii").strip()
+    return f"{branch}@{commit_hash}"
+  except Exception:
+    return os.getenv("GIT_COMMIT_SHA", "dev")
+
+st.caption(f"Versão: {get_git_info()} | Atualizado: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
 health = get_health()
 if health:
-  st.success("Backend conectado")
+  col_status1, col_status2 = st.columns([3, 1])
+  with col_status1:
+    st.success("✅ Backend conectado")
+  with col_status2:
+    if st.button("🔄 Recarregar", key="reload_health"):
+      st.rerun()
 else:
-  st.warning("Backend indisponível. Verifique BACKEND_URL nos Secrets.")
+  st.error("❌ Backend indisponível")
+  with st.expander("🔧 Diagnóstico e Soluções", expanded=True):
+    st.markdown(f"""
+    **URL do Backend:** `{BACKEND_URL}`
+
+    **Possíveis causas:**
+    - Backend não está em execução
+    - URL configurada incorretamente
+    - Problemas de rede ou firewall
+    - Backend em manutenção
+
+    **Soluções:**
+    1. Teste `{BACKEND_URL}/health`
+    2. Verifique `.streamlit/secrets.toml`
+    3. Confira logs do backend
+
+    **Admin:** BACKEND_URL env configurado: `{bool(os.getenv('BACKEND_URL'))}`
+    """)
+    col_diag1, col_diag2 = st.columns(2)
+    with col_diag1:
+      if st.button("🔄 Tentar Reconectar", key="reconnect"):
+        with st.spinner("Tentando reconectar..."):
+          import time
+          time.sleep(1)
+          st.rerun()
+    with col_diag2:
+      if st.button("📋 Copiar URL do Backend", key="copy_backend_url"):
+        st.code(BACKEND_URL)
+  st.warning("⚠️ A aplicação continuará funcionando em modo limitado.")
 
 col_a, col_b, col_c = st.columns([2, 2, 1])
 

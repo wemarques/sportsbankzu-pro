@@ -15,6 +15,37 @@
 
 O **SportsBank Pro** é um sistema completo de análise e prognósticos esportivos que combina modelos estatísticos avançados com uma interface intuitiva e profissional.
 
+---
+
+## 📊 Status de Implementação
+
+### Funcionalidades Ativas
+
+- Backend FastAPI com endpoints REST
+- Interface Streamlit com visualização de dados
+- Quadro-Resumo Profissional formatado para compartilhamento
+- Analise de Picks com multiplos mercados
+- Graficos interativos de probabilidades
+- Analise de Contexto com IA (Mistral)
+- Geracao de relatorios automatizada
+- Exportacao de dados (CSV, JSON, TXT)
+- Filtros por liga e periodo
+- Responsividade mobile/tablet (CSS customizado)
+
+### Funcionalidades Opcionais
+
+- Sistema de autenticacao (depende de config.yaml ou Secrets)
+- Dashboard Next.js (configuracao separada)
+
+### Como habilitar autenticacao
+
+A autenticacao ja esta integrada no `app.py`. Para ativar:
+
+1. Crie `config.yaml` localmente (na raiz) **ou** configure Secrets no Streamlit Cloud.
+2. Garanta `PyYAML` instalado (ja incluso no `requirements.txt`).
+
+---
+
 ### Arquitetura
 
 O sistema é composto por três componentes principais que trabalham de forma integrada:
@@ -29,7 +60,7 @@ O sistema oferece análise estatística baseada em modelos de Poisson, Expected 
 
 ## 🔐 Sistema de Autenticação
 
-O SportsBank Pro inclui um sistema completo de autenticação que protege o acesso ao sistema através de login com usuário e senha.
+O SportsBank Pro inclui um sistema de autenticacao opcional que protege o acesso ao sistema atraves de login com usuario e senha.
 
 ### Características
 
@@ -41,35 +72,13 @@ Para implementar a autenticação, você precisará dos seguintes arquivos na ra
 
 **auth.py** é o módulo principal de autenticação que gerencia login, logout e verificação de credenciais. **config.yaml** armazena as credenciais dos usuários com senhas em hash SHA-256. **gerar_hash_senha.py** (opcional) é um script auxiliar para gerar hash de novas senhas.
 
-### Instalação Rápida
+### Instalacao Rapida
 
-Para adicionar autenticação ao sistema, siga estes passos. Primeiro, copie os arquivos `auth.py` e `config.yaml` para a raiz do projeto (junto com `app.py`). Em seguida, instale a dependência necessária executando `pip install PyYAML`. Depois, modifique o arquivo `app.py` adicionando o código de autenticação no início do arquivo, conforme mostrado abaixo:
+A autenticacao ja esta integrada no `app.py`. Para ativar:
 
-```python
-import streamlit as st
-from auth import Authenticator
-
-# Configurar página
-st.set_page_config(
-    page_title="SportsBank Pro",
-    page_icon="⚽",
-    layout="wide"
-)
-
-# Sistema de autenticação
-authenticator = Authenticator('config.yaml')
-
-if not authenticator.login():
-    st.stop()  # Para a execução se não estiver logado
-
-authenticator.logout()  # Adiciona botão de logout na sidebar
-
-# ============================================
-# RESTO DO CÓDIGO ORIGINAL CONTINUA AQUI
-# ============================================
-```
-
-Por fim, teste localmente executando `streamlit run app.py`.
+1. Crie o arquivo `config.yaml` na raiz do projeto **ou** configure Secrets no Streamlit Cloud.
+2. Instale a dependencia `PyYAML` (ja incluso no `requirements.txt`).
+3. Teste localmente com `streamlit run app.py`.
 
 ### Credenciais de Teste
 
