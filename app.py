@@ -1,15 +1,20 @@
 import os
 import json
+import sys
+from pathlib import Path
 import requests
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import altair as alt
 from datetime import datetime
-from backend.summary_report import generate_summary_report
-from backend.auth.authenticator import Authenticator
 
-# Configurar página
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+  sys.path.insert(0, str(project_root))
+
+from backend.summary_report import generate_summary_report
+
 st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
 st.markdown(
   """
@@ -28,17 +33,19 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
-# ============================================
-# SISTEMA DE AUTENTICAÇÃO
-# ============================================
-authenticator = Authenticator('config.yaml')
-
-if not authenticator.login():
-    st.stop()  # Para a execução se não estiver autenticado
-
-authenticator.logout()  # Adiciona botão de logout na sidebar
-
-BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL") or "http://localhost:5001"
+_general = st.secrets.get("general") or {}
+BACKEND_URL = (
+  st.secrets.get("BACKEND_URL")
+  or _general.get("BACKEND_URL")
+  or os.getenv("BACKEND_URL")
+  or "http://localhost:5001"
+)
+def get_health():
+  try:
+    r = requests.get(f"{BACKEND_URL}/health", timeout=5)
+    return r.json()
+  except:
+    return None
 
 def get_discover():
   try:
@@ -64,6 +71,19 @@ def decision_pre(payload: dict):
     return r.json().get("picks", [])
   except:
     return []
+def ai_analyze_context(home_team: str, away_team: str, news_summary: str | None):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/analyze-context", json={"home_team": home_team, "away_team": away_team, "news_summary": news_summary or ""}, timeout=30)
+    return r.json().get("analysis")
+  except:
+    return None
+def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str, classification: str, probability: float):
+  try:
+    r = requests.post(f"{BACKEND_URL}/ai/generate-report", json={"home_team": home_team, "away_team": away_team, "stats": stats, "market": market, "classification": classification, "probability": probability}, timeout=30)
+    return r.json().get("report")
+  except:
+    return None
+
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   """
@@ -107,31 +127,27 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           animation: fadeIn 0.3s;
       "></div>
   </div>
-
   <style>
       @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-10px); }
           to { opacity: 1; transform: translateY(0); }
       }
   </style>
-
   <script>
       const textoParaCopiar = '__TEXTO__';
-
       function copyToClipboard() {
           if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(textoParaCopiar)
                   .then(() => {
                       mostrarFeedback('✅ Copiado com sucesso!', 'success');
                   })
-                  .catch(err => {
+                  .catch(() => {
                       tentarMetodoAntigo();
                   });
           } else {
               tentarMetodoAntigo();
           }
       }
-
       function tentarMetodoAntigo() {
           const textarea = document.createElement('textarea');
           textarea.value = textoParaCopiar;
@@ -139,7 +155,6 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           textarea.style.left = '-9999px';
           textarea.style.top = '0';
           document.body.appendChild(textarea);
-
           if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
               const range = document.createRange();
               range.selectNodeContents(textarea);
@@ -150,7 +165,6 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           } else {
               textarea.select();
           }
-
           try {
               const successful = document.execCommand('copy');
               if (successful) {
@@ -161,10 +175,8 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           } catch (err) {
               mostrarFeedback('❌ Erro ao copiar. Tente baixar o arquivo.', 'error');
           }
-
           document.body.removeChild(textarea);
       }
-
       function mostrarFeedback(mensagem, tipo) {
           const feedback = document.getElementById('feedback-__BUTTON_ID__');
           feedback.textContent = mensagem;
@@ -172,18 +184,13 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           feedback.style.backgroundColor = tipo === 'success' ? '#d4edda' : '#f8d7da';
           feedback.style.color = tipo === 'success' ? '#155724' : '#721c24';
           feedback.style.border = tipo === 'success' ? '1px solid #c3e6cb' : '1px solid #f5c6cb';
-
           setTimeout(() => {
               feedback.style.display = 'none';
           }, 3000);
       }
   </script>
   """
-  html_code = (
-    html_template
-      .replace("__BUTTON_ID__", button_id)
-      .replace("__TEXTO__", texto_escapado)
-  )
+  html_code = html_template.replace('__BUTTON_ID__', button_id).replace('__TEXTO__', texto_escapado)
   components.html(html_code, height=120)
 
 def get_last_update(matches: list[dict]) -> str | None:
@@ -214,8 +221,14 @@ def format_match_row(m: dict):
     "Cartões/Partida": f"{m.get('stats', {}).get('homeCardsPerMatch') or '-'} / {m.get('stats', {}).get('awayCardsPerMatch') or '-'}",
   }
 
+
 st.title("SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
+health = get_health()
+if health:
+  st.success("Backend conectado")
+else:
+  st.warning("Backend indisponível. Verifique BACKEND_URL nos Secrets.")
 
 col_a, col_b, col_c = st.columns([2, 2, 1])
 
@@ -355,6 +368,7 @@ if quadro_texto:
 
 st.subheader("Jogos")
 if matches:
+
   st.subheader("Quadro Resumo de Jogos")
   summary_report = generate_summary_report(matches)
   st.dataframe(summary_report, hide_index=True, use_container_width=True)
@@ -438,3 +452,41 @@ if st.button("Analisar Selecionados") and selected_games:
     st.dataframe(pdf, use_container_width=True)
   else:
     st.info("Sem picks retornados")
+st.subheader("Análise de Contexto (AI)")
+ai_col1, ai_col2 = st.columns([2, 1])
+with ai_col1:
+  if matches:
+    jogo_ai = st.selectbox("Jogo", options=[f"{m.get('homeTeam')} vs {m.get('awayTeam')}" for m in matches])
+  else:
+    jogo_ai = None
+  news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
+  market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
+with ai_col2:
+  run_ai = st.button("Analisar Contexto", use_container_width=True)
+if run_ai and jogo_ai:
+  for m in matches:
+    if f"{m.get('homeTeam')} vs {m.get('awayTeam')}" == jogo_ai:
+      analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
+      if analysis:
+        st.json(analysis, expanded=True)
+        st.download_button("📥 Baixar análise (JSON)", data=json.dumps(analysis, ensure_ascii=False, indent=2), file_name="analysis.json", mime="application/json", use_container_width=True)
+        stats = m.get("stats") or {}
+        market = market_choice
+        prob_map = {
+          "Over 0.5": stats.get("over05Prob") or 0,
+          "Over 1.5": stats.get("over15Prob") or 0,
+          "Over 2.5": stats.get("over25Prob") or 0,
+          "Over 3.5": stats.get("over35Prob") or 0,
+          "BTTS": stats.get("bttsProb") or 0,
+        }
+        prob = float((prob_map.get(market) or 0) * 100)
+        classification = "SAFE" if prob >= 60 else "NEUTRO"
+        report = ai_generate_report(m.get('homeTeam'), m.get('awayTeam'), stats, market, classification, prob)
+        if report:
+          st.markdown("---")
+          st.subheader("Relatório do Mercado (AI)")
+          st.write(report)
+          st.download_button("📥 Baixar relatório (TXT)", data=report, file_name="report.txt", mime="text/plain", use_container_width=True)
+      else:
+        st.info("Sem análise retornada")
+      break
