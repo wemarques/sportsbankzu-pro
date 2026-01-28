@@ -6,3 +6,5 @@ htmlcov/
 .streamlit/secrets.toml
 dashboard-financeiro/
 sportsbankzu-pro/
+streamlit/
+frontend/streamlit/
