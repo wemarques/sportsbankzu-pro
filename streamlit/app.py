@@ -193,6 +193,34 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   html_code = html_template.replace('__BUTTON_ID__', button_id).replace('__TEXTO__', texto_escapado)
   components.html(html_code, height=120)
 
+def get_last_update(matches: list[dict]) -> str | None:
+  for m in matches:
+    val = m.get("lastUpdated") or m.get("last_updated") or m.get("updatedAt")
+    if val:
+      return str(val)
+  return None
+
+def format_match_row(m: dict):
+  return {
+    "Liga": m.get("leagueName"),
+    "Jogo": f"{m.get('homeTeam')} vs {m.get('awayTeam')}",
+    "Data": m.get("datetime"),
+    "Odds Home": m.get("odds", {}).get("home"),
+    "Odds Draw": m.get("odds", {}).get("draw"),
+    "Odds Away": m.get("odds", {}).get("away"),
+    "BTTS%": m.get("stats", {}).get("bttsProb"),
+    "Over0.5%": m.get("stats", {}).get("over05Prob"),
+    "Over1.5%": m.get("stats", {}).get("over15Prob"),
+    "Over2.5%": m.get("stats", {}).get("over25Prob"),
+    "Over3.5%": m.get("stats", {}).get("over35Prob"),
+    "λH": m.get("stats", {}).get("lambdaHome"),
+    "λA": m.get("stats", {}).get("lambdaAway"),
+    "λT": m.get("stats", {}).get("lambdaTotal"),
+    "Posse": f"{m.get('stats', {}).get('homePossession') or '-'} / {m.get('stats', {}).get('awayPossession') or '-'}",
+    "Escanteios/Partida": f"{m.get('stats', {}).get('homeCornersPerMatch') or '-'} / {m.get('stats', {}).get('awayCornersPerMatch') or '-'}",
+    "Cartões/Partida": f"{m.get('stats', {}).get('homeCardsPerMatch') or '-'} / {m.get('stats', {}).get('awayCardsPerMatch') or '-'}",
+  }
+
 
 st.title("SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
