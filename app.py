@@ -16,56 +16,29 @@ if str(project_root) not in sys.path:
 
 from backend.summary_report import generate_summary_report
 
-st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
-st.markdown(
-  """
-  <style>
-  /* Ajustes para Mobile (até 768px) */
-  @media (max-width: 768px) {
-    div[data-testid="stHorizontalBlock"] {
-      flex-wrap: wrap;
-    }
-    div[data-testid="column"] {
-      min-width: 100% !important;
-      flex: 1 1 100% !important;
-    }
-    h1 { font-size: 1.5rem !important; }
-    h2 { font-size: 1.3rem !important; }
-    h3 { font-size: 1.1rem !important; }
-    .main .block-container {
-      padding-left: 1rem !important;
-      padding-right: 1rem !important;
-    }
-    div[data-testid="stDataFrame"] {
-      font-size: 0.8rem !important;
-    }
-    div[data-testid="stDataFrame"] > div {
-      overflow-x: auto !important;
-    }
-    button {
-      width: 100% !important;
-      margin-bottom: 0.5rem !important;
-    }
-  }
-
-  /* Ajustes para Tablet (768px - 1024px) */
-  @media (min-width: 768px) and (max-width: 1024px) {
-    div[data-testid="column"] {
-      min-width: 48% !important;
-      flex: 1 1 48% !important;
-    }
-    h1 { font-size: 1.8rem !important; }
-  }
-
-  /* Melhorar espaçamento geral */
-  .main .block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-  }
-  </style>
-  """,
-  unsafe_allow_html=True,
+st.set_page_config(
+  page_title="SportsBank Pro Streamlit",
+  page_icon="⚽",
+  layout="wide",
+  initial_sidebar_state="expanded"
 )
+
+def load_custom_css():
+  css_file = Path(__file__).parent / "custom_theme.css"
+  if css_file.exists():
+    css_content = css_file.read_text(encoding="utf-8")
+    st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+  else:
+    st.markdown("""
+    <style>
+    @media (max-width: 768px) {
+      div[data-testid=\"stHorizontalBlock\"] { flex-wrap: wrap; }
+      div[data-testid=\"column\"] { min-width: 100% !important; flex: 1 1 100% !important; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+load_custom_css()
 
 # ============================================
 # SISTEMA DE AUTENTICAÇÃO
@@ -140,6 +113,66 @@ def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str,
     return None
 
 
+# ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI =====
+def render_ai_analysis(analysis_data, report_text=None):
+  st.markdown(
+    """
+    <div class="ai-analysis-section">
+      <div class="ai-analysis-header">
+        <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+  )
+
+  if analysis_data:
+    with st.expander("📊 Análise Contextual Completa", expanded=True):
+      st.json(analysis_data)
+      if isinstance(analysis_data, dict):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+          st.markdown(
+            """
+            <div class="ai-metric-card">
+              <div class="ai-metric-value">✓</div>
+              <div class="ai-metric-label">Análise Completa</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+          )
+        with col2:
+          st.markdown(
+            """
+            <div class="ai-metric-card">
+              <div class="ai-metric-value">🎯</div>
+              <div class="ai-metric-label">Insights Gerados</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+          )
+        with col3:
+          st.markdown(
+            """
+            <div class="ai-metric-card">
+              <div class="ai-metric-value">⚡</div>
+              <div class="ai-metric-label">Processamento Rápido</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+          )
+
+  if report_text:
+    st.markdown("### 📝 Relatório Detalhado")
+    st.markdown(
+      f"""
+      <div class="ai-analysis-content">
+        {report_text}
+      </div>
+      """,
+      unsafe_allow_html=True,
+    )
+
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   """
   Cria botao de copiar que funciona em desktop e mobile.
@@ -155,7 +188,7 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
           id="__BUTTON_ID__"
           onclick="copyToClipboard()"
           style="
-              background-color: #0066cc;
+              background-color: #22c55e;
               color: white;
               border: none;
               padding: 12px 24px;
@@ -167,8 +200,8 @@ def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
               transition: all 0.3s;
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
           "
-          onmouseover="this.style.backgroundColor='#0052a3'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';"
-          onmouseout="this.style.backgroundColor='#0066cc'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';"
+          onmouseover="this.style.backgroundColor='#16a34a'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';"
+          onmouseout="this.style.backgroundColor='#22c55e'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';"
       >
           📋 Copiar
       </button>
@@ -277,7 +310,7 @@ def format_match_row(m: dict):
   }
 
 
-st.title("SportsBank Pro - Streamlit")
+st.title("⚽ SportsBank Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
 
 def get_git_info():
@@ -348,7 +381,7 @@ with col_a:
 with col_b:
   date_filter = st.radio("Data", options=["today","tomorrow","week"], index=2, horizontal=True)
 with col_c:
-  fetch_btn = st.button("Buscar Jogos")
+  fetch_btn = st.button("🔍 Buscar Jogos", use_container_width=True)
 
 if "auto_loaded" not in st.session_state:
   st.session_state["auto_loaded"] = False
@@ -411,7 +444,7 @@ if "quadro_resumo_meta" not in st.session_state:
   st.session_state["quadro_resumo_meta"] = {}
 
 if gerar_btn and leagues:
-  with st.spinner("Gerando quadro-resumo personalizado..."):
+  with st.spinner("⚙️ Gerando quadro-resumo personalizado..."):
     try:
       response = requests.get(
         f"{BACKEND_URL}/quadro-resumo",
@@ -471,7 +504,7 @@ if quadro_texto:
   cols[3].metric("⚙️ Regime", meta.get("regime", "N/A"))
   st.caption(f"Volatilidade: {meta.get('volatilidade', 'N/A')}")
 
-st.subheader("Jogos")
+st.subheader("⚽ Jogos")
 if matches:
 
   st.subheader("Quadro Resumo de Jogos")
@@ -494,7 +527,7 @@ if matches:
   df = pd.DataFrame([format_match_row(m) for m in matches])
   st.dataframe(df, use_container_width=True, height=400)
 
-  st.subheader("Gráfico de Probabilidades")
+  st.subheader("📈 Gráfico de Probabilidades")
   chart_rows = []
   for m in matches:
     game = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
@@ -525,9 +558,9 @@ else:
     st.error(f"Falha ao buscar jogos: {err}")
   st.info("Nenhum jogo encontrado. Ajuste a liga/data e tente novamente.")
 
-st.subheader("Análise de Picks")
+st.subheader("🎯 Análise de Picks")
 selected_games = st.multiselect("Selecionar jogos para análise", options=[f"{m.get('homeTeam')} vs {m.get('awayTeam')}" for m in matches])
-if st.button("Analisar Selecionados") and selected_games:
+if st.button("🔍 Analisar Selecionados") and selected_games:
   sel = []
   for m in matches:
     key = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
@@ -557,7 +590,19 @@ if st.button("Analisar Selecionados") and selected_games:
     st.dataframe(pdf, use_container_width=True)
   else:
     st.info("Sem picks retornados")
-st.subheader("Análise de Contexto (AI)")
+# ===== ANÁLISE DE CONTEXTO (MISTRAL AI) =====
+st.markdown("---")
+st.markdown(
+  """
+  <div class="ai-analysis-section">
+    <div class="ai-analysis-header">
+      <h2>🤖 Análise de Contexto com IA <span class="ai-badge">Powered by Mistral</span></h2>
+    </div>
+  </div>
+  """,
+  unsafe_allow_html=True,
+)
+
 ai_col1, ai_col2 = st.columns([2, 1])
 with ai_col1:
   if matches:
@@ -567,14 +612,24 @@ with ai_col1:
   news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
   market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
 with ai_col2:
-  run_ai = st.button("Analisar Contexto", use_container_width=True)
+  run_ai = st.button("🚀 Analisar Contexto", use_container_width=True)
+
 if run_ai and jogo_ai:
   for m in matches:
     if f"{m.get('homeTeam')} vs {m.get('awayTeam')}" == jogo_ai:
-      analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
+      with st.spinner("🤖 Mistral AI está analisando..."):
+        analysis = ai_analyze_context(m.get('homeTeam'), m.get('awayTeam'), news_summary)
+
       if analysis:
-        st.json(analysis, expanded=True)
-        st.download_button("📥 Baixar análise (JSON)", data=json.dumps(analysis, ensure_ascii=False, indent=2), file_name="analysis.json", mime="application/json", use_container_width=True)
+        render_ai_analysis(analysis)
+        st.download_button(
+          "📥 Baixar análise (JSON)",
+          data=json.dumps(analysis, ensure_ascii=False, indent=2),
+          file_name="analysis.json",
+          mime="application/json",
+          use_container_width=True,
+        )
+
         stats = m.get("stats") or {}
         market = market_choice
         prob_map = {
@@ -586,12 +641,21 @@ if run_ai and jogo_ai:
         }
         prob = float((prob_map.get(market) or 0) * 100)
         classification = "SAFE" if prob >= 60 else "NEUTRO"
-        report = ai_generate_report(m.get('homeTeam'), m.get('awayTeam'), stats, market, classification, prob)
+
+        with st.spinner("📝 Gerando relatório detalhado..."):
+          report = ai_generate_report(m.get('homeTeam'), m.get('awayTeam'), stats, market, classification, prob)
+
         if report:
           st.markdown("---")
-          st.subheader("Relatório do Mercado (AI)")
-          st.write(report)
-          st.download_button("📥 Baixar relatório (TXT)", data=report, file_name="report.txt", mime="text/plain", use_container_width=True)
+          st.subheader("📝 Relatório do Mercado (Mistral AI)")
+          render_ai_analysis(None, report)
+          st.download_button(
+            "📥 Baixar relatório (TXT)",
+            data=report,
+            file_name="report.txt",
+            mime="text/plain",
+            use_container_width=True,
+          )
       else:
-        st.info("Sem análise retornada")
+        st.info("ℹ️ Sem análise retornada. Verifique se o backend está configurado corretamente.")
       break
