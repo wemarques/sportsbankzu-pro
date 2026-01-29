@@ -331,12 +331,18 @@ st.caption(f"Versão: {get_git_info()} | Atualizado: {datetime.now().strftime('%
 
 health = get_health()
 if health:
-  col_status1, col_status2 = st.columns([3, 1])
+  col_status1, col_status2, col_theme = st.columns([3, 1, 1])
   with col_status1:
     st.success("✅ Backend conectado")
   with col_status2:
     if st.button("🔄 Recarregar", key="reload_health"):
       st.rerun()
+  with col_theme:
+    theme = st.selectbox("Tema", options=["Dark","Light"], index=0)
+    if theme == "Light":
+      st.markdown("<style>.stApp{background-color:#f8fafc!important} .stMarkdown, p, h1,h2,h3{color:#111827!important}</style>", unsafe_allow_html=True)
+    else:
+      st.markdown("<style>.stApp{background-color:#1e293b!important}</style>", unsafe_allow_html=True)
 else:
   st.error("❌ Backend indisponível")
   with st.expander("🔧 Diagnóstico e Soluções", expanded=True):
@@ -381,7 +387,7 @@ with col_a:
 with col_b:
   date_filter = st.radio("Data", options=["today","tomorrow","week"], index=2, horizontal=True)
 with col_c:
-  fetch_btn = st.button("🔍 Buscar Jogos", use_container_width=True)
+  fetch_btn = st.button("🔍 Buscar Jogos", width="stretch")
 
 if "auto_loaded" not in st.session_state:
   st.session_state["auto_loaded"] = False
@@ -404,7 +410,7 @@ col1, col2 = st.columns([4, 1])
 with col1:
   st.caption("Prognósticos formatados para compartilhamento e análise rápida")
 with col2:
-  gerar_btn = st.button("🔄 Gerar Quadro", use_container_width=True, key="gerar_quadro")
+  gerar_btn = st.button("🔄 Gerar Quadro", width="stretch", key="gerar_quadro")
 
 st.markdown("**Selecione o que deseja visualizar:**")
 formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
@@ -488,7 +494,7 @@ if quadro_texto:
       data=quadro_texto,
       file_name=f"quadro_{leagues[0]}_{date_filter}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
       mime="text/plain",
-      use_container_width=True,
+      width="stretch",
       key="download_quadro",
     )
 
@@ -551,7 +557,7 @@ if matches:
       column="Jogo",
       tooltip=["Jogo","Métrica","Prob%","λH","λA","λT"]
     ).properties(height=250)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 else:
   err = st.session_state.get("last_error")
   if err:
@@ -612,7 +618,7 @@ with ai_col1:
   news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
   market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
 with ai_col2:
-  run_ai = st.button("🚀 Analisar Contexto", use_container_width=True)
+  run_ai = st.button("🚀 Analisar Contexto", width="stretch")
 
 if run_ai and jogo_ai:
   for m in matches:
@@ -627,7 +633,7 @@ if run_ai and jogo_ai:
           data=json.dumps(analysis, ensure_ascii=False, indent=2),
           file_name="analysis.json",
           mime="application/json",
-          use_container_width=True,
+          width="stretch",
         )
 
         stats = m.get("stats") or {}
@@ -654,7 +660,7 @@ if run_ai and jogo_ai:
             data=report,
             file_name="report.txt",
             mime="text/plain",
-            use_container_width=True,
+            width="stretch",
           )
       else:
         st.info("ℹ️ Sem análise retornada. Verifique se o backend está configurado corretamente.")

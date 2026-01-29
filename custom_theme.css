@@ -91,7 +91,7 @@
 
 /* Aplicação principal do Streamlit */
 .stApp {
-  background-color: var(--bg-dark) !important;
+  background-color: var(--bg-dark-secondary) !important;
 }
 
 /* Container principal */
