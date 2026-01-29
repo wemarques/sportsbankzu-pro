@@ -374,7 +374,13 @@ if health:
       st.markdown("""
         <style>
         .stApp { background-color: #262730 !important; }
-        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'] { color: #fafafa !important; }
+        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'], [data-testid='stCaption'] { 
+            color: #ffffff !important; 
+        }
+        /* Força visibilidade em textos secundários do Streamlit no modo Dark */
+        small, .stCaption p, [data-testid="stMarkdownContainer"] p {
+            color: #f0f0f0 !important;
+        }
         </style>
       """, unsafe_allow_html=True)
 else:
