@@ -1,10 +1,7 @@
 /* ========================================
    SPORTSBANK PRO - TEMA CUSTOMIZADO CORRIGIDO
-   Versão: 1.1 (Corrigido)
-   Data: 28 de Janeiro de 2026
-   
-   CORREÇÃO: Removido reset global que estava
-   escondendo todo o conteúdo do Streamlit
+   Versão: 1.2 (Alto Contraste)
+   Data: 29 de Janeiro de 2026
    ======================================== */
 
 /* ========================================
@@ -494,4 +491,32 @@ label {
 /* Força contraste em textos descritivos */
 .stMarkdown {
   color: #2d3748 !important;
+}
+
+/* ========================================
+   18. TOOLTIPS E HELP
+   ======================================== */
+
+/* Container do Tooltip */
+div[data-testid="stTooltipContent"] {
+  background-color: #ffffff !important;
+  color: #1a1c24 !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: var(--space-sm) var(--space-md) !important;
+  font-size: var(--font-size-sm) !important;
+  max-width: 300px !important;
+}
+
+/* Garante que o texto dentro do tooltip seja escuro (legível) */
+div[data-testid="stTooltipContent"] p,
+div[data-testid="stTooltipContent"] span,
+div[data-testid="stTooltipContent"] div {
+  color: #1a1c24 !important;
+}
+
+/* Ícone de interrogação (Help) */
+div[data-testid="stTooltipIcon"] {
+  color: var(--primary-green) !important;
 }
