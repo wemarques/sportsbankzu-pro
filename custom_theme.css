@@ -509,11 +509,12 @@ div[data-testid="stTooltipContent"] {
   max-width: 300px !important;
 }
 
-/* Garante que o texto dentro do tooltip seja escuro (legível) */
+/* Garante que o texto dentro do tooltip seja ocre (legível) */
 div[data-testid="stTooltipContent"] p,
 div[data-testid="stTooltipContent"] span,
 div[data-testid="stTooltipContent"] div {
-  color: #1a1c24 !important;
+  color: #CC7722 !important; /* Cor Ocre */
+  font-weight: 600 !important;
 }
 
 /* Ícone de interrogação (Help) */
