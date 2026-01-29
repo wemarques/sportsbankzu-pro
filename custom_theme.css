@@ -513,8 +513,9 @@ div[data-testid="stTooltipContent"] {
 div[data-testid="stTooltipContent"] p,
 div[data-testid="stTooltipContent"] span,
 div[data-testid="stTooltipContent"] div {
-  color: #CC7722 !important; /* Cor Ocre */
-  font-weight: 600 !important;
+  color: #B87333 !important; /* Tom Ocre/Cobre mais saturado */
+  font-weight: 700 !important;
+  text-shadow: 0px 0px 1px rgba(0,0,0,0.1) !important;
 }
 
 /* Ícone de interrogação (Help) */
