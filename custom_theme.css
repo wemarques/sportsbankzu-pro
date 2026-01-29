@@ -33,14 +33,14 @@
   --success-green: #10b981;
   --success-green-hover: #059669;
   
-  /* Cores Neutras - Dark Mode */
-  --bg-dark: #0f172a;
-  --bg-dark-secondary: #1e293b;
-  --bg-dark-tertiary: #334155;
-  --border-dark: #475569;
-  --text-dark-primary: #f1f5f9;
-  --text-dark-secondary: #cbd5e1;
-  --text-dark-tertiary: #94a3b8;
+  /* Cores Neutras - Dark Mode (Suavizado) */
+  --bg-dark: #1a1c24;
+  --bg-dark-secondary: #262730;
+  --bg-dark-tertiary: #31333f;
+  --border-dark: #464855;
+  --text-dark-primary: #fafafa;
+  --text-dark-secondary: #e0e0e0;
+  --text-dark-tertiary: #b0b0b0;
   
   /* Espaçamento */
   --space-xs: 4px;

@@ -354,9 +354,29 @@ if health:
   with col_theme:
     theme = st.selectbox("Tema", options=["Dark","Light"], index=0)
     if theme == "Light":
-      st.markdown("<style>body{background-color:#FAF0E6; color:#333; font-family:'Arial', sans-serif} .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText{color:#1f2937!important} [data-testid='stCaption'], [data-testid='stMarkdown'], [data-testid='stHeader'], [data-testid='stSubheader']{color:#1f2937!important}</style>", unsafe_allow_html=True)
+      st.markdown("""
+        <style>
+        :root {
+          --bg-dark-secondary: #FAF0E6 !important;
+          --bg-dark: #F5E6D3 !important;
+          --bg-dark-tertiary: #EBD9C1 !important;
+          --text-dark-primary: #1f2937 !important;
+          --text-dark-secondary: #374151 !important;
+          --text-dark-tertiary: #4b5563 !important;
+          --border-dark: #D2B48C !important;
+        }
+        .stApp { background-color: #FAF0E6 !important; }
+        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'] { color: #1f2937 !important; }
+        .stDataFrame table, .streamlit-expanderHeader, .streamlit-expanderContent { background-color: #FAF0E6 !important; color: #1f2937 !important; }
+        </style>
+      """, unsafe_allow_html=True)
     else:
-      st.markdown("<style>.stApp{background-color:#1e293b!important}</style>", unsafe_allow_html=True)
+      st.markdown("""
+        <style>
+        .stApp { background-color: #262730 !important; }
+        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'] { color: #fafafa !important; }
+        </style>
+      """, unsafe_allow_html=True)
 else:
   st.error("❌ Backend indisponível")
   with st.expander("🔧 Diagnóstico e Soluções", expanded=True):
