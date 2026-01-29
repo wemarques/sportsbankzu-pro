@@ -424,3 +424,74 @@ p, .stMarkdown p, .stText {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary-green) !important;
 }
+
+/* ========================================
+   16. MENSAGENS DE ERRO - BACKEND
+   ======================================== */
+
+/* Texto de erro do backend - deixar branco */
+.stAlert p,
+.stAlert div,
+.stError p,
+.stError div,
+[data-testid="stAlert"] p,
+[data-testid="stAlert"] div {
+  color: #ffffff !important;
+}
+
+/* Alternativa mais específica se o acima não funcionar */
+.stMarkdown p {
+  color: var(--text-dark-primary) !important;
+}
+
+/* Para mensagens de erro em geral */
+.element-container .stMarkdown {
+  color: #ffffff !important;
+}
+
+/* Força branco em todos os textos dentro de alertas */
+.stAlert * {
+  color: #ffffff !important;
+}
+
+.stError * {
+  color: #ffffff !important;
+}
+
+/* ========================================
+   17. TEMA LIGHT - MELHORIAS DE CONTRASTE
+   ======================================== */
+
+/* Força texto escuro no tema light */
+.stMarkdown h3,
+.stMarkdown p,
+.stMarkdown div {
+  color: #1a1a1a !important;
+}
+
+/* Específico para labels e textos descritivos */
+.stSelectbox label,
+.stSelectbox > div > div > div {
+  color: #2d3748 !important;
+}
+
+/* Parágrafos e textos em geral */
+p {
+  color: #1a1a1a !important;
+}
+
+/* Textos dentro de containers */
+.element-container p,
+.element-container .stMarkdown {
+  color: #2d3748 !important;
+}
+
+/* Labels de seleção */
+label {
+  color: #1a1a1a !important;
+}
+
+/* Força contraste em textos descritivos */
+.stMarkdown {
+  color: #2d3748 !important;
+}

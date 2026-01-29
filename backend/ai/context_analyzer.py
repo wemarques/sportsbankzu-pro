@@ -42,6 +42,9 @@ class ContextAnalyzer:
         text = _strip_fences(raw)
         try:
             parsed = json.loads(text)
-            return self._fix_obj_strings(parsed)
+            final_obj = self._fix_obj_strings(parsed)
+            # Salvar no Cache
+            self.cache.set("context", home_team, away_team, final_obj)
+            return final_obj
         except Exception:
             return {"error": "invalid_json", "raw": raw}
