@@ -105,73 +105,87 @@ def ai_analyze_context(home_team: str, away_team: str, news_summary: str | None)
     return r.json().get("analysis")
   except:
     return None
-def ai_generate_report(home_team: str, away_team: str, stats: dict, market: str, classification: str, probability: float):
-  try:
-    r = requests.post(f"{BACKEND_URL}/ai/generate-report", json={"home_team": home_team, "away_team": away_team, "stats": stats, "market": market, "classification": classification, "probability": probability}, timeout=30)
-    return r.json().get("report")
-  except:
+def ai_generate_report(home, away, stats, market, classification, prob):
+    try:
+        payload = {
+            "home_team": home,
+            "away_team": away,
+            "stats": stats,
+            "market": market,
+            "classification": classification,
+            "probability": prob
+        }
+        response = requests.post(f"{BACKEND_URL}/ai/generate-report", json=payload, timeout=60)
+        if response.status_code == 200:
+            return response.json().get("report")
+    except Exception:
+        pass
+    return None
+
+def ai_audit_match(match_data: dict):
+    """Chama o endpoint de auditoria de cálculos do backend."""
+    try:
+        response = requests.post(f"{BACKEND_URL}/ai/audit-match", json=match_data, timeout=60)
+        if response.status_code == 200:
+            return response.json().get("audit")
+    except Exception as e:
+        st.error(f"Erro na auditoria: {e}")
     return None
 
 
 # ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI =====
 def render_ai_analysis(analysis_data, report_text=None):
-  st.markdown(
-    """
-    <div class="ai-analysis-section">
-      <div class="ai-analysis-header">
-        <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-  )
-
-  if analysis_data:
-    with st.expander("📊 Análise Contextual Completa", expanded=True):
-      st.json(analysis_data)
-      if isinstance(analysis_data, dict):
+    st.markdown(
+        """
+        <div class="ai-analysis-section">
+            <div class="ai-analysis-header">
+                <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if analysis_data:
+        # Seção de métricas rápidas
         col1, col2, col3 = st.columns(3)
         with col1:
-          st.markdown(
-            """
-            <div class="ai-metric-card">
-              <div class="ai-metric-value">✓</div>
-              <div class="ai-metric-label">Análise Completa</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-          )
+            st.markdown(
+                f"""
+                <div class="ai-metric-card">
+                    <div class="ai-metric-value">{analysis_data.get('pressure_level', {}).get('home', 'N/A')}</div>
+                    <div class="ai-metric-label">Pressão Casa</div>
+                </div>
+                """, unsafe_allow_html=True)
         with col2:
-          st.markdown(
-            """
-            <div class="ai-metric-card">
-              <div class="ai-metric-value">🎯</div>
-              <div class="ai-metric-label">Insights Gerados</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-          )
+            st.markdown(
+                f"""
+                <div class="ai-metric-card">
+                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('recommendation', 'N/A')}</div>
+                    <div class="ai-metric-label">Recomendação IA</div>
+                </div>
+                """, unsafe_allow_html=True)
         with col3:
-          st.markdown(
-            """
-            <div class="ai-metric-card">
-              <div class="ai-metric-value">⚡</div>
-              <div class="ai-metric-label">Processamento Rápido</div>
+            st.markdown(
+                f"""
+                <div class="ai-metric-card">
+                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('impact_percentage', 0)}%</div>
+                    <div class="ai-metric-label">Ajuste Sugerido</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with st.expander("📊 Análise Tática e Contextual Completa", expanded=True):
+            st.json(analysis_data)
+            
+    if report_text:
+        st.markdown("### 📝 Relatório Detalhado")
+        st.markdown(
+            f"""
+            <div class="ai-analysis-content">
+                {report_text}
             </div>
             """,
             unsafe_allow_html=True,
-          )
-
-  if report_text:
-    st.markdown("### 📝 Relatório Detalhado")
-    st.markdown(
-      f"""
-      <div class="ai-analysis-content">
-        {report_text}
-      </div>
-      """,
-      unsafe_allow_html=True,
-    )
+        )
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   """
@@ -340,7 +354,7 @@ if health:
   with col_theme:
     theme = st.selectbox("Tema", options=["Dark","Light"], index=0)
     if theme == "Light":
-      st.markdown("<style>.stApp{background-color:#f8fafc!important} .stMarkdown, p, h1,h2,h3{color:#111827!important}</style>", unsafe_allow_html=True)
+      st.markdown("<style>body{background-color:#FAF0E6; color:#333; font-family:'Arial', sans-serif} .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText{color:#1f2937!important} [data-testid='stCaption'], [data-testid='stMarkdown'], [data-testid='stHeader'], [data-testid='stSubheader']{color:#1f2937!important}</style>", unsafe_allow_html=True)
     else:
       st.markdown("<style>.stApp{background-color:#1e293b!important}</style>", unsafe_allow_html=True)
 else:
@@ -661,7 +675,42 @@ if run_ai and jogo_ai:
             file_name="report.txt",
             mime="text/plain",
             width="stretch",
+            key="download_report",
           )
+          
+        # ===== NOVA SEÇÃO: AUDITORIA DE CÁLCULOS =====
+        st.markdown("---")
+        st.subheader("🔍 Auditoria de Cálculos (Auditor)")
+        if st.button("⚖️ Auditar Cálculos Estatísticos", width="stretch", key="btn_audit"):
+            with st.spinner("⚖️ Mistral Auditor está validando os números..."):
+                audit_data = {
+                    "id": m.get("id"),
+                    "homeTeam": m.get("homeTeam"),
+                    "awayTeam": m.get("awayTeam"),
+                    "stats": m.get("stats"),
+                    "odds": m.get("odds")
+                }
+                audit_result = ai_audit_match(audit_data)
+                if audit_result:
+                    st.success(f"Auditoria concluída com {audit_result.get('audit_confidence', 0)}% de confiança")
+                    
+                    col_aud1, col_aud2, col_aud3 = st.columns(3)
+                    v = audit_result.get("validation", {})
+                    
+                    def get_status_color(status):
+                        if status == "OK": return "✅"
+                        if status == "WARNING": return "⚠️"
+                        return "❌"
+                        
+                    with col_aud1:
+                        st.metric("Probabilidades", v.get("probabilities", {}).get("status", "N/A"), help=v.get("probabilities", {}).get("notes"))
+                    with col_aud2:
+                        st.metric("Lambdas", v.get("lambdas", {}).get("status", "N/A"), help=v.get("lambdas", {}).get("notes"))
+                    with col_aud3:
+                        st.metric("Expected Value", v.get("ev", {}).get("status", "N/A"), help=v.get("ev", {}).get("notes"))
+                        
+                    with st.expander("Ver detalhes da auditoria"):
+                        st.json(audit_result)
       else:
         st.info("ℹ️ Sem análise retornada. Verifique se o backend está configurado corretamente.")
       break

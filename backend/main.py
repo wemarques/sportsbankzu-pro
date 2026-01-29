@@ -21,6 +21,10 @@ from backend.modeling.market_validator import (
 from backend.modeling.chaos_detector import (
     detectar_caos_jogo,
 )
+from backend.ai.data_collector import FootballDataCollector
+from backend.ai.mistral_auditor import MistralAuditor
+from backend.ai.context_analyzer import ContextAnalyzer
+from backend.ai.report_generator import ReportGenerator
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -38,6 +42,10 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbank")
 
 app = FastAPI(title="SportsBank Pro Backend", version="0.1.0")
+
+data_collector = FootballDataCollector()
+mistral_auditor = MistralAuditor()
+# ... outros inicializadores ...
 try:
     from backend.routes import matches as _r_matches
     app.include_router(_r_matches.router)
@@ -967,6 +975,57 @@ def ml_predict(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
  
+
+from pydantic import BaseModel
+
+class MatchAuditRequest(BaseModel):
+    id: str
+    homeTeam: str
+    awayTeam: str
+    stats: Dict[str, Any]
+    odds: Dict[str, Any]
+
+class ContextAnalysisRequest(BaseModel):
+    home_team: str
+    away_team: str
+    news_summary: Optional[str] = None
+
+class ReportGenerationRequest(BaseModel):
+    home_team: str
+    away_team: str
+    stats: Dict[str, Any]
+    market: str
+    classification: str
+    probability: float
+
+@app.post("/ai/audit-match")
+async def audit_match(request: MatchAuditRequest):
+    try:
+        result = mistral_auditor.audit_match_calculation(request.dict())
+        return {"status": "success", "audit": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai/analyze-context")
+async def analyze_context(request: ContextAnalysisRequest):
+    try:
+        analyzer = ContextAnalyzer()
+        result = analyzer.analyze_match_context(request.home_team, request.away_team, request.news_summary)
+        return {"status": "success", "analysis": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai/generate-report")
+async def generate_report(request: ReportGenerationRequest):
+    try:
+        generator = ReportGenerator()
+        result = generator.generate_match_report(
+            request.home_team, request.away_team, request.stats, 
+            request.market, request.classification, request.probability
+        )
+        return {"status": "success", "report": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if Mangum is not None:
     handler = Mangum(app)
