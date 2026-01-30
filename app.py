@@ -14,7 +14,7 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
   sys.path.insert(0, str(project_root))
 
-from backend.summary_report import generate_summary_report
+from backend.summary_report import generate_summary_report, _normalize_prob
 
 st.set_page_config(
   page_title="SportsBank Pro Streamlit",
@@ -31,9 +31,17 @@ def load_custom_css():
   else:
     st.markdown("""
     <style>
+    input, select, textarea { font-size: 16px !important; }
+    @media (max-width: 1024px) {
+      div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 12px !important; }
+      div[data-testid="stHorizontalBlock"] > div[data-testid="column"] { min-width: 48% !important; flex: 1 1 48% !important; }
+    }
     @media (max-width: 768px) {
-      div[data-testid=\"stHorizontalBlock\"] { flex-wrap: wrap; }
-      div[data-testid=\"column\"] { min-width: 100% !important; flex: 1 1 100% !important; }
+      div[data-testid="stHorizontalBlock"] { flex-direction: column !important; }
+      div[data-testid="column"] { min-width: 100% !important; flex: 1 1 100% !important; width: 100% !important; }
+      .stButton > button, .stDownloadButton > button { width: 100% !important; }
+      .stDataFrame { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+      pre, code { white-space: pre-wrap !important; word-wrap: break-word !important; max-width: 100% !important; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -357,30 +365,34 @@ if health:
       st.markdown("""
         <style>
         :root {
-          --bg-dark-secondary: #FAF0E6 !important;
-          --bg-dark: #F5E6D3 !important;
-          --bg-dark-tertiary: #EBD9C1 !important;
-          --text-dark-primary: #1f2937 !important;
-          --text-dark-secondary: #374151 !important;
-          --text-dark-tertiary: #4b5563 !important;
-          --border-dark: #D2B48C !important;
+          --bg-dark: #F5F5F0 !important;
+          --bg-dark-secondary: #FAFAF5 !important;
+          --bg-dark-tertiary: #EEEEE8 !important;
+          --border-dark: #C8C8BE !important;
+          --text-dark-primary: #1a1a1a !important;
+          --text-dark-secondary: #2d3748 !important;
+          --text-dark-tertiary: #4a5568 !important;
         }
-        .stApp { background-color: #FAF0E6 !important; }
-        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'] { color: #1f2937 !important; }
-        .stDataFrame table, .streamlit-expanderHeader, .streamlit-expanderContent { background-color: #FAF0E6 !important; color: #1f2937 !important; }
-        </style>
-      """, unsafe_allow_html=True)
-    else:
-      st.markdown("""
-        <style>
-        .stApp { background-color: #262730 !important; }
-        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'], [data-testid='stCaption'] { 
-            color: #ffffff !important; 
+        .stApp { background-color: var(--bg-dark-secondary) !important; }
+        h1, h2, h3 { color: var(--text-dark-primary) !important; }
+        p, label, .stMarkdown, .stMarkdown p, .stMarkdown div, .stCaption,
+        .stText, [data-testid='stMetricValue'], [data-testid='stCaption'],
+        .element-container p, .element-container .stMarkdown {
+          color: var(--text-dark-secondary) !important;
         }
-        /* Força visibilidade em textos secundários do Streamlit no modo Dark */
-        small, .stCaption p, [data-testid="stMarkdownContainer"] p {
-            color: #f0f0f0 !important;
+        .stMetric label { color: var(--text-dark-tertiary) !important; }
+        .stDataFrame table { background-color: var(--bg-dark-secondary) !important; }
+        .stDataFrame thead tr th { background-color: var(--bg-dark-tertiary) !important; color: var(--text-dark-primary) !important; }
+        .stDataFrame tbody tr td { color: var(--text-dark-secondary) !important; }
+        .streamlit-expanderHeader, .streamlit-expanderContent { background-color: var(--bg-dark-secondary) !important; color: var(--text-dark-primary) !important; }
+        .stSelectbox > div > div, .stMultiSelect > div > div, .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea, .stDateInput > div > div > input {
+          background-color: #ffffff !important; color: var(--text-dark-primary) !important;
+          border-color: var(--border-dark) !important;
         }
+        .stCheckbox label, .stRadio label { color: var(--text-dark-secondary) !important; }
+        .stMetric { background-color: var(--bg-dark-secondary) !important; border-color: var(--border-dark) !important; }
+        .stCode, pre, code { background-color: var(--bg-dark-tertiary) !important; color: var(--text-dark-primary) !important; }
         </style>
       """, unsafe_allow_html=True)
 else:
@@ -553,25 +565,88 @@ if quadro_texto:
 st.subheader("⚽ Jogos")
 if matches:
 
-  st.subheader("Quadro Resumo de Jogos")
-  summary_report = generate_summary_report(matches)
-  st.dataframe(summary_report, hide_index=True, use_container_width=True)
-
-  last_update = get_last_update(matches)
-  if last_update:
-    st.caption(f"Última atualização (fonte): {last_update} UTC")
-  else:
-    st.caption("Última atualização: não informada pela fonte.")
-  data_source = matches[0].get("dataSource") if matches else None
-  if data_source:
-    st.caption(f"Origem dos dados: {data_source}")
-  # Regime/volatilidade por liga (se disponível)
+  # --- Barra de status da liga ---
   regimes = {m.get("stats", {}).get("leagueRegime") for m in matches if m.get("stats", {}).get("leagueRegime")}
   vols = {m.get("stats", {}).get("leagueVolatility") for m in matches if m.get("stats", {}).get("leagueVolatility")}
-  if regimes or vols:
-    st.caption(f"Regime da Liga: {', '.join(sorted(regimes)) or '-'} | Volatilidade: {', '.join(sorted(vols)) or '-'}")
-  df = pd.DataFrame([format_match_row(m) for m in matches])
-  st.dataframe(df, use_container_width=True, height=400)
+  last_update = get_last_update(matches)
+  data_source = matches[0].get("dataSource") if matches else None
+
+  regime_str = ', '.join(sorted(regimes)) if regimes else 'N/A'
+  vol_str = ', '.join(sorted(vols)) if vols else 'N/A'
+  update_str = f"{last_update} UTC" if last_update else "não informada"
+  source_str = data_source if data_source else "API"
+
+  st.markdown(f"""
+  <div class="quadro-status-bar">
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Jogos</div>
+      <div class="quadro-status-value">{len(matches)}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Regime</div>
+      <div class="quadro-status-value">{regime_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Volatilidade</div>
+      <div class="quadro-status-value">{vol_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Atualização</div>
+      <div class="quadro-status-value">{update_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Fonte</div>
+      <div class="quadro-status-value">{source_str}</div>
+    </div>
+  </div>
+  """, unsafe_allow_html=True)
+
+  # --- Tabela unificada (colunas essenciais) ---
+  def build_unified_row(m: dict):
+    stats = m.get("stats", {})
+    odds = m.get("odds", {})
+    # Mercados sugeridos (lógica do summary_report inline)
+    markets = []
+    p25 = _normalize_prob(stats.get("over25Prob"))
+    p_btts = _normalize_prob(stats.get("bttsProb"))
+    if p25 and p25 > 0.6:
+      markets.append(f"Over 2.5 ({p25*100:.0f}%)")
+    if p_btts and p_btts > 0.55:
+      markets.append(f"BTTS ({p_btts*100:.0f}%)")
+    if not markets:
+      markets = ["—"]
+    # EV
+    ev = m.get("ev")
+    if ev is None and p25:
+      odd_o25 = odds.get("over25")
+      if odd_o25:
+        try:
+          ev = (p25 * float(odd_o25)) - 1
+        except Exception:
+          ev = None
+    return {
+      "Jogo": f"{m.get('homeTeam')} vs {m.get('awayTeam')}",
+      "Liga": m.get("leagueName", ""),
+      "Data": m.get("datetime", ""),
+      "1": odds.get("home", "—"),
+      "X": odds.get("draw", "—"),
+      "2": odds.get("away", "—"),
+      "BTTS%": stats.get("bttsProb", "—"),
+      "O2.5%": stats.get("over25Prob", "—"),
+      "λH": stats.get("lambdaHome", "—"),
+      "λA": stats.get("lambdaAway", "—"),
+      "Mercados": " | ".join(markets),
+      "Status": m.get("pick_type", "NO_BET"),
+      "EV": f"{ev:.2f}" if ev is not None else "—",
+    }
+
+  df_unified = pd.DataFrame([build_unified_row(m) for m in matches])
+  st.dataframe(df_unified, use_container_width=True, hide_index=True, height=min(400, 56 + len(matches) * 35))
+
+  # --- Tabela completa (expandível) ---
+  with st.expander("📋 Ver tabela completa com todas as estatísticas", expanded=False):
+    df_full = pd.DataFrame([format_match_row(m) for m in matches])
+    st.dataframe(df_full, use_container_width=True, height=400)
 
   st.subheader("📈 Gráfico de Probabilidades")
   chart_rows = []
