@@ -559,14 +559,38 @@ else:
 
 col_a, col_b, col_c = st.columns([2, 2, 1])
 
-discover = get_discover()
-available_leagues = [d["league"] for d in discover.get("data_dirs", [])] or [
-  "premier-league","la-liga","serie-a","bundesliga","ligue-1","brasileirao-serie-a"
+# 22 ligas configuradas (FootyStats API) - formato "País - Liga" → id
+ALL_LEAGUES = [
+  ("Inglaterra - Premier League", "premier-league"),
+  ("Inglaterra - Championship", "championship"),
+  ("Argentina - Primera Division", "primera-division"),
+  ("Austrália - A-League", "a-league"),
+  ("Áustria - Bundesliga", "austria-bundesliga"),
+  ("Bélgica - Pro League", "pro-league"),
+  ("Brasil - Série A", "brazil-serie-a"),
+  ("Brasil - Série B", "brazil-serie-b"),
+  ("Dinamarca - Superliga", "denmark-superliga"),
+  ("França - Ligue 1", "france-ligue-1"),
+  ("França - Ligue 2", "france-ligue-2"),
+  ("Alemanha - Bundesliga", "germany-bundesliga"),
+  ("Alemanha - 2. Bundesliga", "germany-2-bundesliga"),
+  ("Itália - Serie A", "italy-serie-a"),
+  ("Itália - Serie B", "italy-serie-b"),
+  ("Holanda - Eredivisie", "netherlands-eredivisie"),
+  ("Portugal - Liga NOS", "portugal-liga-nos"),
+  ("Arábia Saudita - Professional League", "saudi-professional-league"),
+  ("Escócia - Premiership", "scotland-premiership"),
+  ("Espanha - La Liga", "spain-la-liga"),
+  ("Suíça - Super League", "switzerland-super-league"),
+  ("Turquia - Süper Lig", "turkey-super-lig"),
 ]
-default_leagues = ["premier-league"] if "premier-league" in available_leagues else available_leagues[:2]
+league_labels = [label for label, _ in ALL_LEAGUES]
+league_id_map = {label: lid for label, lid in ALL_LEAGUES}
+default_label = "Inglaterra - Premier League"
 
 with col_a:
-  leagues = st.multiselect("Ligas", options=available_leagues, default=default_leagues)
+  selected_labels = st.multiselect("Ligas", options=league_labels, default=[default_label])
+  leagues = [league_id_map[l] for l in selected_labels if l in league_id_map]
 with col_b:
   date_filter = st.radio("Data", options=["today","tomorrow","week"], index=2, horizontal=True)
 with col_c:
