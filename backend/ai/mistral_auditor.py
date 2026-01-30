@@ -38,7 +38,22 @@ class MistralAuditor:
         # 3. Chamar Mistral
         try:
             response_text = self.client.simple_prompt(prompt)
-            audit_result = json.loads(response_text)
+            
+            def _strip_fences(s: str) -> str:
+                s = s.strip()
+                if "```" in s:
+                    import re
+                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL)
+                    if match:
+                        return match.group(1).strip()
+                    s2 = s.strip("`")
+                    if s2.lower().startswith("json"):
+                        s2 = s2[4:]
+                    return s2.strip()
+                return s
+
+            clean_text = _strip_fences(response_text)
+            audit_result = json.loads(clean_text)
             
             # Adicionar metadados
             audit_result["timestamp"] = datetime.now().isoformat()
