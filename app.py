@@ -14,7 +14,7 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
   sys.path.insert(0, str(project_root))
 
-from backend.summary_report import generate_summary_report
+from backend.summary_report import generate_summary_report, _normalize_prob
 
 st.set_page_config(
   page_title="SportsBank Pro Streamlit",
@@ -31,9 +31,17 @@ def load_custom_css():
   else:
     st.markdown("""
     <style>
+    input, select, textarea { font-size: 16px !important; }
+    @media (max-width: 1024px) {
+      div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 12px !important; }
+      div[data-testid="stHorizontalBlock"] > div[data-testid="column"] { min-width: 48% !important; flex: 1 1 48% !important; }
+    }
     @media (max-width: 768px) {
-      div[data-testid=\"stHorizontalBlock\"] { flex-wrap: wrap; }
-      div[data-testid=\"column\"] { min-width: 100% !important; flex: 1 1 100% !important; }
+      div[data-testid="stHorizontalBlock"] { flex-direction: column !important; }
+      div[data-testid="column"] { min-width: 100% !important; flex: 1 1 100% !important; width: 100% !important; }
+      .stButton > button, .stDownloadButton > button { width: 100% !important; }
+      .stDataFrame { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+      pre, code { white-space: pre-wrap !important; word-wrap: break-word !important; max-width: 100% !important; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -133,59 +141,190 @@ def ai_audit_match(match_data: dict):
     return None
 
 
-# ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI =====
-def render_ai_analysis(analysis_data, report_text=None):
+# ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI (7 SEÇÕES) =====
+def render_ai_analysis(analysis_data, report_text=None, match_data=None):
+    """
+    Renderiza análise Mistral AI em 7 seções modulares:
+    1. Recomendação Principal (métricas)
+    2. Comparação de Times (tabela)
+    3. Histórico Direto H2H (gráfico)
+    4. Análise Tática (colunas)
+    5. Análise de Risco/Cenários (cards)
+    6. Fatores de Risco (prós/contras)
+    7. Recomendação Final (ação)
+    """
     st.markdown(
         """
         <div class="ai-analysis-section">
-            <div class="ai-analysis-header">
-                <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
-            </div>
+            <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if analysis_data:
-        # Seção de métricas rápidas
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('pressure_level', {}).get('home', 'N/A')}</div>
-                    <div class="ai-metric-label">Pressão Casa</div>
-                </div>
-                """, unsafe_allow_html=True)
-        with col2:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('recommendation', 'N/A')}</div>
-                    <div class="ai-metric-label">Recomendação IA</div>
-                </div>
-                """, unsafe_allow_html=True)
-        with col3:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('impact_percentage', 0)}%</div>
-                    <div class="ai-metric-label">Ajuste Sugerido</div>
-                </div>
-                """, unsafe_allow_html=True)
 
-        with st.expander("📊 Análise Tática e Contextual Completa", expanded=True):
+    if analysis_data:
+        # === SEÇÃO 1: RECOMENDAÇÃO PRINCIPAL ===
+        with st.container(border=True):
+            st.markdown("#### 🎯 Recomendação Principal")
+            conf = analysis_data.get("confidence_adjustment", {})
+            pressure = analysis_data.get("pressure_level", {})
+            recommendation = conf.get("recommendation", "Aguardar")
+            impact = conf.get("impact_percentage", 0)
+            confidence = analysis_data.get("confidence", analysis_data.get("overall_confidence", 0))
+            edge = analysis_data.get("edge", 0)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Prognóstico", recommendation)
+            c2.metric("Confiança", f"{confidence}%" if confidence else "N/A")
+            c3.metric("Edge", f"{edge}%" if edge else f"{impact}%")
+            classification = "SAFE" if (confidence and float(str(confidence).replace('%','')) >= 60) else "NEUTRO"
+            c4.metric("Classificação", classification,
+                      delta="Alta" if classification == "SAFE" else "Moderada",
+                      delta_color="normal" if classification == "SAFE" else "off")
+
+        # === SEÇÃO 2: COMPARAÇÃO DE TIMES ===
+        teams_data = analysis_data.get("team_comparison") or analysis_data.get("teams")
+        if teams_data:
+            with st.container(border=True):
+                st.markdown("#### ⚔️ Comparação de Times")
+                if isinstance(teams_data, dict):
+                    home_data = teams_data.get("home", {})
+                    away_data = teams_data.get("away", {})
+                    comp_rows = []
+                    all_keys = set(list(home_data.keys()) + list(away_data.keys()))
+                    for k in sorted(all_keys):
+                        comp_rows.append({
+                            "Métrica": k.replace("_", " ").title(),
+                            "Casa": str(home_data.get(k, "—")),
+                            "Fora": str(away_data.get(k, "—")),
+                        })
+                    if comp_rows:
+                        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+                elif isinstance(teams_data, list):
+                    st.dataframe(pd.DataFrame(teams_data), use_container_width=True, hide_index=True)
+
+        # === SEÇÃO 3: HISTÓRICO DIRETO (H2H) ===
+        h2h = analysis_data.get("h2h") or analysis_data.get("head_to_head") or analysis_data.get("historical")
+        if h2h:
+            with st.container(border=True):
+                st.markdown("#### 📊 Histórico Direto (H2H)")
+                if isinstance(h2h, dict):
+                    h2h_metrics = []
+                    for k, v in h2h.items():
+                        h2h_metrics.append({"Indicador": k.replace("_", " ").title(), "Valor": str(v)})
+                    if h2h_metrics:
+                        st.dataframe(pd.DataFrame(h2h_metrics), use_container_width=True, hide_index=True)
+                    # Gráfico de barras H2H se houver dados numéricos
+                    numeric_h2h = {k: v for k, v in h2h.items() if isinstance(v, (int, float))}
+                    if numeric_h2h:
+                        h2h_df = pd.DataFrame([{"Métrica": k.replace("_"," ").title(), "Valor": v} for k, v in numeric_h2h.items()])
+                        h2h_chart = alt.Chart(h2h_df).mark_bar(color="#8b5cf6").encode(
+                            x=alt.X("Métrica:N", sort=None),
+                            y="Valor:Q",
+                            tooltip=["Métrica", "Valor"]
+                        ).properties(height=200)
+                        st.altair_chart(h2h_chart, use_container_width=True)
+                elif isinstance(h2h, list):
+                    for item in h2h[:5]:
+                        st.markdown(f"- {item}" if isinstance(item, str) else f"- {json.dumps(item, ensure_ascii=False)}")
+
+        # === SEÇÃO 4: ANÁLISE TÁTICA ===
+        tactical = analysis_data.get("tactical_analysis") or analysis_data.get("tactics")
+        if tactical:
+            with st.container(border=True):
+                st.markdown("#### 🧠 Análise Tática")
+                if isinstance(tactical, dict):
+                    tc1, tc2 = st.columns(2)
+                    home_tactic = tactical.get("home") or tactical.get("home_team", {})
+                    away_tactic = tactical.get("away") or tactical.get("away_team", {})
+                    with tc1:
+                        st.markdown("**Casa**")
+                        if isinstance(home_tactic, dict):
+                            for k, v in home_tactic.items():
+                                st.markdown(f"- **{k.replace('_',' ').title()}**: {v}")
+                        elif isinstance(home_tactic, str):
+                            st.markdown(home_tactic)
+                    with tc2:
+                        st.markdown("**Fora**")
+                        if isinstance(away_tactic, dict):
+                            for k, v in away_tactic.items():
+                                st.markdown(f"- **{k.replace('_',' ').title()}**: {v}")
+                        elif isinstance(away_tactic, str):
+                            st.markdown(away_tactic)
+                elif isinstance(tactical, str):
+                    st.markdown(tactical)
+
+        # === SEÇÃO 5: CENÁRIOS DE RISCO ===
+        scenarios = analysis_data.get("scenarios") or analysis_data.get("risk_scenarios")
+        if scenarios:
+            with st.container(border=True):
+                st.markdown("#### 🎲 Cenários")
+                if isinstance(scenarios, dict):
+                    sc1, sc2, sc3 = st.columns(3)
+                    for col, (label, icon) in zip(
+                        [sc1, sc2, sc3],
+                        [("optimistic", "🟢"), ("base", "🟡"), ("pessimistic", "🔴")]
+                    ):
+                        sc = scenarios.get(label, {})
+                        if sc:
+                            with col:
+                                st.markdown(f"**{icon} {label.title()}**")
+                                if isinstance(sc, dict):
+                                    for k, v in sc.items():
+                                        st.markdown(f"- {k.replace('_',' ').title()}: {v}")
+                                else:
+                                    st.markdown(str(sc))
+                elif isinstance(scenarios, list):
+                    for sc in scenarios:
+                        st.markdown(f"- {sc}" if isinstance(sc, str) else f"- {json.dumps(sc, ensure_ascii=False)}")
+
+        # === SEÇÃO 6: FATORES DE RISCO ===
+        factors = analysis_data.get("risk_factors") or analysis_data.get("factors")
+        if factors:
+            with st.container(border=True):
+                st.markdown("#### ⚠️ Fatores de Risco")
+                if isinstance(factors, dict):
+                    pros = factors.get("pros") or factors.get("positive") or factors.get("favorable", [])
+                    cons = factors.get("cons") or factors.get("negative") or factors.get("unfavorable", [])
+                    fc1, fc2 = st.columns(2)
+                    with fc1:
+                        st.markdown("**Favoráveis**")
+                        for p in (pros if isinstance(pros, list) else [pros]):
+                            st.markdown(f"✅ {p}")
+                    with fc2:
+                        st.markdown("**Desfavoráveis**")
+                        for c in (cons if isinstance(cons, list) else [cons]):
+                            st.markdown(f"⚠️ {c}")
+                elif isinstance(factors, list):
+                    for f_item in factors:
+                        st.markdown(f"- {f_item}" if isinstance(f_item, str) else f"- {json.dumps(f_item, ensure_ascii=False)}")
+
+        # === SEÇÃO 7: RECOMENDAÇÃO FINAL ===
+        with st.container(border=True):
+            st.markdown("#### 📋 Recomendação Final")
+            final_rec = analysis_data.get("final_recommendation") or analysis_data.get("summary") or analysis_data.get("conclusion")
+            if final_rec:
+                if isinstance(final_rec, dict):
+                    for k, v in final_rec.items():
+                        st.markdown(f"**{k.replace('_',' ').title()}**: {v}")
+                else:
+                    st.markdown(str(final_rec))
+            else:
+                st.markdown(f"**Recomendação**: {recommendation}")
+                st.markdown(f"**Pressão Casa**: {pressure.get('home', 'N/A')} | **Pressão Fora**: {pressure.get('away', 'N/A')}")
+                st.markdown(f"**Ajuste de Confiança**: {impact}%")
+
+        # Dados brutos (colapsado)
+        with st.expander("🔧 Dados brutos da análise (JSON)", expanded=False):
             st.json(analysis_data)
-            
+
     if report_text:
-        st.markdown("### 📝 Relatório Detalhado")
-        st.markdown(
-            f"""
-            <div class="ai-analysis-content">
-                {report_text}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.markdown("### 📝 Relatório Detalhado")
+            st.markdown(
+                f'<div class="ai-analysis-content">{report_text}</div>',
+                unsafe_allow_html=True,
+            )
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   """
@@ -357,30 +496,34 @@ if health:
       st.markdown("""
         <style>
         :root {
-          --bg-dark-secondary: #FAF0E6 !important;
-          --bg-dark: #F5E6D3 !important;
-          --bg-dark-tertiary: #EBD9C1 !important;
-          --text-dark-primary: #1f2937 !important;
-          --text-dark-secondary: #374151 !important;
-          --text-dark-tertiary: #4b5563 !important;
-          --border-dark: #D2B48C !important;
+          --bg-dark: #F5F5F0 !important;
+          --bg-dark-secondary: #FAFAF5 !important;
+          --bg-dark-tertiary: #EEEEE8 !important;
+          --border-dark: #C8C8BE !important;
+          --text-dark-primary: #1a1a1a !important;
+          --text-dark-secondary: #2d3748 !important;
+          --text-dark-tertiary: #4a5568 !important;
         }
-        .stApp { background-color: #FAF0E6 !important; }
-        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'] { color: #1f2937 !important; }
-        .stDataFrame table, .streamlit-expanderHeader, .streamlit-expanderContent { background-color: #FAF0E6 !important; color: #1f2937 !important; }
-        </style>
-      """, unsafe_allow_html=True)
-    else:
-      st.markdown("""
-        <style>
-        .stApp { background-color: #262730 !important; }
-        .stMarkdown, .stCaption, p, h1, h2, h3, label, .stText, [data-testid='stMetricValue'], [data-testid='stCaption'] { 
-            color: #ffffff !important; 
+        .stApp { background-color: var(--bg-dark-secondary) !important; }
+        h1, h2, h3 { color: var(--text-dark-primary) !important; }
+        p, label, .stMarkdown, .stMarkdown p, .stMarkdown div, .stCaption,
+        .stText, [data-testid='stMetricValue'], [data-testid='stCaption'],
+        .element-container p, .element-container .stMarkdown {
+          color: var(--text-dark-secondary) !important;
         }
-        /* Força visibilidade em textos secundários do Streamlit no modo Dark */
-        small, .stCaption p, [data-testid="stMarkdownContainer"] p {
-            color: #f0f0f0 !important;
+        .stMetric label { color: var(--text-dark-tertiary) !important; }
+        .stDataFrame table { background-color: var(--bg-dark-secondary) !important; }
+        .stDataFrame thead tr th { background-color: var(--bg-dark-tertiary) !important; color: var(--text-dark-primary) !important; }
+        .stDataFrame tbody tr td { color: var(--text-dark-secondary) !important; }
+        .streamlit-expanderHeader, .streamlit-expanderContent { background-color: var(--bg-dark-secondary) !important; color: var(--text-dark-primary) !important; }
+        .stSelectbox > div > div, .stMultiSelect > div > div, .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea, .stDateInput > div > div > input {
+          background-color: #ffffff !important; color: var(--text-dark-primary) !important;
+          border-color: var(--border-dark) !important;
         }
+        .stCheckbox label, .stRadio label { color: var(--text-dark-secondary) !important; }
+        .stMetric { background-color: var(--bg-dark-secondary) !important; border-color: var(--border-dark) !important; }
+        .stCode, pre, code { background-color: var(--bg-dark-tertiary) !important; color: var(--text-dark-primary) !important; }
         </style>
       """, unsafe_allow_html=True)
 else:
@@ -427,7 +570,7 @@ with col_a:
 with col_b:
   date_filter = st.radio("Data", options=["today","tomorrow","week"], index=2, horizontal=True)
 with col_c:
-  fetch_btn = st.button("🔍 Buscar Jogos", width="stretch")
+  fetch_btn = st.button("🔍 Buscar Jogos", use_container_width=True)
 
 if "auto_loaded" not in st.session_state:
   st.session_state["auto_loaded"] = False
@@ -450,7 +593,7 @@ col1, col2 = st.columns([4, 1])
 with col1:
   st.caption("Prognósticos formatados para compartilhamento e análise rápida")
 with col2:
-  gerar_btn = st.button("🔄 Gerar Quadro", width="stretch", key="gerar_quadro")
+  gerar_btn = st.button("🔄 Gerar Quadro", use_container_width=True, key="gerar_quadro")
 
 st.markdown("**Selecione o que deseja visualizar:**")
 formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
@@ -534,7 +677,7 @@ if quadro_texto:
       data=quadro_texto,
       file_name=f"quadro_{leagues[0]}_{date_filter}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
       mime="text/plain",
-      width="stretch",
+      use_container_width=True,
       key="download_quadro",
     )
 
@@ -553,30 +696,95 @@ if quadro_texto:
 st.subheader("⚽ Jogos")
 if matches:
 
-  st.subheader("Quadro Resumo de Jogos")
-  summary_report = generate_summary_report(matches)
-  st.dataframe(summary_report, hide_index=True, use_container_width=True)
-
-  last_update = get_last_update(matches)
-  if last_update:
-    st.caption(f"Última atualização (fonte): {last_update} UTC")
-  else:
-    st.caption("Última atualização: não informada pela fonte.")
-  data_source = matches[0].get("dataSource") if matches else None
-  if data_source:
-    st.caption(f"Origem dos dados: {data_source}")
-  # Regime/volatilidade por liga (se disponível)
+  # --- Barra de status da liga ---
   regimes = {m.get("stats", {}).get("leagueRegime") for m in matches if m.get("stats", {}).get("leagueRegime")}
   vols = {m.get("stats", {}).get("leagueVolatility") for m in matches if m.get("stats", {}).get("leagueVolatility")}
-  if regimes or vols:
-    st.caption(f"Regime da Liga: {', '.join(sorted(regimes)) or '-'} | Volatilidade: {', '.join(sorted(vols)) or '-'}")
-  df = pd.DataFrame([format_match_row(m) for m in matches])
-  st.dataframe(df, use_container_width=True, height=400)
+  last_update = get_last_update(matches)
+  data_source = matches[0].get("dataSource") if matches else None
+
+  regime_str = ', '.join(sorted(regimes)) if regimes else 'N/A'
+  vol_str = ', '.join(sorted(vols)) if vols else 'N/A'
+  update_str = f"{last_update} UTC" if last_update else "não informada"
+  source_str = data_source if data_source else "API"
+
+  st.markdown(f"""
+  <div class="quadro-status-bar">
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Jogos</div>
+      <div class="quadro-status-value">{len(matches)}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Regime</div>
+      <div class="quadro-status-value">{regime_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Volatilidade</div>
+      <div class="quadro-status-value">{vol_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Atualização</div>
+      <div class="quadro-status-value">{update_str}</div>
+    </div>
+    <div class="quadro-status-item">
+      <div class="quadro-status-label">Fonte</div>
+      <div class="quadro-status-value">{source_str}</div>
+    </div>
+  </div>
+  """, unsafe_allow_html=True)
+
+  # --- Tabela unificada (colunas essenciais) ---
+  def build_unified_row(m: dict):
+    stats = m.get("stats", {})
+    odds = m.get("odds", {})
+    # Mercados sugeridos (lógica do summary_report inline)
+    markets = []
+    p25 = _normalize_prob(stats.get("over25Prob"))
+    p_btts = _normalize_prob(stats.get("bttsProb"))
+    if p25 and p25 > 0.6:
+      markets.append(f"Over 2.5 ({p25*100:.0f}%)")
+    if p_btts and p_btts > 0.55:
+      markets.append(f"BTTS ({p_btts*100:.0f}%)")
+    if not markets:
+      markets = ["—"]
+    # EV
+    ev = m.get("ev")
+    if ev is None and p25:
+      odd_o25 = odds.get("over25")
+      if odd_o25:
+        try:
+          ev = (p25 * float(odd_o25)) - 1
+        except Exception:
+          ev = None
+    return {
+      "Jogo": f"{m.get('homeTeam')} vs {m.get('awayTeam')}",
+      "Liga": m.get("leagueName", ""),
+      "Data": m.get("datetime", ""),
+      "1": odds.get("home", "—"),
+      "X": odds.get("draw", "—"),
+      "2": odds.get("away", "—"),
+      "BTTS%": stats.get("bttsProb", "—"),
+      "O2.5%": stats.get("over25Prob", "—"),
+      "λH": stats.get("lambdaHome", "—"),
+      "λA": stats.get("lambdaAway", "—"),
+      "Mercados": " | ".join(markets),
+      "Status": m.get("pick_type", "NO_BET"),
+      "EV": f"{ev:.2f}" if ev is not None else "—",
+    }
+
+  df_unified = pd.DataFrame([build_unified_row(m) for m in matches])
+  st.dataframe(df_unified, use_container_width=True, hide_index=True, height=min(400, 56 + len(matches) * 35))
+
+  # --- Tabela completa (expandível) ---
+  with st.expander("📋 Ver tabela completa com todas as estatísticas", expanded=False):
+    df_full = pd.DataFrame([format_match_row(m) for m in matches])
+    st.dataframe(df_full, use_container_width=True, height=400)
 
   st.subheader("📈 Gráfico de Probabilidades")
   chart_rows = []
+  game_names = []
   for m in matches:
     game = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
+    game_names.append(game)
     stats = m.get("stats", {})
     for key,label in [
       ("over05Prob","Over 0.5"),
@@ -590,14 +798,23 @@ if matches:
         chart_rows.append({"Jogo": game, "Métrica": label, "Prob%": float(val), "λH": stats.get("lambdaHome"), "λA": stats.get("lambdaAway"), "λT": stats.get("lambdaTotal")})
   if chart_rows:
     cdf = pd.DataFrame(chart_rows)
-    chart = alt.Chart(cdf).mark_bar().encode(
-      x="Métrica",
-      y="Prob%",
-      color="Métrica",
-      column="Jogo",
+    # Seletor de jogo para evitar gráfico muito largo
+    selected_chart_game = st.selectbox(
+      "Selecionar jogo para visualizar",
+      options=game_names,
+      key="chart_game_selector"
+    )
+    cdf_filtered = cdf[cdf["Jogo"] == selected_chart_game]
+    chart = alt.Chart(cdf_filtered).mark_bar(
+      cornerRadiusTopLeft=4,
+      cornerRadiusTopRight=4,
+    ).encode(
+      x=alt.X("Métrica:N", sort=None, axis=alt.Axis(labelAngle=0)),
+      y=alt.Y("Prob%:Q", title="Probabilidade %"),
+      color=alt.Color("Métrica:N", legend=None),
       tooltip=["Jogo","Métrica","Prob%","λH","λA","λT"]
-    ).properties(height=250)
-    st.altair_chart(chart, width="stretch")
+    ).properties(height=300, title=selected_chart_game)
+    st.altair_chart(chart, use_container_width=True)
 else:
   err = st.session_state.get("last_error")
   if err:
@@ -658,7 +875,7 @@ with ai_col1:
   news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
   market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
 with ai_col2:
-  run_ai = st.button("🚀 Analisar Contexto", width="stretch")
+  run_ai = st.button("🚀 Analisar Contexto", use_container_width=True)
 
 if run_ai and jogo_ai:
   for m in matches:
@@ -673,7 +890,7 @@ if run_ai and jogo_ai:
           data=json.dumps(analysis, ensure_ascii=False, indent=2),
           file_name="analysis.json",
           mime="application/json",
-          width="stretch",
+          use_container_width=True,
         )
 
         stats = m.get("stats") or {}
@@ -700,14 +917,14 @@ if run_ai and jogo_ai:
             data=report,
             file_name="report.txt",
             mime="text/plain",
-            width="stretch",
+            use_container_width=True,
             key="download_report",
           )
           
         # ===== NOVA SEÇÃO: AUDITORIA DE CÁLCULOS =====
         st.markdown("---")
         st.subheader("🔍 Auditoria de Cálculos (Auditor)")
-        if st.button("⚖️ Auditar Cálculos Estatísticos", width="stretch", key="btn_audit"):
+        if st.button("⚖️ Auditar Cálculos Estatísticos", use_container_width=True, key="btn_audit"):
             with st.spinner("⚖️ Mistral Auditor está validando os números..."):
                 audit_data = {
                     "id": m.get("id"),
