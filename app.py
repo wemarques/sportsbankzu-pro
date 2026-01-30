@@ -141,59 +141,190 @@ def ai_audit_match(match_data: dict):
     return None
 
 
-# ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI =====
-def render_ai_analysis(analysis_data, report_text=None):
+# ===== FUNÇÃO PARA RENDERIZAR ANÁLISE AI (7 SEÇÕES) =====
+def render_ai_analysis(analysis_data, report_text=None, match_data=None):
+    """
+    Renderiza análise Mistral AI em 7 seções modulares:
+    1. Recomendação Principal (métricas)
+    2. Comparação de Times (tabela)
+    3. Histórico Direto H2H (gráfico)
+    4. Análise Tática (colunas)
+    5. Análise de Risco/Cenários (cards)
+    6. Fatores de Risco (prós/contras)
+    7. Recomendação Final (ação)
+    """
     st.markdown(
         """
         <div class="ai-analysis-section">
-            <div class="ai-analysis-header">
-                <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
-            </div>
+            <h2>🤖 Análise Inteligente - Mistral AI <span class="ai-badge">Powered by Mistral</span></h2>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if analysis_data:
-        # Seção de métricas rápidas
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('pressure_level', {}).get('home', 'N/A')}</div>
-                    <div class="ai-metric-label">Pressão Casa</div>
-                </div>
-                """, unsafe_allow_html=True)
-        with col2:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('recommendation', 'N/A')}</div>
-                    <div class="ai-metric-label">Recomendação IA</div>
-                </div>
-                """, unsafe_allow_html=True)
-        with col3:
-            st.markdown(
-                f"""
-                <div class="ai-metric-card">
-                    <div class="ai-metric-value">{analysis_data.get('confidence_adjustment', {}).get('impact_percentage', 0)}%</div>
-                    <div class="ai-metric-label">Ajuste Sugerido</div>
-                </div>
-                """, unsafe_allow_html=True)
 
-        with st.expander("📊 Análise Tática e Contextual Completa", expanded=True):
+    if analysis_data:
+        # === SEÇÃO 1: RECOMENDAÇÃO PRINCIPAL ===
+        with st.container(border=True):
+            st.markdown("#### 🎯 Recomendação Principal")
+            conf = analysis_data.get("confidence_adjustment", {})
+            pressure = analysis_data.get("pressure_level", {})
+            recommendation = conf.get("recommendation", "Aguardar")
+            impact = conf.get("impact_percentage", 0)
+            confidence = analysis_data.get("confidence", analysis_data.get("overall_confidence", 0))
+            edge = analysis_data.get("edge", 0)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Prognóstico", recommendation)
+            c2.metric("Confiança", f"{confidence}%" if confidence else "N/A")
+            c3.metric("Edge", f"{edge}%" if edge else f"{impact}%")
+            classification = "SAFE" if (confidence and float(str(confidence).replace('%','')) >= 60) else "NEUTRO"
+            c4.metric("Classificação", classification,
+                      delta="Alta" if classification == "SAFE" else "Moderada",
+                      delta_color="normal" if classification == "SAFE" else "off")
+
+        # === SEÇÃO 2: COMPARAÇÃO DE TIMES ===
+        teams_data = analysis_data.get("team_comparison") or analysis_data.get("teams")
+        if teams_data:
+            with st.container(border=True):
+                st.markdown("#### ⚔️ Comparação de Times")
+                if isinstance(teams_data, dict):
+                    home_data = teams_data.get("home", {})
+                    away_data = teams_data.get("away", {})
+                    comp_rows = []
+                    all_keys = set(list(home_data.keys()) + list(away_data.keys()))
+                    for k in sorted(all_keys):
+                        comp_rows.append({
+                            "Métrica": k.replace("_", " ").title(),
+                            "Casa": str(home_data.get(k, "—")),
+                            "Fora": str(away_data.get(k, "—")),
+                        })
+                    if comp_rows:
+                        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+                elif isinstance(teams_data, list):
+                    st.dataframe(pd.DataFrame(teams_data), use_container_width=True, hide_index=True)
+
+        # === SEÇÃO 3: HISTÓRICO DIRETO (H2H) ===
+        h2h = analysis_data.get("h2h") or analysis_data.get("head_to_head") or analysis_data.get("historical")
+        if h2h:
+            with st.container(border=True):
+                st.markdown("#### 📊 Histórico Direto (H2H)")
+                if isinstance(h2h, dict):
+                    h2h_metrics = []
+                    for k, v in h2h.items():
+                        h2h_metrics.append({"Indicador": k.replace("_", " ").title(), "Valor": str(v)})
+                    if h2h_metrics:
+                        st.dataframe(pd.DataFrame(h2h_metrics), use_container_width=True, hide_index=True)
+                    # Gráfico de barras H2H se houver dados numéricos
+                    numeric_h2h = {k: v for k, v in h2h.items() if isinstance(v, (int, float))}
+                    if numeric_h2h:
+                        h2h_df = pd.DataFrame([{"Métrica": k.replace("_"," ").title(), "Valor": v} for k, v in numeric_h2h.items()])
+                        h2h_chart = alt.Chart(h2h_df).mark_bar(color="#8b5cf6").encode(
+                            x=alt.X("Métrica:N", sort=None),
+                            y="Valor:Q",
+                            tooltip=["Métrica", "Valor"]
+                        ).properties(height=200)
+                        st.altair_chart(h2h_chart, use_container_width=True)
+                elif isinstance(h2h, list):
+                    for item in h2h[:5]:
+                        st.markdown(f"- {item}" if isinstance(item, str) else f"- {json.dumps(item, ensure_ascii=False)}")
+
+        # === SEÇÃO 4: ANÁLISE TÁTICA ===
+        tactical = analysis_data.get("tactical_analysis") or analysis_data.get("tactics")
+        if tactical:
+            with st.container(border=True):
+                st.markdown("#### 🧠 Análise Tática")
+                if isinstance(tactical, dict):
+                    tc1, tc2 = st.columns(2)
+                    home_tactic = tactical.get("home") or tactical.get("home_team", {})
+                    away_tactic = tactical.get("away") or tactical.get("away_team", {})
+                    with tc1:
+                        st.markdown("**Casa**")
+                        if isinstance(home_tactic, dict):
+                            for k, v in home_tactic.items():
+                                st.markdown(f"- **{k.replace('_',' ').title()}**: {v}")
+                        elif isinstance(home_tactic, str):
+                            st.markdown(home_tactic)
+                    with tc2:
+                        st.markdown("**Fora**")
+                        if isinstance(away_tactic, dict):
+                            for k, v in away_tactic.items():
+                                st.markdown(f"- **{k.replace('_',' ').title()}**: {v}")
+                        elif isinstance(away_tactic, str):
+                            st.markdown(away_tactic)
+                elif isinstance(tactical, str):
+                    st.markdown(tactical)
+
+        # === SEÇÃO 5: CENÁRIOS DE RISCO ===
+        scenarios = analysis_data.get("scenarios") or analysis_data.get("risk_scenarios")
+        if scenarios:
+            with st.container(border=True):
+                st.markdown("#### 🎲 Cenários")
+                if isinstance(scenarios, dict):
+                    sc1, sc2, sc3 = st.columns(3)
+                    for col, (label, icon) in zip(
+                        [sc1, sc2, sc3],
+                        [("optimistic", "🟢"), ("base", "🟡"), ("pessimistic", "🔴")]
+                    ):
+                        sc = scenarios.get(label, {})
+                        if sc:
+                            with col:
+                                st.markdown(f"**{icon} {label.title()}**")
+                                if isinstance(sc, dict):
+                                    for k, v in sc.items():
+                                        st.markdown(f"- {k.replace('_',' ').title()}: {v}")
+                                else:
+                                    st.markdown(str(sc))
+                elif isinstance(scenarios, list):
+                    for sc in scenarios:
+                        st.markdown(f"- {sc}" if isinstance(sc, str) else f"- {json.dumps(sc, ensure_ascii=False)}")
+
+        # === SEÇÃO 6: FATORES DE RISCO ===
+        factors = analysis_data.get("risk_factors") or analysis_data.get("factors")
+        if factors:
+            with st.container(border=True):
+                st.markdown("#### ⚠️ Fatores de Risco")
+                if isinstance(factors, dict):
+                    pros = factors.get("pros") or factors.get("positive") or factors.get("favorable", [])
+                    cons = factors.get("cons") or factors.get("negative") or factors.get("unfavorable", [])
+                    fc1, fc2 = st.columns(2)
+                    with fc1:
+                        st.markdown("**Favoráveis**")
+                        for p in (pros if isinstance(pros, list) else [pros]):
+                            st.markdown(f"✅ {p}")
+                    with fc2:
+                        st.markdown("**Desfavoráveis**")
+                        for c in (cons if isinstance(cons, list) else [cons]):
+                            st.markdown(f"⚠️ {c}")
+                elif isinstance(factors, list):
+                    for f_item in factors:
+                        st.markdown(f"- {f_item}" if isinstance(f_item, str) else f"- {json.dumps(f_item, ensure_ascii=False)}")
+
+        # === SEÇÃO 7: RECOMENDAÇÃO FINAL ===
+        with st.container(border=True):
+            st.markdown("#### 📋 Recomendação Final")
+            final_rec = analysis_data.get("final_recommendation") or analysis_data.get("summary") or analysis_data.get("conclusion")
+            if final_rec:
+                if isinstance(final_rec, dict):
+                    for k, v in final_rec.items():
+                        st.markdown(f"**{k.replace('_',' ').title()}**: {v}")
+                else:
+                    st.markdown(str(final_rec))
+            else:
+                st.markdown(f"**Recomendação**: {recommendation}")
+                st.markdown(f"**Pressão Casa**: {pressure.get('home', 'N/A')} | **Pressão Fora**: {pressure.get('away', 'N/A')}")
+                st.markdown(f"**Ajuste de Confiança**: {impact}%")
+
+        # Dados brutos (colapsado)
+        with st.expander("🔧 Dados brutos da análise (JSON)", expanded=False):
             st.json(analysis_data)
-            
+
     if report_text:
-        st.markdown("### 📝 Relatório Detalhado")
-        st.markdown(
-            f"""
-            <div class="ai-analysis-content">
-                {report_text}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.markdown("### 📝 Relatório Detalhado")
+            st.markdown(
+                f'<div class="ai-analysis-content">{report_text}</div>',
+                unsafe_allow_html=True,
+            )
 
 def criar_botao_copiar(texto: str, button_id: str = "copy-btn"):
   """
@@ -439,7 +570,7 @@ with col_a:
 with col_b:
   date_filter = st.radio("Data", options=["today","tomorrow","week"], index=2, horizontal=True)
 with col_c:
-  fetch_btn = st.button("🔍 Buscar Jogos", width="stretch")
+  fetch_btn = st.button("🔍 Buscar Jogos", use_container_width=True)
 
 if "auto_loaded" not in st.session_state:
   st.session_state["auto_loaded"] = False
@@ -462,7 +593,7 @@ col1, col2 = st.columns([4, 1])
 with col1:
   st.caption("Prognósticos formatados para compartilhamento e análise rápida")
 with col2:
-  gerar_btn = st.button("🔄 Gerar Quadro", width="stretch", key="gerar_quadro")
+  gerar_btn = st.button("🔄 Gerar Quadro", use_container_width=True, key="gerar_quadro")
 
 st.markdown("**Selecione o que deseja visualizar:**")
 formato = st.selectbox("Formato", options=["Detalhado", "WhatsApp"], index=0)
@@ -546,7 +677,7 @@ if quadro_texto:
       data=quadro_texto,
       file_name=f"quadro_{leagues[0]}_{date_filter}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
       mime="text/plain",
-      width="stretch",
+      use_container_width=True,
       key="download_quadro",
     )
 
@@ -650,8 +781,10 @@ if matches:
 
   st.subheader("📈 Gráfico de Probabilidades")
   chart_rows = []
+  game_names = []
   for m in matches:
     game = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
+    game_names.append(game)
     stats = m.get("stats", {})
     for key,label in [
       ("over05Prob","Over 0.5"),
@@ -665,14 +798,23 @@ if matches:
         chart_rows.append({"Jogo": game, "Métrica": label, "Prob%": float(val), "λH": stats.get("lambdaHome"), "λA": stats.get("lambdaAway"), "λT": stats.get("lambdaTotal")})
   if chart_rows:
     cdf = pd.DataFrame(chart_rows)
-    chart = alt.Chart(cdf).mark_bar().encode(
-      x="Métrica",
-      y="Prob%",
-      color="Métrica",
-      column="Jogo",
+    # Seletor de jogo para evitar gráfico muito largo
+    selected_chart_game = st.selectbox(
+      "Selecionar jogo para visualizar",
+      options=game_names,
+      key="chart_game_selector"
+    )
+    cdf_filtered = cdf[cdf["Jogo"] == selected_chart_game]
+    chart = alt.Chart(cdf_filtered).mark_bar(
+      cornerRadiusTopLeft=4,
+      cornerRadiusTopRight=4,
+    ).encode(
+      x=alt.X("Métrica:N", sort=None, axis=alt.Axis(labelAngle=0)),
+      y=alt.Y("Prob%:Q", title="Probabilidade %"),
+      color=alt.Color("Métrica:N", legend=None),
       tooltip=["Jogo","Métrica","Prob%","λH","λA","λT"]
-    ).properties(height=250)
-    st.altair_chart(chart, width="stretch")
+    ).properties(height=300, title=selected_chart_game)
+    st.altair_chart(chart, use_container_width=True)
 else:
   err = st.session_state.get("last_error")
   if err:
@@ -733,7 +875,7 @@ with ai_col1:
   news_summary = st.text_area("Resumo de notícias", placeholder="Lesões, pressão, contexto tático", height=100)
   market_choice = st.selectbox("Mercado para relatório", options=["Over 0.5","Over 1.5","Over 2.5","Over 3.5","BTTS"], index=2)
 with ai_col2:
-  run_ai = st.button("🚀 Analisar Contexto", width="stretch")
+  run_ai = st.button("🚀 Analisar Contexto", use_container_width=True)
 
 if run_ai and jogo_ai:
   for m in matches:
@@ -748,7 +890,7 @@ if run_ai and jogo_ai:
           data=json.dumps(analysis, ensure_ascii=False, indent=2),
           file_name="analysis.json",
           mime="application/json",
-          width="stretch",
+          use_container_width=True,
         )
 
         stats = m.get("stats") or {}
@@ -775,14 +917,14 @@ if run_ai and jogo_ai:
             data=report,
             file_name="report.txt",
             mime="text/plain",
-            width="stretch",
+            use_container_width=True,
             key="download_report",
           )
           
         # ===== NOVA SEÇÃO: AUDITORIA DE CÁLCULOS =====
         st.markdown("---")
         st.subheader("🔍 Auditoria de Cálculos (Auditor)")
-        if st.button("⚖️ Auditar Cálculos Estatísticos", width="stretch", key="btn_audit"):
+        if st.button("⚖️ Auditar Cálculos Estatísticos", use_container_width=True, key="btn_audit"):
             with st.spinner("⚖️ Mistral Auditor está validando os números..."):
                 audit_data = {
                     "id": m.get("id"),

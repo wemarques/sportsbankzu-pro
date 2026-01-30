@@ -90,12 +90,19 @@
 /* Aplicação principal do Streamlit */
 .stApp {
   background-color: var(--bg-dark-secondary) !important;
+  overflow-x: hidden !important;
+}
+
+html, body {
+  overflow-x: hidden !important;
+  max-width: 100vw !important;
 }
 
 /* Container principal */
 .main .block-container {
   max-width: 1400px !important;
   padding: var(--space-3xl) var(--space-2xl) !important;
+  overflow-x: hidden !important;
 }
 
 /* Previne zoom indesejado em mobile */
@@ -135,17 +142,35 @@ p, .stMarkdown p, .stText {
   line-height: 1.6 !important;
 }
 
-/* Labels e captions */
-label, .stCaption, [data-testid="stCaption"] {
+/* Labels e captions - alta visibilidade */
+label,
+.stCaption,
+[data-testid="stCaption"],
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p,
+[data-testid="stCaptionContainer"] small,
+small {
   color: var(--text-dark-tertiary) !important;
+  opacity: 1 !important;
 }
 
 /* Markdown geral */
 .stMarkdown,
 .stMarkdown div,
 .stMarkdown h3,
+.stMarkdown span,
+.stMarkdown strong,
+.stMarkdown em,
+.stMarkdown li,
 .element-container .stMarkdown,
 .element-container p {
+  color: var(--text-dark-secondary) !important;
+}
+
+/* Selectbox labels e opções */
+.stSelectbox label,
+.stSelectbox > div > div > div,
+.stMultiSelect label {
   color: var(--text-dark-secondary) !important;
 }
 
@@ -772,19 +797,25 @@ div[data-testid="stTooltipIcon"] {
 .quadro-status-bar {
   display: flex !important;
   flex-wrap: wrap !important;
-  gap: var(--space-md) !important;
+  gap: var(--space-sm) !important;
   background-color: var(--bg-dark-tertiary) !important;
   border: 1px solid var(--border-dark) !important;
   border-radius: var(--radius-lg) !important;
   padding: var(--space-lg) !important;
   margin-bottom: var(--space-xl) !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
 }
 
 .quadro-status-item {
-  flex: 1 1 auto !important;
+  flex: 1 1 80px !important;
   text-align: center !important;
-  padding: var(--space-sm) var(--space-md) !important;
+  padding: var(--space-sm) var(--space-sm) !important;
   border-right: 1px solid var(--border-dark) !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .quadro-status-item:last-child {
