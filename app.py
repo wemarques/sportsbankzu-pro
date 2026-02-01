@@ -611,7 +611,12 @@ if should_fetch and leagues:
 matches = st.session_state["last_matches"]
 
 st.markdown("---")
-st.subheader("📊 Quadro-Resumo Profissional")
+st.markdown("""
+<div class="section-header">
+  <div class="section-header-icon green">📊</div>
+  <span class="section-header-text">Quadro-Resumo Profissional</span>
+</div>
+""", unsafe_allow_html=True)
 
 col1, col2 = st.columns([4, 1])
 with col1:
@@ -717,7 +722,13 @@ if quadro_texto:
   cols[3].metric("⚙️ Regime", meta.get("regime", "N/A"))
   st.caption(f"Volatilidade: {meta.get('volatilidade', 'N/A')}")
 
-st.subheader("⚽ Jogos")
+st.markdown(f"""
+<div class="section-header">
+  <div class="section-header-icon blue">⚽</div>
+  <span class="section-header-text">Jogos Disponíveis</span>
+  <span class="section-header-count">{len(matches)} jogos</span>
+</div>
+""", unsafe_allow_html=True)
 if matches:
 
   # --- Barra de status da liga ---
@@ -756,11 +767,57 @@ if matches:
   </div>
   """, unsafe_allow_html=True)
 
+  # --- Top Picks visuais (cards HTML) ---
+  top_picks_html = ""
+  for m in matches[:3]:
+    stats = m.get("stats", {})
+    odds = m.get("odds", {})
+    p25 = _normalize_prob(stats.get("over25Prob"))
+    p_btts = _normalize_prob(stats.get("bttsProb"))
+    status = m.get("pick_type", "NO_BET")
+    status_class = "safe" if status == "SAFE" else ("neutro" if status == "NEUTRO" else "no-bet")
+
+    # Mercados sugeridos
+    mkt_tags = ""
+    if p25 and p25 > 0.6:
+      mkt_tags += f'<span class="market-tag">Over 2.5 ({p25*100:.0f}%)</span>'
+    if p_btts and p_btts > 0.55:
+      mkt_tags += f'<span class="market-tag">BTTS ({p_btts*100:.0f}%)</span>'
+    if not mkt_tags:
+      mkt_tags = '<span style="color:#6b7280;font-size:12px;">Sem mercado sugerido</span>'
+
+    home = m.get("homeTeam", "")
+    away = m.get("awayTeam", "")
+    league = m.get("leagueName", "")
+    oh = odds.get("home", "—")
+    od = odds.get("draw", "—")
+    oa = odds.get("away", "—")
+
+    top_picks_html += f"""
+    <div class="match-card">
+      <div class="match-card-header">
+        <div>
+          <div class="match-card-teams">{home} vs {away}</div>
+          <div class="match-card-league">{league}</div>
+        </div>
+        <span class="status-badge {status_class}">{status}</span>
+      </div>
+      <div class="match-card-odds">
+        <div class="odds-pill"><div class="odds-pill-label">1</div><div class="odds-pill-value">{oh}</div></div>
+        <div class="odds-pill"><div class="odds-pill-label">X</div><div class="odds-pill-value">{od}</div></div>
+        <div class="odds-pill"><div class="odds-pill-label">2</div><div class="odds-pill-value">{oa}</div></div>
+      </div>
+      <div style="margin-top:10px;">{mkt_tags}</div>
+    </div>
+    """
+
+  if top_picks_html:
+    st.markdown(top_picks_html, unsafe_allow_html=True)
+
   # --- Tabela unificada (colunas essenciais) ---
   def build_unified_row(m: dict):
     stats = m.get("stats", {})
     odds = m.get("odds", {})
-    # Mercados sugeridos (lógica do summary_report inline)
     markets = []
     p25 = _normalize_prob(stats.get("over25Prob"))
     p_btts = _normalize_prob(stats.get("bttsProb"))
@@ -770,7 +827,6 @@ if matches:
       markets.append(f"BTTS ({p_btts*100:.0f}%)")
     if not markets:
       markets = ["—"]
-    # EV
     ev = m.get("ev")
     if ev is None and p25:
       odd_o25 = odds.get("over25")
@@ -795,15 +851,21 @@ if matches:
       "EV": f"{ev:.2f}" if ev is not None else "—",
     }
 
-  df_unified = pd.DataFrame([build_unified_row(m) for m in matches])
-  st.dataframe(df_unified, use_container_width=True, hide_index=True, height=min(400, 56 + len(matches) * 35))
+  with st.expander("📊 Ver tabela resumo de todos os jogos", expanded=True):
+    df_unified = pd.DataFrame([build_unified_row(m) for m in matches])
+    st.dataframe(df_unified, use_container_width=True, hide_index=True, height=min(400, 56 + len(matches) * 35))
 
   # --- Tabela completa (expandível) ---
   with st.expander("📋 Ver tabela completa com todas as estatísticas", expanded=False):
     df_full = pd.DataFrame([format_match_row(m) for m in matches])
     st.dataframe(df_full, use_container_width=True, height=400)
 
-  st.subheader("📈 Gráfico de Probabilidades")
+  st.markdown("""
+  <div class="section-header">
+    <div class="section-header-icon purple">📈</div>
+    <span class="section-header-text">Gráfico de Probabilidades</span>
+  </div>
+  """, unsafe_allow_html=True)
   chart_rows = []
   game_names = []
   for m in matches:
@@ -822,32 +884,74 @@ if matches:
         chart_rows.append({"Jogo": game, "Métrica": label, "Prob%": float(val), "λH": stats.get("lambdaHome"), "λA": stats.get("lambdaAway"), "λT": stats.get("lambdaTotal")})
   if chart_rows:
     cdf = pd.DataFrame(chart_rows)
-    # Seletor de jogo para evitar gráfico muito largo
     selected_chart_game = st.selectbox(
       "Selecionar jogo para visualizar",
       options=game_names,
       key="chart_game_selector"
     )
     cdf_filtered = cdf[cdf["Jogo"] == selected_chart_game]
+
+    # Paleta de cores profissional
+    color_scale = alt.Scale(
+      domain=["Over 0.5", "Over 1.5", "Over 2.5", "Over 3.5", "BTTS"],
+      range=["#3b82f6", "#f472b6", "#ef4444", "#22c55e", "#6366f1"]
+    )
+
     chart = alt.Chart(cdf_filtered).mark_bar(
-      cornerRadiusTopLeft=4,
-      cornerRadiusTopRight=4,
+      cornerRadiusTopLeft=6,
+      cornerRadiusTopRight=6,
     ).encode(
-      x=alt.X("Métrica:N", sort=None, axis=alt.Axis(labelAngle=0)),
-      y=alt.Y("Prob%:Q", title="Probabilidade %"),
-      color=alt.Color("Métrica:N", legend=None),
-      tooltip=["Jogo","Métrica","Prob%","λH","λA","λT"]
-    ).properties(height=300, title=selected_chart_game)
+      x=alt.X("Métrica:N", sort=None, axis=alt.Axis(labelAngle=0, labelFontSize=12, titleFontSize=13)),
+      y=alt.Y("Prob%:Q", title="Probabilidade %", scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(labelFontSize=11, titleFontSize=13)),
+      color=alt.Color("Métrica:N", scale=color_scale, legend=None),
+      tooltip=[
+        alt.Tooltip("Jogo:N"),
+        alt.Tooltip("Métrica:N"),
+        alt.Tooltip("Prob%:Q", format=".1f"),
+        alt.Tooltip("λH:Q", format=".2f", title="Lambda Casa"),
+        alt.Tooltip("λA:Q", format=".2f", title="Lambda Fora"),
+        alt.Tooltip("λT:Q", format=".2f", title="Lambda Total"),
+      ]
+    ).properties(height=320, title=alt.TitleParams(selected_chart_game, fontSize=14, anchor="start"))
     st.altair_chart(chart, use_container_width=True)
+
+    # Mini barras de probabilidade abaixo do gráfico
+    prob_cols = st.columns(5)
+    for i, (key, label, emoji) in enumerate([
+      ("over05Prob", "Over 0.5", "🔵"),
+      ("over15Prob", "Over 1.5", "🩷"),
+      ("over25Prob", "Over 2.5", "🔴"),
+      ("over35Prob", "Over 3.5", "🟢"),
+      ("bttsProb", "BTTS", "🟣"),
+    ]):
+      sel_match = next((m for m in matches if f"{m.get('homeTeam')} vs {m.get('awayTeam')}" == selected_chart_game), None)
+      val = sel_match.get("stats", {}).get(key) if sel_match else None
+      with prob_cols[i]:
+        if val is not None:
+          pct = float(val)
+          color_class = "high" if pct >= 60 else ("medium" if pct >= 40 else "low")
+          st.markdown(f"""
+          <div style="text-align:center;margin-bottom:4px;">
+            <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">{emoji} {label}</div>
+            <div style="font-size:18px;font-weight:700;color:#fff;">{pct:.0f}%</div>
+          </div>
+          """, unsafe_allow_html=True)
+        else:
+          st.markdown(f"<div style='text-align:center;font-size:10px;color:#6b7280;'>{label}<br>—</div>", unsafe_allow_html=True)
 else:
   err = st.session_state.get("last_error")
   if err:
     st.error(f"Falha ao buscar jogos: {err}")
   st.info("Nenhum jogo encontrado. Ajuste a liga/data e tente novamente.")
 
-st.subheader("🎯 Análise de Picks")
+st.markdown("""
+<div class="section-header">
+  <div class="section-header-icon red">🎯</div>
+  <span class="section-header-text">Análise de Picks</span>
+</div>
+""", unsafe_allow_html=True)
 selected_games = st.multiselect("Selecionar jogos para análise", options=[f"{m.get('homeTeam')} vs {m.get('awayTeam')}" for m in matches])
-if st.button("🔍 Analisar Selecionados") and selected_games:
+if st.button("🔍 Analisar Selecionados", use_container_width=True) and selected_games:
   sel = []
   for m in matches:
     key = f"{m.get('homeTeam')} vs {m.get('awayTeam')}"
@@ -879,16 +983,18 @@ if st.button("🔍 Analisar Selecionados") and selected_games:
     st.info("Sem picks retornados")
 # ===== ANÁLISE DE CONTEXTO (MISTRAL AI) =====
 st.markdown("---")
-st.markdown(
-  """
-  <div class="ai-analysis-section">
-    <div class="ai-analysis-header">
-      <h2>🤖 Análise de Contexto com IA <span class="ai-badge">Powered by Mistral</span></h2>
-    </div>
+st.markdown("""
+<div class="ai-analysis-section">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:28px;">🤖</span>
+    <h2 style="margin:0 !important;font-size:20px !important;">Análise de Contexto com IA</h2>
+    <span class="ai-badge">Powered by Mistral</span>
   </div>
-  """,
-  unsafe_allow_html=True,
-)
+  <p style="margin-top:8px;font-size:13px;color:#9ca3af !important;">
+    Selecione um jogo, adicione contexto de notícias e escolha o mercado para obter uma análise detalhada com 7 seções modulares.
+  </p>
+</div>
+""", unsafe_allow_html=True)
 
 ai_col1, ai_col2 = st.columns([2, 1])
 with ai_col1:
