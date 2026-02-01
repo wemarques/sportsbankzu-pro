@@ -27,12 +27,15 @@ class MistralClient:
                 return text
         return text
 
-    def chat_complete(self, messages, temperature: float = 0.3, max_tokens: int = 600) -> str:
+    def chat_complete(self, messages, temperature: float = 0.3, max_tokens: int = 1000) -> str:
         if self.client is None:
+            # Fallback mock mais completo e condizente com as novas instruções
             return json.dumps({
-                "injuries_key_players": {"home": None, "away": None},
-                "pressure_level": {"home": "BAIXA", "away": "ALTA"},
-                "confidence_adjustment": {"recommendation": "MANTER", "reason": "stub"}
+                "injuries_key_players": {"home": "Sem dados", "away": "Sem dados"},
+                "pressure_level": {"home": "MEDIA", "away": "MEDIA"},
+                "tactical_insight": "Aguardando conexão com Mistral API.",
+                "confidence_adjustment": {"recommendation": "MANTER", "reason": "Modo offline.", "impact_percentage": 0},
+                "independent_prediction": {"total_goals_estimate": 0.0, "reasoning": "Offline."}
             })
         r = self.client.chat.complete(
             model=self.model,

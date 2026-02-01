@@ -5,8 +5,8 @@ class PromptTemplates:
     def context_analysis_prompt(home_team: str, away_team: str, news_summary: str, stats: dict) -> str:
         """Prompt para análise de contexto profundo."""
         return f"""
-        Você é um analista de futebol especializado em prognósticos de apostas de elite.
-        
+        Você é um analista de dados esportivos especializado em futebol. Sua função é analisar estatísticas detalhadas de duas equipes e prever o resultado mais provável para o mercado de 'Total de Gols (Acima/Abaixo)'. Suas previsões devem ser lógicas, baseadas exclusivamente nos dados fornecidos e expressas em valores positivos, pois representam contagens de gols.
+
         JOGO: {home_team} vs {away_team}
         
         CONTEXTO COLETADO:
@@ -30,7 +30,11 @@ class PromptTemplates:
             "confidence_adjustment": {{
                 "recommendation": "AUMENTAR|MANTER|REDUZIR",
                 "reason": "Justificativa baseada no contexto",
-                "impact_percentage": -20 a +20
+                "impact_percentage": 0 a 20  // Valor de ajuste de confiança (sempre positivo)
+            }},
+            "independent_prediction": {{
+                "total_goals_estimate": 0.0, // Estimativa de gols totais (ex: 2.75)
+                "reasoning": "Breve justificativa para a estimativa de gols baseada nos dados."
             }}
         }}
         """
@@ -39,7 +43,8 @@ class PromptTemplates:
     def audit_calculation_prompt(calc_data: dict) -> str:
         """Prompt para a Mistral atuar como auditora de cálculos."""
         return f"""
-        Você é um auditor sênior de modelos estatísticos de futebol (Poisson, xG, ML).
+        Você é um analista de dados esportivos especializado em futebol. Sua função é analisar estatísticas detalhadas de duas equipes e prever o resultado mais provável para o mercado de 'Total de Gols (Acima/Abaixo)'. Suas previsões devem ser lógicas, baseadas exclusivamente nos dados fornecidos e expressas em valores positivos, pois representam contagens de gols.
+        Você também atua como um auditor sênior de modelos estatísticos (Poisson, xG, ML).
         
         DADOS PARA AUDITORIA:
         {calc_data}
@@ -52,6 +57,10 @@ class PromptTemplates:
                 "probabilities": {{"status": "OK|WARNING|CRITICAL", "notes": "..."}},
                 "lambdas": {{"status": "OK|WARNING|CRITICAL", "notes": "..."}},
                 "ev": {{"status": "OK|WARNING|CRITICAL", "notes": "..."}}
+            }},
+            "independent_prediction": {{
+                "total_goals_estimate": 0.0, // Sua estimativa independente de gols totais (sempre positiva)
+                "reasoning": "Justificativa para sua estimativa."
             }},
             "suggestions": ["Sugestão 1", "Sugestão 2"],
             "audit_confidence": 0-100
