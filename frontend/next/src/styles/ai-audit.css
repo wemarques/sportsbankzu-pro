@@ -61,6 +61,24 @@
   background: #ff9100;
 }
 
+/* Rejeição - Mistral AI Rejected (Vermelho) */
+.card-mistral-rejected {
+  background: linear-gradient(145deg, #2d1616 0%, #1a0f0f 100%);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+.card-mistral-rejected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #ef4444;
+}
+
 /* Tipografia de Odds */
 .odds-value {
   font-family: 'Inter', 'Roboto Mono', monospace;
