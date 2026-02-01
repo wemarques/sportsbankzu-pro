@@ -1,0 +1,93 @@
+/* ========================================
+   AI AUDIT DASHBOARD - Estilos Personalizados
+   Glassmorphism, Gradientes e Efeitos Neon
+   ======================================== */
+
+/* Scrollbar Invisivel para Abas */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Glassmorphism para Header e Nav */
+.glass-effect {
+  background: rgba(13, 13, 13, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Gradiente para Cards do Sistema */
+.card-system {
+  background: linear-gradient(145deg, #141d2b 0%, #0f1621 100%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Neon Suave - Mistral AI Confirmed (Roxo) */
+.card-mistral-confirmed {
+  background: linear-gradient(145deg, #1c162d 0%, #140f21 100%);
+  border: 1px solid rgba(157, 80, 255, 0.2);
+  box-shadow: 0 0 15px rgba(157, 80, 255, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+.card-mistral-confirmed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #9d50ff;
+}
+
+/* Alerta de Ajuste - Mistral AI Adjusted (Laranja) */
+.card-mistral-adjusted {
+  background: linear-gradient(145deg, #241a12 0%, #1a120a 100%);
+  border: 1px solid rgba(255, 145, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+.card-mistral-adjusted::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #ff9100;
+}
+
+/* Tipografia de Odds */
+.odds-value {
+  font-family: 'Inter', 'Roboto Mono', monospace;
+  letter-spacing: -0.02em;
+}
+
+/* Animacao de entrada */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-card {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Animacao stagger para lista de cards */
+.animate-card:nth-child(1) { animation-delay: 0s; }
+.animate-card:nth-child(2) { animation-delay: 0.1s; }
+.animate-card:nth-child(3) { animation-delay: 0.2s; }
+.animate-card:nth-child(4) { animation-delay: 0.3s; }
+.animate-card:nth-child(5) { animation-delay: 0.4s; }
+
+/* Badge status pulsante */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(0, 223, 130, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(0, 223, 130, 0.6); }
+}
+.pulse-active {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
