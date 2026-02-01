@@ -3,7 +3,8 @@ import { useMemo, useState, useEffect } from "react";
 import BankChart from "../components/BankChart";
 import ProgressBar from "../components/ProgressBar";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@radix-ui/react-accordion";
-import { Plus, AlertTriangle } from "lucide-react";
+import { Plus, AlertTriangle, Cpu } from "lucide-react";
+import Link from "next/link";
 import { MultiLeagueSelector } from "@/components/multi-league-selector";
 import { MatchesList } from "@/components/matches-list";
 import type { Match } from "@/components/MatchCard";
@@ -96,6 +97,13 @@ export default function Page() {
             />
           </div>
           <div className="ml-auto flex items-center gap-4">
+            <Link
+              href="/ai-audit"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#9d50ff]/10 border border-[#9d50ff]/30 text-[#9d50ff] text-sm font-semibold hover:bg-[#9d50ff]/20 transition-colors"
+            >
+              <Cpu size={14} />
+              AI Audit
+            </Link>
             <span className={"badge " + (varValor >= 0 ? "bg-primary" : "bg-red-600")}>
               {varValor >= 0 ? "+" : ""}R$ {varValor.toFixed(2)} ({varPct.toFixed(1)}%)
             </span>
