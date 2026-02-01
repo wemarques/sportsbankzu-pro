@@ -8,6 +8,7 @@ dashboard-financeiro/
 sportsbankzu-pro/
 streamlit/
 frontend/streamlit/
+node_modules/
 
 config.yaml
 backend/main.py.backup
