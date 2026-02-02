@@ -5,9 +5,10 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Latest-red.svg)](https://streamlit.io/)
-[![Next.js](https://img.shields.io/badge/Next.js-18+-black.svg)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-01-22
+**Última revisão:** 2026-02-02
 
 ---
 
@@ -36,6 +37,8 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 
 - Sistema de autenticacao (depende de config.yaml ou Secrets)
 - Dashboard Next.js (configuracao separada)
+- CLI unificado (`python -m cli`) com Click
+- Testes E2E com Playwright
 
 ### Como habilitar autenticacao
 
@@ -165,6 +168,119 @@ npm run dev
 ```
 
 Acesse o dashboard em `http://localhost:3000/`.
+
+### 4. CLI (Linha de Comando)
+
+O projeto inclui uma CLI unificada construída com Click:
+
+```bash
+# Ajuda geral
+python -m cli --help
+
+# Listar ligas configuradas
+python -m cli data leagues
+
+# Descobrir dados disponíveis
+python -m cli data discover
+
+# Buscar fixtures
+python -m cli data fixtures premier-league --date today
+
+# Gerar Quadro-Resumo
+python -m cli analysis quadro premier-league
+
+# Previsões com mercados sugeridos
+python -m cli analysis predict premier-league --date tomorrow
+
+# Auditoria com IA (requer MISTRAL_API_KEY)
+python -m cli analysis audit premier-league --match-index 0
+
+# Iniciar backend
+python -m cli server api --port 5001 --reload
+
+# Iniciar backend + Streamlit juntos
+python -m cli server dev
+
+# Validar deploy
+python -m cli server validate --backend-url https://api.exemplo.com
+
+# Gerar hash de senha
+python -m cli utils hash-password
+
+# Rodar testes
+python -m cli utils test --coverage
+```
+
+Após instalar com `pip install -e .`, o comando `sportsbank` fica disponível globalmente:
+
+```bash
+sportsbank data leagues
+sportsbank analysis quadro premier-league
+```
+
+### 5. Testes E2E (Playwright)
+
+O dashboard Next.js possui testes E2E automatizados com Playwright:
+
+```bash
+cd frontend/next
+
+# Instalar browsers (primeira vez)
+npx playwright install --with-deps
+
+# Rodar todos os testes
+npm run test:e2e
+
+# Modo visual interativo
+npm run test:e2e:ui
+
+# Com navegador visível
+npm run test:e2e:headed
+
+# Ver relatório HTML
+npm run test:e2e:report
+```
+
+**Testes disponíveis:**
+
+| Arquivo | Cobertura |
+|---------|-----------|
+| `e2e/home.spec.ts` | Página principal: header, banca, slider Kelly, estratégia, value bets |
+| `e2e/dashboard.spec.ts` | Dashboard: sidebar, stats, gráfico, seletor de liga |
+| `e2e/ai-audit.spec.ts` | Página de auditoria AI |
+| `e2e/market-trends.spec.ts` | Tendências de mercado: chips, gráfico |
+| `e2e/performance-stats.spec.ts` | Estatísticas: heat map, DRS zones, transfers |
+| `e2e/navigation.spec.ts` | Navegação entre páginas, theme toggle |
+| `e2e/api.spec.ts` | Rotas API: matches, decision/pre |
+
+---
+
+## ⚽ Ligas Suportadas (22)
+
+| # | País | Liga | ID |
+|---|------|------|----|
+| 1 | England | Premier League | `premier-league` |
+| 2 | England | Championship | `championship` |
+| 3 | Argentina | Primera Division | `primera-division` |
+| 4 | Australia | A-League | `a-league` |
+| 5 | Austria | Bundesliga | `austria-bundesliga` |
+| 6 | Belgium | Pro League | `pro-league` |
+| 7 | Brazil | Serie A | `brazil-serie-a` |
+| 8 | Brazil | Serie B | `brazil-serie-b` |
+| 9 | Denmark | Superliga | `denmark-superliga` |
+| 10 | France | Ligue 1 | `france-ligue-1` |
+| 11 | France | Ligue 2 | `france-ligue-2` |
+| 12 | Germany | Bundesliga | `germany-bundesliga` |
+| 13 | Germany | 2. Bundesliga | `germany-2-bundesliga` |
+| 14 | Italy | Serie A | `italy-serie-a` |
+| 15 | Italy | Serie B | `italy-serie-b` |
+| 16 | Netherlands | Eredivisie | `netherlands-eredivisie` |
+| 17 | Portugal | Liga NOS | `portugal-liga-nos` |
+| 18 | Saudi Arabia | Professional League | `saudi-professional-league` |
+| 19 | Scotland | Premiership | `scotland-premiership` |
+| 20 | Spain | La Liga | `spain-la-liga` |
+| 21 | Switzerland | Super League | `switzerland-super-league` |
+| 22 | Turkey | Süper Lig | `turkey-super-lig` |
 
 ---
 
@@ -386,6 +502,7 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **Sistema de Autenticação:** `solucao_autenticacao_streamlit.md`
 - **Quadro-Resumo Profissional:** `PROMPT_IMPLEMENTACAO_QUADRO_RESUMO_FINAL.md`
 - **API do Backend:** Acesse `http://localhost:5001/docs` para documentação interativa (Swagger)
+- **Claude Code:** `CLAUDE.md` na raiz do projeto com instruções, comandos e referências Context7
 
 ---
 
