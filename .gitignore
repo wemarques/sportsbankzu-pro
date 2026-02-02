@@ -12,3 +12,4 @@ node_modules/
 
 config.yaml
 backend/main.py.backup
+*.db
