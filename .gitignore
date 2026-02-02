@@ -13,6 +13,7 @@ node_modules/
 config.yaml
 backend/main.py.backup
 *.db
+.coverage
 playwright-report/
 test-results/
 blob-report/
