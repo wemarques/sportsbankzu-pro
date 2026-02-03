@@ -28,6 +28,9 @@ jobs:
     defaults:
       run:
         working-directory: frontend/next
+    env:
+      CI: true
+      PY_BACKEND_URL: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,9 +38,14 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/next/package-lock.json
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test --project=chromium
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Build Next.js
+        run: npm run build
+      - name: Run E2E tests
+        run: npx playwright test --project=chromium
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
