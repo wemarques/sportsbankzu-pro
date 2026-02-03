@@ -1,7 +1,15 @@
 """
 Testes visuais basicos para validar componentes da interface.
+Requerem streamlit e .streamlit/secrets.toml configurado.
 """
+import os
 import pytest
+
+_secrets_path = os.path.join(os.path.dirname(__file__), "..", ".streamlit", "secrets.toml")
+_skip = not os.path.exists(_secrets_path)
+
+pytestmark = pytest.mark.skipif(_skip, reason="Requer .streamlit/secrets.toml (indisponivel no CI)")
+
 from streamlit.testing.v1 import AppTest
 
 
