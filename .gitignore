@@ -10,6 +10,7 @@ streamlit/
 frontend/streamlit/
 node_modules/
 .vscode/
+.next/
 
 config.yaml
 backend/main.py.backup
