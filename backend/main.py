@@ -6,6 +6,7 @@ import math
 import random
 import importlib.util
 import logging
+import re
 from io import BytesIO
 from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
 from backend.modeling.lambda_calculator import (
@@ -278,7 +279,10 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 return False
 
         def resolve_s3_base() -> str:
-            for cand in (league_id, f"PRE {league_id}"):
+            aliases = get_league_aliases(league_id)
+            candidates = [league_id, f"PRE {league_id}"] + aliases
+            norm_targets = {normalize_league_key(x) for x in candidates}
+            for cand in candidates:
                 key = f"{prefix}/{cand}/matches.csv"
                 if s3_key_exists(key):
                     return f"{prefix}/{cand}"
@@ -286,7 +290,7 @@ def load_fixtures_from_csv(league_id: str, date_filter: str) -> List[Dict[str, A
                 resp = s3.list_objects_v2(Bucket=bucket, Prefix=f"{prefix}/", Delimiter="/")
                 for item in resp.get("CommonPrefixes", []):
                     name = item.get("Prefix", "").replace(f"{prefix}/", "").strip("/")
-                    if league_id in name and s3_key_exists(f"{prefix}/{name}/matches.csv"):
+                    if normalize_league_key(name) in norm_targets and s3_key_exists(f"{prefix}/{name}/matches.csv"):
                         return f"{prefix}/{name}"
             except Exception:
                 pass
@@ -391,6 +395,8 @@ def resolve_league_dir(base: str, league_id: str) -> str:
     direct = os.path.join(base, league_id)
     if os.path.isdir(direct):
         return direct
+    aliases = get_league_aliases(league_id)
+    norm_targets = {normalize_league_key(x) for x in ([league_id] + aliases)}
     mod = load_config_module()
     if mod and hasattr(mod, "LEAGUES_CONFIG"):
         conf = getattr(mod, "LEAGUES_CONFIG")
@@ -403,12 +409,37 @@ def resolve_league_dir(base: str, league_id: str) -> str:
                 cand_dir = os.path.join(base, candidate)
                 if os.path.isdir(cand_dir):
                     return cand_dir
+                if normalize_league_key(candidate) in norm_targets:
+                    cand_alt = os.path.join(base, candidate)
+                    if os.path.isdir(cand_alt):
+                        return cand_alt
     # fallback: first dir matching league_id substring
     for d in os.listdir(base):
         cand = os.path.join(base, d)
-        if os.path.isdir(cand) and league_id in d:
+        if not os.path.isdir(cand):
+            continue
+        if normalize_league_key(d) in norm_targets:
+            return cand
+        if league_id in d:
             return cand
     return direct
+
+def normalize_league_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+def get_league_aliases(league_id: str) -> List[str]:
+    key = normalize_league_key(league_id)
+    aliases_map = {
+        "ligue1": ["ligue-1", "france-ligue-1"],
+        "ligue-1": ["france-ligue-1"],
+        "portugal": ["liga-nos", "portugal-liga-nos"],
+        "liganos": ["liga-nos", "portugal-liga-nos"],
+        "austria": ["austria-bundesliga"],
+        "austriabundesliga": ["austria-bundesliga"],
+        "eredivise": ["eredivisie", "netherlands-eredivisie"],
+        "eredivisie": ["netherlands-eredivisie"],
+    }
+    return aliases_map.get(key, [])
 
 def formatar_nome_liga(liga: str) -> str:
     mapeamento = {
