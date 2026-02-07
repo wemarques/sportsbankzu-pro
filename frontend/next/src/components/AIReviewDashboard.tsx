@@ -399,7 +399,7 @@ export default function AIReviewDashboard() {
             season: "",
             totalMatches: 0,
             matchesToday: 0,
-            apiEndpoints: { whoscored: "", footystats: "", packball: "" },
+            apiEndpoints: { footystats: "" },
           };
           return transformAPIMatch(m, league);
         });

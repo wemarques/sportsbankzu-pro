@@ -78,9 +78,7 @@ export async function POST(req: NextRequest) {
   for (const id of ids) {
     const league = AVAILABLE_LEAGUES.find((l) => l.id === id)!;
     const sources = [
-      { base: "https://www.whoscored.com", path: league.apiEndpoints.whoscored },
       { base: "https://footystats.org", path: league.apiEndpoints.footystats },
-      { base: "https://packball.com", path: league.apiEndpoints.packball },
     ];
     const fetched: Match[] = [];
     for (const s of sources) {

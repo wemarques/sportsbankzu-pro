@@ -40,8 +40,9 @@ export default function SystemStatus({ open, onClose }: { open: boolean; onClose
         const cache = res?.cache || {};
         const ttlMatches = Number(cache?.ttl_matches) || 0;
         const ttlVB = Number(cache?.ttl_value_bets) || 0;
-        const order: Record<string, number> = { csv: 4, odds_api: 3, whoscored: 2, footystats: 1 };
-        const list: StatusItem[] = Object.keys(ds).map((k) => {
+        const order: Record<string, number> = { csv: 3, odds_api: 2, footystats: 1 };
+        const listKeys = Object.keys(ds).filter((k) => k !== "whoscored" && k !== "packball");
+        const list: StatusItem[] = listKeys.map((k) => {
           const v = ds[k] || {};
           const type = k === "csv" ? "local_file" : k === "odds_api" ? "http_api" : "scraper";
           const ok = !!v.available;
@@ -79,8 +80,9 @@ export default function SystemStatus({ open, onClose }: { open: boolean; onClose
       const cache = res?.cache || {};
       const ttlMatches = Number(cache?.ttl_matches) || 0;
       const ttlVB = Number(cache?.ttl_value_bets) || 0;
-      const order: Record<string, number> = { csv: 4, odds_api: 3, whoscored: 2, footystats: 1 };
-      const list: StatusItem[] = Object.keys(ds).map((k) => {
+      const order: Record<string, number> = { csv: 3, odds_api: 2, footystats: 1 };
+      const listKeys = Object.keys(ds).filter((k) => k !== "whoscored" && k !== "packball");
+      const list: StatusItem[] = listKeys.map((k) => {
         const v = ds[k] || {};
         const type = k === "csv" ? "local_file" : k === "odds_api" ? "http_api" : "scraper";
         const ok = !!v.available;

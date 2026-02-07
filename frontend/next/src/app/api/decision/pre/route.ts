@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     const backend = process.env.PY_BACKEND_URL;
     if (backend) {
-      const res = await fetch(`${backend.replace(/\\/$/, "")}/decision/pre`, {
+      const res = await fetch(`${backend.replace(/\/$/, "")}/decision/pre`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

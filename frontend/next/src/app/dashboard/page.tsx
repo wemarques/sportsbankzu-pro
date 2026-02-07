@@ -8,6 +8,8 @@ import { AVAILABLE_LEAGUES, Match } from "../../lib/leagues";
 import { getMatchesByLeague, getValueBetsByLeague } from "../../lib/api";
 import SystemStatus from "../../components/SystemStatus";
 
+export const dynamic = "force-dynamic";
+
 function DashboardJogos({ dataJogos }: { dataJogos: { liga: string; time_casa: string; time_fora: string; data_hora: string; estadio: string; status: string; }[] }) {
   const initialDate = dataJogos?.[0]?.data_hora?.substring(0, 10) ?? new Date().toISOString().substring(0, 10);
   const [dataSelecionada, setDataSelecionada] = useState(initialDate);

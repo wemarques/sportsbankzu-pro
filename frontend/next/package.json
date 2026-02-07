@@ -33,7 +33,8 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.1",
+    "@playwright/test": "^1.58.2",
+    "@storybook/react": "^10.2.7",
     "@types/node": "24.10.1",
     "@types/react": "19.2.6",
     "typescript": "5.9.3"
