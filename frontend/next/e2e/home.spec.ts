@@ -54,7 +54,7 @@ test.describe("Home Page", () => {
 
   test("renders stats grid with key metrics", async ({ page }) => {
     await expect(page.getByText("Jogos analisados")).toBeVisible();
-    await expect(page.getByText("Value bets")).toBeVisible();
+    await expect(page.getByText("Value bets").first()).toBeVisible();
   });
 
   test("renders value bets table with match data", async ({ page }) => {

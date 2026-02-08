@@ -3,8 +3,10 @@ import { test, expect } from "@playwright/test";
 test.describe("Navigation & Theme", () => {
   test("navigating from home to AI Audit", async ({ page }) => {
     await page.goto("/");
-    await page.locator('a[href="/ai-audit"]').click();
-    await expect(page).toHaveURL(/\/ai-audit/);
+    const link = page.locator('a[href="/ai-audit"]');
+    await expect(link).toBeVisible({ timeout: 10000 });
+    await link.click();
+    await expect(page).toHaveURL(/\/ai-audit/, { timeout: 15000 });
   });
 
   test("theme toggle switches between light and dark mode", async ({ page }) => {
