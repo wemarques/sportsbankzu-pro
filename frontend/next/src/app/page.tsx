@@ -9,6 +9,8 @@ import { MultiLeagueSelector } from "@/components/multi-league-selector";
 import { MatchesList } from "@/components/matches-list";
 import type { Match } from "@/components/MatchCard";
 
+export const dynamic = "force-dynamic";
+
 type BetRow = { jogo: string; mercado: string; odd: number; ev: number; stake: number; confianca: "Baixa" | "Média" | "Boa" | "Alta" };
 
 export default function Page() {

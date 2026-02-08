@@ -5,6 +5,8 @@ import DRSZones from "../../components/DRSZones";
 import Transfers from "../../components/Transfers";
 import { getPerformanceStats, getDRSZones } from "../../lib/api";
 
+export const dynamic = "force-dynamic";
+
 export default function PerformanceStats() {
   const [heat, setHeat] = useState<number[]>([]);
   const [drs, setDrs] = useState<Array<{ start: number; end: number }>>([]);

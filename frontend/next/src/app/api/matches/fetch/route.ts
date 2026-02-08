@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const backend = process.env.PY_BACKEND_URL;
     if (backend) {
       const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
-      const res = await fetch(`${backend.replace(/\\/$/, "")}/fixtures?${qs.toString()}`, { cache: "no-store" });
+      const res = await fetch(`${backend.replace(/\/$/, "")}/fixtures?${qs.toString()}`, { cache: "no-store" });
       const data = await res.json();
       return new Response(JSON.stringify(data), {
         status: 200,
