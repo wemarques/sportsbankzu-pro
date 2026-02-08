@@ -39,7 +39,7 @@ function DashboardJogos({ dataJogos }: { dataJogos: { liga: string; time_casa: s
         {jogosFiltrados.length ? (
           <ul className="space-y-2">
             {jogosFiltrados.map((j, idx) => (
-              <li key={idx} className="p-3 bg-[var(--bg)] border border-[var(--border)] rounded-md">
+              <li key={idx} className="p-3 bg-[var(--bg)] border border-[var(--border)] rounded-md" title={`Liga: ${j.liga} | Estádio: ${j.estadio} | Status: ${j.status}`}>
                 <span className="font-semibold">{j.time_casa}</span> vs <span className="font-semibold">{j.time_fora}</span> <span className="muted text-xs">({j.liga} - {new Date(j.data_hora).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})</span>
               </li>
             ))}
