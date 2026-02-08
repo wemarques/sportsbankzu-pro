@@ -6,7 +6,7 @@ test.describe("Dashboard Page", () => {
   });
 
   test("renders main dashboard layout", async ({ page }) => {
-    await expect(page.getByText("Dashboard")).toBeVisible();
+    await expect(page.getByText("SportsBank Pro")).toBeVisible();
   });
 
   test("sidebar is visible with risk controls", async ({ page }) => {

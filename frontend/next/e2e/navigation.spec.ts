@@ -5,8 +5,11 @@ test.describe("Navigation & Theme", () => {
     await page.goto("/");
     const link = page.locator('a[href="/ai-audit"]');
     await expect(link).toBeVisible({ timeout: 10000 });
-    await link.click();
-    await expect(page).toHaveURL(/\/ai-audit/, { timeout: 15000 });
+    await expect(link).toHaveAttribute("href", "/ai-audit");
+    await Promise.all([
+      page.waitForURL(/\/ai-audit/, { timeout: 15000 }),
+      link.click(),
+    ]);
   });
 
   test("theme toggle switches between light and dark mode", async ({ page }) => {
