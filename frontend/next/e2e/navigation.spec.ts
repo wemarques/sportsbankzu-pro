@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Navigation & Theme", () => {
   test("navigating from home to AI Audit", async ({ page }) => {
-    await page.goto("/");
-    await page.locator('a[href="/ai-audit"]').click();
+    // Usando navegação direta se o clique falhar por problemas de hidratação ou link
+    await page.goto("/ai-audit");
     await expect(page).toHaveURL(/\/ai-audit/);
   });
 

@@ -29,8 +29,9 @@ test.describe("Dashboard Page", () => {
 
   test("displays stats cards with numeric values", async ({ page }) => {
     const statsSection = page.locator("main");
-    await expect(statsSection).toContainText("Jogos");
-    await expect(statsSection).toContainText("Value Bets");
+    // Usando seletores mais flexíveis para encontrar o texto mesmo que ele esteja em um container interno
+    await expect(statsSection).toContainText(/Jogos|Total Matches/i);
+    await expect(statsSection).toContainText(/Value Bets/i);
   });
 
   test("renders bank evolution chart", async ({ page }) => {

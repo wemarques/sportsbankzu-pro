@@ -54,7 +54,10 @@ test.describe("Home Page", () => {
 
   test("renders stats grid with key metrics", async ({ page }) => {
     await expect(page.getByText("Jogos analisados")).toBeVisible();
-    await expect(page.getByText("Value bets")).toBeVisible();
+    // Usando um seletor mais específico para evitar conflito com múltiplos elementos "Value bets"
+    // ou garantindo que pegamos o primeiro visível
+    const valueBetsLabel = page.getByText("Value bets").first();
+    await expect(valueBetsLabel).toBeVisible();
   });
 
   test("renders value bets table with match data", async ({ page }) => {
