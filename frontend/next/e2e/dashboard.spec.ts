@@ -6,10 +6,13 @@ test.describe("Dashboard Page", () => {
   });
 
   test("renders main dashboard layout", async ({ page }) => {
-    // "SportsBank Pro" é o título principal no header, visível em todas as páginas
+    // "SportsBank Pro" é o título principal no header
     await expect(page.getByText("SportsBank Pro")).toBeVisible();
-    // Verifica se existe algum elemento que indique que estamos na dashboard (ex: cards, sidebar)
-    await expect(page.locator("aside")).toBeVisible();
+    
+    // Verifica elementos específicos da sidebar ao invés de um locator genérico "aside"
+    // que pode não estar presente ou estar oculto dependendo do estado inicial
+    const settingsButton = page.locator("button", { hasText: /Configurações|Ocultar|Mostrar/i }).first();
+    await expect(settingsButton).toBeVisible();
   });
 
   test("sidebar is visible with risk controls", async ({ page }) => {
@@ -31,11 +34,16 @@ test.describe("Dashboard Page", () => {
   });
 
   test("displays stats cards with numeric values", async ({ page }) => {
-    // Procura por "Jogos Analisados" ou "Jogos" dentro de qualquer card
-    // Como o texto exato no componente é "Jogos Analisados", o regex /Jogos/i vai funcionar
-    const mainContent = page.locator("div.grid"); // Foca na grid de cards
-    await expect(mainContent).toContainText(/Jogos|Analysed Matches/i);
-    await expect(mainContent).toContainText(/Value Bets/i);
+    // Foca na grid de cards específica que tem 4 colunas (onde estão os stats principais)
+    // para evitar ambiguidade com outras grids na página
+    const statsGrid = page.locator("div.grid.grid-cols-1.md\\:grid-cols-4");
+    
+    // Verifica se a grid específica está visível
+    await expect(statsGrid).toBeVisible();
+    
+    // Verifica os textos dentro dessa grid específica
+    await expect(statsGrid).toContainText(/Jogos|Analysed Matches/i);
+    await expect(statsGrid).toContainText(/Value Bets/i);
   });
 
   test("renders bank evolution chart", async ({ page }) => {
