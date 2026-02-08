@@ -8,10 +8,75 @@ export type League = {
   totalMatches: number;
   matchesToday: number;
   apiEndpoints: {
-    whoscored: string;
     footystats: string;
-    packball: string;
   };
+};
+
+export type Match = {
+  id: string;
+  leagueId: string;
+  leagueName: string;
+  homeTeam: {
+    name: string;
+    logo: string;
+    form: string[];
+    rating: number;
+  };
+  awayTeam: {
+    name: string;
+    logo: string;
+    form: string[];
+    rating: number;
+  };
+  datetime: string;
+  venue: string;
+  status: "scheduled" | "live" | "finished" | "postponed";
+  score?: {
+    home: number;
+    away: number;
+    halftime?: { home: number; away: number };
+  };
+  odds: {
+    home: number;
+    draw: number;
+    away: number;
+    over25: number;
+    under25: number;
+    bttsYes: number;
+    bttsNo: number;
+  };
+  stats: {
+    homeWinProb: number;
+    drawProb: number;
+    awayWinProb: number;
+    avgGoals: number;
+    bttsProb: number;
+    over25Prob: number;
+    over05Prob?: number;
+    over15Prob?: number;
+    over35Prob?: number;
+    homePossession?: number;
+    awayPossession?: number;
+    homeCornersPerMatch?: number;
+    awayCornersPerMatch?: number;
+    homeCardsPerMatch?: number;
+    awayCardsPerMatch?: number;
+    leagueAvgCorners?: number;
+    leagueAvgCards?: number;
+    lambdaHome?: number;
+    lambdaAway?: number;
+    lambdaTotal?: number;
+    regime?: string;
+  };
+  h2h: {
+    totalMatches: number;
+    homeWins: number;
+    draws: number;
+    awayWins: number;
+    avgGoals: number;
+  };
+  source: "footystats";
+  lastUpdated: string;
 };
 
 export const AVAILABLE_LEAGUES: League[] = [
@@ -25,9 +90,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/252/tournaments/2",
       footystats: "/england/premier-league",
-      packball: "/matches?league=premier-league",
     },
   },
   {
@@ -40,9 +103,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 552,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/252/tournaments/7",
       footystats: "/england/championship",
-      packball: "/matches?league=championship",
     },
   },
   {
@@ -55,9 +116,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 378,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/11/tournaments/68",
       footystats: "/argentina/primera-division",
-      packball: "/matches?league=primera-division",
     },
   },
   {
@@ -70,9 +129,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 162,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/15/tournaments/233",
       footystats: "/australia/a-league",
-      packball: "/matches?league=a-league",
     },
   },
   {
@@ -85,9 +142,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/17/tournaments/36",
       footystats: "/austria/bundesliga",
-      packball: "/matches?league=austria-bundesliga",
     },
   },
   {
@@ -100,9 +155,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 240,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/22/tournaments/23",
       footystats: "/belgium/pro-league",
-      packball: "/matches?league=pro-league",
     },
   },
   {
@@ -115,9 +168,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/31/tournaments/95",
       footystats: "/brazil/campeonato-brasileiro-serie-a",
-      packball: "/matches?league=brasileirao",
     },
   },
   {
@@ -130,9 +181,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/31/tournaments/96",
       footystats: "/brazil/campeonato-brasileiro-serie-b",
-      packball: "/matches?league=brasileirao-b",
     },
   },
   {
@@ -145,9 +194,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/63/tournaments/118",
       footystats: "/denmark/superliga",
-      packball: "/matches?league=superliga",
     },
   },
   {
@@ -160,9 +207,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/74/tournaments/22",
       footystats: "/france/ligue-1",
-      packball: "/matches?league=ligue-1",
     },
   },
   {
@@ -175,9 +220,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/74/tournaments/23",
       footystats: "/france/ligue-2",
-      packball: "/matches?league=ligue-2",
     },
   },
   {
@@ -190,9 +233,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/81/tournaments/3",
       footystats: "/germany/bundesliga",
-      packball: "/matches?league=bundesliga",
     },
   },
   {
@@ -205,9 +246,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/81/tournaments/4",
       footystats: "/germany/2-bundesliga",
-      packball: "/matches?league=2-bundesliga",
     },
   },
   {
@@ -220,9 +259,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/108/tournaments/5",
       footystats: "/italy/serie-a",
-      packball: "/matches?league=serie-a",
     },
   },
   {
@@ -235,9 +272,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/108/tournaments/6",
       footystats: "/italy/serie-b",
-      packball: "/matches?league=serie-b",
     },
   },
   {
@@ -250,9 +285,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/155/tournaments/13",
       footystats: "/netherlands/eredivisie",
-      packball: "/matches?league=eredivisie",
     },
   },
   {
@@ -265,9 +298,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/177/tournaments/155",
       footystats: "/portugal/liga-nos",
-      packball: "/matches?league=liga-nos",
     },
   },
   {
@@ -280,9 +311,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/191/tournaments/220",
       footystats: "/saudi-arabia/professional-league",
-      packball: "/matches?league=saudi-pro-league",
     },
   },
   {
@@ -295,9 +324,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 228,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/253/tournaments/12",
       footystats: "/scotland/premiership",
-      packball: "/matches?league=scotland-premiership",
     },
   },
   {
@@ -310,9 +337,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/206/tournaments/4",
       footystats: "/spain/la-liga",
-      packball: "/matches?league=la-liga",
     },
   },
   {
@@ -325,9 +350,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/213/tournaments/34",
       footystats: "/switzerland/super-league",
-      packball: "/matches?league=switzerland-super-league",
     },
   },
   {
@@ -340,9 +363,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     totalMatches: 342,
     matchesToday: 0,
     apiEndpoints: {
-      whoscored: "/regions/221/tournaments/11",
       footystats: "/turkey/super-lig",
-      packball: "/matches?league=super-lig",
     },
   },
 ];

@@ -4,6 +4,8 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import Chips from "../../components/Chips";
 import { getTrendData } from "../../lib/api";
 
+export const dynamic = "force-dynamic";
+
 export default function MarketTrends() {
   const metrics = ["odds", "ev", "stake", "points"];
   const [metric, setMetric] = useState("odds");

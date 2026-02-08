@@ -68,7 +68,7 @@ export type Match = {
     awayWins: number;
     avgGoals: number;
   };
-  source: "whoscored" | "footystats" | "packball";
+  source: "footystats";
   lastUpdated: string;
 };
 

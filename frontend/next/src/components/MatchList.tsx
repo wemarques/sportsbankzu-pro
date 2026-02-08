@@ -33,7 +33,7 @@ export default function MatchesList({ matches, league, dateFilter, statusFilter,
       const dt = new Date(m.datetime);
       const inRange = dt >= start && dt < end;
       const statusValue = unifyStatus(m.status);
-      const statusOk = localStatus === "all" ? true : statusValue === localStatus || (localStatus === "finished" && statusValue === "finished") || (localStatus === "finished" && statusValue === "completed");
+      const statusOk = localStatus === "all" ? true : statusValue === localStatus;
       return inRange && statusOk;
     });
   }, [matches, dateFilter, localStatus]);
@@ -97,12 +97,13 @@ export default function MatchesList({ matches, league, dateFilter, statusFilter,
   );
 }
 
-function unifyStatus(s: any): StatusFilter {
+function unifyStatus(s: any): Match["status"] {
   const v = String(s || "").toLowerCase();
   if (v === "completed" || v === "finished") return "finished";
   if (v === "live") return "live";
   if (v === "scheduled") return "scheduled";
-  return "all";
+  if (v === "postponed") return "postponed";
+  return "scheduled";
 }
 
 function normalizeMatches(raw: any, leagues: string[]): Match[] {
@@ -149,7 +150,7 @@ function normalizeMatches(raw: any, leagues: string[]): Match[] {
         awayWins: item.h2h?.awayWins ?? 0,
         avgGoals: item.h2h?.avgGoals ?? 0,
       },
-      source: item.source ?? "backend",
+      source: "footystats",
       lastUpdated: item.lastUpdated ?? new Date().toISOString(),
     };
     return m;
