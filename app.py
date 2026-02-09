@@ -273,7 +273,14 @@ all_possible_leagues = [
     "super-league-greece", # Grécia
     "premiership", # Escócia
     "brasileirao-serie-a", "brasileirao-serie-b", # Brasil
-    "mls" # EUA
+    "mls", # EUA
+    # Novas ligas adicionadas conforme solicitação
+    "primera-division", # Argentina
+    "a-league", # Austrália
+    "austrian-bundesliga", # Áustria
+    "superliga", # Dinamarca
+    "professional-league", # Arábia Saudita
+    "super-league" # Suíça
 ]
 
 available_leagues = [d["league"] for d in discover.get("data_dirs", [])]
