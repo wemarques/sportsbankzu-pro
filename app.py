@@ -270,11 +270,9 @@ all_possible_leagues = [
     "primeira-liga", # Portugal
     "super-lig", # Turquia
     "pro-league", # Bélgica
-    "super-league-greece", # Grécia
     "premiership", # Escócia
     "brasileirao-serie-a", "brasileirao-serie-b", # Brasil
-    "mls", # EUA
-    # Novas ligas adicionadas conforme solicitação
+    # Novas ligas adicionadas
     "primera-division", # Argentina
     "a-league", # Austrália
     "austrian-bundesliga", # Áustria
