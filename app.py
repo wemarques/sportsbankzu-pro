@@ -259,10 +259,31 @@ st.caption(f"Backend: {BACKEND_URL}")
 col_a, col_b, col_c = st.columns([2, 2, 1])
 
 discover = get_discover()
-available_leagues = [d["league"] for d in discover.get("data_dirs", [])] or [
-  "premier-league","la-liga","serie-a","bundesliga","ligue-1","brasileirao-serie-a"
+# Se o backend retornar ligas, usamos elas. Se não, usamos uma lista fixa estendida com as 22 ligas
+all_possible_leagues = [
+    "premier-league", "championship", "league-one", "league-two", # Inglaterra
+    "la-liga", "segunda-division", # Espanha
+    "serie-a", "serie-b", # Itália
+    "bundesliga", "2-bundesliga", # Alemanha
+    "ligue-1", "ligue-2", # França
+    "eredivisie", # Holanda
+    "primeira-liga", # Portugal
+    "super-lig", # Turquia
+    "pro-league", # Bélgica
+    "super-league-greece", # Grécia
+    "premiership", # Escócia
+    "brasileirao-serie-a", "brasileirao-serie-b", # Brasil
+    "mls" # EUA
 ]
-default_leagues = ["premier-league"] if "premier-league" in available_leagues else available_leagues[:2]
+
+available_leagues = [d["league"] for d in discover.get("data_dirs", [])]
+if not available_leagues:
+    available_leagues = all_possible_leagues
+
+# Ordena alfabeticamente para facilitar a busca
+available_leagues = sorted(list(set(available_leagues)))
+
+default_leagues = ["premier-league"] if "premier-league" in available_leagues else available_leagues[:1]
 
 with col_a:
   leagues = st.multiselect("Ligas", options=available_leagues, default=default_leagues)
@@ -440,13 +461,26 @@ if matches:
         })
   if chart_rows:
     cdf = pd.DataFrame(chart_rows)
-    chart = alt.Chart(cdf).mark_bar().encode(
-      x="Métrica",
-      y="Prob%",
-      color="Métrica",
-      column="Jogo",
-      tooltip=["Liga","Jogo","Métrica","Prob%","λH","λA","λT"]
-    ).properties(height=250)
+    # Lista única de jogos para criar o seletor
+    jogos_unicos = sorted(list(set(cdf["Jogo"])))
+    
+    st.markdown("### Visualização Gráfica")
+    jogo_selecionado = st.selectbox(
+        "Selecione o jogo para visualizar probabilidades:",
+        options=jogos_unicos,
+        key="chart_game_selector"
+    )
+    
+    # Filtra o dataframe para mostrar apenas o jogo selecionado
+    cdf_filtrado = cdf[cdf["Jogo"] == jogo_selecionado]
+    
+    chart = alt.Chart(cdf_filtrado).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+      x=alt.X("Métrica", axis=alt.Axis(labelAngle=0)),
+      y=alt.Y("Prob%", scale=alt.Scale(domain=[0, 100])),
+      color=alt.Color("Métrica", legend=None),
+      tooltip=["Liga", "Jogo", "Métrica", "Prob%", "λH", "λA", "λT"]
+    ).properties(height=300)
+    
     st.altair_chart(chart, use_container_width=True)
 else:
   err = st.session_state.get("last_error")
