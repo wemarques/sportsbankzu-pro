@@ -30,9 +30,31 @@ jobs:
         working-directory: frontend/next
     env:
       CI: true
-      PY_BACKEND_URL: ""
+      # Definir URL para mock ou localhost caso precise de conexão real
+      # Para testes de build/renderização que não requerem backend ativo, deixe vazio ou mock
+      PY_BACKEND_URL: "http://localhost:8000" 
     steps:
       - uses: actions/checkout@v4
+      
+      # Setup Python Backend for E2E
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Backend Deps
+        run: |
+          python -m pip install -r ../../backend/requirements.txt
+          python -m pip install uvicorn
+        working-directory: frontend/next
+      
+      - name: Start Backend in Background
+        run: |
+          # Inicia o backend na porta 8000 e coloca em background
+          cd ../../
+          python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+          # Aguarda backend iniciar
+          sleep 5
+        working-directory: frontend/next
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
