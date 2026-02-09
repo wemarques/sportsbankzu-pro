@@ -123,7 +123,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen">
+    <main className="min-h-screen">
       <div className="fixed top-0 left-0 right-0 z-40 border-b border-[var(--border)] bg-[var(--card)]">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-4">
           <div className="flex-1 font-semibold text-xl">SportsBank Pro</div>
@@ -383,7 +383,7 @@ export default function Dashboard() {
         </div>
       </div>
       <SystemStatus open={statusOpen} onClose={() => setStatusOpen(false)} />
-  </div>
+  </main>
   );
 }
 
