@@ -32,7 +32,9 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        const res = await getMatchesByLeague(selectedLeague);
+        // Envia 'date=tomorrow' para pegar jogos futuros, já que 'today' pode estar vazio
+        const today = new Date().toISOString().split('T')[0];
+        const res = await getMatchesByLeague(selectedLeague, today);
         const normalized: Match[] = (res?.matches ?? []).map(toMatch(selectedLeague));
         setMatches(normalized);
         setSelectedMatchId((prev) => (prev && normalized.some((m) => m.id === prev) ? prev : normalized[0]?.id ?? null));
