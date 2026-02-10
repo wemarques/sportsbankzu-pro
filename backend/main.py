@@ -92,6 +92,11 @@ try:
     app.include_router(_r_ai.router)
 except Exception:
     pass
+try:
+    from backend.routes import ai_analysis as _r_ai_analysis
+    app.include_router(_r_ai_analysis.router)
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"
