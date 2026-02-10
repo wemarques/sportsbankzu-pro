@@ -1,4 +1,4 @@
-export const API_BASE = 'http://127.0.0.1:8001';
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8001";
 
 async function get(path: string, init?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, { ...init, cache: 'no-store' });
@@ -41,5 +41,16 @@ export async function getValueBetsByLeague(league: string) {
   } catch (error) {
     console.error('Erro na API getValueBetsByLeague:', error);
     return { value_bets: [] } as any;
+  }
+}
+
+export async function getAiMatchAnalysis(matchId: string) {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai/match/${encodeURIComponent(matchId)}/analysis`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Erro ao buscar análise AI');
+    return await res.json();
+  } catch (error) {
+    console.error('Erro na API getAiMatchAnalysis:', error);
+    return null;
   }
 }

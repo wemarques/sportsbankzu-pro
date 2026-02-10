@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import "../styles/match-detail-card.css";
 
 @layer base {
   :root {
@@ -24,6 +25,42 @@
     --input: 240 4% 16%;
     --ring: 142 71% 45%;
     --radius: 0.75rem;
+
+    /* Scoretabs tokens */
+    --color-bg-primary: #0b0c10;
+    --color-bg-secondary: #141822;
+    --color-bg-tertiary: #1b2230;
+    --color-bg-card: #121826;
+    --color-bg-card-hover: #1a2333;
+    --color-border: #242b3a;
+    --color-border-light: #2f3a4e;
+    --color-text-primary: #e5e7eb;
+    --color-text-secondary: #9ca3af;
+    --color-text-muted: #6b7280;
+    --color-primary: #00ff88;
+    --color-primary-light: #3cffae;
+    --color-odds-up: #22c55e;
+    --color-odds-down: #ef4444;
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.5rem;
+
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
   }
 
   :root[data-theme="light"] {
@@ -64,3 +101,4 @@
 /* Utility classes */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.muted { color: hsl(var(--muted-foreground)); }
