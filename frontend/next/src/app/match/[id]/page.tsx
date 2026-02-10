@@ -11,6 +11,44 @@ import MatchDetailCard, {
 
 const PY_BACKEND = process.env.NEXT_PUBLIC_PY_BACKEND_URL || "http://127.0.0.1:5001";
 
+/**
+ * Maps raw fixture data from the Python backend into the MatchDetailData
+ * shape expected by the new MatchDetailCard component.
+ */
+function mapFixtureToDetail(raw: Record<string, unknown>, matchId: string): MatchDetailData {
+  const rawOdds = (raw.odds ?? {}) as Record<string, number>;
+  return {
+    id: String(raw.id ?? matchId),
+    league: (raw.leagueName as string) ?? "",
+    season: (raw.season as string) ?? undefined,
+    homeTeam: (raw.homeTeam as string) ?? "",
+    awayTeam: (raw.awayTeam as string) ?? "",
+    startTime: (raw.datetime as string) ?? undefined,
+    status: (raw.status as "scheduled" | "live" | "finished") ?? "scheduled",
+    venue: raw.stadium
+      ? { name: raw.stadium as string }
+      : undefined,
+    odds: {
+      home: rawOdds.home,
+      draw: rawOdds.draw,
+      away: rawOdds.away,
+    },
+    doubleChance:
+      rawOdds.home && rawOdds.draw && rawOdds.away
+        ? {
+            homeOrDraw: parseFloat((1 / (1 / rawOdds.home + 1 / rawOdds.draw)).toFixed(2)),
+            homeOrAway: parseFloat((1 / (1 / rawOdds.home + 1 / rawOdds.away)).toFixed(2)),
+            drawOrAway: parseFloat((1 / (1 / rawOdds.draw + 1 / rawOdds.away)).toFixed(2)),
+          }
+        : undefined,
+    btts:
+      rawOdds.bttsYes || rawOdds.bttsNo
+        ? { yes: rawOdds.bttsYes, no: rawOdds.bttsNo }
+        : undefined,
+    round: (raw.round as string) ?? undefined,
+  };
+}
+
 export default function MatchDetailPage() {
   const params = useParams();
   const matchId = params?.id as string;
@@ -29,16 +67,15 @@ export default function MatchDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        // Try fetching from the fixtures endpoint with all leagues
         const res = await fetch(`${PY_BACKEND}/fixtures?leagues=&date=today`, {
           cache: "no-store",
         });
         if (res.ok) {
           const data = await res.json();
-          const matches: MatchDetailData[] = data.matches || [];
+          const matches = (data.matches || []) as Record<string, unknown>[];
           const found = matches.find((m) => String(m.id) === String(matchId));
           if (found) {
-            setMatch(found);
+            setMatch(mapFixtureToDetail(found, matchId));
             setLoading(false);
             return;
           }
@@ -47,49 +84,29 @@ export default function MatchDetailPage() {
         // ignore, fallback below
       }
 
-      // Fallback: use mock data
+      // Fallback: mock data matching the new interface
+      const kickoff = new Date();
+      kickoff.setHours(kickoff.getHours() + 3);
       setMatch({
         id: matchId,
+        league: "Copa Libertadores",
+        season: "2026",
         homeTeam: "Deportivo Tachira",
         awayTeam: "The Strongest",
-        leagueName: "Copa Libertadores",
-        datetime: new Date().toISOString(),
-        stadium: "Estadio Polideportivo de Pueblo Nuevo",
+        startTime: kickoff.toISOString(),
         status: "scheduled",
-        odds: {
-          home: 1.66,
-          draw: 3.6,
-          away: 4.75,
-          over25: 2.07,
-          under25: 1.72,
-          bttsYes: 2.0,
-          bttsNo: 1.78,
+        venue: {
+          name: "Estadio Polideportivo de Pueblo Nuevo",
+          capacity: 38755,
         },
-        stats: {
-          homeWinProb: 38.5,
-          drawProb: 28.3,
-          awayWinProb: 33.2,
-          avgGoals: 2.67,
-          over25Prob: 65.8,
-          bttsProb: 58.4,
-          lambdaHome: 1.45,
-          lambdaAway: 1.22,
-          lambdaTotal: 2.67,
-          homePossession: 54,
-          awayPossession: 46,
-          leagueRegime: "NORMAL",
-          status: "SAFE",
+        odds: { home: 1.66, draw: 3.6, away: 4.75 },
+        doubleChance: {
+          homeOrDraw: 1.14,
+          homeOrAway: 1.23,
+          drawOrAway: 2.05,
         },
-        h2h: {
-          totalMatches: 4,
-          homeWins: 2,
-          draws: 1,
-          awayWins: 1,
-          avgGoals: 2.5,
-        },
-        homeForm: ["W", "D", "W", "L", "W"],
-        awayForm: ["W", "W", "D", "W", "L"],
-        ratings: { home: 6.8, away: 6.2 },
+        btts: { yes: 2.0, no: 1.78 },
+        round: "Fase de Grupos - Rodada 1",
       });
       setLoading(false);
     }

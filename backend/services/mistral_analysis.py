@@ -1,7 +1,17 @@
+# backend/services/mistral_analysis.py
+"""
+Servico de analise de jogos usando MISTRAL AI
+"""
+import os
 import json
 import logging
+from typing import Dict, List, Optional
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+
+try:
+    import httpx
+except Exception:
+    httpx = None  # type: ignore
 
 from pydantic import BaseModel, Field
 
@@ -12,7 +22,7 @@ logger = logging.getLogger("sportsbank.ai.analysis")
 
 
 class AIAnalysisResponse(BaseModel):
-    """Structured response from Mistral AI match analysis."""
+    """Modelo de resposta da analise AI"""
 
     summary: str = ""
     key_points: List[str] = Field(default_factory=list)
@@ -22,90 +32,86 @@ class AIAnalysisResponse(BaseModel):
 
 
 class MistralAnalysisService:
-    """Generates structured AI match analyses using the Mistral API."""
+    """Servico para analise de jogos com MISTRAL AI.
 
-    def __init__(self):
+    Supports two modes:
+    - Direct httpx call to Mistral REST API (when MISTRAL_API_KEY is set)
+    - Fallback via existing MistralClient wrapper
+    """
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("MISTRAL_API_KEY")
+        self.base_url = "https://api.mistral.ai/v1"
+        self.model = "mistral-large-latest"
         self.client = MistralClient()
         self.cache = CacheManager(ttl_hours=6)
 
-    def _build_prompt(self, match_data: Dict[str, Any]) -> str:
+    async def analyze_match(
+        self,
+        home_team: str,
+        away_team: str,
+        league: str,
+        match_stats: Dict,
+        odds: Dict,
+        context: Optional[Dict] = None,
+    ) -> AIAnalysisResponse:
+        """
+        Gera analise completa de um jogo usando MISTRAL AI.
+
+        Args:
+            home_team: Nome do time da casa
+            away_team: Nome do time visitante
+            league: Nome da liga/competicao
+            match_stats: Estatisticas do jogo (lambda, probabilidades, etc)
+            odds: Odds do mercado
+            context: Contexto adicional (forma recente, lesoes, etc)
+
+        Returns:
+            AIAnalysisResponse com a analise completa
+        """
+        # Check cache
+        cached = self.cache.get("analysis", home_team, away_team)
+        if cached:
+            logger.info(f"Cache hit for analysis: {home_team} vs {away_team}")
+            return AIAnalysisResponse(**cached)
+
+        prompt = self._build_prompt(
+            home_team, away_team, league, match_stats, odds, context
+        )
+
+        try:
+            analysis = await self._call_mistral_api(prompt)
+            result = self._parse_analysis(analysis)
+            self.cache.set("analysis", home_team, away_team, result.model_dump())
+            return result
+        except Exception as e:
+            logger.error(f"Mistral analysis error for {home_team} vs {away_team}: {e}")
+            # Fallback: try sync client
+            try:
+                return self._analyze_sync(prompt, home_team, away_team)
+            except Exception:
+                return self._get_fallback_analysis()
+
+    def _analyze_sync(
+        self, prompt: str, home_team: str, away_team: str
+    ) -> AIAnalysisResponse:
+        """Fallback synchronous analysis via MistralClient wrapper."""
+        response_text = self.client.simple_prompt(
+            prompt,
+            system_prompt="Voce e um analista esportivo profissional. Responda apenas em JSON valido.",
+        )
+        result = self._parse_analysis(response_text)
+        self.cache.set("analysis", home_team, away_team, result.model_dump())
+        return result
+
+    def analyze_match_sync(self, match_data: Dict) -> AIAnalysisResponse:
+        """Synchronous version for non-async contexts."""
         home = match_data.get("home_team") or match_data.get("homeTeam", "Home")
         away = match_data.get("away_team") or match_data.get("awayTeam", "Away")
         league = match_data.get("league") or match_data.get("leagueName", "")
         stats = match_data.get("stats", {})
         odds = match_data.get("odds", {})
-        h2h = match_data.get("h2h", {})
-
-        return f"""Voce e um analista de dados esportivos especializado em futebol.
-Analise os dados abaixo e gere um prognostico estruturado.
-
-JOGO: {home} vs {away}
-LIGA: {league}
-
-ESTATISTICAS:
-- Lambda Home: {stats.get('lambdaHome') or stats.get('lambda_home', 'N/A')}
-- Lambda Away: {stats.get('lambdaAway') or stats.get('lambda_away', 'N/A')}
-- Prob Home Win: {stats.get('homeWinProb') or stats.get('prob_home', 'N/A')}%
-- Prob Draw: {stats.get('drawProb') or stats.get('prob_draw', 'N/A')}%
-- Prob Away Win: {stats.get('awayWinProb') or stats.get('prob_away', 'N/A')}%
-- Prob Over 2.5: {stats.get('over25Prob') or stats.get('prob_over_25', 'N/A')}%
-- Prob BTTS: {stats.get('bttsProb') or stats.get('prob_btts', 'N/A')}%
-
-ODDS:
-- Home: {odds.get('home', 'N/A')}
-- Draw: {odds.get('draw', 'N/A')}
-- Away: {odds.get('away', 'N/A')}
-- Over 2.5: {odds.get('over25') or odds.get('over_25', 'N/A')}
-- BTTS Yes: {odds.get('bttsYes') or odds.get('btts_yes', 'N/A')}
-
-H2H:
-- Total jogos: {h2h.get('totalMatches', 'N/A')}
-- Vitorias casa: {h2h.get('homeWins', 'N/A')}
-- Empates: {h2h.get('draws', 'N/A')}
-- Vitorias fora: {h2h.get('awayWins', 'N/A')}
-- Media gols: {h2h.get('avgGoals', 'N/A')}
-
-Responda EXCLUSIVAMENTE em JSON valido com a seguinte estrutura:
-{{
-    "summary": "Resumo geral da analise em 2-3 frases",
-    "key_points": [
-        "Ponto-chave 1",
-        "Ponto-chave 2",
-        "Ponto-chave 3",
-        "Ponto-chave 4",
-        "Ponto-chave 5"
-    ],
-    "recommendation": "Recomendacao clara de aposta com justificativa",
-    "confidence": 75
-}}
-
-REGRAS:
-- confidence deve ser um inteiro de 0 a 100
-- key_points deve ter exatamente 5 itens
-- Nao use markdown, apenas JSON puro
-- Baseie-se nos dados fornecidos, nao invente estatisticas"""
-
-    def _strip_json_fences(self, text: str) -> str:
-        text = text.strip()
-        if "```" in text:
-            import re
-
-            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-            if match:
-                return match.group(1).strip()
-            text = text.strip("`")
-            if text.lower().startswith("json"):
-                text = text[4:]
-            return text.strip()
-        return text
-
-    def analyze_match(self, match_data: Dict[str, Any]) -> AIAnalysisResponse:
-        """Analyze a match and return a structured AI response.
-
-        Uses cache when available. Falls back to a generic response on error.
-        """
-        home = match_data.get("home_team") or match_data.get("homeTeam", "Home")
-        away = match_data.get("away_team") or match_data.get("awayTeam", "Away")
+        context = match_data.get("context")
 
         # Check cache
         cached = self.cache.get("analysis", home, away)
@@ -113,40 +119,151 @@ REGRAS:
             logger.info(f"Cache hit for analysis: {home} vs {away}")
             return AIAnalysisResponse(**cached)
 
-        prompt = self._build_prompt(match_data)
-
+        prompt = self._build_prompt(home, away, league, stats, odds, context)
         try:
-            response_text = self.client.simple_prompt(
-                prompt,
-                system_prompt="Voce e um analista esportivo profissional. Responda apenas em JSON valido.",
-            )
-            clean = self._strip_json_fences(response_text)
-            parsed = json.loads(clean)
-
-            result = AIAnalysisResponse(
-                summary=parsed.get("summary", ""),
-                key_points=parsed.get("key_points", [])[:5],
-                recommendation=parsed.get("recommendation", ""),
-                confidence=max(0, min(100, int(parsed.get("confidence", 50)))),
-                last_updated=datetime.now().isoformat(),
-            )
-
-            # Save to cache
-            self.cache.set("analysis", home, away, result.model_dump())
-            return result
-
+            return self._analyze_sync(prompt, home, away)
         except Exception as e:
-            logger.error(f"Mistral analysis error for {home} vs {away}: {e}")
-            return AIAnalysisResponse(
-                summary=f"Analise automatica indisponivel para {home} vs {away}. Tente novamente mais tarde.",
-                key_points=[
-                    "Servico de AI temporariamente indisponivel",
-                    "Verifique as estatisticas manuais disponíveis",
-                    "Consulte o historico H2H para referencia",
-                    "Odds de mercado podem indicar tendencias",
-                    "Aguarde nova tentativa de analise",
-                ],
-                recommendation="Analise manual recomendada enquanto o servico AI esta indisponivel.",
-                confidence=0,
-                last_updated=datetime.now().isoformat(),
+            logger.error(f"Sync analysis error: {e}")
+            return self._get_fallback_analysis()
+
+    def _build_prompt(
+        self,
+        home_team: str,
+        away_team: str,
+        league: str,
+        match_stats: Dict,
+        odds: Dict,
+        context: Optional[Dict] = None,
+    ) -> str:
+        """Constroi o prompt para a MISTRAL AI"""
+
+        prompt = f"""Voce e um analista profissional de apostas esportivas especializado em futebol.
+
+JOGO: {home_team} vs {away_team}
+COMPETICAO: {league}
+
+ESTATISTICAS DO JOGO:
+- Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')}
+- Lambda Fora: {match_stats.get('lambda_away') or match_stats.get('lambdaAway', 'N/A')}
+- Probabilidade Casa: {match_stats.get('prob_home') or match_stats.get('homeWinProb', 'N/A')}%
+- Probabilidade Empate: {match_stats.get('prob_draw') or match_stats.get('drawProb', 'N/A')}%
+- Probabilidade Fora: {match_stats.get('prob_away') or match_stats.get('awayWinProb', 'N/A')}%
+- Probabilidade Over 2.5: {match_stats.get('prob_over_25') or match_stats.get('over25Prob', 'N/A')}%
+- Probabilidade BTTS: {match_stats.get('prob_btts') or match_stats.get('bttsProb', 'N/A')}%
+
+ODDS DO MERCADO:
+- Casa (1): {odds.get('home', 'N/A')}
+- Empate (X): {odds.get('draw', 'N/A')}
+- Fora (2): {odds.get('away', 'N/A')}
+- Over 2.5: {odds.get('over_25') or odds.get('over25', 'N/A')}
+- BTTS Sim: {odds.get('btts_yes') or odds.get('bttsYes', 'N/A')}
+"""
+
+        if context:
+            prompt += f"""
+CONTEXTO ADICIONAL:
+- Forma Casa (ultimos 5): {context.get('home_form', 'N/A')}
+- Forma Fora (ultimos 5): {context.get('away_form', 'N/A')}
+- Confrontos diretos: {context.get('h2h', 'N/A')}
+- Lesoes/Suspensoes: {context.get('absences', 'Nenhuma informacao')}
+"""
+
+        prompt += """
+Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte formato JSON:
+
+{
+  "summary": "Um resumo de 2-3 frases sobre o jogo, destacando os principais pontos",
+  "key_points": [
+    "Ponto-chave 1 com dados especificos",
+    "Ponto-chave 2 com dados especificos",
+    "Ponto-chave 3 com dados especificos",
+    "Ponto-chave 4 com dados especificos",
+    "Ponto-chave 5 com dados especificos"
+  ],
+  "recommendation": "Recomendacao clara de aposta com mercado, odd e justificativa",
+  "confidence": 75
+}
+
+IMPORTANTE:
+- Seja especifico e use os numeros fornecidos
+- A confianca (confidence) deve ser um numero de 0-100
+- Forneca 5 pontos-chave
+- A recomendacao deve incluir o mercado e a odd especifica
+- Retorne APENAS o JSON, sem texto adicional
+"""
+        return prompt
+
+    async def _call_mistral_api(self, prompt: str) -> str:
+        """Chama a API da MISTRAL via httpx"""
+        if not httpx or not self.api_key:
+            raise RuntimeError("httpx not available or API key missing")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 1000,
+                },
+                timeout=30.0,
             )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+
+    def _parse_analysis(self, raw_response: str) -> AIAnalysisResponse:
+        """Parse da resposta da MISTRAL para o modelo estruturado"""
+        try:
+            cleaned = raw_response.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            # Handle potential fenced JSON
+            if "```" in cleaned:
+                import re
+
+                match = re.search(
+                    r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL
+                )
+                if match:
+                    cleaned = match.group(1).strip()
+
+            data = json.loads(cleaned)
+
+            return AIAnalysisResponse(
+                summary=data.get("summary", ""),
+                key_points=data.get("key_points", [])[:5],
+                recommendation=data.get("recommendation", ""),
+                confidence=min(max(int(data.get("confidence", 50)), 0), 100),
+                last_updated=datetime.now().strftime("%d/%m/%Y as %H:%M"),
+            )
+        except Exception as e:
+            logger.error(f"Error parsing Mistral response: {e}")
+            return self._get_fallback_analysis()
+
+    def _get_fallback_analysis(self) -> AIAnalysisResponse:
+        """Retorna analise padrao em caso de erro"""
+        return AIAnalysisResponse(
+            summary="Analise temporariamente indisponivel. Por favor, tente novamente em alguns instantes.",
+            key_points=[
+                "Servico de analise AI temporariamente indisponivel",
+                "Recomendamos analisar as estatisticas manualmente",
+                "Verifique as probabilidades e odds apresentadas",
+                "Consulte o historico de confrontos diretos",
+                "Considere a forma recente das equipes",
+            ],
+            recommendation="Aguarde restabelecimento do servico de analise AI ou consulte as estatisticas disponiveis para tomar sua decisao.",
+            confidence=0,
+            last_updated=datetime.now().strftime("%d/%m/%Y as %H:%M"),
+        )

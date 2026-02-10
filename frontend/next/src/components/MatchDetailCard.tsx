@@ -1,78 +1,64 @@
+// frontend/next/components/MatchDetailCard.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Clock,
   MapPin,
   Users,
   Star,
-  Sparkles,
-  ChevronUp,
+  ExternalLink,
   ChevronDown,
-  TrendingUp,
+  ChevronUp,
+  Sparkles,
   Loader2,
   RefreshCw,
 } from "lucide-react";
 import "../styles/match-detail-card.css";
 
-export type AIAnalysis = {
+export interface AIAnalysis {
   summary: string;
   key_points: string[];
   recommendation: string;
   confidence: number;
   last_updated: string;
-};
+}
 
-export type MatchDetailData = {
+export interface MatchDetailData {
   id: string;
+  league: string;
+  season?: string;
   homeTeam: string;
   awayTeam: string;
-  leagueName?: string;
-  datetime?: string;
-  stadium?: string;
-  status?: string;
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
+  startTime?: string;
+  status?: "scheduled" | "live" | "finished";
+  venue?: {
+    name: string;
+    capacity?: number;
+    image?: string;
+  };
   odds?: {
     home?: number;
     draw?: number;
     away?: number;
-    over25?: number;
-    under25?: number;
-    bttsYes?: number;
-    bttsNo?: number;
+    homeVariation?: "up" | "down";
+    drawVariation?: "up" | "down";
+    awayVariation?: "up" | "down";
   };
-  stats?: {
-    homeWinProb?: number;
-    drawProb?: number;
-    awayWinProb?: number;
-    avgGoals?: number;
-    bttsProb?: number;
-    over25Prob?: number;
-    over15Prob?: number;
-    over35Prob?: number;
-    lambdaHome?: number;
-    lambdaAway?: number;
-    lambdaTotal?: number;
-    homePossession?: number;
-    awayPossession?: number;
-    leagueRegime?: string;
-    leagueVolatility?: string;
-    chaosDetected?: boolean;
-    status?: string;
-    mercado_principal?: string;
+  doubleChance?: {
+    homeOrDraw?: number;
+    homeOrAway?: number;
+    drawOrAway?: number;
   };
-  h2h?: {
-    totalMatches?: number;
-    homeWins?: number;
-    draws?: number;
-    awayWins?: number;
-    avgGoals?: number;
+  btts?: {
+    yes?: number;
+    no?: number;
   };
-  homeForm?: string[];
-  awayForm?: string[];
-  ratings?: { home?: number; away?: number };
-  xg?: { home?: number; away?: number };
+  round?: string;
   aiAnalysis?: AIAnalysis;
-};
+}
 
 type Props = {
   match: MatchDetailData;
@@ -80,394 +66,376 @@ type Props = {
   onRegenerate?: () => void;
 };
 
-function OddBadge({ label, value }: { label: string; value?: number }) {
-  return (
-    <div className="match-detail-card__odd">
-      <span className="match-detail-card__odd-label">{label}</span>
-      <span className="match-detail-card__odd-value">
-        {value != null ? value.toFixed(2) : "-"}
+export default function MatchDetailCard({ match, aiLoading, onRegenerate }: Props) {
+  const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
+  const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
+  const [isAIExpanded, setIsAIExpanded] = useState(true);
+  const [isComparativeExpanded, setIsComparativeExpanded] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!match.startTime) return;
+
+    const update = () => {
+      const now = new Date();
+      const start = new Date(match.startTime!);
+      const diff = start.getTime() - now.getTime();
+      if (diff <= 0) {
+        setTimeRemaining(null);
+        return;
+      }
+      setTimeRemaining({
+        hours: Math.floor(diff / (1000 * 60 * 60)),
+        minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+        seconds: Math.floor((diff % (1000 * 60)) / 1000),
+      });
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [match.startTime]);
+
+  const getOddVariation = (variation?: "up" | "down") => {
+    if (!variation) return null;
+    return (
+      <span className={`mdc-odd-variation mdc-odd-variation--${variation}`}>
+        {variation === "up" ? "\u2191" : "\u2193"}
       </span>
-    </div>
-  );
-}
+    );
+  };
 
-function StatRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="match-detail-card__stat">
-      <span className="match-detail-card__stat-label">{label}</span>
-      <span className="match-detail-card__stat-value">{value}</span>
-    </div>
-  );
-}
-
-function FormBadges({ form, label }: { form?: string[]; label: string }) {
-  if (!form || form.length === 0) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-[#888]">{label}:</span>
-      <div className="flex gap-1">
-        {form.map((f, i) => {
-          const bg =
-            f === "W"
-              ? "bg-[#00cc66]"
-              : f === "D"
-                ? "bg-[#ffaa00]"
-                : "bg-[#ff4444]";
-          return (
-            <span
-              key={`${label}-${i}`}
-              className={`${bg} text-black text-xs font-bold w-5 h-5 rounded flex items-center justify-center`}
-            >
-              {f}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export default function MatchDetailCard({
-  match,
-  aiLoading,
-  onRegenerate,
-}: Props) {
-  const [activeTab, setActiveTab] = useState("pre-jogo");
-  const [aiOpen, setAiOpen] = useState(true);
-
-  const { odds, stats, h2h, aiAnalysis } = match;
-
-  const tabs = [
-    { id: "pre-jogo", label: "Pre-Jogo" },
-    { id: "cotacoes", label: "Cotacoes" },
-    { id: "stats", label: "Stats" },
-    { id: "h2h", label: "H2H" },
-  ];
+  const getStatusBadge = () => {
+    switch (match.status) {
+      case "scheduled":
+        return <span className="mdc-badge-upcoming">AGENDADO</span>;
+      case "live":
+        return <span className="mdc-badge-live">AO VIVO</span>;
+      case "finished":
+        return <span className="mdc-badge-finished">FINALIZADO</span>;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="match-detail-card">
-      {/* Header: Teams + Time */}
+      {/* HEADER */}
       <div className="match-detail-card__header">
-        <div className="match-detail-card__teams">
-          <div className="match-detail-card__team">
-            <div className="match-detail-card__team-name">
-              {match.homeTeam}
-            </div>
-            <FormBadges form={match.homeForm} label="Forma" />
-            {match.ratings?.home != null && (
-              <span className="text-xs text-[#888]">
-                Rating: {match.ratings.home.toFixed(1)}
-              </span>
-            )}
-          </div>
-          <div className="match-detail-card__vs">
-            <div className="match-detail-card__time">
-              {match.datetime ? (
-                <>
-                  <Clock size={14} className="inline mr-1 text-[#888]" />
-                  {new Date(match.datetime).toLocaleTimeString("pt-BR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </>
-              ) : (
-                "VS"
-              )}
-            </div>
-            {match.leagueName && (
-              <div className="match-detail-card__league">
-                {match.leagueName}
-              </div>
-            )}
-            {match.stadium && (
-              <div className="match-detail-card__league">
-                <MapPin size={10} className="inline mr-0.5" />
-                {match.stadium}
-              </div>
-            )}
-          </div>
-          <div className="match-detail-card__team match-detail-card__team--away">
-            <div className="match-detail-card__team-name">
-              {match.awayTeam}
-            </div>
-            <FormBadges form={match.awayForm} label="Forma" />
-            {match.ratings?.away != null && (
-              <span className="text-xs text-[#888]">
-                Rating: {match.ratings.away.toFixed(1)}
-              </span>
-            )}
-          </div>
+        <div className="match-detail-card__league">
+          {match.league}{match.season ? ` \u2022 ${match.season}` : ""}
         </div>
-      </div>
-
-      {/* Odds bar */}
-      <div className="match-detail-card__odds">
-        <OddBadge label="1" value={odds?.home} />
-        <OddBadge label="X" value={odds?.draw} />
-        <OddBadge label="2" value={odds?.away} />
-        <OddBadge label="O2.5" value={odds?.over25} />
-        <OddBadge label="U2.5" value={odds?.under25} />
-        <OddBadge label="BTTS S" value={odds?.bttsYes} />
-        <OddBadge label="BTTS N" value={odds?.bttsNo} />
-      </div>
-
-      {/* Tabs */}
-      <div className="match-detail-card__tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`match-detail-card__tab ${activeTab === tab.id ? "match-detail-card__tab--active" : ""}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
+        <div className="match-detail-card__actions">
+          {getStatusBadge()}
+          <button className="mdc-icon-btn" aria-label="Favoritar">
+            <Star size={18} />
           </button>
-        ))}
+          <button className="mdc-icon-btn" aria-label="Link externo">
+            <ExternalLink size={18} />
+          </button>
+        </div>
       </div>
 
-      {/* Tab Content */}
-      <div className="match-detail-card__content">
-        {activeTab === "pre-jogo" && (
-          <div className="match-detail-card__stats-grid">
-            <StatRow
-              label="Prob. Casa"
-              value={stats?.homeWinProb != null ? `${stats.homeWinProb.toFixed(1)}%` : "-"}
-            />
-            <StatRow
-              label="Prob. Empate"
-              value={stats?.drawProb != null ? `${stats.drawProb.toFixed(1)}%` : "-"}
-            />
-            <StatRow
-              label="Prob. Fora"
-              value={stats?.awayWinProb != null ? `${stats.awayWinProb.toFixed(1)}%` : "-"}
-            />
-            <StatRow
-              label="Media Gols"
-              value={stats?.avgGoals != null ? stats.avgGoals.toFixed(2) : "-"}
-            />
-            <StatRow
-              label="Over 2.5"
-              value={stats?.over25Prob != null ? `${stats.over25Prob.toFixed(1)}%` : "-"}
-            />
-            <StatRow
-              label="BTTS"
-              value={stats?.bttsProb != null ? `${stats.bttsProb.toFixed(1)}%` : "-"}
-            />
-            {stats?.mercado_principal && (
-              <StatRow label="Mercado" value={stats.mercado_principal} />
-            )}
-            {stats?.status && (
-              <StatRow label="Status" value={stats.status} />
-            )}
-          </div>
-        )}
+      {/* TEAMS + TIMER */}
+      <div className="match-detail-card__teams">
+        <div className="mdc-team-logo">
+          {match.homeTeamLogo ? (
+            <img src={match.homeTeamLogo} alt={match.homeTeam} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          ) : (
+            <span>{"\ud83c\udfe0"}</span>
+          )}
+        </div>
 
-        {activeTab === "cotacoes" && (
-          <div className="match-detail-card__stats-grid">
-            <StatRow label="1 (Casa)" value={odds?.home?.toFixed(2) ?? "-"} />
-            <StatRow label="X (Empate)" value={odds?.draw?.toFixed(2) ?? "-"} />
-            <StatRow label="2 (Fora)" value={odds?.away?.toFixed(2) ?? "-"} />
-            <StatRow label="Over 2.5" value={odds?.over25?.toFixed(2) ?? "-"} />
-            <StatRow label="Under 2.5" value={odds?.under25?.toFixed(2) ?? "-"} />
-            <StatRow label="BTTS Sim" value={odds?.bttsYes?.toFixed(2) ?? "-"} />
-            <StatRow label="BTTS Nao" value={odds?.bttsNo?.toFixed(2) ?? "-"} />
-          </div>
-        )}
+        <div className="match-detail-card__center">
+          <h3 className="mdc-team-name">{match.homeTeam}</h3>
 
-        {activeTab === "stats" && (
-          <div className="match-detail-card__stats-grid">
-            <StatRow
-              label="Lambda Casa"
-              value={stats?.lambdaHome?.toFixed(2) ?? "-"}
-            />
-            <StatRow
-              label="Lambda Fora"
-              value={stats?.lambdaAway?.toFixed(2) ?? "-"}
-            />
-            <StatRow
-              label="Lambda Total"
-              value={stats?.lambdaTotal?.toFixed(2) ?? "-"}
-            />
-            <StatRow
-              label="Posse Casa"
-              value={stats?.homePossession != null ? `${stats.homePossession.toFixed(0)}%` : "-"}
-            />
-            <StatRow
-              label="Posse Fora"
-              value={stats?.awayPossession != null ? `${stats.awayPossession.toFixed(0)}%` : "-"}
-            />
-            <StatRow
-              label="Regime"
-              value={stats?.leagueRegime ?? "-"}
-            />
-            <StatRow
-              label="Volatilidade"
-              value={stats?.leagueVolatility ?? "-"}
-            />
-            <StatRow
-              label="Caos"
-              value={stats?.chaosDetected ? "Sim" : "Nao"}
-            />
-            {match.xg && (
-              <>
-                <StatRow
-                  label="xG Casa"
-                  value={match.xg.home?.toFixed(2) ?? "-"}
-                />
-                <StatRow
-                  label="xG Fora"
-                  value={match.xg.away?.toFixed(2) ?? "-"}
-                />
-              </>
-            )}
-          </div>
-        )}
-
-        {activeTab === "h2h" && (
-          <div>
-            <div className="match-detail-card__h2h-grid">
-              <div className="match-detail-card__h2h-item">
-                <div className="match-detail-card__h2h-value">
-                  {h2h?.totalMatches ?? 0}
-                </div>
-                <div className="match-detail-card__h2h-label">Total Jogos</div>
+          {timeRemaining && (
+            <div className="mdc-countdown">
+              <div className="mdc-countdown__label">Inicia em</div>
+              <div className="mdc-countdown__time">
+                <span className="mdc-countdown__number">{String(timeRemaining.hours).padStart(2, "0")}</span>
+                <span className="mdc-countdown__separator">:</span>
+                <span className="mdc-countdown__number">{String(timeRemaining.minutes).padStart(2, "0")}</span>
+                <span className="mdc-countdown__separator">:</span>
+                <span className="mdc-countdown__number">{String(timeRemaining.seconds).padStart(2, "0")}</span>
               </div>
-              <div className="match-detail-card__h2h-item">
-                <div className="match-detail-card__h2h-value">
-                  {h2h?.homeWins ?? 0}
-                </div>
-                <div className="match-detail-card__h2h-label">Vit. Casa</div>
-              </div>
-              <div className="match-detail-card__h2h-item">
-                <div className="match-detail-card__h2h-value">
-                  {h2h?.draws ?? 0}
-                </div>
-                <div className="match-detail-card__h2h-label">Empates</div>
-              </div>
-              <div className="match-detail-card__h2h-item">
-                <div className="match-detail-card__h2h-value">
-                  {h2h?.awayWins ?? 0}
-                </div>
-                <div className="match-detail-card__h2h-label">Vit. Fora</div>
-              </div>
-              <div className="match-detail-card__h2h-item">
-                <div className="match-detail-card__h2h-value">
-                  {h2h?.avgGoals?.toFixed(1) ?? "-"}
-                </div>
-                <div className="match-detail-card__h2h-label">Media Gols</div>
-              </div>
+              <span className="mdc-link-small">Ver classificacao</span>
             </div>
-          </div>
-        )}
+          )}
+
+          <h3 className="mdc-team-name">{match.awayTeam}</h3>
+        </div>
+
+        <div className="mdc-team-logo">
+          {match.awayTeamLogo ? (
+            <img src={match.awayTeamLogo} alt={match.awayTeam} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          ) : (
+            <span>{"\u2708\ufe0f"}</span>
+          )}
+        </div>
       </div>
 
-      {/* AI Analysis Section */}
-      <div className="match-detail-card__ai">
-        <div
-          className="match-detail-card__ai-header"
-          onClick={() => setAiOpen(!aiOpen)}
-        >
-          <div className="match-detail-card__ai-title">
-            <Sparkles size={18} className="match-detail-card__ai-sparkle" />
-            Analise AI (MISTRAL)
+      {/* ODDS SECTION */}
+      <div className="match-detail-card__odds-section">
+        <div className="mdc-odds-title">RESULTADO DA PARTIDA</div>
+        <div className="mdc-odds-main-grid">
+          <div className="mdc-odd-main">
+            <span className="mdc-odd-main__label">1</span>
+            <span className="mdc-odd-main__value">
+              {match.odds?.home?.toFixed(2) ?? "-"}
+              {getOddVariation(match.odds?.homeVariation)}
+            </span>
           </div>
-          <div
-            className={`match-detail-card__ai-toggle ${aiOpen ? "match-detail-card__ai-toggle--open" : ""}`}
-          >
-            <ChevronDown size={18} />
+          <div className="mdc-odd-main">
+            <span className="mdc-odd-main__label">X</span>
+            <span className="mdc-odd-main__value">
+              {match.odds?.draw?.toFixed(2) ?? "-"}
+              {getOddVariation(match.odds?.drawVariation)}
+            </span>
+          </div>
+          <div className="mdc-odd-main">
+            <span className="mdc-odd-main__label">2</span>
+            <span className="mdc-odd-main__value">
+              {match.odds?.away?.toFixed(2) ?? "-"}
+              {getOddVariation(match.odds?.awayVariation)}
+            </span>
           </div>
         </div>
 
-        {aiOpen && (
-          <div className="match-detail-card__ai-body">
-            {aiLoading && (
-              <div className="match-detail-card__loading">
-                <Loader2 size={16} className="match-detail-card__loading-spinner" />
-                Gerando analise AI...
+        {/* DUPLA CHANCE */}
+        {match.doubleChance && (
+          <>
+            <div className="mdc-odds-title mt-md">DUPLA CHANCE</div>
+            <div className="mdc-odds-secondary-grid">
+              <div className="mdc-odd-secondary">
+                <span className="mdc-odd-secondary__label">1X</span>
+                <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrDraw?.toFixed(2) ?? "-"}</span>
               </div>
-            )}
-
-            {!aiLoading && aiAnalysis && (
-              <>
-                {/* Confidence Bar */}
-                <div className="match-detail-card__confidence">
-                  <div className="match-detail-card__confidence-header">
-                    <span className="match-detail-card__confidence-label">
-                      Confianca da Analise
-                    </span>
-                    <span className="match-detail-card__confidence-value">
-                      {aiAnalysis.confidence}%
-                    </span>
-                  </div>
-                  <div className="match-detail-card__confidence-bar">
-                    <div
-                      className="match-detail-card__confidence-fill"
-                      style={{ width: `${aiAnalysis.confidence}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Summary */}
-                <div className="match-detail-card__ai-summary">
-                  {aiAnalysis.summary}
-                </div>
-
-                {/* Key Points */}
-                {aiAnalysis.key_points.length > 0 && (
-                  <ul className="match-detail-card__key-points">
-                    {aiAnalysis.key_points.map((point, i) => (
-                      <li key={i} className="match-detail-card__key-point">
-                        <Star
-                          size={12}
-                          className="match-detail-card__key-point-icon"
-                        />
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {/* Recommendation */}
-                {aiAnalysis.recommendation && (
-                  <div className="match-detail-card__recommendation">
-                    <div className="match-detail-card__recommendation-label">
-                      <TrendingUp size={12} className="inline mr-1" />
-                      Recomendacao
-                    </div>
-                    <div className="match-detail-card__recommendation-text">
-                      {aiAnalysis.recommendation}
-                    </div>
-                  </div>
-                )}
-
-                {/* Timestamp + Regenerate */}
-                <div className="flex items-center justify-between">
-                  {aiAnalysis.last_updated && (
-                    <div className="match-detail-card__ai-timestamp">
-                      <Clock size={10} className="inline mr-0.5" />
-                      {new Date(aiAnalysis.last_updated).toLocaleString("pt-BR")}
-                    </div>
-                  )}
-                  {onRegenerate && (
-                    <button
-                      onClick={onRegenerate}
-                      className="flex items-center gap-1 text-xs text-[#00ff88] hover:text-[#00cc66] transition-colors"
-                    >
-                      <RefreshCw size={12} />
-                      Regenerar
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-
-            {!aiLoading && !aiAnalysis && (
-              <div className="text-center text-sm text-[#666] py-4">
-                Analise AI nao disponivel para este jogo.
+              <div className="mdc-odd-secondary">
+                <span className="mdc-odd-secondary__label">12</span>
+                <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrAway?.toFixed(2) ?? "-"}</span>
               </div>
-            )}
-          </div>
+              <div className="mdc-odd-secondary">
+                <span className="mdc-odd-secondary__label">X2</span>
+                <span className="mdc-odd-secondary__value">{match.doubleChance.drawOrAway?.toFixed(2) ?? "-"}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* AMBAS MARCAM */}
+        {match.btts && (
+          <>
+            <div className="mdc-odds-title mt-md">AMBAS MARCAM</div>
+            <div className="mdc-odds-secondary-grid">
+              <div className="mdc-odd-secondary">
+                <span className="mdc-odd-secondary__label">Sim</span>
+                <span className="mdc-odd-secondary__value">{match.btts.yes?.toFixed(2) ?? "-"}</span>
+              </div>
+              <div className="mdc-odd-secondary">
+                <span className="mdc-odd-secondary__label">Nao</span>
+                <span className="mdc-odd-secondary__value">{match.btts.no?.toFixed(2) ?? "-"}</span>
+              </div>
+            </div>
+          </>
         )}
       </div>
+
+      {/* TABS */}
+      <div className="match-detail-card__tabs">
+        <button className={`mdc-tab-btn ${activeTab === "pre-game" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("pre-game")}>
+          Pre-Jogo
+        </button>
+        <button className={`mdc-tab-btn ${activeTab === "odds" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("odds")}>
+          Cotacoes
+        </button>
+        <button className="mdc-tab-btn">
+          <span className="mdc-badge-pro">PRO</span>
+        </button>
+      </div>
+
+      {/* SUB-TABS */}
+      {activeTab === "pre-game" && (
+        <>
+          <div className="match-detail-card__sub-tabs">
+            <button className={`mdc-sub-tab-btn ${activeSubTab === "resumo" ? "mdc-sub-tab-btn--active" : ""}`} onClick={() => setActiveSubTab("resumo")}>
+              Resumo
+            </button>
+            <button className={`mdc-sub-tab-btn ${activeSubTab === "stats" ? "mdc-sub-tab-btn--active" : ""}`} onClick={() => setActiveSubTab("stats")}>
+              Stats
+            </button>
+            <button className={`mdc-sub-tab-btn ${activeSubTab === "h2h" ? "mdc-sub-tab-btn--active" : ""}`} onClick={() => setActiveSubTab("h2h")}>
+              H2H
+            </button>
+            <button className={`mdc-sub-tab-btn ${activeSubTab === "ultimos" ? "mdc-sub-tab-btn--active" : ""}`} onClick={() => setActiveSubTab("ultimos")}>
+              Ultimos Jogos
+            </button>
+          </div>
+
+          {/* RESUMO CONTENT */}
+          {activeSubTab === "resumo" && (
+            <div className="match-detail-card__content">
+              {/* AI ANALYSIS SECTION */}
+              <div className="mdc-ai-section">
+                <button className="mdc-collapsible-header" onClick={() => setIsAIExpanded(!isAIExpanded)}>
+                  <div className="mdc-collapsible-header__left">
+                    <Sparkles className="mdc-ai-icon" size={20} />
+                    <span className="mdc-collapsible-title">Analise AI (MISTRAL)</span>
+                    <span className="mdc-badge-pro" style={{ marginLeft: 8 }}>PRO</span>
+                  </div>
+                  {isAIExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+
+                {isAIExpanded && (
+                  <div className="mdc-ai-content">
+                    {aiLoading && (
+                      <div className="mdc-loading">
+                        <Loader2 size={16} className="mdc-loading-spinner" />
+                        Gerando analise AI...
+                      </div>
+                    )}
+
+                    {!aiLoading && match.aiAnalysis && (
+                      <>
+                        {/* Confidence Bar */}
+                        <div className="mdc-confidence">
+                          <div className="mdc-confidence__header">
+                            <span>Confianca da Analise</span>
+                            <span className="mdc-confidence__value">{match.aiAnalysis.confidence}%</span>
+                          </div>
+                          <div className="mdc-confidence__bar">
+                            <div className="mdc-confidence__fill" style={{ width: `${match.aiAnalysis.confidence}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Summary */}
+                        <div className="mdc-ai-summary">
+                          <h4 className="mdc-ai-section-title">Resumo</h4>
+                          <p className="mdc-ai-text">{match.aiAnalysis.summary}</p>
+                        </div>
+
+                        {/* Key Points */}
+                        <div className="mdc-ai-key-points">
+                          <h4 className="mdc-ai-section-title">Pontos-Chave</h4>
+                          <ul className="mdc-ai-list">
+                            {match.aiAnalysis.key_points.map((point, index) => (
+                              <li key={index} className="mdc-ai-list-item">
+                                <span className="mdc-ai-bullet">{"\u2022"}</span>
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Recommendation */}
+                        {match.aiAnalysis.recommendation && (
+                          <div className="mdc-ai-recommendation">
+                            <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                            <div className="mdc-ai-recommendation-box">
+                              <Sparkles size={16} className="mdc-ai-recommendation-icon" />
+                              <p className="mdc-ai-recommendation-text">{match.aiAnalysis.recommendation}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Timestamp + Regenerate */}
+                        <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <Clock size={14} />
+                            <span>Ultima atualizacao: {match.aiAnalysis.last_updated}</span>
+                          </div>
+                          {onRegenerate && (
+                            <button
+                              onClick={onRegenerate}
+                              style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem", color: "#00ff88", background: "transparent", border: "none", cursor: "pointer" }}
+                            >
+                              <RefreshCw size={12} />
+                              Regenerar
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {!aiLoading && !match.aiAnalysis && (
+                      <div style={{ textAlign: "center", fontSize: "0.8rem", color: "#666", padding: 16 }}>
+                        Analise AI nao disponivel para este jogo.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* VENUE IMAGE */}
+              {match.venue?.image && (
+                <div className="mdc-venue-image-container">
+                  <img src={match.venue.image} alt={match.venue.name} className="mdc-venue-image" />
+                </div>
+              )}
+
+              {/* MATCH INFO */}
+              <div className="mdc-info-grid">
+                <div className="mdc-info-item">
+                  <span className="mdc-info-label">Competicao</span>
+                  <span className="mdc-info-value">{match.league}</span>
+                </div>
+                {match.season && (
+                  <div className="mdc-info-item">
+                    <span className="mdc-info-label">Temporada</span>
+                    <span className="mdc-info-value">{match.season}</span>
+                  </div>
+                )}
+                {match.round && (
+                  <div className="mdc-info-item">
+                    <span className="mdc-info-label">Rodada</span>
+                    <span className="mdc-info-value">{match.round}</span>
+                  </div>
+                )}
+                {match.venue && (
+                  <>
+                    <div className="mdc-info-item">
+                      <span className="mdc-info-label">
+                        <MapPin size={14} /> Estadio
+                      </span>
+                      <span className="mdc-info-value">{match.venue.name}</span>
+                    </div>
+                    {match.venue.capacity && (
+                      <div className="mdc-info-item">
+                        <span className="mdc-info-label">
+                          <Users size={14} /> Capacidade
+                        </span>
+                        <span className="mdc-info-value">{match.venue.capacity.toLocaleString("pt-BR")}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* COMPARATIVE SECTION */}
+              <div className="mdc-comparative">
+                <button className="mdc-collapsible-header" onClick={() => setIsComparativeExpanded(!isComparativeExpanded)}>
+                  <span className="mdc-collapsible-title">Comparativo dos Times</span>
+                  {isComparativeExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+                {isComparativeExpanded && (
+                  <div className="mdc-comparative__content">
+                    <div className="mdc-comparative__tabs">
+                      <button className="mdc-comparative__tab mdc-comparative__tab--active">Gols</button>
+                      <button className="mdc-comparative__tab">BTTS</button>
+                      <button className="mdc-comparative__tab">Escanteios</button>
+                      <button className="mdc-comparative__tab">Chutes ao Gol</button>
+                      <button className="mdc-comparative__tab">Finalizacoes</button>
+                      <button className="mdc-comparative__tab">Faltas</button>
+                      <button className="mdc-comparative__tab">Cartoes</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
