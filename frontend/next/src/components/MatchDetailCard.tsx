@@ -24,6 +24,9 @@ export interface AIAnalysis {
   last_updated: string;
 }
 
+// Alias for backward compatibility with V0 dashboard
+export type MatchDetail = MatchDetailData;
+
 export interface MatchDetailData {
   id: string;
   league: string;
