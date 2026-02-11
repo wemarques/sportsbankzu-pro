@@ -18,6 +18,7 @@ type AiAnalysis = {
 };
 
 export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
   const [selectedLeague, setSelectedLeague] = useState<string>(AVAILABLE_LEAGUES[0]?.id ?? "");
   const [matches, setMatches] = useState<Match[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -25,6 +26,10 @@ export default function Dashboard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function fetchMatches() {
@@ -74,8 +79,8 @@ export default function Dashboard() {
     <main className="scoretabs-page">
       <div className="scoretabs-header">
         <div className="scoretabs-title">SportsBank Pro • Dashboard Scoretabs</div>
-        <div className="scoretabs-meta" suppressHydrationWarning>
-          {new Date().toLocaleString("pt-BR")}
+        <div className="scoretabs-meta">
+          {mounted ? new Date().toLocaleString("pt-BR") : "Carregando..."}
         </div>
       </div>
 
