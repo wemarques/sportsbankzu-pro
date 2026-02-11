@@ -152,7 +152,9 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
 /* ── COMPONENT ── */
 
 export default function Dashboard() {
-  const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [mounted, setMounted] = useState(false);
+  const [selectedLeague, setSelectedLeague] = useState<string>(AVAILABLE_LEAGUES[0]?.id ?? "");
+  const [matches, setMatches] = useState<Match[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -162,7 +164,12 @@ export default function Dashboard() {
 
   /* Fetch all leagues on mount */
   useEffect(() => {
-    async function fetchAll() {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    async function fetchMatches() {
+      if (!selectedLeague) return;
       setLoading(true);
       const today = new Date().toISOString().split("T")[0];
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
@@ -227,13 +234,14 @@ export default function Dashboard() {
     return toDetailData(selectedMatch, aiAnalysis, aiLoading);
   }, [selectedMatch, aiAnalysis, aiLoading]);
 
-  const toggleLeague = useCallback((lid: string) => {
-    setCollapsedLeagues((prev) => {
-      const next = new Set(prev);
-      next.has(lid) ? next.delete(lid) : next.add(lid);
-      return next;
-    });
-  }, []);
+  return (
+    <main className="scoretabs-page">
+      <div className="scoretabs-header">
+        <div className="scoretabs-title">SportsBank Pro • Dashboard Scoretabs</div>
+        <div className="scoretabs-meta">
+          {mounted ? new Date().toLocaleString("pt-BR") : "Carregando..."}
+        </div>
+      </div>
 
   const oddsTabs: { key: OddsTab; label: string }[] = [
     { key: "1x2", label: "1X2" },
