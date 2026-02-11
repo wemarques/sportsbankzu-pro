@@ -74,7 +74,9 @@ export default function Dashboard() {
     <main className="scoretabs-page">
       <div className="scoretabs-header">
         <div className="scoretabs-title">SportsBank Pro • Dashboard Scoretabs</div>
-        <div className="scoretabs-meta">{new Date().toLocaleString("pt-BR")}</div>
+        <div className="scoretabs-meta" suppressHydrationWarning>
+          {new Date().toLocaleString("pt-BR")}
+        </div>
       </div>
 
       <div className="scoretabs-layout">
