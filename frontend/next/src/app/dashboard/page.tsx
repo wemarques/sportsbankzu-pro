@@ -54,21 +54,21 @@ export default function Dashboard() {
     fetchMatches();
   }, [selectedLeague]);
 
+  const selectedMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId) ?? matches[0], [matches, selectedMatchId]);
+
   useEffect(() => {
     async function fetchAi() {
-      if (!selectedMatchId) {
+      if (!selectedMatch) {
         setAiAnalysis(null);
         return;
       }
       setAiLoading(true);
-      const analysis = await getAiMatchAnalysis(selectedMatchId);
+      const analysis = await getAiMatchAnalysis(selectedMatch);
       setAiAnalysis(analysis);
       setAiLoading(false);
     }
     fetchAi();
-  }, [selectedMatchId]);
-
-  const selectedMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId) ?? matches[0], [matches, selectedMatchId]);
+  }, [selectedMatch]);
 
   const detailMatch = useMemo<MatchDetail | null>(() => {
     if (!selectedMatch) return null;
@@ -129,7 +129,7 @@ export default function Dashboard() {
           </div>
         </aside>
 
-        <section>
+        <section className="detail-card-section">
           {detailMatch ? (
             <MatchDetailCard match={detailMatch} />
           ) : (
@@ -251,6 +251,10 @@ function toMatch(leagueId: string) {
         bttsProb: item.stats?.bttsProb ?? 0,
         over25Prob: item.stats?.over25Prob ?? 0,
         regime: item.stats?.regime ?? "",
+        lambdaHome: item.stats?.lambdaHome,
+        lambdaAway: item.stats?.lambdaAway,
+        lambdaTotal: item.stats?.lambdaTotal,
+        ...item.stats,
       },
       h2h: {
         totalMatches: item.h2h?.totalMatches ?? 0,

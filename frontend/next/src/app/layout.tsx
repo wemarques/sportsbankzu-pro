@@ -1,4 +1,5 @@
 import "./globals.css";
+import "@/styles/match-detail-card.css";
 import { Inter } from "next/font/google";
 import { ThemeToggle } from "../components/ThemeToggle";
 

@@ -21,15 +21,72 @@ export async function getMatchesByLeague(league: string, date?: string) {
   }
 }
 
-export async function getAiMatchAnalysis(matchId: string) {
+export type MatchForAnalysis = {
+  homeTeam: { name: string; form?: string[] };
+  awayTeam: { name: string; form?: string[] };
+  leagueName: string;
+  stats?: Record<string, unknown>;
+  odds?: Record<string, number>;
+  h2h?: Record<string, unknown>;
+};
+
+export async function getAiMatchAnalysis(match: MatchForAnalysis | null): Promise<{
+  summary: string;
+  key_points: string[];
+  recommendation: string;
+  confidence: number;
+  last_updated: string;
+} | null> {
+  if (!match) return null;
   try {
-    // Corrige para usar endpoints reais de AI se existirem, ou retorna mock por enquanto
-    // O backend atual tem /ai/analyze-context mas espera home/away, não ID direto
-    // Precisaremos adaptar ou criar um endpoint no backend para busca por ID
-    // Por enquanto, vamos manter o mock/erro tratado
-    return null; 
+    const body = {
+      home_team: match.homeTeam?.name ?? "",
+      away_team: match.awayTeam?.name ?? "",
+      league: match.leagueName ?? "",
+      stats: {
+        lambdaHome: match.stats?.lambdaHome ?? match.stats?.lambda_home,
+        lambdaAway: match.stats?.lambdaAway ?? match.stats?.lambda_away,
+        homeWinProb: match.stats?.homeWinProb ?? match.stats?.prob_home,
+        drawProb: match.stats?.drawProb ?? match.stats?.prob_draw,
+        awayWinProb: match.stats?.awayWinProb ?? match.stats?.prob_away,
+        over25Prob: match.stats?.over25Prob ?? match.stats?.prob_over_25,
+        bttsProb: match.stats?.bttsProb ?? match.stats?.prob_btts,
+        ...match.stats,
+      },
+      odds: {
+        home: match.odds?.home,
+        draw: match.odds?.draw,
+        away: match.odds?.away,
+        over25: match.odds?.over25,
+        bttsYes: match.odds?.bttsYes,
+        ...match.odds,
+      },
+      context: match.h2h
+        ? {
+            home_form: match.homeTeam?.form?.join("-") ?? "N/A",
+            away_form: match.awayTeam?.form?.join("-") ?? "N/A",
+            h2h: `${match.h2h?.homeWins ?? 0}V ${match.h2h?.draws ?? 0}E ${match.h2h?.awayWins ?? 0}D`,
+          }
+        : undefined,
+    };
+    const res = await fetch(`${API_BASE}/ai/match-analysis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.status !== "success") return null;
+    return {
+      summary: data.summary ?? "",
+      key_points: data.key_points ?? [],
+      recommendation: data.recommendation ?? "",
+      confidence: data.confidence ?? 0,
+      last_updated: data.last_updated ?? new Date().toLocaleString("pt-BR"),
+    };
   } catch (error) {
-    console.error('Erro na API getAiMatchAnalysis:', error);
+    console.error("Erro na API getAiMatchAnalysis:", error);
     return null;
   }
 }

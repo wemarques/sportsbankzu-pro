@@ -1046,6 +1046,31 @@ class ReportGenerationRequest(BaseModel):
     classification: str
     probability: float
 
+class MatchAnalysisRequest(BaseModel):
+    home_team: str
+    away_team: str
+    league: str = ""
+    stats: Dict[str, Any] = {}
+    odds: Dict[str, Any] = {}
+    context: Optional[Dict[str, Any]] = None
+
+@app.post("/ai/match-analysis")
+def match_analysis(request: MatchAnalysisRequest):
+    """Retorna análise no formato do MatchDetailCard (summary, key_points, recommendation, confidence)."""
+    try:
+        from backend.ai.match_analysis_service import analyze_match
+        result = analyze_match(
+            home_team=request.home_team,
+            away_team=request.away_team,
+            league=request.league,
+            stats=request.stats,
+            odds=request.odds,
+            context=request.context,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/ai/audit-match")
 async def audit_match(request: MatchAuditRequest):
     try:
