@@ -119,18 +119,16 @@
 }
 
 @layer utilities {
-  @layer utilities {
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
-    }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 
-    .muted {
-      color: hsl(var(--muted-foreground));
-    }
+  .muted {
+    color: hsl(var(--muted-foreground));
   }
 }
