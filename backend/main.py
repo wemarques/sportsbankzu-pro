@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
@@ -43,6 +44,22 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbank")
 
 app = FastAPI(title="SportsBank Pro Backend", version="0.1.0")
+
+# --- CONFIGURAÇÃO DE CORS (CORREÇÃO) ---
+origins = [
+    "http://localhost:3000",  # Desenvolvimento local
+    "https://sportsbankzu-pro-well.vercel.app",  # Frontend Principal
+    "https://sportsbankzu-pro.vercel.app",  # Domínio alternativo
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Previews Vercel
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ---------------------------------------
 
 data_collector = FootballDataCollector()
 mistral_auditor = MistralAuditor()
