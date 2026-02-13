@@ -187,41 +187,21 @@ export default function Dashboard() {
     fetchAll();
   }, []);
 
-  /* Fetch AI for selected match */
-  useEffect(() => {
-    if (!selectedMatchId) { setAiAnalysis(null); return; }
-    let cancelled = false;
-    (async () => {
-      setAiLoading(true);
-      const analysis = await getAiMatchAnalysis(selectedMatchId);
-      if (!cancelled) {
-        setAiAnalysis(analysis);
-        setAiLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedMatchId]);
+  const selectedMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId) ?? matches[0], [matches, selectedMatchId]);
 
-  /* Group matches by league */
-  const leagueGroups = useMemo<LeagueGroup[]>(() => {
-    const map = new Map<string, Match[]>();
-    allMatches.forEach((m) => {
-      const key = m.leagueId;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(m);
-    });
-    return Array.from(map.entries()).map(([lid, matches]) => {
-      const league = AVAILABLE_LEAGUES.find((l) => l.id === lid);
-      return {
-        leagueId: lid,
-        leagueName: league ? `${league.country} - ${league.name}` : lid,
-        countryFlag: league?.countryFlag ?? "",
-        country: league?.country ?? "",
-        matches,
-        collapsed: collapsedLeagues.has(lid),
-      };
-    });
-  }, [allMatches, collapsedLeagues]);
+  useEffect(() => {
+    async function fetchAi() {
+      if (!selectedMatch) {
+        setAiAnalysis(null);
+        return;
+      }
+      setAiLoading(true);
+      const analysis = await getAiMatchAnalysis(selectedMatch);
+      setAiAnalysis(analysis);
+      setAiLoading(false);
+    }
+    fetchAi();
+  }, [selectedMatch]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -302,14 +282,17 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* Match list */}
-          <div className="st-match-list">
-            {loading && (
-              <div className="st-loading">
-                <Loader2 size={18} className="animate-spin" />
-                Carregando jogos...
-              </div>
-            )}
+        <section className="detail-card-section">
+          {detailMatch ? (
+            <MatchDetailCard match={detailMatch} />
+          ) : (
+            <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
 
             {!loading && leagueGroups.length === 0 && (
               <div className="st-empty">
@@ -363,103 +346,54 @@ export default function Dashboard() {
                         )}
                       </div>
 
-                      {/* Teams */}
-                      <div className="st-match-row__teams">
-                        <div className="st-match-row__team">
-                          {match.homeTeam.logo ? (
-                            <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
-                          ) : (
-                            <div className="st-match-row__team-logo--placeholder" />
-                          )}
-                          <span className="st-match-row__team-name">{match.homeTeam.name}</span>
-                          <span className="st-match-row__star"><Star size={10} /></span>
-                        </div>
-                        <div className="st-match-row__team">
-                          {match.awayTeam.logo ? (
-                            <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
-                          ) : (
-                            <div className="st-match-row__team-logo--placeholder" />
-                          )}
-                          <span className="st-match-row__team-name">{match.awayTeam.name}</span>
-                          <span className="st-match-row__star"><Star size={10} /></span>
-                        </div>
-                      </div>
-
-                      {/* Score (if finished/live) */}
-                      {match.score && (
-                        <div className="st-match-row__score">
-                          <div>{match.score.home}</div>
-                          <div>{match.score.away}</div>
-                        </div>
-                      )}
-
-                      {/* 1X2 Odds */}
-                      <div className="st-match-row__odds">
-                        {[
-                          { label: "1", value: h, idx: 0 },
-                          { label: "X", value: d, idx: 1 },
-                          { label: "2", value: a, idx: 2 },
-                        ].map((odd) => (
-                          <div
-                            key={odd.label}
-                            className={`st-match-row__odd ${odd.idx === lowestIdx && odd.value > 0 ? "st-match-row__odd--highlight" : ""}`}
-                          >
-                            <span className="st-match-row__odd-label">{odd.label}</span>
-                            <span className="st-match-row__odd-value">
-                              {odd.value > 0 ? odd.value.toFixed(2) : "-"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Favorite */}
-                      <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()}>
-                        <Star size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Bottom nav */}
-          <div className="st-bottom-nav">
-            <button className="st-bottom-nav__item st-bottom-nav__item--active">
-              <Flame size={16} />
-              Destaques
-            </button>
-            <button className="st-bottom-nav__item">
-              <Radio size={16} />
-              Radar Esportivo
-            </button>
-            <button className="st-bottom-nav__item">
-              <Bot size={16} />
-              ST Bots
-            </button>
-          </div>
-        </div>
-
-        {/* RIGHT PANEL */}
-        <div className={`st-panel-right ${!detailData ? "st-panel-right--empty" : ""}`}>
-          {detailData ? (
-            <MatchDetailCard
-              match={detailData}
-              aiLoading={aiLoading}
-              onRegenerate={() => {
-                if (!selectedMatchId) return;
-                setAiLoading(true);
-                getAiMatchAnalysis(selectedMatchId).then((data) => {
-                  setAiAnalysis(data);
-                  setAiLoading(false);
-                });
-              }}
-            />
-          ) : (
-            <span>Selecione um jogo para ver os detalhes</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function toMatch(leagueId: string) {
+  return (item: any, idx: number): Match => {
+    const home = item.home_team ?? item.homeTeam?.name ?? item.home ?? "Home";
+    const away = item.away_team ?? item.awayTeam?.name ?? item.away ?? "Away";
+    const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
+    const leagueName = AVAILABLE_LEAGUES.find((l) => l.id === leagueId)?.name ?? leagueId;
+    const statusRaw = item.status ?? "scheduled";
+    return {
+      id: item.id ?? `${leagueId}-${idx}-${home}-${away}-${dt}`,
+      leagueId,
+      leagueName,
+      homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
+      awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+      datetime: dt,
+      venue: item.venue ?? "",
+      status: statusRaw,
+      score: item.score,
+      odds: {
+        home: item.odds?.home ?? 0,
+        draw: item.odds?.draw ?? 0,
+        away: item.odds?.away ?? 0,
+        over25: item.odds?.over25 ?? 0,
+        under25: item.odds?.under25 ?? 0,
+        bttsYes: item.odds?.bttsYes ?? 0,
+        bttsNo: item.odds?.bttsNo ?? 0,
+      },
+      stats: {
+        homeWinProb: item.stats?.homeWinProb ?? 0,
+        drawProb: item.stats?.drawProb ?? 0,
+        awayWinProb: item.stats?.awayWinProb ?? 0,
+        avgGoals: item.stats?.avgGoals ?? 0,
+        bttsProb: item.stats?.bttsProb ?? 0,
+        over25Prob: item.stats?.over25Prob ?? 0,
+        regime: item.stats?.regime ?? "",
+        lambdaHome: item.stats?.lambdaHome,
+        lambdaAway: item.stats?.lambdaAway,
+        lambdaTotal: item.stats?.lambdaTotal,
+        ...item.stats,
+      },
+      h2h: {
+        totalMatches: item.h2h?.totalMatches ?? 0,
+        homeWins: item.h2h?.homeWins ?? 0,
+        draws: item.h2h?.draws ?? 0,
+        awayWins: item.h2h?.awayWins ?? 0,
+        avgGoals: item.h2h?.avgGoals ?? 0,
+      },
+      source: item.source ?? "footystats",
+      lastUpdated: item.lastUpdated ?? new Date().toISOString(),
+    };
+  };
 }
