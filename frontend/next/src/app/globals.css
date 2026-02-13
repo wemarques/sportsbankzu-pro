@@ -5,8 +5,10 @@
 @layer base {
   :root {
     /* Tema Escuro (Padrão) */
-    --background: 222 47% 11%; /* #0f172a - Azul noite profundo */
-    --foreground: 210 40% 98%; /* #f8fafc */
+    --background: 222 47% 11%;
+    /* #0f172a - Azul noite profundo */
+    --foreground: 210 40% 98%;
+    /* #f8fafc */
     --card: 222 47% 13%;
     --card-foreground: 210 40% 98%;
     --popover: 222 47% 11%;
@@ -84,7 +86,7 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222 47% 11%;
     --radius: 0.5rem;
-    
+
     /* Scoretabs tokens Light Mode */
     --color-bg-primary: #ffffff;
     --color-bg-secondary: #f8fafc;
@@ -103,10 +105,12 @@
   * {
     @apply border-border;
   }
+
   html {
     height: 100%;
     overflow-x: hidden;
   }
+
   body {
     min-height: 100%;
     background-color: var(--color-bg-primary);
@@ -114,7 +118,19 @@
   }
 }
 
-/* Utility classes */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.muted { color: hsl(var(--muted-foreground)); }
+@layer utilities {
+  @layer utilities {
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .muted {
+      color: hsl(var(--muted-foreground));
+    }
+  }
+}

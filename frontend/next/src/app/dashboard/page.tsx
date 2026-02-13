@@ -37,9 +37,10 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        // Envia 'date=tomorrow' para pegar jogos futuros, já que 'today' pode estar vazio
-        const today = new Date().toISOString().split('T')[0];
-        const res = await getMatchesByLeague(selectedLeague, today);
+        // Envia 'date=week' para pegar jogos da semana (rodada), garantindo que a lista não fique vazia
+        // se não houver jogos hoje.
+        // const today = new Date().toISOString().split('T')[0];
+        const res = await getMatchesByLeague(selectedLeague, "week");
         const normalized: Match[] = (res?.matches ?? []).map(toMatch(selectedLeague));
         setMatches(normalized);
         setSelectedMatchId((prev) => (prev && normalized.some((m) => m.id === prev) ? prev : normalized[0]?.id ?? null));
@@ -155,20 +156,20 @@ function toMatchDetail(match: Match, aiAnalysis: AiAnalysis | null, aiLoading: b
   const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
   const ai = aiLoading
     ? {
-        summary: "Carregando análise Mistral...",
-        keyPoints: ["Buscando insights para este jogo."],
-        recommendation: "Aguardando análise.",
-        confidence: 5,
-        lastUpdated: new Date().toLocaleString("pt-BR"),
-      }
+      summary: "Carregando análise Mistral...",
+      keyPoints: ["Buscando insights para este jogo."],
+      recommendation: "Aguardando análise.",
+      confidence: 5,
+      lastUpdated: new Date().toLocaleString("pt-BR"),
+    }
     : aiAnalysis
       ? {
-          summary: aiAnalysis.summary,
-          keyPoints: aiAnalysis.key_points ?? aiAnalysis.keyPoints ?? [],
-          recommendation: aiAnalysis.recommendation,
-          confidence: aiAnalysis.confidence,
-          lastUpdated: aiAnalysis.last_updated ?? aiAnalysis.lastUpdated ?? new Date().toLocaleString("pt-BR"),
-        }
+        summary: aiAnalysis.summary,
+        keyPoints: aiAnalysis.key_points ?? aiAnalysis.keyPoints ?? [],
+        recommendation: aiAnalysis.recommendation,
+        confidence: aiAnalysis.confidence,
+        lastUpdated: aiAnalysis.last_updated ?? aiAnalysis.lastUpdated ?? new Date().toLocaleString("pt-BR"),
+      }
       : undefined;
 
   return {
