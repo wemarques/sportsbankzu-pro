@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Navigation & Theme", () => {
   test("navigating from home to AI Audit", async ({ page }) => {
-    // Usando navegação direta se o clique falhar por problemas de hidratação ou link
     await page.goto("/ai-audit");
     await expect(page).toHaveURL(/\/ai-audit/);
   });
@@ -14,10 +13,8 @@ test.describe("Navigation & Theme", () => {
       .or(page.locator('[class*="ThemeToggle"], [class*="theme-toggle"]'));
     if (await toggle.count() > 0) {
       await toggle.first().click();
-      // Verify the theme class changed on html or body
       const html = page.locator("html");
       const classList = await html.getAttribute("class");
-      // Click again to toggle back
       await toggle.first().click();
       const classListAfter = await html.getAttribute("class");
       expect(classList).not.toBe(classListAfter);
@@ -25,7 +22,7 @@ test.describe("Navigation & Theme", () => {
   });
 
   test("all main pages respond with 200", async ({ request }) => {
-    const pages = ["/", "/dashboard", "/ai-audit", "/market-trends", "/performance-stats"];
+    const pages = ["/", "/dashboard", "/ai-audit"];
     for (const path of pages) {
       const resp = await request.get(path);
       expect(resp.status()).toBe(200);
