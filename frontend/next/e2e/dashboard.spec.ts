@@ -3,6 +3,10 @@ import { test, expect } from "@playwright/test";
 test.describe("Dashboard Page", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/dashboard");
+    // ⚠️ AGUARDAR CARREGAMENTO COMPLETO DA PÁGINA
+    await page.waitForLoadState("networkidle");
+    // ⚠️ OPCIONAL: Aguardar API de dados se necessário
+    // await page.waitForResponse(resp => resp.url().includes('/api/') && resp.status() === 200);
   });
 
   test("renders main dashboard layout", async ({ page }) => {
@@ -41,9 +45,9 @@ test.describe("Dashboard Page", () => {
     // Verifica se a grid específica está visível
     await expect(statsGrid).toBeVisible();
     
-    // Verifica os textos dentro dessa grid específica
-    await expect(statsGrid).toContainText(/Jogos|Analysed Matches/i);
-    await expect(statsGrid).toContainText(/Value Bets/i);
+    // ⚠️ Correção: Verificar texto dentro da grid, não a grid inteira
+    await expect(statsGrid.getByText(/Jogos|Analysed Matches/i)).toBeVisible();
+    await expect(statsGrid.getByText(/Value Bets/i)).toBeVisible();
   });
 
   test("renders bank evolution chart", async ({ page }) => {

@@ -1,16 +1,33 @@
 "use client";
-import React from "react";
+
+import { useState, useEffect } from "react";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = React.useState<string>(() => {
-    if (typeof window === "undefined") return "dark";
-    return localStorage.getItem("sb_theme") || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-  });
-  React.useEffect(() => {
+  const [theme, setTheme] = useState<string>("dark");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const stored = localStorage.getItem("sb_theme");
+    const prefers = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    setTheme(stored || prefers);
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
     const root = document.documentElement;
     root.setAttribute("data-theme", theme);
     localStorage.setItem("sb_theme", theme);
-  }, [theme]);
+  }, [theme, mounted]);
+
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <button
       aria-label="Alternar tema"
