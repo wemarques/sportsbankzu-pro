@@ -1,58 +1,191 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import MatchDetailCard, { MatchDetail } from "@/components/MatchDetailCard";
-import { AVAILABLE_LEAGUES, Match } from "@/lib/leagues";
-import { getAiMatchAnalysis, getMatchesByLeague } from "@/lib/api";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import MatchDetailCard, {
+  type MatchDetailData,
+  type AIAnalysis,
+} from "@/components/MatchDetailCard";
+import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
+import { getMatchesByLeague, getAiMatchAnalysis } from "@/lib/api";
+import {
+  Star,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Loader2,
+  Flame,
+  Radio,
+  Bot,
+  SlidersHorizontal,
+  Heart,
+  Filter,
+  Bell,
+} from "lucide-react";
+import "@/styles/scoretabs-dashboard.css";
 
 export const dynamic = "force-dynamic";
 
-type AiAnalysis = {
-  summary: string;
-  key_points?: string[];
-  keyPoints?: string[];
-  recommendation: string;
-  confidence: number;
-  last_updated?: string;
-  lastUpdated?: string;
+type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
+
+type LeagueGroup = {
+  leagueId: string;
+  leagueName: string;
+  countryFlag: string;
+  country: string;
+  matches: Match[];
+  collapsed: boolean;
 };
+
+/* ── helpers ── */
+
+function safeOdd(value?: number, fallback = 0) {
+  if (!value || value <= 0) return fallback;
+  return value;
+}
+
+function formatTime(dt: string) {
+  try {
+    const d = new Date(dt);
+    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "--:--";
+  }
+}
+
+function statusInfo(status: Match["status"]) {
+  switch (status) {
+    case "live":
+      return { label: "AO VIVO", cssClass: "st-match-row__status-label--live" };
+    case "finished":
+      return { label: "FT", cssClass: "st-match-row__status-label--ft" };
+    case "postponed":
+      return { label: "ADIADO", cssClass: "st-match-row__status-label--ft" };
+    default:
+      return { label: "", cssClass: "st-match-row__status-label--scheduled" };
+  }
+}
+
+function getLowestOddIndex(home: number, draw: number, away: number): number {
+  const vals = [home, draw, away];
+  const min = Math.min(...vals.filter((v) => v > 0));
+  return vals.indexOf(min);
+}
+
+function normalizeMatch(item: any, leagueId: string, idx: number): Match {
+  const home = item.home_team ?? item.homeTeam?.name ?? item.home ?? "Home";
+  const away = item.away_team ?? item.awayTeam?.name ?? item.away ?? "Away";
+  const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
+  const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+  return {
+    id: item.id ?? `${leagueId}-${idx}-${home}-${away}`,
+    leagueId,
+    leagueName: league?.name ?? leagueId,
+    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
+    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+    datetime: dt,
+    venue: item.venue ?? item.stadium ?? "",
+    status: item.status ?? "scheduled",
+    score: item.score,
+    odds: {
+      home: item.odds?.home ?? 0,
+      draw: item.odds?.draw ?? 0,
+      away: item.odds?.away ?? 0,
+      over25: item.odds?.over25 ?? 0,
+      under25: item.odds?.under25 ?? 0,
+      bttsYes: item.odds?.bttsYes ?? 0,
+      bttsNo: item.odds?.bttsNo ?? 0,
+    },
+    stats: {
+      homeWinProb: item.stats?.homeWinProb ?? 0,
+      drawProb: item.stats?.drawProb ?? 0,
+      awayWinProb: item.stats?.awayWinProb ?? 0,
+      avgGoals: item.stats?.avgGoals ?? 0,
+      bttsProb: item.stats?.bttsProb ?? 0,
+      over25Prob: item.stats?.over25Prob ?? 0,
+      regime: item.stats?.regime ?? "",
+    },
+    h2h: {
+      totalMatches: item.h2h?.totalMatches ?? 0,
+      homeWins: item.h2h?.homeWins ?? 0,
+      draws: item.h2h?.draws ?? 0,
+      awayWins: item.h2h?.awayWins ?? 0,
+      avgGoals: item.h2h?.avgGoals ?? 0,
+    },
+    source: item.source ?? "footystats",
+    lastUpdated: item.lastUpdated ?? new Date().toISOString(),
+  };
+}
+
+function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: boolean): MatchDetailData {
+  const h = safeOdd(match.odds?.home, 1.7);
+  const d = safeOdd(match.odds?.draw, 3.1);
+  const a = safeOdd(match.odds?.away, 3.8);
+  const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
+  const ai: AIAnalysis | undefined = isAiLoading
+    ? { summary: "Carregando analise Mistral...", key_points: ["Buscando insights..."], recommendation: "Aguardando.", confidence: 5, last_updated: new Date().toLocaleString("pt-BR") }
+    : aiData ?? undefined;
+  return {
+    id: match.id,
+    league: league?.name ?? match.leagueName ?? match.leagueId,
+    season: league?.season ?? "2026",
+    homeTeam: match.homeTeam.name,
+    awayTeam: match.awayTeam.name,
+    homeTeamLogo: match.homeTeam.logo || undefined,
+    awayTeamLogo: match.awayTeam.logo || undefined,
+    startTime: match.datetime,
+    status: match.status === "postponed" ? "scheduled" : match.status,
+    venue: { name: match.venue || "Estadio nao informado" },
+    odds: { home: h, draw: d, away: a },
+    doubleChance: {
+      homeOrDraw: parseFloat((1 / (1 / h + 1 / d)).toFixed(2)),
+      homeOrAway: parseFloat((1 / (1 / h + 1 / a)).toFixed(2)),
+      drawOrAway: parseFloat((1 / (1 / d + 1 / a)).toFixed(2)),
+    },
+    btts: { yes: safeOdd(match.odds?.bttsYes, 2.0), no: safeOdd(match.odds?.bttsNo, 1.7) },
+    round: match.stats?.regime ?? "-",
+    aiAnalysis: ai,
+  };
+}
+
+/* ── COMPONENT ── */
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
-  const [selectedLeague, setSelectedLeague] = useState<string>(AVAILABLE_LEAGUES[0]?.id ?? "");
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
+  const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
+  /* Fetch all leagues on mount */
   useEffect(() => {
-    async function fetchMatches() {
-      if (!selectedLeague) return;
+    async function fetchAll() {
       setLoading(true);
-      setError(null);
+      const today = new Date().toISOString().split("T")[0];
+      const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
       try {
-        // Envia 'date=tomorrow' para pegar jogos futuros, já que 'today' pode estar vazio
-        const today = new Date().toISOString().split('T')[0];
-        const res = await getMatchesByLeague(selectedLeague, today);
-        const normalized: Match[] = (res?.matches ?? []).map(toMatch(selectedLeague));
-        setMatches(normalized);
-        setSelectedMatchId((prev) => (prev && normalized.some((m) => m.id === prev) ? prev : normalized[0]?.id ?? null));
-      } catch (err) {
-        setError("Não foi possível carregar os jogos.");
-        setMatches([]);
-        setSelectedMatchId(null);
+        const res = await getMatchesByLeague(allLeagueIds, today);
+        const raw = res?.matches ?? [];
+        const normalized = raw.map((item: any, idx: number) => {
+          const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+          return normalizeMatch(item, lid, idx);
+        });
+        setAllMatches(normalized);
+        if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
+      } catch {
+        setAllMatches([]);
       } finally {
         setLoading(false);
       }
     }
-    fetchMatches();
-  }, [selectedLeague]);
+    fetchAll();
+  }, []);
 
   const selectedMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId) ?? matches[0], [matches, selectedMatchId]);
 
@@ -70,64 +203,84 @@ export default function Dashboard() {
     fetchAi();
   }, [selectedMatch]);
 
-  const detailMatch = useMemo<MatchDetail | null>(() => {
+  const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
+
+  const detailData = useMemo<MatchDetailData | null>(() => {
     if (!selectedMatch) return null;
-    return toMatchDetail(selectedMatch, aiAnalysis, aiLoading);
+    return toDetailData(selectedMatch, aiAnalysis, aiLoading);
   }, [selectedMatch, aiAnalysis, aiLoading]);
 
-  return (
-    <main className="scoretabs-page">
-      <div className="scoretabs-header">
-        <div className="scoretabs-title">SportsBank Pro • Dashboard Scoretabs</div>
-        <div className="scoretabs-meta">
-          {mounted ? new Date().toLocaleString("pt-BR") : "Carregando..."}
-        </div>
-      </div>
+  const toggleLeague = useCallback((lid: string) => {
+    setCollapsedLeagues((prev) => {
+      const next = new Set(prev);
+      next.has(lid) ? next.delete(lid) : next.add(lid);
+      return next;
+    });
+  }, []);
 
-      <div className="scoretabs-layout">
-        <aside className="matches-sidebar">
-          <div className="sidebar-title">Jogos da Rodada</div>
-          <div className="sidebar-controls">
-            <select className="sidebar-select" value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
-              {AVAILABLE_LEAGUES.map((league) => (
-                <option key={league.id} value={league.id}>
-                  {league.name}
-                </option>
-              ))}
-            </select>
+  const oddsTabs: { key: OddsTab; label: string }[] = [
+    { key: "1x2", label: "1X2" },
+    { key: "double-chance", label: "Dupla Chance" },
+    { key: "btts", label: "BTTS" },
+    { key: "goals", label: "Gols" },
+    { key: "cards", label: "Cartoes" },
+    { key: "corners", label: "Escanteios" },
+  ];
+
+  return (
+    <div className="st-app">
+      {/* TOP NAV */}
+      <nav className="st-nav">
+        <div className="st-nav__logo">
+          sports<span>bank</span>.
+        </div>
+        <div className="st-nav__links">
+          <button className="st-nav__link">Campeonatos</button>
+          <button className="st-nav__link">Ferramentas</button>
+          <button className="st-nav__link">Recomendadas 2026</button>
+        </div>
+        <div className="st-nav__right">
+          <span className="st-badge-pro">PRO</span>
+          <button className="st-nav__search">
+            <Search size={14} />
+            Buscar
+            <kbd>Ctrl+K</kbd>
+          </button>
+          <button className="st-nav__link" aria-label="Notificacoes">
+            <Bell size={16} />
+          </button>
+        </div>
+      </nav>
+
+      <div className="st-main">
+        {/* LEFT PANEL */}
+        <div className="st-panel-left">
+          {/* Filter bar */}
+          <div className="st-filters">
+            <div className="st-date-nav">
+              <button className="st-date-nav__btn"><ChevronLeft size={14} /></button>
+              <span className="st-date-label">Hoje</span>
+              <button className="st-date-nav__btn"><ChevronRight size={14} /></button>
+            </div>
+            <div className="st-live-dot" />
+            <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
+            <button className="st-filter-btn"><Heart size={12} /> Favoritos</button>
+            <button className="st-filter-btn"><Filter size={12} /> Filtros</button>
           </div>
 
-          {loading && <div className="muted">Carregando jogos...</div>}
-          {error && <div className="muted">{error}</div>}
-
-          {!loading && !matches.length && (
-            <div className="muted">Nenhum jogo disponível para a liga selecionada.</div>
-          )}
-
-          <div className="match-list">
-            {matches.map((match) => (
+          {/* Odds tabs */}
+          <div className="st-odds-tabs">
+            <span style={{ fontSize: "0.7rem", color: "var(--st-text-muted)", padding: "10px 8px 10px 0", whiteSpace: "nowrap" }}>COTACOES</span>
+            {oddsTabs.map((t) => (
               <button
-                key={match.id}
-                className={`match-list-item ${match.id === selectedMatchId ? "match-list-item--active" : ""}`}
-                onClick={() => setSelectedMatchId(match.id)}
+                key={t.key}
+                className={`st-odds-tab ${oddsTab === t.key ? "st-odds-tab--active" : ""}`}
+                onClick={() => setOddsTab(t.key)}
               >
-                <div className="match-list-time">
-                  {new Date(match.datetime).toLocaleDateString("pt-BR")} • {new Date(match.datetime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                </div>
-                <div className="match-list-status">{statusLabel(match.status)}</div>
-                <div className="match-list-teams">
-                  <span>{match.homeTeam.name}</span>
-                  <span>{match.awayTeam.name}</span>
-                </div>
-                <div className="match-odds-grid">
-                  <span className="match-odds-cell">1 {safeOdd(match.odds?.home).toFixed(2)}</span>
-                  <span className="match-odds-cell">X {safeOdd(match.odds?.draw).toFixed(2)}</span>
-                  <span className="match-odds-cell">2 {safeOdd(match.odds?.away).toFixed(2)}</span>
-                </div>
+                {t.label}
               </button>
             ))}
           </div>
-        </aside>
 
         <section className="detail-card-section">
           {detailMatch ? (
@@ -141,81 +294,57 @@ export default function Dashboard() {
   );
 }
 
-function safeOdd(value?: number, fallback = 1.5) {
-  if (!value || value <= 0) return fallback;
-  return value;
-}
+            {!loading && leagueGroups.length === 0 && (
+              <div className="st-empty">
+                <div className="st-empty__icon">&#9917;</div>
+                Nenhum jogo disponivel para hoje.
+              </div>
+            )}
 
-function toMatchDetail(match: Match, aiAnalysis: AiAnalysis | null, aiLoading: boolean): MatchDetail {
-  const homeOdd = safeOdd(match.odds?.home, 1.7);
-  const drawOdd = safeOdd(match.odds?.draw, 3.1);
-  const awayOdd = safeOdd(match.odds?.away, 3.8);
-  const bttsYes = safeOdd(match.odds?.bttsYes, 2.0);
-  const bttsNo = safeOdd(match.odds?.bttsNo, 1.7);
-  const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
-  const ai = aiLoading
-    ? {
-        summary: "Carregando análise Mistral...",
-        keyPoints: ["Buscando insights para este jogo."],
-        recommendation: "Aguardando análise.",
-        confidence: 5,
-        lastUpdated: new Date().toLocaleString("pt-BR"),
-      }
-    : aiAnalysis
-      ? {
-          summary: aiAnalysis.summary,
-          keyPoints: aiAnalysis.key_points ?? aiAnalysis.keyPoints ?? [],
-          recommendation: aiAnalysis.recommendation,
-          confidence: aiAnalysis.confidence,
-          lastUpdated: aiAnalysis.last_updated ?? aiAnalysis.lastUpdated ?? new Date().toLocaleString("pt-BR"),
-        }
-      : undefined;
+            {!loading && leagueGroups.map((group) => (
+              <div key={group.leagueId} className="st-league-group">
+                {/* League header */}
+                <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
+                  <span className="st-league-flag">{group.countryFlag}</span>
+                  <span className="st-league-name">
+                    {group.leagueName}
+                    <span className="st-league-count"> ({group.matches.length})</span>
+                  </span>
+                  <div className="st-league-actions">
+                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                      <Star size={14} />
+                    </button>
+                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                      <SlidersHorizontal size={14} />
+                    </button>
+                    {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  </div>
+                </div>
 
-  return {
-    id: match.id,
-    league: league?.name ?? match.leagueName ?? match.leagueId,
-    season: league?.season ?? "2026",
-    homeTeam: match.homeTeam.name,
-    awayTeam: match.awayTeam.name,
-    homeTeamLogo: match.homeTeam.logo || undefined,
-    awayTeamLogo: match.awayTeam.logo || undefined,
-    startTime: match.datetime,
-    status: match.status === "postponed" ? "scheduled" : match.status,
-    venue: {
-      name: match.venue || "Estádio não informado",
-      capacity: 0,
-    },
-    odds: {
-      home: homeOdd,
-      draw: drawOdd,
-      away: awayOdd,
-    },
-    doubleChance: {
-      homeOrDraw: Math.max(1.05, homeOdd * 0.7),
-      homeOrAway: Math.max(1.05, awayOdd * 0.6),
-      drawOrAway: Math.max(1.05, awayOdd * 0.7),
-    },
-    btts: {
-      yes: bttsYes,
-      no: bttsNo,
-    },
-    round: match.stats?.regime ?? "-",
-    aiAnalysis: ai,
-  };
-}
+                {/* Match rows */}
+                {!group.collapsed && group.matches.map((match) => {
+                  const si = statusInfo(match.status);
+                  const h = safeOdd(match.odds?.home);
+                  const d = safeOdd(match.odds?.draw);
+                  const a = safeOdd(match.odds?.away);
+                  const lowestIdx = getLowestOddIndex(h, d, a);
+                  const isSelected = match.id === selectedMatchId;
 
-function statusLabel(status: Match["status"]) {
-  switch (status) {
-    case "live":
-      return "● Ao vivo";
-    case "finished":
-      return "Encerrado";
-    case "postponed":
-      return "Adiado";
-    default:
-      return "Agendado";
-  }
-}
+                  return (
+                    <div
+                      key={match.id}
+                      className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
+                      onClick={() => setSelectedMatchId(match.id)}
+                    >
+                      {/* Status / Time */}
+                      <div className="st-match-row__status">
+                        <div className={`st-match-row__status-label ${si.cssClass}`}>
+                          {si.label || formatTime(match.datetime)}
+                        </div>
+                        {si.label && (
+                          <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
+                        )}
+                      </div>
 
 function toMatch(leagueId: string) {
   return (item: any, idx: number): Match => {
