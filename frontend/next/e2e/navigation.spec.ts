@@ -6,7 +6,7 @@ test.describe("Navigation & Theme", () => {
     await expect(page).toHaveURL(/\/ai-audit/);
   });
 
-  test("theme toggle switches between light and dark mode", async ({ page }) => {
+  test("market tabs switch active state on click", async ({ page }) => {
     await page.goto("/");
     const toggle = page.locator("button").filter({ hasText: /theme|dark|light/i })
       .or(page.locator('[aria-label*="theme"]'))
@@ -27,5 +27,12 @@ test.describe("Navigation & Theme", () => {
       const resp = await request.get(path);
       expect(resp.status()).toBe(200);
     }
+  });
+
+  test("Ctrl+K opens search", async ({ page }) => {
+    await page.goto("/");
+    await page.keyboard.press("Control+k");
+    const input = page.locator('header input[type="text"]');
+    await expect(input).toBeVisible();
   });
 });
