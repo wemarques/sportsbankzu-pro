@@ -1,0 +1,810 @@
+/* === MATCH DETAIL CARD — Scoretabs-inspired dark theme === */
+
+/* CSS Variables for match detail card */
+:root {
+  --mdc-bg-primary: #0a0a0a;
+  --mdc-bg-secondary: #111111;
+  --mdc-bg-card: #141414;
+  --mdc-bg-tertiary: #1a1a1a;
+  --mdc-bg-card-hover: #1e1e1e;
+  --mdc-border: #2a2a2a;
+  --mdc-border-light: #333333;
+  --mdc-text-primary: #f0f0f0;
+  --mdc-text-secondary: #999999;
+  --mdc-text-muted: #666666;
+  --mdc-primary: #00ff88;
+  --mdc-primary-light: #33ffaa;
+  --mdc-gold: #ffd700;
+  --mdc-odds-up: #00cc66;
+  --mdc-odds-down: #ff4444;
+  --mdc-radius-sm: 4px;
+  --mdc-radius-md: 8px;
+  --mdc-radius-lg: 12px;
+}
+
+.match-detail-card {
+  background-color: var(--mdc-bg-card);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-lg);
+  overflow: hidden;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  position: sticky;
+  top: 24px;
+  width: 100%;
+}
+
+.match-detail-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mdc-border);
+  background-color: var(--mdc-bg-secondary);
+}
+
+.match-detail-card__league {
+  color: var(--mdc-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.match-detail-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mdc-icon-btn {
+  background: transparent;
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-md);
+  padding: 6px;
+  color: var(--mdc-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mdc-icon-btn:hover {
+  background-color: var(--mdc-bg-tertiary);
+  border-color: var(--mdc-primary);
+  color: var(--mdc-primary);
+}
+
+/* === TEAMS + TIMER === */
+.match-detail-card__teams {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 20px;
+  gap: 16px;
+  background: linear-gradient(180deg, var(--mdc-bg-secondary) 0%, var(--mdc-bg-card) 100%);
+}
+
+.mdc-team-logo {
+  flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+}
+
+.match-detail-card__center {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mdc-team-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--mdc-text-primary);
+}
+
+/* === COUNTDOWN TIMER === */
+.mdc-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.mdc-countdown__label {
+  color: var(--mdc-text-secondary);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mdc-countdown__time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.mdc-countdown__number {
+  background-color: var(--mdc-bg-tertiary);
+  color: var(--mdc-primary);
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: var(--mdc-radius-md);
+  min-width: 50px;
+  text-align: center;
+}
+
+.mdc-countdown__separator {
+  color: var(--mdc-text-muted);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.mdc-link-small {
+  color: var(--mdc-primary);
+  font-size: 0.7rem;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.mdc-link-small:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+/* === ODDS SECTION === */
+.match-detail-card__odds-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--mdc-border);
+}
+
+.mdc-odds-title {
+  color: var(--mdc-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.mdc-odds-title.mt-md {
+  margin-top: 16px;
+}
+
+/* Odds Principais (Douradas) */
+.mdc-odds-main-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mdc-odd-main {
+  background: linear-gradient(135deg, #3a2f1f 0%, #2a2520 100%);
+  border: 1px solid #4a3f2f;
+  border-radius: var(--mdc-radius-md);
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mdc-odd-main:hover {
+  border-color: var(--mdc-gold);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.mdc-odd-main__label {
+  display: block;
+  color: #9a8f7f;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mdc-odd-main__value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--mdc-gold);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.mdc-odd-variation { font-size: 0.85rem; }
+.mdc-odd-variation--up { color: var(--mdc-odds-up); }
+.mdc-odd-variation--down { color: var(--mdc-odds-down); }
+
+/* Odds Secundarias */
+.mdc-odds-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.mdc-odd-secondary {
+  background-color: var(--mdc-bg-tertiary);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-md);
+  padding: 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mdc-odd-secondary:hover {
+  background-color: var(--mdc-bg-card-hover);
+  border-color: var(--mdc-gold);
+}
+
+.mdc-odd-secondary__label {
+  display: block;
+  color: var(--mdc-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.mdc-odd-secondary__value {
+  display: block;
+  color: var(--mdc-gold);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* === TABS === */
+.match-detail-card__tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background-color: var(--mdc-bg-secondary);
+  border-bottom: 1px solid var(--mdc-border);
+}
+
+.mdc-tab-btn {
+  flex: 1;
+  background-color: var(--mdc-bg-tertiary);
+  color: var(--mdc-text-secondary);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-md);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.mdc-tab-btn:hover {
+  background-color: var(--mdc-bg-card-hover);
+  border-color: var(--mdc-border-light);
+}
+
+.mdc-tab-btn--active {
+  background-color: var(--mdc-primary);
+  color: #000;
+  border-color: var(--mdc-primary);
+}
+
+/* === SUB-TABS === */
+.match-detail-card__sub-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--mdc-border);
+  overflow-x: auto;
+}
+
+.mdc-sub-tab-btn {
+  background: transparent;
+  color: var(--mdc-text-secondary);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.mdc-sub-tab-btn:hover {
+  color: var(--mdc-text-primary);
+}
+
+.mdc-sub-tab-btn--active {
+  color: var(--mdc-primary);
+  border-bottom-color: var(--mdc-primary);
+}
+
+/* === CONTENT === */
+.match-detail-card__content {
+  padding: 16px;
+}
+
+/* === AI ANALYSIS SECTION === */
+.mdc-ai-section {
+  background: linear-gradient(135deg, #1a1f1a 0%, #1e1e1e 100%);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: var(--mdc-radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.mdc-collapsible-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: var(--mdc-text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.mdc-collapsible-header:hover {
+  background-color: rgba(0, 255, 136, 0.05);
+}
+
+.mdc-collapsible-header__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mdc-ai-icon {
+  color: var(--mdc-primary);
+  animation: mdc-pulse-ai 2s ease-in-out infinite;
+}
+
+@keyframes mdc-pulse-ai {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.mdc-collapsible-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mdc-badge-pro {
+  background-color: var(--mdc-primary);
+  color: #000;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--mdc-radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* AI Analysis Content */
+.mdc-ai-content {
+  padding: 16px;
+  padding-top: 0;
+}
+
+/* Confidence Bar */
+.mdc-confidence {
+  margin-bottom: 16px;
+}
+
+.mdc-confidence__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--mdc-text-secondary);
+  font-size: 0.8rem;
+}
+
+.mdc-confidence__value {
+  color: var(--mdc-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.mdc-confidence__bar {
+  width: 100%;
+  height: 8px;
+  background-color: var(--mdc-bg-tertiary);
+  border-radius: var(--mdc-radius-sm);
+  overflow: hidden;
+}
+
+.mdc-confidence__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--mdc-primary) 0%, var(--mdc-primary-light) 100%);
+  transition: width 0.5s ease;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+
+/* AI Sections */
+.mdc-ai-summary,
+.mdc-ai-key-points,
+.mdc-ai-recommendation { margin-bottom: 16px; }
+
+.mdc-ai-section-title {
+  color: var(--mdc-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mdc-ai-section-title::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  background-color: var(--mdc-primary);
+  border-radius: 2px;
+}
+
+.mdc-ai-text {
+  color: var(--mdc-text-primary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* Key Points List */
+.mdc-ai-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.mdc-ai-list-item {
+  display: flex;
+  gap: 8px;
+  color: var(--mdc-text-primary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.mdc-ai-bullet {
+  color: var(--mdc-primary);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Recommendation Box */
+.mdc-ai-recommendation-box {
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 255, 136, 0.05) 100%);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: var(--mdc-radius-md);
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.mdc-ai-recommendation-icon {
+  color: var(--mdc-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mdc-ai-recommendation-text {
+  color: var(--mdc-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Timestamp */
+.mdc-ai-timestamp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mdc-text-muted);
+  font-size: 0.7rem;
+  padding-top: 8px;
+  border-top: 1px solid var(--mdc-border);
+}
+
+/* === MATCH INFO GRID === */
+.mdc-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mdc-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mdc-info-label {
+  color: var(--mdc-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mdc-info-value {
+  color: var(--mdc-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* === VENUE IMAGE === */
+.mdc-venue-image-container {
+  margin-bottom: 16px;
+  border-radius: var(--mdc-radius-lg);
+  overflow: hidden;
+}
+
+.mdc-venue-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* === COMPARATIVE SECTION === */
+.mdc-comparative {
+  background-color: var(--mdc-bg-secondary);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-lg);
+  overflow: hidden;
+}
+
+.mdc-comparative__content {
+  padding: 12px;
+}
+
+.mdc-comparative__tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.mdc-comparative__tab {
+  background-color: var(--mdc-bg-tertiary);
+  color: var(--mdc-text-secondary);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-sm);
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.mdc-comparative__tab:hover {
+  background-color: var(--mdc-bg-card-hover);
+}
+
+.mdc-comparative__tab--active {
+  background-color: var(--mdc-primary);
+  color: #000;
+  border-color: var(--mdc-primary);
+}
+
+/* === STATUS BADGES === */
+.mdc-badge-upcoming {
+  background-color: var(--mdc-bg-tertiary);
+  color: var(--mdc-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--mdc-radius-sm);
+  border: 1px solid var(--mdc-border);
+}
+
+.scoretabs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.scoretabs-meta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.scoretabs-meta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.scoretabs-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.scoretabs-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Seção direita: card de detalhe com análise Mistral */
+.detail-card-section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.matches-sidebar {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.sidebar-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sidebar-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sidebar-select {
+  width: 100%;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  color: var(--color-text-primary);
+}
+
+.match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.match-list-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  color: var(--color-text-primary);
+}
+
+.match-list-item:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.match-list-item--active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
+}
+
+.mdc-badge-finished {
+  background-color: rgba(0, 204, 102, 0.15);
+  color: var(--mdc-primary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--mdc-radius-sm);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+/* === LOADING === */
+.mdc-loading {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 8px;
+}
+
+.match-odds-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.match-odds-cell {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  text-align: center;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* === BADGES === */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  font-size: 0.8rem;
+  color: var(--mdc-primary);
+}
+
+.mdc-loading-spinner {
+  animation: mdc-spin 1s linear infinite;
+}
+
+@keyframes mdc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* === RESPONSIVENESS === */
+@media (max-width: 1024px) {
+  .match-detail-card {
+    position: static;
+    max-height: none;
+    width: 100%;
+  }
+
+  .scoretabs-layout {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .detail-card-section {
+    order: 2;
+  }
+
+  .matches-sidebar {
+    max-height: none;
+    order: 1;
+  }
+
+  .match-detail-card__teams {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .mdc-team-logo { width: 60px; height: 60px; }
+
+  .mdc-info-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .mdc-odds-main-grid { gap: 6px; }
+  .mdc-odd-main { padding: 8px; }
+  .mdc-countdown__number { font-size: 1rem; padding: 6px 8px; min-width: 40px; }
+  .mdc-team-name { font-size: 0.95rem; }
+}

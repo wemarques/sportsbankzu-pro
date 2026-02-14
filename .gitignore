@@ -1,6 +1,8 @@
 *.pyc
 __pycache__/
 .env
+.env.local
+.env*.local
 htmlcov/
 .pytest_cache/
 .streamlit/secrets.toml
@@ -19,4 +21,7 @@ backend/main.py.backup
 playwright-report/
 test-results/
 blob-report/
-*.tsbuildinfo
+
+deploy_lambda_build/
+
+nul
