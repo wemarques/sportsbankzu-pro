@@ -1,80 +1,78 @@
 "use client";
-import { useMemo, useState, useEffect } from "react";
-import BankChart from "../components/BankChart";
-import ProgressBar from "../components/ProgressBar";
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@radix-ui/react-accordion";
-import { Plus, AlertTriangle, Cpu } from "lucide-react";
-import Link from "next/link";
-import { MultiLeagueSelector } from "@/components/multi-league-selector";
-import { MatchesList } from "@/components/matches-list";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Search,
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  Star,
+  ArrowUpDown,
+  Loader2,
+} from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { AVAILABLE_LEAGUES } from "@/lib/leagues";
 import type { Match } from "@/components/MatchCard";
 
-export const dynamic = "force-dynamic";
+const MARKET_TABS = [
+  { id: "cotacoes", label: "COTACOES" },
+  { id: "1x2", label: "1X2" },
+  { id: "dupla-chance", label: "Dupla Chance" },
+  { id: "btts", label: "BTTS" },
+  { id: "gols", label: "Gols" },
+  { id: "cartoes", label: "Cartoes" },
+  { id: "escanteios", label: "Escanteios" },
+];
 
-type BetRow = { jogo: string; mercado: string; odd: number; ev: number; stake: number; confianca: "Baixa" | "Média" | "Boa" | "Alta" };
+const BOTTOM_TABS = [
+  { id: "destaques", label: "Destaques" },
+  { id: "radar", label: "Radar Esportivo" },
+  { id: "bots", label: "ST Bots" },
+];
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+}
 
 export default function Page() {
-  const [banca, setBanca] = useState(80);
-  const [kellyFraction, setKellyFraction] = useState(25);
-  const [estrategia, setEstrategia] = useState("Moderado");
-  const [limiteDiarioUsado, setLimiteDiarioUsado] = useState(0);
-  const limiteDiario = useMemo(() => banca * 0.1, [banca]);
-  const limitePorAposta = useMemo(() => banca * 0.05, [banca]);
-
-  const bets: BetRow[] = [
-    { jogo: "Aston Villa vs Bournemouth", mercado: "Home ML", odd: 1.9, ev: 4, stake: 8, confianca: "Média" },
-    { jogo: "Crystal Palace vs Brighton", mercado: "DNB", odd: 2.15, ev: 7, stake: 10, confianca: "Boa" },
-    { jogo: "Nottingham Forest vs Leeds", mercado: "Home ML", odd: 1.95, ev: 9, stake: 12, confianca: "Alta" },
-  ];
-
-  const jogosAnalisados = 148;
-  const valueBets = 24;
-  const stakeTotal = useMemo(() => bets.reduce((s, b) => s + b.stake, 0), [bets]);
-  const evMedio = useMemo(() => (bets.reduce((s, b) => s + b.ev, 0) / bets.length), [bets]);
-
-  const [linhaLabels, setLinhaLabels] = useState<string[]>([]);
-  const [linhaReal, setLinhaReal] = useState<number[]>([]);
-  const [linhaProj, setLinhaProj] = useState<number[]>([]);
-  useEffect(() => {
-    const labels = Array.from({ length: 30 }, (_, i) => `Dia ${i + 1}`);
-    let real = [banca];
-    let proj = [banca];
-    for (let i = 1; i < 30; i++) {
-      const deltaProj = stakeTotal * (evMedio / 100) * 0.2;
-      const deltaReal = i % 5 === 0 ? -limitePorAposta * 0.5 : limitePorAposta * 0.2;
-      proj.push(proj[i - 1] + deltaProj);
-      real.push(real[i - 1] + deltaReal);
-    }
-    setLinhaLabels(labels);
-    setLinhaReal(real);
-    setLinhaProj(proj);
-  }, [banca, stakeTotal, evMedio, limitePorAposta]);
-
-  useEffect(() => {
-    setLimiteDiarioUsado(stakeTotal);
-  }, [stakeTotal]);
-
-  const varValor = (linhaReal[linhaReal.length - 1] ?? banca) - banca;
-  const varPct = (varValor / banca) * 100;
-  const timestamp = new Date().toLocaleString();
-
-  const [toasts, setToasts] = useState<string[]>([]);
-  useEffect(() => {
-    const alerts: string[] = [];
-    if (stakeTotal > limiteDiario) alerts.push("Stake total acima do limite diário");
-    if (bets.some((b) => b.stake > limitePorAposta)) alerts.push("Stake por aposta acima de 5% da banca");
-    setToasts(alerts);
-  }, [stakeTotal, bets, limiteDiario, limitePorAposta]);
-
+  const [activeMarket, setActiveMarket] = useState("1x2");
+  const [activeBottomTab, setActiveBottomTab] = useState("destaques");
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [selectedLeagues, setSelectedLeagues] = useState<string[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [selectedMatches, setSelectedMatches] = useState<string[]>([]);
+  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
 
-  async function fetchMatches() {
+  const isToday =
+    selectedDate.toDateString() === new Date().toDateString();
+
+  const navigateDate = (direction: number) => {
+    setSelectedDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + direction);
+      return next;
+    });
+  };
+
+  const fetchMatches = useCallback(async () => {
+    const leagueIds =
+      selectedLeagues.length > 0
+        ? selectedLeagues
+        : AVAILABLE_LEAGUES.map((l) => l.id);
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/matches/fetch?leagues=${encodeURIComponent(selectedLeagues.join(","))}&date=today`, { cache: "no-store" });
+      const response = await fetch(
+        `/api/matches/fetch?leagues=${encodeURIComponent(leagueIds.join(","))}&date=today`,
+        { cache: "no-store" }
+      );
       const data = await response.json();
       setMatches(Array.isArray(data?.matches) ? data.matches : []);
     } catch {
@@ -82,168 +80,466 @@ export default function Page() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [selectedLeagues]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
+
+  const toggleLeague = (id: string) => {
+    setSelectedLeagues((prev) =>
+      prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]
+    );
+  };
+
+  const filteredMatches = matches.filter((m) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return (
+        m.homeTeam.name.toLowerCase().includes(q) ||
+        m.awayTeam.name.toLowerCase().includes(q) ||
+        m.leagueName.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const getOddsForMarket = (match: Match) => {
+    switch (activeMarket) {
+      case "1x2":
+        return [
+          { label: "1", value: match.odds.home },
+          { label: "X", value: match.odds.draw },
+          { label: "2", value: match.odds.away },
+        ];
+      case "dupla-chance":
+        return [
+          { label: "1X", value: +(1 / (1 / match.odds.home + 1 / match.odds.draw)).toFixed(2) },
+          { label: "12", value: +(1 / (1 / match.odds.home + 1 / match.odds.away)).toFixed(2) },
+          { label: "X2", value: +(1 / (1 / match.odds.draw + 1 / match.odds.away)).toFixed(2) },
+        ];
+      case "btts":
+        return [
+          { label: "Sim", value: match.odds.bttsYes },
+          { label: "Nao", value: match.odds.bttsNo },
+        ];
+      case "gols":
+        return [
+          { label: "O 2.5", value: match.odds.over25 },
+          { label: "U 2.5", value: match.odds.under25 },
+        ];
+      default:
+        return [
+          { label: "1", value: match.odds.home },
+          { label: "X", value: match.odds.draw },
+          { label: "2", value: match.odds.away },
+        ];
+    }
+  };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-20 backdrop-blur bg-black/30">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-6">
-          <div className="text-xl font-semibold">SportsBank Pro</div>
-          <div className="flex items-center gap-3">
-            <span className="muted">Banca Atual:</span>
-            <input
-              className="card px-3 py-2 w-32 text-right outline-none"
-              type="number"
-              value={banca}
-              onChange={(e) => setBanca(parseFloat(e.target.value || "0"))}
-            />
-          </div>
-          <div className="ml-auto flex items-center gap-4">
-            <Link
-              href="/ai-audit"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#9d50ff]/10 border border-[#9d50ff]/30 text-[#9d50ff] text-sm font-semibold hover:bg-[#9d50ff]/20 transition-colors"
-            >
-              <Cpu size={14} />
-              AI Audit
-            </Link>
-            <span className={"badge " + (varValor >= 0 ? "bg-primary" : "bg-red-600")}>
-              {varValor >= 0 ? "+" : ""}R$ {varValor.toFixed(2)} ({varPct.toFixed(1)}%)
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      {/* Header */}
+      <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+          {/* Logo */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xl font-bold tracking-tight">sportsbank.</span>
+            <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded">
+              PRO
             </span>
-            <span className="muted">Última atualização: {timestamp}</span>
+          </div>
+
+          {/* Search */}
+          <div className="flex-1 max-w-md mx-auto">
+            {searchOpen ? (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Buscar jogos, times, ligas..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onBlur={() => !searchQuery && setSearchOpen(false)}
+                  className="w-full bg-secondary rounded-lg pl-9 pr-16 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                />
+                <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border">
+                  Esc
+                </kbd>
+              </div>
+            ) : (
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="flex items-center gap-2 w-full bg-secondary rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/80 transition-colors"
+              >
+                <Search size={16} />
+                <span>Buscar</span>
+                <kbd className="ml-auto text-[10px] bg-background px-1.5 py-0.5 rounded border border-border">
+                  Ctrl+K
+                </kbd>
+              </button>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1 shrink-0">
+            <ThemeToggle />
+            <button className="p-2 rounded-lg hover:bg-secondary transition-colors relative" aria-label="Notificacoes">
+              <Bell size={18} />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 px-6 py-6">
-        <aside className="card p-5 h-max">
-          <div className="text-lg font-semibold mb-3">Configurações de Risco</div>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-1"><span className="muted">Kelly Fraction</span><span>{kellyFraction}%</span></div>
-              <input type="range" min={0} max={100} value={kellyFraction} onChange={(e) => setKellyFraction(parseInt(e.target.value))} className="w-full" />
-            </div>
-            <div>
-              <div className="muted mb-1">Estratégia</div>
-              <select value={estrategia} onChange={(e) => setEstrategia(e.target.value)} className="card px-3 py-2 w-full">
-                <option>Conservador</option>
-                <option>Moderado</option>
-                <option>Agressivo</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between"><span className="muted">Limite diário</span><span>R$ {limiteDiarioUsado.toFixed(2)} / R$ {limiteDiario.toFixed(2)}</span></div>
-              <ProgressBar value={limiteDiarioUsado} max={limiteDiario} />
-              <div className="flex justify-between"><span className="muted">Limite por aposta</span><span>R$ {limitePorAposta.toFixed(2)} (5% da banca)</span></div>
-            </div>
-            <button className="w-full bg-primary text-black py-2 rounded-xl shadow-soft" onClick={() => alert("Stake fixo de 2% aplicado")}>Aplicar Stake Fixo (2%)</button>
-          </div>
-        </aside>
+      {/* Date navigation bar */}
+      <div className="border-b border-border bg-card/50">
+        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-3">
+          <button
+            onClick={() => navigateDate(-1)}
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
+            aria-label="Dia anterior"
+          >
+            <ChevronLeft size={18} />
+          </button>
 
-        <section className="space-y-6">
-          <MultiLeagueSelector
-            selectedLeagues={selectedLeagues}
-            onSelectionChange={setSelectedLeagues}
-            onFetchMatches={fetchMatches}
-            isLoading={isLoading}
-          />
-          <MatchesList
-            matches={matches}
-            selectedMatches={selectedMatches}
-            onSelectMatch={(id) => {
-              setSelectedMatches((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
-            }}
-            isLoading={isLoading}
-          />
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="card p-4"><div className="muted">📊 Jogos Analisados</div><div className="text-2xl font-semibold">{jogosAnalisados}</div></div>
-            <div className="card p-4"><div className="muted">✅ Value Bets</div><div className="text-2xl font-semibold">{valueBets} <span className="badge bg-primary ml-2">+16% oportunidades</span></div></div>
-            <div className="card p-4"><div className="muted">💰 Stake Total</div><div className="text-2xl font-semibold">R$ {stakeTotal.toFixed(2)} <span className="badge bg-warning ml-2">⚠️ acima do recomendado</span></div></div>
-            <div className="card p-4"><div className="muted">📈 EV Médio</div><div className="text-2xl font-semibold">{evMedio.toFixed(1)}% <span className="badge bg-primary ml-2">Positivo</span></div></div>
-          </div>
+          <button
+            onClick={() => setSelectedDate(new Date())}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-secondary transition-colors font-medium text-sm"
+          >
+            {isToday && <span className="w-2 h-2 bg-primary rounded-full" />}
+            {isToday ? "Hoje" : formatDate(selectedDate)}
+          </button>
 
-          <div>
-            <div className="text-xl mb-2">Evolução da Banca (30 dias)</div>
-            <BankChart labels={linhaLabels} real={linhaReal} projected={linhaProj} />
-          </div>
+          <button
+            onClick={() => navigateDate(1)}
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
+            aria-label="Proximo dia"
+          >
+            <ChevronRight size={18} />
+          </button>
 
-          <div className="card p-4">
-            <div className="text-xl mb-3">Tabela de Value Bets</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left muted">
-                  <tr>
-                    <th className="py-2">Jogo</th><th>Mercado</th><th>Odd</th><th>EV%</th><th>Stake Sugerido</th><th>Confiança</th><th>Retorno Projetado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bets.map((b, i) => (
-                    <tr key={i} className="border-t border-slate-700">
-                      <td className="py-2">{b.jogo}</td>
-                      <td>{b.mercado}</td>
-                      <td>{b.odd.toFixed(2)}</td>
-                      <td className={b.ev >= 0 ? "text-primary" : "text-red-500"}>{(b.ev >= 0 ? "+" : "") + b.ev}%</td>
-                      <td>R$ {b.stake.toFixed(2)}</td>
-                      <td>{b.confianca === "Alta" ? "🔴 Alta" : b.confianca === "Boa" ? "🟢 Boa" : b.confianca === "Média" ? "🟡 Média" : "⚪ Baixa"}</td>
-                      <td>R$ {(b.stake * b.odd).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <div className="flex-1" />
 
-          <div className="card p-4">
-            <div className="text-xl mb-3">Cenários Detalhados por Jogo</div>
-            <Accordion type="single" collapsible>
-              <AccordionItem value="city-liverpool">
-                <AccordionTrigger className="w-full py-2">Manchester City vs Liverpool</AccordionTrigger>
-                <AccordionContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="card p-3">
-                      <div>🔵 TUDO ACERTA</div>
-                      <div className="muted">Retorno Total | Lucro | ROI</div>
-                      <div>R$ 152,50 | +R$ 72,50 | +90,6%</div>
-                    </div>
-                    <div className="card p-3"><div>🟡 2 ACERTOS</div><div className="muted">Retorno médio</div><div>R$ 95,40</div></div>
-                    <div className="card p-3"><div>🔴 1 ACERTO</div><div className="muted">Retorno médio</div><div>R$ 49,50</div></div>
-                  </div>
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left muted"><tr><th>Mercado</th><th>Stake</th><th>Odd</th><th>Retorno</th><th>ROI%</th><th>Confiança</th></tr></thead>
-                      <tbody>
-                        <tr className="border-t border-slate-700"><td>BTTS NÃO</td><td>R$ 28,00</td><td>1.90</td><td>R$ 53,20</td><td>+4%</td><td>Média</td></tr>
-                        <tr className="border-t border-slate-700"><td>Galo DNB</td><td>R$ 22,00</td><td>2.25</td><td>R$ 49,50</td><td>+7%</td><td>Boa</td></tr>
-                        <tr className="border-t border-slate-700"><td>Under 10.5 escanteios</td><td>R$ 15,00</td><td>1.66</td><td>R$ 24,90</td><td>+5%</td><td>Média</td></tr>
-                        <tr className="border-t border-slate-700"><td>Under 2,5 gols</td><td>R$ 15,00</td><td>1.66</td><td>R$ 24,90</td><td>+3%</td><td>Média-Alta</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
+          <button
+            onClick={() => setShowFavorites(!showFavorites)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              showFavorites ? "bg-primary/20 text-primary" : "hover:bg-secondary"
+            }`}
+          >
+            <Star size={14} />
+            Favoritos
+          </button>
 
-          {toasts.length > 0 && (
-            <div className="fixed bottom-4 right-4 space-y-2">
-              {toasts.map((t, i) => (
-                <div key={i} className="card px-4 py-3 flex items-center gap-2">
-                  <AlertTriangle className="text-yellow-400" size={18} />
-                  <span>{t}</span>
-                </div>
+          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm hover:bg-secondary transition-colors">
+            <ArrowUpDown size={14} />
+            Ordenar
+          </button>
+
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              showFilters ? "bg-primary/20 text-primary" : "hover:bg-secondary"
+            }`}
+          >
+            <SlidersHorizontal size={14} />
+            Filtros
+          </button>
+        </div>
+      </div>
+
+      {/* Filters panel */}
+      {showFilters && (
+        <div className="border-b border-border bg-card/30 animate-fade-in">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <div className="flex flex-wrap gap-2">
+              {AVAILABLE_LEAGUES.map((league) => (
+                <button
+                  key={league.id}
+                  onClick={() => toggleLeague(league.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    selectedLeagues.includes(league.id)
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  }`}
+                >
+                  <span>{league.countryFlag}</span>
+                  {league.name}
+                </button>
               ))}
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          <footer className="card p-4 flex items-center justify-between">
-            <span>Status: Em análise</span>
-            <span className="muted">Próxima atualização em: 00:30</span>
-          </footer>
+      {/* Market tabs */}
+      <div className="border-b border-border">
+        <div className="max-w-7xl mx-auto px-4">
+          <nav className="flex gap-1 overflow-x-auto no-scrollbar" aria-label="Mercados">
+            {MARKET_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveMarket(tab.id)}
+                className={`relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeMarket === tab.id
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+                {activeMarket === tab.id && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
 
-          <button className="fixed bottom-6 right-6 bg-accent text-white p-4 rounded-full shadow-soft">
-            <Plus />
-          </button>
-        </section>
+      {/* Main content: match list + detail panel */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 h-full">
+          {/* Match list */}
+          <div className="space-y-2">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <Loader2 className="animate-spin mb-3" size={32} />
+                <p className="text-sm">Carregando jogos...</p>
+              </div>
+            ) : filteredMatches.length > 0 ? (
+              filteredMatches.map((match) => (
+                <button
+                  key={match.id}
+                  onClick={() => setSelectedMatch(match)}
+                  className={`w-full text-left rounded-xl border transition-colors p-4 ${
+                    selectedMatch?.id === match.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card hover:border-primary/30"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">
+                      {match.leagueName}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(match.datetime).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{match.homeTeam.name}</p>
+                      <p className="font-medium text-sm mt-1">{match.awayTeam.name}</p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      {getOddsForMarket(match).map((odd) => (
+                        <div
+                          key={odd.label}
+                          className="flex flex-col items-center bg-secondary rounded-lg px-3 py-1.5 min-w-[48px]"
+                        >
+                          <span className="text-[10px] text-muted-foreground">
+                            {odd.label}
+                          </span>
+                          <span className="text-sm font-semibold">
+                            {odd.value.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {match.status === "live" && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      <span className="text-xs text-red-400 font-medium">AO VIVO</span>
+                      {match.score && (
+                        <span className="text-xs font-bold ml-1">
+                          {match.score.home} - {match.score.away}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <div className="text-5xl mb-4">&#9917;</div>
+                <p className="text-sm">Nenhum jogo disponivel para hoje.</p>
+                <p className="text-xs mt-1">
+                  Tente selecionar outra data ou liga.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Detail panel */}
+          <aside className="hidden lg:block">
+            <div className="sticky top-[130px] rounded-xl border border-border bg-card p-6">
+              {selectedMatch ? (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {selectedMatch.leagueName}
+                    </p>
+                    <div className="flex items-center justify-center gap-4">
+                      <div className="text-center">
+                        <p className="font-semibold">{selectedMatch.homeTeam.name}</p>
+                        <div className="flex gap-0.5 mt-1 justify-center">
+                          {selectedMatch.homeTeam.form?.slice(0, 5).map((f, i) => (
+                            <span
+                              key={i}
+                              className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
+                                f === "W"
+                                  ? "bg-primary/20 text-primary"
+                                  : f === "L"
+                                    ? "bg-destructive/20 text-destructive"
+                                    : "bg-secondary text-muted-foreground"
+                              }`}
+                            >
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <span className="text-2xl font-bold text-muted-foreground">vs</span>
+                      <div className="text-center">
+                        <p className="font-semibold">{selectedMatch.awayTeam.name}</p>
+                        <div className="flex gap-0.5 mt-1 justify-center">
+                          {selectedMatch.awayTeam.form?.slice(0, 5).map((f, i) => (
+                            <span
+                              key={i}
+                              className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
+                                f === "W"
+                                  ? "bg-primary/20 text-primary"
+                                  : f === "L"
+                                    ? "bg-destructive/20 text-destructive"
+                                    : "bg-secondary text-muted-foreground"
+                              }`}
+                            >
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Probabilities */}
+                  <div className="space-y-2 pt-4 border-t border-border">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Probabilidades
+                    </h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="text-center bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">Casa</p>
+                        <p className="font-semibold text-sm">{(selectedMatch.stats.homeWinProb * 100).toFixed(0)}%</p>
+                      </div>
+                      <div className="text-center bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">Empate</p>
+                        <p className="font-semibold text-sm">{(selectedMatch.stats.drawProb * 100).toFixed(0)}%</p>
+                      </div>
+                      <div className="text-center bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">Fora</p>
+                        <p className="font-semibold text-sm">{(selectedMatch.stats.awayWinProb * 100).toFixed(0)}%</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Market stats */}
+                  <div className="space-y-2 pt-4 border-t border-border">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Mercados
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">Over 2.5</p>
+                        <p className="font-semibold text-sm">{(selectedMatch.stats.over25Prob * 100).toFixed(0)}%</p>
+                      </div>
+                      <div className="bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">BTTS</p>
+                        <p className="font-semibold text-sm">{(selectedMatch.stats.bttsProb * 100).toFixed(0)}%</p>
+                      </div>
+                      <div className="bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">Media Gols</p>
+                        <p className="font-semibold text-sm">{selectedMatch.stats.avgGoals.toFixed(1)}</p>
+                      </div>
+                      <div className="bg-secondary rounded-lg p-2">
+                        <p className="text-xs text-muted-foreground">H2H</p>
+                        <p className="font-semibold text-sm">{selectedMatch.h2h.totalMatches} jogos</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* H2H detail */}
+                  {selectedMatch.h2h.totalMatches > 0 && (
+                    <div className="space-y-2 pt-4 border-t border-border">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Confronto Direto
+                      </h3>
+                      <div className="flex justify-between text-sm">
+                        <span>Vit. Casa: {selectedMatch.h2h.homeWins}</span>
+                        <span>Emp: {selectedMatch.h2h.draws}</span>
+                        <span>Vit. Fora: {selectedMatch.h2h.awayWins}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <div className="text-3xl mb-3">&#9917;</div>
+                  <p className="text-sm">Selecione um jogo para ver os detalhes</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
       </main>
+
+      {/* Bottom navigation */}
+      <nav className="sticky bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur" aria-label="Navegacao principal">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex justify-around">
+            {BOTTOM_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveBottomTab(tab.id)}
+                className={`flex-1 py-3 text-sm font-medium text-center transition-colors relative ${
+                  activeBottomTab === tab.id
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+                {activeBottomTab === tab.id && (
+                  <span className="absolute top-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </nav>
+
+      {/* Keyboard shortcut handler */}
+      <KeyboardShortcuts onSearch={() => setSearchOpen(true)} />
     </div>
   );
+}
+
+function KeyboardShortcuts({ onSearch }: { onSearch: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        onSearch();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onSearch]);
+  return null;
 }

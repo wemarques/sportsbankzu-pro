@@ -1,7 +1,8 @@
 "use client";
 import React from "react";
+import { Sun, Moon } from "lucide-react";
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const [theme, setTheme] = React.useState<string>(() => {
     if (typeof window === "undefined") return "dark";
     return localStorage.getItem("sb_theme") || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
@@ -14,10 +15,10 @@ export function ThemeToggle() {
   return (
     <button
       aria-label="Alternar tema"
-      className="fixed top-3 right-3 px-3 py-2 rounded-md border border-[var(--border)] bg-[var(--card)] text-[var(--text)]"
+      className={className ?? "p-2 rounded-lg hover:bg-secondary transition-colors"}
       onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
     >
-      {theme === "light" ? "🌙" : "☀️"}
+      {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
     </button>
   );
 }
