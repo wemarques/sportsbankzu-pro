@@ -19,3 +19,4 @@ backend/main.py.backup
 playwright-report/
 test-results/
 blob-report/
+*.tsbuildinfo
