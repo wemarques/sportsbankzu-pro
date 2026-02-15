@@ -187,7 +187,7 @@ export default function Dashboard() {
     fetchAll();
   }, []);
 
-  const selectedMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId) ?? matches[0], [matches, selectedMatchId]);
+  const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
   useEffect(() => {
     async function fetchAi() {
@@ -203,8 +203,6 @@ export default function Dashboard() {
     fetchAi();
   }, [selectedMatch]);
 
-  const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
-
   const detailData = useMemo<MatchDetailData | null>(() => {
     if (!selectedMatch) return null;
     return toDetailData(selectedMatch, aiAnalysis, aiLoading);
@@ -217,6 +215,26 @@ export default function Dashboard() {
       return next;
     });
   }, []);
+
+  const leagueGroups = useMemo<LeagueGroup[]>(() => {
+    const byLeague = new Map<string, Match[]>();
+    for (const m of allMatches) {
+      const list = byLeague.get(m.leagueId) ?? [];
+      list.push(m);
+      byLeague.set(m.leagueId, list);
+    }
+    return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
+      const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+      return {
+        leagueId,
+        leagueName: league?.name ?? leagueId,
+        countryFlag: league?.countryFlag ?? "🏆",
+        country: league?.country ?? "",
+        matches,
+        collapsed: collapsedLeagues.has(leagueId),
+      };
+    });
+  }, [allMatches, collapsedLeagues]);
 
   const oddsTabs: { key: OddsTab; label: string }[] = [
     { key: "1x2", label: "1X2" },
@@ -282,118 +300,111 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {!loading && leagueGroups.length === 0 && (
+            <div className="st-empty">
+              <div className="st-empty__icon">&#9917;</div>
+              Nenhum jogo disponivel para hoje.
+            </div>
+          )}
+
+          {!loading && leagueGroups.map((group) => (
+            <div key={group.leagueId} className="st-league-group">
+              <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
+                <span className="st-league-flag">{group.countryFlag}</span>
+                <span className="st-league-name">
+                  {group.leagueName}
+                  <span className="st-league-count"> ({group.matches.length})</span>
+                </span>
+                <div className="st-league-actions">
+                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                    <Star size={14} />
+                  </button>
+                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                    <SlidersHorizontal size={14} />
+                  </button>
+                  {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                </div>
+              </div>
+
+              {!group.collapsed && group.matches.map((match) => {
+                const si = statusInfo(match.status);
+                const h = safeOdd(match.odds?.home);
+                const d = safeOdd(match.odds?.draw);
+                const a = safeOdd(match.odds?.away);
+                const lowestIdx = getLowestOddIndex(h, d, a);
+                const isSelected = match.id === selectedMatchId;
+
+                return (
+                  <div
+                    key={match.id}
+                    className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
+                    onClick={() => setSelectedMatchId(match.id)}
+                  >
+                    <div className="st-match-row__status">
+                      <div className={`st-match-row__status-label ${si.cssClass}`}>
+                        {si.label || formatTime(match.datetime)}
+                      </div>
+                      {si.label && (
+                        <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
+                      )}
+                    </div>
+                    <div className="st-match-row__teams">
+                      <div className="st-match-row__team">
+                        {match.homeTeam.logo ? (
+                          <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
+                        ) : (
+                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">H</div>
+                        )}
+                        <span className="st-match-row__team-name">{match.homeTeam.name}</span>
+                      </div>
+                      <div className="st-match-row__team">
+                        {match.awayTeam.logo ? (
+                          <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
+                        ) : (
+                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">A</div>
+                        )}
+                        <span className="st-match-row__team-name">{match.awayTeam.name}</span>
+                      </div>
+                    </div>
+                    {match.score && (
+                      <div className="st-match-row__score">
+                        {match.score.home ?? 0} - {match.score.away ?? 0}
+                      </div>
+                    )}
+                    {oddsTab === "1x2" && (
+                      <div className="st-match-row__odds">
+                        <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">1</span>
+                          <span className="st-match-row__odd-value">{h.toFixed(2)}</span>
+                        </div>
+                        <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">X</span>
+                          <span className="st-match-row__odd-value">{d.toFixed(2)}</span>
+                        </div>
+                        <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">2</span>
+                          <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+                    <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()} aria-label="Favoritar">
+                      <Star size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
         <section className="detail-card-section">
-          {detailMatch ? (
-            <MatchDetailCard match={detailMatch} />
+          {detailData ? (
+            <MatchDetailCard match={detailData} />
           ) : (
             <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
-}
-
-            {!loading && leagueGroups.length === 0 && (
-              <div className="st-empty">
-                <div className="st-empty__icon">&#9917;</div>
-                Nenhum jogo disponivel para hoje.
-              </div>
-            )}
-
-            {!loading && leagueGroups.map((group) => (
-              <div key={group.leagueId} className="st-league-group">
-                {/* League header */}
-                <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
-                  <span className="st-league-flag">{group.countryFlag}</span>
-                  <span className="st-league-name">
-                    {group.leagueName}
-                    <span className="st-league-count"> ({group.matches.length})</span>
-                  </span>
-                  <div className="st-league-actions">
-                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
-                      <Star size={14} />
-                    </button>
-                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
-                      <SlidersHorizontal size={14} />
-                    </button>
-                    {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-                  </div>
-                </div>
-
-                {/* Match rows */}
-                {!group.collapsed && group.matches.map((match) => {
-                  const si = statusInfo(match.status);
-                  const h = safeOdd(match.odds?.home);
-                  const d = safeOdd(match.odds?.draw);
-                  const a = safeOdd(match.odds?.away);
-                  const lowestIdx = getLowestOddIndex(h, d, a);
-                  const isSelected = match.id === selectedMatchId;
-
-                  return (
-                    <div
-                      key={match.id}
-                      className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
-                      onClick={() => setSelectedMatchId(match.id)}
-                    >
-                      {/* Status / Time */}
-                      <div className="st-match-row__status">
-                        <div className={`st-match-row__status-label ${si.cssClass}`}>
-                          {si.label || formatTime(match.datetime)}
-                        </div>
-                        {si.label && (
-                          <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
-                        )}
-                      </div>
-
-function toMatch(leagueId: string) {
-  return (item: any, idx: number): Match => {
-    const home = item.home_team ?? item.homeTeam?.name ?? item.home ?? "Home";
-    const away = item.away_team ?? item.awayTeam?.name ?? item.away ?? "Away";
-    const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
-    const leagueName = AVAILABLE_LEAGUES.find((l) => l.id === leagueId)?.name ?? leagueId;
-    const statusRaw = item.status ?? "scheduled";
-    return {
-      id: item.id ?? `${leagueId}-${idx}-${home}-${away}-${dt}`,
-      leagueId,
-      leagueName,
-      homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
-      awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
-      datetime: dt,
-      venue: item.venue ?? "",
-      status: statusRaw,
-      score: item.score,
-      odds: {
-        home: item.odds?.home ?? 0,
-        draw: item.odds?.draw ?? 0,
-        away: item.odds?.away ?? 0,
-        over25: item.odds?.over25 ?? 0,
-        under25: item.odds?.under25 ?? 0,
-        bttsYes: item.odds?.bttsYes ?? 0,
-        bttsNo: item.odds?.bttsNo ?? 0,
-      },
-      stats: {
-        homeWinProb: item.stats?.homeWinProb ?? 0,
-        drawProb: item.stats?.drawProb ?? 0,
-        awayWinProb: item.stats?.awayWinProb ?? 0,
-        avgGoals: item.stats?.avgGoals ?? 0,
-        bttsProb: item.stats?.bttsProb ?? 0,
-        over25Prob: item.stats?.over25Prob ?? 0,
-        regime: item.stats?.regime ?? "",
-        lambdaHome: item.stats?.lambdaHome,
-        lambdaAway: item.stats?.lambdaAway,
-        lambdaTotal: item.stats?.lambdaTotal,
-        ...item.stats,
-      },
-      h2h: {
-        totalMatches: item.h2h?.totalMatches ?? 0,
-        homeWins: item.h2h?.homeWins ?? 0,
-        draws: item.h2h?.draws ?? 0,
-        awayWins: item.h2h?.awayWins ?? 0,
-        avgGoals: item.h2h?.avgGoals ?? 0,
-      },
-      source: item.source ?? "footystats",
-      lastUpdated: item.lastUpdated ?? new Date().toISOString(),
-    };
-  };
 }
