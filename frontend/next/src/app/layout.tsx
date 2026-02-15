@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "SportsBank Pro",
-  description: "Dashboard de gestão de banca esportiva",
+  description: "Dashboard de análise esportiva profissional",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
