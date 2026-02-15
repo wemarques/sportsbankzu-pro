@@ -25,16 +25,16 @@ test.describe("Navigation & Theme", () => {
   });
 
   test("all main pages respond with 200 or redirect", async ({ request }) => {
-    const pages = [
-      { path: "/", expectedStatus: [200, 302, 307, 308] }, // redirects to /dashboard
-      { path: "/dashboard", expectedStatus: [200] },
-      { path: "/ai-audit", expectedStatus: [200] },
-    ];
-    for (const { path, expectedStatus } of pages) {
-      const resp = await request.get(path);
-      expect(expectedStatus, `Expected ${path} to return one of ${expectedStatus.join(", ")}, got ${resp.status()}`).toContain(resp.status());
-    }
-  });
+  const pages = [
+    { path: "/", expectedStatus: [200, 307, 308] }, // redirects to /dashboard
+    { path: "/dashboard", expectedStatus: [200] },
+    { path: "/ai-audit", expectedStatus: [200] },
+  ];
+  for (const { path, expectedStatus } of pages) {
+    const resp = await request.get(path);
+    expect(expectedStatus).toContain(resp.status());
+  }
+});
 
   test("search button is present in nav", async ({ page }) => {
     await page.goto("/dashboard");
