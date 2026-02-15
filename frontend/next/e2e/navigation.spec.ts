@@ -21,13 +21,17 @@ test.describe("Navigation & Theme", () => {
     }
   });
 
-  test("all main pages respond with 200", async ({ request }) => {
-    const pages = ["/", "/dashboard", "/ai-audit"];
-    for (const path of pages) {
-      const resp = await request.get(path);
-      expect(resp.status()).toBe(200);
-    }
-  });
+  test("all main pages respond with 200 or redirect", async ({ request }) => {
+  const pages = [
+    { path: "/", expectedStatus: [200, 307, 308] }, // redirects to /dashboard
+    { path: "/dashboard", expectedStatus: [200] },
+    { path: "/ai-audit", expectedStatus: [200] },
+  ];
+  for (const { path, expectedStatus } of pages) {
+    const resp = await request.get(path);
+    expect(expectedStatus).toContain(resp.status());
+  }
+});
 
   test("Ctrl+K opens search", async ({ page }) => {
     await page.goto("/");
