@@ -12,6 +12,6 @@ test.describe("Home Page", () => {
     await page.waitForURL("**/dashboard");
     await expect(page.locator(".st-nav__logo")).toBeVisible();
     await expect(page.locator(".st-panel-left")).toBeVisible();
-    await expect(page.locator(".st-panel-right")).toBeVisible();
+    await expect(page.locator(".detail-card-section")).toBeVisible();
   });
 });

@@ -69,7 +69,7 @@ test.describe("Dashboard Page", () => {
   test("round matches section renders", async ({ page }) => {
     await expect(page.locator(".st-panel-left")).toBeVisible();
     await expect(
-      page.locator(".st-league-group, .st-empty, .st-odds-tabs")
+      page.locator(".st-league-group, .st-empty, .st-odds-tabs").first()
     ).toBeVisible();
   });
 });
