@@ -25,8 +25,6 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-export const dynamic = "force-dynamic";
-
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 
 type LeagueGroup = {
