@@ -3,10 +3,16 @@ import { test, expect } from "@playwright/test";
 test.describe("Dashboard Page", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/dashboard");
-    // ⚠️ AGUARDAR CARREGAMENTO COMPLETO DA PÁGINA
+    // ⚠️ AGUARDAR CARREGAMENTO COMPLETO DA PÁGINA (obrigatório para evitar flakiness)
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForLoadState("networkidle");
     // ⚠️ OPCIONAL: Aguardar API de dados se necessário
     // await page.waitForResponse(resp => resp.url().includes('/api/') && resp.status() === 200);
+  });
+
+  test("renders main dashboard layout", async ({ page }) => {
+    await expect(page).toHaveTitle(/SportsBank Pro/i);
+    await expect(page.locator(".st-nav__logo")).toContainText("sportsbank");
   });
 
   test("renders scoretabs layout with branding", async ({ page }) => {
@@ -58,5 +64,12 @@ test.describe("Dashboard Page", () => {
   test("search button is visible", async ({ page }) => {
     await expect(page.locator(".st-nav__search")).toBeVisible();
     await expect(page.locator(".st-nav__search")).toContainText("Buscar");
+  });
+
+  test("round matches section renders", async ({ page }) => {
+    await expect(page.locator(".st-panel-left")).toBeVisible();
+    await expect(
+      page.locator(".st-league-group, .st-empty, .st-odds-tabs")
+    ).toBeVisible();
   });
 });

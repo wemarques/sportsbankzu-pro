@@ -1,7 +1,11 @@
 "use client";
 
+<<<<<<< claude/build-cli-8t0E3
+import { useState, useEffect } from "react";
 import { Moon, Sun } from "lucide-react";
+=======
 import { useTheme } from "./theme-provider";
+>>>>>>> main
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
