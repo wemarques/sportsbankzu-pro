@@ -25,8 +25,6 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-export const dynamic = "force-dynamic";
-
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 
 type LeagueGroup = {
@@ -191,43 +189,21 @@ export default function Dashboard() {
     fetchAll();
   }, []);
 
-  /* Fetch AI for selected match */
-  useEffect(() => {
-    if (!selectedMatchId) { setAiAnalysis(null); return; }
-    let cancelled = false;
-    (async () => {
-      setAiLoading(true);
-      const analysis = await getAiMatchAnalysis(selectedMatchId);
-      if (!cancelled) {
-        setAiAnalysis(analysis);
-        setAiLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedMatchId]);
-
-  /* Group matches by league */
-  const leagueGroups = useMemo<LeagueGroup[]>(() => {
-    const map = new Map<string, Match[]>();
-    allMatches.forEach((m) => {
-      const key = m.leagueId;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(m);
-    });
-    return Array.from(map.entries()).map(([lid, matches]) => {
-      const league = AVAILABLE_LEAGUES.find((l) => l.id === lid);
-      return {
-        leagueId: lid,
-        leagueName: league ? `${league.country} - ${league.name}` : lid,
-        countryFlag: league?.countryFlag ?? "",
-        country: league?.country ?? "",
-        matches,
-        collapsed: collapsedLeagues.has(lid),
-      };
-    });
-  }, [allMatches, collapsedLeagues]);
-
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
+
+  useEffect(() => {
+    async function fetchAi() {
+      if (!selectedMatch) {
+        setAiAnalysis(null);
+        return;
+      }
+      setAiLoading(true);
+      const analysis = await getAiMatchAnalysis(selectedMatch.id);
+      setAiAnalysis(analysis);
+      setAiLoading(false);
+    }
+    fetchAi();
+  }, [selectedMatch]);
 
   const detailData = useMemo<MatchDetailData | null>(() => {
     if (!selectedMatch) return null;
@@ -241,6 +217,26 @@ export default function Dashboard() {
       return next;
     });
   }, []);
+
+  const leagueGroups = useMemo<LeagueGroup[]>(() => {
+    const byLeague = new Map<string, Match[]>();
+    for (const m of allMatches) {
+      const list = byLeague.get(m.leagueId) ?? [];
+      list.push(m);
+      byLeague.set(m.leagueId, list);
+    }
+    return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
+      const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+      return {
+        leagueId,
+        leagueName: league?.name ?? leagueId,
+        countryFlag: league?.countryFlag ?? "🏆",
+        country: league?.country ?? "",
+        matches,
+        collapsed: collapsedLeagues.has(leagueId),
+      };
+    });
+  }, [allMatches, collapsedLeagues]);
 
   const oddsTabs: { key: OddsTab; label: string }[] = [
     { key: "1x2", label: "1X2" },
@@ -306,163 +302,110 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* Match list */}
-          <div className="st-match-list">
-            {loading && (
-              <div className="st-loading">
-                <Loader2 size={18} className="animate-spin" />
-                Carregando jogos...
-              </div>
-            )}
+          {!loading && leagueGroups.length === 0 && (
+            <div className="st-empty">
+              <div className="st-empty__icon">&#9917;</div>
+              Nenhum jogo disponivel para hoje.
+            </div>
+          )}
 
-            {!loading && leagueGroups.length === 0 && (
-              <div className="st-empty">
-                <div className="st-empty__icon">&#9917;</div>
-                Nenhum jogo disponivel para hoje.
+          {!loading && leagueGroups.map((group) => (
+            <div key={group.leagueId} className="st-league-group">
+              <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
+                <span className="st-league-flag">{group.countryFlag}</span>
+                <span className="st-league-name">
+                  {group.leagueName}
+                  <span className="st-league-count"> ({group.matches.length})</span>
+                </span>
+                <div className="st-league-actions">
+                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                    <Star size={14} />
+                  </button>
+                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                    <SlidersHorizontal size={14} />
+                  </button>
+                  {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                </div>
               </div>
-            )}
 
-            {!loading && leagueGroups.map((group) => (
-              <div key={group.leagueId} className="st-league-group">
-                {/* League header */}
-                <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
-                  <span className="st-league-flag">{group.countryFlag}</span>
-                  <span className="st-league-name">
-                    {group.leagueName}
-                    <span className="st-league-count"> ({group.matches.length})</span>
-                  </span>
-                  <div className="st-league-actions">
-                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+              {!group.collapsed && group.matches.map((match) => {
+                const si = statusInfo(match.status);
+                const h = safeOdd(match.odds?.home);
+                const d = safeOdd(match.odds?.draw);
+                const a = safeOdd(match.odds?.away);
+                const lowestIdx = getLowestOddIndex(h, d, a);
+                const isSelected = match.id === selectedMatchId;
+
+                return (
+                  <div
+                    key={match.id}
+                    className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
+                    onClick={() => setSelectedMatchId(match.id)}
+                  >
+                    <div className="st-match-row__status">
+                      <div className={`st-match-row__status-label ${si.cssClass}`}>
+                        {si.label || formatTime(match.datetime)}
+                      </div>
+                      {si.label && (
+                        <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
+                      )}
+                    </div>
+                    <div className="st-match-row__teams">
+                      <div className="st-match-row__team">
+                        {match.homeTeam.logo ? (
+                          <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
+                        ) : (
+                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">H</div>
+                        )}
+                        <span className="st-match-row__team-name">{match.homeTeam.name}</span>
+                      </div>
+                      <div className="st-match-row__team">
+                        {match.awayTeam.logo ? (
+                          <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
+                        ) : (
+                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">A</div>
+                        )}
+                        <span className="st-match-row__team-name">{match.awayTeam.name}</span>
+                      </div>
+                    </div>
+                    {match.score && (
+                      <div className="st-match-row__score">
+                        {match.score.home ?? 0} - {match.score.away ?? 0}
+                      </div>
+                    )}
+                    {oddsTab === "1x2" && (
+                      <div className="st-match-row__odds">
+                        <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">1</span>
+                          <span className="st-match-row__odd-value">{h.toFixed(2)}</span>
+                        </div>
+                        <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">X</span>
+                          <span className="st-match-row__odd-value">{d.toFixed(2)}</span>
+                        </div>
+                        <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
+                          <span className="st-match-row__odd-label">2</span>
+                          <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+                    <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()} aria-label="Favoritar">
                       <Star size={14} />
                     </button>
-                    <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
-                      <SlidersHorizontal size={14} />
-                    </button>
-                    {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                   </div>
-                </div>
-
-                {/* Match rows */}
-                {!group.collapsed && group.matches.map((match) => {
-                  const si = statusInfo(match.status);
-                  const h = safeOdd(match.odds?.home);
-                  const d = safeOdd(match.odds?.draw);
-                  const a = safeOdd(match.odds?.away);
-                  const lowestIdx = getLowestOddIndex(h, d, a);
-                  const isSelected = match.id === selectedMatchId;
-
-                  return (
-                    <div
-                      key={match.id}
-                      className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
-                      onClick={() => setSelectedMatchId(match.id)}
-                    >
-                      {/* Status / Time */}
-                      <div className="st-match-row__status">
-                        <div className={`st-match-row__status-label ${si.cssClass}`}>
-                          {si.label || formatTime(match.datetime)}
-                        </div>
-                        {si.label && (
-                          <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
-                        )}
-                      </div>
-
-                      {/* Teams */}
-                      <div className="st-match-row__teams">
-                        <div className="st-match-row__team">
-                          {match.homeTeam.logo ? (
-                            <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
-                          ) : (
-                            <div className="st-match-row__team-logo--placeholder" />
-                          )}
-                          <span className="st-match-row__team-name">{match.homeTeam.name}</span>
-                          <span className="st-match-row__star"><Star size={10} /></span>
-                        </div>
-                        <div className="st-match-row__team">
-                          {match.awayTeam.logo ? (
-                            <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
-                          ) : (
-                            <div className="st-match-row__team-logo--placeholder" />
-                          )}
-                          <span className="st-match-row__team-name">{match.awayTeam.name}</span>
-                          <span className="st-match-row__star"><Star size={10} /></span>
-                        </div>
-                      </div>
-
-                      {/* Score (if finished/live) */}
-                      {match.score && (
-                        <div className="st-match-row__score">
-                          <div>{match.score.home}</div>
-                          <div>{match.score.away}</div>
-                        </div>
-                      )}
-
-                      {/* 1X2 Odds */}
-                      <div className="st-match-row__odds">
-                        {[
-                          { label: "1", value: h, idx: 0 },
-                          { label: "X", value: d, idx: 1 },
-                          { label: "2", value: a, idx: 2 },
-                        ].map((odd) => (
-                          <div
-                            key={odd.label}
-                            className={`st-match-row__odd ${odd.idx === lowestIdx && odd.value > 0 ? "st-match-row__odd--highlight" : ""}`}
-                          >
-                            <span className="st-match-row__odd-label">{odd.label}</span>
-                            <span className="st-match-row__odd-value">
-                              {odd.value > 0 ? odd.value.toFixed(2) : "-"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Favorite */}
-                      <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()}>
-                        <Star size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Bottom nav */}
-          <div className="st-bottom-nav">
-            <button className="st-bottom-nav__item st-bottom-nav__item--active">
-              <Flame size={16} />
-              Destaques
-            </button>
-            <button className="st-bottom-nav__item">
-              <Radio size={16} />
-              Radar Esportivo
-            </button>
-            <button className="st-bottom-nav__item">
-              <Bot size={16} />
-              ST Bots
-            </button>
-          </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
 
-        {/* RIGHT PANEL */}
-        <div className={`st-panel-right ${!detailData ? "st-panel-right--empty" : ""}`}>
+        <section className="detail-card-section">
           {detailData ? (
-            <MatchDetailCard
-              match={detailData}
-              aiLoading={aiLoading}
-              onRegenerate={() => {
-                if (!selectedMatchId) return;
-                setAiLoading(true);
-                getAiMatchAnalysis(selectedMatchId).then((data) => {
-                  setAiAnalysis(data);
-                  setAiLoading(false);
-                });
-              }}
-            />
+            <MatchDetailCard match={detailData} />
           ) : (
-            <span>Selecione um jogo para ver os detalhes</span>
+            <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

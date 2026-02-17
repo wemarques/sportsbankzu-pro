@@ -1,14 +1,16 @@
 import "./globals.css";
+import "@/styles/match-detail-card.css";
+import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
 
 export const metadata = {
   title: "SportsBank Pro",
-  description: "Dashboard de gestão de banca esportiva",
+  description: "Dashboard de análise esportiva profissional",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
@@ -16,8 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}>
-        <ThemeToggle />
-        {children}
+        <ThemeProvider>
+          <ThemeToggle />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

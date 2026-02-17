@@ -1,6 +1,34 @@
 # Mapeamento das 22 Ligas solicitadas (País - Liga)
 # Este dicionário associa o nome amigável ao nome técnico da FootyStats para busca via API.
 
+# Aliases: IDs do frontend -> IDs do backend (para FootyStats API)
+# Permite que o frontend use IDs como "spain-la-liga" e o backend resolva para a config correta
+# Inclui as 22 ligas do frontend (mesmo as que já batem, para garantir cobertura)
+LEAGUE_ID_ALIASES = {
+    "premier-league": "premier-league",
+    "championship": "championship",
+    "a-league": "a-league",
+    "primera-division": "primera-division",
+    "pro-league": "pro-league",
+    "spain-la-liga": "la-liga",
+    "italy-serie-a": "serie-a",
+    "italy-serie-b": "serie-b",
+    "germany-bundesliga": "bundesliga",
+    "germany-2-bundesliga": "2-bundesliga",
+    "france-ligue-1": "ligue-1",
+    "france-ligue-2": "ligue-2",
+    "brazil-serie-a": "brasileirao-serie-a",
+    "brazil-serie-b": "brasileirao-serie-b",
+    "netherlands-eredivisie": "eredivisie",
+    "portugal-liga-nos": "primeira-liga",
+    "saudi-professional-league": "professional-league",
+    "scotland-premiership": "premiership",
+    "austria-bundesliga": "austrian-bundesliga",
+    "denmark-superliga": "superliga",
+    "switzerland-super-league": "super-league",
+    "turkey-super-lig": "super-lig",
+}
+
 LEAGUES_CONFIG = [
     # INGLATERRA
     {"country": "England", "name": "Premier League", "id": "premier-league"},
@@ -45,8 +73,10 @@ LEAGUES_CONFIG = [
 ]
 
 def get_league_config(league_id: str):
-    """Busca configuração de uma liga pelo ID interno."""
+    """Busca configuração de uma liga pelo ID interno.
+    Aceita IDs do frontend (ex: spain-la-liga) e resolve para a config FootyStats."""
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
     for league in LEAGUES_CONFIG:
-        if league["id"] == league_id:
+        if league["id"] == resolved_id:
             return league
     return None

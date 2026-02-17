@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
@@ -43,6 +44,22 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbank")
 
 app = FastAPI(title="SportsBank Pro Backend", version="0.1.0")
+
+# --- CONFIGURAÇÃO DE CORS (CORREÇÃO) ---
+origins = [
+    "http://localhost:3000",  # Desenvolvimento local
+    "https://sportsbankzu-pro-well.vercel.app",  # Frontend Principal
+    "https://sportsbankzu-pro.vercel.app",  # Domínio alternativo
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Previews Vercel
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ---------------------------------------
 
 data_collector = FootballDataCollector()
 mistral_auditor = MistralAuditor()
@@ -1033,6 +1050,31 @@ class ReportGenerationRequest(BaseModel):
     market: str
     classification: str
     probability: float
+
+class MatchAnalysisRequest(BaseModel):
+    home_team: str
+    away_team: str
+    league: str = ""
+    stats: Dict[str, Any] = {}
+    odds: Dict[str, Any] = {}
+    context: Optional[Dict[str, Any]] = None
+
+@app.post("/ai/match-analysis")
+def match_analysis(request: MatchAnalysisRequest):
+    """Retorna análise no formato do MatchDetailCard (summary, key_points, recommendation, confidence)."""
+    try:
+        from backend.ai.match_analysis_service import analyze_match
+        result = analyze_match(
+            home_team=request.home_team,
+            away_team=request.away_team,
+            league=request.league,
+            stats=request.stats,
+            odds=request.odds,
+            context=request.context,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ai/audit-match")
 async def audit_match(request: MatchAuditRequest):
