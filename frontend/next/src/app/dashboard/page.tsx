@@ -74,8 +74,12 @@ function getLowestOddIndex(home: number, draw: number, away: number): number {
 }
 
 function normalizeMatch(item: any, leagueId: string, idx: number): Match {
-  const home = item.home_team ?? item.homeTeam?.name ?? item.home ?? "Home";
-  const away = item.away_team ?? item.awayTeam?.name ?? item.away ?? "Away";
+  const home = item.home_team
+    ?? (typeof item.homeTeam === "string" ? item.homeTeam : item.homeTeam?.name)
+    ?? item.home ?? "Home";
+  const away = item.away_team
+    ?? (typeof item.awayTeam === "string" ? item.awayTeam : item.awayTeam?.name)
+    ?? item.away ?? "Away";
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
   const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
   return {
