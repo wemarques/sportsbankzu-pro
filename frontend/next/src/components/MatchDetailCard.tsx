@@ -77,6 +77,12 @@ export interface MatchDetailData {
     awayXG?: number;
     leagueRegime?: string;
     leagueVolatility?: string;
+    homeCornersPerMatch?: number;
+    awayCornersPerMatch?: number;
+    homeCardsPerMatch?: number;
+    awayCardsPerMatch?: number;
+    leagueAvgCorners?: number;
+    leagueAvgCards?: number;
   };
   h2h?: {
     totalMatches?: number;
@@ -98,7 +104,7 @@ type Props = {
   version?: string;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.4" }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.5" }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -489,7 +495,29 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                           </div>
                         </div>
                       )}
-                      {(comparativeTab === "escanteios" || comparativeTab === "chutes" || comparativeTab === "finalizacoes" || comparativeTab === "faltas" || comparativeTab === "cartoes") && (
+                      {comparativeTab === "escanteios" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          <ComparativeBar label="Escanteios por Jogo" homeVal={match.matchStats.homeCornersPerMatch ?? 0} awayVal={match.matchStats.awayCornersPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                            <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCorners?.toFixed(1) ?? "-"}</span></span>
+                          </div>
+                          {(!match.matchStats.homeCornersPerMatch && !match.matchStats.awayCornersPerMatch) && (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de escanteios nao disponiveis para este jogo.</div>
+                          )}
+                        </div>
+                      )}
+                      {comparativeTab === "cartoes" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          <ComparativeBar label="Cartoes por Jogo" homeVal={match.matchStats.homeCardsPerMatch ?? 0} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                            <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCards?.toFixed(1) ?? "-"}</span></span>
+                          </div>
+                          {(!match.matchStats.homeCardsPerMatch && !match.matchStats.awayCardsPerMatch) && (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de cartoes nao disponiveis para este jogo.</div>
+                          )}
+                        </div>
+                      )}
+                      {(comparativeTab === "chutes" || comparativeTab === "finalizacoes" || comparativeTab === "faltas") && (
                         <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.75rem", color: "#666" }}>
                           Dados em desenvolvimento. Em breve.
                         </div>
@@ -539,6 +567,18 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                       <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Desempenho</h4>
                       <ComparativeBar label="Posse de Bola" homeVal={match.matchStats.homePossession ?? 50} awayVal={match.matchStats.awayPossession ?? 50} homeTeam={match.homeTeam} awayTeam={match.awayTeam} suffix="%" />
                       <ComparativeBar label="xG" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                    </>
+                  )}
+
+                  {(match.matchStats.homeCornersPerMatch || match.matchStats.homeCardsPerMatch) && (
+                    <>
+                      <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Escanteios & Cartoes</h4>
+                      {match.matchStats.homeCornersPerMatch != null && (
+                        <ComparativeBar label="Escanteios/Jogo" homeVal={match.matchStats.homeCornersPerMatch} awayVal={match.matchStats.awayCornersPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                      )}
+                      {match.matchStats.homeCardsPerMatch != null && (
+                        <ComparativeBar label="Cartoes/Jogo" homeVal={match.matchStats.homeCardsPerMatch} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                      )}
                     </>
                   )}
 
