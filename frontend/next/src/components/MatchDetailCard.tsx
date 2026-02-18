@@ -67,9 +67,10 @@ type Props = {
   match: MatchDetailData;
   aiLoading?: boolean;
   onRegenerate?: () => void;
+  version?: string;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.1" }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -254,7 +255,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate }: Prop
           Cotacoes
         </button>
         <button className="mdc-tab-btn">
-          <span className="mdc-badge-pro">PRO</span>
+          <span className="mdc-badge-pro">{version}</span>
         </button>
       </div>
 
@@ -285,7 +286,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate }: Prop
                   <div className="mdc-collapsible-header__left">
                     <Sparkles className="mdc-ai-icon" size={20} />
                     <span className="mdc-collapsible-title">Analise AI (MISTRAL)</span>
-                    <span className="mdc-badge-pro" style={{ marginLeft: 8 }}>PRO</span>
+                    <span className="mdc-badge-pro" style={{ marginLeft: 8 }}>{version}</span>
                   </div>
                   {isAIExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </button>
