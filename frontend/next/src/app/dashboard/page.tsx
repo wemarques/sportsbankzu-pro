@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const APP_VERSION = "pro V2.2";
+const APP_VERSION = "pro V2.3";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 
