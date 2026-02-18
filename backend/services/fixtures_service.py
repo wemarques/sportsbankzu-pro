@@ -10,6 +10,7 @@ from backend.services.util_service import status_map, parse_date, pick_column, c
 from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
 from backend.modeling.xg_filter import aplicar_filtro_completo
 from backend.modeling.chaos_detector import detectar_caos_jogo
+from backend.services.market_service import selecionar_mercados_jogo
 
 logger = logging.getLogger("sportsbank")
 
@@ -388,4 +389,14 @@ def build_records_from_matches(
             "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
+        # Calculate market predictions (mercados) for this match
+        try:
+            record = records[-1]
+            _regime = record["stats"].get("leagueRegime", "NORMAL")
+            _volatilidade = record["stats"].get("leagueVolatility", "MODERADA")
+            mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
+            record["mercados"] = mercados
+        except Exception as e:
+            logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
+            records[-1]["mercados"] = []
     return records

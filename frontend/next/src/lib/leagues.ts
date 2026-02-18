@@ -85,6 +85,14 @@ export type Match = {
     awayWins: number;
     avgGoals: number;
   };
+  predictions?: {
+    mercado: string;
+    status: string;
+    prob_min: number;
+    prob_max: number;
+    odd_minima: number | null;
+    alerta?: string;
+  }[];
   source: "footystats";
   lastUpdated: string;
 };
@@ -96,7 +104,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Inglaterra",
     countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
     logo: "/logos/premier-league.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -109,7 +117,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Inglaterra",
     countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
     logo: "/logos/championship.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 552,
     matchesToday: 0,
     apiEndpoints: {
@@ -122,7 +130,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Argentina",
     countryFlag: "🇦🇷",
     logo: "/logos/primera-division.png",
-    season: "2024",
+    season: "2025",
     totalMatches: 378,
     matchesToday: 0,
     apiEndpoints: {
@@ -135,7 +143,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Austrália",
     countryFlag: "🇦🇺",
     logo: "/logos/a-league.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 162,
     matchesToday: 0,
     apiEndpoints: {
@@ -148,7 +156,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Áustria",
     countryFlag: "🇦🇹",
     logo: "/logos/austria-bundesliga.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
@@ -161,7 +169,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Bélgica",
     countryFlag: "🇧🇪",
     logo: "/logos/pro-league.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 240,
     matchesToday: 0,
     apiEndpoints: {
@@ -174,7 +182,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao.png",
-    season: "2024",
+    season: "2025",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -187,7 +195,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao-b.png",
-    season: "2024",
+    season: "2025",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -200,7 +208,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Dinamarca",
     countryFlag: "🇩🇰",
     logo: "/logos/superliga.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
@@ -213,7 +221,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "França",
     countryFlag: "🇫🇷",
     logo: "/logos/ligue-1.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -226,7 +234,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "França",
     countryFlag: "🇫🇷",
     logo: "/logos/ligue-2.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -239,7 +247,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Alemanha",
     countryFlag: "🇩🇪",
     logo: "/logos/bundesliga.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -252,7 +260,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Alemanha",
     countryFlag: "🇩🇪",
     logo: "/logos/2-bundesliga.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -265,7 +273,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Itália",
     countryFlag: "🇮🇹",
     logo: "/logos/serie-a.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -278,7 +286,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Itália",
     countryFlag: "🇮🇹",
     logo: "/logos/serie-b.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -291,7 +299,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Holanda",
     countryFlag: "🇳🇱",
     logo: "/logos/eredivisie.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -304,7 +312,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Portugal",
     countryFlag: "🇵🇹",
     logo: "/logos/liga-nos.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -317,7 +325,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Arábia Saudita",
     countryFlag: "🇸🇦",
     logo: "/logos/saudi-pro-league.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 306,
     matchesToday: 0,
     apiEndpoints: {
@@ -330,7 +338,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Escócia",
     countryFlag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
     logo: "/logos/premiership.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 228,
     matchesToday: 0,
     apiEndpoints: {
@@ -343,7 +351,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Espanha",
     countryFlag: "🇪🇸",
     logo: "/logos/laliga.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -356,7 +364,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Suíça",
     countryFlag: "🇨🇭",
     logo: "/logos/switzerland-super-league.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 132,
     matchesToday: 0,
     apiEndpoints: {
@@ -369,7 +377,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Turquia",
     countryFlag: "🇹🇷",
     logo: "/logos/super-lig.png",
-    season: "2024/25",
+    season: "2025/26",
     totalMatches: 342,
     matchesToday: 0,
     apiEndpoints: {

@@ -998,3 +998,95 @@
     gap: 8px;
   }
 }
+
+/* ──────────────────────────────────────────────── */
+/* PREDICTION BADGES (Prognosticos)                 */
+/* ──────────────────────────────────────────────── */
+
+.st-match-row {
+  flex-wrap: wrap;
+}
+
+.st-match-row__predictions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 4px 50px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.st-prediction-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: #888;
+  line-height: 1.3;
+}
+
+.st-prediction-status {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+  min-width: 42px;
+  text-align: center;
+}
+
+.st-prediction-status--safe {
+  background: rgba(0, 255, 136, 0.15);
+  color: #00ff88;
+}
+
+.st-prediction-status--safe-star {
+  background: rgba(0, 255, 136, 0.08);
+  color: #88cc88;
+}
+
+.st-prediction-status--neutro {
+  background: rgba(255, 187, 51, 0.15);
+  color: #ffbb33;
+}
+
+.st-prediction-status--alerta {
+  background: rgba(255, 68, 68, 0.15);
+  color: #ff4444;
+}
+
+.st-prediction-market {
+  color: #ccc;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.st-prediction-prob {
+  color: #888;
+  white-space: nowrap;
+}
+
+.st-prediction-odd {
+  color: #00ff88;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.st-prediction-alert {
+  color: #ffbb33;
+  font-size: 0.6rem;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .st-match-row__predictions {
+    padding-left: 8px;
+  }
+  .st-prediction-badge {
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 0.62rem;
+  }
+}
