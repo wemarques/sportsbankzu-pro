@@ -102,89 +102,121 @@ async def get_batch_analysis(
 
 # ===== HELPER FUNCTIONS =====
 
+def _extract_league_id(match_id: str) -> str:
+    """Extract league ID from match_id format 'premier-league-mock-0'."""
+    # Remove trailing '-mock-N' or '-m-N' suffix to get league id
+    parts = match_id.rsplit("-mock-", 1)
+    if len(parts) == 2:
+        return parts[0]
+    parts = match_id.rsplit("-m", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return parts[0]
+    # Fallback: try all known league prefixes
+    from backend.config.leagues_config import LEAGUE_ID_ALIASES
+    for alias in LEAGUE_ID_ALIASES:
+        if match_id.startswith(alias):
+            return alias
+    return ""
+
+
+def _match_to_ai_input(m: dict) -> dict:
+    """Convert a fixtures match object to the dict expected by AI analysis."""
+    stats = m.get("stats", {})
+    home_form = stats.get("homeForm") or m.get("homeForm") or []
+    away_form = stats.get("awayForm") or m.get("awayForm") or []
+    h2h = m.get("h2h", {})
+    return {
+        "id": m.get("id"),
+        "home_team": m.get("homeTeam", ""),
+        "away_team": m.get("awayTeam", ""),
+        "league": m.get("leagueName", ""),
+        "stats": stats,
+        "odds": m.get("odds", {}),
+        "context": {
+            "home_form": ", ".join(home_form) if isinstance(home_form, list) else str(home_form),
+            "away_form": ", ".join(away_form) if isinstance(away_form, list) else str(away_form),
+            "h2h": f"Total: {h2h.get('totalMatches', 0)} jogos, Casa: {h2h.get('homeWins', 0)}, Empates: {h2h.get('draws', 0)}, Fora: {h2h.get('awayWins', 0)}, Media gols: {h2h.get('avgGoals', 0)}",
+        },
+    }
+
+
 def _get_match_data(match_id: str) -> dict:
     """Fetch match data from the fixtures system, falling back to mock."""
     try:
         from backend.routes.fixtures import fixtures as fixtures_endpoint
 
-        result = fixtures_endpoint(leagues="", date="today")
-        for m in result.get("matches", []):
-            if str(m.get("id")) == str(match_id):
-                return {
-                    "id": m.get("id"),
-                    "home_team": m.get("homeTeam", ""),
-                    "away_team": m.get("awayTeam", ""),
-                    "league": m.get("leagueName", ""),
-                    "stats": m.get("stats", {}),
-                    "odds": m.get("odds", {}),
-                    "context": {
-                        "home_form": ", ".join(m.get("homeForm", [])),
-                        "away_form": ", ".join(m.get("awayForm", [])),
-                        "h2h": f"Total: {m.get('h2h', {}).get('totalMatches', 0)} jogos",
-                    },
-                }
+        # Extract league from match_id so the fixtures endpoint returns data
+        league_id = _extract_league_id(match_id)
+
+        # Try today first, then week as fallback
+        for date_filter in ("today", "week"):
+            if not league_id:
+                break
+            result = fixtures_endpoint(leagues=league_id, date=date_filter)
+            for m in result.get("matches", []):
+                if str(m.get("id")) == str(match_id):
+                    logger.info(f"Found match {match_id} via fixtures (date={date_filter})")
+                    return _match_to_ai_input(m)
+
+            # If exact ID not found, return first match from this league
+            # (handles ID format mismatches between frontend and backend)
+            matches = result.get("matches", [])
+            if matches:
+                logger.warning(f"Match {match_id} not found by ID, using first match from {league_id}")
+                return _match_to_ai_input(matches[0])
+
     except Exception as e:
         logger.warning(f"Could not fetch live fixtures for match {match_id}: {e}")
 
-    # Mock data fallback
+    # Fallback — use generic data with descriptive names instead of hardcoded mock
+    logger.warning(f"Using fallback mock data for match {match_id}")
     return {
         "id": match_id,
-        "home_team": "Deportivo Tachira",
-        "away_team": "The Strongest",
-        "league": "Copa Libertadores",
-        "start_time": "2026-02-10T21:30:00",
+        "home_team": "Home Team",
+        "away_team": "Away Team",
+        "league": "Unknown League",
         "stats": {
-            "lambda_home": 1.45,
-            "lambda_away": 1.22,
-            "prob_home": 38.5,
-            "prob_draw": 28.3,
-            "prob_away": 33.2,
-            "prob_over_25": 65.8,
-            "prob_btts": 58.4,
+            "homeWinProb": 40.0,
+            "drawProb": 30.0,
+            "awayWinProb": 30.0,
+            "avgGoals": 2.5,
+            "bttsProb": 52.0,
+            "lambdaHome": 1.3,
+            "lambdaAway": 1.2,
         },
         "odds": {
-            "home": 1.66,
-            "draw": 3.60,
-            "away": 4.75,
-            "over_25": 2.07,
-            "btts_yes": 2.00,
-            "btts_no": 1.72,
+            "home": 2.10,
+            "draw": 3.30,
+            "away": 3.40,
+            "over25": 1.85,
+            "bttsYes": 1.80,
         },
         "context": {
-            "home_form": "V-V-E-V-D (70% aproveitamento)",
-            "away_form": "V-D-V-V-E (60% aproveitamento)",
-            "h2h": "Ultimos 5 confrontos: Casa venceu 3, Empate 1, Fora venceu 1",
-            "absences": "Time visitante sem desfalques importantes",
+            "home_form": "Dados indisponiveis",
+            "away_form": "Dados indisponiveis",
+            "h2h": "Dados indisponiveis",
         },
     }
 
 
 def _get_matches_by_league_and_date(league: str, date: str, limit: int) -> list:
-    """Fetch matches from fixtures, fallback to mock."""
+    """Fetch matches from fixtures, fallback to week then mock."""
     try:
         from backend.routes.fixtures import fixtures as fixtures_endpoint
 
-        result = fixtures_endpoint(leagues=league, date=date)
-        matches = []
-        for m in result.get("matches", [])[:limit]:
-            matches.append(
-                {
-                    "id": m.get("id"),
-                    "home_team": m.get("homeTeam", ""),
-                    "away_team": m.get("awayTeam", ""),
-                    "league": m.get("leagueName", ""),
-                    "start_time": m.get("datetime", ""),
-                    "stats": m.get("stats", {}),
-                    "odds": m.get("odds", {}),
-                    "context": {
-                        "home_form": ", ".join(m.get("homeForm", [])),
-                        "away_form": ", ".join(m.get("awayForm", [])),
-                    },
-                }
-            )
-        if matches:
-            return matches
+        # Try requested date first, then week as fallback
+        for date_filter in (date, "week"):
+            if not league:
+                break
+            result = fixtures_endpoint(leagues=league, date=date_filter)
+            matches = []
+            for m in result.get("matches", [])[:limit]:
+                data = _match_to_ai_input(m)
+                data["start_time"] = m.get("datetime", "")
+                matches.append(data)
+            if matches:
+                return matches
     except Exception as e:
         logger.warning(f"Could not fetch fixtures for batch: {e}")
 
-    return [_get_match_data("1")][:limit]
+    return [_get_match_data("fallback-0")][:limit]

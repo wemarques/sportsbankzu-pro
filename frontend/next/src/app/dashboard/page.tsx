@@ -25,9 +25,10 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const APP_VERSION = "pro V2.3";
+const APP_VERSION = "pro V2.4";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
+type DateMode = "today" | "tomorrow" | "week";
 
 type LeagueGroup = {
   leagueId: string;
@@ -96,7 +97,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       home: item.odds?.home ?? 0,
       draw: item.odds?.draw ?? 0,
       away: item.odds?.away ?? 0,
+      over15: item.odds?.over15 ?? 0,
       over25: item.odds?.over25 ?? 0,
+      over35: item.odds?.over35 ?? 0,
+      over45: item.odds?.over45 ?? 0,
       under25: item.odds?.under25 ?? 0,
       bttsYes: item.odds?.bttsYes ?? 0,
       bttsNo: item.odds?.bttsNo ?? 0,
@@ -107,7 +111,20 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayWinProb: item.stats?.awayWinProb ?? 0,
       avgGoals: item.stats?.avgGoals ?? 0,
       bttsProb: item.stats?.bttsProb ?? 0,
+      over15Prob: item.stats?.over15Prob ?? 0,
       over25Prob: item.stats?.over25Prob ?? 0,
+      over35Prob: item.stats?.over35Prob ?? 0,
+      over45Prob: item.stats?.over45Prob ?? 0,
+      lambdaHome: item.stats?.lambdaHome ?? 0,
+      lambdaAway: item.stats?.lambdaAway ?? 0,
+      homePossession: item.stats?.homePossession ?? 0,
+      awayPossession: item.stats?.awayPossession ?? 0,
+      homeXG: item.stats?.homeXG ?? 0,
+      awayXG: item.stats?.awayXG ?? 0,
+      homeForm: item.stats?.homeForm ?? item.homeTeam?.form ?? [],
+      awayForm: item.stats?.awayForm ?? item.awayTeam?.form ?? [],
+      leagueRegime: item.stats?.leagueRegime ?? "",
+      leagueVolatility: item.stats?.leagueVolatility ?? "",
       regime: item.stats?.regime ?? "",
     },
     h2h: {
@@ -148,6 +165,28 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       drawOrAway: parseFloat((1 / (1 / d + 1 / a)).toFixed(2)),
     },
     btts: { yes: safeOdd(match.odds?.bttsYes, 2.0), no: safeOdd(match.odds?.bttsNo, 1.7) },
+    matchStats: {
+      homeWinProb: match.stats?.homeWinProb,
+      drawProb: match.stats?.drawProb,
+      awayWinProb: match.stats?.awayWinProb,
+      avgGoals: match.stats?.avgGoals,
+      bttsProb: match.stats?.bttsProb,
+      over15Prob: match.stats?.over15Prob,
+      over25Prob: match.stats?.over25Prob,
+      over35Prob: match.stats?.over35Prob,
+      over45Prob: match.stats?.over45Prob,
+      lambdaHome: match.stats?.lambdaHome,
+      lambdaAway: match.stats?.lambdaAway,
+      homePossession: match.stats?.homePossession,
+      awayPossession: match.stats?.awayPossession,
+      homeXG: match.stats?.homeXG,
+      awayXG: match.stats?.awayXG,
+      leagueRegime: match.stats?.leagueRegime,
+      leagueVolatility: match.stats?.leagueVolatility,
+    },
+    h2h: match.h2h,
+    homeForm: match.stats?.homeForm ?? match.homeTeam.form,
+    awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
   };
@@ -164,18 +203,39 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
+  const [dateMode, setDateMode] = useState<DateMode>("today");
 
   useEffect(() => { setMounted(true); }, []);
 
-  /* Fetch all leagues on mount */
+  const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
+
+  /* Fetch all leagues — fallback to "week" if today returns empty */
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
-      const today = new Date().toISOString().split("T")[0];
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+
+      function dateParamFor(mode: DateMode): string {
+        if (mode === "today") return new Date().toISOString().split("T")[0];
+        if (mode === "tomorrow") {
+          const d = new Date();
+          d.setDate(d.getDate() + 1);
+          return d.toISOString().split("T")[0];
+        }
+        return "week";
+      }
+
       try {
-        const res = await getMatchesByLeague(allLeagueIds, today);
-        const raw = res?.matches ?? [];
+        let res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
+        let raw = res?.matches ?? [];
+
+        // Auto-fallback: if today returns empty, try week
+        if (raw.length === 0 && dateMode === "today") {
+          res = await getMatchesByLeague(allLeagueIds, "week");
+          raw = res?.matches ?? [];
+          if (raw.length > 0) setDateMode("week");
+        }
+
         const normalized = raw.map((item: any, idx: number) => {
           const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
           return normalizeMatch(item, lid, idx);
@@ -189,7 +249,8 @@ export default function Dashboard() {
       }
     }
     fetchAll();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateMode]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -280,9 +341,9 @@ export default function Dashboard() {
           {/* Filter bar */}
           <div className="st-filters">
             <div className="st-date-nav">
-              <button className="st-date-nav__btn"><ChevronLeft size={14} /></button>
-              <span className="st-date-label">Hoje</span>
-              <button className="st-date-nav__btn"><ChevronRight size={14} /></button>
+              <button className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
+              <span className="st-date-label">{dateLabel}</span>
+              <button className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
             </div>
             <div className="st-live-dot" />
             <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
@@ -307,7 +368,9 @@ export default function Dashboard() {
           {!loading && leagueGroups.length === 0 && (
             <div className="st-empty">
               <div className="st-empty__icon">&#9917;</div>
-              Nenhum jogo disponivel para hoje.
+              {dateMode === "week"
+                ? "Nenhum jogo encontrado para esta semana. Tente novamente mais tarde."
+                : "Nenhum jogo disponivel. Use as setas para navegar entre datas."}
             </div>
           )}
 
@@ -388,6 +451,73 @@ export default function Dashboard() {
                         <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
                           <span className="st-match-row__odd-label">2</span>
                           <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+                    {oddsTab === "double-chance" && (() => {
+                      const dc1x = h > 0 && d > 0 ? parseFloat((1 / (1/h + 1/d)).toFixed(2)) : 0;
+                      const dc12 = h > 0 && a > 0 ? parseFloat((1 / (1/h + 1/a)).toFixed(2)) : 0;
+                      const dcx2 = d > 0 && a > 0 ? parseFloat((1 / (1/d + 1/a)).toFixed(2)) : 0;
+                      return (
+                        <div className="st-match-row__odds">
+                          <div className="st-match-row__odd">
+                            <span className="st-match-row__odd-label">1X</span>
+                            <span className="st-match-row__odd-value">{dc1x > 0 ? dc1x.toFixed(2) : "-"}</span>
+                          </div>
+                          <div className="st-match-row__odd">
+                            <span className="st-match-row__odd-label">12</span>
+                            <span className="st-match-row__odd-value">{dc12 > 0 ? dc12.toFixed(2) : "-"}</span>
+                          </div>
+                          <div className="st-match-row__odd">
+                            <span className="st-match-row__odd-label">X2</span>
+                            <span className="st-match-row__odd-value">{dcx2 > 0 ? dcx2.toFixed(2) : "-"}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {oddsTab === "btts" && (
+                      <div className="st-match-row__odds">
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Sim</span>
+                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsYes) > 0 ? safeOdd(match.odds?.bttsYes).toFixed(2) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Nao</span>
+                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsNo) > 0 ? safeOdd(match.odds?.bttsNo).toFixed(2) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                          <span className="st-match-row__odd-label">Prob%</span>
+                          <span className="st-match-row__odd-value">{match.stats?.bttsProb > 0 ? `${match.stats.bttsProb.toFixed(0)}%` : "-"}</span>
+                        </div>
+                      </div>
+                    )}
+                    {oddsTab === "goals" && (
+                      <div className="st-match-row__odds">
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">O 1.5</span>
+                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over15) > 0 ? safeOdd(match.odds?.over15).toFixed(2) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd st-match-row__odd--highlight">
+                          <span className="st-match-row__odd-label">O 2.5</span>
+                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over25) > 0 ? safeOdd(match.odds?.over25).toFixed(2) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">O 3.5</span>
+                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over35) > 0 ? safeOdd(match.odds?.over35).toFixed(2) : "-"}</span>
+                        </div>
+                      </div>
+                    )}
+                    {oddsTab === "cards" && (
+                      <div className="st-match-row__odds">
+                        <div className="st-match-row__odd" style={{ opacity: 0.5 }}>
+                          <span className="st-match-row__odd-label" style={{ fontSize: "0.6rem" }}>Em breve</span>
+                        </div>
+                      </div>
+                    )}
+                    {oddsTab === "corners" && (
+                      <div className="st-match-row__odds">
+                        <div className="st-match-row__odd" style={{ opacity: 0.5 }}>
+                          <span className="st-match-row__odd-label" style={{ fontSize: "0.6rem" }}>Em breve</span>
                         </div>
                       </div>
                     )}
