@@ -318,11 +318,33 @@ credentials:
 
 ### Variáveis do Dashboard Next.js
 
-Crie o arquivo `src/.env.local` (ou `.env.local` na raiz):
+O dashboard Next.js requer a variável `PY_BACKEND_URL` para conectar ao backend FastAPI e exibir dados reais. Sem essa variável, o sistema usa **mock data** como fallback (comportamento intencional para desenvolvimento local sem backend).
+
+**Setup local:**
 
 ```bash
-PY_BACKEND_URL=http://localhost:5001
+# Copiar o arquivo de exemplo
+cp frontend/next/.env.example frontend/next/.env.local
+
+# Editar com a URL do backend local
+# PY_BACKEND_URL=http://localhost:5001
 ```
+
+**Deploy no Vercel (produção):**
+
+Para que o dashboard em produção use dados reais (e não mock data), configure a variável de ambiente no painel do Vercel:
+
+1. Acesse **Settings > Environment Variables** no projeto Vercel
+2. Adicione: `PY_BACKEND_URL` = URL do seu backend FastAPI (ex: `https://seu-endpoint.execute-api.us-east-1.amazonaws.com`)
+3. Aplique para os ambientes: **Production** e **Preview**
+4. Faça um novo deploy para que a variável tenha efeito
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `PY_BACKEND_URL` | Sim (produção) | URL do backend FastAPI. Sem ela, o dashboard usa mock data |
+| `NEXT_PUBLIC_PY_BACKEND_URL` | Não | Variante pública para fetches client-side |
+
+> **Importante:** A branch `main` deve ser sempre a fonte da verdade para deploys em produção. Certifique-se de que features desenvolvidas em branches de trabalho sejam mergeadas na `main` antes do deploy final.
 
 ---
 
