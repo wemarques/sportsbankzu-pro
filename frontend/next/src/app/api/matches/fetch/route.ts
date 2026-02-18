@@ -37,8 +37,9 @@ export async function GET(req: NextRequest) {
   //    (Previously this tried a self-referencing POST to /api/matches which
   //     caused stale data issues on Vercel serverless.)
   const mockData = generateMockMatches(leagueIds);
-  return new Response(JSON.stringify({ matches: mockData }), {
+  console.log("[fetch/route] V2.3 | Using generateMockMatches | count:", mockData.length, "| first id:", mockData[0]?.id);
+  return new Response(JSON.stringify({ matches: mockData, _version: "V2.3", _source: "generateMockMatches" }), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-data-version": "V2.3" },
   });
 }
