@@ -40,7 +40,10 @@ export type Match = {
     home: number;
     draw: number;
     away: number;
+    over15?: number;
     over25: number;
+    over35?: number;
+    over45?: number;
     under25: number;
     bttsYes: number;
     bttsNo: number;
@@ -51,12 +54,15 @@ export type Match = {
     awayWinProb: number;
     avgGoals: number;
     bttsProb: number;
-    over25Prob: number;
-    over05Prob?: number;
     over15Prob?: number;
+    over25Prob: number;
     over35Prob?: number;
+    over45Prob?: number;
+    over05Prob?: number;
     homePossession?: number;
     awayPossession?: number;
+    homeXG?: number;
+    awayXG?: number;
     homeCornersPerMatch?: number;
     awayCornersPerMatch?: number;
     homeCardsPerMatch?: number;
@@ -67,6 +73,10 @@ export type Match = {
     lambdaAway?: number;
     lambdaTotal?: number;
     regime?: string;
+    leagueRegime?: string;
+    leagueVolatility?: string;
+    homeForm?: string[];
+    awayForm?: string[];
   };
   h2h: {
     totalMatches: number;

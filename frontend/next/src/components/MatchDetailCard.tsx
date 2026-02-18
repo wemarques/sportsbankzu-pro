@@ -59,6 +59,34 @@ export interface MatchDetailData {
     yes?: number;
     no?: number;
   };
+  matchStats?: {
+    homeWinProb?: number;
+    drawProb?: number;
+    awayWinProb?: number;
+    avgGoals?: number;
+    bttsProb?: number;
+    over15Prob?: number;
+    over25Prob?: number;
+    over35Prob?: number;
+    over45Prob?: number;
+    lambdaHome?: number;
+    lambdaAway?: number;
+    homePossession?: number;
+    awayPossession?: number;
+    homeXG?: number;
+    awayXG?: number;
+    leagueRegime?: string;
+    leagueVolatility?: string;
+  };
+  h2h?: {
+    totalMatches?: number;
+    homeWins?: number;
+    draws?: number;
+    awayWins?: number;
+    avgGoals?: number;
+  };
+  homeForm?: string[];
+  awayForm?: string[];
   round?: string;
   aiAnalysis?: AIAnalysis;
 }
@@ -70,11 +98,12 @@ type Props = {
   version?: string;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.3" }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.4" }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
   const [isComparativeExpanded, setIsComparativeExpanded] = useState(false);
+  const [comparativeTab, setComparativeTab] = useState<string>("gols");
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
 
   // Countdown timer
@@ -425,21 +454,244 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                 {isComparativeExpanded && (
                   <div className="mdc-comparative__content">
                     <div className="mdc-comparative__tabs">
-                      <button className="mdc-comparative__tab mdc-comparative__tab--active">Gols</button>
-                      <button className="mdc-comparative__tab">BTTS</button>
-                      <button className="mdc-comparative__tab">Escanteios</button>
-                      <button className="mdc-comparative__tab">Chutes ao Gol</button>
-                      <button className="mdc-comparative__tab">Finalizacoes</button>
-                      <button className="mdc-comparative__tab">Faltas</button>
-                      <button className="mdc-comparative__tab">Cartoes</button>
+                      {["gols", "btts", "escanteios", "chutes", "finalizacoes", "faltas", "cartoes"].map((tab) => (
+                        <button
+                          key={tab}
+                          className={`mdc-comparative__tab ${comparativeTab === tab ? "mdc-comparative__tab--active" : ""}`}
+                          onClick={() => setComparativeTab(tab)}
+                        >
+                          {tab === "gols" ? "Gols" : tab === "btts" ? "BTTS" : tab === "escanteios" ? "Escanteios" : tab === "chutes" ? "Chutes ao Gol" : tab === "finalizacoes" ? "Finalizacoes" : tab === "faltas" ? "Faltas" : "Cartoes"}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ padding: "12px 0" }}>
+                      {comparativeTab === "gols" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          <ComparativeBar label="Lambda (Gols Esperados)" homeVal={match.matchStats.lambdaHome ?? 0} awayVal={match.matchStats.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          <ComparativeBar label="xG (Gols Esperados)" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "0.75rem", color: "#ccc" }}>
+                            <span>Media de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
+                            <span>Over 2.5: {match.matchStats.over25Prob ? `${match.matchStats.over25Prob.toFixed(0)}%` : "-"}</span>
+                          </div>
+                        </div>
+                      )}
+                      {comparativeTab === "btts" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          <div style={{ textAlign: "center", padding: "8px 0" }}>
+                            <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: (match.matchStats.bttsProb ?? 0) >= 55 ? "#00ff88" : (match.matchStats.bttsProb ?? 0) >= 40 ? "#ffbb33" : "#ff4444" }}>
+                              {match.matchStats.bttsProb?.toFixed(0) ?? "0"}%
+                            </span>
+                            <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Probabilidade BTTS</div>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-around", padding: "8px 0", fontSize: "0.75rem" }}>
+                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Sim</span><br/><span style={{ color: "#00ff88" }}>{match.btts?.yes?.toFixed(2) ?? "-"}</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Nao</span><br/><span style={{ color: "#ff4444" }}>{match.btts?.no?.toFixed(2) ?? "-"}</span></div>
+                          </div>
+                        </div>
+                      )}
+                      {(comparativeTab === "escanteios" || comparativeTab === "chutes" || comparativeTab === "finalizacoes" || comparativeTab === "faltas" || comparativeTab === "cartoes") && (
+                        <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.75rem", color: "#666" }}>
+                          Dados em desenvolvimento. Em breve.
+                        </div>
+                      )}
+                      {comparativeTab === "gols" && !match.matchStats && (
+                        <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.75rem", color: "#666" }}>
+                          Dados estatisticos nao disponiveis para este jogo.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
             </div>
           )}
+
+          {/* STATS TAB CONTENT */}
+          {activeSubTab === "stats" && (
+            <div className="match-detail-card__content">
+              {match.matchStats ? (
+                <div className="mdc-stats-content">
+                  <h4 className="mdc-section-title">Probabilidades</h4>
+                  <div className="mdc-stats-grid">
+                    <StatRow label="Vitoria Casa" value={`${match.matchStats.homeWinProb?.toFixed(1) ?? "0"}%`} />
+                    <StatRow label="Empate" value={`${match.matchStats.drawProb?.toFixed(1) ?? "0"}%`} />
+                    <StatRow label="Vitoria Fora" value={`${match.matchStats.awayWinProb?.toFixed(1) ?? "0"}%`} />
+                  </div>
+
+                  <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Gols</h4>
+                  <div className="mdc-stats-grid">
+                    <StatRow label="Media de Gols" value={match.matchStats.avgGoals?.toFixed(2) ?? "-"} />
+                    <StatRow label="Lambda Casa" value={match.matchStats.lambdaHome?.toFixed(2) ?? "-"} />
+                    <StatRow label="Lambda Fora" value={match.matchStats.lambdaAway?.toFixed(2) ?? "-"} />
+                  </div>
+
+                  <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Over/Under</h4>
+                  <div className="mdc-stats-grid">
+                    {match.matchStats.over15Prob != null && <StatRow label="Over 1.5" value={`${match.matchStats.over15Prob.toFixed(0)}%`} />}
+                    <StatRow label="Over 2.5" value={`${match.matchStats.over25Prob?.toFixed(0) ?? "0"}%`} />
+                    {match.matchStats.over35Prob != null && <StatRow label="Over 3.5" value={`${match.matchStats.over35Prob.toFixed(0)}%`} />}
+                    {match.matchStats.over45Prob != null && <StatRow label="Over 4.5" value={`${match.matchStats.over45Prob.toFixed(0)}%`} />}
+                    <StatRow label="BTTS" value={`${match.matchStats.bttsProb?.toFixed(0) ?? "0"}%`} />
+                  </div>
+
+                  {(match.matchStats.homePossession || match.matchStats.homeXG) && (
+                    <>
+                      <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Desempenho</h4>
+                      <ComparativeBar label="Posse de Bola" homeVal={match.matchStats.homePossession ?? 50} awayVal={match.matchStats.awayPossession ?? 50} homeTeam={match.homeTeam} awayTeam={match.awayTeam} suffix="%" />
+                      <ComparativeBar label="xG" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                    </>
+                  )}
+
+                  {match.matchStats.leagueRegime && (
+                    <div style={{ marginTop: 16, padding: "8px 12px", background: "rgba(0,255,136,0.05)", borderRadius: 6, fontSize: "0.75rem" }}>
+                      <span style={{ color: "#888" }}>Regime da Liga: </span>
+                      <span style={{ color: match.matchStats.leagueRegime === "HIPER-OFENSIVA" ? "#00ff88" : "#ffbb33", fontWeight: 600 }}>
+                        {match.matchStats.leagueRegime}
+                      </span>
+                      {match.matchStats.leagueVolatility && (
+                        <span style={{ marginLeft: 12, color: "#888" }}>
+                          Volatilidade: <span style={{ color: "#ccc" }}>{match.matchStats.leagueVolatility}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "24px 0", fontSize: "0.8rem", color: "#666" }}>
+                  Dados estatisticos nao disponiveis para este jogo.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* H2H TAB CONTENT */}
+          {activeSubTab === "h2h" && (
+            <div className="match-detail-card__content">
+              {match.h2h && match.h2h.totalMatches && match.h2h.totalMatches > 0 ? (
+                <div className="mdc-h2h-content">
+                  <h4 className="mdc-section-title">Confrontos Diretos</h4>
+                  <div style={{ textAlign: "center", padding: "12px 0" }}>
+                    <span style={{ fontSize: "2rem", fontWeight: "bold", color: "#00ff88" }}>{match.h2h.totalMatches}</span>
+                    <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Total de Jogos</div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-around", padding: "16px 0", textAlign: "center" }}>
+                    <div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#00ff88" }}>{match.h2h.homeWins ?? 0}</div>
+                      <div style={{ fontSize: "0.65rem", color: "#888", marginTop: 2 }}>{match.homeTeam}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#ffbb33" }}>{match.h2h.draws ?? 0}</div>
+                      <div style={{ fontSize: "0.65rem", color: "#888", marginTop: 2 }}>Empates</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#ff4444" }}>{match.h2h.awayWins ?? 0}</div>
+                      <div style={{ fontSize: "0.65rem", color: "#888", marginTop: 2 }}>{match.awayTeam}</div>
+                    </div>
+                  </div>
+
+                  {/* H2H Bar */}
+                  {match.h2h.totalMatches > 0 && (
+                    <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8 }}>
+                      <div style={{ width: `${((match.h2h.homeWins ?? 0) / match.h2h.totalMatches) * 100}%`, background: "#00ff88" }} />
+                      <div style={{ width: `${((match.h2h.draws ?? 0) / match.h2h.totalMatches) * 100}%`, background: "#ffbb33" }} />
+                      <div style={{ width: `${((match.h2h.awayWins ?? 0) / match.h2h.totalMatches) * 100}%`, background: "#ff4444" }} />
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16, fontSize: "0.75rem" }}>
+                    <span style={{ color: "#888" }}>Media de Gols: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.h2h.avgGoals?.toFixed(2) ?? "-"}</span></span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "24px 0", fontSize: "0.8rem", color: "#666" }}>
+                  Dados de confronto direto nao disponiveis.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ULTIMOS JOGOS TAB CONTENT */}
+          {activeSubTab === "ultimos" && (
+            <div className="match-detail-card__content">
+              <h4 className="mdc-section-title">Forma Recente</h4>
+              <div style={{ padding: "8px 0" }}>
+                <FormDisplay label={match.homeTeam} form={match.homeForm} />
+                <FormDisplay label={match.awayTeam} form={match.awayForm} />
+              </div>
+              {(!match.homeForm || match.homeForm.length === 0) && (!match.awayForm || match.awayForm.length === 0) && (
+                <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.8rem", color: "#666" }}>
+                  Dados de forma recente nao disponiveis.
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+/* ── SUB-COMPONENTS ── */
+
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: "0.75rem" }}>
+      <span style={{ color: "#888" }}>{label}</span>
+      <span style={{ color: "#e0e0e0", fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
+function ComparativeBar({ label, homeVal, awayVal, homeTeam, awayTeam, suffix = "" }: { label: string; homeVal: number; awayVal: number; homeTeam: string; awayTeam: string; suffix?: string }) {
+  const total = homeVal + awayVal || 1;
+  const homePct = (homeVal / total) * 100;
+  return (
+    <div style={{ padding: "8px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#888", marginBottom: 4 }}>
+        <span>{homeTeam}: {homeVal.toFixed(2)}{suffix}</span>
+        <span style={{ fontSize: "0.6rem" }}>{label}</span>
+        <span>{awayTeam}: {awayVal.toFixed(2)}{suffix}</span>
+      </div>
+      <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "rgba(255,255,255,0.05)" }}>
+        <div style={{ width: `${homePct}%`, background: "#00ff88", transition: "width 0.3s" }} />
+        <div style={{ width: `${100 - homePct}%`, background: "#ff4444", transition: "width 0.3s" }} />
+      </div>
+    </div>
+  );
+}
+
+function FormDisplay({ label, form }: { label: string; form?: string[] }) {
+  if (!form || form.length === 0) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+      <span style={{ fontSize: "0.7rem", color: "#888", minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <div style={{ display: "flex", gap: 4 }}>
+        {form.map((result, i) => {
+          const r = result.toUpperCase();
+          const color = r === "W" ? "#00ff88" : r === "D" ? "#ffbb33" : "#ff4444";
+          const lbl = r === "W" ? "V" : r === "D" ? "E" : "D";
+          return (
+            <div
+              key={i}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                background: color,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.6rem",
+                fontWeight: "bold",
+                color: "#000",
+              }}
+            >
+              {lbl}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

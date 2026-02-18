@@ -865,3 +865,31 @@
 
   .mdc-comparative__tab { padding: 4px 8px; font-size: 0.65rem; }
 }
+
+/* ── STATS / H2H / FORM SUB-TAB CONTENT ── */
+
+.mdc-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.mdc-stats-content,
+.mdc-h2h-content {
+  padding: 4px 0;
+}
+
+.mdc-stats-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mdc-comparative-data {
+  padding: 4px 0;
+}
