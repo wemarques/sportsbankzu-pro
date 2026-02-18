@@ -23,5 +23,6 @@ test-results/
 blob-report/
 
 deploy_lambda_build/
+.env.vercel
 
 nul

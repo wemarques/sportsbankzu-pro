@@ -20,26 +20,37 @@ export async function GET(req: NextRequest) {
       const date = url.searchParams.get("date") || "today";
       const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
       const base = backend.endsWith("/") ? backend.slice(0, -1) : backend;
-      const res = await fetch(`${base}/fixtures?${qs.toString()}`, { cache: "no-store" });
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+
+      const res = await fetch(`${base}/fixtures?${qs.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
       const data = await res.json();
       if (data.matches && data.matches.length > 0) {
-        return new Response(JSON.stringify(data), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        console.log(
+          `[fetch/route] Backend OK | ${data.matches.length} matches | source: ${data.matches[0]?.source ?? "unknown"}`
+        );
+        return new Response(
+          JSON.stringify({ ...data, _dataSource: "backend" }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
       }
+      console.log("[fetch/route] Backend returned 0 matches — falling back to mock");
     }
-  } catch {
-    // Python backend unavailable — fall through to mock
+  } catch (err) {
+    console.error("[fetch/route] Backend error:", err instanceof Error ? err.message : err);
   }
 
   // 2. No backend or backend returned empty — use mock data directly
-  //    (Previously this tried a self-referencing POST to /api/matches which
-  //     caused stale data issues on Vercel serverless.)
   const mockData = generateMockMatches(leagueIds);
-  console.log("[fetch/route] V2.3 | Using generateMockMatches | count:", mockData.length, "| first id:", mockData[0]?.id);
-  return new Response(JSON.stringify({ matches: mockData, _version: "V2.3", _source: "generateMockMatches" }), {
-    status: 200,
-    headers: { "content-type": "application/json", "x-data-version": "V2.3" },
-  });
+  console.log(`[fetch/route] Using mock fallback | ${mockData.length} matches`);
+  return new Response(
+    JSON.stringify({ matches: mockData, _dataSource: "mock-fallback" }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  );
 }
