@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const APP_VERSION = "pro V2.5";
+const APP_VERSION = "pro V2.6";
 
 type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas";
 
@@ -152,6 +152,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayWins: item.h2h?.awayWins ?? 0,
       avgGoals: item.h2h?.avgGoals ?? 0,
     },
+    predictions: item.mercados ?? item.predictions ?? [],
     source: item.source ?? "footystats",
     lastUpdated: item.lastUpdated ?? new Date().toISOString(),
   };
@@ -737,6 +738,21 @@ export default function Dashboard() {
                     <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()} aria-label="Favoritar">
                       <Star size={14} />
                     </button>
+                    {match.predictions && match.predictions.length > 0 && (
+                      <div className="st-match-row__predictions">
+                        {match.predictions.map((pred, pidx) => (
+                          <div key={pidx} className="st-prediction-badge">
+                            <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                              {pred.status}
+                            </span>
+                            <span className="st-prediction-market">{pred.mercado}</span>
+                            <span className="st-prediction-prob">prob {pred.prob_min}-{pred.prob_max}%</span>
+                            <span className="st-prediction-odd">odd min. EV+ {pred.odd_minima != null ? `≈${pred.odd_minima.toFixed(2)}` : "-"}</span>
+                            {pred.alerta && <span className="st-prediction-alert">△ {pred.alerta}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

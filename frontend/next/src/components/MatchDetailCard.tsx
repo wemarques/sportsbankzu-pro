@@ -104,7 +104,7 @@ type Props = {
   version?: string;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.5" }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.6" }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
