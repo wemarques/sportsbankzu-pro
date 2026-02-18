@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
+const APP_VERSION = "pro V2.1";
+
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 
 type LeagueGroup = {
@@ -260,7 +262,7 @@ export default function Dashboard() {
           <button className="st-nav__link">Recomendadas 2026</button>
         </div>
         <div className="st-nav__right">
-          <span className="st-badge-pro">PRO</span>
+          <span className="st-badge-pro">{APP_VERSION}</span>
           <button className="st-nav__search">
             <Search size={14} />
             Buscar
@@ -399,9 +401,9 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <section className="detail-card-section">
+        <section className="st-panel-right detail-card-section">
           {detailData ? (
-            <MatchDetailCard match={detailData} />
+            <MatchDetailCard match={detailData} version={APP_VERSION} />
           ) : (
             <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
           )}

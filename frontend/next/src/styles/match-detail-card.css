@@ -771,6 +771,8 @@
 }
 
 /* === RESPONSIVENESS === */
+
+/* Tablet landscape / small desktop */
 @media (max-width: 1024px) {
   .match-detail-card {
     position: static;
@@ -792,8 +794,9 @@
     order: 1;
   }
 
+  /* Keep teams side-by-side on tablets */
   .match-detail-card__teams {
-    flex-direction: column;
+    flex-direction: row;
     padding: 16px;
   }
 
@@ -802,9 +805,63 @@
   .mdc-info-grid { grid-template-columns: 1fr; }
 }
 
+/* Tablet portrait */
 @media (max-width: 768px) {
   .mdc-odds-main-grid { gap: 6px; }
   .mdc-odd-main { padding: 8px; }
+  .mdc-odd-main__value { font-size: 0.95rem; }
+  .mdc-odd-main__label { font-size: 0.65rem; }
+
+  .mdc-odds-secondary-grid { gap: 6px; }
+  .mdc-odd-secondary { padding: 6px; }
+  .mdc-odd-secondary__value { font-size: 0.85rem; }
+
   .mdc-countdown__number { font-size: 1rem; padding: 6px 8px; min-width: 40px; }
   .mdc-team-name { font-size: 0.95rem; }
+
+  .mdc-tab-btn { padding: 6px 8px; font-size: 0.75rem; }
+  .mdc-sub-tab-btn { padding: 6px 8px; font-size: 0.75rem; }
+
+  .mdc-badge-pro { font-size: 0.55rem; padding: 2px 5px; }
+
+  .match-detail-card__odds-section { padding: 12px; }
+  .match-detail-card__content { padding: 12px; }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .match-detail-card__teams {
+    flex-direction: row;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .mdc-team-logo { width: 48px; height: 48px; font-size: 32px; }
+  .mdc-team-name { font-size: 0.85rem; }
+
+  .mdc-countdown__number {
+    font-size: 0.85rem;
+    padding: 4px 6px;
+    min-width: 34px;
+  }
+
+  .mdc-countdown__label { font-size: 0.6rem; }
+
+  .mdc-odds-secondary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mdc-ai-text { font-size: 0.78rem; }
+  .mdc-ai-list-item { font-size: 0.78rem; }
+  .mdc-ai-recommendation-text { font-size: 0.78rem; }
+  .mdc-ai-section-title { font-size: 0.7rem; }
+  .mdc-collapsible-title { font-size: 0.8rem; }
+
+  .mdc-confidence__header { font-size: 0.72rem; }
+  .mdc-confidence__value { font-size: 0.8rem; }
+
+  .match-detail-card__header { padding: 10px 12px; }
+  .match-detail-card__league { font-size: 0.72rem; }
+
+  .mdc-comparative__tab { padding: 4px 8px; font-size: 0.65rem; }
 }

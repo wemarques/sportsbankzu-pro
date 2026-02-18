@@ -550,6 +550,8 @@
 }
 
 /* ---- RESPONSIVE ---- */
+
+/* Tablet landscape / small desktop */
 @media (max-width: 1024px) {
   .st-main {
     flex-direction: column;
@@ -568,18 +570,60 @@
     min-height: 50vh;
   }
 
+  .detail-card-section {
+    width: 100%;
+    padding: 12px;
+  }
+
   .st-bottom-nav {
     width: 100%;
     max-width: none;
   }
+
+  .st-nav {
+    gap: 16px;
+    padding: 0 12px;
+  }
 }
 
-@media (max-width: 640px) {
-  .st-match-row__odds {
+/* Tablet portrait */
+@media (max-width: 768px) {
+  .st-nav__links {
     display: none;
   }
 
-  .st-nav__links {
+  .st-filters {
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .st-filter-btn {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .st-match-row {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+
+  .st-match-row__odd {
+    min-width: 38px;
+    padding: 3px 4px;
+  }
+
+  .st-match-row__odd-value {
+    font-size: 0.72rem;
+  }
+
+  .st-match-row__odd-label {
+    font-size: 0.55rem;
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .st-match-row__odds {
     display: none;
   }
 
@@ -590,6 +634,76 @@
   .st-odds-tab {
     padding: 8px 10px;
     font-size: 0.72rem;
+  }
+
+  .st-nav {
+    gap: 10px;
+    padding: 0 10px;
+    height: 46px;
+  }
+
+  .st-nav__logo {
+    font-size: 0.95rem;
+  }
+
+  .st-badge-pro {
+    font-size: 0.6rem;
+    padding: 2px 6px;
+  }
+
+  .st-date-nav__btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .st-date-label {
+    font-size: 0.72rem;
+    padding: 4px 8px;
+  }
+
+  .st-match-row__team {
+    font-size: 0.75rem;
+  }
+
+  .st-match-row__team-name {
+    max-width: 140px;
+  }
+
+  .st-league-header {
+    padding: 8px 12px;
+  }
+
+  .st-league-name {
+    font-size: 0.78rem;
+  }
+
+  .st-bottom-nav {
+    height: 46px;
+  }
+
+  .st-bottom-nav__item {
+    font-size: 0.6rem;
+    padding: 4px 8px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+  .st-nav__search {
+    display: none;
+  }
+
+  .st-match-row__favorite {
+    display: none;
+  }
+
+  .st-match-row__team-name {
+    max-width: 110px;
+  }
+
+  .st-filter-btn {
+    padding: 3px 6px;
+    font-size: 0.68rem;
   }
 }
 
