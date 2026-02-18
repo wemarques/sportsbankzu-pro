@@ -160,7 +160,7 @@ const MOCK_DATA: Match[] = [
     leagueId: "premier-league",
     leagueName: "Premier League",
     homeTeam: { name: "Everton", logo: "", form: ["L", "D", "L", "W", "D"], rating: 6.2 },
-    awayTeam: { name: "Leicester City", logo: "", form: ["D", "L", "W", "L", "W"], rating: 6.5 },
+    awayTeam: { name: "Leeds United", logo: "", form: ["D", "L", "W", "L", "W"], rating: 6.5 },
     datetime: today(5),
     venue: "Goodison Park",
     status: "scheduled",
