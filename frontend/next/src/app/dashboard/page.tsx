@@ -22,10 +22,22 @@ import {
   Heart,
   Filter,
   Bell,
+  Trophy,
+  Wrench,
+  Sparkles,
+  ArrowLeft,
+  TrendingUp,
+  BarChart3,
+  Calculator,
+  Brain,
+  Target,
+  Zap,
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const APP_VERSION = "pro V2.4";
+const APP_VERSION = "pro V2.5";
+
+type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 type DateMode = "today" | "tomorrow" | "week";
@@ -121,11 +133,17 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayPossession: item.stats?.awayPossession ?? 0,
       homeXG: item.stats?.homeXG ?? 0,
       awayXG: item.stats?.awayXG ?? 0,
-      homeForm: item.stats?.homeForm ?? item.homeTeam?.form ?? [],
-      awayForm: item.stats?.awayForm ?? item.awayTeam?.form ?? [],
+      homeForm: item.stats?.homeForm ?? item.homeForm ?? item.homeTeam?.form ?? [],
+      awayForm: item.stats?.awayForm ?? item.awayForm ?? item.awayTeam?.form ?? [],
       leagueRegime: item.stats?.leagueRegime ?? "",
       leagueVolatility: item.stats?.leagueVolatility ?? "",
       regime: item.stats?.regime ?? "",
+      homeCornersPerMatch: item.stats?.homeCornersPerMatch ?? 0,
+      awayCornersPerMatch: item.stats?.awayCornersPerMatch ?? 0,
+      homeCardsPerMatch: item.stats?.homeCardsPerMatch ?? 0,
+      awayCardsPerMatch: item.stats?.awayCardsPerMatch ?? 0,
+      leagueAvgCorners: item.stats?.leagueAvgCorners ?? 0,
+      leagueAvgCards: item.stats?.leagueAvgCards ?? 0,
     },
     h2h: {
       totalMatches: item.h2h?.totalMatches ?? 0,
@@ -183,6 +201,12 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       awayXG: match.stats?.awayXG,
       leagueRegime: match.stats?.leagueRegime,
       leagueVolatility: match.stats?.leagueVolatility,
+      homeCornersPerMatch: match.stats?.homeCornersPerMatch,
+      awayCornersPerMatch: match.stats?.awayCornersPerMatch,
+      homeCardsPerMatch: match.stats?.homeCardsPerMatch,
+      awayCardsPerMatch: match.stats?.awayCardsPerMatch,
+      leagueAvgCorners: match.stats?.leagueAvgCorners,
+      leagueAvgCards: match.stats?.leagueAvgCards,
     },
     h2h: match.h2h,
     homeForm: match.stats?.homeForm ?? match.homeTeam.form,
@@ -204,6 +228,7 @@ export default function Dashboard() {
   const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
+  const [navView, setNavView] = useState<NavView>("matches");
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -318,9 +343,18 @@ export default function Dashboard() {
           sports<span>bank</span>.
         </div>
         <div className="st-nav__links">
-          <button className="st-nav__link">Campeonatos</button>
-          <button className="st-nav__link">Ferramentas</button>
-          <button className="st-nav__link">Recomendadas 2026</button>
+          <button className={`st-nav__link ${navView === "campeonatos" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "campeonatos" ? "matches" : "campeonatos")}>
+            <Trophy size={14} />
+            Campeonatos
+          </button>
+          <button className={`st-nav__link ${navView === "ferramentas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "ferramentas" ? "matches" : "ferramentas")}>
+            <Wrench size={14} />
+            Ferramentas
+          </button>
+          <button className={`st-nav__link ${navView === "recomendadas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "recomendadas" ? "matches" : "recomendadas")}>
+            <Sparkles size={14} />
+            Recomendadas 2026
+          </button>
         </div>
         <div className="st-nav__right">
           <span className="st-badge-pro">{APP_VERSION}</span>
@@ -338,6 +372,167 @@ export default function Dashboard() {
       <div className="st-main">
         {/* LEFT PANEL */}
         <div className="st-panel-left">
+
+          {/* ── CAMPEONATOS VIEW ── */}
+          {navView === "campeonatos" && (
+            <div className="st-view-panel">
+              <div className="st-view-header">
+                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                <h2 className="st-view-title"><Trophy size={16} /> Campeonatos</h2>
+              </div>
+              <div className="st-view-content">
+                {AVAILABLE_LEAGUES.map((league) => {
+                  const matchCount = allMatches.filter((m) => m.leagueId === league.id).length;
+                  return (
+                    <div
+                      key={league.id}
+                      className="st-league-card"
+                      onClick={() => { setNavView("matches"); }}
+                    >
+                      <span className="st-league-card__flag">{league.countryFlag}</span>
+                      <div className="st-league-card__info">
+                        <span className="st-league-card__name">{league.name}</span>
+                        <span className="st-league-card__country">{league.country} &middot; {league.season}</span>
+                      </div>
+                      <div className="st-league-card__right">
+                        {matchCount > 0 && (
+                          <span className="st-league-card__badge">{matchCount} jogos</span>
+                        )}
+                        <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── FERRAMENTAS VIEW ── */}
+          {navView === "ferramentas" && (
+            <div className="st-view-panel">
+              <div className="st-view-header">
+                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                <h2 className="st-view-title"><Wrench size={16} /> Ferramentas</h2>
+              </div>
+              <div className="st-view-content">
+                <a href="/ai-audit" className="st-tool-card">
+                  <div className="st-tool-card__icon" style={{ background: "rgba(0,255,136,0.1)" }}><Brain size={20} style={{ color: "#00ff88" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Auditoria AI (Mistral)</span>
+                    <span className="st-tool-card__desc">Analise inteligente com recomendacoes de apostas</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </a>
+                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("goals"); }}>
+                  <div className="st-tool-card__icon" style={{ background: "rgba(255,187,51,0.1)" }}><BarChart3 size={20} style={{ color: "#ffbb33" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Comparativo de Gols</span>
+                    <span className="st-tool-card__desc">Lambda, xG, Over/Under e medias por liga</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </div>
+                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("btts"); }}>
+                  <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Target size={20} style={{ color: "#9d50ff" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Analise BTTS</span>
+                    <span className="st-tool-card__desc">Both Teams To Score — probabilidades e odds</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </div>
+                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("corners"); }}>
+                  <div className="st-tool-card__icon" style={{ background: "rgba(0,187,255,0.1)" }}><Zap size={20} style={{ color: "#00bbff" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Escanteios & Cartoes</span>
+                    <span className="st-tool-card__desc">Medias de escanteios e cartoes por equipe</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </div>
+                <div className="st-tool-card" onClick={() => setNavView("recomendadas")}>
+                  <div className="st-tool-card__icon" style={{ background: "rgba(255,68,68,0.1)" }}><Sparkles size={20} style={{ color: "#ff4444" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Recomendadas do Dia</span>
+                    <span className="st-tool-card__desc">Jogos com maior confianca da analise AI</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── RECOMENDADAS VIEW ── */}
+          {navView === "recomendadas" && (
+            <div className="st-view-panel">
+              <div className="st-view-header">
+                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                <h2 className="st-view-title"><Sparkles size={16} /> Recomendadas 2026</h2>
+              </div>
+              <div className="st-view-subtitle">Jogos com melhor potencial baseado em probabilidades, Lambda e analise estatistica</div>
+              <div className="st-view-content">
+                {allMatches.length === 0 && (
+                  <div className="st-empty">
+                    <div className="st-empty__icon">&#9917;</div>
+                    Carregando jogos para analise...
+                  </div>
+                )}
+                {allMatches
+                  .filter((m) => m.status === "scheduled")
+                  .sort((a, b) => {
+                    // Score: higher homeWinProb or awayWinProb + high over25 + btts data
+                    const scoreA = Math.max(a.stats?.homeWinProb ?? 0, a.stats?.awayWinProb ?? 0) + (a.stats?.over25Prob ?? 0) * 0.5;
+                    const scoreB = Math.max(b.stats?.homeWinProb ?? 0, b.stats?.awayWinProb ?? 0) + (b.stats?.over25Prob ?? 0) * 0.5;
+                    return scoreB - scoreA;
+                  })
+                  .slice(0, 15)
+                  .map((match) => {
+                    const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
+                    const maxProb = Math.max(match.stats?.homeWinProb ?? 0, match.stats?.awayWinProb ?? 0);
+                    const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${maxProb.toFixed(0)}%)` : `${match.awayTeam.name} (${maxProb.toFixed(0)}%)`;
+                    const confidenceColor = maxProb >= 55 ? "#00ff88" : maxProb >= 40 ? "#ffbb33" : "#ff4444";
+                    return (
+                      <div
+                        key={match.id}
+                        className="st-rec-card"
+                        onClick={() => { setSelectedMatchId(match.id); setNavView("matches"); }}
+                      >
+                        <div className="st-rec-card__header">
+                          <span className="st-rec-card__league">{league?.countryFlag} {league?.name ?? match.leagueId}</span>
+                          <span className="st-rec-card__time">{formatTime(match.datetime)}</span>
+                        </div>
+                        <div className="st-rec-card__teams">
+                          <span className="st-rec-card__team">{match.homeTeam.name}</span>
+                          <span className="st-rec-card__vs">vs</span>
+                          <span className="st-rec-card__team">{match.awayTeam.name}</span>
+                        </div>
+                        <div className="st-rec-card__stats">
+                          <div className="st-rec-card__stat">
+                            <span className="st-rec-card__stat-label">Favorito</span>
+                            <span className="st-rec-card__stat-value" style={{ color: confidenceColor }}>{probLabel}</span>
+                          </div>
+                          <div className="st-rec-card__stat">
+                            <span className="st-rec-card__stat-label">Over 2.5</span>
+                            <span className="st-rec-card__stat-value">{match.stats?.over25Prob ? `${match.stats.over25Prob.toFixed(0)}%` : "-"}</span>
+                          </div>
+                          <div className="st-rec-card__stat">
+                            <span className="st-rec-card__stat-label">BTTS</span>
+                            <span className="st-rec-card__stat-value">{match.stats?.bttsProb ? `${match.stats.bttsProb.toFixed(0)}%` : "-"}</span>
+                          </div>
+                        </div>
+                        {match.odds?.home > 0 && (
+                          <div className="st-rec-card__odds">
+                            <span className="st-rec-card__odd">1: {match.odds.home.toFixed(2)}</span>
+                            <span className="st-rec-card__odd">X: {match.odds.draw.toFixed(2)}</span>
+                            <span className="st-rec-card__odd">2: {match.odds.away.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* ── MATCHES VIEW (default) ── */}
+          {navView === "matches" && <>
           {/* Filter bar */}
           <div className="st-filters">
             <div className="st-date-nav">
@@ -509,15 +704,33 @@ export default function Dashboard() {
                     )}
                     {oddsTab === "cards" && (
                       <div className="st-match-row__odds">
-                        <div className="st-match-row__odd" style={{ opacity: 0.5 }}>
-                          <span className="st-match-row__odd-label" style={{ fontSize: "0.6rem" }}>Em breve</span>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Casa</span>
+                          <span className="st-match-row__odd-value">{match.stats?.homeCardsPerMatch ? match.stats.homeCardsPerMatch.toFixed(1) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Fora</span>
+                          <span className="st-match-row__odd-value">{match.stats?.awayCardsPerMatch ? match.stats.awayCardsPerMatch.toFixed(1) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                          <span className="st-match-row__odd-label">Liga</span>
+                          <span className="st-match-row__odd-value">{match.stats?.leagueAvgCards ? match.stats.leagueAvgCards.toFixed(1) : "-"}</span>
                         </div>
                       </div>
                     )}
                     {oddsTab === "corners" && (
                       <div className="st-match-row__odds">
-                        <div className="st-match-row__odd" style={{ opacity: 0.5 }}>
-                          <span className="st-match-row__odd-label" style={{ fontSize: "0.6rem" }}>Em breve</span>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Casa</span>
+                          <span className="st-match-row__odd-value">{match.stats?.homeCornersPerMatch ? match.stats.homeCornersPerMatch.toFixed(1) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd">
+                          <span className="st-match-row__odd-label">Fora</span>
+                          <span className="st-match-row__odd-value">{match.stats?.awayCornersPerMatch ? match.stats.awayCornersPerMatch.toFixed(1) : "-"}</span>
+                        </div>
+                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                          <span className="st-match-row__odd-label">Liga</span>
+                          <span className="st-match-row__odd-value">{match.stats?.leagueAvgCorners ? match.stats.leagueAvgCorners.toFixed(1) : "-"}</span>
                         </div>
                       </div>
                     )}
@@ -529,6 +742,7 @@ export default function Dashboard() {
               })}
             </div>
           ))}
+          </>}
         </div>
 
         <section className="st-panel-right detail-card-section">

@@ -728,3 +728,273 @@
 .st-panel-right::-webkit-scrollbar-thumb:hover {
   background: var(--st-text-muted);
 }
+
+/* ---- ACTIVE NAV LINK ---- */
+.st-nav__link--active {
+  color: var(--st-primary) !important;
+  font-weight: 600;
+}
+
+/* ---- VIEW PANELS (Campeonatos, Ferramentas, Recomendadas) ---- */
+.st-view-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.st-view-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--st-border);
+  background: var(--st-bg-secondary);
+}
+
+.st-view-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--st-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.st-view-back:hover {
+  color: var(--st-primary);
+  background: var(--st-primary-dim);
+}
+
+.st-view-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--st-text);
+  margin: 0;
+}
+
+.st-view-subtitle {
+  padding: 8px 16px;
+  font-size: 0.72rem;
+  color: var(--st-text-muted);
+  border-bottom: 1px solid var(--st-border);
+}
+
+.st-view-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* ---- LEAGUE CARD (Campeonatos) ---- */
+.st-league-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.st-league-card:hover {
+  background: var(--st-bg-hover);
+}
+
+.st-league-card__flag {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.st-league-card__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.st-league-card__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+.st-league-card__country {
+  font-size: 0.7rem;
+  color: var(--st-text-muted);
+}
+
+.st-league-card__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.st-league-card__badge {
+  background: var(--st-primary-dim);
+  color: var(--st-primary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* ---- TOOL CARD (Ferramentas) ---- */
+.st-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.st-tool-card:hover {
+  background: var(--st-bg-hover);
+}
+
+.st-tool-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.st-tool-card__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.st-tool-card__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+.st-tool-card__desc {
+  font-size: 0.7rem;
+  color: var(--st-text-muted);
+}
+
+/* ---- RECOMMENDATION CARD (Recomendadas) ---- */
+.st-rec-card {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--st-border);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--st-bg-card);
+}
+
+.st-rec-card:hover {
+  border-color: var(--st-primary);
+  background: var(--st-bg-active);
+}
+
+.st-rec-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.st-rec-card__league {
+  font-size: 0.68rem;
+  color: var(--st-text-muted);
+}
+
+.st-rec-card__time {
+  font-size: 0.68rem;
+  color: var(--st-text-secondary);
+}
+
+.st-rec-card__teams {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.st-rec-card__team {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+.st-rec-card__vs {
+  font-size: 0.7rem;
+  color: var(--st-text-muted);
+}
+
+.st-rec-card__stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.st-rec-card__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.st-rec-card__stat-label {
+  font-size: 0.6rem;
+  color: var(--st-text-muted);
+  text-transform: uppercase;
+}
+
+.st-rec-card__stat-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+.st-rec-card__odds {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.st-rec-card__odd {
+  font-size: 0.7rem;
+  color: var(--st-text-secondary);
+  background: var(--st-bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ---- RESPONSIVE for view panels ---- */
+@media (max-width: 768px) {
+  .st-view-header {
+    padding: 8px 12px;
+  }
+  .st-view-title {
+    font-size: 0.82rem;
+  }
+  .st-rec-card__stats {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
