@@ -22,7 +22,7 @@ test.describe("Dashboard Page", () => {
 
   test("renders PRO badge", async ({ page }) => {
     await expect(page.locator(".st-badge-pro")).toBeVisible();
-    await expect(page.locator(".st-badge-pro")).toContainText("PRO");
+    await expect(page.locator(".st-badge-pro")).toContainText("pro V");
   });
 
   test("renders left panel with filters", async ({ page }) => {
