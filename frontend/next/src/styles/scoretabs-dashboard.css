@@ -627,7 +627,21 @@
 /* Mobile */
 @media (max-width: 640px) {
   .st-match-row__odds {
-    display: none;
+    display: flex;
+    gap: 2px;
+  }
+
+  .st-match-row__odd {
+    min-width: 30px;
+    padding: 2px 3px;
+  }
+
+  .st-match-row__odd-label {
+    font-size: 0.5rem;
+  }
+
+  .st-match-row__odd-value {
+    font-size: 0.62rem;
   }
 
   .st-odds-tabs {
@@ -669,7 +683,7 @@
   }
 
   .st-match-row__team-name {
-    max-width: 140px;
+    max-width: 120px;
   }
 
   .st-league-header {
@@ -688,6 +702,32 @@
     font-size: 0.6rem;
     padding: 4px 8px;
   }
+
+  /* Prognósticos visíveis e compactos em mobile */
+  .st-match-row__predictions {
+    display: flex !important;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .st-prediction-badge {
+    flex-wrap: wrap;
+    gap: 2px;
+    font-size: 0.56rem;
+  }
+
+  .st-prediction-market,
+  .st-prediction-prob,
+  .st-prediction-odd,
+  .st-prediction-alert {
+    white-space: normal;
+  }
+
+  .st-prediction-status {
+    font-size: 0.52rem;
+    padding: 1px 4px;
+    min-width: 36px;
+  }
 }
 
 /* Very small phones */
@@ -701,12 +741,35 @@
   }
 
   .st-match-row__team-name {
-    max-width: 110px;
+    max-width: 90px;
   }
 
   .st-filter-btn {
     padding: 3px 6px;
     font-size: 0.68rem;
+  }
+
+  .st-match-row__odd {
+    min-width: 26px;
+    padding: 1px 2px;
+  }
+
+  .st-match-row__odd-value {
+    font-size: 0.58rem;
+  }
+
+  .st-match-row__odd-label {
+    display: none;
+  }
+
+  .st-prediction-badge {
+    font-size: 0.52rem;
+  }
+
+  .st-prediction-status {
+    font-size: 0.48rem;
+    min-width: 30px;
+    padding: 1px 3px;
   }
 }
 
