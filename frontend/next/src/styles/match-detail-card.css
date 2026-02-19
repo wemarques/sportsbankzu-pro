@@ -893,3 +893,42 @@
 .mdc-comparative-data {
   padding: 4px 0;
 }
+
+
+/* === BOTÃO VOLTAR (Mobile) === */
+.mdc-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-md);
+  padding: 8px 12px;
+  color: var(--mdc-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-right: auto;
+}
+
+.mdc-back-btn:hover {
+  background-color: var(--mdc-bg-tertiary);
+  border-color: var(--mdc-primary);
+  color: var(--mdc-primary);
+}
+
+.mdc-back-btn:active {
+  transform: scale(0.98);
+}
+
+/* Ajustar o header quando o botão Voltar está presente */
+.match-detail-card__header:has(.mdc-back-btn) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.match-detail-card__header:has(.mdc-back-btn) .match-detail-card__league {
+  flex: 1;
+  text-align: center;
+}

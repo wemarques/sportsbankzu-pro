@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -230,6 +231,9 @@ export default function Dashboard() {
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
   const [navView, setNavView] = useState<NavView>("matches");
+  
+  // Hook para detectar se estamos em mobile/tablet
+  const isMobile = useMediaQuery("(max-width: 1024px)");
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -371,7 +375,8 @@ export default function Dashboard() {
       </nav>
 
       <div className="st-main">
-        {/* LEFT PANEL */}
+        {/* LEFT PANEL - Em mobile, esconder quando um jogo está selecionado */}
+        {(!isMobile || !selectedMatchId) && (
         <div className="st-panel-left">
 
           {/* ── CAMPEONATOS VIEW ── */}
@@ -760,14 +765,23 @@ export default function Dashboard() {
           ))}
           </>}
         </div>
+        )}
 
+        {/* RIGHT PANEL - Em mobile, esconder quando nenhum jogo está selecionado */}
+        {(!isMobile || selectedMatchId) && (
         <section className="st-panel-right detail-card-section">
           {detailData ? (
-            <MatchDetailCard match={detailData} version={APP_VERSION} />
+            <MatchDetailCard 
+              match={detailData} 
+              version={APP_VERSION}
+              onBack={() => setSelectedMatchId(null)}
+              showBackButton={isMobile}
+            />
           ) : (
             <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
           )}
         </section>
+        )}
       </div>
     </div>
   );

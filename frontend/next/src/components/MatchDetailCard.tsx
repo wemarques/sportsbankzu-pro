@@ -13,6 +13,7 @@ import {
   Sparkles,
   Loader2,
   RefreshCw,
+  ArrowLeft,
 } from "lucide-react";
 import "../styles/match-detail-card.css";
 
@@ -102,9 +103,11 @@ type Props = {
   aiLoading?: boolean;
   onRegenerate?: () => void;
   version?: string;
+  onBack?: () => void;
+  showBackButton?: boolean;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.6" }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.6", onBack, showBackButton = false }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -162,6 +165,12 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
     <div className="match-detail-card">
       {/* HEADER */}
       <div className="match-detail-card__header">
+        {showBackButton && onBack && (
+          <button className="mdc-back-btn" onClick={onBack} aria-label="Voltar">
+            <ArrowLeft size={20} />
+            <span>Voltar</span>
+          </button>
+        )}
         <div className="match-detail-card__league">
           {match.league}{match.season ? ` \u2022 ${match.season}` : ""}
         </div>
