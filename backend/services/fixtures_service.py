@@ -17,11 +17,11 @@ logger = logging.getLogger("sportsbank")
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
-    teams: Optional["pd.DataFrame"],
-    teams2: Optional["pd.DataFrame"],
-    league_df: Optional["pd.DataFrame"],
-    players: Optional["pd.DataFrame"],
-    date_filter: str,
+    teams: Optional["pd.DataFrame"] = None,
+    teams2: Optional["pd.DataFrame"] = None,
+    league_df: Optional["pd.DataFrame"] = None,
+    players: Optional["pd.DataFrame"] = None,
+    date_filter: str = "today",
 ) -> List[Dict[str, Any]]:
     from backend.main import date_range, aggregate_team_xg, expected_goals_v2
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"

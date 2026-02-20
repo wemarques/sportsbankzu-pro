@@ -28,12 +28,31 @@ export async function GET(req: NextRequest) {
     if (result.ok) {
       const matches = (result.data as Record<string, unknown>)?.matches;
       if (Array.isArray(matches) && matches.length > 0) {
+        // Quality gate: check if backend returned real team names (not generic "Team A")
+        const hasQuality = matches.some((m: Record<string, unknown>) => {
+          const home = typeof m.homeTeam === "string" ? m.homeTeam : (m.homeTeam as Record<string, string>)?.name;
+          return home && home !== "Team A" && home !== "Team C" && home !== "Team B" && home !== "Team D";
+        });
+
+        if (hasQuality) {
+          console.log(
+            `[fetch/route] Backend OK | ${matches.length} matches | ${result.durationMs}ms`,
+          );
+          return Response.json({
+            ...(result.data as object),
+            _dataSource: "backend",
+            _latencyMs: result.durationMs,
+          });
+        }
+
+        // Backend returned low-quality mock data — use frontend mock instead
         console.log(
-          `[fetch/route] Backend OK | ${matches.length} matches | ${result.durationMs}ms`,
+          `[fetch/route] Backend low-quality mock (generic team names) — using frontend mock | ${result.durationMs}ms`,
         );
+        const betterMock = generateMockMatches(leagueIds);
         return Response.json({
-          ...(result.data as object),
-          _dataSource: "backend",
+          matches: betterMock,
+          _dataSource: "mock-quality-fallback",
           _latencyMs: result.durationMs,
         });
       }

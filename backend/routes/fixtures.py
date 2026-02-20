@@ -46,15 +46,24 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                         # Busca estatísticas da temporada para os Lambdas
                         season_stats = footstats.get_league_season_stats(season_id)
                         teams_df = None
+                        league_season_data = None
                         if season_stats.get("success"):
-                            # A API retorna clubes dentro de league-season
-                            teams_df = DataMapper.teams_to_df(season_stats.get("data", [{}])[0].get("clubs", []))
-                        
+                            # league-season retorna data como DICT (não lista)
+                            # com stats agregadas da liga (seasonAVG, BTTS%, etc.)
+                            # NÃO contém "clubs" — teams vem do próprio matches_df
+                            season_data = season_stats.get("data", {})
+                            if isinstance(season_data, dict):
+                                league_season_data = season_data
+                                logger.info(f"Season stats carregadas para {lid}: avgGoals={season_data.get('seasonAVG_overall')}")
+
                         # Constrói registros usando o serviço existente
                         records = build_records_from_matches(
                             league_id=lid,
                             matches=matches_df,
                             teams=teams_df,
+                            teams2=None,
+                            league_df=None,
+                            players=None,
                             date_filter=date,
                         )
                         
@@ -65,7 +74,7 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             out.extend(records)
                             found_via_api = True
             except Exception as e:
-                logger.error(f"Falha ao integrar FootyStats para {lid}: {e}")
+                logger.error(f"Falha ao integrar FootyStats para {lid}: {type(e).__name__}: {e}")
 
         # 2. FALLBACK: ARQUIVOS CSV LOCAIS (Se não encontrou via API ou se lid não está na config)
         if not found_via_api:

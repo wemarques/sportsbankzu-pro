@@ -140,39 +140,315 @@ def mock_match(league_id: str, i: int) -> Dict[str, Any]:
     }
 
 def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, Any]]:
-    """Gera dados mock realistas para demonstração quando S3/CSV não estão disponíveis."""
-    teams_by_league = {
+    """Gera dados mock realistas para demonstração quando S3/CSV não estão disponíveis.
+    Cobre todas as 22 ligas com nomes reais de times e prognósticos (mercados)."""
+    teams_by_league: Dict[str, List[Tuple[str, str]]] = {
+        # INGLATERRA
         "premier-league": [
-            ("Manchester City", "Wolverhampton Wanderers"),
-            ("Arsenal", "Manchester United"),
-            ("Liverpool", "Chelsea"),
-            ("Tottenham Hotspur", "Newcastle United"),
-            ("Brighton & Hove Albion", "Fulham"),
-            ("West Ham United", "Sunderland"),
-            ("Burnley", "AFC Bournemouth"),
-            ("Brentford", "Nottingham Forest"),
-            ("Crystal Palace", "Aston Villa"),
-            ("Everton", "Leeds United"),
+            ("Manchester City", "Wolverhampton Wanderers"), ("Arsenal", "Manchester United"),
+            ("Liverpool", "Chelsea"), ("Tottenham Hotspur", "Newcastle United"),
+            ("Brighton & Hove Albion", "Fulham"), ("West Ham United", "Aston Villa"),
+            ("AFC Bournemouth", "Brentford"), ("Nottingham Forest", "Crystal Palace"),
+            ("Everton", "Ipswich Town"), ("Leicester City", "Southampton"),
+        ],
+        "championship": [
+            ("Leeds United", "Sunderland"), ("Burnley", "Sheffield United"),
+            ("Norwich City", "West Bromwich Albion"), ("Coventry City", "Middlesbrough"),
+            ("Watford", "Bristol City"),
+        ],
+        # ESPANHA
+        "la-liga": [
+            ("Real Madrid", "Barcelona"), ("Atlético Madrid", "Real Sociedad"),
+            ("Athletic Bilbao", "Villarreal"), ("Real Betis", "Sevilla"),
+            ("Valencia", "Celta de Vigo"),
+        ],
+        "spain-la-liga": [
+            ("Real Madrid", "Barcelona"), ("Atlético Madrid", "Real Sociedad"),
+            ("Athletic Bilbao", "Villarreal"), ("Real Betis", "Sevilla"),
+            ("Valencia", "Celta de Vigo"),
+        ],
+        # ITÁLIA
+        "serie-a": [
+            ("Inter Milan", "AC Milan"), ("Juventus", "Napoli"),
+            ("AS Roma", "Lazio"), ("Atalanta", "Fiorentina"),
+            ("Bologna", "Torino"),
+        ],
+        "italy-serie-a": [
+            ("Inter Milan", "AC Milan"), ("Juventus", "Napoli"),
+            ("AS Roma", "Lazio"), ("Atalanta", "Fiorentina"),
+            ("Bologna", "Torino"),
+        ],
+        "serie-b": [
+            ("Palermo", "Sampdoria"), ("Cremonese", "Brescia"),
+            ("Catanzaro", "Bari"), ("Pisa", "Modena"),
+        ],
+        "italy-serie-b": [
+            ("Palermo", "Sampdoria"), ("Cremonese", "Brescia"),
+            ("Catanzaro", "Bari"), ("Pisa", "Modena"),
+        ],
+        # ALEMANHA
+        "bundesliga": [
+            ("Bayern Munich", "Borussia Dortmund"), ("Bayer Leverkusen", "RB Leipzig"),
+            ("VfB Stuttgart", "Eintracht Frankfurt"), ("SC Freiburg", "Union Berlin"),
+            ("Wolfsburg", "Borussia Mönchengladbach"),
+        ],
+        "germany-bundesliga": [
+            ("Bayern Munich", "Borussia Dortmund"), ("Bayer Leverkusen", "RB Leipzig"),
+            ("VfB Stuttgart", "Eintracht Frankfurt"), ("SC Freiburg", "Union Berlin"),
+            ("Wolfsburg", "Borussia Mönchengladbach"),
+        ],
+        "2-bundesliga": [
+            ("Hamburger SV", "1. FC Köln"), ("Hertha BSC", "Hannover 96"),
+            ("FC Schalke 04", "1. FC Kaiserslautern"), ("Fortuna Düsseldorf", "Karlsruher SC"),
+        ],
+        "germany-2-bundesliga": [
+            ("Hamburger SV", "1. FC Köln"), ("Hertha BSC", "Hannover 96"),
+            ("FC Schalke 04", "1. FC Kaiserslautern"), ("Fortuna Düsseldorf", "Karlsruher SC"),
+        ],
+        # FRANÇA
+        "ligue-1": [
+            ("Paris Saint-Germain", "Olympique Marseille"), ("AS Monaco", "Olympique Lyonnais"),
+            ("Lille", "Stade Rennais"), ("OGC Nice", "RC Lens"),
+            ("RC Strasbourg", "Montpellier"),
+        ],
+        "france-ligue-1": [
+            ("Paris Saint-Germain", "Olympique Marseille"), ("AS Monaco", "Olympique Lyonnais"),
+            ("Lille", "Stade Rennais"), ("OGC Nice", "RC Lens"),
+            ("RC Strasbourg", "Montpellier"),
+        ],
+        "ligue-2": [
+            ("Saint-Étienne", "FC Metz"), ("SM Caen", "Paris FC"),
+            ("Bordeaux", "Amiens SC"),
+        ],
+        "france-ligue-2": [
+            ("Saint-Étienne", "FC Metz"), ("SM Caen", "Paris FC"),
+            ("Bordeaux", "Amiens SC"),
+        ],
+        # BRASIL
+        "brasileirao-serie-a": [
+            ("Vasco da Gama", "Palmeiras"), ("Corinthians", "São Paulo"),
+            ("Fluminense", "Botafogo"), ("Internacional", "Grêmio"),
+            ("Atlético Mineiro", "Cruzeiro"),
+        ],
+        "brazil-serie-a": [
+            ("Vasco da Gama", "Palmeiras"), ("Corinthians", "São Paulo"),
+            ("Fluminense", "Botafogo"), ("Internacional", "Grêmio"),
+            ("Atlético Mineiro", "Cruzeiro"),
+        ],
+        "brasileirao-serie-b": [
+            ("Sport Recife", "Ceará"), ("Bahia", "Goiás"),
+            ("Coritiba", "Ponte Preta"), ("Guarani", "Vila Nova"),
+        ],
+        "brazil-serie-b": [
+            ("Sport Recife", "Ceará"), ("Bahia", "Goiás"),
+            ("Coritiba", "Ponte Preta"), ("Guarani", "Vila Nova"),
+        ],
+        # OUTROS EUROPA
+        "eredivisie": [
+            ("Ajax", "PSV Eindhoven"), ("Feyenoord", "AZ Alkmaar"),
+            ("FC Twente", "FC Utrecht"), ("Vitesse", "Heerenveen"),
+        ],
+        "netherlands-eredivisie": [
+            ("Ajax", "PSV Eindhoven"), ("Feyenoord", "AZ Alkmaar"),
+            ("FC Twente", "FC Utrecht"), ("Vitesse", "Heerenveen"),
+        ],
+        "primeira-liga": [
+            ("SL Benfica", "FC Porto"), ("Sporting CP", "SC Braga"),
+            ("Vitória SC", "Gil Vicente"), ("Boavista", "Rio Ave"),
+        ],
+        "portugal-liga-nos": [
+            ("SL Benfica", "FC Porto"), ("Sporting CP", "SC Braga"),
+            ("Vitória SC", "Gil Vicente"), ("Boavista", "Rio Ave"),
+        ],
+        "super-lig": [
+            ("Galatasaray", "Fenerbahçe"), ("Beşiktaş", "Trabzonspor"),
+            ("İstanbul Başakşehir", "Adana Demirspor"),
+        ],
+        "turkey-super-lig": [
+            ("Galatasaray", "Fenerbahçe"), ("Beşiktaş", "Trabzonspor"),
+            ("İstanbul Başakşehir", "Adana Demirspor"),
+        ],
+        "pro-league": [
+            ("Club Brugge", "RSC Anderlecht"), ("KRC Genk", "Royal Antwerp"),
+            ("Standard Liège", "Gent"),
+        ],
+        "premiership": [
+            ("Celtic", "Rangers"), ("Aberdeen", "Hearts"),
+            ("Hibernian", "Dundee United"),
+        ],
+        "scotland-premiership": [
+            ("Celtic", "Rangers"), ("Aberdeen", "Hearts"),
+            ("Hibernian", "Dundee United"),
+        ],
+        "austrian-bundesliga": [
+            ("Red Bull Salzburg", "Rapid Wien"), ("Sturm Graz", "LASK"),
+            ("Wolfsberger AC", "Austria Wien"),
+        ],
+        "austria-bundesliga": [
+            ("Red Bull Salzburg", "Rapid Wien"), ("Sturm Graz", "LASK"),
+            ("Wolfsberger AC", "Austria Wien"),
+        ],
+        "superliga": [
+            ("FC Copenhagen", "FC Midtjylland"), ("Brøndby IF", "Aarhus GF"),
+            ("Nordsjælland", "Silkeborg IF"),
+        ],
+        "denmark-superliga": [
+            ("FC Copenhagen", "FC Midtjylland"), ("Brøndby IF", "Aarhus GF"),
+            ("Nordsjælland", "Silkeborg IF"),
+        ],
+        "super-league": [
+            ("Young Boys", "FC Basel"), ("FC Zürich", "Servette"),
+            ("FC Lugano", "FC St. Gallen"),
+        ],
+        "switzerland-super-league": [
+            ("Young Boys", "FC Basel"), ("FC Zürich", "Servette"),
+            ("FC Lugano", "FC St. Gallen"),
+        ],
+        # RESTO DO MUNDO
+        "primera-division": [
+            ("Boca Juniors", "River Plate"), ("Racing Club", "Independiente"),
+            ("San Lorenzo", "Vélez Sarsfield"), ("Estudiantes", "Lanús"),
+        ],
+        "a-league": [
+            ("Melbourne Victory", "Sydney FC"), ("Western Sydney Wanderers", "Melbourne City"),
+            ("Adelaide United", "Brisbane Roar"),
+        ],
+        "professional-league": [
+            ("Al-Hilal", "Al-Nassr"), ("Al-Ittihad", "Al-Ahli"),
+            ("Al-Shabab", "Al-Fateh"),
+        ],
+        "saudi-professional-league": [
+            ("Al-Hilal", "Al-Nassr"), ("Al-Ittihad", "Al-Ahli"),
+            ("Al-Shabab", "Al-Fateh"),
         ],
     }
+
+    # League display names
+    league_names: Dict[str, str] = {
+        "premier-league": "Premier League", "championship": "Championship",
+        "la-liga": "La Liga", "spain-la-liga": "La Liga",
+        "serie-a": "Serie A", "italy-serie-a": "Serie A",
+        "serie-b": "Serie B", "italy-serie-b": "Serie B",
+        "bundesliga": "Bundesliga", "germany-bundesliga": "Bundesliga",
+        "2-bundesliga": "2. Bundesliga", "germany-2-bundesliga": "2. Bundesliga",
+        "ligue-1": "Ligue 1", "france-ligue-1": "Ligue 1",
+        "ligue-2": "Ligue 2", "france-ligue-2": "Ligue 2",
+        "brasileirao-serie-a": "Brasileirão Série A", "brazil-serie-a": "Brasileirão Série A",
+        "brasileirao-serie-b": "Brasileirão Série B", "brazil-serie-b": "Brasileirão Série B",
+        "eredivisie": "Eredivisie", "netherlands-eredivisie": "Eredivisie",
+        "primeira-liga": "Primeira Liga", "portugal-liga-nos": "Primeira Liga",
+        "super-lig": "Süper Lig", "turkey-super-lig": "Süper Lig",
+        "pro-league": "Pro League", "premiership": "Premiership",
+        "scotland-premiership": "Premiership",
+        "austrian-bundesliga": "Bundesliga (Austria)", "austria-bundesliga": "Bundesliga (Austria)",
+        "superliga": "Superliga", "denmark-superliga": "Superliga",
+        "super-league": "Super League", "switzerland-super-league": "Super League",
+        "primera-division": "Primera División", "a-league": "A-League",
+        "professional-league": "Professional League",
+        "saudi-professional-league": "Professional League",
+    }
+
+    # Offensive leagues get HIPER-OFENSIVA regime
+    offensive_leagues = {
+        "bundesliga", "germany-bundesliga", "eredivisie", "netherlands-eredivisie",
+        "primera-division", "a-league", "professional-league", "saudi-professional-league",
+    }
+
     teams = teams_by_league.get(league_id, [("Team A", "Team B"), ("Team C", "Team D")])
+    league_display = league_names.get(league_id, league_id.replace("-", " ").title())
+    is_offensive = league_id in offensive_leagues
+
+    # Deterministic random per league for consistent results
+    rng = random.Random(hash(league_id) % (2**31))
+
     now = datetime.utcnow()
     start_date = now.replace(hour=12, minute=0, second=0, microsecond=0)
-    fixtures = []
+    fixtures: List[Dict[str, Any]] = []
+
     for i, (home, away) in enumerate(teams[:10]):
         game_time = start_date + timedelta(hours=(i % 3) * 3)
-        fixtures.append({
+
+        # Vary stats per match for realism
+        avg_goals = round(rng.uniform(2.2, 3.4), 1)
+        home_win_prob = round(rng.uniform(38.0, 62.0), 1)
+        draw_prob = round(rng.uniform(18.0, 30.0), 1)
+        away_win_prob = round(100.0 - home_win_prob - draw_prob, 1)
+        btts_prob = round(rng.uniform(45.0, 72.0), 1)
+        over25_prob = round(rng.uniform(48.0, 70.0), 1)
+        lam_home = round(rng.uniform(1.0, 2.0), 2)
+        lam_away = round(rng.uniform(0.8, 1.6), 2)
+        lam_total = round(lam_home + lam_away, 2)
+
+        # Compute under probs from lambda
+        under35_prob = round(min(95.0, max(40.0, 100.0 - over25_prob + rng.uniform(8, 20))), 1)
+        under45_prob = round(min(98.0, under35_prob + rng.uniform(8, 15)), 1)
+
+        # Odds
+        odd_home = round(rng.uniform(1.5, 3.5), 2)
+        odd_draw = round(rng.uniform(2.8, 4.0), 2)
+        odd_away = round(rng.uniform(1.8, 4.5), 2)
+        odd_over25 = round(rng.uniform(1.60, 2.20), 2)
+        odd_btts = round(rng.uniform(1.55, 2.10), 2)
+
+        regime = "HIPER-OFENSIVA" if is_offensive else "NORMAL"
+        volatilidade = "MODERADA" if is_offensive else "BAIXA"
+        league_avg = round(rng.uniform(2.4, 3.2), 1) if is_offensive else round(rng.uniform(2.3, 2.8), 1)
+
+        match_data: Dict[str, Any] = {
             "id": f"{league_id}-mock-{i}",
             "leagueId": league_id,
-            "leagueName": league_id.replace("-", " ").title(),
+            "leagueName": league_display,
             "homeTeam": home,
             "awayTeam": away,
             "datetime": game_time.isoformat(),
             "stadium": f"{home} Stadium",
             "status": "scheduled",
-            "odds": {"home": 1.9, "draw": 3.4, "away": 2.2, "over15": 1.15, "over25": 1.85, "over35": 3.50, "over45": 7.00, "under25": 1.95, "bttsYes": 1.80, "bttsNo": 2.00},
-            "stats": {"homeWinProb": 52.0, "drawProb": 24.0, "awayWinProb": 24.0, "avgGoals": 2.6, "bttsProb": 55.0, "over05Prob": 95.0, "over15Prob": 87.0, "over25Prob": 57.0, "over35Prob": 28.0, "over45Prob": 14.0, "under15Prob": 13.0, "under25Prob": 43.0, "under35Prob": 72.0, "under45Prob": 86.0, "lambdaHome": 1.4, "lambdaAway": 1.2, "lambdaTotal": 2.6, "leagueAvgGoals": 2.7, "totalGoals": None, "leagueRegime": "NORMAL", "leagueVolatility": "BAIXA", "homePossession": 52.0, "awayPossession": 48.0, "homeXG": 1.4, "awayXG": 1.2, "homeForm": ["W", "D", "W", "W", "L"], "awayForm": ["L", "W", "D", "L", "W"]}
-        })
+            "odds": {
+                "home": odd_home, "draw": odd_draw, "away": odd_away,
+                "over15": round(odd_over25 * 0.65, 2), "over25": odd_over25,
+                "over35": round(odd_over25 * 1.9, 2), "over45": round(odd_over25 * 3.8, 2),
+                "under25": round(1.0 / (1.0 - 1.0 / odd_over25) if odd_over25 > 1.0 else 1.95, 2),
+                "bttsYes": odd_btts,
+                "bttsNo": round(1.0 / (1.0 - 1.0 / odd_btts) if odd_btts > 1.0 else 2.00, 2),
+            },
+            "stats": {
+                "homeWinProb": home_win_prob, "drawProb": draw_prob, "awayWinProb": away_win_prob,
+                "avgGoals": avg_goals, "bttsProb": btts_prob,
+                "over05Prob": 95.0, "over15Prob": round(over25_prob + rng.uniform(15, 25), 1),
+                "over25Prob": over25_prob, "over35Prob": round(over25_prob * 0.5, 1),
+                "over45Prob": round(over25_prob * 0.25, 1),
+                "under15Prob": round(100.0 - over25_prob - rng.uniform(15, 25), 1),
+                "under25Prob": round(100.0 - over25_prob, 1),
+                "under35Prob": under35_prob, "under45Prob": under45_prob,
+                "lambdaHome": lam_home, "lambdaAway": lam_away, "lambdaTotal": lam_total,
+                "leagueAvgGoals": league_avg, "totalGoals": None,
+                "leagueRegime": regime, "leagueVolatility": volatilidade,
+                "homePossession": round(rng.uniform(45.0, 58.0), 1),
+                "awayPossession": round(rng.uniform(42.0, 55.0), 1),
+                "homeXG": lam_home, "awayXG": lam_away,
+                "homeForm": rng.choices(["W", "D", "L"], weights=[50, 25, 25], k=5),
+                "awayForm": rng.choices(["W", "D", "L"], weights=[35, 30, 35], k=5),
+            },
+            "h2h": {
+                "totalMatches": rng.randint(5, 20),
+                "homeWins": rng.randint(2, 8),
+                "draws": rng.randint(1, 5),
+                "awayWins": rng.randint(1, 7),
+                "avgGoals": round(rng.uniform(2.0, 3.2), 1),
+            },
+            "source": "mock",
+        }
+
+        # Generate mercados/predictions using the market service
+        try:
+            mercados = selecionar_mercados_jogo(match_data, regime, volatilidade)
+            if mercados:
+                match_data["mercados"] = mercados
+        except Exception:
+            pass
+
+        fixtures.append(match_data)
+
     return fixtures
 
 
