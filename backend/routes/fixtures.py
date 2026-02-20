@@ -56,13 +56,23 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                                 league_season_data = season_data
                                 logger.info(f"Season stats carregadas para {lid}: avgGoals={season_data.get('seasonAVG_overall')}")
 
+                        # Constrói league_df a partir de season stats para enriquecer cálculos
+                        league_df = None
+                        if league_season_data:
+                            league_df = pd.DataFrame([{
+                                "league_name": league_config.get("name", lid),
+                                "average_goals_per_match": league_season_data.get("seasonAVG_overall", 2.5),
+                                "average_corners_per_match": league_season_data.get("cornersAVG_overall", 10.0),
+                                "average_cards_per_match": league_season_data.get("cardsAVG_overall", 4.0),
+                            }])
+
                         # Constrói registros usando o serviço existente
                         records = build_records_from_matches(
                             league_id=lid,
                             matches=matches_df,
                             teams=teams_df,
                             teams2=None,
-                            league_df=None,
+                            league_df=league_df,
                             players=None,
                             date_filter=date,
                         )

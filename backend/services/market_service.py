@@ -68,7 +68,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         if alerta:
             item["alerta"] = alerta
         mercados.append(item)
-    league_avg_goals = stats.get("leagueAvgGoals", 2.7)
+    league_avg_goals = stats.get("leagueAvgGoals") or 2.7
     if league_avg_goals < 2.5:
         threshold_u35 = 0.55
         threshold_u45 = 0.65
@@ -79,8 +79,10 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         threshold_u35 = 0.65
         threshold_u45 = 0.75
     logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
-    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={prob_under35 >= threshold_u35 if prob_under35 else False}")
-    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={prob_under45 >= threshold_u45 if prob_under45 else False}")
+    _u35_check = (prob_under35 >= threshold_u35) if prob_under35 is not None else False
+    _u45_check = (prob_under45 >= threshold_u45) if prob_under45 is not None else False
+    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={_u35_check}")
+    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={_u45_check}")
     if regime in ["NORMAL", "DEFENSIVA"]:
         if prob_under35 is not None and prob_under35 >= threshold_u35:
             if odd_under35 and odd_under35 >= 1.25:
