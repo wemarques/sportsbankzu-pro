@@ -62,7 +62,11 @@ function safeOdd(value?: number, fallback = 0) {
 function formatTime(dt: string) {
   try {
     const d = new Date(dt);
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
   } catch {
     return "--:--";
   }
@@ -170,6 +174,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
   return {
     id: match.id,
     league: league?.name ?? match.leagueName ?? match.leagueId,
+    leagueId: match.leagueId,
     season: league?.season ?? "2026",
     homeTeam: match.homeTeam.name,
     awayTeam: match.awayTeam.name,

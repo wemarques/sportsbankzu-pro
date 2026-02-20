@@ -453,7 +453,9 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
 
 
 def date_range(filter_type: str) -> Tuple[datetime, datetime]:
-    now = datetime.utcnow()
+    from datetime import timezone as tz
+    BRT = tz(timedelta(hours=-3))
+    now = datetime.now(BRT).replace(tzinfo=None)  # naive datetime in Brasilia time
     if filter_type == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1) - timedelta(milliseconds=1)

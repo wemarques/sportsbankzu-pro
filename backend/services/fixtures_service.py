@@ -39,13 +39,7 @@ def build_records_from_matches(
         return items
     start, end = date_range(date_filter)
     rows = filter_rows(start, end)
-    if not rows and date_filter in ("today", "tomorrow"):
-        start, end = date_range("week")
-        rows = filter_rows(start, end)
-    if not rows and date_filter == "week":
-        start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=30) - timedelta(milliseconds=1)
-        rows = filter_rows(start, end)
+    # No automatic fallback — return only matches for the requested period
     records: List[Dict[str, Any]] = []
     for r in rows:
         dt = row_date(r)
@@ -146,6 +140,28 @@ def build_records_from_matches(
         away_corners_pm = team_corners_per_match(away)
         home_cards_pm = team_cards_per_match(home)
         away_cards_pm = team_cards_per_match(away)
+        # Fallback: calcular media de escanteios a partir dos jogos do DataFrame
+        if home_corners_pm is None and "home_team_corner_count" in matches.columns:
+            hm = matches[matches[home_col] == home] if home_col else matches.head(0)
+            vals = hm["home_team_corner_count"].dropna()
+            vals = vals[vals >= 0]
+            if len(vals) > 0:
+                home_corners_pm = round(float(vals.mean()), 1)
+        if away_corners_pm is None and "away_team_corner_count" in matches.columns:
+            am = matches[matches[away_col] == away] if away_col else matches.head(0)
+            vals = am["away_team_corner_count"].dropna()
+            vals = vals[vals >= 0]
+            if len(vals) > 0:
+                away_corners_pm = round(float(vals.mean()), 1)
+        # Fallback final: usar media da liga / 2
+        if home_corners_pm is None and league_avgs["avg_corners"]:
+            home_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+        if away_corners_pm is None and league_avgs["avg_corners"]:
+            away_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+        if home_cards_pm is None and league_avgs["avg_cards"]:
+            home_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
+        if away_cards_pm is None and league_avgs["avg_cards"]:
+            away_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
         over15_pct = r.get("over_15_percentage_pre_match", None)
         over25_pct = r.get("over_25_percentage_pre_match", None)
         over35_pct = r.get("over_35_percentage_pre_match", None)
@@ -339,9 +355,9 @@ def build_records_from_matches(
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
             },
             "stats": {
-                "homeWinProb": round(homeProb, 1),
-                "drawProb": round(drawProb, 1),
-                "awayWinProb": round(awayProb, 1),
+                "homeWinProb": round(homeProb * 100.0, 1),
+                "drawProb": round(drawProb * 100.0, 1),
+                "awayWinProb": round(awayProb * 100.0, 1),
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
                 "bttsProb": float(btts_pct) if btts_pct is not None else round(btts_poisson * 100.0, 1),
                 "over05Prob": round(over05 * 100.0, 1),

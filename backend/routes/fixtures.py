@@ -130,3 +130,24 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                 out.extend(generate_mock_fixtures(lid, date))
 
     return {"matches": out}
+
+
+@router.get("/standings")
+def standings(league: str = Query("")) -> Dict[str, Any]:
+    """Retorna a tabela de classificação de uma liga via FootyStats API."""
+    if not league:
+        return {"standings": [], "error": "Parâmetro 'league' é obrigatório"}
+    league_config = get_league_config(league)
+    if not league_config:
+        return {"standings": [], "error": f"Liga '{league}' não configurada"}
+    try:
+        season_id = footstats.resolve_season_id(league_config["country"], league_config["name"])
+        if not season_id:
+            return {"standings": [], "error": "Season não encontrada"}
+        data = footstats.get_league_tables(season_id)
+        if not data.get("success"):
+            return {"standings": [], "error": "Falha ao buscar classificação"}
+        return {"standings": data.get("data", []), "leagueId": league}
+    except Exception as e:
+        logger.error(f"Erro ao buscar standings para {league}: {e}")
+        return {"standings": [], "error": str(e)}

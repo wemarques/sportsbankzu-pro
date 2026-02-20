@@ -31,6 +31,7 @@ export type MatchDetail = MatchDetailData;
 export interface MatchDetailData {
   id: string;
   league: string;
+  leagueId?: string;
   season?: string;
   homeTeam: string;
   awayTeam: string;
@@ -114,6 +115,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
   const [isComparativeExpanded, setIsComparativeExpanded] = useState(false);
   const [comparativeTab, setComparativeTab] = useState<string>("gols");
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+  const [showStandings, setShowStandings] = useState(false);
+  const [standingsData, setStandingsData] = useState<any[]>([]);
+  const [standingsLoading, setStandingsLoading] = useState(false);
 
   // Countdown timer
   useEffect(() => {
@@ -208,7 +212,70 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                 <span className="mdc-countdown__separator">:</span>
                 <span className="mdc-countdown__number">{String(timeRemaining.seconds).padStart(2, "0")}</span>
               </div>
-              <span className="mdc-link-small">Ver classificacao</span>
+              <span
+                className="mdc-link-small"
+                style={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (showStandings) {
+                    setShowStandings(false);
+                    return;
+                  }
+                  if (!match.leagueId) return;
+                  setStandingsLoading(true);
+                  setShowStandings(true);
+                  fetch(`/api/standings?league=${encodeURIComponent(match.leagueId)}`)
+                    .then((r) => r.json())
+                    .then((data) => setStandingsData(data.standings ?? []))
+                    .catch(() => setStandingsData([]))
+                    .finally(() => setStandingsLoading(false));
+                }}
+              >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
+            </div>
+          )}
+
+          {showStandings && (
+            <div className="mdc-standings" style={{ width: "100%", marginTop: 8, marginBottom: 8, maxHeight: 300, overflowY: "auto", fontSize: "0.75rem" }}>
+              {standingsLoading ? (
+                <div style={{ textAlign: "center", padding: 12 }}><Loader2 size={16} className="animate-spin" style={{ display: "inline-block" }} /> Carregando...</div>
+              ) : standingsData.length > 0 ? (
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                      <th style={{ padding: "4px 6px", textAlign: "left" }}>#</th>
+                      <th style={{ padding: "4px 6px", textAlign: "left" }}>Time</th>
+                      <th style={{ padding: "4px 6px" }}>J</th>
+                      <th style={{ padding: "4px 6px" }}>V</th>
+                      <th style={{ padding: "4px 6px" }}>E</th>
+                      <th style={{ padding: "4px 6px" }}>D</th>
+                      <th style={{ padding: "4px 6px" }}>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {standingsData.map((team: any, idx: number) => {
+                      const name = team.cleanName || team.name || team.team_name || `Time ${idx + 1}`;
+                      const isHighlighted = name === match.homeTeam || name === match.awayTeam;
+                      return (
+                        <tr key={idx} style={{
+                          borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          background: isHighlighted ? "rgba(255,165,0,0.15)" : "transparent",
+                          fontWeight: isHighlighted ? 600 : 400,
+                        }}>
+                          <td style={{ padding: "3px 6px", textAlign: "left" }}>{team.position ?? idx + 1}</td>
+                          <td style={{ padding: "3px 6px", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{name}</td>
+                          <td style={{ padding: "3px 6px" }}>{team.played ?? team.matchesPlayed ?? "-"}</td>
+                          <td style={{ padding: "3px 6px" }}>{team.won ?? team.wins ?? "-"}</td>
+                          <td style={{ padding: "3px 6px" }}>{team.drawn ?? team.draws ?? "-"}</td>
+                          <td style={{ padding: "3px 6px" }}>{team.lost ?? team.losses ?? "-"}</td>
+                          <td style={{ padding: "3px 6px", fontWeight: 700 }}>{team.points ?? team.pts ?? "-"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ textAlign: "center", padding: 12, opacity: 0.6 }}>Classificacao indisponivel</div>
+              )}
             </div>
           )}
 
