@@ -30,6 +30,14 @@ export async function GET(req: NextRequest) {
       });
       clearTimeout(timeout);
 
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "(unreadable)");
+        console.error(
+          `[fetch/route] Backend HTTP ${res.status}: ${errBody.slice(0, 200)}`
+        );
+        throw new Error(`Backend responded with HTTP ${res.status}`);
+      }
+
       const data = await res.json();
       if (data.matches && data.matches.length > 0) {
         console.log(
@@ -44,6 +52,10 @@ export async function GET(req: NextRequest) {
     }
   } catch (err) {
     console.error("[fetch/route] Backend error:", err instanceof Error ? err.message : err);
+  }
+
+  if (!process.env.PY_BACKEND_URL) {
+    console.warn("[fetch/route] PY_BACKEND_URL not configured — using mock data");
   }
 
   // 2. No backend or backend returned empty — use mock data directly
