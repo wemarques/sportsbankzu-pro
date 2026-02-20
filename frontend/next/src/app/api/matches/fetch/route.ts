@@ -1,68 +1,89 @@
 import { NextRequest } from "next/server";
 import { generateMockMatches } from "@/lib/mockMatches";
+import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
+
+/** Allow up to 25 s on Vercel Pro (our fetch timeout is 20 s). */
+export const maxDuration = 25;
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const leaguesParam = url.searchParams.get("leagues") || "";
   const leagueIds = leaguesParam.split(",").map((s) => s.trim()).filter(Boolean);
+  const debug = url.searchParams.get("debug") === "true";
 
   if (leagueIds.length === 0) {
-    return new Response(JSON.stringify({ matches: [] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    return Response.json({ matches: [] });
   }
 
   // 1. Try Python backend if configured
-  try {
-    const backend = process.env.PY_BACKEND_URL;
-    if (backend) {
-      const date = url.searchParams.get("date") || "today";
-      const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
-      const base = backend.endsWith("/") ? backend.slice(0, -1) : backend;
+  const backendBase = getBackendUrl();
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15_000);
+  if (backendBase) {
+    const date = url.searchParams.get("date") || "today";
+    const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
+    const result = await fetchBackend(`/fixtures?${qs.toString()}`, {
+      timeoutMs: 20_000,
+    });
 
-      const res = await fetch(`${base}/fixtures?${qs.toString()}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "(unreadable)");
-        console.error(
-          `[fetch/route] Backend HTTP ${res.status}: ${errBody.slice(0, 200)}`
-        );
-        throw new Error(`Backend responded with HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
-      if (data.matches && data.matches.length > 0) {
+    if (result.ok) {
+      const matches = (result.data as Record<string, unknown>)?.matches;
+      if (Array.isArray(matches) && matches.length > 0) {
         console.log(
-          `[fetch/route] Backend OK | ${data.matches.length} matches | source: ${data.matches[0]?.source ?? "unknown"}`
+          `[fetch/route] Backend OK | ${matches.length} matches | ${result.durationMs}ms`,
         );
-        return new Response(
-          JSON.stringify({ ...data, _dataSource: "backend" }),
-          { status: 200, headers: { "content-type": "application/json" } }
-        );
+        return Response.json({
+          ...(result.data as object),
+          _dataSource: "backend",
+          _latencyMs: result.durationMs,
+        });
       }
-      console.log("[fetch/route] Backend returned 0 matches — falling back to mock");
+      console.log(
+        `[fetch/route] Backend returned 0 matches — falling back to mock | ${result.durationMs}ms`,
+      );
     }
-  } catch (err) {
-    console.error("[fetch/route] Backend error:", err instanceof Error ? err.message : err);
-  }
 
-  if (!process.env.PY_BACKEND_URL) {
+    if (result.error) {
+      console.error(
+        `[fetch/route] ${result.error.kind} | ${result.error.message} | url: ${result.error.url} | ${result.error.durationMs}ms`,
+      );
+    }
+
+    // In debug mode, return the error instead of falling back to mock
+    if (debug) {
+      return Response.json(
+        {
+          _dataSource: "error",
+          _debug: {
+            error: result.error ?? { kind: "EMPTY_RESPONSE", message: "Backend returned 0 matches" },
+            backendConfigured: true,
+            backendUrl: maskUrl(backendBase),
+            durationMs: result.durationMs,
+          },
+          matches: [],
+        },
+        { status: 502 },
+      );
+    }
+  } else {
     console.warn("[fetch/route] PY_BACKEND_URL not configured — using mock data");
+
+    if (debug) {
+      return Response.json(
+        {
+          _dataSource: "error",
+          _debug: {
+            error: { kind: "NOT_CONFIGURED", message: "PY_BACKEND_URL is not set" },
+            backendConfigured: false,
+          },
+          matches: [],
+        },
+        { status: 503 },
+      );
+    }
   }
 
-  // 2. No backend or backend returned empty — use mock data directly
+  // 2. Fallback to mock data
   const mockData = generateMockMatches(leagueIds);
   console.log(`[fetch/route] Using mock fallback | ${mockData.length} matches`);
-  return new Response(
-    JSON.stringify({ matches: mockData, _dataSource: "mock-fallback" }),
-    { status: 200, headers: { "content-type": "application/json" } }
-  );
+  return Response.json({ matches: mockData, _dataSource: "mock-fallback" });
 }
