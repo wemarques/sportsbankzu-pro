@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -32,12 +32,16 @@ import {
   Brain,
   Target,
   Zap,
+  Copy,
+  MessageCircle,
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
 const APP_VERSION = "pro V2.6";
+const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBank Pro.";
 
 type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas";
+type ShareFeedbackTone = "success" | "error" | "info";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
 type DateMode = "today" | "tomorrow" | "week";
@@ -99,6 +103,11 @@ function getLowestOddIndex(home: number, draw: number, away: number): number {
   const vals = [home, draw, away];
   const min = Math.min(...vals.filter((v) => v > 0));
   return vals.indexOf(min);
+}
+
+function buildScreenshotName() {
+  const stamp = new Date().toISOString().replace(/[:]/g, "-").replace("T", "_").slice(0, 19);
+  return `sportsbank-picks-${stamp}.png`;
 }
 
 function normalizeMatch(item: any, leagueId: string, idx: number): Match {
@@ -245,6 +254,10 @@ export default function Dashboard() {
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
   const [navView, setNavView] = useState<NavView>("matches");
+  const [shareBusy, setShareBusy] = useState<"copy" | "whatsapp" | null>(null);
+  const [shareFeedback, setShareFeedback] = useState("");
+  const [shareFeedbackTone, setShareFeedbackTone] = useState<ShareFeedbackTone>("info");
+  const capturePanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -351,6 +364,130 @@ export default function Dashboard() {
     { key: "corners", label: "Escanteios" },
   ];
 
+  function setShareMessage(message: string, tone: ShareFeedbackTone) {
+    setShareFeedback(message);
+    setShareFeedbackTone(tone);
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const blobUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  async function copyBlobToClipboard(blob: Blob): Promise<boolean> {
+    if (typeof navigator === "undefined" || !navigator.clipboard || typeof ClipboardItem === "undefined") {
+      return false;
+    }
+    try {
+      const item = new ClipboardItem({ [blob.type]: blob });
+      await navigator.clipboard.write([item]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function captureLeftPanelBlob() {
+    const target = capturePanelRef.current;
+    if (!target) {
+      throw new Error("Painel de captura nao encontrado.");
+    }
+    const controls = Array.from(target.querySelectorAll<HTMLElement>("[data-share-control='true']"));
+    const prevVisibility = controls.map((el) => el.style.visibility);
+    controls.forEach((el) => {
+      el.style.visibility = "hidden";
+    });
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(target, {
+        backgroundColor: "#0d0d0d",
+        scale: Math.min(window.devicePixelRatio || 1, 2),
+        useCORS: true,
+        logging: false,
+      });
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("Falha ao gerar imagem da captura."));
+        }, "image/png");
+      });
+      return blob;
+    } finally {
+      controls.forEach((el, index) => {
+        el.style.visibility = prevVisibility[index] ?? "";
+      });
+    }
+  }
+
+  async function handleCopyScreen() {
+    setShareBusy("copy");
+    setShareFeedback("");
+    try {
+      const blob = await captureLeftPanelBlob();
+      const copied = await copyBlobToClipboard(blob);
+      if (copied) {
+        setShareMessage("Tela copiada. Agora voce pode colar no WhatsApp (Ctrl+V).", "success");
+        return;
+      }
+      const filename = buildScreenshotName();
+      downloadBlob(blob, filename);
+      setShareMessage("Clipboard indisponivel. Imagem baixada automaticamente.", "info");
+    } catch {
+      setShareMessage("Nao foi possivel capturar a tela agora.", "error");
+    } finally {
+      setShareBusy(null);
+    }
+  }
+
+  async function handleShareWhatsApp() {
+    setShareBusy("whatsapp");
+    setShareFeedback("");
+    try {
+      const blob = await captureLeftPanelBlob();
+      const file = new File([blob], buildScreenshotName(), { type: "image/png" });
+      if (
+        typeof navigator !== "undefined"
+        && "share" in navigator
+        && "canShare" in navigator
+        && navigator.canShare({ files: [file] })
+      ) {
+        await navigator.share({
+          title: "SportsBank Pro",
+          text: SHARE_TEXT,
+          files: [file],
+        });
+        setShareMessage("Compartilhamento concluido pelo menu do seu dispositivo.", "success");
+        return;
+      }
+      const copied = await copyBlobToClipboard(blob);
+      const prefilled = copied
+        ? `${SHARE_TEXT}\n\nImagem copiada. Abra o chat no WhatsApp e cole (Ctrl+V).`
+        : `${SHARE_TEXT}\n\nArquivo da imagem foi baixado para envio manual.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(prefilled)}`, "_blank", "noopener,noreferrer");
+      if (!copied) {
+        downloadBlob(blob, buildScreenshotName());
+      }
+      setShareMessage(
+        copied
+          ? "WhatsApp aberto. Cole a imagem no chat para enviar."
+          : "WhatsApp aberto e imagem baixada para anexo manual.",
+        "info",
+      );
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        setShareMessage("Compartilhamento cancelado.", "info");
+      } else {
+        setShareMessage("Nao foi possivel compartilhar no WhatsApp agora.", "error");
+      }
+    } finally {
+      setShareBusy(null);
+    }
+  }
+
   return (
     <div className="st-app">
       {/* TOP NAV */}
@@ -387,7 +524,7 @@ export default function Dashboard() {
 
       <div className="st-main">
         {/* LEFT PANEL */}
-        <div className="st-panel-left">
+        <div className="st-panel-left" ref={capturePanelRef}>
 
           {/* ── CAMPEONATOS VIEW ── */}
           {navView === "campeonatos" && (
@@ -561,7 +698,34 @@ export default function Dashboard() {
             <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
             <button className="st-filter-btn"><Heart size={12} /> Favoritos</button>
             <button className="st-filter-btn"><Filter size={12} /> Filtros</button>
+            <button
+              className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
+              onClick={handleCopyScreen}
+              data-share-control="true"
+              disabled={shareBusy !== null}
+            >
+              {shareBusy === "copy" ? <Loader2 size={12} className="st-spin-icon" /> : <Copy size={12} />}
+              Copiar tela
+            </button>
+            <button
+              className={`st-filter-btn ${shareBusy === "whatsapp" ? "st-filter-btn--active" : ""}`}
+              onClick={handleShareWhatsApp}
+              data-share-control="true"
+              disabled={shareBusy !== null}
+            >
+              {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
+              WhatsApp
+            </button>
           </div>
+          {shareFeedback && (
+            <div
+              className={`st-share-feedback st-share-feedback--${shareFeedbackTone}`}
+              role="status"
+              data-share-control="true"
+            >
+              {shareFeedback}
+            </div>
+          )}
 
           {/* Odds tabs */}
           <div className="st-odds-tabs">

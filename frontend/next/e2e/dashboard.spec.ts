@@ -31,6 +31,11 @@ test.describe("Dashboard Page", () => {
     await expect(page.locator(".st-date-label")).toContainText("Hoje");
   });
 
+  test("renders copy and whatsapp actions", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "Copiar tela" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "WhatsApp" })).toBeVisible();
+  });
+
   test("renders odds tabs with COTACOES", async ({ page }) => {
     await expect(page.locator(".st-odds-tabs")).toBeVisible();
     await expect(page.locator(".st-odds-tabs").getByText("COTACOES", { exact: true })).toBeVisible();
