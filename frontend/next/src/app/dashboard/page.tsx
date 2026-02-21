@@ -355,6 +355,18 @@ export default function Dashboard() {
     });
   }, [allMatches, collapsedLeagues]);
 
+  const leagueIdForCapture = useMemo(() => {
+    if (navView !== "matches") return null;
+    const selectedLeagueId = selectedMatch?.leagueId;
+    if (selectedLeagueId) {
+      const selectedGroup = leagueGroups.find(
+        (group) => group.leagueId === selectedLeagueId && !group.collapsed,
+      );
+      if (selectedGroup) return selectedLeagueId;
+    }
+    return leagueGroups.find((group) => !group.collapsed)?.leagueId ?? null;
+  }, [leagueGroups, navView, selectedMatch?.leagueId]);
+
   const oddsTabs: { key: OddsTab; label: string }[] = [
     { key: "1x2", label: "1X2" },
     { key: "double-chance", label: "Dupla Chance" },
@@ -392,9 +404,15 @@ export default function Dashboard() {
   }
 
   async function captureLeftPanelBlob() {
-    const target = capturePanelRef.current;
-    if (!target) {
+    const panel = capturePanelRef.current;
+    if (!panel) {
       throw new Error("Painel de captura nao encontrado.");
+    }
+    const target = navView === "matches"
+      ? panel.querySelector<HTMLElement>("[data-capture-target='true']")
+      : panel;
+    if (!target) {
+      throw new Error("Abra uma liga para capturar a imagem.");
     }
     const controls = Array.from(target.querySelectorAll<HTMLElement>("[data-share-control='true']"));
     const prevVisibility = controls.map((el) => el.style.visibility);
@@ -436,8 +454,8 @@ export default function Dashboard() {
       const filename = buildScreenshotName();
       downloadBlob(blob, filename);
       setShareMessage("Clipboard indisponivel. Imagem baixada automaticamente.", "info");
-    } catch {
-      setShareMessage("Nao foi possivel capturar a tela agora.", "error");
+    } catch (error: any) {
+      setShareMessage(error?.message || "Nao foi possivel capturar a tela agora.", "error");
     } finally {
       setShareBusy(null);
     }
@@ -481,7 +499,7 @@ export default function Dashboard() {
       if (error?.name === "AbortError") {
         setShareMessage("Compartilhamento cancelado.", "info");
       } else {
-        setShareMessage("Nao foi possivel compartilhar no WhatsApp agora.", "error");
+        setShareMessage(error?.message || "Nao foi possivel compartilhar no WhatsApp agora.", "error");
       }
     } finally {
       setShareBusy(null);
@@ -750,9 +768,15 @@ export default function Dashboard() {
             </div>
           )}
 
-          {!loading && leagueGroups.map((group) => (
-            <div key={group.leagueId} className="st-league-group">
-              <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
+          {!loading && leagueGroups.map((group) => {
+            const isCaptureTarget = group.leagueId === leagueIdForCapture;
+            return (
+              <div
+                key={group.leagueId}
+                className="st-league-group"
+                data-capture-target={isCaptureTarget ? "true" : "false"}
+              >
+                <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
                 <span className="st-league-flag">{group.countryFlag}</span>
                 <span className="st-league-name">
                   {group.leagueName}
@@ -769,7 +793,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {!group.collapsed && group.matches.map((match) => {
+                {!group.collapsed && group.matches.map((match) => {
                 const si = statusInfo(match.status);
                 const h = safeOdd(match.odds?.home);
                 const d = safeOdd(match.odds?.draw);
@@ -935,9 +959,10 @@ export default function Dashboard() {
                     )}
                   </div>
                 );
-              })}
-            </div>
-          ))}
+                })}
+              </div>
+            );
+          })}
           </>}
         </div>
 

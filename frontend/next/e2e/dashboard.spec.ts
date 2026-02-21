@@ -36,6 +36,12 @@ test.describe("Dashboard Page", () => {
     await expect(page.getByRole("button", { name: "WhatsApp" })).toBeVisible();
   });
 
+  test("marks one league as capture target", async ({ page }) => {
+    const totalGroups = await page.locator(".st-league-group").count();
+    test.skip(totalGroups === 0, "Nenhuma liga visivel para validar captura.");
+    await expect(page.locator(".st-league-group[data-capture-target='true']")).toHaveCount(1);
+  });
+
   test("renders odds tabs with COTACOES", async ({ page }) => {
     await expect(page.locator(".st-odds-tabs")).toBeVisible();
     await expect(page.locator(".st-odds-tabs").getByText("COTACOES", { exact: true })).toBeVisible();
