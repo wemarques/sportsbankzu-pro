@@ -18,6 +18,11 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   const matchId = params.id;
+  if (matchId.startsWith("mock-") || matchId.includes("-mock-")) {
+    return fallbackResponse(
+      "Analise AI disponivel apenas para jogos com dados reais. Selecione um jogo da lista principal.",
+    );
+  }
   const url = new URL(req.url);
   const homeTeam = url.searchParams.get("home_team") || "";
   const awayTeam = url.searchParams.get("away_team") || "";
@@ -27,7 +32,7 @@ export async function GET(
   const qsStr = qs.toString() ? `?${qs.toString()}` : "";
   const result = await fetchBackend(
     `/api/ai/match/${encodeURIComponent(matchId)}/analysis${qsStr}`,
-    { timeoutMs: 25_000 },
+    { timeoutMs: 28_000 },
   );
 
   if (result.ok) {
@@ -47,7 +52,7 @@ export async function POST(
   const matchId = params.id;
   const result = await fetchBackend(
     `/api/ai/match/${encodeURIComponent(matchId)}/analysis/regenerate`,
-    { method: "POST", timeoutMs: 25_000 },
+    { method: "POST", timeoutMs: 28_000 },
   );
 
   if (result.ok) {

@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { generateMockMatches } from "@/lib/mockMatches";
 import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
 
-/** Allow up to 25 s on Vercel Pro (our fetch timeout is 20 s). */
-export const maxDuration = 25;
+/** Allow up to 30 s on Vercel Pro for cold starts. */
+export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
     const result = await fetchBackend(`/fixtures?${qs.toString()}`, {
-      timeoutMs: 20_000,
+      timeoutMs: 28_000,
     });
 
     if (result.ok) {
