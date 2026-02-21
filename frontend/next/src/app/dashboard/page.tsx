@@ -713,9 +713,6 @@ export default function Dashboard() {
               <button className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
             </div>
             <div className="st-live-dot" />
-            <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
-            <button className="st-filter-btn"><Heart size={12} /> Favoritos</button>
-            <button className="st-filter-btn"><Filter size={12} /> Filtros</button>
             <button
               className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
               onClick={handleCopyScreen}
@@ -734,6 +731,9 @@ export default function Dashboard() {
               {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
               WhatsApp
             </button>
+            <button className="st-filter-btn st-filter-btn--mobile-hidden"><SlidersHorizontal size={12} /> Ordenar</button>
+            <button className="st-filter-btn st-filter-btn--mobile-hidden"><Heart size={12} /> Favoritos</button>
+            <button className="st-filter-btn st-filter-btn--mobile-hidden"><Filter size={12} /> Filtros</button>
           </div>
           {shareFeedback && (
             <div

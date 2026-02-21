@@ -662,6 +662,10 @@
 
 /* Mobile */
 @media (max-width: 640px) {
+  .st-filter-btn--mobile-hidden {
+    display: none;
+  }
+
   .st-match-row__odds {
     display: none;
   }
