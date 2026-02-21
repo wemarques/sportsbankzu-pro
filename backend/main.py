@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import math
 import random
@@ -122,7 +122,7 @@ def get_data_dir() -> str:
     return os.getenv("FUTEBOL_DATA_DIR") or os.path.join(get_base_root(), "data")
 
 def mock_match(league_id: str, i: int) -> Dict[str, Any]:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "id": f"{league_id}-m{i}",
         "leagueId": league_id,
@@ -363,7 +363,7 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
     # Deterministic random per league for consistent results
     rng = random.Random(hash(league_id) % (2**31))
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     start_date = now.replace(hour=12, minute=0, second=0, microsecond=0)
     fixtures: List[Dict[str, Any]] = []
 
@@ -402,7 +402,7 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             "leagueName": league_display,
             "homeTeam": home,
             "awayTeam": away,
-            "datetime": game_time.isoformat(),
+            "datetime": game_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "stadium": f"{home} Stadium",
             "status": "scheduled",
             "odds": {
@@ -455,20 +455,21 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
 
 
 def date_range(filter_type: str) -> Tuple[datetime, datetime]:
+    """Return (start, end) as UTC-aware datetimes based on Brasilia (BRT) calendar day."""
     from datetime import timezone as tz
     BRT = tz(timedelta(hours=-3))
-    now = datetime.now(BRT).replace(tzinfo=None)  # naive datetime in Brasilia time
+    now_brt = datetime.now(BRT)
     if filter_type == "today":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1) - timedelta(milliseconds=1)
-        return start, end
+        start_brt = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
+        return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
     if filter_type == "tomorrow":
-        start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1) - timedelta(milliseconds=1)
-        return start, end
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=7) - timedelta(milliseconds=1)
-    return start, end
+        start_brt = (now_brt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
+        return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
+    start_brt = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_brt = start_brt + timedelta(days=7) - timedelta(milliseconds=1)
+    return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
 
  
 
@@ -1241,7 +1242,7 @@ def gerar_quadro_resumo_whatsapp(
         dt = datetime.fromisoformat(jogos[0].get("datetime"))
         data_ref = dt.strftime("%d/%m")
     except Exception:
-        data_ref = datetime.utcnow().strftime("%d/%m")
+        data_ref = datetime.now(timezone.utc).strftime("%d/%m")
 
     liga_curta = formatar_liga_curta(liga)
     linhas.append(f"{liga_curta} – {data_ref}")

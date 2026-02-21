@@ -76,7 +76,7 @@ export default function MatchesList({ matches, league, dateFilter, statusFilter,
               </td>
               <td>{m.leagueName || "-"}</td>
               <td className="font-semibold">{m.homeTeam.name} vs {m.awayTeam.name}</td>
-              <td>{new Date(m.datetime).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+              <td>{new Date(m.datetime).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</td>
               <td>{m.venue || "-"}</td>
               <td>{unifyStatus(m.status)}</td>
               <td>{`H ${m.odds.home} / D ${m.odds.draw} / A ${m.odds.away}`}</td>

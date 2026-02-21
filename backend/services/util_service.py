@@ -2,7 +2,7 @@ try:
     import pandas as pd  # type: ignore
 except Exception:
     pd = None
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 def status_map(s: str) -> str:
@@ -16,17 +16,20 @@ def status_map(s: str) -> str:
     return "scheduled"
 
 def parse_date(value: Any) -> Optional[datetime]:
+    """Parse date from various formats. Returns timezone-aware datetime in UTC."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
         try:
-            return datetime.utcfromtimestamp(int(value))
+            return datetime.fromtimestamp(int(value), tz=timezone.utc)
         except Exception:
             return None
     if isinstance(value, str):
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%b %d %Y - %I:%M%p"):
             try:
-                return datetime.strptime(value, fmt)
+                dt = datetime.strptime(value, fmt)
+                # FootyStats date_gmt fields are GMT — attach UTC timezone
+                return dt.replace(tzinfo=timezone.utc)
             except Exception:
                 continue
         try:

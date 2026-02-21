@@ -200,7 +200,7 @@ function InlineMatchCard({
   onSelect: () => void;
 }) {
   const matchTime = new Date(match.datetime);
-  const timeString = matchTime.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const timeString = matchTime.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
   return (
     <div

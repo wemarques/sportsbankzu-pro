@@ -339,7 +339,7 @@ def build_records_from_matches(
             "leagueName": league_id.replace("-", " ").title(),
             "homeTeam": home,
             "awayTeam": away,
-            "datetime": dt.isoformat(),
+            "datetime": dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt.tzinfo else dt.isoformat() + "Z",
             "stadium": stadium,
             "status": status,
             "odds": {
