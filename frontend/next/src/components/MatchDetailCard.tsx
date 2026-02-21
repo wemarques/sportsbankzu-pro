@@ -491,6 +491,28 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
 
               {/* MATCH INFO */}
               <div className="mdc-info-grid">
+                {match.startTime && (
+                  <div className="mdc-info-item">
+                    <span className="mdc-info-label">
+                      <Clock size={14} /> Data
+                    </span>
+                    <span className="mdc-info-value">
+                      {new Date(match.startTime).toLocaleDateString("pt-BR", {
+                        weekday: "long",
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                        timeZone: "America/Sao_Paulo",
+                      })}
+                      {" às "}
+                      {new Date(match.startTime).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "America/Sao_Paulo",
+                      })}
+                    </span>
+                  </div>
+                )}
                 <div className="mdc-info-item">
                   <span className="mdc-info-label">Competicao</span>
                   <span className="mdc-info-value">{match.league}</span>

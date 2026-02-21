@@ -18,16 +18,20 @@ router = APIRouter(
 @router.get("/match/{match_id}/analysis", response_model=AIAnalysisResponse)
 async def get_match_analysis(
     match_id: str,
+    home_team: str = Query(None, description="Nome do time da casa (para busca precisa)"),
+    away_team: str = Query(None, description="Nome do time visitante (para busca precisa)"),
     include_context: bool = Query(True, description="Incluir contexto adicional (forma, H2H)"),
 ):
     """
     Retorna analise completa de um jogo usando MISTRAL AI.
 
     - **match_id**: ID do jogo
+    - **home_team**: Nome do time da casa (opcional, para busca precisa)
+    - **away_team**: Nome do time visitante (opcional, para busca precisa)
     - **include_context**: Se deve incluir contexto adicional na analise
     """
     try:
-        match_data = _get_match_data(match_id)
+        match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
         service = MistralAnalysisService()
 
         analysis = await service.analyze_match(
@@ -140,7 +144,7 @@ def _match_to_ai_input(m: dict) -> dict:
     }
 
 
-def _get_match_data(match_id: str) -> dict:
+def _get_match_data(match_id: str, home_team: str = None, away_team: str = None) -> dict:
     """Fetch match data from the fixtures system, falling back to mock."""
     try:
         from backend.routes.fixtures import fixtures as fixtures_endpoint
@@ -153,17 +157,37 @@ def _get_match_data(match_id: str) -> dict:
             if not league_id:
                 break
             result = fixtures_endpoint(leagues=league_id, date=date_filter)
+            # 1. Try exact ID match
             for m in result.get("matches", []):
                 if str(m.get("id")) == str(match_id):
                     logger.info(f"Found match {match_id} via fixtures (date={date_filter})")
                     return _match_to_ai_input(m)
 
-            # If exact ID not found, return first match from this league
-            # (handles ID format mismatches between frontend and backend)
-            matches = result.get("matches", [])
-            if matches:
-                logger.warning(f"Match {match_id} not found by ID, using first match from {league_id}")
-                return _match_to_ai_input(matches[0])
+            # 2. Try matching by team names (handles ID format mismatches)
+            if home_team and away_team:
+                for m in result.get("matches", []):
+                    h = str(m.get("homeTeam", ""))
+                    a = str(m.get("awayTeam", ""))
+                    if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
+                       (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
+                        logger.info(f"Found match by team names: {h} vs {a} (date={date_filter})")
+                        return _match_to_ai_input(m)
+
+        # If no league could be extracted but we have team names, try all leagues
+        if home_team and away_team and not league_id:
+            from backend.config.leagues_config import LEAGUE_ID_ALIASES
+            for alias in LEAGUE_ID_ALIASES:
+                try:
+                    result = fixtures_endpoint(leagues=alias, date="today")
+                    for m in result.get("matches", []):
+                        h = str(m.get("homeTeam", ""))
+                        a = str(m.get("awayTeam", ""))
+                        if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
+                           (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
+                            logger.info(f"Found match by team names in {alias}: {h} vs {a}")
+                            return _match_to_ai_input(m)
+                except Exception:
+                    continue
 
     except Exception as e:
         logger.warning(f"Could not fetch live fixtures for match {match_id}: {e}")

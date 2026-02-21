@@ -72,6 +72,19 @@ function formatTime(dt: string) {
   }
 }
 
+function formatDate(dt: string) {
+  try {
+    const d = new Date(dt);
+    return d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
+  } catch {
+    return "--/--";
+  }
+}
+
 function statusInfo(status: Match["status"]) {
   switch (status) {
     case "live":
@@ -236,7 +249,8 @@ export default function Dashboard() {
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
   const [navView, setNavView] = useState<NavView>("matches");
-  
+  const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
+
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
 
@@ -296,7 +310,7 @@ export default function Dashboard() {
         return;
       }
       setAiLoading(true);
-      const analysis = await getAiMatchAnalysis(selectedMatch.id);
+      const analysis = await getAiMatchAnalysis(selectedMatch.id, selectedMatch.homeTeam.name, selectedMatch.awayTeam.name);
       setAiAnalysis(analysis);
       setAiLoading(false);
     }
@@ -316,9 +330,14 @@ export default function Dashboard() {
     });
   }, []);
 
+  const displayMatches = useMemo(() => {
+    if (!selectedLeague) return allMatches;
+    return allMatches.filter((m) => m.leagueId === selectedLeague);
+  }, [allMatches, selectedLeague]);
+
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
     const byLeague = new Map<string, Match[]>();
-    for (const m of allMatches) {
+    for (const m of displayMatches) {
       const list = byLeague.get(m.leagueId) ?? [];
       list.push(m);
       byLeague.set(m.leagueId, list);
@@ -334,7 +353,7 @@ export default function Dashboard() {
         collapsed: collapsedLeagues.has(leagueId),
       };
     });
-  }, [allMatches, collapsedLeagues]);
+  }, [displayMatches, collapsedLeagues]);
 
   const oddsTabs: { key: OddsTab; label: string }[] = [
     { key: "1x2", label: "1X2" },
@@ -398,7 +417,7 @@ export default function Dashboard() {
                     <div
                       key={league.id}
                       className="st-league-card"
-                      onClick={() => { setNavView("matches"); }}
+                      onClick={() => { setSelectedLeague(league.id); setNavView("matches"); }}
                     >
                       <span className="st-league-card__flag">{league.countryFlag}</span>
                       <div className="st-league-card__info">
@@ -571,6 +590,28 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {selectedLeague && (
+            <div style={{ padding: "8px 12px" }}>
+              <button
+                onClick={() => setSelectedLeague(null)}
+                style={{
+                  background: "rgba(255,165,0,0.15)",
+                  border: "1px solid rgba(255,165,0,0.3)",
+                  borderRadius: 6,
+                  padding: "4px 12px",
+                  color: "#ffaa33",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                ✕ {AVAILABLE_LEAGUES.find((l) => l.id === selectedLeague)?.name ?? selectedLeague} — Ver todas as ligas
+              </button>
+            </div>
+          )}
+
           {!loading && leagueGroups.length === 0 && (
             <div className="st-empty">
               <div className="st-empty__icon">&#9917;</div>
@@ -614,6 +655,7 @@ export default function Dashboard() {
                     onClick={() => setSelectedMatchId(match.id)}
                   >
                     <div className="st-match-row__status">
+                      <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
                       <div className={`st-match-row__status-label ${si.cssClass}`}>
                         {si.label || formatTime(match.datetime)}
                       </div>

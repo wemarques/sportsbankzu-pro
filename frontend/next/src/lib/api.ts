@@ -21,9 +21,13 @@ export async function getMatchesByLeague(leagues: string, date?: string) {
   }
 }
 
-export async function getAiMatchAnalysis(matchId: string) {
+export async function getAiMatchAnalysis(matchId: string, homeTeam?: string, awayTeam?: string) {
   try {
-    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/analysis`, {
+    const params = new URLSearchParams();
+    if (homeTeam) params.set("home_team", homeTeam);
+    if (awayTeam) params.set("away_team", awayTeam);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/analysis${qs}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;

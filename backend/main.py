@@ -224,24 +224,26 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             ("Saint-Étienne", "FC Metz"), ("SM Caen", "Paris FC"),
             ("Bordeaux", "Amiens SC"),
         ],
-        # BRASIL
+        # BRASIL (temporada 2025/2026)
         "brasileirao-serie-a": [
-            ("Vasco da Gama", "Palmeiras"), ("Corinthians", "São Paulo"),
+            ("Flamengo", "Palmeiras"), ("Corinthians", "São Paulo"),
             ("Fluminense", "Botafogo"), ("Internacional", "Grêmio"),
-            ("Atlético Mineiro", "Cruzeiro"),
+            ("Atlético Mineiro", "Cruzeiro"), ("Bahia", "Fortaleza"),
+            ("Vasco da Gama", "Santos"),
         ],
         "brazil-serie-a": [
-            ("Vasco da Gama", "Palmeiras"), ("Corinthians", "São Paulo"),
+            ("Flamengo", "Palmeiras"), ("Corinthians", "São Paulo"),
             ("Fluminense", "Botafogo"), ("Internacional", "Grêmio"),
-            ("Atlético Mineiro", "Cruzeiro"),
+            ("Atlético Mineiro", "Cruzeiro"), ("Bahia", "Fortaleza"),
+            ("Vasco da Gama", "Santos"),
         ],
         "brasileirao-serie-b": [
-            ("Sport Recife", "Ceará"), ("Bahia", "Goiás"),
-            ("Coritiba", "Ponte Preta"), ("Guarani", "Vila Nova"),
+            ("Sport Recife", "Ceará"), ("Goiás", "Coritiba"),
+            ("Ponte Preta", "Guarani"), ("Vila Nova", "CRB"),
         ],
         "brazil-serie-b": [
-            ("Sport Recife", "Ceará"), ("Bahia", "Goiás"),
-            ("Coritiba", "Ponte Preta"), ("Guarani", "Vila Nova"),
+            ("Sport Recife", "Ceará"), ("Goiás", "Coritiba"),
+            ("Ponte Preta", "Guarani"), ("Vila Nova", "CRB"),
         ],
         # OUTROS EUROPA
         "eredivisie": [

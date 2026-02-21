@@ -142,14 +142,16 @@ class MistralAnalysisService:
 JOGO: {home_team} vs {away_team}
 COMPETICAO: {league}
 
-ESTATISTICAS DO JOGO:
-- Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')}
-- Lambda Fora: {match_stats.get('lambda_away') or match_stats.get('lambdaAway', 'N/A')}
-- Probabilidade Casa: {match_stats.get('prob_home') or match_stats.get('homeWinProb', 'N/A')}%
+PROGNOSTICOS (use SEMPRE estes valores em porcentagem na analise):
+- Probabilidade Vitoria Casa: {match_stats.get('prob_home') or match_stats.get('homeWinProb', 'N/A')}%
 - Probabilidade Empate: {match_stats.get('prob_draw') or match_stats.get('drawProb', 'N/A')}%
-- Probabilidade Fora: {match_stats.get('prob_away') or match_stats.get('awayWinProb', 'N/A')}%
+- Probabilidade Vitoria Fora: {match_stats.get('prob_away') or match_stats.get('awayWinProb', 'N/A')}%
 - Probabilidade Over 2.5: {match_stats.get('prob_over_25') or match_stats.get('over25Prob', 'N/A')}%
 - Probabilidade BTTS: {match_stats.get('prob_btts') or match_stats.get('bttsProb', 'N/A')}%
+
+LAMBDAS (taxa media de gols esperados — NAO sao probabilidades, sao contagens):
+- Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')} gols
+- Lambda Fora: {match_stats.get('lambda_away') or match_stats.get('lambdaAway', 'N/A')} gols
 
 ODDS DO MERCADO:
 - Casa (1): {odds.get('home', 'N/A')}
@@ -186,6 +188,9 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 
 IMPORTANTE:
 - Seja especifico e use os numeros fornecidos
+- Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
+- Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
+- Exemplo correto: "probabilidade de vitoria de 55.2%". Exemplo INCORRETO: "Casa (1.177) vs Fora (0.996)"
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica

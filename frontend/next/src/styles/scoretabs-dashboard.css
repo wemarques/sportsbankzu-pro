@@ -354,9 +354,17 @@
 }
 
 .st-match-row__status {
-  width: 42px;
+  width: 52px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.st-match-row__status-date {
+  font-size: 0.6rem;
+  color: var(--st-accent);
+  font-weight: 600;
+  line-height: 1.1;
+  margin-bottom: 1px;
 }
 
 .st-match-row__status-label {

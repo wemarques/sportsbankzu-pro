@@ -14,12 +14,19 @@ function fallbackResponse(message: string) {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const matchId = params.id;
+  const url = new URL(req.url);
+  const homeTeam = url.searchParams.get("home_team") || "";
+  const awayTeam = url.searchParams.get("away_team") || "";
+  const qs = new URLSearchParams();
+  if (homeTeam) qs.set("home_team", homeTeam);
+  if (awayTeam) qs.set("away_team", awayTeam);
+  const qsStr = qs.toString() ? `?${qs.toString()}` : "";
   const result = await fetchBackend(
-    `/api/ai/match/${encodeURIComponent(matchId)}/analysis`,
+    `/api/ai/match/${encodeURIComponent(matchId)}/analysis${qsStr}`,
     { timeoutMs: 25_000 },
   );
 
