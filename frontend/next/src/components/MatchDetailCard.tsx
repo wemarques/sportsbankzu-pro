@@ -99,6 +99,15 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
 }
 
+/** Corrige percentuais mal formatados na análise AI (ex: 8547.4% -> 85.5%) */
+function fixAiPercentages(text: string): string {
+  return text.replace(/(\d+\.?\d*)%/g, (_, num) => {
+    const n = parseFloat(num);
+    if (n > 100) return `${(n / 100).toFixed(1)}%`;
+    return `${num}%`;
+  });
+}
+
 type Props = {
   match: MatchDetailData;
   aiLoading?: boolean;
@@ -427,7 +436,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                         {/* Summary */}
                         <div className="mdc-ai-summary">
                           <h4 className="mdc-ai-section-title">Resumo</h4>
-                          <p className="mdc-ai-text">{match.aiAnalysis.summary}</p>
+                          <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary)}</p>
                         </div>
 
                         {/* Key Points */}
@@ -437,7 +446,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             {match.aiAnalysis.key_points.map((point, index) => (
                               <li key={index} className="mdc-ai-list-item">
                                 <span className="mdc-ai-bullet">{"\u2022"}</span>
-                                {point}
+                                {fixAiPercentages(point)}
                               </li>
                             ))}
                           </ul>
@@ -449,7 +458,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             <h4 className="mdc-ai-section-title">Recomendacao</h4>
                             <div className="mdc-ai-recommendation-box">
                               <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{match.aiAnalysis.recommendation}</p>
+                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation)}</p>
                             </div>
                           </div>
                         )}

@@ -126,6 +126,22 @@ class MistralAnalysisService:
             logger.error(f"Sync analysis error: {e}")
             return self._get_fallback_analysis()
 
+    def _format_prob_for_prompt(self, value) -> str:
+        """Normaliza e formata probabilidade para o prompt (0-1, 0-100 ou >100 -> X.X%)."""
+        if value is None:
+            return "N/A"
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return "N/A"
+        if v < 0:
+            return "N/A"
+        if v <= 1:
+            v *= 100
+        elif v > 100:
+            v /= 100
+        return f"{v:.1f}"
+
     def _build_prompt(
         self,
         home_team: str,
@@ -136,18 +152,33 @@ class MistralAnalysisService:
         context: Optional[Dict] = None,
     ) -> str:
         """Constroi o prompt para a MISTRAL AI"""
+        prob_home = self._format_prob_for_prompt(
+            match_stats.get("prob_home") or match_stats.get("homeWinProb")
+        )
+        prob_draw = self._format_prob_for_prompt(
+            match_stats.get("prob_draw") or match_stats.get("drawProb")
+        )
+        prob_away = self._format_prob_for_prompt(
+            match_stats.get("prob_away") or match_stats.get("awayWinProb")
+        )
+        prob_over25 = self._format_prob_for_prompt(
+            match_stats.get("prob_over_25") or match_stats.get("over25Prob")
+        )
+        prob_btts = self._format_prob_for_prompt(
+            match_stats.get("prob_btts") or match_stats.get("bttsProb")
+        )
 
         prompt = f"""Voce e um analista profissional de apostas esportivas especializado em futebol.
 
 JOGO: {home_team} vs {away_team}
 COMPETICAO: {league}
 
-PROGNOSTICOS (use SEMPRE estes valores em porcentagem na analise):
-- Probabilidade Vitoria Casa: {match_stats.get('prob_home') or match_stats.get('homeWinProb', 'N/A')}%
-- Probabilidade Empate: {match_stats.get('prob_draw') or match_stats.get('drawProb', 'N/A')}%
-- Probabilidade Vitoria Fora: {match_stats.get('prob_away') or match_stats.get('awayWinProb', 'N/A')}%
-- Probabilidade Over 2.5: {match_stats.get('prob_over_25') or match_stats.get('over25Prob', 'N/A')}%
-- Probabilidade BTTS: {match_stats.get('prob_btts') or match_stats.get('bttsProb', 'N/A')}%
+PROGNOSTICOS (valores JA em porcentagem 0-100 — use EXATAMENTE como mostrado, ex: 85.5%):
+- Probabilidade Vitoria Casa: {prob_home}%
+- Probabilidade Empate: {prob_draw}%
+- Probabilidade Vitoria Fora: {prob_away}%
+- Probabilidade Over 2.5: {prob_over25}%
+- Probabilidade BTTS: {prob_btts}%
 
 LAMBDAS (taxa media de gols esperados — NAO sao probabilidades, sao contagens):
 - Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')} gols
@@ -187,10 +218,10 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 }
 
 IMPORTANTE:
-- Seja especifico e use os numeros fornecidos
+- Seja especifico e use os numeros fornecidos EXATAMENTE como mostrados (ex: 85.5% significa 85.5%, NAO multiplique por 100)
 - Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
 - Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
-- Exemplo correto: "probabilidade de vitoria de 55.2%". Exemplo INCORRETO: "Casa (1.177) vs Fora (0.996)"
+- Exemplo correto: "probabilidade de vitoria de 85.5%". Exemplo INCORRETO: "8547.4%" ou "Casa (1.177) vs Fora (0.996)"
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica

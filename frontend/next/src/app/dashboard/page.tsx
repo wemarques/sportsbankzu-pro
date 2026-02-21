@@ -265,6 +265,16 @@ export default function Dashboard() {
   const [dateMode, setDateMode] = useState<DateMode>("today");
   const [navView, setNavView] = useState<NavView>("matches");
   const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const s = localStorage.getItem("sb-favorites");
+        if (s) return new Set(JSON.parse(s));
+      } catch {}
+    }
+    return new Set();
+  });
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -279,14 +289,9 @@ export default function Dashboard() {
       setLoading(true);
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
+      /** Backend espera "today" | "tomorrow" | "week" (timezone BRT), não YYYY-MM-DD */
       function dateParamFor(mode: DateMode): string {
-        if (mode === "today") return new Date().toISOString().split("T")[0];
-        if (mode === "tomorrow") {
-          const d = new Date();
-          d.setDate(d.getDate() + 1);
-          return d.toISOString().split("T")[0];
-        }
-        return "week";
+        return mode;
       }
 
       try {
@@ -346,9 +351,23 @@ export default function Dashboard() {
   }, []);
 
   const displayMatches = useMemo(() => {
-    if (!selectedLeague) return allMatches;
-    return allMatches.filter((m) => m.leagueId === selectedLeague);
-  }, [allMatches, selectedLeague]);
+    let list = allMatches;
+    if (selectedLeague) list = list.filter((m) => m.leagueId === selectedLeague);
+    if (showFavoritesOnly) list = list.filter((m) => favoriteIds.has(m.id));
+    return list;
+  }, [allMatches, selectedLeague, showFavoritesOnly, favoriteIds]);
+
+  const toggleFavorite = useCallback((matchId: string) => {
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(matchId)) next.delete(matchId);
+      else next.add(matchId);
+      try {
+        localStorage.setItem("sb-favorites", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
     const byLeague = new Map<string, Match[]>();
@@ -359,12 +378,17 @@ export default function Dashboard() {
     }
     return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+      const sorted = [...matches].sort((a, b) => {
+        const da = new Date(a.datetime).getTime();
+        const db = new Date(b.datetime).getTime();
+        return da - db;
+      });
       return {
         leagueId,
         leagueName: league?.name ?? leagueId,
         countryFlag: league?.countryFlag ?? "🏆",
         country: league?.country ?? "",
-        matches,
+        matches: sorted,
         collapsed: collapsedLeagues.has(leagueId),
       };
     });
@@ -588,8 +612,13 @@ export default function Dashboard() {
             </div>
             <div className="st-live-dot" />
             <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
-            <button className="st-filter-btn"><Heart size={12} /> Favoritos</button>
-            <button className="st-filter-btn"><Filter size={12} /> Filtros</button>
+            <button
+              className={`st-filter-btn ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
+              onClick={() => setShowFavoritesOnly((v) => !v)}
+            >
+              <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
+            </button>
+            <button className="st-filter-btn" title="Filtros em breve"><Filter size={12} /> Filtros</button>
           </div>
 
           {/* Odds tabs */}
@@ -803,8 +832,12 @@ export default function Dashboard() {
                         </div>
                       </div>
                     )}
-                    <button className="st-match-row__favorite" onClick={(e) => e.stopPropagation()} aria-label="Favoritar">
-                      <Star size={14} />
+                    <button
+                      className="st-match-row__favorite"
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(match.id); }}
+                      aria-label={favoriteIds.has(match.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                    >
+                      <Star size={14} fill={favoriteIds.has(match.id) ? "currentColor" : "none"} />
                     </button>
                     {match.predictions && match.predictions.length > 0 && (
                       <div className="st-match-row__predictions">
