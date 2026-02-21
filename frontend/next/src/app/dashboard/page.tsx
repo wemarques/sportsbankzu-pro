@@ -606,19 +606,20 @@ export default function Dashboard() {
           {/* Filter bar */}
           <div className="st-filters">
             <div className="st-date-nav">
-              <button className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
+              <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
               <span className="st-date-label">{dateLabel}</span>
-              <button className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
+              <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
             </div>
             <div className="st-live-dot" />
-            <button className="st-filter-btn"><SlidersHorizontal size={12} /> Ordenar</button>
+            <button type="button" className="st-filter-btn" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
             <button
+              type="button"
               className={`st-filter-btn ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
               onClick={() => setShowFavoritesOnly((v) => !v)}
             >
               <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
             </button>
-            <button className="st-filter-btn" title="Filtros em breve"><Filter size={12} /> Filtros</button>
+            <button type="button" className="st-filter-btn" title="Filtros em breve"><Filter size={12} /> Filtros</button>
           </div>
 
           {/* Odds tabs */}
@@ -833,8 +834,9 @@ export default function Dashboard() {
                       </div>
                     )}
                     <button
+                      type="button"
                       className="st-match-row__favorite"
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(match.id); }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(match.id); }}
                       aria-label={favoriteIds.has(match.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     >
                       <Star size={14} fill={favoriteIds.has(match.id) ? "currentColor" : "none"} />

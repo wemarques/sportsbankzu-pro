@@ -99,12 +99,18 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
 }
 
-/** Corrige percentuais mal formatados na análise AI (ex: 8547.4% -> 85.5%) */
+/** Corrige percentuais mal formatados na análise AI (ex: 4849.8% -> 48.5%, 2646.6% -> 26.5%) */
 function fixAiPercentages(text: string): string {
-  return text.replace(/(\d+\.?\d*)%/g, (_, num) => {
-    const n = parseFloat(num);
+  if (!text || typeof text !== "string") return text;
+  return text.replace(/(\d[\d.,]*)\s*%/g, (match) => {
+    const raw = match.replace(/\s/g, "").slice(0, -1);
+    const numStr = raw.includes(",") && raw.lastIndexOf(",") > (raw.lastIndexOf(".") || -1)
+      ? raw.replace(/\./g, "").replace(",", ".") // europeu: 2.646,6
+      : raw.replace(/,/g, "");
+    const n = parseFloat(numStr);
+    if (Number.isNaN(n)) return match;
     if (n > 100) return `${(n / 100).toFixed(1)}%`;
-    return `${num}%`;
+    return match;
   });
 }
 
@@ -436,7 +442,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                         {/* Summary */}
                         <div className="mdc-ai-summary">
                           <h4 className="mdc-ai-section-title">Resumo</h4>
-                          <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary)}</p>
+                          <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary ?? "")}</p>
                         </div>
 
                         {/* Key Points */}
@@ -446,7 +452,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             {match.aiAnalysis.key_points.map((point, index) => (
                               <li key={index} className="mdc-ai-list-item">
                                 <span className="mdc-ai-bullet">{"\u2022"}</span>
-                                {fixAiPercentages(point)}
+                                {fixAiPercentages(typeof point === "string" ? point : String(point ?? ""))}
                               </li>
                             ))}
                           </ul>
@@ -458,7 +464,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             <h4 className="mdc-ai-section-title">Recomendacao</h4>
                             <div className="mdc-ai-recommendation-box">
                               <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation)}</p>
+                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation ?? "")}</p>
                             </div>
                           </div>
                         )}
