@@ -85,6 +85,21 @@ function formatDate(dt: string) {
   }
 }
 
+/** Normaliza probabilidade para percentual 0-100. Aceita 0-1, 0-100 ou valores >100. */
+function toPercent(value?: number | null): number {
+  if (value == null || value < 0) return 0;
+  if (value <= 1) return value * 100;
+  if (value > 100) return value / 100;
+  return value;
+}
+
+/** Normaliza e formata probabilidade em decimal (ex: 85.5%). */
+function formatProb(value?: number | null): string {
+  if (value == null || value < 0) return "-";
+  const pct = toPercent(value);
+  return `${pct.toFixed(1)}%`;
+}
+
 function statusInfo(status: Match["status"]) {
   switch (status) {
     case "live":
@@ -516,8 +531,9 @@ export default function Dashboard() {
                   .map((match) => {
                     const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
                     const maxProb = Math.max(match.stats?.homeWinProb ?? 0, match.stats?.awayWinProb ?? 0);
-                    const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${maxProb.toFixed(0)}%)` : `${match.awayTeam.name} (${maxProb.toFixed(0)}%)`;
-                    const confidenceColor = maxProb >= 55 ? "#00ff88" : maxProb >= 40 ? "#ffbb33" : "#ff4444";
+                    const maxProbPct = toPercent(maxProb);
+                    const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
+                    const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
                     return (
                       <div
                         key={match.id}
@@ -540,11 +556,11 @@ export default function Dashboard() {
                           </div>
                           <div className="st-rec-card__stat">
                             <span className="st-rec-card__stat-label">Over 2.5</span>
-                            <span className="st-rec-card__stat-value">{match.stats?.over25Prob ? `${match.stats.over25Prob.toFixed(0)}%` : "-"}</span>
+                            <span className="st-rec-card__stat-value">{formatProb(match.stats?.over25Prob)}</span>
                           </div>
                           <div className="st-rec-card__stat">
                             <span className="st-rec-card__stat-label">BTTS</span>
-                            <span className="st-rec-card__stat-value">{match.stats?.bttsProb ? `${match.stats.bttsProb.toFixed(0)}%` : "-"}</span>
+                            <span className="st-rec-card__stat-value">{formatProb(match.stats?.bttsProb)}</span>
                           </div>
                         </div>
                         {match.odds?.home > 0 && (
