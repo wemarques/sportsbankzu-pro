@@ -1208,6 +1208,28 @@
   white-space: nowrap;
 }
 
+/* ---- SHARE CAPTURE MODE (WhatsApp) ---- */
+[data-share-mode="true"] [data-share-hide="true"] {
+  display: none !important;
+}
+
+[data-share-mode="true"] .st-match-row__predictions {
+  padding-left: 8px;
+}
+
+[data-share-mode="true"] .st-prediction-badge {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+[data-share-mode="true"] .st-prediction-market {
+  white-space: normal;
+}
+
+[data-share-mode="true"] .st-prediction-alert {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .st-match-row__predictions {
     padding-left: 8px;

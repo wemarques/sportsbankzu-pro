@@ -509,6 +509,8 @@ export default function Dashboard() {
     if (!target) {
       throw new Error("Abra uma liga para capturar a imagem.");
     }
+    const previousShareMode = target.getAttribute("data-share-mode");
+    target.setAttribute("data-share-mode", "true");
     const controls = Array.from(target.querySelectorAll<HTMLElement>("[data-share-control='true']"));
     const prevVisibility = controls.map((el) => el.style.visibility);
     controls.forEach((el) => {
@@ -533,6 +535,11 @@ export default function Dashboard() {
       controls.forEach((el, index) => {
         el.style.visibility = prevVisibility[index] ?? "";
       });
+      if (previousShareMode == null) {
+        target.removeAttribute("data-share-mode");
+      } else {
+        target.setAttribute("data-share-mode", previousShareMode);
+      }
     }
   }
 
@@ -919,7 +926,7 @@ export default function Dashboard() {
                   {group.leagueName}
                   <span className="st-league-count"> ({group.matches.length})</span>
                 </span>
-                <div className="st-league-actions">
+                <div className="st-league-actions" data-share-hide="true">
                   <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
                     <Star size={14} />
                   </button>
@@ -1080,6 +1087,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       className="st-match-row__favorite"
+                      data-share-hide="true"
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(match.id); }}
                       aria-label={favoriteIds.has(match.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     >
@@ -1093,8 +1101,8 @@ export default function Dashboard() {
                               {pred.status}
                             </span>
                             <span className="st-prediction-market">{pred.mercado}</span>
-                            <span className="st-prediction-prob">prob {pred.prob_min}-{pred.prob_max}%</span>
-                            <span className="st-prediction-odd">odd min. EV+ {pred.odd_minima != null ? `≈${pred.odd_minima.toFixed(2)}` : "-"}</span>
+                            <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
+                            <span className="st-prediction-odd">EV+ &gt;= {pred.odd_minima != null ? pred.odd_minima.toFixed(2) : "-"}</span>
                             {pred.alerta && <span className="st-prediction-alert">△ {pred.alerta}</span>}
                           </div>
                         ))}
