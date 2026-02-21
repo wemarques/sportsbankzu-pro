@@ -235,6 +235,22 @@
   50% { opacity: 0.4; }
 }
 
+@keyframes st-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.st-nav__link .animate-spin {
+  animation: st-spin 1s linear infinite;
+}
+
+.st-nav__share-label {
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .st-nav__share-label { display: none; }
+}
+
 /* ---- ODDS TABS ---- */
 .st-odds-tabs {
   display: flex;

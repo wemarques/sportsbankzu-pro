@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-02
+**Última revisão:** 2026-02-21
 
 ---
 
@@ -33,10 +33,18 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Filtros por liga e periodo
 - Responsividade mobile/tablet (CSS customizado)
 
+### Dashboard Next.js (Produção)
+
+- Dashboard em [sportsbankzu-pro-well.vercel.app](https://sportsbankzu-pro-well.vercel.app/dashboard)
+- Seleção de ligas (22+ europeias e sul-americanas)
+- Aba Recomendadas 2026 com jogos de maior confiança
+- Análise IA (Mistral) por jogo
+- Favoritos com persistência em localStorage
+- **Compartilhar via WhatsApp**: captura da tela e envio (Web Share API ou download + link)
+
 ### Funcionalidades Opcionais
 
 - Sistema de autenticacao (depende de config.yaml ou Secrets)
-- Dashboard Next.js (configuracao separada)
 - CLI unificado (`python -m cli`) com Click
 - Testes E2E com Playwright
 
@@ -160,14 +168,12 @@ Acesse a interface em `http://localhost:8501/`.
 Por fim, inicie o dashboard moderno:
 
 ```bash
-# Instalar dependências
-npm i
-
-# Iniciar servidor de desenvolvimento
+cd frontend/next
+npm install
 npm run dev
 ```
 
-Acesse o dashboard em `http://localhost:3000/`.
+Acesse o dashboard em `http://localhost:3000/dashboard`. Em produção: [sportsbankzu-pro-well.vercel.app/dashboard](https://sportsbankzu-pro-well.vercel.app/dashboard).
 
 ### 4. CLI (Linha de Comando)
 
@@ -469,7 +475,7 @@ A **tela de login** deve aparecer ao acessar pela primeira vez. Após autentica�
 
 Confirme o funcionamento do dashboard:
 
-A **página inicial** deve carregar o `MultiLeagueSelector` e `MatchesList`. O **botão "Analisar"** deve chamar `/api/decision/pre` e exibir os picks recomendados. A **navegação** deve ser fluida e responsiva.
+A **página inicial** (`/dashboard`) deve carregar jogos por liga com filtros Hoje/Amanhã/Próxima Rodada. A **aba Recomendadas 2026** exibe jogos com maior confiança. O **botão Compartilhar** captura a tela e permite enviar via WhatsApp (em dispositivos compatíveis) ou faz download da imagem e abre o WhatsApp com o link. A **navegação** é fluida e responsiva.
 
 ---
 

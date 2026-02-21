@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import MatchDetailCard, {
   type MatchDetailData,
@@ -33,6 +33,7 @@ import {
   Brain,
   Target,
   Zap,
+  Share2,
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
@@ -275,6 +276,8 @@ export default function Dashboard() {
     return new Set();
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const mainContentRef = useRef<HTMLDivElement>(null);
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -363,10 +366,51 @@ export default function Dashboard() {
       if (next.has(matchId)) next.delete(matchId);
       else next.add(matchId);
       try {
-        localStorage.setItem("sb-favorites", JSON.stringify([...next]));
+        localStorage.setItem("sb-favorites", JSON.stringify(Array.from(next)));
       } catch {}
       return next;
     });
+  }, []);
+
+  const handleShareWhatsApp = useCallback(async () => {
+    const el = mainContentRef.current;
+    if (!el) return;
+    setShareLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(el, {
+        useCORS: true,
+        scale: window.devicePixelRatio || 1,
+        logging: false,
+        backgroundColor: "var(--st-bg-primary, #0f0f12)",
+      });
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/png", 0.95)
+      );
+      if (!blob) throw new Error("Falha ao gerar imagem");
+      const file = new File([blob], "sportsbank-pro-dashboard.png", { type: "image/png" });
+      const url = typeof window !== "undefined" ? window.location.href : "";
+      const msg = encodeURIComponent(`Confira o dashboard SportsBank Pro: ${url}`);
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "SportsBank Pro",
+          text: `Confira o dashboard: ${url}`,
+          files: [file],
+        });
+      } else {
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = "sportsbank-pro-dashboard.png";
+        a.click();
+        window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener");
+      }
+    } catch (err) {
+      console.error("Share error:", err);
+      const url = typeof window !== "undefined" ? window.location.href : "";
+      window.open(`https://wa.me/?text=${encodeURIComponent(`Confira o SportsBank Pro: ${url}`)}`, "_blank", "noopener");
+    } finally {
+      setShareLoading(false);
+    }
   }, []);
 
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
@@ -426,6 +470,17 @@ export default function Dashboard() {
         </div>
         <div className="st-nav__right">
           <span className="st-badge-pro">{APP_VERSION}</span>
+          <button
+            type="button"
+            className="st-nav__link"
+            onClick={handleShareWhatsApp}
+            disabled={shareLoading}
+            title="Copiar tela e compartilhar via WhatsApp"
+            aria-label="Compartilhar via WhatsApp"
+          >
+            {shareLoading ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
+            <span className="st-nav__share-label">Compartilhar</span>
+          </button>
           <button className="st-nav__search">
             <Search size={14} />
             Buscar
@@ -437,7 +492,7 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <div className="st-main">
+      <div className="st-main" ref={mainContentRef}>
         {/* LEFT PANEL - Em mobile, esconder quando um jogo está selecionado */}
         {(!isMobile || !selectedMatchId) && (
         <div className="st-panel-left">
