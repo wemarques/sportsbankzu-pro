@@ -69,6 +69,12 @@ test.describe("Dashboard Page", () => {
     await expect(page.locator(".st-nav__search")).toContainText("Buscar");
   });
 
+  test("share button is visible and clickable", async ({ page }) => {
+    const shareBtn = page.getByRole("button", { name: /compartilhar via whatsapp/i });
+    await expect(shareBtn).toBeVisible();
+    await expect(shareBtn).toBeEnabled();
+  });
+
   test("round matches section renders", async ({ page }) => {
     await expect(page.locator(".st-panel-left")).toBeVisible();
     await expect(
