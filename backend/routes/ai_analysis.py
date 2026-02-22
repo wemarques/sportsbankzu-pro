@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import logging
+import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
 
@@ -144,6 +145,7 @@ async def audit_match(
             league=match_data.get("league", ""),
             audit_data=audit_result,
             match_status="finished" if is_finished else "scheduled",
+            user="user",
         )
 
         return {"status": "success", "audit": audit_result, "match_status": match_status}
@@ -712,6 +714,8 @@ async def batch_audit(
             logger.error(f"Mistral batch evaluation failed: {e}")
 
         # 5. Store aggregate audit result
+        # Determine user source: "cron" for EventBridge, "user" for manual
+        _audit_user = "cron" if os.getenv("EVENTBRIDGE_TRIGGERED") else "user"
         try:
             audit_db.log_audit_result(
                 match_id=f"batch:{date_filter}:{datetime.now().strftime('%Y%m%d%H%M')}",
@@ -721,9 +725,12 @@ async def batch_audit(
                     "safe_accuracy": safe_accuracy_pct,
                     "neutro_accuracy": neutro_accuracy_pct,
                     "total_matches": len(match_results),
+                    "avg_brier_score": avg_brier,
+                    "avg_lambda_error": avg_lambda_error,
                     "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
                 },
                 match_status="batch_audit",
+                user=_audit_user,
             )
         except Exception as e:
             logger.warning(f"Could not store batch audit result: {e}")

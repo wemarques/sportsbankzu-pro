@@ -1387,4 +1387,18 @@ async def generate_report(request: ReportGenerationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if Mangum is not None:
-    handler = Mangum(app)
+    _mangum_handler = Mangum(app)
+
+    def handler(event, context):
+        """
+        Unified Lambda entry point.
+        Routes EventBridge scheduled events to cron_handler,
+        and HTTP requests (API Gateway) to Mangum/FastAPI.
+        """
+        # EventBridge events have a "source" field like "eventbridge" or "aws.events"
+        source = event.get("source", "")
+        if source in ("eventbridge", "aws.events") or event.get("action") == "batch_audit":
+            from backend.cron_handler import cron_handler
+            return cron_handler(event, context)
+        # Default: HTTP request via API Gateway -> Mangum -> FastAPI
+        return _mangum_handler(event, context)

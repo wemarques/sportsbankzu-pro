@@ -17,12 +17,19 @@ DEFAULT_PG_CONFIG = {
     "port": int(os.getenv("PGPORT", "5432")),
 }
 
-logging.basicConfig(
-    filename="decisions.log",
-    level=logging.INFO,
-    format="%(asctime)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V2.7")
+
+audit_logger = logging.getLogger("sportsbank.audit")
+_audit_handler = logging.FileHandler("decisions.log")
+_audit_handler.setLevel(logging.INFO)
+_audit_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 )
+audit_logger.addHandler(_audit_handler)
+audit_logger.setLevel(logging.INFO)
 
 
 def _db_path() -> str:
@@ -91,6 +98,8 @@ CREATE TABLE IF NOT EXISTS audit_results (
             "ev": "ev REAL",
             "context": "context TEXT",
             "timestamp": "timestamp DATETIME",
+            "user": "user TEXT DEFAULT 'system'",
+            "version": "version TEXT",
         },
     )
 
@@ -135,35 +144,50 @@ def log_audit_result(
     league: str,
     audit_data: dict,
     match_status: str,
+    user: str = "system",
+    version: str | None = None,
 ) -> None:
-    """Store full audit result from MistralAuditor."""
+    """Store full audit result from MistralAuditor with user/version tracking."""
+    ver = version or APP_VERSION
     conn = init_db()
     cursor = conn.cursor()
     record_id = f"{match_id}:audit"
+    now = datetime.now()
     if _use_postgres():
         cursor.execute(
             """
             INSERT INTO audit_results
-            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp, "user", version)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (match_id) DO UPDATE
-            SET context = EXCLUDED.context, timestamp = EXCLUDED.timestamp
+            SET context = EXCLUDED.context, timestamp = EXCLUDED.timestamp,
+                "user" = EXCLUDED."user", version = EXCLUDED.version
             """,
             (record_id, league, "audit", json.dumps(audit_data), match_status,
-             "AUDIT", json.dumps(audit_data), datetime.now()),
+             "AUDIT", json.dumps(audit_data), now, user, ver),
         )
     else:
         cursor.execute(
             """
             INSERT OR REPLACE INTO audit_results
-            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp, user, version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (record_id, league, "audit", json.dumps(audit_data), match_status,
-             "AUDIT", json.dumps(audit_data), datetime.now()),
+             "AUDIT", json.dumps(audit_data), now, user, ver),
         )
     conn.commit()
     conn.close()
+
+    # Structured decisions.log entry
+    brier = audit_data.get("avg_brier_score", audit_data.get("brier_score", ""))
+    ev = audit_data.get("ev", "")
+    audit_logger.info(
+        f"Auditoria registrada: match_id={match_id}, league={league}, "
+        f"brier_score={brier}, ev={ev}, "
+        f"context={json.dumps(audit_data, ensure_ascii=False)}, "
+        f"user={user}, version={ver}"
+    )
 
 
 def log_correction(
@@ -205,9 +229,10 @@ def log_correction(
         )
     conn.commit()
     conn.close()
-    logging.info(
-        f"Correcao aplicada: {parameter_name} {old_value:.4f} -> {new_value:.4f} "
-        f"(liga={league}, tipo={correction_type}, confianca={audit_confidence}%)"
+    audit_logger.info(
+        f"Correcao aplicada: parameter={parameter_name}, old={old_value:.4f}, new={new_value:.4f}, "
+        f"league={league}, type={correction_type}, confidence={audit_confidence}%, "
+        f"suggested_by={suggested_by}, applied_by={applied_by}, version={APP_VERSION}"
     )
 
 
@@ -380,9 +405,10 @@ def adjust_thresholds(defaults: dict) -> None:
             """,
                 (datetime.now(), market),
             )
-            logging.info(
-                f"Ajustado threshold SAFE para {market} de {current:.2f} → {current + 0.05:.2f}. "
-                f"Motivo: Brier Score = {avg_brier:.2f}"
+            audit_logger.info(
+                f"Threshold ajustado: market={market}, parameter=safe_threshold, "
+                f"old={current:.2f}, new={current + 0.05:.2f}, "
+                f"reason=brier_score_alto({avg_brier:.2f}), user=system, version={APP_VERSION}"
             )
         elif avg_brier < 0.18:
             current = get_current_threshold(conn, market, "SAFE") or defaults[market]["SAFE"]
@@ -395,9 +421,10 @@ def adjust_thresholds(defaults: dict) -> None:
             """,
                 (datetime.now(), market),
             )
-            logging.info(
-                f"Ajustado threshold SAFE para {market} de {current:.2f} → {current - 0.02:.2f}. "
-                f"Motivo: Brier Score = {avg_brier:.2f}"
+            audit_logger.info(
+                f"Threshold ajustado: market={market}, parameter=safe_threshold, "
+                f"old={current:.2f}, new={current - 0.02:.2f}, "
+                f"reason=brier_score_bom({avg_brier:.2f}), user=system, version={APP_VERSION}"
             )
 
     conn.commit()
