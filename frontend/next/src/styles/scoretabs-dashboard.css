@@ -49,7 +49,10 @@
   border-right: 1px solid var(--st-border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;        /* scroll interno gerenciado por .st-match-list */
+  flex: 0 0 55%;           /* largura fixa, não cresce nem encolhe */
+  min-height: 0;           /* permite que filhos flex encolham e ativem scroll */
+  overflow-y: auto;        /* scroll da lista de jogos */
+  overflow-x: hidden;
 }
 
 .st-panel-right {
