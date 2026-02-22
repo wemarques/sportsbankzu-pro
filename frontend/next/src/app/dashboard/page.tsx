@@ -297,6 +297,7 @@ export default function Dashboard() {
   const [batchAuditOpen, setBatchAuditOpen] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
+  const auditResultRef = useRef<HTMLDivElement>(null);
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -475,6 +476,10 @@ export default function Dashboard() {
           audit_type: "error",
         } as AuditResult);
       }
+      // Scroll automático para o resultado da auditoria
+      setTimeout(() => {
+        auditResultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
     } catch (err) {
       console.error("Audit error:", err);
       setAuditResult({
@@ -486,6 +491,10 @@ export default function Dashboard() {
         },
         audit_type: "error",
       } as AuditResult);
+      // Scroll automático para o resultado mesmo em caso de erro
+      setTimeout(() => {
+        auditResultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
     } finally {
       setAuditLoading(false);
     }
@@ -1304,6 +1313,7 @@ export default function Dashboard() {
               onApplyCorrection={handleApplyCorrection}
               auditResult={auditResult}
               auditLoading={auditLoading}
+              auditResultRef={auditResultRef}
               onBack={() => setSelectedMatchId(null)}
               showBackButton={isMobile}
             />

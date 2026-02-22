@@ -167,12 +167,13 @@ type Props = {
   onApplyCorrection?: (correction: AuditCorrection) => void;
   auditResult?: AuditResult | null;
   auditLoading?: boolean;
+  auditResultRef?: React.RefObject<HTMLDivElement | null>;
   version?: string;
   onBack?: () => void;
   showBackButton?: boolean;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, version = "pro V2.6", onBack, showBackButton = false }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V2.6", onBack, showBackButton = false }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -560,7 +561,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
 
               {/* AUDIT RESULTS */}
               {auditResult && (
-                <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
+                <div ref={auditResultRef}>
+                  <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
+                </div>
               )}
 
               {/* VENUE IMAGE */}

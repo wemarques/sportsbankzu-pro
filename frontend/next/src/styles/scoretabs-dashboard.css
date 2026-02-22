@@ -29,7 +29,8 @@
 .st-app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;           /* altura fixa para o layout não crescer além da tela */
+  overflow: hidden;        /* impede scroll global da página */
   background: var(--st-bg);
   color: var(--st-text);
 }
@@ -37,6 +38,7 @@
 .st-main {
   display: flex;
   flex: 1;
+  min-height: 0;           /* permite que filhos flex encolham abaixo do conteúdo */
   overflow: hidden;
 }
 
@@ -47,12 +49,13 @@
   border-right: 1px solid var(--st-border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden;        /* scroll interno gerenciado por .st-match-list */
 }
 
 .st-panel-right {
   flex: 1;
-  overflow-y: auto;
+  min-width: 0;
+  overflow-y: auto;        /* scroll independente do painel de análise */
   background: var(--st-bg-secondary);
   padding: 0 0 16px;
 }
