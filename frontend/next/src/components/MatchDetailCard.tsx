@@ -356,7 +356,21 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
         </div>
       </div>
 
-      {/* ODDS SECTION */}
+      {/* TABS — logo após os times para ficarem sempre visíveis */}
+      <div className="match-detail-card__tabs">
+        <button className={`mdc-tab-btn ${activeTab === "pre-game" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("pre-game")}>
+          Pre-Jogo
+        </button>
+        <button className={`mdc-tab-btn ${activeTab === "odds" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("odds")}>
+          Cotacoes
+        </button>
+        <button className="mdc-tab-btn">
+          <span className="mdc-badge-pro">{version}</span>
+        </button>
+      </div>
+
+      {/* ODDS SECTION — só quando aba Cotacoes ativa */}
+      {activeTab === "odds" && (
       <div className="match-detail-card__odds-section">
         <div className="mdc-odds-title">RESULTADO DA PARTIDA</div>
         <div className="mdc-odds-main-grid">
@@ -421,19 +435,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
           </>
         )}
       </div>
-
-      {/* TABS */}
-      <div className="match-detail-card__tabs">
-        <button className={`mdc-tab-btn ${activeTab === "pre-game" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("pre-game")}>
-          Pre-Jogo
-        </button>
-        <button className={`mdc-tab-btn ${activeTab === "odds" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("odds")}>
-          Cotacoes
-        </button>
-        <button className="mdc-tab-btn">
-          <span className="mdc-badge-pro">{version}</span>
-        </button>
-      </div>
+      )}
 
       {/* SUB-TABS */}
       {activeTab === "pre-game" && (
