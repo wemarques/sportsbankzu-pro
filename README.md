@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-21
+**Última revisão:** 2026-02-22
 
 ---
 
@@ -330,7 +330,7 @@ O dashboard Next.js requer a variável `PY_BACKEND_URL` para conectar ao backend
 
 ```bash
 # Copiar o arquivo de exemplo
-cp frontend/next/.env.example frontend/next/.env.local
+tcp frontend/next/.env.example frontend/next/.env.local
 
 # Editar com a URL do backend local
 # PY_BACKEND_URL=http://localhost:5001
@@ -531,6 +531,22 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **Quadro-Resumo Profissional:** `PROMPT_IMPLEMENTACAO_QUADRO_RESUMO_FINAL.md`
 - **API do Backend:** Acesse `http://localhost:5001/docs` para documentação interativa (Swagger)
 - **Claude Code:** `CLAUDE.md` na raiz do projeto com instruções, comandos e referências Context7
+
+---
+
+## 🔄 Histórico de Alterações (Changelog)
+
+### 22 de Fevereiro de 2026
+
+- **fix(layout):** Corrige scroll independente dos painéis esquerdo e direito. O painel direito agora permanece fixo na tela com scroll interno, enquanto o painel esquerdo rola a lista de jogos de forma independente.
+- **fix(auditoria):** Adiciona scroll automático para o resultado da auditoria individual ao clicar em "Auditar", garantindo que o resultado seja sempre visível para o usuário.
+- **fix(auditoria):** Garante que o modal de auditoria em lote seja sempre visível, mesmo quando o backend está indisponível.
+
+### 21 de Fevereiro de 2026
+
+- **feat(dashboard):** Adiciona prognósticos de cartões e escanteios nas abas correspondentes.
+- **fix(dashboard):** Corrige a exibição de prognósticos abaixo dos jogos, que não apareciam devido a um problema de layout flex.
+- **fix(dashboard):s** Corrige a exibição de odds para cartões e escanteios, que mostravam "-" em vez dos valores corretos.
 
 ---
 
