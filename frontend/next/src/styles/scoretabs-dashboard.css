@@ -58,7 +58,8 @@
 .st-panel-right {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;        /* scroll independente do painel de análise */
+  min-height: 0;           /* essencial: ativa overflow-y no contexto flex */
+  overflow-y: auto;        /* scroll interno do painel de análise */
   background: var(--st-bg-secondary);
   padding: 0 0 16px;
 }
