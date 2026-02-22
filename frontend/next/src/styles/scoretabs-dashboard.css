@@ -29,8 +29,8 @@
 .st-app {
   display: flex;
   flex-direction: column;
-  height: 100vh;           /* altura fixa para o layout não crescer além da tela */
-  overflow: hidden;        /* impede scroll global da página */
+  height: 100vh;
+  overflow: hidden;
   background: var(--st-bg);
   color: var(--st-text);
 }
@@ -38,7 +38,7 @@
 .st-main {
   display: flex;
   flex: 1;
-  min-height: 0;           /* permite que filhos flex encolham abaixo do conteúdo */
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -58,8 +58,8 @@
 .st-panel-right {
   flex: 1;
   min-width: 0;
-  min-height: 0;           /* essencial: ativa overflow-y no contexto flex */
-  overflow-y: auto;        /* scroll interno do painel de análise */
+  min-height: 0;
+  overflow-y: auto;
   background: var(--st-bg-secondary);
   padding: 0 0 16px;
 }
