@@ -20,16 +20,31 @@ DEFAULT_PG_CONFIG = {
 APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V2.7")
 
 audit_logger = logging.getLogger("sportsbank.audit")
-_audit_handler = logging.FileHandler("decisions.log")
-_audit_handler.setLevel(logging.INFO)
-_audit_handler.setFormatter(
-    logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-)
-audit_logger.addHandler(_audit_handler)
 audit_logger.setLevel(logging.INFO)
+
+# On Lambda the filesystem is read-only except /tmp
+_log_path = "/tmp/decisions.log" if os.getenv("AWS_LAMBDA_FUNCTION_NAME") else "decisions.log"
+try:
+    _audit_handler = logging.FileHandler(_log_path)
+    _audit_handler.setLevel(logging.INFO)
+    _audit_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    audit_logger.addHandler(_audit_handler)
+except OSError:
+    # Fallback: if file handler fails, use stream handler (stdout)
+    _stream_handler = logging.StreamHandler()
+    _stream_handler.setLevel(logging.INFO)
+    _stream_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    audit_logger.addHandler(_stream_handler)
 
 
 def _db_path() -> str:
@@ -54,23 +69,61 @@ def _pg_connect():
     return psycopg2.connect(**DEFAULT_PG_CONFIG)
 
 
-def _ensure_columns(cursor: sqlite3.Cursor, table: str, columns: dict) -> None:
-    cursor.execute(f"PRAGMA table_info({table})")
-    existing = {row[1] for row in cursor.fetchall()}
-    for name, ddl in columns.items():
-        if name not in existing:
-            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+def _ensure_columns(cursor, table: str, columns: dict, is_pg: bool = False) -> None:
+    if is_pg:
+        # PostgreSQL: query information_schema for column names
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table,),
+        )
+        existing = {row[0] for row in cursor.fetchall()}
+        for name, ddl in columns.items():
+            if name not in existing:
+                # Quote column name to handle reserved words like "user"
+                col_name = f'"{name}"' if name in ("user",) else name
+                col_type = ddl.split(" ", 1)[1] if " " in ddl else ddl
+                try:
+                    cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col_name} {col_type}')
+                except Exception:
+                    pass  # Column may already exist
+    else:
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for name, ddl in columns.items():
+            if name not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
 def init_db():
-    if _use_postgres():
+    is_pg = _use_postgres()
+    if is_pg:
         conn = _pg_connect()
     else:
         conn = sqlite3.connect(_db_path())
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
+    if is_pg:
+        cursor.execute(
+            """
+CREATE TABLE IF NOT EXISTS audit_results (
+    match_id TEXT PRIMARY KEY,
+    league TEXT,
+    market TEXT,
+    predicted_probs TEXT,
+    actual_result TEXT,
+    pick_type TEXT,
+    brier_score REAL,
+    ev REAL,
+    context TEXT,
+    "timestamp" TIMESTAMP,
+    "user" TEXT DEFAULT 'system',
+    version TEXT
+)
+"""
+        )
+    else:
+        cursor.execute(
+            """
 CREATE TABLE IF NOT EXISTS audit_results (
     match_id TEXT PRIMARY KEY,
     league TEXT,
@@ -84,7 +137,7 @@ CREATE TABLE IF NOT EXISTS audit_results (
     timestamp DATETIME
 )
 """
-    )
+        )
 
     _ensure_columns(
         cursor,
@@ -101,6 +154,7 @@ CREATE TABLE IF NOT EXISTS audit_results (
             "user": "user TEXT DEFAULT 'system'",
             "version": "version TEXT",
         },
+        is_pg=is_pg,
     )
 
     cursor.execute(
@@ -114,8 +168,30 @@ CREATE TABLE IF NOT EXISTS thresholds (
 """
     )
 
-    cursor.execute(
-        """
+    if is_pg:
+        cursor.execute(
+            """
+CREATE TABLE IF NOT EXISTS corrections (
+    id SERIAL PRIMARY KEY,
+    match_id TEXT,
+    league TEXT,
+    correction_type TEXT,
+    parameter_name TEXT,
+    old_value REAL,
+    new_value REAL,
+    suggested_by TEXT DEFAULT 'mistral_audit',
+    applied_by TEXT DEFAULT 'user',
+    audit_confidence INTEGER,
+    reason TEXT,
+    status TEXT DEFAULT 'applied',
+    created_at TIMESTAMP,
+    reverted_at TIMESTAMP
+)
+"""
+        )
+    else:
+        cursor.execute(
+            """
 CREATE TABLE IF NOT EXISTS corrections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id TEXT,
@@ -133,7 +209,7 @@ CREATE TABLE IF NOT EXISTS corrections (
     reverted_at DATETIME
 )
 """
-    )
+        )
 
     conn.commit()
     return conn
@@ -381,6 +457,8 @@ def adjust_thresholds(defaults: dict) -> None:
     conn = init_db()
     ensure_thresholds(conn, defaults)
     cursor = conn.cursor()
+    is_pg = _use_postgres()
+    ph = "%s" if is_pg else "?"
     cursor.execute(
         """
         SELECT market, AVG(brier_score) as avg_brier
@@ -397,11 +475,11 @@ def adjust_thresholds(defaults: dict) -> None:
         if avg_brier > 0.25:
             current = get_current_threshold(conn, market, "SAFE") or defaults[market]["SAFE"]
             cursor.execute(
-                """
+                f"""
             UPDATE thresholds
             SET safe_threshold = safe_threshold + 0.05,
-                last_updated = ?
-            WHERE market = ?
+                last_updated = {ph}
+            WHERE market = {ph}
             """,
                 (datetime.now(), market),
             )
@@ -413,11 +491,11 @@ def adjust_thresholds(defaults: dict) -> None:
         elif avg_brier < 0.18:
             current = get_current_threshold(conn, market, "SAFE") or defaults[market]["SAFE"]
             cursor.execute(
-                """
+                f"""
             UPDATE thresholds
             SET safe_threshold = safe_threshold - 0.02,
-                last_updated = ?
-            WHERE market = ?
+                last_updated = {ph}
+            WHERE market = {ph}
             """,
                 (datetime.now(), market),
             )
