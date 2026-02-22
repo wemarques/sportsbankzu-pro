@@ -58,10 +58,26 @@
 .st-panel-right {
   flex: 1;
   min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
+  min-height: 0;           /* essencial: ativa overflow-y no contexto flex */
+  overflow-y: scroll;      /* scroll sempre visível no painel de análise */
+  overflow-x: hidden;
   background: var(--st-bg-secondary);
   padding: 0 0 16px;
+}
+
+/* Scrollbar visível e estilizada para o painel direito */
+.st-panel-right::-webkit-scrollbar {
+  width: 8px;
+}
+.st-panel-right::-webkit-scrollbar-track {
+  background: var(--st-bg-secondary);
+}
+.st-panel-right::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+.st-panel-right::-webkit-scrollbar-thumb:hover {
+  background: #777;
 }
 
 .st-panel-right--empty {
@@ -627,16 +643,19 @@
     width: 100%;
     max-width: none;
     min-width: 0;
-    height: 100%;
+    height: auto;
     max-height: none;
     border-right: none;
     border-bottom: none;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .st-panel-right {
     width: 100%;
-    height: 100%;
+    height: auto;
     min-height: 0;
+    overflow-y: auto;
   }
 
   .detail-card-section {

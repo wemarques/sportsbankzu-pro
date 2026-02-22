@@ -476,10 +476,15 @@ export default function Dashboard() {
           audit_type: "error",
         } as AuditResult);
       }
-      // Scroll automático para o resultado da auditoria
+      // Scroll automático para o resultado da auditoria dentro do painel direito
       setTimeout(() => {
-        auditResultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
+        if (auditResultRef.current && rightPanelRef.current) {
+          rightPanelRef.current.scrollTo({
+            top: auditResultRef.current.offsetTop - rightPanelRef.current.offsetTop,
+            behavior: "smooth",
+          });
+        }
+      }, 150);
     } catch (err) {
       console.error("Audit error:", err);
       setAuditResult({
@@ -493,8 +498,13 @@ export default function Dashboard() {
       } as AuditResult);
       // Scroll automático para o resultado mesmo em caso de erro
       setTimeout(() => {
-        auditResultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
+        if (auditResultRef.current && rightPanelRef.current) {
+          rightPanelRef.current.scrollTo({
+            top: auditResultRef.current.offsetTop - rightPanelRef.current.offsetTop,
+            behavior: "smooth",
+          });
+        }
+      }, 150);
     } finally {
       setAuditLoading(false);
     }

@@ -26,9 +26,9 @@
   background-color: var(--mdc-bg-card);
   border: 1px solid var(--mdc-border);
   border-radius: var(--mdc-radius-lg);
-  overflow: hidden;
+  overflow: visible;
   width: 100%;
-  /* No max-height or overflow-y here — .st-panel-right handles scroll */
+  /* overflow: visible allows content to flow into .st-panel-right which handles scroll */
 }
 
 .match-detail-card__header {
@@ -647,8 +647,6 @@
 /* Seção direita: card de detalhe com análise Mistral */
 .detail-card-section {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .matches-sidebar {
