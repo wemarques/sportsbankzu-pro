@@ -656,7 +656,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                           <ComparativeBar label="xG (Gols Esperados)" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "0.75rem", color: "#ccc" }}>
                             <span>Media de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
-                            <span>Over 2.5: {match.matchStats.over25Prob ? `${match.matchStats.over25Prob.toFixed(0)}%` : "-"}</span>
+                            <span>Over 2.5: {formatProbValue(match.matchStats.over25Prob)}</span>
                           </div>
                         </div>
                       )}
@@ -664,7 +664,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                         <div className="mdc-comparative-data">
                           <div style={{ textAlign: "center", padding: "8px 0" }}>
                             <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: (match.matchStats.bttsProb ?? 0) >= 55 ? "#00ff88" : (match.matchStats.bttsProb ?? 0) >= 40 ? "#ffbb33" : "#ff4444" }}>
-                              {match.matchStats.bttsProb?.toFixed(0) ?? "0"}%
+                              {formatProbValue(match.matchStats.bttsProb)}
                             </span>
                             <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Probabilidade BTTS</div>
                           </div>
