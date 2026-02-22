@@ -135,6 +135,15 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
 }
 
+/** Normaliza probabilidade para exibição (0-1, 0-100 ou >100 -> X.X%) */
+function formatProbValue(value?: number | null): string {
+  if (value == null || value < 0) return "-";
+  let pct = value;
+  if (pct <= 1) pct *= 100;
+  else if (pct > 100) pct /= 100;
+  return `${pct.toFixed(1)}%`;
+}
+
 /** Corrige percentuais mal formatados na análise AI (ex: 4849.8% -> 48.5%, 2646.6% -> 26.5%) */
 function fixAiPercentages(text: string): string {
   if (!text || typeof text !== "string") return text;
@@ -711,9 +720,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                 <div className="mdc-stats-content">
                   <h4 className="mdc-section-title">Probabilidades</h4>
                   <div className="mdc-stats-grid">
-                    <StatRow label="Vitoria Casa" value={`${match.matchStats.homeWinProb?.toFixed(1) ?? "0"}%`} />
-                    <StatRow label="Empate" value={`${match.matchStats.drawProb?.toFixed(1) ?? "0"}%`} />
-                    <StatRow label="Vitoria Fora" value={`${match.matchStats.awayWinProb?.toFixed(1) ?? "0"}%`} />
+                    <StatRow label="Vitoria Casa" value={formatProbValue(match.matchStats.homeWinProb)} />
+                    <StatRow label="Empate" value={formatProbValue(match.matchStats.drawProb)} />
+                    <StatRow label="Vitoria Fora" value={formatProbValue(match.matchStats.awayWinProb)} />
                   </div>
 
                   <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Gols</h4>
@@ -725,11 +734,11 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
 
                   <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Over/Under</h4>
                   <div className="mdc-stats-grid">
-                    {match.matchStats.over15Prob != null && <StatRow label="Over 1.5" value={`${match.matchStats.over15Prob.toFixed(0)}%`} />}
-                    <StatRow label="Over 2.5" value={`${match.matchStats.over25Prob?.toFixed(0) ?? "0"}%`} />
-                    {match.matchStats.over35Prob != null && <StatRow label="Over 3.5" value={`${match.matchStats.over35Prob.toFixed(0)}%`} />}
-                    {match.matchStats.over45Prob != null && <StatRow label="Over 4.5" value={`${match.matchStats.over45Prob.toFixed(0)}%`} />}
-                    <StatRow label="BTTS" value={`${match.matchStats.bttsProb?.toFixed(0) ?? "0"}%`} />
+                    {match.matchStats.over15Prob != null && <StatRow label="Over 1.5" value={formatProbValue(match.matchStats.over15Prob)} />}
+                    <StatRow label="Over 2.5" value={formatProbValue(match.matchStats.over25Prob)} />
+                    {match.matchStats.over35Prob != null && <StatRow label="Over 3.5" value={formatProbValue(match.matchStats.over35Prob)} />}
+                    {match.matchStats.over45Prob != null && <StatRow label="Over 4.5" value={formatProbValue(match.matchStats.over45Prob)} />}
+                    <StatRow label="BTTS" value={formatProbValue(match.matchStats.bttsProb)} />
                   </div>
 
                   {(match.matchStats.homePossession || match.matchStats.homeXG) && (
@@ -780,6 +789,11 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
               {match.h2h && match.h2h.totalMatches && match.h2h.totalMatches > 0 ? (
                 <div className="mdc-h2h-content">
                   <h4 className="mdc-section-title">Confrontos Diretos</h4>
+                  {match.season && (
+                    <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: 8 }}>
+                      Temporada: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.season}</span>
+                    </div>
+                  )}
                   <div style={{ textAlign: "center", padding: "12px 0" }}>
                     <span style={{ fontSize: "2rem", fontWeight: "bold", color: "#00ff88" }}>{match.h2h.totalMatches}</span>
                     <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Total de Jogos</div>
