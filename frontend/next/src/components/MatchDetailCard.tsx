@@ -97,6 +97,30 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
 }
 
+/** Normaliza probabilidade para exibição (0-1, 0-100 ou >100 -> X.X%) */
+function formatProbValue(value?: number | null): string {
+  if (value == null || value < 0) return "-";
+  let pct = value;
+  if (pct <= 1) pct *= 100;
+  else if (pct > 100) pct /= 100;
+  return `${pct.toFixed(1)}%`;
+}
+
+/** Corrige percentuais mal formatados na análise AI (ex: 4849.8% -> 48.5%, 2646.6% -> 26.5%) */
+function fixAiPercentages(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  return text.replace(/(\d[\d.,]*)\s*%/g, (match) => {
+    const raw = match.replace(/\s/g, "").slice(0, -1);
+    const numStr = raw.includes(",") && raw.lastIndexOf(",") > (raw.lastIndexOf(".") || -1)
+      ? raw.replace(/\./g, "").replace(",", ".") // europeu: 2.646,6
+      : raw.replace(/,/g, "");
+    const n = parseFloat(numStr);
+    if (Number.isNaN(n)) return match;
+    if (n > 100) return `${(n / 100).toFixed(1)}%`;
+    return match;
+  });
+}
+
 type Props = {
   match: MatchDetailData;
   aiLoading?: boolean;
@@ -351,7 +375,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                         {/* Summary */}
                         <div className="mdc-ai-summary">
                           <h4 className="mdc-ai-section-title">Resumo</h4>
-                          <p className="mdc-ai-text">{match.aiAnalysis.summary}</p>
+                          <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary ?? "")}</p>
                         </div>
 
                         {/* Key Points */}
@@ -361,7 +385,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             {match.aiAnalysis.key_points.map((point, index) => (
                               <li key={index} className="mdc-ai-list-item">
                                 <span className="mdc-ai-bullet">{"\u2022"}</span>
-                                {point}
+                                {fixAiPercentages(typeof point === "string" ? point : String(point ?? ""))}
                               </li>
                             ))}
                           </ul>
@@ -373,7 +397,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                             <h4 className="mdc-ai-section-title">Recomendacao</h4>
                             <div className="mdc-ai-recommendation-box">
                               <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{match.aiAnalysis.recommendation}</p>
+                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation ?? "")}</p>
                             </div>
                           </div>
                         )}
@@ -477,7 +501,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                           <ComparativeBar label="xG (Gols Esperados)" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "0.75rem", color: "#ccc" }}>
                             <span>Media de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
-                            <span>Over 2.5: {match.matchStats.over25Prob ? `${match.matchStats.over25Prob.toFixed(0)}%` : "-"}</span>
+                            <span>Over 2.5: {formatProbValue(match.matchStats.over25Prob)}</span>
                           </div>
                         </div>
                       )}
@@ -485,7 +509,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                         <div className="mdc-comparative-data">
                           <div style={{ textAlign: "center", padding: "8px 0" }}>
                             <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: (match.matchStats.bttsProb ?? 0) >= 55 ? "#00ff88" : (match.matchStats.bttsProb ?? 0) >= 40 ? "#ffbb33" : "#ff4444" }}>
-                              {match.matchStats.bttsProb?.toFixed(0) ?? "0"}%
+                              {formatProbValue(match.matchStats.bttsProb)}
                             </span>
                             <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Probabilidade BTTS</div>
                           </div>
@@ -541,9 +565,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                 <div className="mdc-stats-content">
                   <h4 className="mdc-section-title">Probabilidades</h4>
                   <div className="mdc-stats-grid">
-                    <StatRow label="Vitoria Casa" value={`${match.matchStats.homeWinProb?.toFixed(1) ?? "0"}%`} />
-                    <StatRow label="Empate" value={`${match.matchStats.drawProb?.toFixed(1) ?? "0"}%`} />
-                    <StatRow label="Vitoria Fora" value={`${match.matchStats.awayWinProb?.toFixed(1) ?? "0"}%`} />
+                    <StatRow label="Vitoria Casa" value={formatProbValue(match.matchStats.homeWinProb)} />
+                    <StatRow label="Empate" value={formatProbValue(match.matchStats.drawProb)} />
+                    <StatRow label="Vitoria Fora" value={formatProbValue(match.matchStats.awayWinProb)} />
                   </div>
 
                   <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Gols</h4>
@@ -555,11 +579,11 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
 
                   <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Over/Under</h4>
                   <div className="mdc-stats-grid">
-                    {match.matchStats.over15Prob != null && <StatRow label="Over 1.5" value={`${match.matchStats.over15Prob.toFixed(0)}%`} />}
-                    <StatRow label="Over 2.5" value={`${match.matchStats.over25Prob?.toFixed(0) ?? "0"}%`} />
-                    {match.matchStats.over35Prob != null && <StatRow label="Over 3.5" value={`${match.matchStats.over35Prob.toFixed(0)}%`} />}
-                    {match.matchStats.over45Prob != null && <StatRow label="Over 4.5" value={`${match.matchStats.over45Prob.toFixed(0)}%`} />}
-                    <StatRow label="BTTS" value={`${match.matchStats.bttsProb?.toFixed(0) ?? "0"}%`} />
+                    {match.matchStats.over15Prob != null && <StatRow label="Over 1.5" value={formatProbValue(match.matchStats.over15Prob)} />}
+                    <StatRow label="Over 2.5" value={formatProbValue(match.matchStats.over25Prob)} />
+                    {match.matchStats.over35Prob != null && <StatRow label="Over 3.5" value={formatProbValue(match.matchStats.over35Prob)} />}
+                    {match.matchStats.over45Prob != null && <StatRow label="Over 4.5" value={formatProbValue(match.matchStats.over45Prob)} />}
+                    <StatRow label="BTTS" value={formatProbValue(match.matchStats.bttsProb)} />
                   </div>
 
                   {(match.matchStats.homePossession || match.matchStats.homeXG) && (
@@ -609,7 +633,7 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
             <div className="match-detail-card__content">
               {match.h2h && match.h2h.totalMatches && match.h2h.totalMatches > 0 ? (
                 <div className="mdc-h2h-content">
-                  <h4 className="mdc-section-title">Confrontos Diretos</h4>
+                  <h4 className="mdc-section-title">Confrontos Diretos{match.season ? ` \u2022 Temporada: ${match.season}` : ""}</h4>
                   <div style={{ textAlign: "center", padding: "12px 0" }}>
                     <span style={{ fontSize: "2rem", fontWeight: "bold", color: "#00ff88" }}>{match.h2h.totalMatches}</span>
                     <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Total de Jogos</div>
