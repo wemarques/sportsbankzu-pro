@@ -163,3 +163,54 @@ class MistralAuditor:
                 "biases_detected": [],
                 "audit_confidence": 0,
             }
+
+    def evaluate_model_from_batch(self, batch_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Evaluate system models + AI with aggregated round data.
+        Makes ONE Mistral call with all batch statistics.
+
+        Args:
+            batch_summary: Aggregated stats (accuracy by market, lambda errors, brier scores)
+        Returns:
+            Model evaluation with recommended corrections.
+        """
+        prompt = PromptTemplates.batch_audit_model_evaluation_prompt(batch_summary)
+
+        try:
+            response_text = self.client.simple_prompt(prompt)
+
+            def _strip_fences(s: str) -> str:
+                s = s.strip()
+                if "```" in s:
+                    import re
+                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL)
+                    if match:
+                        return match.group(1).strip()
+                    s2 = s.strip("`")
+                    if s2.lower().startswith("json"):
+                        s2 = s2[4:]
+                    return s2.strip()
+                return s
+
+            clean_text = _strip_fences(response_text)
+            evaluation = json.loads(clean_text)
+
+            evaluation["timestamp"] = datetime.now().isoformat()
+            evaluation["audit_type"] = "batch_model_evaluation"
+            evaluation["total_matches_evaluated"] = batch_summary.get("total_audited", 0)
+
+            return evaluation
+        except Exception as e:
+            logger.error(f"Erro na avaliacao de modelos em lote: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "audit_type": "batch_model_evaluation",
+                "overall_assessment": "UNKNOWN",
+                "lambda_evaluation": {"status": "UNKNOWN", "notes": "Erro na avaliacao"},
+                "threshold_evaluation": {"safe_status": "UNKNOWN", "neutro_status": "UNKNOWN", "notes": "Erro"},
+                "market_biases": [],
+                "ai_self_evaluation": {"alignment_with_results": "UNKNOWN", "factors_to_emphasize": [], "factors_to_reduce": [], "notes": "Erro"},
+                "recommended_corrections": [],
+                "audit_confidence": 0,
+            }

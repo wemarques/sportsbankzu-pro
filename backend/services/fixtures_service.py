@@ -49,6 +49,15 @@ def build_records_from_matches(
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
+        # Extract score for finished matches
+        _home_goals_raw = r.get("home_goals", r.get("home_team_goal_count", None))
+        _away_goals_raw = r.get("away_goals", r.get("away_team_goal_count", None))
+        match_score = None
+        if status == "finished" and _home_goals_raw is not None and _away_goals_raw is not None:
+            try:
+                match_score = {"home": int(_home_goals_raw), "away": int(_away_goals_raw)}
+            except (ValueError, TypeError):
+                match_score = None
         odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
         odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
         odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
@@ -342,6 +351,7 @@ def build_records_from_matches(
             "datetime": dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt.tzinfo else dt.isoformat() + "Z",
             "stadium": stadium,
             "status": status,
+            "score": match_score,
             "odds": {
                 "home": float(odds_home) if odds_home else None,
                 "draw": float(odds_draw) if odds_draw else None,

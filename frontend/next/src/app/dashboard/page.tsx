@@ -9,7 +9,9 @@ import MatchDetailCard, {
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
-import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection } from "@/lib/api";
+import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, postBatchAudit, applyBatchCorrections } from "@/lib/api";
+import type { BatchAuditResult, BatchAuditCorrection } from "@/lib/api";
+import BatchAuditPanel from "@/components/BatchAuditPanel";
 import {
   Star,
   ChevronLeft,
@@ -38,6 +40,7 @@ import {
   Share2,
   Copy,
   MessageCircle,
+  ShieldCheck,
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
@@ -289,6 +292,9 @@ export default function Dashboard() {
   const [shareLoading, setShareLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [batchAuditResult, setBatchAuditResult] = useState<BatchAuditResult | null>(null);
+  const [batchAuditLoading, setBatchAuditLoading] = useState(false);
+  const [batchAuditOpen, setBatchAuditOpen] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
 
   // Hook para detectar se estamos em mobile/tablet
@@ -475,6 +481,41 @@ export default function Dashboard() {
       alert("Erro ao aplicar correcao.");
     }
   }, [selectedMatch]);
+
+  // Batch audit handlers
+  const finishedCount = useMemo(() => {
+    return allMatches.filter((m) => m.status === "finished").length;
+  }, [allMatches]);
+
+  const handleBatchAudit = useCallback(async () => {
+    if (batchAuditLoading) return;
+    setBatchAuditLoading(true);
+    try {
+      const result = await postBatchAudit(dateMode);
+      if (result) {
+        setBatchAuditResult(result);
+        setBatchAuditOpen(true);
+      }
+    } catch (err) {
+      console.error("Batch audit error:", err);
+    } finally {
+      setBatchAuditLoading(false);
+    }
+  }, [dateMode, batchAuditLoading]);
+
+  const handleBatchApplyCorrections = useCallback(async (corrections: BatchAuditCorrection[]) => {
+    try {
+      const result = await applyBatchCorrections(corrections);
+      if (result?.status === "success" || result?.status === "partial") {
+        alert(`${result.applied} correcoes aplicadas com sucesso.`);
+      } else {
+        alert("Falha ao aplicar correcoes.");
+      }
+    } catch (err) {
+      console.error("Batch apply corrections error:", err);
+      alert("Erro ao aplicar correcoes em lote.");
+    }
+  }, []);
 
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
     const byLeague = new Map<string, Match[]>();
@@ -898,6 +939,16 @@ export default function Dashboard() {
               {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
               WhatsApp
             </button>
+            <button
+              type="button"
+              className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
+              onClick={handleBatchAudit}
+              disabled={batchAuditLoading || finishedCount === 0}
+              title={finishedCount === 0 ? "Nenhum jogo finalizado para auditar" : `Auditar ${finishedCount} jogos finalizados`}
+            >
+              {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
+              {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
+            </button>
             <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
             <button
               type="button"
@@ -1189,6 +1240,15 @@ export default function Dashboard() {
         </section>
         )}
       </div>
+
+      {/* Batch Audit Panel (modal overlay) */}
+      {batchAuditOpen && batchAuditResult && (
+        <BatchAuditPanel
+          result={batchAuditResult}
+          onClose={() => setBatchAuditOpen(false)}
+          onApplyCorrections={handleBatchApplyCorrections}
+        />
+      )}
     </div>
   );
 }

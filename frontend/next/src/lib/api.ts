@@ -126,3 +126,126 @@ export async function applyAuditCorrection(
     return null;
   }
 }
+
+// ===== BATCH AUDIT API =====
+
+export interface BatchAuditPickEval {
+  mercado: string;
+  status_pick: string;
+  resultado: "ACERTOU" | "ERROU";
+}
+
+export interface BatchAuditMatchResult {
+  match_id: string;
+  home_team: string;
+  away_team: string;
+  league: string;
+  score: string;
+  picks: BatchAuditPickEval[];
+  picks_correct: number;
+  picks_total: number;
+}
+
+export interface BatchAuditMarketAccuracy {
+  market: string;
+  correct: number;
+  total: number;
+  accuracy_pct: number;
+}
+
+export interface BatchAuditMarketBias {
+  market: string;
+  bias_type: string;
+  description: string;
+  severity: "LOW" | "MEDIUM" | "HIGH";
+}
+
+export interface BatchAuditModelEvaluation {
+  overall_assessment: "SATISFATORIO" | "NECESSITA_AJUSTE" | "CRITICO" | "UNKNOWN";
+  overall_notes?: string;
+  lambda_evaluation: {
+    status: string;
+    direction?: string;
+    avg_error?: number;
+    notes: string;
+  };
+  threshold_evaluation: {
+    safe_status: string;
+    neutro_status: string;
+    notes: string;
+  };
+  market_biases?: BatchAuditMarketBias[];
+  ai_self_evaluation?: {
+    alignment_with_results: string;
+    factors_to_emphasize: string[];
+    factors_to_reduce: string[];
+    notes: string;
+  };
+  recommended_corrections?: BatchAuditCorrection[];
+  audit_confidence: number;
+  timestamp?: string;
+}
+
+export interface BatchAuditCorrection {
+  type: string;
+  parameter: string;
+  current_value: number;
+  suggested_value: number;
+  reason: string;
+  confidence: number;
+  impact: "LOW" | "MEDIUM" | "HIGH";
+}
+
+export interface BatchAuditResult {
+  status: string;
+  total_matches: number;
+  finished_matches: number;
+  audited_matches: number;
+  overall_accuracy: number;
+  safe_accuracy: number;
+  neutro_accuracy: number;
+  safe_correct: number;
+  safe_total: number;
+  neutro_correct: number;
+  neutro_total: number;
+  avg_brier_score: number;
+  avg_lambda_error: number;
+  market_accuracy: BatchAuditMarketAccuracy[];
+  match_results: BatchAuditMatchResult[];
+  model_evaluation: BatchAuditModelEvaluation | null;
+  message?: string;
+}
+
+export async function postBatchAudit(date?: string): Promise<BatchAuditResult | null> {
+  try {
+    const body: Record<string, string> = {};
+    if (date) body.date = date;
+    const res = await fetch("/api/ai/batch-audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function applyBatchCorrections(
+  corrections: BatchAuditCorrection[],
+): Promise<{ status: string; applied: number; errors: number } | null> {
+  try {
+    const res = await fetch("/api/ai/batch-audit/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ corrections }),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

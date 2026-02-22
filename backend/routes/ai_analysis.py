@@ -5,6 +5,7 @@ Router para endpoints de analise AI com MISTRAL
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime
 import logging
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
@@ -422,3 +423,384 @@ def _get_matches_by_league_and_date(league: str, date: str, limit: int) -> list:
         logger.warning(f"Could not fetch fixtures for batch: {e}")
 
     return [_get_match_data("fallback-0")][:limit]
+
+
+# ===== BATCH AUDIT =====
+
+class BatchAuditRequest(BaseModel):
+    date: str = "today"  # today / tomorrow / week / YYYY-MM-DD
+
+
+class BatchCorrectionRequest(BaseModel):
+    corrections: List[dict]  # List of corrections to apply
+
+
+def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
+    """Deterministic evaluation of a single pick against actual result.
+    Returns True if the pick was correct, False otherwise."""
+    mercado = str(pick.get("mercado", "")).strip().upper()
+    total_goals = actual_result.get("total_goals", 0)
+    btts = actual_result.get("btts", False)
+    result_1x2 = actual_result.get("result_1x2", "")
+    home_goals = actual_result.get("home_goals", 0)
+    away_goals = actual_result.get("away_goals", 0)
+
+    # Over/Under markets
+    if "UNDER" in mercado or "MENOS" in mercado:
+        for threshold in (0.5, 1.5, 2.5, 3.5, 4.5):
+            if str(threshold) in mercado:
+                return total_goals < threshold
+    if "OVER" in mercado or "MAIS" in mercado or "ACIMA" in mercado:
+        for threshold in (0.5, 1.5, 2.5, 3.5, 4.5):
+            if str(threshold) in mercado:
+                return total_goals > threshold
+
+    # BTTS
+    if "BTTS" in mercado or "AMBAS" in mercado:
+        if "SIM" in mercado or "YES" in mercado:
+            return btts
+        if "NAO" in mercado or "NO" in mercado or "NÃO" in mercado:
+            return not btts
+
+    # 1X2
+    if mercado in ("1", "VITORIA CASA", "HOME WIN", "CASA"):
+        return result_1x2 == "1"
+    if mercado in ("X", "EMPATE", "DRAW"):
+        return result_1x2 == "X"
+    if mercado in ("2", "VITORIA FORA", "AWAY WIN", "FORA"):
+        return result_1x2 == "2"
+
+    # Double Chance
+    if mercado in ("1X", "DC 1X", "CASA OU EMPATE"):
+        return result_1x2 in ("1", "X")
+    if mercado in ("12", "DC 12", "CASA OU FORA"):
+        return result_1x2 in ("1", "2")
+    if mercado in ("X2", "DC X2", "EMPATE OU FORA"):
+        return result_1x2 in ("X", "2")
+
+    # Unknown market — cannot evaluate
+    logger.warning(f"Cannot evaluate unknown market: {mercado}")
+    return False
+
+
+def _get_all_finished_matches(date_filter: str) -> list:
+    """Fetch all finished matches across all leagues for the given date range."""
+    from backend.routes.fixtures import fixtures as fixtures_endpoint
+    from backend.config.leagues_config import LEAGUE_ID_ALIASES
+
+    all_finished = []
+    tried_leagues = set()
+
+    for alias, resolved in LEAGUE_ID_ALIASES.items():
+        if resolved in tried_leagues:
+            continue
+        tried_leagues.add(resolved)
+        try:
+            result = fixtures_endpoint(leagues=alias, date=date_filter)
+            for m in result.get("matches", []):
+                status = str(m.get("status", "")).lower()
+                if status in ("finished", "complete", "ft"):
+                    all_finished.append(m)
+        except Exception as e:
+            logger.debug(f"Skipping league {alias} for batch audit: {e}")
+            continue
+
+    return all_finished
+
+
+@router.post("/batch-audit")
+async def batch_audit(
+    request: BatchAuditRequest = None,
+    date: str = Query("today", description="Date filter: today/tomorrow/week/YYYY-MM-DD"),
+):
+    """
+    Audit ALL finished matches for the given date range.
+    - Evaluates each pick deterministically (no AI call per match)
+    - ONE Mistral call at the end for aggregate model evaluation
+    """
+    from backend.ai.mistral_auditor import MistralAuditor
+    from backend import audit as audit_db
+
+    date_filter = request.date if request and request.date else date
+
+    try:
+        # 1. Get all finished matches
+        finished_matches = _get_all_finished_matches(date_filter)
+
+        if not finished_matches:
+            return {
+                "status": "success",
+                "total_matches": 0,
+                "finished_matches": 0,
+                "audited_matches": 0,
+                "message": "Nenhum jogo finalizado encontrado para o periodo.",
+                "match_results": [],
+                "model_evaluation": None,
+            }
+
+        # 2. Evaluate each match deterministically
+        match_results = []
+        overall_correct = 0
+        overall_total = 0
+        safe_correct = 0
+        safe_total = 0
+        neutro_correct = 0
+        neutro_total = 0
+        market_stats = {}  # {market: {correct: int, total: int}}
+        lambda_errors = []
+        brier_scores = []
+
+        for m in finished_matches:
+            home = m.get("homeTeam", "")
+            away = m.get("awayTeam", "")
+            league = m.get("leagueName", m.get("leagueId", ""))
+            score = m.get("score") or {}
+            stats = m.get("stats", {})
+            mercados = m.get("mercados", [])
+
+            # Extract actual result
+            home_goals = score.get("home", 0) if score else 0
+            away_goals = score.get("away", 0) if score else 0
+
+            # If score not from new field, try legacy fields
+            if not score:
+                home_goals = m.get("home_team_goal_count") or m.get("homeGoals") or 0
+                away_goals = m.get("away_team_goal_count") or m.get("awayGoals") or 0
+                try:
+                    home_goals = int(home_goals)
+                    away_goals = int(away_goals)
+                except (ValueError, TypeError):
+                    home_goals, away_goals = 0, 0
+
+            total_goals = home_goals + away_goals
+            btts = home_goals > 0 and away_goals > 0
+            if home_goals > away_goals:
+                result_1x2 = "1"
+            elif home_goals == away_goals:
+                result_1x2 = "X"
+            else:
+                result_1x2 = "2"
+
+            actual_result = {
+                "home_goals": home_goals,
+                "away_goals": away_goals,
+                "total_goals": total_goals,
+                "btts": btts,
+                "result_1x2": result_1x2,
+            }
+
+            # Evaluate picks
+            picks_eval = []
+            match_correct = 0
+            match_total = 0
+
+            for merc in mercados:
+                merc_name = merc.get("mercado", merc.get("market", ""))
+                merc_status = merc.get("status", merc.get("pick_type", "NEUTRO"))
+
+                pick_dict = {"mercado": merc_name}
+                is_correct = _evaluate_pick_deterministic(pick_dict, actual_result)
+
+                picks_eval.append({
+                    "mercado": merc_name,
+                    "status_pick": merc_status,
+                    "resultado": "ACERTOU" if is_correct else "ERROU",
+                })
+
+                match_total += 1
+                overall_total += 1
+                if is_correct:
+                    match_correct += 1
+                    overall_correct += 1
+
+                # Track by pick status
+                if merc_status == "SAFE":
+                    safe_total += 1
+                    if is_correct:
+                        safe_correct += 1
+                elif merc_status == "NEUTRO":
+                    neutro_total += 1
+                    if is_correct:
+                        neutro_correct += 1
+
+                # Track by market
+                market_key = merc_name.upper().strip()
+                if market_key not in market_stats:
+                    market_stats[market_key] = {"correct": 0, "total": 0}
+                market_stats[market_key]["total"] += 1
+                if is_correct:
+                    market_stats[market_key]["correct"] += 1
+
+            # Lambda error calculation
+            lambda_total = stats.get("lambdaTotal") or (
+                (stats.get("lambdaHome") or 0) + (stats.get("lambdaAway") or 0)
+            )
+            if lambda_total and lambda_total > 0:
+                lambda_errors.append(abs(lambda_total - total_goals))
+
+            # Brier score (simplified: use over25Prob)
+            over25_prob = stats.get("over25Prob")
+            if over25_prob is not None:
+                actual_over25 = 1 if total_goals > 2.5 else 0
+                brier = (over25_prob / 100.0 - actual_over25) ** 2
+                brier_scores.append(brier)
+
+            match_results.append({
+                "match_id": m.get("id", ""),
+                "home_team": home,
+                "away_team": away,
+                "league": league,
+                "score": f"{home_goals}x{away_goals}",
+                "picks": picks_eval,
+                "picks_correct": match_correct,
+                "picks_total": match_total,
+            })
+
+        # 3. Aggregate metrics
+        overall_accuracy_pct = (overall_correct / overall_total * 100.0) if overall_total > 0 else 0.0
+        safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else 0.0
+        neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else 0.0
+        avg_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.0
+        avg_lambda_error = sum(lambda_errors) / len(lambda_errors) if lambda_errors else 0.0
+
+        # Build market accuracy text for prompt
+        market_accuracy_list = []
+        market_accuracy_output = []
+        for mkt, data in sorted(market_stats.items()):
+            acc = (data["correct"] / data["total"] * 100.0) if data["total"] > 0 else 0.0
+            market_accuracy_list.append(f"- {mkt}: {data['correct']}/{data['total']} ({acc:.1f}%)")
+            market_accuracy_output.append({
+                "market": mkt,
+                "correct": data["correct"],
+                "total": data["total"],
+                "accuracy_pct": round(acc, 1),
+            })
+
+        # Build match summary text for prompt (abbreviated)
+        matches_summary_lines = []
+        for mr in match_results[:20]:  # Limit to 20 for prompt size
+            picks_str = ", ".join(
+                f"{p['mercado']}:{p['resultado']}" for p in mr["picks"]
+            )
+            matches_summary_lines.append(
+                f"- {mr['home_team']} {mr['score']} {mr['away_team']} ({mr['league']}) | {picks_str}"
+            )
+
+        # 4. ONE Mistral call for aggregate model evaluation
+        batch_summary = {
+            "total_audited": len(match_results),
+            "overall_correct": overall_correct,
+            "overall_total": overall_total,
+            "overall_accuracy_pct": overall_accuracy_pct,
+            "safe_correct": safe_correct,
+            "safe_total": safe_total,
+            "safe_accuracy_pct": safe_accuracy_pct,
+            "neutro_correct": neutro_correct,
+            "neutro_total": neutro_total,
+            "neutro_accuracy_pct": neutro_accuracy_pct,
+            "avg_brier_score": avg_brier,
+            "avg_lambda_error": avg_lambda_error,
+            "market_accuracy_text": "\n".join(market_accuracy_list) if market_accuracy_list else "Sem dados de mercado",
+            "matches_summary_text": "\n".join(matches_summary_lines) if matches_summary_lines else "Sem detalhes",
+        }
+
+        model_evaluation = None
+        try:
+            auditor = MistralAuditor()
+            model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
+        except Exception as e:
+            logger.error(f"Mistral batch evaluation failed: {e}")
+
+        # 5. Store aggregate audit result
+        try:
+            audit_db.log_audit_result(
+                match_id=f"batch:{date_filter}:{datetime.now().strftime('%Y%m%d%H%M')}",
+                league="ALL",
+                audit_data={
+                    "overall_accuracy": overall_accuracy_pct,
+                    "safe_accuracy": safe_accuracy_pct,
+                    "neutro_accuracy": neutro_accuracy_pct,
+                    "total_matches": len(match_results),
+                    "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
+                },
+                match_status="batch_audit",
+            )
+        except Exception as e:
+            logger.warning(f"Could not store batch audit result: {e}")
+
+        return {
+            "status": "success",
+            "total_matches": len(finished_matches),
+            "finished_matches": len(finished_matches),
+            "audited_matches": len(match_results),
+            "overall_accuracy": round(overall_accuracy_pct, 1),
+            "safe_accuracy": round(safe_accuracy_pct, 1),
+            "neutro_accuracy": round(neutro_accuracy_pct, 1),
+            "safe_correct": safe_correct,
+            "safe_total": safe_total,
+            "neutro_correct": neutro_correct,
+            "neutro_total": neutro_total,
+            "avg_brier_score": round(avg_brier, 4),
+            "avg_lambda_error": round(avg_lambda_error, 2),
+            "market_accuracy": market_accuracy_output,
+            "match_results": match_results,
+            "model_evaluation": model_evaluation,
+        }
+    except Exception as e:
+        logger.error(f"Batch audit error: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na auditoria em lote: {str(e)}")
+
+
+@router.post("/batch-audit/apply")
+async def apply_batch_corrections(request: BatchCorrectionRequest):
+    """Apply multiple corrections from a batch audit at once."""
+    from backend import audit as audit_db
+
+    applied = []
+    errors = []
+
+    for idx, corr in enumerate(request.corrections):
+        try:
+            corr_type = corr.get("type", corr.get("correction_type", ""))
+            param = corr.get("parameter", corr.get("parameter_name", ""))
+            old_val = float(corr.get("current_value", corr.get("old_value", 0)))
+            new_val = float(corr.get("suggested_value", corr.get("new_value", 0)))
+            reason = corr.get("reason", "")
+            confidence = int(corr.get("confidence", corr.get("audit_confidence", 0)))
+
+            audit_db.log_correction(
+                match_id=f"batch_correction_{datetime.now().strftime('%Y%m%d%H%M')}_{idx}",
+                league="ALL",
+                correction_type=corr_type,
+                parameter_name=param,
+                old_value=old_val,
+                new_value=new_val,
+                suggested_by="mistral_batch_audit",
+                applied_by="user",
+                audit_confidence=confidence,
+                reason=reason,
+            )
+
+            # Apply threshold corrections immediately
+            if corr_type in ("THRESHOLD", "threshold_adjustment"):
+                corr_model = CorrectionApplication(
+                    correction_type="threshold_adjustment",
+                    parameter_name=param,
+                    old_value=old_val,
+                    new_value=new_val,
+                    reason=reason,
+                    audit_confidence=confidence,
+                )
+                _apply_threshold_correction(corr_model)
+
+            applied.append({"parameter": param, "old_value": old_val, "new_value": new_val})
+        except Exception as e:
+            errors.append({"index": idx, "error": str(e)})
+
+    return {
+        "status": "success" if not errors else "partial",
+        "applied": len(applied),
+        "errors": len(errors),
+        "details": applied,
+        "error_details": errors if errors else None,
+    }
