@@ -461,17 +461,23 @@ export default function Dashboard() {
       const aiSummary = aiAnalysis
         ? { summary: aiAnalysis.summary, key_points: aiAnalysis.key_points, recommendation: aiAnalysis.recommendation, confidence: aiAnalysis.confidence }
         : undefined;
-      const result = await postMatchAudit(selectedMatch.id, predictions, aiSummary);
-      if (result) {
-        setAuditResult(result);
+      const result = await postMatchAudit(
+        selectedMatch.id,
+        predictions,
+        aiSummary,
+        selectedMatch.homeTeam?.name,
+        selectedMatch.awayTeam?.name,
+      );
+      if (result.ok) {
+        setAuditResult(result.audit);
       } else {
-        // Set a minimal error result so the UI shows feedback
+        const msg = (result as { message: string }).message;
         setAuditResult({
           audit_confidence: 0,
           validation: {
-            probabilities: { status: "UNKNOWN", notes: "Servico de auditoria indisponivel." },
-            lambdas: { status: "UNKNOWN", notes: "Nao foi possivel conectar ao backend." },
-            ev: { status: "UNKNOWN", notes: "Tente novamente em alguns instantes." },
+            probabilities: { status: "UNKNOWN", notes: msg },
+            lambdas: { status: "UNKNOWN", notes: msg },
+            ev: { status: "UNKNOWN", notes: msg },
           },
           audit_type: "error",
         } as AuditResult);

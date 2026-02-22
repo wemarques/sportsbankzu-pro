@@ -79,26 +79,36 @@ export interface AuditResult {
   match?: string;
 }
 
+export type AuditResponse =
+  | { ok: true; audit: AuditResult }
+  | { ok: false; message: string };
+
 export async function postMatchAudit(
   matchId: string,
   predictions?: Array<{ mercado: string; status: string; prob_min: number; prob_max: number; odd_minima: number }>,
   aiSummary?: { summary: string; key_points: string[]; recommendation: string; confidence: number },
-): Promise<AuditResult | null> {
+  homeTeam?: string,
+  awayTeam?: string,
+): Promise<AuditResponse> {
   try {
     const body: Record<string, unknown> = {};
     if (predictions) body.predictions = predictions;
     if (aiSummary) body.ai_summary = aiSummary;
-    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/audit`, {
+    const params = new URLSearchParams();
+    if (homeTeam) params.set("home_team", homeTeam);
+    if (awayTeam) params.set("away_team", awayTeam);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/audit${qs}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.audit ?? null;
-  } catch {
-    return null;
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.audit) return { ok: true, audit: data.audit };
+    return { ok: false, message: data.message || "Servico de auditoria indisponivel." };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : "Erro de conexao." };
   }
 }
 
