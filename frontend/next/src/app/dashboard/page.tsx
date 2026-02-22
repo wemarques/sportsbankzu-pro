@@ -5,9 +5,11 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
+  type AuditResult,
+  type AuditCorrection,
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
-import { getMatchesByLeague, getAiMatchAnalysis } from "@/lib/api";
+import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection } from "@/lib/api";
 import {
   Star,
   ChevronLeft,
@@ -285,6 +287,8 @@ export default function Dashboard() {
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
 
   // Hook para detectar se estamos em mobile/tablet
@@ -342,9 +346,11 @@ export default function Dashboard() {
     async function fetchAi() {
       if (!selectedMatch) {
         setAiAnalysis(null);
+        setAuditResult(null);
         return;
       }
       setAiLoading(true);
+      setAuditResult(null);
       const analysis = await getAiMatchAnalysis(selectedMatch.id, selectedMatch.homeTeam.name, selectedMatch.awayTeam.name);
       setAiAnalysis(analysis);
       setAiLoading(false);
@@ -424,6 +430,51 @@ export default function Dashboard() {
       setShareLoading(false);
     }
   }, []);
+
+  const handleAudit = useCallback(async () => {
+    if (!selectedMatch || auditLoading) return;
+    setAuditLoading(true);
+    try {
+      const predictions = selectedMatch.predictions?.map((p: any) => ({
+        mercado: p.mercado,
+        status: p.status,
+        prob_min: p.prob_min,
+        prob_max: p.prob_max,
+        odd_minima: p.odd_minima,
+      }));
+      const aiSummary = aiAnalysis
+        ? { summary: aiAnalysis.summary, key_points: aiAnalysis.key_points, recommendation: aiAnalysis.recommendation, confidence: aiAnalysis.confidence }
+        : undefined;
+      const result = await postMatchAudit(selectedMatch.id, predictions, aiSummary);
+      setAuditResult(result);
+    } catch (err) {
+      console.error("Audit error:", err);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [selectedMatch, aiAnalysis, auditLoading]);
+
+  const handleApplyCorrection = useCallback(async (correction: AuditCorrection) => {
+    if (!selectedMatch) return;
+    try {
+      const result = await applyAuditCorrection(selectedMatch.id, {
+        correction_type: correction.type,
+        parameter_name: correction.parameter,
+        old_value: correction.current_value,
+        new_value: correction.suggested_value,
+        reason: correction.reason,
+        audit_confidence: correction.confidence,
+      });
+      if (result?.status === "success") {
+        alert(`Correcao aplicada: ${correction.parameter}`);
+      } else {
+        alert("Falha ao aplicar correcao.");
+      }
+    } catch (err) {
+      console.error("Apply correction error:", err);
+      alert("Erro ao aplicar correcao.");
+    }
+  }, [selectedMatch]);
 
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
     const byLeague = new Map<string, Match[]>();
@@ -1122,9 +1173,13 @@ export default function Dashboard() {
         {(!isMobile || selectedMatchId) && (
         <section className="st-panel-right detail-card-section">
           {detailData ? (
-            <MatchDetailCard 
-              match={detailData} 
+            <MatchDetailCard
+              match={detailData}
               version={APP_VERSION}
+              onAudit={handleAudit}
+              onApplyCorrection={handleApplyCorrection}
+              auditResult={auditResult}
+              auditLoading={auditLoading}
               onBack={() => setSelectedMatchId(null)}
               showBackButton={isMobile}
             />

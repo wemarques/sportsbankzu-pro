@@ -38,3 +38,91 @@ export async function getAiMatchAnalysis(matchId: string, homeTeam?: string, awa
     return null;
   }
 }
+
+// ===== AUDIT API =====
+
+export interface AuditPickEvaluation {
+  mercado: string;
+  status_pick: string;
+  resultado: string;
+  nota: string;
+}
+
+export interface AuditValidation {
+  probabilities: { status: string; notes: string; brier_score?: number };
+  lambdas: { status: string; notes: string; predicted_total?: number; actual_total?: number };
+  ev: { status: string; notes: string };
+}
+
+export interface AuditCorrection {
+  type: string;
+  parameter: string;
+  current_value: number;
+  suggested_value: number;
+  reason: string;
+  confidence: number;
+  impact: string;
+}
+
+export interface AuditResult {
+  picks_evaluation?: AuditPickEvaluation[];
+  validation: AuditValidation;
+  ai_analysis_accuracy?: string;
+  accuracy_summary?: string;
+  independent_prediction?: { total_goals_estimate: number; reasoning: string };
+  corrections?: AuditCorrection[];
+  biases_detected?: string[];
+  suggestions?: string[];
+  audit_confidence: number;
+  audit_type?: string;
+  timestamp?: string;
+  match?: string;
+}
+
+export async function postMatchAudit(
+  matchId: string,
+  predictions?: Array<{ mercado: string; status: string; prob_min: number; prob_max: number; odd_minima: number }>,
+  aiSummary?: { summary: string; key_points: string[]; recommendation: string; confidence: number },
+): Promise<AuditResult | null> {
+  try {
+    const body: Record<string, unknown> = {};
+    if (predictions) body.predictions = predictions;
+    if (aiSummary) body.ai_summary = aiSummary;
+    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/audit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.audit ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function applyAuditCorrection(
+  matchId: string,
+  correction: {
+    correction_type: string;
+    parameter_name: string;
+    old_value: number;
+    new_value: number;
+    reason: string;
+    audit_confidence: number;
+  },
+): Promise<{ status: string; message: string } | null> {
+  try {
+    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/audit/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(correction),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

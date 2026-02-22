@@ -3,6 +3,8 @@
 Router para endpoints de analise AI com MISTRAL
 """
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from typing import Optional, List
 import logging
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
@@ -55,6 +57,182 @@ async def get_match_analysis(
 async def regenerate_match_analysis(match_id: str):
     """Forca regeneracao da analise AI para um jogo."""
     return await get_match_analysis(match_id, include_context=True)
+
+
+class AuditRequest(BaseModel):
+    predictions: Optional[List[dict]] = None  # System picks (SAFE/NEUTRO)
+    ai_summary: Optional[dict] = None  # Mistral AI analysis summary
+
+
+class CorrectionApplication(BaseModel):
+    correction_type: str  # 'lambda_multiplier', 'threshold_adjustment', 'weight_adjustment'
+    parameter_name: str
+    old_value: float
+    new_value: float
+    reason: str
+    audit_confidence: int = 0
+
+
+@router.post("/match/{match_id}/audit")
+async def audit_match(
+    match_id: str,
+    request: AuditRequest = None,
+    home_team: str = Query(None),
+    away_team: str = Query(None),
+):
+    """
+    Audit a match's predictions vs actual results.
+    - Scheduled matches: validates calculation consistency
+    - Finished matches: compares system picks + Mistral analysis vs real result
+    """
+    from backend.ai.mistral_auditor import MistralAuditor
+    from backend import audit as audit_db
+
+    try:
+        match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
+        auditor = MistralAuditor()
+
+        # Get full match record to check status and extract actual result
+        full_match = _get_full_match_record(match_id, home_team, away_team)
+        match_status = full_match.get("status", "scheduled") if full_match else "scheduled"
+        is_finished = match_status in ("finished", "complete", "ft")
+
+        if is_finished and full_match:
+            # Extract actual result from match data (FootyStats API fields)
+            home_goals = full_match.get("home_team_goal_count") or full_match.get("homeGoals") or 0
+            away_goals = full_match.get("away_team_goal_count") or full_match.get("awayGoals") or 0
+            try:
+                home_goals = int(home_goals)
+                away_goals = int(away_goals)
+            except (ValueError, TypeError):
+                home_goals, away_goals = 0, 0
+            total_goals = home_goals + away_goals
+            btts = home_goals > 0 and away_goals > 0
+            if home_goals > away_goals:
+                result_1x2 = "1"
+            elif home_goals == away_goals:
+                result_1x2 = "X"
+            else:
+                result_1x2 = "2"
+
+            actual_result = {
+                "home_goals": home_goals,
+                "away_goals": away_goals,
+                "total_goals": total_goals,
+                "btts": btts,
+                "result_1x2": result_1x2,
+                "score": f"{home_goals}x{away_goals}",
+            }
+
+            predictions = (request.predictions or []) if request else []
+            ai_analysis = (request.ai_summary or {}) if request else {}
+
+            audit_result = auditor.audit_match_vs_result(
+                match_data=match_data.get("stats", {}),
+                predictions=predictions,
+                ai_analysis=ai_analysis,
+                actual_result=actual_result,
+            )
+        else:
+            # Pre-match: validate calculation consistency
+            audit_result = auditor.audit_match_calculation(match_data)
+
+        # Store audit result
+        audit_db.log_audit_result(
+            match_id=match_id,
+            league=match_data.get("league", ""),
+            audit_data=audit_result,
+            match_status="finished" if is_finished else "scheduled",
+        )
+
+        return {"status": "success", "audit": audit_result, "match_status": match_status}
+    except Exception as e:
+        logger.error(f"Audit error for match {match_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na auditoria: {str(e)}")
+
+
+@router.post("/match/{match_id}/audit/apply")
+async def apply_audit_correction(match_id: str, correction: CorrectionApplication):
+    """Apply a correction suggested by the audit."""
+    from backend import audit as audit_db
+    from datetime import datetime
+
+    try:
+        match_data = _get_match_data(match_id)
+
+        audit_db.log_correction(
+            match_id=match_id,
+            league=match_data.get("league", ""),
+            correction_type=correction.correction_type,
+            parameter_name=correction.parameter_name,
+            old_value=correction.old_value,
+            new_value=correction.new_value,
+            suggested_by="mistral_audit",
+            applied_by="user",
+            audit_confidence=correction.audit_confidence,
+            reason=correction.reason,
+        )
+
+        # Apply threshold corrections immediately
+        if correction.correction_type == "threshold_adjustment":
+            _apply_threshold_correction(correction)
+
+        return {
+            "status": "success",
+            "message": f"Correcao aplicada: {correction.parameter_name}",
+            "old_value": correction.old_value,
+            "new_value": correction.new_value,
+        }
+    except Exception as e:
+        logger.error(f"Error applying correction for match {match_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao aplicar correcao: {str(e)}")
+
+
+def _apply_threshold_correction(correction: CorrectionApplication):
+    """Apply a threshold correction to the thresholds table."""
+    from backend import audit as audit_db
+    from datetime import datetime
+
+    parts = correction.parameter_name.split(".")
+    if len(parts) >= 2:
+        market = parts[0] if len(parts) == 2 else parts[1]
+        conn = audit_db.init_db()
+        cursor = conn.cursor()
+        if audit_db._use_postgres():
+            cursor.execute(
+                "UPDATE thresholds SET safe_threshold = %s, last_updated = %s WHERE market = %s",
+                (correction.new_value, datetime.now(), market),
+            )
+        else:
+            cursor.execute(
+                "UPDATE thresholds SET safe_threshold = ?, last_updated = ? WHERE market = ?",
+                (correction.new_value, datetime.now(), market),
+            )
+        conn.commit()
+        conn.close()
+
+
+def _get_full_match_record(match_id: str, home_team: str = None, away_team: str = None) -> dict | None:
+    """Get the full raw match record including status and goals, without AI transformation."""
+    try:
+        from backend.routes.fixtures import fixtures as fixtures_endpoint
+        league_id = _extract_league_id(match_id)
+        for date_filter in ("today", "week"):
+            if not league_id:
+                break
+            result = fixtures_endpoint(leagues=league_id, date=date_filter)
+            for m in result.get("matches", []):
+                if str(m.get("id")) == str(match_id):
+                    return m
+                if home_team and away_team:
+                    h = str(m.get("homeTeam", ""))
+                    a = str(m.get("awayTeam", ""))
+                    if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
+                       (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
+                        return m
+    except Exception as e:
+        logger.warning(f"Could not fetch full match record for {match_id}: {e}")
+    return None
 
 
 @router.get("/batch-analysis")

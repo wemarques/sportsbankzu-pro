@@ -105,8 +105,136 @@ CREATE TABLE IF NOT EXISTS thresholds (
 """
     )
 
+    cursor.execute(
+        """
+CREATE TABLE IF NOT EXISTS corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id TEXT,
+    league TEXT,
+    correction_type TEXT,
+    parameter_name TEXT,
+    old_value REAL,
+    new_value REAL,
+    suggested_by TEXT DEFAULT 'mistral_audit',
+    applied_by TEXT DEFAULT 'user',
+    audit_confidence INTEGER,
+    reason TEXT,
+    status TEXT DEFAULT 'applied',
+    created_at DATETIME,
+    reverted_at DATETIME
+)
+"""
+    )
+
     conn.commit()
     return conn
+
+
+def log_audit_result(
+    match_id: str,
+    league: str,
+    audit_data: dict,
+    match_status: str,
+) -> None:
+    """Store full audit result from MistralAuditor."""
+    conn = init_db()
+    cursor = conn.cursor()
+    record_id = f"{match_id}:audit"
+    if _use_postgres():
+        cursor.execute(
+            """
+            INSERT INTO audit_results
+            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (match_id) DO UPDATE
+            SET context = EXCLUDED.context, timestamp = EXCLUDED.timestamp
+            """,
+            (record_id, league, "audit", json.dumps(audit_data), match_status,
+             "AUDIT", json.dumps(audit_data), datetime.now()),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO audit_results
+            (match_id, league, market, predicted_probs, actual_result, pick_type, context, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (record_id, league, "audit", json.dumps(audit_data), match_status,
+             "AUDIT", json.dumps(audit_data), datetime.now()),
+        )
+    conn.commit()
+    conn.close()
+
+
+def log_correction(
+    match_id: str,
+    league: str,
+    correction_type: str,
+    parameter_name: str,
+    old_value: float,
+    new_value: float,
+    suggested_by: str = "mistral_audit",
+    applied_by: str = "user",
+    audit_confidence: int = 0,
+    reason: str = "",
+) -> None:
+    """Store a correction applied from an audit suggestion."""
+    conn = init_db()
+    cursor = conn.cursor()
+    if _use_postgres():
+        cursor.execute(
+            """
+            INSERT INTO corrections
+            (match_id, league, correction_type, parameter_name, old_value, new_value,
+             suggested_by, applied_by, audit_confidence, reason, status, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'applied', %s)
+            """,
+            (match_id, league, correction_type, parameter_name, old_value, new_value,
+             suggested_by, applied_by, audit_confidence, reason, datetime.now()),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO corrections
+            (match_id, league, correction_type, parameter_name, old_value, new_value,
+             suggested_by, applied_by, audit_confidence, reason, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)
+            """,
+            (match_id, league, correction_type, parameter_name, old_value, new_value,
+             suggested_by, applied_by, audit_confidence, reason, datetime.now()),
+        )
+    conn.commit()
+    conn.close()
+    logging.info(
+        f"Correcao aplicada: {parameter_name} {old_value:.4f} -> {new_value:.4f} "
+        f"(liga={league}, tipo={correction_type}, confianca={audit_confidence}%)"
+    )
+
+
+def get_active_corrections(league: str | None = None) -> list:
+    """Fetch active corrections, optionally filtered by league."""
+    conn = init_db()
+    cursor = conn.cursor()
+    if league:
+        ph = "%s" if _use_postgres() else "?"
+        cursor.execute(
+            f"SELECT parameter_name, new_value, correction_type, reason FROM corrections "
+            f"WHERE league = {ph} AND status = 'applied' ORDER BY created_at DESC",
+            (league,),
+        )
+    else:
+        cursor.execute(
+            "SELECT parameter_name, new_value, correction_type, reason FROM corrections "
+            "WHERE status = 'applied' ORDER BY created_at DESC"
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    corrections = {}
+    for row in rows:
+        param = row[0]
+        if param not in corrections:
+            corrections[param] = {"value": row[1], "type": row[2], "reason": row[3]}
+    return corrections
 
 
 def ensure_thresholds(conn, defaults: dict) -> None:

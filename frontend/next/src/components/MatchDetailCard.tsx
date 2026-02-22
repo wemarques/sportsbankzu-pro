@@ -14,6 +14,7 @@ import {
   Loader2,
   RefreshCw,
   ArrowLeft,
+  ShieldCheck,
 } from "lucide-react";
 import "../styles/match-detail-card.css";
 
@@ -23,6 +24,41 @@ export interface AIAnalysis {
   recommendation: string;
   confidence: number;
   last_updated: string;
+}
+
+export interface AuditPickEvaluation {
+  mercado: string;
+  status_pick: string;
+  resultado: string;
+  nota: string;
+}
+
+export interface AuditCorrection {
+  type: string;
+  parameter: string;
+  current_value: number;
+  suggested_value: number;
+  reason: string;
+  confidence: number;
+  impact: string;
+}
+
+export interface AuditResult {
+  picks_evaluation?: AuditPickEvaluation[];
+  validation: {
+    probabilities: { status: string; notes: string; brier_score?: number };
+    lambdas: { status: string; notes: string; predicted_total?: number; actual_total?: number };
+    ev: { status: string; notes: string };
+  };
+  ai_analysis_accuracy?: string;
+  accuracy_summary?: string;
+  corrections?: AuditCorrection[];
+  biases_detected?: string[];
+  suggestions?: string[];
+  audit_confidence: number;
+  audit_type?: string;
+  timestamp?: string;
+  match?: string;
 }
 
 // Alias for backward compatibility with V0 dashboard
@@ -118,12 +154,16 @@ type Props = {
   match: MatchDetailData;
   aiLoading?: boolean;
   onRegenerate?: () => void;
+  onAudit?: () => void;
+  onApplyCorrection?: (correction: AuditCorrection) => void;
+  auditResult?: AuditResult | null;
+  auditLoading?: boolean;
   version?: string;
   onBack?: () => void;
   showBackButton?: boolean;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, version = "pro V2.6", onBack, showBackButton = false }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, version = "pro V2.6", onBack, showBackButton = false }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -469,21 +509,33 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                           </div>
                         )}
 
-                        {/* Timestamp + Regenerate */}
+                        {/* Timestamp + Regenerate + Audit */}
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <Clock size={14} />
                             <span>Ultima atualizacao: {match.aiAnalysis.last_updated}</span>
                           </div>
-                          {onRegenerate && (
-                            <button
-                              onClick={onRegenerate}
-                              style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem", color: "#00ff88", background: "transparent", border: "none", cursor: "pointer" }}
-                            >
-                              <RefreshCw size={12} />
-                              Regenerar
-                            </button>
-                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            {onAudit && (
+                              <button
+                                onClick={onAudit}
+                                disabled={auditLoading}
+                                style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem", color: "#ffbb33", background: "transparent", border: "none", cursor: auditLoading ? "wait" : "pointer", opacity: auditLoading ? 0.6 : 1 }}
+                              >
+                                {auditLoading ? <Loader2 size={12} className="mdc-loading-spinner" /> : <ShieldCheck size={12} />}
+                                Auditar
+                              </button>
+                            )}
+                            {onRegenerate && (
+                              <button
+                                onClick={onRegenerate}
+                                style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem", color: "#00ff88", background: "transparent", border: "none", cursor: "pointer" }}
+                              >
+                                <RefreshCw size={12} />
+                                Regenerar
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </>
                     )}
@@ -496,6 +548,11 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, versio
                   </div>
                 )}
               </div>
+
+              {/* AUDIT RESULTS */}
+              {auditResult && (
+                <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
+              )}
 
               {/* VENUE IMAGE */}
               {match.venue?.image && (
@@ -845,6 +902,191 @@ function FormDisplay({ label, form }: { label: string; form?: string[] }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ── AUDIT RESULTS SECTION ── */
+
+function AuditStatusBadge({ status }: { status: string }) {
+  const s = status.toUpperCase();
+  const color = s === "OK" ? "#00ff88" : s === "WARNING" ? "#ffbb33" : "#ff4444";
+  return (
+    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700, color: "#000", background: color }}>
+      {s}
+    </span>
+  );
+}
+
+function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: AuditResult; onApplyCorrection?: (c: AuditCorrection) => void }) {
+  return (
+    <div className="mdc-audit-section">
+      {/* Header */}
+      <div className="mdc-audit-header">
+        <ShieldCheck size={18} style={{ color: "#ffbb33" }} />
+        <span className="mdc-audit-title">Resultado da Auditoria</span>
+        <span className="mdc-audit-confidence">
+          Confianca: <strong>{auditResult.audit_confidence}%</strong>
+        </span>
+      </div>
+
+      {/* Picks Evaluation */}
+      {auditResult.picks_evaluation && auditResult.picks_evaluation.length > 0 && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Avaliacao dos Prognosticos</h4>
+          <div className="mdc-audit-picks-table">
+            <div className="mdc-audit-picks-row mdc-audit-picks-row--header">
+              <span>Mercado</span>
+              <span>Status</span>
+              <span>Resultado</span>
+            </div>
+            {auditResult.picks_evaluation.map((pick, i) => {
+              const isHit = pick.resultado.toUpperCase().includes("ACERT");
+              return (
+                <div key={i} className="mdc-audit-picks-row">
+                  <span className="mdc-audit-pick-market">{pick.mercado}</span>
+                  <span className="mdc-audit-pick-status">{pick.status_pick}</span>
+                  <span style={{ color: isHit ? "#00ff88" : "#ff4444", fontWeight: 600, fontSize: "0.75rem" }}>
+                    {pick.resultado}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Validation Grid */}
+      {auditResult.validation && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Validacao</h4>
+          <div className="mdc-audit-validation-grid">
+            {/* Probabilities */}
+            <div className="mdc-audit-validation-card">
+              <div className="mdc-audit-validation-card-header">
+                <span>Probabilidades</span>
+                <AuditStatusBadge status={auditResult.validation.probabilities.status} />
+              </div>
+              <p className="mdc-audit-validation-notes">{auditResult.validation.probabilities.notes}</p>
+              {auditResult.validation.probabilities.brier_score != null && (
+                <div className="mdc-audit-validation-metric">
+                  Brier Score: <strong>{auditResult.validation.probabilities.brier_score.toFixed(3)}</strong>
+                </div>
+              )}
+            </div>
+            {/* Lambdas */}
+            <div className="mdc-audit-validation-card">
+              <div className="mdc-audit-validation-card-header">
+                <span>Lambdas</span>
+                <AuditStatusBadge status={auditResult.validation.lambdas.status} />
+              </div>
+              <p className="mdc-audit-validation-notes">{auditResult.validation.lambdas.notes}</p>
+              {auditResult.validation.lambdas.predicted_total != null && (
+                <div className="mdc-audit-validation-metric">
+                  Previsto: <strong>{auditResult.validation.lambdas.predicted_total.toFixed(1)}</strong>
+                  {auditResult.validation.lambdas.actual_total != null && (
+                    <> | Real: <strong>{auditResult.validation.lambdas.actual_total}</strong></>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* EV */}
+            <div className="mdc-audit-validation-card">
+              <div className="mdc-audit-validation-card-header">
+                <span>Expected Value</span>
+                <AuditStatusBadge status={auditResult.validation.ev.status} />
+              </div>
+              <p className="mdc-audit-validation-notes">{auditResult.validation.ev.notes}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Analysis Accuracy */}
+      {auditResult.ai_analysis_accuracy && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Precisao da Analise Mistral</h4>
+          <p className="mdc-audit-text">{auditResult.ai_analysis_accuracy}</p>
+        </div>
+      )}
+
+      {/* Accuracy Summary */}
+      {auditResult.accuracy_summary && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Resumo de Precisao</h4>
+          <p className="mdc-audit-text">{auditResult.accuracy_summary}</p>
+        </div>
+      )}
+
+      {/* Biases Detected */}
+      {auditResult.biases_detected && auditResult.biases_detected.length > 0 && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title" style={{ color: "#ff4444" }}>Vieses Detectados</h4>
+          <ul className="mdc-audit-biases-list">
+            {auditResult.biases_detected.map((bias, i) => (
+              <li key={i} className="mdc-audit-bias-item">{bias}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Suggestions */}
+      {auditResult.suggestions && auditResult.suggestions.length > 0 && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Sugestoes</h4>
+          <ul className="mdc-audit-biases-list" style={{ borderLeftColor: "#ffbb33" }}>
+            {auditResult.suggestions.map((sug, i) => (
+              <li key={i} className="mdc-audit-bias-item">{sug}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Corrections */}
+      {auditResult.corrections && auditResult.corrections.length > 0 && (
+        <div className="mdc-audit-block">
+          <h4 className="mdc-audit-block-title">Correcoes Sugeridas</h4>
+          <div className="mdc-audit-corrections">
+            {auditResult.corrections.map((corr, i) => {
+              const impactColor = corr.impact === "HIGH" ? "#ff4444" : corr.impact === "MEDIUM" ? "#ffbb33" : "#00ff88";
+              return (
+                <div key={i} className="mdc-audit-correction-card">
+                  <div className="mdc-audit-correction-header">
+                    <span className="mdc-audit-correction-param">{corr.parameter}</span>
+                    <span className="mdc-audit-correction-impact" style={{ color: impactColor }}>{corr.impact}</span>
+                  </div>
+                  <div className="mdc-audit-correction-values">
+                    <span className="mdc-audit-correction-old">{corr.current_value.toFixed(3)}</span>
+                    <span className="mdc-audit-correction-arrow">{"\u2192"}</span>
+                    <span className="mdc-audit-correction-new">{corr.suggested_value.toFixed(3)}</span>
+                  </div>
+                  <p className="mdc-audit-correction-reason">{corr.reason}</p>
+                  <div className="mdc-audit-correction-footer">
+                    <span style={{ fontSize: "0.65rem", color: "#888" }}>Confianca: {corr.confidence}%</span>
+                    {onApplyCorrection && (
+                      <button
+                        className="mdc-audit-apply-btn"
+                        onClick={() => onApplyCorrection(corr)}
+                      >
+                        Aplicar Correcao
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Timestamp */}
+      {auditResult.timestamp && (
+        <div className="mdc-audit-footer">
+          <Clock size={12} />
+          <span>Auditoria: {auditResult.timestamp}</span>
+          {auditResult.audit_type && <span> | Tipo: {auditResult.audit_type}</span>}
+        </div>
+      )}
     </div>
   );
 }
