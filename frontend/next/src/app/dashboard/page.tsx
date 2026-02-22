@@ -296,6 +296,7 @@ export default function Dashboard() {
   const [batchAuditLoading, setBatchAuditLoading] = useState(false);
   const [batchAuditOpen, setBatchAuditOpen] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -305,6 +306,13 @@ export default function Dashboard() {
   const capturePanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Scroll right panel to top when a new match is selected
+  useEffect(() => {
+    if (selectedMatchId && rightPanelRef.current) {
+      rightPanelRef.current.scrollTop = 0;
+    }
+  }, [selectedMatchId]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
@@ -440,6 +448,7 @@ export default function Dashboard() {
   const handleAudit = useCallback(async () => {
     if (!selectedMatch || auditLoading) return;
     setAuditLoading(true);
+    setAuditResult(null);
     try {
       const predictions = selectedMatch.predictions?.map((p: any) => ({
         mercado: p.mercado,
@@ -452,9 +461,31 @@ export default function Dashboard() {
         ? { summary: aiAnalysis.summary, key_points: aiAnalysis.key_points, recommendation: aiAnalysis.recommendation, confidence: aiAnalysis.confidence }
         : undefined;
       const result = await postMatchAudit(selectedMatch.id, predictions, aiSummary);
-      setAuditResult(result);
+      if (result) {
+        setAuditResult(result);
+      } else {
+        // Set a minimal error result so the UI shows feedback
+        setAuditResult({
+          audit_confidence: 0,
+          validation: {
+            probabilities: { status: "UNKNOWN", notes: "Servico de auditoria indisponivel." },
+            lambdas: { status: "UNKNOWN", notes: "Nao foi possivel conectar ao backend." },
+            ev: { status: "UNKNOWN", notes: "Tente novamente em alguns instantes." },
+          },
+          audit_type: "error",
+        } as AuditResult);
+      }
     } catch (err) {
       console.error("Audit error:", err);
+      setAuditResult({
+        audit_confidence: 0,
+        validation: {
+          probabilities: { status: "UNKNOWN", notes: "Erro ao executar auditoria." },
+          lambdas: { status: "UNKNOWN", notes: "Verifique a conexao com o backend." },
+          ev: { status: "UNKNOWN", notes: "Tente novamente." },
+        },
+        audit_type: "error",
+      } as AuditResult);
     } finally {
       setAuditLoading(false);
     }
@@ -495,9 +526,51 @@ export default function Dashboard() {
       if (result) {
         setBatchAuditResult(result);
         setBatchAuditOpen(true);
+      } else {
+        // Show panel with error feedback
+        setBatchAuditResult({
+          status: "error",
+          total_matches: 0,
+          finished_matches: 0,
+          audited_matches: 0,
+          overall_accuracy: 0,
+          safe_accuracy: 0,
+          neutro_accuracy: 0,
+          safe_correct: 0,
+          safe_total: 0,
+          neutro_correct: 0,
+          neutro_total: 0,
+          avg_brier_score: 0,
+          avg_lambda_error: 0,
+          market_accuracy: [],
+          match_results: [],
+          model_evaluation: null,
+          message: "Servico de auditoria indisponivel. Verifique a conexao com o backend.",
+        });
+        setBatchAuditOpen(true);
       }
     } catch (err) {
       console.error("Batch audit error:", err);
+      setBatchAuditResult({
+        status: "error",
+        total_matches: 0,
+        finished_matches: 0,
+        audited_matches: 0,
+        overall_accuracy: 0,
+        safe_accuracy: 0,
+        neutro_accuracy: 0,
+        safe_correct: 0,
+        safe_total: 0,
+        neutro_correct: 0,
+        neutro_total: 0,
+        avg_brier_score: 0,
+        avg_lambda_error: 0,
+        market_accuracy: [],
+        match_results: [],
+        model_evaluation: null,
+        message: "Erro ao executar auditoria em lote. Tente novamente.",
+      });
+      setBatchAuditOpen(true);
     } finally {
       setBatchAuditLoading(false);
     }
@@ -1222,7 +1295,7 @@ export default function Dashboard() {
 
         {/* RIGHT PANEL - Em mobile, esconder quando nenhum jogo está selecionado */}
         {(!isMobile || selectedMatchId) && (
-        <section className="st-panel-right detail-card-section">
+        <section ref={rightPanelRef} className="st-panel-right detail-card-section">
           {detailData ? (
             <MatchDetailCard
               match={detailData}

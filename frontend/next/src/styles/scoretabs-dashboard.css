@@ -54,6 +54,7 @@
   flex: 1;
   overflow-y: auto;
   background: var(--st-bg-secondary);
+  padding: 0 0 16px;
 }
 
 .st-panel-right--empty {

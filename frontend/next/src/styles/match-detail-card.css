@@ -27,11 +27,8 @@
   border: 1px solid var(--mdc-border);
   border-radius: var(--mdc-radius-lg);
   overflow: hidden;
-  max-height: calc(100vh - 120px);
-  overflow-y: auto;
-  position: sticky;
-  top: 24px;
   width: 100%;
+  /* No max-height or overflow-y here — .st-panel-right handles scroll */
 }
 
 .match-detail-card__header {
@@ -775,8 +772,6 @@
 /* Tablet landscape / small desktop */
 @media (max-width: 1024px) {
   .match-detail-card {
-    position: static;
-    max-height: none;
     width: 100%;
   }
 
