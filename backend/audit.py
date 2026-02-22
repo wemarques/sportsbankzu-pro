@@ -55,11 +55,20 @@ def _db_path() -> str:
     return DEFAULT_DB_PATH
 
 
+_PG_PLACEHOLDER_VALUES = {"seu_host_postgres", "seu_usuario", "sua_senha", "localhost", ""}
+
+
 def _use_postgres() -> bool:
     if not psycopg2:
         return False
     if os.getenv("DATABASE_URL"):
         return True
+    # Reject placeholder values that would cause DNS resolution failure
+    host = DEFAULT_PG_CONFIG.get("host") or ""
+    user = DEFAULT_PG_CONFIG.get("user") or ""
+    password = DEFAULT_PG_CONFIG.get("password") or ""
+    if host in _PG_PLACEHOLDER_VALUES or user in _PG_PLACEHOLDER_VALUES:
+        return False
     return all(DEFAULT_PG_CONFIG.get(k) for k in ("host", "database", "user", "password"))
 
 

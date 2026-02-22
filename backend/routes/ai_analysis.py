@@ -444,8 +444,6 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
     total_goals = actual_result.get("total_goals", 0)
     btts = actual_result.get("btts", False)
     result_1x2 = actual_result.get("result_1x2", "")
-    home_goals = actual_result.get("home_goals", 0)
-    away_goals = actual_result.get("away_goals", 0)
 
     # Over/Under markets
     if "UNDER" in mercado or "MENOS" in mercado:
@@ -457,12 +455,22 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
             if str(threshold) in mercado:
                 return total_goals > threshold
 
-    # BTTS
+    # BTTS — handle "BTTS — SIM", "BTTS - SIM", "BTTS SIM", etc.
     if "BTTS" in mercado or "AMBAS" in mercado:
         if "SIM" in mercado or "YES" in mercado:
             return btts
         if "NAO" in mercado or "NO" in mercado or "NÃO" in mercado:
             return not btts
+        # Bare "BTTS" without qualifier defaults to YES
+        return btts
+
+    # Double Chance — handle "DC 1X (ARS/EMP)" format with parentheses
+    if mercado.startswith("DC 1X") or mercado.startswith("1X") or "CASA OU EMPATE" in mercado:
+        return result_1x2 in ("1", "X")
+    if mercado.startswith("DC 12") or mercado.startswith("12") or "CASA OU FORA" in mercado:
+        return result_1x2 in ("1", "2")
+    if mercado.startswith("DC X2") or mercado.startswith("X2") or "EMPATE OU FORA" in mercado:
+        return result_1x2 in ("X", "2")
 
     # 1X2
     if mercado in ("1", "VITORIA CASA", "HOME WIN", "CASA"):
@@ -471,14 +479,6 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
         return result_1x2 == "X"
     if mercado in ("2", "VITORIA FORA", "AWAY WIN", "FORA"):
         return result_1x2 == "2"
-
-    # Double Chance
-    if mercado in ("1X", "DC 1X", "CASA OU EMPATE"):
-        return result_1x2 in ("1", "X")
-    if mercado in ("12", "DC 12", "CASA OU FORA"):
-        return result_1x2 in ("1", "2")
-    if mercado in ("X2", "DC X2", "EMPATE OU FORA"):
-        return result_1x2 in ("X", "2")
 
     # Unknown market — cannot evaluate
     logger.warning(f"Cannot evaluate unknown market: {mercado}")
