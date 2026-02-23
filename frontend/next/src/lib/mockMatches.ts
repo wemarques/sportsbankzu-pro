@@ -1,6 +1,12 @@
 /**
- * Mock matches fallback — garante que o dashboard nunca fique vazio.
- * Usado quando PY_BACKEND_URL nao responde E o proxy /api/matches tambem falha.
+ * Mock matches — DEVELOPMENT ONLY.
+ *
+ * Em producao, o proxy route.ts nunca importa este arquivo.
+ * Mock data so e usado quando NODE_ENV === "development" para
+ * permitir desenvolvimento local sem backend.
+ *
+ * Em producao, o dashboard mostra um EmptyState com mensagem
+ * clara quando o backend esta indisponivel.
  *
  * IDs usam os mesmos valores de AVAILABLE_LEAGUES em leagues.ts.
  * Campos seguem o tipo Match de leagues.ts (homeTeam/awayTeam como objetos).

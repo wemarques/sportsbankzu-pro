@@ -10,9 +10,11 @@ import MatchDetailCard, {
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, postBatchAudit, applyBatchCorrections } from "@/lib/api";
-import type { BatchAuditResult, BatchAuditCorrection } from "@/lib/api";
+import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import AuditBanner from "@/components/AuditBanner";
+import EmptyState, { MockDataBanner } from "@/components/EmptyState";
+import type { EmptyStateVariant } from "@/components/EmptyState";
 import {
   Star,
   ChevronLeft,
@@ -296,6 +298,10 @@ export default function Dashboard() {
   const [batchAuditResult, setBatchAuditResult] = useState<BatchAuditResult | null>(null);
   const [batchAuditLoading, setBatchAuditLoading] = useState(false);
   const [batchAuditOpen, setBatchAuditOpen] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [isMockData, setIsMockData] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const auditResultRef = useRef<HTMLDivElement>(null);
@@ -322,6 +328,11 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
+      setHasError(false);
+      setIsMockData(false);
+      setErrorMessage(null);
+      setDataSource(null);
+
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
       /** Backend espera "today" | "tomorrow" | "week" (timezone BRT), não YYYY-MM-DD */
@@ -330,14 +341,31 @@ export default function Dashboard() {
       }
 
       try {
-        let res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
+        let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
         let raw = res?.matches ?? [];
 
-        // Auto-fallback: if today returns empty, try week
-        if (raw.length === 0 && dateMode === "today") {
+        // Track data source and error state
+        setDataSource(res._dataSource ?? null);
+        setIsMockData(res._isMockData ?? false);
+
+        if (res._error) {
+          setHasError(true);
+          setErrorMessage(res._error.message);
+        }
+
+        // Auto-fallback: if today returns empty (and no error), try week
+        if (raw.length === 0 && dateMode === "today" && !res._error) {
           res = await getMatchesByLeague(allLeagueIds, "week");
           raw = res?.matches ?? [];
-          if (raw.length > 0) setDateMode("week");
+          if (raw.length > 0) {
+            setDateMode("week");
+            setDataSource(res._dataSource ?? null);
+            setIsMockData(res._isMockData ?? false);
+          }
+          if (res._error) {
+            setHasError(true);
+            setErrorMessage(res._error.message);
+          }
         }
 
         const normalized = raw.map((item: any, idx: number) => {
@@ -348,6 +376,8 @@ export default function Dashboard() {
         if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
       } catch {
         setAllMatches([]);
+        setHasError(true);
+        setErrorMessage("Erro inesperado ao carregar jogos. Tente novamente.");
       } finally {
         setLoading(false);
       }
@@ -615,6 +645,55 @@ export default function Dashboard() {
       alert("Erro ao aplicar correcoes em lote.");
     }
   }, []);
+
+  const handleRetry = useCallback(() => {
+    // Force refetch by toggling dateMode (trigger useEffect)
+    setDateMode((prev) => prev);
+    // Since setting same value won't trigger useEffect, use a workaround
+    setLoading(true);
+    setHasError(false);
+    setErrorMessage(null);
+    const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+    getMatchesByLeague(allLeagueIds, dateMode).then((res) => {
+      const raw = res?.matches ?? [];
+      setDataSource(res._dataSource ?? null);
+      setIsMockData(res._isMockData ?? false);
+      if (res._error) {
+        setHasError(true);
+        setErrorMessage(res._error.message);
+      }
+      const normalized = raw.map((item: any, idx: number) => {
+        const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+        return normalizeMatch(item, lid, idx);
+      });
+      setAllMatches(normalized);
+      if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
+    }).catch(() => {
+      setAllMatches([]);
+      setHasError(true);
+      setErrorMessage("Erro inesperado ao carregar jogos. Tente novamente.");
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [dateMode]);
+
+  const handleEmptyDateChange = useCallback((direction: "prev" | "next") => {
+    setDateMode((prev) => {
+      if (direction === "prev") {
+        return prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today";
+      }
+      return prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week";
+    });
+  }, []);
+
+  /** Determine which empty state variant to show */
+  const emptyVariant = useMemo<EmptyStateVariant | null>(() => {
+    if (loading) return null;
+    if (hasError && dataSource === "mock-dev") return "mock-dev";
+    if (hasError) return dataSource === "client-error" ? "client-error" : "backend-offline";
+    if (allMatches.length === 0 && !hasError) return "no-games-date";
+    return null;
+  }, [loading, hasError, dataSource, allMatches.length]);
 
   const leagueGroups = useMemo<LeagueGroup[]>(() => {
     const byLeague = new Map<string, Match[]>();
@@ -1106,13 +1185,20 @@ export default function Dashboard() {
             </div>
           )}
 
-          {!loading && leagueGroups.length === 0 && (
-            <div className="st-empty">
-              <div className="st-empty__icon">&#9917;</div>
-              {dateMode === "week"
-                ? "Nenhum jogo encontrado para esta semana. Tente novamente mais tarde."
-                : "Nenhum jogo disponivel. Use as setas para navegar entre datas."}
-            </div>
+          {/* Mock data dev banner */}
+          {!loading && isMockData && allMatches.length > 0 && (
+            <MockDataBanner />
+          )}
+
+          {/* Empty state / Error state */}
+          {!loading && leagueGroups.length === 0 && emptyVariant && (
+            <EmptyState
+              variant={emptyVariant}
+              errorMessage={errorMessage ?? undefined}
+              dateLabel={dateLabel}
+              onRetry={handleRetry}
+              onChangeDate={emptyVariant === "no-games-date" ? handleEmptyDateChange : undefined}
+            />
           )}
 
           {!loading && leagueGroups.map((group) => {

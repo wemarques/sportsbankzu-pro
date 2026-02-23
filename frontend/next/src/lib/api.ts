@@ -3,21 +3,43 @@
  * para usar PY_BACKEND_URL (server-side) e evitar CORS.
  */
 
-export async function getMatchesByLeague(leagues: string, date?: string) {
+export interface MatchesResponse {
+  matches: unknown[];
+  _dataSource?: string;
+  _isMockData?: boolean;
+  _error?: {
+    kind: string;
+    message: string;
+  };
+  _latencyMs?: number;
+}
+
+export async function getMatchesByLeague(leagues: string, date?: string): Promise<MatchesResponse> {
   try {
     const params = new URLSearchParams({ leagues });
     if (date) params.append("date", date);
     const res = await fetch(`/api/matches/fetch?${params.toString()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (data.matches && data.matches.length > 0) return data;
-    // Server proxy retornou vazio — fallback client-side
-    const { getMockMatches } = await import("./mockMatches");
-    return { matches: getMockMatches(leagues) };
+
+    // Proxy returned data (even if status is 503, parse the JSON for error info)
+    return {
+      matches: data.matches ?? [],
+      _dataSource: data._dataSource,
+      _isMockData: data._isMockData ?? false,
+      _error: data._error,
+      _latencyMs: data._latencyMs,
+    };
   } catch (error) {
     console.error("Erro na API getMatchesByLeague:", error);
-    const { getMockMatches } = await import("./mockMatches");
-    return { matches: getMockMatches(leagues) };
+    return {
+      matches: [],
+      _dataSource: "client-error",
+      _isMockData: false,
+      _error: {
+        kind: "NETWORK_ERROR",
+        message: "Erro de conexao com o servidor. Verifique sua internet e tente novamente.",
+      },
+    };
   }
 }
 
