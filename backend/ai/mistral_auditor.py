@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from .mistral_client import MistralClient
@@ -7,6 +8,83 @@ from .prompt_templates import PromptTemplates
 from .cache_manager import CacheManager
 
 logger = logging.getLogger("sportsbank.ai.auditor")
+
+
+def _strip_fences(s: str) -> str:
+    """Remove markdown code fences from Mistral JSON responses."""
+    s = s.strip()
+    if "```" in s:
+        match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", s, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        s2 = s.strip("`")
+        if s2.lower().startswith("json"):
+            s2 = s2[4:]
+        return s2.strip()
+    return s
+
+
+def _safe_json_loads(text: str) -> dict:
+    """Parse JSON from Mistral responses, handling common issues.
+
+    Fixes:
+    - Control characters inside strings (tabs, newlines)
+    - Unterminated strings (truncated responses)
+    - BOM markers
+    """
+    clean = _strip_fences(text)
+
+    # Remove BOM if present
+    clean = clean.lstrip("\ufeff")
+
+    # Try direct parse first
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        pass
+
+    # Remove control characters inside JSON strings (except escaped ones)
+    sanitized = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
+    try:
+        return json.loads(sanitized)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to fix unterminated strings by finding the last complete brace
+    # Walk backwards to find the last balanced closing brace
+    depth = 0
+    last_valid = -1
+    in_string = False
+    escape_next = False
+    for i, ch in enumerate(sanitized):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\':
+            escape_next = True
+            continue
+        if ch == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                last_valid = i
+                break
+
+    if last_valid > 0:
+        truncated = sanitized[:last_valid + 1]
+        try:
+            return json.loads(truncated)
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: raise with sanitized text for better error message
+    return json.loads(sanitized)
 
 class MistralAuditor:
     """Audita os cálculos estatísticos do sistema usando Mistral AI."""
@@ -38,22 +116,7 @@ class MistralAuditor:
         # 3. Chamar Mistral
         try:
             response_text = self.client.simple_prompt(prompt)
-            
-            def _strip_fences(s: str) -> str:
-                s = s.strip()
-                if "```" in s:
-                    import re
-                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL)
-                    if match:
-                        return match.group(1).strip()
-                    s2 = s.strip("`")
-                    if s2.lower().startswith("json"):
-                        s2 = s2[4:]
-                    return s2.strip()
-                return s
-
-            clean_text = _strip_fences(response_text)
-            audit_result = json.loads(clean_text)
+            audit_result = _safe_json_loads(response_text)
             
             # Adicionar metadados
             audit_result["timestamp"] = datetime.now().isoformat()
@@ -121,22 +184,7 @@ class MistralAuditor:
 
         try:
             response_text = self.client.simple_prompt(prompt)
-
-            def _strip_fences(s: str) -> str:
-                s = s.strip()
-                if "```" in s:
-                    import re
-                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL)
-                    if match:
-                        return match.group(1).strip()
-                    s2 = s.strip("`")
-                    if s2.lower().startswith("json"):
-                        s2 = s2[4:]
-                    return s2.strip()
-                return s
-
-            clean_text = _strip_fences(response_text)
-            audit_result = json.loads(clean_text)
+            audit_result = _safe_json_loads(response_text)
 
             # Add metadata
             audit_result["timestamp"] = datetime.now().isoformat()
@@ -178,22 +226,7 @@ class MistralAuditor:
 
         try:
             response_text = self.client.simple_prompt(prompt)
-
-            def _strip_fences(s: str) -> str:
-                s = s.strip()
-                if "```" in s:
-                    import re
-                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL)
-                    if match:
-                        return match.group(1).strip()
-                    s2 = s.strip("`")
-                    if s2.lower().startswith("json"):
-                        s2 = s2[4:]
-                    return s2.strip()
-                return s
-
-            clean_text = _strip_fences(response_text)
-            evaluation = json.loads(clean_text)
+            evaluation = _safe_json_loads(response_text)
 
             evaluation["timestamp"] = datetime.now().isoformat()
             evaluation["audit_type"] = "batch_model_evaluation"

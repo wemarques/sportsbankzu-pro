@@ -45,9 +45,9 @@ class MistralClient:
         )
         return self._fix_mojibake(r.choices[0].message.content)
 
-    def simple_prompt(self, prompt: str, system_prompt: str | None = None) -> str:
+    def simple_prompt(self, prompt: str, system_prompt: str | None = None, max_tokens: int = 4000) -> str:
         msgs = []
         if system_prompt:
             msgs.append({"role": "system", "content": system_prompt})
         msgs.append({"role": "user", "content": prompt})
-        return self.chat_complete(msgs)
+        return self.chat_complete(msgs, max_tokens=max_tokens)
