@@ -17,11 +17,15 @@ footstats = FootyStatsClient()
 
 @router.get("/fixtures")
 def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, Any]:
+    import sys
     from backend.main import resolve_league_dir, get_data_dir, generate_mock_fixtures
     league_ids = [lid.strip() for lid in leagues.split(",") if lid.strip()]
     out: List[Dict[str, Any]] = []
     base = get_data_dir()
-    
+
+    # Force flush prints for Lambda CloudWatch
+    logger.info(f"[fixtures] ENTER: leagues={leagues}, date={date}, pd={pd is not None}, base_exists={os.path.isdir(base) if base else False}, base={base}")
+
     # Se nenhuma liga for selecionada, não retorna nada para evitar sobrecarga
     if not league_ids:
         return {"matches": []}
@@ -30,19 +34,22 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
         # 1. TENTA API FOOTYSTATS PRIMEIRO
         league_config = get_league_config(lid)
         found_via_api = False
-        
+
+        logger.info(f"[fixtures] {lid}: league_config={league_config}")
+
         if league_config:
             try:
                 # Resolve season_id dinamicamente
                 season_id = footstats.resolve_season_id(league_config["country"], league_config["name"])
+                logger.info(f"[fixtures] {lid}: season_id={season_id}")
                 if season_id:
-                    print(f"[fixtures] {lid}: season_id={season_id}, fetching matches...")
+                    logger.info(f"[fixtures] {lid}: season_id={season_id}, fetching matches...")
                     matches_data = footstats.get_league_matches(season_id)
 
                     if matches_data.get("success"):
                         # Converte para DataFrame usando o Mapper
                         matches_df = DataMapper.matches_to_df(matches_data.get("data", []))
-                        print(f"[fixtures] {lid}: {len(matches_df)} matches in DataFrame")
+                        logger.info(f"[fixtures] {lid}: {len(matches_df)} matches in DataFrame")
 
                         # Busca estatísticas da temporada para os Lambdas
                         season_stats = footstats.get_league_season_stats(season_id)
@@ -73,7 +80,7 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             players=None,
                             date_filter=date,
                         )
-                        print(f"[fixtures] {lid}: {len(records)} records after date filter '{date}'")
+                        logger.info(f"[fixtures] {lid}: {len(records)} records after date filter '{date}'")
 
                         if records:
                             # Adiciona tag de origem
@@ -81,18 +88,22 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                                 r["dataSource"] = "FootyStats API (Tempo Real)"
                             out.extend(records)
                             found_via_api = True
+                        else:
+                            logger.warning(f"[fixtures] {lid}: API returned data but 0 records after date filter '{date}'")
                     else:
-                        print(f"[fixtures] {lid}: API returned success=False: {matches_data.get('message','')}")
+                        logger.warning(f"[fixtures] {lid}: API returned success=False: {matches_data.get('message','')}")
                 else:
-                    print(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
+                    logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
             except Exception as e:
                 import traceback
-                print(f"[fixtures] {lid}: EXCEPTION: {type(e).__name__}: {e}")
-                traceback.print_exc()
+                logger.error(f"[fixtures] {lid}: EXCEPTION: {type(e).__name__}: {e}")
+                logger.error(traceback.format_exc())
 
         # 2. FALLBACK: ARQUIVOS CSV LOCAIS (Se não encontrou via API ou se lid não está na config)
         if not found_via_api:
+            logger.warning(f"[fixtures] {lid}: API FAILED, trying CSV fallback. pd={pd is not None}, base_exists={os.path.isdir(base) if base else False}")
             if pd is None or not os.path.isdir(base):
+                logger.warning(f"[fixtures] {lid}: MOCK FALLBACK (pd={pd is not None}, base_isdir={os.path.isdir(base) if base else False})")
                 out.extend(generate_mock_fixtures(lid, date))
                 continue
                 
