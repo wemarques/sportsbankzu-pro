@@ -135,12 +135,11 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
 }
 
-/** Normaliza probabilidade para exibição (0-1, 0-100 ou >100 -> X.X%) */
+/** Normaliza probabilidade para exibição (0-1 ou 0-100 -> X.X%) */
 function formatProbValue(value?: number | null): string {
   if (value == null || value < 0) return "-";
   let pct = value;
-  if (pct <= 1) pct *= 100;
-  else if (pct > 100) pct /= 100;
+  if (pct > 0 && pct <= 1) pct *= 100;
   return `${pct.toFixed(1)}%`;
 }
 
