@@ -365,9 +365,9 @@ def build_records_from_matches(
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
             },
             "stats": {
-                "homeWinProb": round(homeProb * 100.0, 1),
-                "drawProb": round(drawProb * 100.0, 1),
-                "awayWinProb": round(awayProb * 100.0, 1),
+                "homeWinProb": round(homeProb, 1),
+                "drawProb": round(drawProb, 1),
+                "awayWinProb": round(awayProb, 1),
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
                 "bttsProb": float(btts_pct) if btts_pct is not None else round(btts_poisson * 100.0, 1),
                 "over05Prob": round(over05 * 100.0, 1),
