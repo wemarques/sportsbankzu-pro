@@ -55,8 +55,13 @@ jobs:
 
       - name: Copy backend code
         run: |
+          # Remove any pre-existing backend/ dir from pip to avoid nesting
+          rm -rf lambda_build/backend
           cp -r backend lambda_build/backend
           find lambda_build -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+          # Verify: backend/main.py should be the CURRENT version
+          echo "backend/main.py lines: $(wc -l < lambda_build/backend/main.py)"
+          echo "Nested backend check: $(ls lambda_build/backend/backend/main.py 2>/dev/null && echo 'NESTED EXISTS - ERROR' || echo 'OK - no nesting')"
 
       - name: Create deployment ZIP
         run: |
