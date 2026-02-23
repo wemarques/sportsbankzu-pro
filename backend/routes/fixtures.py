@@ -36,25 +36,22 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                 # Resolve season_id dinamicamente
                 season_id = footstats.resolve_season_id(league_config["country"], league_config["name"])
                 if season_id:
-                    logger.info(f"Buscando dados da API para {lid} (Season: {season_id})")
+                    print(f"[fixtures] {lid}: season_id={season_id}, fetching matches...")
                     matches_data = footstats.get_league_matches(season_id)
-                    
+
                     if matches_data.get("success"):
                         # Converte para DataFrame usando o Mapper
                         matches_df = DataMapper.matches_to_df(matches_data.get("data", []))
-                        
+                        print(f"[fixtures] {lid}: {len(matches_df)} matches in DataFrame")
+
                         # Busca estatísticas da temporada para os Lambdas
                         season_stats = footstats.get_league_season_stats(season_id)
                         teams_df = None
                         league_season_data = None
                         if season_stats.get("success"):
-                            # league-season retorna data como DICT (não lista)
-                            # com stats agregadas da liga (seasonAVG, BTTS%, etc.)
-                            # NÃO contém "clubs" — teams vem do próprio matches_df
                             season_data = season_stats.get("data", {})
                             if isinstance(season_data, dict):
                                 league_season_data = season_data
-                                logger.info(f"Season stats carregadas para {lid}: avgGoals={season_data.get('seasonAVG_overall')}")
 
                         # Constrói league_df a partir de season stats para enriquecer cálculos
                         league_df = None
@@ -76,15 +73,22 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             players=None,
                             date_filter=date,
                         )
-                        
+                        print(f"[fixtures] {lid}: {len(records)} records after date filter '{date}'")
+
                         if records:
                             # Adiciona tag de origem
                             for r in records:
                                 r["dataSource"] = "FootyStats API (Tempo Real)"
                             out.extend(records)
                             found_via_api = True
+                    else:
+                        print(f"[fixtures] {lid}: API returned success=False: {matches_data.get('message','')}")
+                else:
+                    print(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
             except Exception as e:
-                logger.error(f"Falha ao integrar FootyStats para {lid}: {type(e).__name__}: {e}")
+                import traceback
+                print(f"[fixtures] {lid}: EXCEPTION: {type(e).__name__}: {e}")
+                traceback.print_exc()
 
         # 2. FALLBACK: ARQUIVOS CSV LOCAIS (Se não encontrou via API ou se lid não está na config)
         if not found_via_api:
