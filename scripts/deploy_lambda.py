@@ -7,7 +7,7 @@ from pathlib import Path
 # Configurações
 FUNCTION_NAME = "sportsbank-pro-backend"
 REGION = "us-east-1" # Ajuste se necessário
-ROOT_DIR = Path("c:/painel_apostas/sportsbank-pro")
+ROOT_DIR = Path(__file__).resolve().parent.parent
 # SRC_DIR points to the repo root — backend/ lives directly under ROOT_DIR
 SRC_DIR = ROOT_DIR
 BUILD_DIR = ROOT_DIR / "lambda_build"

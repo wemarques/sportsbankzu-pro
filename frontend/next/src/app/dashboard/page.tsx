@@ -12,6 +12,7 @@ import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, postBatchAudit, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection } from "@/lib/api";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
+import AuditBanner from "@/components/AuditBanner";
 import {
   Star,
   ChevronLeft,
@@ -1066,6 +1067,8 @@ export default function Dashboard() {
               {shareFeedback}
             </div>
           )}
+
+          <AuditBanner />
 
           {/* Odds tabs */}
           <div className="st-odds-tabs">

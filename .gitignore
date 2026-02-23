@@ -23,6 +23,9 @@ test-results/
 blob-report/
 
 deploy_lambda_build/
+lambda_build/
+sportsbank_lambda.zip
 .env.vercel
 
 nul
+.vercel

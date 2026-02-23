@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 try:
     import psycopg2  # type: ignore
 except Exception:
@@ -516,6 +516,80 @@ def adjust_thresholds(defaults: dict) -> None:
 
     conn.commit()
     conn.close()
+
+
+# --- Read functions for audit status endpoint ---
+
+
+def get_recent_audit_results(days: int = 7, limit: int = 10) -> list:
+    """Fetch recent batch audit results (cron runs)."""
+    conn = init_db()
+    cursor = conn.cursor()
+    cutoff = datetime.now() - timedelta(days=days)
+    is_pg = _use_postgres()
+    ph = "%s" if is_pg else "?"
+    ts_col = '"timestamp"' if is_pg else "timestamp"
+    user_col = '"user"' if is_pg else "user"
+    query = (
+        f"SELECT match_id, league, context, {ts_col}, "
+        f"{user_col}, version "
+        f"FROM audit_results WHERE pick_type = 'AUDIT' AND {ts_col} >= {ph} "
+        f"ORDER BY {ts_col} DESC LIMIT {ph}"
+    )
+    cursor.execute(query, (cutoff, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        ctx = {}
+        try:
+            ctx = json.loads(r[2]) if r[2] else {}
+        except Exception:
+            pass
+        ts = r[3]
+        results.append({
+            "match_id": r[0],
+            "league": r[1],
+            "data": ctx,
+            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            "user": r[4],
+            "version": r[5],
+        })
+    return results
+
+
+def get_recent_corrections(days: int = 7, limit: int = 20) -> list:
+    """Fetch recent corrections (applied and rejected)."""
+    conn = init_db()
+    cursor = conn.cursor()
+    cutoff = datetime.now() - timedelta(days=days)
+    ph = "%s" if _use_postgres() else "?"
+    cursor.execute(
+        f"SELECT match_id, league, correction_type, parameter_name, old_value, "
+        f"new_value, suggested_by, applied_by, audit_confidence, reason, status, "
+        f"created_at FROM corrections WHERE created_at >= {ph} "
+        f"ORDER BY created_at DESC LIMIT {ph}",
+        (cutoff, limit),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "match_id": r[0],
+            "league": r[1],
+            "type": r[2],
+            "parameter": r[3],
+            "old_value": r[4],
+            "new_value": r[5],
+            "suggested_by": r[6],
+            "applied_by": r[7],
+            "confidence": r[8],
+            "reason": r[9],
+            "status": r[10],
+            "created_at": r[11].isoformat() if hasattr(r[11], "isoformat") else str(r[11]),
+        }
+        for r in rows
+    ]
 
 
 # --- Safety limits for automatic adjustments ---

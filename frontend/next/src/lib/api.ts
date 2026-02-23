@@ -259,3 +259,52 @@ export async function applyBatchCorrections(
     return null;
   }
 }
+
+// ===== AUDIT STATUS API =====
+
+export interface AuditStatusCorrection {
+  match_id: string;
+  league: string;
+  type: string;
+  parameter: string;
+  old_value: number;
+  new_value: number;
+  suggested_by: string;
+  applied_by: string;
+  confidence: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+export interface AuditStatusResult {
+  match_id: string;
+  league: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+  user: string;
+  version: string;
+}
+
+export interface AuditStatusResponse {
+  version: string;
+  last_batch_audit: AuditStatusResult | null;
+  recent_audits: AuditStatusResult[];
+  recent_corrections: AuditStatusCorrection[];
+  active_corrections: Record<string, { value: number; type: string; reason: string }>;
+  summary: {
+    total_audits: number;
+    total_corrections_applied: number;
+    has_recent_activity: boolean;
+  };
+}
+
+export async function getAuditStatus(days: number = 3): Promise<AuditStatusResponse | null> {
+  try {
+    const res = await fetch(`/api/audit/status?days=${days}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
