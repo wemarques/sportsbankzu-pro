@@ -73,3 +73,66 @@ jobs:
             --s3-bucket meu-bucket-sportsbank \
             --s3-key deploy/sportsbank_lambda.zip
           echo "Lambda deploy completed successfully!"
+
+      - name: Wait for Lambda function to be active
+        run: |
+          echo "Waiting for Lambda function to be fully updated..."
+          aws lambda wait function-updated --function-name sportsbank-pro-backend
+          echo "Lambda function is active and ready!"
+
+      - name: Warm up FootyStats cache (sequential per league)
+        run: |
+          API_URL="https://4eksz2n7h5.execute-api.us-east-1.amazonaws.com"
+          LEAGUES=(
+            "premier-league"
+            "championship"
+            "primera-division"
+            "a-league"
+            "austria-bundesliga"
+            "pro-league"
+            "brazil-serie-a"
+            "brazil-serie-b"
+            "denmark-superliga"
+            "france-ligue-1"
+            "france-ligue-2"
+            "germany-bundesliga"
+            "germany-2-bundesliga"
+            "italy-serie-a"
+            "italy-serie-b"
+            "netherlands-eredivisie"
+            "portugal-liga-nos"
+            "saudi-professional-league"
+            "scotland-premiership"
+            "spain-la-liga"
+            "switzerland-super-league"
+            "turkey-super-lig"
+          )
+
+          echo "Starting cache warm-up for ${#LEAGUES[@]} leagues..."
+          SUCCESS=0
+          FAIL=0
+
+          for LEAGUE in "${LEAGUES[@]}"; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 25 \
+              "${API_URL}/fixtures?leagues=${LEAGUE}&date=today" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
+              echo "  ✓ ${LEAGUE} (HTTP ${HTTP_CODE})"
+              SUCCESS=$((SUCCESS + 1))
+            else
+              echo "  ✗ ${LEAGUE} (HTTP ${HTTP_CODE})"
+              FAIL=$((FAIL + 1))
+            fi
+
+            # 3s delay between calls to avoid FootyStats API rate limiting
+            sleep 3
+          done
+
+          echo ""
+          echo "Cache warm-up complete: ${SUCCESS} OK, ${FAIL} failed (out of ${#LEAGUES[@]} leagues)"
+
+          # Don't fail the workflow if some leagues fail — cache is best-effort
+          if [ "$SUCCESS" -eq 0 ]; then
+            echo "::warning::All league warm-up calls failed. Cache may be cold."
+          fi
