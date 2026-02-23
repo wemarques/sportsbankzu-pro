@@ -6,6 +6,8 @@ on:
     paths:
       - "backend/**"
       - "scripts/deploy_lambda.py"
+      - ".github/workflows/deploy-lambda.yml"
+  workflow_dispatch:
 
 jobs:
   test:
