@@ -1293,6 +1293,68 @@ def gerar_quadro_resumo_whatsapp(
 
  
 
+@app.get("/debug/fixtures-diag")
+def fixtures_diagnostics() -> Dict[str, Any]:
+    """Inline diagnostic endpoint — tests the full fixtures data pipeline."""
+    import sys
+    diag: Dict[str, Any] = {"step": "start"}
+    try:
+        # 1. Check if fixtures router was imported
+        try:
+            from backend.routes import fixtures as _fx
+            diag["fixtures_router_import"] = "OK"
+            diag["fixtures_router_routes"] = [r.path for r in _fx.router.routes]
+        except Exception as e:
+            diag["fixtures_router_import"] = f"FAILED: {type(e).__name__}: {e}"
+
+        # 2. Check if pandas is available
+        diag["pandas_available"] = pd is not None
+        diag["pandas_version"] = getattr(pd, "__version__", "N/A") if pd else None
+
+        # 3. Check data dir
+        base = get_data_dir()
+        diag["data_dir"] = base
+        diag["data_dir_exists"] = os.path.isdir(base) if base else False
+
+        # 4. Check FootyStats client
+        try:
+            from backend.services.footstats_client import FootyStatsClient
+            client = FootyStatsClient()
+            diag["footystats_api_key_set"] = client.api_key != "example"
+            diag["footystats_api_key_prefix"] = client.api_key[:4] + "..." if client.api_key else None
+
+            # 5. Test league list
+            leagues = client.get_league_list(chosen_only=True)
+            diag["league_list_success"] = leagues.get("success", False)
+            diag["league_list_count"] = len(leagues.get("data", []))
+
+            # 6. Test resolve season_id for premier-league
+            from backend.config.leagues_config import get_league_config
+            config = get_league_config("premier-league")
+            diag["premier_league_config"] = config
+            if config:
+                season_id = client.resolve_season_id(config["country"], config["name"])
+                diag["premier_league_season_id"] = season_id
+                if season_id:
+                    matches = client.get_league_matches(season_id)
+                    diag["premier_league_matches_success"] = matches.get("success", False)
+                    diag["premier_league_matches_count"] = len(matches.get("data", []))
+        except Exception as e:
+            diag["footystats_error"] = f"{type(e).__name__}: {e}"
+
+        # 7. Check registered routes
+        diag["all_routes"] = [r.path for r in app.routes if hasattr(r, "path")]
+
+        # 8. Python/sys info
+        diag["python_version"] = sys.version
+        diag["lambda_env"] = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
+    except Exception as e:
+        diag["error"] = f"{type(e).__name__}: {e}"
+
+    return diag
+
+
 @app.get("/odds")
 def odds(league: str) -> Dict[str, Any]:
     return {
