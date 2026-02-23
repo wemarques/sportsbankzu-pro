@@ -4,6 +4,7 @@ import { AlertTriangle, WifiOff, Calendar, Trophy, RefreshCw, ChevronLeft, Chevr
 
 export type EmptyStateVariant =
   | "backend-offline"    // Backend indisponivel (503, timeout, etc.)
+  | "low-quality"        // Backend retornou dados simulados/mock
   | "no-games-date"      // Sem jogos para esta data (backend OK, 0 matches)
   | "no-games-league"    // Liga sem jogos para esta data
   | "mock-dev"           // Mock data em desenvolvimento
@@ -100,6 +101,13 @@ function getConfig(
         title: "Servidor indisponivel",
         message: errorMessage ?? "O servidor de dados esta temporariamente indisponivel.",
         suggestion: "Isso pode acontecer apos uma atualizacao. Aguarde alguns minutos e tente novamente.",
+      };
+    case "low-quality":
+      return {
+        icon: <AlertTriangle size={48} strokeWidth={1.5} />,
+        title: "Dados reais indisponiveis",
+        message: errorMessage ?? "O servidor retornou dados simulados em vez de dados reais.",
+        suggestion: "A fonte de dados pode estar em manutencao. Tente novamente em alguns minutos.",
       };
     case "no-games-date":
       return {

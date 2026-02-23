@@ -71,6 +71,13 @@ export async function GET(req: NextRequest) {
           `[fetch/route] Backend returned mock data (${mockReason}) | ${matches.length} matches | ${result.durationMs}ms`,
         );
 
+        // Human-readable reason per detection type
+        const mockReasonPt = hasGenericNames
+          ? "nomes de times genericos"
+          : hasMockIds
+            ? "identificadores de teste"
+            : "odds uniformes em todas as partidas";
+
         // In development: allow mock data with flag
         if (isDev) {
           const { generateMockMatches } = await import("@/lib/mockMatches");
@@ -91,7 +98,7 @@ export async function GET(req: NextRequest) {
             _dataSource: "backend-low-quality",
             _error: {
               kind: "LOW_QUALITY_DATA",
-              message: "O backend retornou dados de baixa qualidade (nomes genericos). Tente novamente em alguns minutos.",
+              message: `O backend retornou dados simulados (${mockReasonPt}). Os dados reais estao temporariamente indisponiveis.`,
             },
             _latencyMs: result.durationMs,
           },

@@ -690,6 +690,7 @@ export default function Dashboard() {
   const emptyVariant = useMemo<EmptyStateVariant | null>(() => {
     if (loading) return null;
     if (hasError && dataSource === "mock-dev") return "mock-dev";
+    if (hasError && dataSource === "backend-low-quality") return "low-quality";
     if (hasError) return dataSource === "client-error" ? "client-error" : "backend-offline";
     if (allMatches.length === 0 && !hasError) return "no-games-date";
     return null;
