@@ -29,13 +29,32 @@ export async function GET(req: NextRequest) {
     if (result.ok) {
       const matches = (result.data as Record<string, unknown>)?.matches;
       if (Array.isArray(matches) && matches.length > 0) {
-        // Quality gate: check if backend returned real team names (not generic "Team A")
-        const hasQuality = matches.some((m: Record<string, unknown>) => {
+        // Quality gate: detect mock data from backend
+        // 1. Generic team names: "Team A", "Team B", etc.
+        // 2. Mock IDs: IDs containing "-mock-" (backend generate_mock_fixtures pattern)
+        // 3. Uniform odds: all matches have identical odds (sign of mock generator)
+        const hasGenericNames = matches.every((m: Record<string, unknown>) => {
           const home = typeof m.homeTeam === "string" ? m.homeTeam : (m.homeTeam as Record<string, string>)?.name;
-          return home && home !== "Team A" && home !== "Team C" && home !== "Team B" && home !== "Team D";
+          return home && /^Team [A-Z]$/i.test(home);
         });
 
-        if (hasQuality) {
+        const hasMockIds = matches.some((m: Record<string, unknown>) => {
+          const id = String(m.id ?? "");
+          return id.includes("-mock-");
+        });
+
+        const hasUniformOdds = matches.length >= 3 && (() => {
+          const oddsSet = new Set<string>();
+          for (const m of matches.slice(0, 10) as Record<string, unknown>[]) {
+            const odds = m.odds as Record<string, number> | undefined;
+            if (odds?.home) oddsSet.add(`${odds.home}-${odds.draw}-${odds.away}`);
+          }
+          return oddsSet.size === 1; // All matches have identical odds
+        })();
+
+        const isMockData = hasGenericNames || hasMockIds || hasUniformOdds;
+
+        if (!isMockData) {
           console.log(
             `[fetch/route] Backend OK | ${matches.length} matches | ${result.durationMs}ms`,
           );
@@ -46,9 +65,10 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        // Backend returned low-quality mock data (generic team names)
+        // Backend returned mock data (detected by: names/IDs/uniform odds)
+        const mockReason = hasGenericNames ? "generic names" : hasMockIds ? "mock IDs" : "uniform odds";
         console.warn(
-          `[fetch/route] Backend returned low-quality mock data (generic team names) | ${result.durationMs}ms`,
+          `[fetch/route] Backend returned mock data (${mockReason}) | ${matches.length} matches | ${result.durationMs}ms`,
         );
 
         // In development: allow mock data with flag
