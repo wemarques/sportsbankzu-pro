@@ -516,3 +516,51 @@ def adjust_thresholds(defaults: dict) -> None:
 
     conn.commit()
     conn.close()
+
+
+# --- Safety limits for automatic adjustments ---
+
+ADJUSTMENT_LIMITS = {
+    "THRESHOLD": {"min": 0.40, "max": 0.95, "max_delta": 0.10},
+    "LAMBDA_WEIGHT": {"min": 0.10, "max": 0.90, "max_delta": 0.15},
+    "MARKET_FILTER": {"min": 0.0, "max": 1.0, "max_delta": 0.20},
+    "AI_PROMPT": {"min": 0.0, "max": 1.0, "max_delta": 0.30},
+}
+
+
+def validate_adjustment(
+    correction_type: str, parameter: str, old_value: float, new_value: float
+) -> tuple:
+    """Validate that an adjustment is within safety limits.
+
+    Returns (is_valid: bool, reason: str).
+    """
+    limits = ADJUSTMENT_LIMITS.get(correction_type, ADJUSTMENT_LIMITS.get("THRESHOLD"))
+    if limits is None:
+        return False, f"Unknown correction type: {correction_type}"
+    if new_value < limits["min"] or new_value > limits["max"]:
+        return False, (
+            f"Valor {new_value} fora do range [{limits['min']}, {limits['max']}]"
+        )
+    delta = abs(new_value - old_value)
+    if delta > limits["max_delta"]:
+        return False, (
+            f"Delta {delta:.4f} excede maximo {limits['max_delta']}"
+        )
+    return True, "OK"
+
+
+def increment_version() -> str:
+    """Increment the patch component of APP_VERSION (e.g. 'pro V2.7' -> 'pro V2.8')."""
+    global APP_VERSION
+    import re as _re
+
+    m = _re.search(r"(\d+)\.(\d+)", APP_VERSION)
+    if m:
+        major, minor = int(m.group(1)), int(m.group(2))
+        new_ver = APP_VERSION.replace(f"{major}.{minor}", f"{major}.{minor + 1}")
+        APP_VERSION = new_ver
+        os.environ["SPORTSBANK_VERSION"] = new_ver
+        audit_logger.info(f"Versao incrementada: {new_ver}")
+        return new_ver
+    return APP_VERSION

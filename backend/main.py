@@ -463,6 +463,10 @@ def date_range(filter_type: str) -> Tuple[datetime, datetime]:
         start_brt = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
         end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
         return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
+    if filter_type == "yesterday":
+        start_brt = (now_brt - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
+        return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
     if filter_type == "tomorrow":
         start_brt = (now_brt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)

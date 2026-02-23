@@ -10,7 +10,7 @@ Configuracao EventBridge:
   - Rule name: sportsbank-daily-audit
   - Schedule: cron(0 23 * * ? *)  -> 23:00 UTC = 20:00 BRT
   - Target: Lambda sportsbank-pro-backend
-  - Input: {"source": "eventbridge", "action": "batch_audit", "date": "today"}
+  - Input: {"source": "eventbridge", "action": "batch_audit", "date": "yesterday"}
 """
 
 import json
@@ -33,7 +33,7 @@ def cron_handler(event, context):
     os.environ["EVENTBRIDGE_TRIGGERED"] = "1"
 
     action = event.get("action", "batch_audit")
-    date_filter = event.get("date", "today")
+    date_filter = event.get("date", "yesterday")
 
     try:
         if action == "batch_audit":
@@ -63,7 +63,10 @@ def _run_batch_audit(date_filter: str) -> dict:
     finished_matches = _get_all_finished_matches(date_filter)
 
     if not finished_matches:
-        logger.info("No finished matches found. Skipping audit.")
+        from backend.audit import audit_logger
+        msg = f"[CRON] {date_filter} — Nenhum jogo finalizado encontrado. Auditoria pulada."
+        logger.info(msg)
+        audit_logger.info(msg)
         return {
             "status": "success",
             "message": "Nenhum jogo finalizado encontrado.",
@@ -80,6 +83,7 @@ def _run_batch_audit(date_filter: str) -> dict:
     market_stats = {}
     lambda_errors = []
     brier_scores = []
+    ev_values = []
     match_results = []
 
     for m in finished_matches:
@@ -158,6 +162,13 @@ def _run_batch_audit(date_filter: str) -> dict:
             if is_correct:
                 market_stats[market_key]["correct"] += 1
 
+            # Calculate EV for each pick
+            odd_pick = merc.get("odd_minima", 0) or 0
+            prob_pick = merc.get("prob_max", 0) / 100.0 if merc.get("prob_max") else 0
+            if odd_pick > 0 and prob_pick > 0:
+                ev_pick = (prob_pick * (odd_pick - 1)) - (1 - prob_pick)
+                ev_values.append(ev_pick)
+
         lambda_total = stats.get("lambdaTotal") or (
             (stats.get("lambdaHome") or 0) + (stats.get("lambdaAway") or 0)
         )
@@ -186,6 +197,7 @@ def _run_batch_audit(date_filter: str) -> dict:
     neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else 0.0
     avg_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.0
     avg_lambda_error = sum(lambda_errors) / len(lambda_errors) if lambda_errors else 0.0
+    avg_ev = sum(ev_values) / len(ev_values) if ev_values else 0.0
 
     # Build prompt data
     market_accuracy_list = []
@@ -213,6 +225,7 @@ def _run_batch_audit(date_filter: str) -> dict:
         "neutro_accuracy_pct": neutro_accuracy_pct,
         "avg_brier_score": avg_brier,
         "avg_lambda_error": avg_lambda_error,
+        "avg_ev": avg_ev,
         "market_accuracy_text": "\n".join(market_accuracy_list) or "Sem dados",
         "matches_summary_text": "\n".join(matches_summary_lines) or "Sem detalhes",
     }
@@ -238,6 +251,7 @@ def _run_batch_audit(date_filter: str) -> dict:
                 "total_matches": len(match_results),
                 "avg_brier_score": avg_brier,
                 "avg_lambda_error": avg_lambda_error,
+                "avg_ev": avg_ev,
                 "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
             },
             match_status="cron_batch_audit",
@@ -246,31 +260,58 @@ def _run_batch_audit(date_filter: str) -> dict:
     except Exception as e:
         logger.warning(f"Could not store cron batch audit result: {e}")
 
-    # Auto-apply high-confidence corrections from model evaluation
+    # Auto-apply high-confidence corrections from model evaluation (with validation)
     auto_applied = []
+    rejected = []
     if model_evaluation and model_evaluation.get("recommended_corrections"):
+        from backend.audit import validate_adjustment, audit_logger
         for corr in model_evaluation["recommended_corrections"]:
             confidence = corr.get("confidence", 0)
             # Only auto-apply if confidence >= 80%
             if confidence >= 80:
                 try:
+                    old_val = float(corr.get("current_value", 0))
+                    new_val = float(corr.get("suggested_value", 0))
+                    param = corr.get("parameter", "")
+                    corr_type = corr.get("type", "")
+
+                    # Validate adjustment is within safety limits
+                    is_valid, reason = validate_adjustment(corr_type, param, old_val, new_val)
+                    if not is_valid:
+                        rejected.append(param)
+                        logger.warning(f"Correction rejected: {param} — {reason}")
+                        audit_logger.info(
+                            f"[CRON] Correcao rejeitada: parameter={param}, "
+                            f"old={old_val}, new={new_val}, reason={reason}"
+                        )
+                        continue
+
                     audit_db.log_correction(
                         match_id=f"cron_auto_{datetime.now().strftime('%Y%m%d')}",
                         league="ALL",
-                        correction_type=corr.get("type", ""),
-                        parameter_name=corr.get("parameter", ""),
-                        old_value=float(corr.get("current_value", 0)),
-                        new_value=float(corr.get("suggested_value", 0)),
+                        correction_type=corr_type,
+                        parameter_name=param,
+                        old_value=old_val,
+                        new_value=new_val,
                         suggested_by="mistral_cron_audit",
                         applied_by="cron_auto",
                         audit_confidence=confidence,
                         reason=corr.get("reason", ""),
                     )
-                    auto_applied.append(corr.get("parameter", ""))
-                    logger.info(f"Auto-applied correction: {corr.get('parameter', '')} "
-                                f"({corr.get('current_value', 0)} -> {corr.get('suggested_value', 0)})")
+                    auto_applied.append(param)
+                    logger.info(f"Auto-applied correction: {param} ({old_val} -> {new_val})")
                 except Exception as e:
                     logger.warning(f"Failed to auto-apply correction: {e}")
+
+    # Increment app version if corrections were applied
+    if auto_applied:
+        try:
+            from backend.audit import increment_version, audit_logger as _al
+            new_ver = increment_version()
+            _al.info(f"[CRON] Versao atualizada: {new_ver} apos {len(auto_applied)} correcoes")
+            logger.info(f"Version incremented to {new_ver}")
+        except Exception as e:
+            logger.warning(f"Failed to increment version: {e}")
 
     result = {
         "status": "success",
@@ -281,9 +322,11 @@ def _run_batch_audit(date_filter: str) -> dict:
         "safe_accuracy": round(safe_accuracy_pct, 1),
         "neutro_accuracy": round(neutro_accuracy_pct, 1),
         "avg_brier_score": round(avg_brier, 4),
+        "avg_ev": round(avg_ev, 4),
         "model_assessment": model_evaluation.get("overall_assessment", "") if model_evaluation else "N/A",
         "auto_corrections_applied": len(auto_applied),
         "auto_corrections": auto_applied,
+        "rejected_corrections": len(rejected),
     }
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")

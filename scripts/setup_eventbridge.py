@@ -24,7 +24,7 @@ SCHEDULE = "cron(0 23 * * ? *)"
 EVENT_INPUT = json.dumps({
     "source": "eventbridge",
     "action": "batch_audit",
-    "date": "today"
+    "date": "yesterday"
 })
 
 

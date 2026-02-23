@@ -139,6 +139,7 @@ class PromptTemplates:
         - Acerto picks SAFE: {batch_data.get("safe_correct", 0)}/{batch_data.get("safe_total", 0)} ({batch_data.get("safe_accuracy_pct", 0):.1f}%)
         - Acerto picks NEUTRO: {batch_data.get("neutro_correct", 0)}/{batch_data.get("neutro_total", 0)} ({batch_data.get("neutro_accuracy_pct", 0):.1f}%)
         - Media Brier Score: {batch_data.get("avg_brier_score", 0):.4f}
+        - Media EV (Expected Value): {batch_data.get("avg_ev", 0):.4f}
         - Erro medio de lambda (previsto vs real): {batch_data.get("avg_lambda_error", 0):.2f} gols
 
         ACURACIA POR MERCADO:
