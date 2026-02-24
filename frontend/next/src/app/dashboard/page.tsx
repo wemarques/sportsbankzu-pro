@@ -1089,78 +1089,81 @@ export default function Dashboard() {
 
           {/* ── MATCHES VIEW (default) ── */}
           {navView === "matches" && <>
-          {/* Filter bar */}
-          <div className="st-filters">
-            <div className="st-date-nav">
-              <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
-              <span className="st-date-label">{dateLabel}</span>
-              <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
-            </div>
-            <div className="st-live-dot" />
-            <button
-              type="button"
-              className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
-              onClick={handleCopyScreen}
-              data-share-control="true"
-              disabled={shareBusy !== null}
-            >
-              {shareBusy === "copy" ? <Loader2 size={12} className="st-spin-icon" /> : <Copy size={12} />}
-              Copiar tela
-            </button>
-            <button
-              type="button"
-              className={`st-filter-btn ${shareBusy === "whatsapp" ? "st-filter-btn--active" : ""}`}
-              onClick={handleShareWhatsApp}
-              data-share-control="true"
-              disabled={shareBusy !== null}
-            >
-              {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
-              WhatsApp
-            </button>
-            <button
-              type="button"
-              className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
-              onClick={handleBatchAudit}
-              disabled={batchAuditLoading || finishedCount === 0}
-              title={finishedCount === 0 ? "Nenhum jogo finalizado para auditar" : `Auditar ${finishedCount} jogos finalizados`}
-            >
-              {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
-              {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
-            </button>
-            <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
-            <button
-              type="button"
-              className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
-              onClick={() => setShowFavoritesOnly((v) => !v)}
-            >
-              <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
-            </button>
-            <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
-          </div>
-          {shareFeedback && (
-            <div
-              className={`st-share-feedback st-share-feedback--${shareFeedbackTone}`}
-              role="status"
-              data-share-control="true"
-            >
-              {shareFeedback}
-            </div>
-          )}
-
-          <AuditBanner />
-
-          {/* Odds tabs */}
-          <div className="st-odds-tabs">
-            <span style={{ fontSize: "0.7rem", color: "var(--st-text-muted)", padding: "10px 8px 10px 0", whiteSpace: "nowrap" }}>COTACOES</span>
-            {oddsTabs.map((t) => (
+          {/* Sticky header: filter bar + odds tabs */}
+          <div className="st-sticky-header">
+            {/* Filter bar */}
+            <div className="st-filters">
+              <div className="st-date-nav">
+                <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
+                <span className="st-date-label">{dateLabel}</span>
+                <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
+              </div>
+              <div className="st-live-dot" />
               <button
-                key={t.key}
-                className={`st-odds-tab ${oddsTab === t.key ? "st-odds-tab--active" : ""}`}
-                onClick={() => setOddsTab(t.key)}
+                type="button"
+                className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
+                onClick={handleCopyScreen}
+                data-share-control="true"
+                disabled={shareBusy !== null}
               >
-                {t.label}
+                {shareBusy === "copy" ? <Loader2 size={12} className="st-spin-icon" /> : <Copy size={12} />}
+                Copiar tela
               </button>
-            ))}
+              <button
+                type="button"
+                className={`st-filter-btn ${shareBusy === "whatsapp" ? "st-filter-btn--active" : ""}`}
+                onClick={handleShareWhatsApp}
+                data-share-control="true"
+                disabled={shareBusy !== null}
+              >
+                {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
+                WhatsApp
+              </button>
+              <button
+                type="button"
+                className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
+                onClick={handleBatchAudit}
+                disabled={batchAuditLoading || finishedCount === 0}
+                title={finishedCount === 0 ? "Nenhum jogo finalizado para auditar" : `Auditar ${finishedCount} jogos finalizados`}
+              >
+                {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
+                {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
+              </button>
+              <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
+              <button
+                type="button"
+                className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
+                onClick={() => setShowFavoritesOnly((v) => !v)}
+              >
+                <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
+              </button>
+              <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
+            </div>
+            {shareFeedback && (
+              <div
+                className={`st-share-feedback st-share-feedback--${shareFeedbackTone}`}
+                role="status"
+                data-share-control="true"
+              >
+                {shareFeedback}
+              </div>
+            )}
+
+            <AuditBanner />
+
+            {/* Odds tabs */}
+            <div className="st-odds-tabs">
+              <span style={{ fontSize: "0.7rem", color: "var(--st-text-muted)", padding: "10px 8px 10px 0", whiteSpace: "nowrap" }}>COTACOES</span>
+              {oddsTabs.map((t) => (
+                <button
+                  key={t.key}
+                  className={`st-odds-tab ${oddsTab === t.key ? "st-odds-tab--active" : ""}`}
+                  onClick={() => setOddsTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {selectedLeague && (
