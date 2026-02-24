@@ -149,7 +149,20 @@ def standings(league: str = Query("")) -> Dict[str, Any]:
         data = footstats.get_league_tables(season_id)
         if not data.get("success"):
             return {"standings": [], "error": "Falha ao buscar classificação"}
-        return {"standings": data.get("data", []), "leagueId": league}
+        # FootyStats returns a dict with league_table, all_matches_table_*, etc.
+        raw = data.get("data", {})
+        table = raw.get("league_table", []) if isinstance(raw, dict) else raw
+        # Normalize field names for the frontend
+        standings_list = []
+        for team in table:
+            standings_list.append({
+                **team,
+                "won": team.get("seasonWins_overall", 0),
+                "drawn": team.get("seasonDraws_overall", 0),
+                "lost": team.get("seasonLosses_overall", 0),
+                "played": team.get("matchesPlayed", 0),
+            })
+        return {"standings": standings_list, "leagueId": league}
     except Exception as e:
         logger.error(f"Erro ao buscar standings para {league}: {e}")
         return {"standings": [], "error": str(e)}

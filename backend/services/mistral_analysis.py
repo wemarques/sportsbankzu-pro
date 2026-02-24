@@ -200,6 +200,14 @@ CONTEXTO ADICIONAL:
 - Confrontos diretos: {context.get('h2h', 'N/A')}
 - Lesoes/Suspensoes: {context.get('absences', 'Nenhuma informacao')}
 """
+            if context.get("footystats_analysis"):
+                prompt += f"""
+ANALISE FOOTYSTATS (dados reais de forma recente, BTTS, clean sheets, streaks, H2H):
+{context['footystats_analysis']}
+
+IMPORTANTE: Use os dados da analise FootyStats acima como fonte primaria para forma recente,
+tendencias de BTTS, clean sheets e confrontos diretos. NAO invente dados de forma.
+"""
 
         prompt += """
 Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte formato JSON:

@@ -121,6 +121,10 @@ export interface MatchDetailData {
     awayCardsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
+    cornersPotential?: number;
+    cornerOver85Prob?: number;
+    cornerOver95Prob?: number;
+    cornerOver105Prob?: number;
   };
   h2h?: {
     totalMatches?: number;
@@ -684,7 +688,39 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
                             <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCorners?.toFixed(1) ?? "-"}</span></span>
                           </div>
-                          {(!match.matchStats.homeCornersPerMatch && !match.matchStats.awayCornersPerMatch) && (
+                          {/* Corner predictions from FootyStats */}
+                          {(match.matchStats.cornerOver85Prob != null || match.matchStats.cornerOver95Prob != null || match.matchStats.cornerOver105Prob != null) && (
+                            <div style={{ marginTop: 12 }}>
+                              <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: 8, textAlign: "center" }}>Prognosticos de Escanteios</div>
+                              <div style={{ display: "flex", justifyContent: "space-around", textAlign: "center" }}>
+                                {match.matchStats.cornerOver85Prob != null && (
+                                  <div>
+                                    <div style={{ fontSize: "1rem", fontWeight: "bold", color: (match.matchStats.cornerOver85Prob ?? 0) >= 70 ? "#00ff88" : (match.matchStats.cornerOver85Prob ?? 0) >= 50 ? "#ffbb33" : "#ff4444" }}>
+                                      {formatProbValue(match.matchStats.cornerOver85Prob)}
+                                    </div>
+                                    <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>Over 8.5</div>
+                                  </div>
+                                )}
+                                {match.matchStats.cornerOver95Prob != null && (
+                                  <div>
+                                    <div style={{ fontSize: "1rem", fontWeight: "bold", color: (match.matchStats.cornerOver95Prob ?? 0) >= 65 ? "#00ff88" : (match.matchStats.cornerOver95Prob ?? 0) >= 45 ? "#ffbb33" : "#ff4444" }}>
+                                      {formatProbValue(match.matchStats.cornerOver95Prob)}
+                                    </div>
+                                    <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>Over 9.5</div>
+                                  </div>
+                                )}
+                                {match.matchStats.cornerOver105Prob != null && (
+                                  <div>
+                                    <div style={{ fontSize: "1rem", fontWeight: "bold", color: (match.matchStats.cornerOver105Prob ?? 0) >= 55 ? "#00ff88" : (match.matchStats.cornerOver105Prob ?? 0) >= 35 ? "#ffbb33" : "#ff4444" }}>
+                                      {formatProbValue(match.matchStats.cornerOver105Prob)}
+                                    </div>
+                                    <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>Over 10.5</div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {(!match.matchStats.homeCornersPerMatch && !match.matchStats.awayCornersPerMatch && !match.matchStats.cornerOver85Prob) && (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de escanteios nao disponiveis para este jogo.</div>
                           )}
                         </div>
@@ -753,11 +789,18 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                     </>
                   )}
 
-                  {(match.matchStats.homeCornersPerMatch || match.matchStats.homeCardsPerMatch) && (
+                  {(match.matchStats.homeCornersPerMatch || match.matchStats.homeCardsPerMatch || match.matchStats.cornerOver85Prob) && (
                     <>
                       <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Escanteios & Cartoes</h4>
                       {match.matchStats.homeCornersPerMatch != null && (
                         <ComparativeBar label="Escanteios/Jogo" homeVal={match.matchStats.homeCornersPerMatch} awayVal={match.matchStats.awayCornersPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                      )}
+                      {(match.matchStats.cornerOver85Prob != null || match.matchStats.cornerOver95Prob != null || match.matchStats.cornerOver105Prob != null) && (
+                        <div className="mdc-stats-grid" style={{ marginTop: 8 }}>
+                          {match.matchStats.cornerOver85Prob != null && <StatRow label="Escanteios Over 8.5" value={formatProbValue(match.matchStats.cornerOver85Prob)} />}
+                          {match.matchStats.cornerOver95Prob != null && <StatRow label="Escanteios Over 9.5" value={formatProbValue(match.matchStats.cornerOver95Prob)} />}
+                          {match.matchStats.cornerOver105Prob != null && <StatRow label="Escanteios Over 10.5" value={formatProbValue(match.matchStats.cornerOver105Prob)} />}
+                        </div>
                       )}
                       {match.matchStats.homeCardsPerMatch != null && (
                         <ComparativeBar label="Cartoes/Jogo" homeVal={match.matchStats.homeCardsPerMatch} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />

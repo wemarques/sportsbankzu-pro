@@ -310,18 +310,56 @@ def _match_to_ai_input(m: dict) -> dict:
     home_form = stats.get("homeForm") or m.get("homeForm") or []
     away_form = stats.get("awayForm") or m.get("awayForm") or []
     h2h = m.get("h2h", {})
+
+    # Enrich with FootyStats match details (gpt_en analysis, H2H, etc.)
+    footystats_analysis = ""
+    footystats_match_id = m.get("footystatsId")
+    if footystats_match_id:
+        try:
+            from backend.services.footstats_client import FootyStatsClient
+            client = FootyStatsClient()
+            details = client.get_match_details(int(footystats_match_id))
+            if details.get("success"):
+                detail_data = details.get("data", {})
+                footystats_analysis = detail_data.get("gpt_en", "") or ""
+                # Extract real H2H data if available
+                api_h2h = detail_data.get("h2h", {})
+                if api_h2h and isinstance(api_h2h, dict):
+                    prev = api_h2h.get("previous_matches_results", {})
+                    betting = api_h2h.get("betting_stats", {})
+                    h2h = {
+                        "totalMatches": prev.get("totalMatches", 0),
+                        "homeWins": prev.get("team_a_wins", 0),
+                        "draws": prev.get("draw", 0),
+                        "awayWins": prev.get("team_b_wins", 0),
+                        "avgGoals": betting.get("avg_goals", 0),
+                        "bttsPercentage": betting.get("bttsPercentage", 0),
+                        "over25Percentage": betting.get("over25Percentage", 0),
+                    }
+        except Exception as e:
+            logger.warning(f"Could not fetch match details for {footystats_match_id}: {e}")
+
+    h2h_text = f"Total: {h2h.get('totalMatches', 0)} jogos, Casa: {h2h.get('homeWins', 0)}, Empates: {h2h.get('draws', 0)}, Fora: {h2h.get('awayWins', 0)}, Media gols: {h2h.get('avgGoals', 0)}"
+    if h2h.get("bttsPercentage"):
+        h2h_text += f", BTTS: {h2h['bttsPercentage']}%, Over 2.5: {h2h.get('over25Percentage', 0)}%"
+
+    context = {
+        "home_form": ", ".join(home_form) if isinstance(home_form, list) else str(home_form),
+        "away_form": ", ".join(away_form) if isinstance(away_form, list) else str(away_form),
+        "h2h": h2h_text,
+    }
+    if footystats_analysis:
+        context["footystats_analysis"] = footystats_analysis
+
     return {
         "id": m.get("id"),
+        "footystatsId": footystats_match_id,
         "home_team": m.get("homeTeam", ""),
         "away_team": m.get("awayTeam", ""),
         "league": m.get("leagueName", ""),
         "stats": stats,
         "odds": m.get("odds", {}),
-        "context": {
-            "home_form": ", ".join(home_form) if isinstance(home_form, list) else str(home_form),
-            "away_form": ", ".join(away_form) if isinstance(away_form, list) else str(away_form),
-            "h2h": f"Total: {h2h.get('totalMatches', 0)} jogos, Casa: {h2h.get('homeWins', 0)}, Empates: {h2h.get('draws', 0)}, Fora: {h2h.get('awayWins', 0)}, Media gols: {h2h.get('avgGoals', 0)}",
-        },
+        "context": context,
     }
 
 
