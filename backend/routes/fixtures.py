@@ -87,6 +87,8 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                     logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
             except Exception as e:
                 logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
+            # League is configured for FootyStats — never fall back to mock
+            found_via_api = True
 
         # 2. FALLBACK: ARQUIVOS CSV LOCAIS (Se não encontrou via API ou se lid não está na config)
         if not found_via_api:
