@@ -141,8 +141,12 @@ async def audit_match(
             predictions = (request.predictions or []) if request else []
             ai_analysis = (request.ai_summary or {}) if request else {}
 
+            # Include team names in stats dict for audit metadata
+            audit_stats = dict(match_data.get("stats", {}))
+            audit_stats["homeTeam"] = match_data.get("homeTeam", "")
+            audit_stats["awayTeam"] = match_data.get("awayTeam", "")
             audit_result = auditor.audit_match_vs_result(
-                match_data=match_data.get("stats", {}),
+                match_data=audit_stats,
                 predictions=predictions,
                 ai_analysis=ai_analysis,
                 actual_result=actual_result,
