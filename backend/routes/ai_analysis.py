@@ -92,6 +92,18 @@ async def audit_match(
 
     try:
         match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
+        # Ensure both camelCase and snake_case team name keys exist for auditor compatibility
+        if "homeTeam" not in match_data and "home_team" in match_data:
+            match_data["homeTeam"] = match_data["home_team"]
+        if "awayTeam" not in match_data and "away_team" in match_data:
+            match_data["awayTeam"] = match_data["away_team"]
+        # Fallback to query params if neither key is populated
+        if not match_data.get("homeTeam") and home_team:
+            match_data["homeTeam"] = home_team
+            match_data["home_team"] = home_team
+        if not match_data.get("awayTeam") and away_team:
+            match_data["awayTeam"] = away_team
+            match_data["away_team"] = away_team
         auditor = MistralAuditor()
 
         # Get full match record to check status and extract actual result
@@ -351,11 +363,15 @@ def _match_to_ai_input(m: dict) -> dict:
     if footystats_analysis:
         context["footystats_analysis"] = footystats_analysis
 
+    home_name = m.get("homeTeam", "")
+    away_name = m.get("awayTeam", "")
     return {
         "id": m.get("id"),
         "footystatsId": footystats_match_id,
-        "home_team": m.get("homeTeam", ""),
-        "away_team": m.get("awayTeam", ""),
+        "home_team": home_name,
+        "away_team": away_name,
+        "homeTeam": home_name,
+        "awayTeam": away_name,
         "league": m.get("leagueName", ""),
         "stats": stats,
         "odds": m.get("odds", {}),
@@ -413,10 +429,14 @@ def _get_match_data(match_id: str, home_team: str = None, away_team: str = None)
 
     # Fallback — use generic data with descriptive names instead of hardcoded mock
     logger.warning(f"Using fallback mock data for match {match_id}")
+    fallback_home = home_team or "Home Team"
+    fallback_away = away_team or "Away Team"
     return {
         "id": match_id,
-        "home_team": "Home Team",
-        "away_team": "Away Team",
+        "home_team": fallback_home,
+        "away_team": fallback_away,
+        "homeTeam": fallback_home,
+        "awayTeam": fallback_away,
         "league": "Unknown League",
         "stats": {
             "homeWinProb": 40.0,
