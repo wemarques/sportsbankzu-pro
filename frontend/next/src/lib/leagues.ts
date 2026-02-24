@@ -47,6 +47,10 @@ export type Match = {
     under25: number;
     bttsYes: number;
     bttsNo: number;
+    cornersOver85?: number;
+    cornersOver95?: number;
+    cornersOver105?: number;
+    cornersOver115?: number;
   };
   stats: {
     homeWinProb: number;
@@ -69,6 +73,10 @@ export type Match = {
     awayCardsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
+    cornersPotential?: number;
+    cornerOver85Prob?: number;
+    cornerOver95Prob?: number;
+    cornerOver105Prob?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;

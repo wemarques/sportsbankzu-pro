@@ -179,6 +179,26 @@ def build_records_from_matches(
         odds_over15 = r.get("odds_ft_over15", None)
         odds_over35 = r.get("odds_ft_over35", None)
         odds_over45 = r.get("odds_ft_over45", None)
+        # Corner potentials from FootyStats (pre-match probabilities, 0-100 scale)
+        corners_potential = r.get("corners_potential", None)
+        corners_o85_pct = r.get("corners_o85_potential", None)
+        corners_o95_pct = r.get("corners_o95_potential", None)
+        corners_o105_pct = r.get("corners_o105_potential", None)
+        # Corner odds
+        odds_corners_o85 = r.get("odds_corners_over_85", None)
+        odds_corners_o95 = r.get("odds_corners_over_95", None)
+        odds_corners_o105 = r.get("odds_corners_over_105", None)
+        odds_corners_o115 = r.get("odds_corners_over_115", None)
+        try:
+            corners_potential = float(corners_potential) if corners_potential is not None and float(corners_potential) > 0 else None
+            corners_o85_pct = float(corners_o85_pct) if corners_o85_pct is not None and float(corners_o85_pct) > 0 else None
+            corners_o95_pct = float(corners_o95_pct) if corners_o95_pct is not None and float(corners_o95_pct) > 0 else None
+            corners_o105_pct = float(corners_o105_pct) if corners_o105_pct is not None and float(corners_o105_pct) > 0 else None
+        except Exception:
+            corners_potential = None
+            corners_o85_pct = None
+            corners_o95_pct = None
+            corners_o105_pct = None
         try:
             over15_pct = float(over15_pct) if over15_pct is not None else None
             over25_pct = float(over25_pct) if over25_pct is not None else None
@@ -344,6 +364,7 @@ def build_records_from_matches(
             total_gols = None
         records.append({
             "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
+            "footystatsId": r.get("id"),
             "leagueId": league_id,
             "leagueName": league_id.replace("-", " ").title(),
             "homeTeam": home,
@@ -363,6 +384,10 @@ def build_records_from_matches(
                 "under25": float(odds_under25) if odds_under25 else None,
                 "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
+                "cornersOver85": float(odds_corners_o85) if odds_corners_o85 else None,
+                "cornersOver95": float(odds_corners_o95) if odds_corners_o95 else None,
+                "cornersOver105": float(odds_corners_o105) if odds_corners_o105 else None,
+                "cornersOver115": float(odds_corners_o115) if odds_corners_o115 else None,
             },
             "stats": {
                 "homeWinProb": round(homeProb, 1),
@@ -399,6 +424,11 @@ def build_records_from_matches(
                 "awayCardsPerMatch": away_cards_pm,
                 "leagueAvgCorners": league_avgs["avg_corners"],
                 "leagueAvgCards": league_avgs["avg_cards"],
+                # Corner predictions (from FootyStats pre-match potentials)
+                "cornersPotential": corners_potential,
+                "cornerOver85Prob": corners_o85_pct,
+                "cornerOver95Prob": corners_o95_pct,
+                "cornerOver105Prob": corners_o105_pct,
             },
             "h2h": {
                 "totalMatches": totalMatches,

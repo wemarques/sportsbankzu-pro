@@ -108,6 +108,23 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         home = str(jogo.get("homeTeam", ""))[:3].upper()
         status_dc = "SAFE" if prob_dc >= 0.82 else "NEUTRO"
         add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
+    # Corner market predictions (from FootyStats pre-match potentials)
+    corner_o85 = normalize_prob(stats.get("cornerOver85Prob"))
+    corner_o95 = normalize_prob(stats.get("cornerOver95Prob"))
+    corner_o105 = normalize_prob(stats.get("cornerOver105Prob"))
+    odd_corners_o85 = odds.get("cornersOver85")
+    odd_corners_o95 = odds.get("cornersOver95")
+    odd_corners_o105 = odds.get("cornersOver105")
+    # Add corner markets when probability is high enough
+    if corner_o85 is not None and corner_o85 >= 0.72:
+        status_c = "SAFE" if corner_o85 >= 0.80 else "NEUTRO"
+        add_mercado("Escanteios Over 8.5", status_c, corner_o85, odd_corners_o85)
+    if corner_o95 is not None and corner_o95 >= 0.65:
+        status_c = "SAFE" if corner_o95 >= 0.75 else "NEUTRO"
+        add_mercado("Escanteios Over 9.5", status_c, corner_o95, odd_corners_o95)
+    if corner_o105 is not None and corner_o105 >= 0.58:
+        status_c = "SAFE" if corner_o105 >= 0.68 else "NEUTRO"
+        add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
     if not mercados:
         # Fallback: only the single best candidate with stricter thresholds
         candidatos = []
@@ -136,6 +153,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
             return "Double Chance 12"
         if base.startswith("BTTS"):
             return "BTTS"
+        if base.startswith("Escanteios Over"):
+            return base  # Already in valid format
         return base
     if mercados:
         mercados_normalizados = [normalizar_mercado(m.get("mercado", "")) for m in mercados]
