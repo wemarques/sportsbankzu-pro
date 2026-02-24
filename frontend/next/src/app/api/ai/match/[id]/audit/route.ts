@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(
   req: NextRequest,
@@ -14,7 +14,7 @@ export async function POST(
     const qs = url.search ? url.search : "";
     const result = await fetchBackend(
       `/api/ai/match/${encodeURIComponent(matchId)}/audit${qs}`,
-      { method: "POST", body: JSON.stringify(body), timeoutMs: 30_000 },
+      { method: "POST", body: JSON.stringify(body), timeoutMs: 55_000 },
     );
 
     if (result.ok) {

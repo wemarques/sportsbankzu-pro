@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function fallbackResponse(message: string) {
   return Response.json({
@@ -32,7 +32,7 @@ export async function GET(
   const qsStr = qs.toString() ? `?${qs.toString()}` : "";
   const result = await fetchBackend(
     `/api/ai/match/${encodeURIComponent(matchId)}/analysis${qsStr}`,
-    { timeoutMs: 28_000 },
+    { timeoutMs: 55_000 },
   );
 
   if (result.ok) {
