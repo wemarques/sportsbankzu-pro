@@ -77,9 +77,10 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             for r in records:
                                 r["dataSource"] = "FootyStats API (Tempo Real)"
                             out.extend(records)
-                            found_via_api = True
                         else:
                             logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}'")
+                        # Mark API as found even with 0 records to avoid mock fallback
+                        found_via_api = True
                     else:
                         logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
                 else:
