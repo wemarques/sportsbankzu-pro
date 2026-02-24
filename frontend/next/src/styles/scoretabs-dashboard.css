@@ -178,6 +178,15 @@
   color: var(--st-text-muted);
 }
 
+/* ---- STICKY HEADER (filters + odds tabs) ---- */
+.st-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: var(--st-bg);
+  flex-shrink: 0;
+}
+
 /* ---- FILTER BAR ---- */
 .st-filters {
   display: flex;
@@ -220,7 +229,7 @@
 }
 
 .st-share-feedback {
-  margin: 8px 16px 0;
+  margin: 0 16px;
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 0.74rem;
