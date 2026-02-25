@@ -344,6 +344,13 @@ export default function Dashboard() {
         let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
         let raw = res?.matches ?? [];
 
+        // Auto-retry once on timeout (Lambda cold start takes ~10-20s, second call is fast)
+        if (raw.length === 0 && res._error?.kind === "TIMEOUT") {
+          console.log("[dashboard] Timeout on first attempt, retrying (Lambda cold start)...");
+          res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
+          raw = res?.matches ?? [];
+        }
+
         // Track data source and error state
         setDataSource(res._dataSource ?? null);
         setIsMockData(res._isMockData ?? false);
