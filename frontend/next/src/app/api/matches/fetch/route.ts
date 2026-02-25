@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
 
-/** Allow up to 30 s on Vercel Pro for cold starts. */
-export const maxDuration = 30;
+/** Allow up to 60 s on Vercel for Lambda cold starts + multi-league fetches. */
+export const maxDuration = 60;
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
     const result = await fetchBackend(`/fixtures?${qs.toString()}`, {
-      timeoutMs: 28_000,
+      timeoutMs: 55_000,
     });
 
     if (result.ok) {
