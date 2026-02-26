@@ -7,6 +7,36 @@ from backend.modeling.market_validator import (
 
 logger = logging.getLogger("sportsbank")
 
+
+def _get_dynamic_thresholds(market: str) -> dict:
+    """Return SAFE/NEUTRO thresholds for a market, preferring values from the audit DB.
+
+    Falls back to hardcoded defaults when the DB is unavailable or has no entry
+    for this market. This enables the cron audit to gradually tighten or relax
+    thresholds based on observed Brier scores (Gap 4 — dynamic thresholds).
+    """
+    try:
+        from backend.audit import init_db
+        conn = init_db()
+        row = conn.execute(
+            "SELECT safe_threshold, neutro_threshold FROM thresholds WHERE market=?",
+            (market,),
+        ).fetchone()
+        conn.close()
+        if row and row[0] is not None:
+            return {"SAFE": float(row[0]), "NEUTRO": float(row[1]) if row[1] is not None else float(row[0]) * 0.9}
+    except Exception as _e:
+        logger.debug(f"[Gap4] Could not read dynamic threshold for {market}: {_e}")
+
+    _defaults: dict = {
+        "BTTS":          {"SAFE": 0.75, "NEUTRO": 0.68},
+        "Over/Under":    {"SAFE": 0.72, "NEUTRO": 0.65},
+        "Double Chance": {"SAFE": 0.82, "NEUTRO": 0.75},
+        "1X2":           {"SAFE": 0.60, "NEUTRO": 0.50},
+    }
+    return _defaults.get(market, {"SAFE": 0.60, "NEUTRO": 0.50})
+
+
 def normalize_prob(value: Optional[float]) -> Optional[float]:
     if value is None:
         return None
@@ -33,6 +63,11 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     mercados: List[Dict[str, Any]] = []
     stats = jogo.get("stats", {})
     odds = jogo.get("odds", {})
+
+    # Load thresholds from audit DB (Gap 4 — dynamic thresholds with hardcoded fallback)
+    _th_btts = _get_dynamic_thresholds("BTTS")
+    _th_dc = _get_dynamic_thresholds("Double Chance")
+    _th_ou = _get_dynamic_thresholds("Over/Under")
     prob_over25 = normalize_prob(stats.get("over25Prob"))
     prob_btts = normalize_prob(stats.get("bttsProb"))
     prob_under35 = normalize_prob(stats.get("under35Prob"))
@@ -99,14 +134,14 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
             else:
                 add_mercado("Under 4.5 gols", "SAFE*", prob_under45, odd_under45, alerta="Odd muito baixa")
     else:
-        if prob_over25 is not None and prob_over25 >= 0.72:
+        if prob_over25 is not None and prob_over25 >= _th_ou["SAFE"]:
             add_mercado("Over 2.5 gols", "SAFE", prob_over25, odds.get("over25"))
-    if prob_btts is not None and prob_btts >= 0.68:
-        status = "SAFE" if prob_btts >= 0.75 else "NEUTRO"
+    if prob_btts is not None and prob_btts >= _th_btts["NEUTRO"]:
+        status = "SAFE" if prob_btts >= _th_btts["SAFE"] else "NEUTRO"
         add_mercado("BTTS — SIM", status, prob_btts, odd_btts_yes)
-    if prob_dc is not None and prob_dc >= 0.75:
+    if prob_dc is not None and prob_dc >= _th_dc["NEUTRO"]:
         home = str(jogo.get("homeTeam", ""))[:3].upper()
-        status_dc = "SAFE" if prob_dc >= 0.82 else "NEUTRO"
+        status_dc = "SAFE" if prob_dc >= _th_dc["SAFE"] else "NEUTRO"
         add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
     # Corner market predictions (from FootyStats pre-match potentials)
     corner_o85 = normalize_prob(stats.get("cornerOver85Prob"))

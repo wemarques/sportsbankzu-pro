@@ -38,6 +38,11 @@ def cron_handler(event, context):
     try:
         if action == "batch_audit":
             return _run_batch_audit(date_filter)
+        elif action == "today_audit":
+            # New rule: cron(45 2 * * ? *) → 02:45 UTC = 23:45 BRT
+            return _run_batch_audit("today", before_time_brt="23:45")
+        elif action == "retrain_calibrators":
+            return _run_retrain_calibrators()
         elif action == "adjust_thresholds":
             return _run_threshold_adjustment()
         else:
@@ -49,8 +54,15 @@ def cron_handler(event, context):
         os.environ.pop("EVENTBRIDGE_TRIGGERED", None)
 
 
-def _run_batch_audit(date_filter: str) -> dict:
-    """Execute batch audit for all finished matches."""
+def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> dict:
+    """Execute batch audit for all finished matches.
+
+    Args:
+        date_filter: 'today' | 'yesterday' | 'week'
+        before_time_brt: Optional cutoff time in BRT (e.g. '23:45') — only include
+            matches that finished before this time. Used by the today_audit action so
+            that late European matches already completed are audited same-day.
+    """
     from backend.routes.ai_analysis import (
         _get_all_finished_matches,
         _evaluate_pick_deterministic,
@@ -58,9 +70,10 @@ def _run_batch_audit(date_filter: str) -> dict:
     from backend.ai.mistral_auditor import MistralAuditor
     from backend import audit as audit_db
 
-    logger.info(f"Starting automated batch audit for date={date_filter}")
+    label = f"date={date_filter}" + (f" before_brt={before_time_brt}" if before_time_brt else "")
+    logger.info(f"Starting automated batch audit for {label}")
 
-    finished_matches = _get_all_finished_matches(date_filter)
+    finished_matches = _get_all_finished_matches(date_filter, before_time_brt=before_time_brt)
 
     if not finished_matches:
         from backend.audit import audit_logger
@@ -331,6 +344,22 @@ def _run_batch_audit(date_filter: str) -> dict:
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")
     return result
+
+
+def _run_retrain_calibrators() -> dict:
+    """Retrain Isotonic Regression calibrators for all active leagues (Gap 5).
+
+    Scheduled weekly: cron(0 4 ? * MON *) → 04:00 UTC Monday.
+    Uses season_start boundary per league (not a fixed 90-day window).
+    """
+    try:
+        from backend.modeling.calibrator import retrain_all_calibrators
+        results = retrain_all_calibrators()
+        logger.info(f"Calibrator retraining completed: {results}")
+        return {"status": "success", "calibrators": results}
+    except Exception as e:
+        logger.error(f"Calibrator retraining failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 def _run_threshold_adjustment() -> dict:

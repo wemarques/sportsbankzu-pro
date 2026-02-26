@@ -180,20 +180,23 @@ def calcular_lambda_jogo(
     home_team_data: Dict[str, Any],
     away_team_data: Dict[str, Any],
     league_data: Dict[str, Any],
-    regime: str
+    regime: str,
+    league_id: str = "",
 ) -> Tuple[float, float]:
     """
     Calcula lambda para ambos os times em um jogo.
-    
+
     Args:
         home_team_data: Dados do time mandante
         away_team_data: Dados do time visitante
         league_data: Dados da liga
         regime: Regime da liga ('NORMAL' ou 'HIPER-OFENSIVA')
-    
+        league_id: ID da liga (opcional). Quando fornecido, aplica correções de
+            lambda armazenadas no DB de auditoria (Gap 2 — feedback loop).
+
     Returns:
         Tuple[float, float]: (lambda_home, lambda_away)
-    
+
     Examples:
         >>> home = {
         ...     'goals_scored_avg_home': 2.0,
@@ -215,7 +218,7 @@ def calcular_lambda_jogo(
         regime=regime,
         is_home=True
     )
-    
+
     # Lambda do time visitante
     lambda_away = calcular_lambda_dinamico(
         team_data=away_team_data,
@@ -224,7 +227,22 @@ def calcular_lambda_jogo(
         regime=regime,
         is_home=False
     )
-    
+
+    # Apply audit corrections from DB (Gap 2)
+    if league_id:
+        try:
+            corrections = get_lambda_corrections(league_id)
+            if corr := corrections.get("lambda_home_multiplier"):
+                mult = float(corr.get("value", 1.0))
+                lambda_home = max(LAMBDA_MIN, min(LAMBDA_MAX, lambda_home * mult))
+                logger.info(f"[Gap2] lambda_home correction applied: ×{mult:.3f} → {lambda_home:.3f}")
+            if corr := corrections.get("lambda_away_multiplier"):
+                mult = float(corr.get("value", 1.0))
+                lambda_away = max(LAMBDA_MIN, min(LAMBDA_MAX, lambda_away * mult))
+                logger.info(f"[Gap2] lambda_away correction applied: ×{mult:.3f} → {lambda_away:.3f}")
+        except Exception as e:
+            logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {e}")
+
     return lambda_home, lambda_away
 
 

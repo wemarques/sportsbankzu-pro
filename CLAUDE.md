@@ -34,7 +34,7 @@ cd frontend/next && npm run test:e2e
 - `backend/` — FastAPI app, routes, services, models, AI integration
 - `backend/routes/` — API endpoints (fixtures, leagues, decision, quadro, ai, health)
 - `backend/services/` — Business logic (math, market, fixtures, quadro, decision)
-- `backend/modeling/` — Statistical models (lambda, xg_filter, chaos_detector)
+- `backend/modeling/` — Statistical models (lambda, xg_filter, chaos_detector, calibrator)
 - `backend/ai/` — Mistral AI integration (auditor, context, prompts)
 - `frontend/next/` — Next.js 14 App Router dashboard
 - `frontend/next/e2e/` — Playwright E2E tests

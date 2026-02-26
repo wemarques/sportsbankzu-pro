@@ -1,6 +1,6 @@
-# SportsBank Pro
+# SportsBank Pro V3.1
 
-> Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit e dashboard Next.js
+> Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green.svg)](https://fastapi.tiangolo.com/)
@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-22
+**Última revisão:** 2026-02-26
 
 ---
 
@@ -28,6 +28,9 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Analise de Picks com multiplos mercados
 - Graficos interativos de probabilidades
 - Analise de Contexto com IA (Mistral)
+- Auditoria continua com feedback loop completo (V3.1)
+- Calibracao de probabilidades via Isotonic Regression (V3.1)
+- Thresholds dinamicos de mercado ajustados pela auditoria (V3.1)
 - Geracao de relatorios automatizada
 - Exportacao de dados (CSV, JSON, TXT)
 - Filtros por liga e periodo
@@ -535,6 +538,19 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.1 — 26 de Fevereiro de 2026 (Auditoria Contínua + Calibração)
+
+- **feat(audit):** Cron `today_audit` às 23:45 BRT para auditar jogos do mesmo dia (além do `batch_audit` de ontem às 20h)
+- **feat(pipeline):** Correções de lambda do audit DB aplicadas automaticamente no cálculo de previsões
+- **feat(pipeline):** Ajuste de confiança via Mistral ContextAnalyzer (AUMENTAR/MANTER/REDUZIR) aplicado às probabilidades 1X2
+- **feat(pipeline):** Thresholds dinâmicos de mercado (BTTS, Over/Under, Double Chance) lidos do audit DB com fallback para valores hardcoded
+- **feat(modeling):** Novo módulo `calibrator.py` com Isotonic Regression para calibração de probabilidades:
+  - Fallback por volume: liga (≥50 amostras) → regime (≥30) → passthrough
+  - Validação temporal com `TimeSeriesSplit` (sem data leakage)
+  - Critério de aceitação via Brier Score
+  - Cron `retrain_calibrators` para re-treino semanal
+- **feat(ai):** Campo `impact_percentage` (0-20) adicionado ao schema de `confidence_adjustment` do ContextAnalyzer
 
 ### 22 de Fevereiro de 2026
 

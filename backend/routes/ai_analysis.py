@@ -547,10 +547,21 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
     return False
 
 
-def _get_all_finished_matches(date_filter: str) -> list:
-    """Fetch all finished matches across all leagues for the given date range."""
+def _get_all_finished_matches(date_filter: str, before_time_brt: str | None = None) -> list:
+    """Fetch all finished matches across all leagues for the given date range.
+
+    Args:
+        date_filter: 'today' | 'yesterday' | 'week'
+        before_time_brt: Optional cutoff time in BRT (HH:MM). When set, only matches
+            that finished strictly before this BRT time are included. Used by the
+            today_audit cron action (23:45 BRT) to audit European matches same-day.
+    """
     from backend.routes.fixtures import fixtures as fixtures_endpoint
     from backend.config.leagues_config import LEAGUE_ID_ALIASES
+    from datetime import timezone, timedelta
+
+    BRT = timezone(timedelta(hours=-3))
+    cutoff_hour, cutoff_min = (int(p) for p in before_time_brt.split(":")) if before_time_brt else (None, None)
 
     all_finished = []
     tried_leagues = set()
@@ -563,11 +574,27 @@ def _get_all_finished_matches(date_filter: str) -> list:
             result = fixtures_endpoint(leagues=alias, date=date_filter)
             for m in result.get("matches", []):
                 status = str(m.get("status", "")).lower()
-                if status in ("finished", "complete", "ft"):
-                    all_finished.append(m)
+                if status not in ("finished", "complete", "ft"):
+                    continue
+
+                # Apply BRT time cutoff when requested (Gap 1 — today_audit)
+                if before_time_brt is not None:
+                    try:
+                        dt_str = m.get("datetime", "")
+                        dt_utc = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                        dt_brt = dt_utc.astimezone(BRT)
+                        if dt_brt.hour > cutoff_hour or (dt_brt.hour == cutoff_hour and dt_brt.minute >= cutoff_min):
+                            continue  # Match after cutoff — skip
+                    except Exception:
+                        pass  # Cannot parse datetime → include the match
+
+                all_finished.append(m)
         except Exception as e:
             logger.debug(f"Skipping league {alias} for batch audit: {e}")
             continue
+
+    if before_time_brt:
+        logger.info(f"[TODAY_AUDIT] {len(all_finished)} jogos finalizados antes das {before_time_brt} BRT")
 
     return all_finished
 

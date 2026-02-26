@@ -14,6 +14,46 @@ from backend.services.market_service import selecionar_mercados_jogo
 
 logger = logging.getLogger("sportsbank")
 
+
+def _apply_confidence_adjustment(stats: dict, adjustment: dict) -> dict:
+    """Apply Mistral confidence_adjustment to 1X2 probabilities (Gap 3).
+
+    Probs in `stats` are on 0-100 scale. Adjustment shifts the favourite up or
+    compresses both sides down, then renormalises so homeWinProb + drawProb +
+    awayWinProb = 100.
+    """
+    recommendation = adjustment.get("recommendation", "MANTER")
+    if recommendation == "MANTER":
+        return stats
+
+    impact = float(adjustment.get("impact_percentage", 10)) / 100.0
+    impact = min(0.20, max(0.0, impact))
+
+    h = (stats.get("homeWinProb") or 0) / 100.0
+    d = (stats.get("drawProb") or 0) / 100.0
+    a = (stats.get("awayWinProb") or 0) / 100.0
+
+    if recommendation == "AUMENTAR":
+        if h >= a:
+            h = min(0.95, h * (1 + impact))
+        else:
+            a = min(0.95, a * (1 + impact))
+    elif recommendation == "REDUZIR":
+        h = max(0.05, h * (1 - impact))
+        a = max(0.05, a * (1 - impact))
+
+    total = h + d + a
+    if total > 0:
+        h /= total
+        d /= total
+        a /= total
+
+    stats["homeWinProb"] = round(h * 100.0, 1)
+    stats["drawProb"] = round(d * 100.0, 1)
+    stats["awayWinProb"] = round(a * 100.0, 1)
+    return stats
+
+
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
@@ -386,6 +426,18 @@ def build_records_from_matches(
             home_team_data=home_team_data,
             away_team_data=away_team_data,
         )
+
+        # Apply lambda corrections from audit DB (Gap 2 — feedback loop)
+        try:
+            from backend.modeling.lambda_calculator import get_lambda_corrections, LAMBDA_MIN, LAMBDA_MAX
+            _lc = get_lambda_corrections(league_id)
+            if _corr := _lc.get("lambda_home_multiplier"):
+                lam_home = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_home * float(_corr.get("value", 1.0))))
+            if _corr := _lc.get("lambda_away_multiplier"):
+                lam_away = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_away * float(_corr.get("value", 1.0))))
+        except Exception as _e:
+            logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {_e}")
+
         lam_total = lam_home + lam_away
         if lam_total < 2.2:
             league_volatility = "BAIXA"
@@ -496,6 +548,30 @@ def build_records_from_matches(
             record = records[-1]
             _regime = record["stats"].get("leagueRegime", "NORMAL")
             _volatilidade = record["stats"].get("leagueVolatility", "MODERADA")
+
+            # Apply Mistral confidence_adjustment (Gap 3 — contextual bridge)
+            # Only called when MISTRAL_API_KEY is set; CacheManager(6h) prevents re-calls.
+            if os.getenv("MISTRAL_API_KEY"):
+                try:
+                    from backend.ai.context_analyzer import ContextAnalyzer
+                    ctx_result = ContextAnalyzer().analyze_match_context(home, away)
+                    _adj = ctx_result.get("confidence_adjustment", {})
+                    if _adj and _adj.get("recommendation", "MANTER") != "MANTER":
+                        record["stats"] = _apply_confidence_adjustment(record["stats"], _adj)
+                        logger.info(
+                            f"[Gap3] Confidence adjustment {_adj.get('recommendation')} "
+                            f"{_adj.get('impact_percentage', 10)}% applied to {home} vs {away}"
+                        )
+                except Exception as _ctx_err:
+                    logger.debug(f"[Gap3] Context analysis skipped for {home} vs {away}: {_ctx_err}")
+
+            # Apply Isotonic Regression calibration (Gap 5)
+            try:
+                from backend.modeling.calibrator import calibrate_match_stats
+                record["stats"] = calibrate_match_stats(record["stats"], league_id, _regime)
+            except Exception as _cal_err:
+                logger.debug(f"[Gap5] Calibration skipped for {home} vs {away}: {_cal_err}")
+
             mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
             record["mercados"] = mercados
         except Exception as e:

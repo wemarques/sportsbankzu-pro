@@ -35,9 +35,11 @@ class ContextAnalyzer:
             "pressure_level": {{"home": "ALTA|MEDIA|BAIXA", "away": "ALTA|MEDIA|BAIXA"}},
             "confidence_adjustment": {{
                 "recommendation": "AUMENTAR|MANTER|REDUZIR",
+                "impact_percentage": 10,
                 "reason": "str"
             }}
         }}
+        Onde impact_percentage é um número inteiro entre 0 e 20 indicando o percentual de ajuste nas probabilidades.
         """
         system = "Você é um gerador estrito de JSON. Responda somente JSON válido, sem texto adicional. Não use blocos de código markdown."
         resp = self.client.simple_prompt(prompt, system_prompt=system)
