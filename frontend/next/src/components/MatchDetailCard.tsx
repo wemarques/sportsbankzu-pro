@@ -119,6 +119,10 @@ export interface MatchDetailData {
     awayCornersPerMatch?: number;
     homeCardsPerMatch?: number;
     awayCardsPerMatch?: number;
+    homeShotsOnTarget?: number;
+    awayShotsOnTarget?: number;
+    homeFoulsPerMatch?: number;
+    awayFoulsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
     cornersPotential?: number;
@@ -174,9 +178,11 @@ type Props = {
   version?: string;
   onBack?: () => void;
   showBackButton?: boolean;
+  isFavorite?: boolean;
+  onFavorite?: () => void;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V2.6", onBack, showBackButton = false }: Props) {
+export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.0", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -248,8 +254,13 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
         </div>
         <div className="match-detail-card__actions">
           {getStatusBadge()}
-          <button className="mdc-icon-btn" aria-label="Favoritar">
-            <Star size={18} />
+          <button
+            className="mdc-icon-btn"
+            aria-label={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            onClick={onFavorite}
+            style={{ color: isFavorite ? "#ffbb33" : undefined }}
+          >
+            <Star size={18} fill={isFavorite ? "currentColor" : "none"} />
           </button>
           <button className="mdc-icon-btn" aria-label="Link externo">
             <ExternalLink size={18} />
@@ -294,8 +305,12 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                   setShowStandings(true);
                   fetch(`/api/standings?league=${encodeURIComponent(match.leagueId)}`)
                     .then((r) => r.json())
-                    .then((data) => setStandingsData(data.standings ?? []))
-                    .catch(() => setStandingsData([]))
+                    .then((data) => {
+                      const rows = data.standings ?? [];
+                      if (rows.length === 0) setShowStandings(false);
+                      else setStandingsData(rows);
+                    })
+                    .catch(() => setShowStandings(false))
                     .finally(() => setStandingsLoading(false));
                 }}
               >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
@@ -736,9 +751,27 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                           )}
                         </div>
                       )}
-                      {(comparativeTab === "chutes" || comparativeTab === "finalizacoes" || comparativeTab === "faltas") && (
-                        <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.75rem", color: "#666" }}>
-                          Dados em desenvolvimento. Em breve.
+                      {comparativeTab === "chutes" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          {(match.matchStats.homeShotsOnTarget || match.matchStats.awayShotsOnTarget) ? (
+                            <ComparativeBar label="Chutes ao Gol por Jogo" homeVal={match.matchStats.homeShotsOnTarget ?? 0} awayVal={match.matchStats.awayShotsOnTarget ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          ) : (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes nao disponiveis para este jogo.</div>
+                          )}
+                        </div>
+                      )}
+                      {comparativeTab === "finalizacoes" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Finalizacoes totais nao disponiveis na fonte de dados atual.</div>
+                        </div>
+                      )}
+                      {comparativeTab === "faltas" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          {(match.matchStats.homeFoulsPerMatch || match.matchStats.awayFoulsPerMatch) ? (
+                            <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          ) : (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de faltas nao disponiveis para este jogo.</div>
+                          )}
                         </div>
                       )}
                       {comparativeTab === "gols" && !match.matchStats && (

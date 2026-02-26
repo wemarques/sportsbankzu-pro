@@ -140,6 +140,40 @@ def build_records_from_matches(
                     except Exception:
                         return None
             return None
+        def team_shots_on_target(name: str) -> Optional[float]:
+            if teams is None:
+                return None
+            for col in ["shots_on_target_per_match", "shots_on_target_per_game", "shotsOnTarget_per_match", "shots_on_target_avg"]:
+                if col in teams.columns:
+                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+                    if not name_col:
+                        return None
+                    row = teams[teams[name_col] == name]
+                    if len(row) > 0:
+                        val = row.iloc[0].get(col, None)
+                        try:
+                            v = float(val)
+                            return v if v > 0 else None
+                        except Exception:
+                            return None
+            return None
+        def team_fouls_per_match(name: str) -> Optional[float]:
+            if teams is None:
+                return None
+            for col in ["fouls_per_match", "fouls_per_game", "foulsPerMatch", "fouls_avg"]:
+                if col in teams.columns:
+                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+                    if not name_col:
+                        return None
+                    row = teams[teams[name_col] == name]
+                    if len(row) > 0:
+                        val = row.iloc[0].get(col, None)
+                        try:
+                            v = float(val)
+                            return v if v > 0 else None
+                        except Exception:
+                            return None
+            return None
         league_avgs = { "avg_goals": None, "avg_corners": None, "avg_cards": None }
         if league_df is not None:
             league_avgs["avg_goals"] = float(league_df.iloc[0].get("average_goals_per_match", 2.5) or 2.5)
@@ -153,6 +187,10 @@ def build_records_from_matches(
         away_corners_pm = team_corners_per_match(away)
         home_cards_pm = team_cards_per_match(home)
         away_cards_pm = team_cards_per_match(away)
+        home_shots_on_target = team_shots_on_target(home)
+        away_shots_on_target = team_shots_on_target(away)
+        home_fouls_pm = team_fouls_per_match(home)
+        away_fouls_pm = team_fouls_per_match(away)
         # Fallback: calcular media de escanteios a partir dos jogos do DataFrame
         if home_corners_pm is None and "home_team_corner_count" in matches.columns:
             hm = matches[matches[home_col] == home] if home_col else matches.head(0)
@@ -426,6 +464,10 @@ def build_records_from_matches(
                 "awayCornersPerMatch": away_corners_pm,
                 "homeCardsPerMatch": home_cards_pm,
                 "awayCardsPerMatch": away_cards_pm,
+                "homeShotsOnTarget": home_shots_on_target,
+                "awayShotsOnTarget": away_shots_on_target,
+                "homeFoulsPerMatch": home_fouls_pm,
+                "awayFoulsPerMatch": away_fouls_pm,
                 "leagueAvgCorners": league_avgs["avg_corners"],
                 "leagueAvgCards": league_avgs["avg_cards"],
                 # Corner predictions (from FootyStats pre-match potentials)

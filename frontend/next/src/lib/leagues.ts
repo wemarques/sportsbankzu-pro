@@ -71,6 +71,10 @@ export type Match = {
     awayCornersPerMatch?: number;
     homeCardsPerMatch?: number;
     awayCardsPerMatch?: number;
+    homeShotsOnTarget?: number;
+    awayShotsOnTarget?: number;
+    homeFoulsPerMatch?: number;
+    awayFoulsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
     cornersPotential?: number;
@@ -138,7 +142,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Argentina",
     countryFlag: "🇦🇷",
     logo: "/logos/primera-division.png",
-    season: "2025",
+    season: "2026",
     totalMatches: 378,
     matchesToday: 0,
     apiEndpoints: {
@@ -190,7 +194,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao.png",
-    season: "2025",
+    season: "2026",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {
@@ -203,7 +207,7 @@ export const AVAILABLE_LEAGUES: League[] = [
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao-b.png",
-    season: "2025",
+    season: "2026",
     totalMatches: 380,
     matchesToday: 0,
     apiEndpoints: {

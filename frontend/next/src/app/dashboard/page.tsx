@@ -44,13 +44,84 @@ import {
   Copy,
   MessageCircle,
   ShieldCheck,
+  Link2,
+  Layers,
+  RefreshCw,
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const APP_VERSION = "pro V2.6";
+const VERSION_FALLBACK = "pro V3.0";
+
+/* ── Tipos de Combinadas (duplas) ── */
+interface CombinadaLeg {
+  jogo: string; homeTeam: string; awayTeam: string;
+  leagueId: string; leagueName: string; datetime: string;
+  mercado: string; status: string; prob_min: number; prob_max: number; odd_minima: number;
+}
+interface Combinada {
+  tipo: "intra" | "inter"; leg1: CombinadaLeg; leg2: CombinadaLeg;
+  odd_combinada: number; prob_combinada_min: number; prob_combinada_max: number;
+  status_combinada: "SAFE" | "MISTA" | "NEUTRO";
+}
+interface CombinadasData {
+  intra: Combinada[]; inter: Combinada[];
+  total_intra: number; total_inter: number; total_jogos: number;
+}
+
+function statusCombinadaStyle(s: string) {
+  if (s === "SAFE") return { bg: "rgba(0,223,130,0.08)", border: "rgba(0,223,130,0.25)", badge: { bg: "rgba(0,223,130,0.15)", color: "#00df82" } };
+  if (s === "MISTA") return { bg: "rgba(157,80,255,0.08)", border: "rgba(157,80,255,0.25)", badge: { bg: "rgba(157,80,255,0.15)", color: "#c4a0ff" } };
+  return { bg: "rgba(255,136,0,0.06)", border: "rgba(255,136,0,0.2)", badge: { bg: "rgba(255,136,0,0.12)", color: "#ffaa44" } };
+}
+
+function CombinadaCardDash({ c }: { c: Combinada }) {
+  const st = statusCombinadaStyle(c.status_combinada);
+  const isIntra = c.tipo === "intra";
+  const timeStr = (dt: string) => {
+    try { const d = new Date(dt); return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }); }
+    catch { return "--:--"; }
+  };
+  return (
+    <div style={{ borderRadius: 12, border: `1px solid ${st.border}`, background: st.bg, padding: "12px 14px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {isIntra ? <Layers size={12} style={{ color: "#c4a0ff" }} /> : <Link2 size={12} style={{ color: "#00df82" }} />}
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888" }}>
+            {isIntra ? "Intra-jogo" : "Inter-jogo"}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: "0.65rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, borderRadius: 4, padding: "2px 6px", background: st.badge.bg, color: st.badge.color }}>{c.status_combinada}</span>
+        </div>
+      </div>
+      {([c.leg1, c.leg2] as CombinadaLeg[]).map((leg, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+          <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", color: "#888", flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {leg.homeTeam} <span style={{ color: "#666" }}>x</span> {leg.awayTeam} <span style={{ color: "#555", fontWeight: 400 }}>{timeStr(leg.datetime)}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.7rem", color: "#00df82", fontWeight: 500 }}>{leg.mercado}</span>
+              <span style={{ fontSize: "0.65rem", borderRadius: 4, padding: "1px 5px", fontWeight: 700, background: leg.status.toUpperCase().startsWith("SAFE") ? "rgba(0,223,130,0.12)" : "rgba(255,136,0,0.12)", color: leg.status.toUpperCase().startsWith("SAFE") ? "#00df82" : "#ffaa44" }}>
+                {leg.status} {leg.prob_min}–{leg.prob_max}%
+              </span>
+              <span style={{ fontSize: "0.65rem", color: "#555" }}>@{leg.odd_minima.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: 4 }}>
+        <span style={{ fontSize: "0.65rem", color: "#555", textTransform: "uppercase", letterSpacing: "0.05em" }}>Odd Combinada</span>
+        <span style={{ fontSize: "1.1rem", fontWeight: 900, color: "#fff" }}>{c.odd_combinada.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
 const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBank Pro.";
 
-type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas";
+type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas";
 type ShareFeedbackTone = "success" | "error" | "info";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
@@ -131,6 +202,26 @@ function getLowestOddIndex(home: number, draw: number, away: number): number {
   return vals.indexOf(min);
 }
 
+function getHighlightReason(match: Match): string {
+  const reasons: string[] = [];
+  const homeProb = toPercent(match.stats?.homeWinProb ?? 0);
+  const awayProb = toPercent(match.stats?.awayWinProb ?? 0);
+  const maxProbPct = Math.max(homeProb, awayProb);
+  const favName = homeProb >= awayProb ? match.homeTeam.name : match.awayTeam.name;
+  const over25Pct = toPercent(match.stats?.over25Prob ?? 0);
+  const bttsPct = toPercent(match.stats?.bttsProb ?? 0);
+  const safePreds = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
+
+  if (maxProbPct >= 65) reasons.push(`Confiança alta: ${favName} (${maxProbPct.toFixed(0)}%)`);
+  if (over25Pct >= 70) reasons.push(`Over 2.5 provável (${over25Pct.toFixed(0)}%)`);
+  if (bttsPct >= 65) reasons.push(`BTTS forte (${bttsPct.toFixed(0)}%)`);
+  if (safePreds.length > 0) reasons.push(`Mercado SAFE: ${safePreds[0].mercado}`);
+  if (reasons.length === 0 && maxProbPct >= 50) reasons.push(`Favorito claro: ${favName} (${maxProbPct.toFixed(0)}%)`);
+  if (reasons.length === 0) reasons.push("Potencial estatístico detectado");
+
+  return reasons.slice(0, 2).join(" • ");
+}
+
 function buildScreenshotName() {
   const stamp = new Date().toISOString().replace(/[:]/g, "-").replace("T", "_").slice(0, 19);
   return `sportsbank-picks-${stamp}.png`;
@@ -192,6 +283,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayCornersPerMatch: item.stats?.awayCornersPerMatch ?? 0,
       homeCardsPerMatch: item.stats?.homeCardsPerMatch ?? 0,
       awayCardsPerMatch: item.stats?.awayCardsPerMatch ?? 0,
+      homeShotsOnTarget: item.stats?.homeShotsOnTarget ?? undefined,
+      awayShotsOnTarget: item.stats?.awayShotsOnTarget ?? undefined,
+      homeFoulsPerMatch: item.stats?.homeFoulsPerMatch ?? undefined,
+      awayFoulsPerMatch: item.stats?.awayFoulsPerMatch ?? undefined,
       leagueAvgCorners: item.stats?.leagueAvgCorners ?? 0,
       leagueAvgCards: item.stats?.leagueAvgCards ?? 0,
     },
@@ -257,6 +352,10 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       awayCornersPerMatch: match.stats?.awayCornersPerMatch,
       homeCardsPerMatch: match.stats?.homeCardsPerMatch,
       awayCardsPerMatch: match.stats?.awayCardsPerMatch,
+      homeShotsOnTarget: match.stats?.homeShotsOnTarget,
+      awayShotsOnTarget: match.stats?.awayShotsOnTarget,
+      homeFoulsPerMatch: match.stats?.homeFoulsPerMatch,
+      awayFoulsPerMatch: match.stats?.awayFoulsPerMatch,
       leagueAvgCorners: match.stats?.leagueAvgCorners,
       leagueAvgCards: match.stats?.leagueAvgCards,
     },
@@ -309,11 +408,25 @@ export default function Dashboard() {
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
   const [shareBusy, setShareBusy] = useState<"copy" | "whatsapp" | null>(null);
+  const [appVersion, setAppVersion] = useState(VERSION_FALLBACK);
+  const [combinadas, setCombinadas] = useState<CombinadasData | null>(null);
+  const [combinadasLoading, setCombindasLoading] = useState(false);
+  const [combinadasError, setCombindasError] = useState<string | null>(null);
+  const [combinadasMinStatus, setCombindasMinStatus] = useState<"SAFE" | "NEUTRO">("NEUTRO");
+  const [combinadasSubTab, setCombindasSubTab] = useState<"intra" | "inter">("intra");
   const [shareFeedback, setShareFeedback] = useState("");
   const [shareFeedbackTone, setShareFeedbackTone] = useState<ShareFeedbackTone>("info");
   const capturePanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Busca a versão real do backend (fica em sync com o cron de auditoria)
+  useEffect(() => {
+    fetch("/api/audit/status?days=1", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (d?.version) setAppVersion(d.version); })
+      .catch(() => { /* mantém o fallback VERSION_FALLBACK */ });
+  }, []);
 
   // Scroll right panel to top when a new match is selected
   useEffect(() => {
@@ -321,6 +434,26 @@ export default function Dashboard() {
       rightPanelRef.current.scrollTop = 0;
     }
   }, [selectedMatchId]);
+
+  const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
+    setCombindasLoading(true);
+    setCombindasError(null);
+    try {
+      const today = dateMode;
+      const leagueIds = AVAILABLE_LEAGUES.map((l) => l.id);
+      const res = await fetch(
+        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
+        { cache: "no-store" },
+      );
+      const data: CombinadasData = await res.json();
+      if (!res.ok) throw new Error((data as any)._error?.message || `Erro ${res.status}`);
+      setCombinadas(data);
+    } catch (err) {
+      setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
+    } finally {
+      setCombindasLoading(false);
+    }
+  }, [dateMode]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
@@ -903,11 +1036,15 @@ export default function Dashboard() {
           </button>
           <button className={`st-nav__link ${navView === "recomendadas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "recomendadas" ? "matches" : "recomendadas")}>
             <Sparkles size={14} />
-            Recomendadas 2026
+            Destaques do Dia
+          </button>
+          <button className={`st-nav__link ${navView === "duplas" ? "st-nav__link--active" : ""}`} onClick={() => { const next = navView === "duplas" ? "matches" : "duplas"; setNavView(next); if (next === "duplas" && !combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
+            <Layers size={14} />
+            Duplas
           </button>
         </div>
         <div className="st-nav__right">
-          <span className="st-badge-pro">{APP_VERSION}</span>
+          <span className="st-badge-pro">{appVersion}</span>
           <button
             type="button"
             className="st-nav__link"
@@ -1017,6 +1154,14 @@ export default function Dashboard() {
                   </div>
                   <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                 </div>
+                <div className="st-tool-card" onClick={() => { setNavView("duplas"); if (!combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
+                  <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Layers size={20} style={{ color: "#c4a0ff" }} /></div>
+                  <div className="st-tool-card__info">
+                    <span className="st-tool-card__name">Duplas (Intra/Inter)</span>
+                    <span className="st-tool-card__desc">Combinadas intra-jogo e inter-jogo com alta probabilidade</span>
+                  </div>
+                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                </div>
               </div>
             </div>
           )}
@@ -1026,9 +1171,9 @@ export default function Dashboard() {
             <div className="st-view-panel">
               <div className="st-view-header">
                 <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                <h2 className="st-view-title"><Sparkles size={16} /> Recomendadas 2026</h2>
+                <h2 className="st-view-title"><Sparkles size={16} /> Destaques do Dia</h2>
               </div>
-              <div className="st-view-subtitle">Jogos com melhor potencial baseado em probabilidades, Lambda e analise estatistica</div>
+              <div className="st-view-subtitle">Jogos com maior potencial — saiba por que cada jogo está em destaque</div>
               <div className="st-view-content">
                 {allMatches.length === 0 && (
                   <div className="st-empty">
@@ -1051,6 +1196,8 @@ export default function Dashboard() {
                     const maxProbPct = toPercent(maxProb);
                     const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
                     const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
+                    const highlightReason = getHighlightReason(match);
+                    const safePicks = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
                     return (
                       <div
                         key={match.id}
@@ -1066,6 +1213,9 @@ export default function Dashboard() {
                           <span className="st-rec-card__vs">vs</span>
                           <span className="st-rec-card__team">{match.awayTeam.name}</span>
                         </div>
+                        <div style={{ fontSize: "0.68rem", color: "#ffbb33", padding: "4px 0 2px", fontStyle: "italic" }}>
+                          ★ {highlightReason}
+                        </div>
                         <div className="st-rec-card__stats">
                           <div className="st-rec-card__stat">
                             <span className="st-rec-card__stat-label">Favorito</span>
@@ -1080,6 +1230,15 @@ export default function Dashboard() {
                             <span className="st-rec-card__stat-value">{formatProb(match.stats?.bttsProb)}</span>
                           </div>
                         </div>
+                        {safePicks.length > 0 && (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
+                            {safePicks.slice(0, 3).map((p, i) => (
+                              <span key={i} style={{ fontSize: "0.65rem", background: "rgba(0,255,136,0.12)", color: "#00ff88", borderRadius: 4, padding: "2px 6px", border: "1px solid rgba(0,255,136,0.3)" }}>
+                                SAFE: {p.mercado}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {match.odds?.home > 0 && (
                           <div className="st-rec-card__odds">
                             <span className="st-rec-card__odd">1: {match.odds.home.toFixed(2)}</span>
@@ -1090,6 +1249,99 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
+              </div>
+            </div>
+          )}
+
+          {/* ── DUPLAS VIEW ── */}
+          {navView === "duplas" && (
+            <div className="st-view-panel">
+              <div className="st-view-header">
+                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                <h2 className="st-view-title"><Layers size={16} /> Duplas</h2>
+              </div>
+              <div className="st-view-subtitle">Combinadas intra-jogo e inter-jogo com maior probabilidade</div>
+
+              {/* Sub-tabs + filtro */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px 4px" }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {(["intra", "inter"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setCombindasSubTab(tab)}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700,
+                        background: combinadasSubTab === tab ? "rgba(157,80,255,0.18)" : "rgba(255,255,255,0.05)",
+                        color: combinadasSubTab === tab ? "#c4a0ff" : "#777" }}
+                    >
+                      {tab === "intra" ? "Intra-jogo" : "Inter-jogo"}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <span style={{ fontSize: "0.65rem", color: "#555" }}>Mín:</span>
+                  {(["NEUTRO", "SAFE"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { setCombindasMinStatus(s); fetchCombinadas(s); }}
+                      style={{ padding: "3px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 700,
+                        background: combinadasMinStatus === s ? (s === "SAFE" ? "rgba(0,223,130,0.15)" : "rgba(255,136,0,0.12)") : "rgba(255,255,255,0.05)",
+                        color: combinadasMinStatus === s ? (s === "SAFE" ? "#00df82" : "#ffaa44") : "#666" }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => fetchCombinadas(combinadasMinStatus)}
+                    disabled={combinadasLoading}
+                    style={{ marginLeft: 4, padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.06)", color: "#888" }}
+                    title="Recarregar"
+                  >
+                    <RefreshCw size={11} style={{ display: "block", animation: combinadasLoading ? "spin 1s linear infinite" : "none" }} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="st-view-content">
+                {combinadasLoading && (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "#555" }}>
+                    <Loader2 size={24} style={{ display: "inline-block", animation: "spin 1s linear infinite", marginBottom: 8 }} />
+                    <div style={{ fontSize: "0.78rem" }}>Calculando combinadas...</div>
+                  </div>
+                )}
+                {!combinadasLoading && combinadasError && (
+                  <div style={{ textAlign: "center", padding: "32px 14px", color: "#ff5555", fontSize: "0.8rem" }}>
+                    <div style={{ marginBottom: 8 }}>Erro ao carregar duplas.</div>
+                    <div style={{ color: "#555", fontSize: "0.72rem" }}>{combinadasError}</div>
+                    <button onClick={() => fetchCombinadas(combinadasMinStatus)} style={{ marginTop: 12, padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.3)", background: "transparent", color: "#ff5555", cursor: "pointer", fontSize: "0.72rem" }}>
+                      Tentar novamente
+                    </button>
+                  </div>
+                )}
+                {!combinadasLoading && !combinadasError && !combinadas && (
+                  <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
+                    Clique em Duplas na barra de navegação para carregar as combinadas do dia.
+                  </div>
+                )}
+                {!combinadasLoading && !combinadasError && combinadas && (() => {
+                  const list = combinadasSubTab === "intra" ? (combinadas.intra ?? []) : (combinadas.inter ?? []);
+                  const total = combinadasSubTab === "intra" ? combinadas.total_intra : combinadas.total_inter;
+                  if (list.length === 0) {
+                    return (
+                      <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
+                        <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{combinadasSubTab === "intra" ? "🔗" : "⛓️"}</div>
+                        Nenhuma dupla {combinadasSubTab === "intra" ? "intra-jogo" : "inter-jogo"} encontrada com status mínimo {combinadasMinStatus}.
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div style={{ fontSize: "0.65rem", color: "#555", padding: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        {total} {combinadasSubTab === "intra" ? "combinadas intra-jogo" : "combinadas inter-jogo"}
+                      </div>
+                      {list.map((c, i) => <CombinadaCardDash key={i} c={c} />)}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -1423,7 +1675,7 @@ export default function Dashboard() {
           {detailData ? (
             <MatchDetailCard
               match={detailData}
-              version={APP_VERSION}
+              version={appVersion}
               onAudit={handleAudit}
               onApplyCorrection={handleApplyCorrection}
               auditResult={auditResult}
@@ -1431,6 +1683,8 @@ export default function Dashboard() {
               auditResultRef={auditResultRef}
               onBack={() => setSelectedMatchId(null)}
               showBackButton={isMobile}
+              isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
+              onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
             />
           ) : (
             <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
