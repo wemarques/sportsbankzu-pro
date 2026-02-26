@@ -10,17 +10,18 @@ from backend.services.util_service import status_map, parse_date, pick_column, c
 from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
 from backend.modeling.xg_filter import aplicar_filtro_completo
 from backend.modeling.chaos_detector import detectar_caos_jogo
+from backend.services.market_service import selecionar_mercados_jogo
 
 logger = logging.getLogger("sportsbank")
 
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
-    teams: Optional["pd.DataFrame"],
-    teams2: Optional["pd.DataFrame"],
-    league_df: Optional["pd.DataFrame"],
-    players: Optional["pd.DataFrame"],
-    date_filter: str,
+    teams: Optional["pd.DataFrame"] = None,
+    teams2: Optional["pd.DataFrame"] = None,
+    league_df: Optional["pd.DataFrame"] = None,
+    players: Optional["pd.DataFrame"] = None,
+    date_filter: str = "today",
 ) -> List[Dict[str, Any]]:
     from backend.main import date_range, aggregate_team_xg, expected_goals_v2
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
@@ -38,13 +39,7 @@ def build_records_from_matches(
         return items
     start, end = date_range(date_filter)
     rows = filter_rows(start, end)
-    if not rows and date_filter in ("today", "tomorrow"):
-        start, end = date_range("week")
-        rows = filter_rows(start, end)
-    if not rows and date_filter == "week":
-        start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=30) - timedelta(milliseconds=1)
-        rows = filter_rows(start, end)
+    # No automatic fallback — return only matches for the requested period
     records: List[Dict[str, Any]] = []
     for r in rows:
         dt = row_date(r)
@@ -54,6 +49,15 @@ def build_records_from_matches(
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
+        # Extract score for finished matches
+        _home_goals_raw = r.get("home_goals", r.get("home_team_goal_count", None))
+        _away_goals_raw = r.get("away_goals", r.get("away_team_goal_count", None))
+        match_score = None
+        if status == "finished" and _home_goals_raw is not None and _away_goals_raw is not None:
+            try:
+                match_score = {"home": int(_home_goals_raw), "away": int(_away_goals_raw)}
+            except (ValueError, TypeError):
+                match_score = None
         odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
         odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
         odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
@@ -145,6 +149,28 @@ def build_records_from_matches(
         away_corners_pm = team_corners_per_match(away)
         home_cards_pm = team_cards_per_match(home)
         away_cards_pm = team_cards_per_match(away)
+        # Fallback: calcular media de escanteios a partir dos jogos do DataFrame
+        if home_corners_pm is None and "home_team_corner_count" in matches.columns:
+            hm = matches[matches[home_col] == home] if home_col else matches.head(0)
+            vals = hm["home_team_corner_count"].dropna()
+            vals = vals[vals >= 0]
+            if len(vals) > 0:
+                home_corners_pm = round(float(vals.mean()), 1)
+        if away_corners_pm is None and "away_team_corner_count" in matches.columns:
+            am = matches[matches[away_col] == away] if away_col else matches.head(0)
+            vals = am["away_team_corner_count"].dropna()
+            vals = vals[vals >= 0]
+            if len(vals) > 0:
+                away_corners_pm = round(float(vals.mean()), 1)
+        # Fallback final: usar media da liga / 2
+        if home_corners_pm is None and league_avgs["avg_corners"]:
+            home_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+        if away_corners_pm is None and league_avgs["avg_corners"]:
+            away_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+        if home_cards_pm is None and league_avgs["avg_cards"]:
+            home_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
+        if away_cards_pm is None and league_avgs["avg_cards"]:
+            away_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
         over15_pct = r.get("over_15_percentage_pre_match", None)
         over25_pct = r.get("over_25_percentage_pre_match", None)
         over35_pct = r.get("over_35_percentage_pre_match", None)
@@ -153,6 +179,26 @@ def build_records_from_matches(
         odds_over15 = r.get("odds_ft_over15", None)
         odds_over35 = r.get("odds_ft_over35", None)
         odds_over45 = r.get("odds_ft_over45", None)
+        # Corner potentials from FootyStats (pre-match probabilities, 0-100 scale)
+        corners_potential = r.get("corners_potential", None)
+        corners_o85_pct = r.get("corners_o85_potential", None)
+        corners_o95_pct = r.get("corners_o95_potential", None)
+        corners_o105_pct = r.get("corners_o105_potential", None)
+        # Corner odds
+        odds_corners_o85 = r.get("odds_corners_over_85", None)
+        odds_corners_o95 = r.get("odds_corners_over_95", None)
+        odds_corners_o105 = r.get("odds_corners_over_105", None)
+        odds_corners_o115 = r.get("odds_corners_over_115", None)
+        try:
+            corners_potential = float(corners_potential) if corners_potential is not None and float(corners_potential) > 0 else None
+            corners_o85_pct = float(corners_o85_pct) if corners_o85_pct is not None and float(corners_o85_pct) > 0 else None
+            corners_o95_pct = float(corners_o95_pct) if corners_o95_pct is not None and float(corners_o95_pct) > 0 else None
+            corners_o105_pct = float(corners_o105_pct) if corners_o105_pct is not None and float(corners_o105_pct) > 0 else None
+        except Exception:
+            corners_potential = None
+            corners_o85_pct = None
+            corners_o95_pct = None
+            corners_o105_pct = None
         try:
             over15_pct = float(over15_pct) if over15_pct is not None else None
             over25_pct = float(over25_pct) if over25_pct is not None else None
@@ -318,13 +364,15 @@ def build_records_from_matches(
             total_gols = None
         records.append({
             "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
+            "footystatsId": r.get("id"),
             "leagueId": league_id,
             "leagueName": league_id.replace("-", " ").title(),
             "homeTeam": home,
             "awayTeam": away,
-            "datetime": dt.isoformat(),
+            "datetime": dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt.tzinfo else dt.isoformat() + "Z",
             "stadium": stadium,
             "status": status,
+            "score": match_score,
             "odds": {
                 "home": float(odds_home) if odds_home else None,
                 "draw": float(odds_draw) if odds_draw else None,
@@ -336,6 +384,10 @@ def build_records_from_matches(
                 "under25": float(odds_under25) if odds_under25 else None,
                 "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
+                "cornersOver85": float(odds_corners_o85) if odds_corners_o85 else None,
+                "cornersOver95": float(odds_corners_o95) if odds_corners_o95 else None,
+                "cornersOver105": float(odds_corners_o105) if odds_corners_o105 else None,
+                "cornersOver115": float(odds_corners_o115) if odds_corners_o115 else None,
             },
             "stats": {
                 "homeWinProb": round(homeProb, 1),
@@ -372,6 +424,11 @@ def build_records_from_matches(
                 "awayCardsPerMatch": away_cards_pm,
                 "leagueAvgCorners": league_avgs["avg_corners"],
                 "leagueAvgCards": league_avgs["avg_cards"],
+                # Corner predictions (from FootyStats pre-match potentials)
+                "cornersPotential": corners_potential,
+                "cornerOver85Prob": corners_o85_pct,
+                "cornerOver95Prob": corners_o95_pct,
+                "cornerOver105Prob": corners_o105_pct,
             },
             "h2h": {
                 "totalMatches": totalMatches,
@@ -388,4 +445,14 @@ def build_records_from_matches(
             "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
+        # Calculate market predictions (mercados) for this match
+        try:
+            record = records[-1]
+            _regime = record["stats"].get("leagueRegime", "NORMAL")
+            _volatilidade = record["stats"].get("leagueVolatility", "MODERADA")
+            mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
+            record["mercados"] = mercados
+        except Exception as e:
+            logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
+            records[-1]["mercados"] = []
     return records

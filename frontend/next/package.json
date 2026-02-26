@@ -12,15 +12,18 @@
     "test:e2e:report": "npx playwright show-report"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.27",
     "@radix-ui/react-accordion": "1.1.2",
     "@radix-ui/react-select": "2.0.0",
     "@radix-ui/react-toast": "1.1.4",
+    "ai": "^6.0.83",
     "autoprefixer": "10.4.16",
     "chart.js": "4.4.1",
     "cheerio": "^1.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^0.453.0",
     "next": "14.2.4",
     "postcss": "8.4.31",

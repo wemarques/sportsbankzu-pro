@@ -314,6 +314,21 @@ def obter_info_ponderacao(regime: str) -> Dict[str, float]:
     return PESOS_LAMBDA.get(regime, PESOS_LAMBDA['NORMAL']).copy()
 
 
+def get_lambda_corrections(league: str) -> Dict[str, Any]:
+    """
+    Fetch active lambda/weight corrections from the audit corrections table.
+
+    Returns a dict keyed by parameter_name with the corrected value.
+    These can be applied as multipliers or weight overrides in calcular_lambda_dinamico().
+    """
+    try:
+        from backend.audit import get_active_corrections
+        return get_active_corrections(league)
+    except Exception as e:
+        logger.warning(f"Could not load lambda corrections for {league}: {e}")
+        return {}
+
+
 # Aliases para compatibilidade
 expected_goals = calcular_lambda_legado
 calculate_lambda = calcular_lambda_dinamico

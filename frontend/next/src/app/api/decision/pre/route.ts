@@ -1,31 +1,26 @@
 import { NextRequest } from "next/server";
+import { fetchBackend } from "@/lib/backend";
+
+export const maxDuration = 25;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  try {
-    const backend = process.env.PY_BACKEND_URL;
-    if (backend) {
-      const res = await fetch(`${backend.replace(/\/$/, "")}/decision/pre`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      return new Response(JSON.stringify(data), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    } else {
-      return new Response(JSON.stringify({ picks: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-  } catch {
-    return new Response(JSON.stringify({ picks: [] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  }
-}
 
+  const result = await fetchBackend("/decision/pre", {
+    method: "POST",
+    body: JSON.stringify(body),
+    timeoutMs: 20_000,
+  });
+
+  if (result.ok) {
+    return Response.json(result.data);
+  }
+
+  if (result.error) {
+    console.error(
+      `[decision/pre] ${result.error.kind} | ${result.error.message} | ${result.error.durationMs}ms`,
+    );
+  }
+
+  return Response.json({ picks: [] });
+}

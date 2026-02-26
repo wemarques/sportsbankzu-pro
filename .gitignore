@@ -1,6 +1,8 @@
 *.pyc
 __pycache__/
 .env
+.env.local
+.env*.local
 htmlcov/
 .pytest_cache/
 .streamlit/secrets.toml
@@ -19,4 +21,11 @@ backend/main.py.backup
 playwright-report/
 test-results/
 blob-report/
-frontend/next/tsconfig.tsbuildinfo
+
+deploy_lambda_build/
+lambda_build/
+sportsbank_lambda.zip
+.env.vercel
+
+nul
+.vercel

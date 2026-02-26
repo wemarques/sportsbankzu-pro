@@ -68,19 +68,21 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         if alerta:
             item["alerta"] = alerta
         mercados.append(item)
-    league_avg_goals = stats.get("leagueAvgGoals", 2.7)
+    league_avg_goals = stats.get("leagueAvgGoals") or 2.7
     if league_avg_goals < 2.5:
-        threshold_u35 = 0.55
-        threshold_u45 = 0.65
+        threshold_u35 = 0.72
+        threshold_u45 = 0.82
     elif league_avg_goals < 3.0:
-        threshold_u35 = 0.60
-        threshold_u45 = 0.70
+        threshold_u35 = 0.68
+        threshold_u45 = 0.78
     else:
-        threshold_u35 = 0.65
-        threshold_u45 = 0.75
+        threshold_u35 = 0.75
+        threshold_u45 = 0.85
     logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
-    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={prob_under35 >= threshold_u35 if prob_under35 else False}")
-    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={prob_under45 >= threshold_u45 if prob_under45 else False}")
+    _u35_check = (prob_under35 >= threshold_u35) if prob_under35 is not None else False
+    _u45_check = (prob_under45 >= threshold_u45) if prob_under45 is not None else False
+    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={_u35_check}")
+    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={_u45_check}")
     if regime in ["NORMAL", "DEFENSIVA"]:
         if prob_under35 is not None and prob_under35 >= threshold_u35:
             if odd_under35 and odd_under35 >= 1.25:
@@ -99,27 +101,47 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     else:
         if prob_over25 is not None and prob_over25 >= 0.72:
             add_mercado("Over 2.5 gols", "SAFE", prob_over25, odds.get("over25"))
-    if prob_btts is not None and prob_btts >= 0.60:
-        status = "SAFE" if prob_btts >= 0.68 else "NEUTRO"
+    if prob_btts is not None and prob_btts >= 0.68:
+        status = "SAFE" if prob_btts >= 0.75 else "NEUTRO"
         add_mercado("BTTS — SIM", status, prob_btts, odd_btts_yes)
-    if prob_dc is not None and prob_dc >= 0.65:
+    if prob_dc is not None and prob_dc >= 0.75:
         home = str(jogo.get("homeTeam", ""))[:3].upper()
-        add_mercado(f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc)
+        status_dc = "SAFE" if prob_dc >= 0.82 else "NEUTRO"
+        add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
+    # Corner market predictions (from FootyStats pre-match potentials)
+    corner_o85 = normalize_prob(stats.get("cornerOver85Prob"))
+    corner_o95 = normalize_prob(stats.get("cornerOver95Prob"))
+    corner_o105 = normalize_prob(stats.get("cornerOver105Prob"))
+    odd_corners_o85 = odds.get("cornersOver85")
+    odd_corners_o95 = odds.get("cornersOver95")
+    odd_corners_o105 = odds.get("cornersOver105")
+    # Add corner markets when probability is high enough
+    if corner_o85 is not None and corner_o85 >= 0.72:
+        status_c = "SAFE" if corner_o85 >= 0.80 else "NEUTRO"
+        add_mercado("Escanteios Over 8.5", status_c, corner_o85, odd_corners_o85)
+    if corner_o95 is not None and corner_o95 >= 0.65:
+        status_c = "SAFE" if corner_o95 >= 0.75 else "NEUTRO"
+        add_mercado("Escanteios Over 9.5", status_c, corner_o95, odd_corners_o95)
+    if corner_o105 is not None and corner_o105 >= 0.58:
+        status_c = "SAFE" if corner_o105 >= 0.68 else "NEUTRO"
+        add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
     if not mercados:
+        # Fallback: only the single best candidate with stricter thresholds
         candidatos = []
-        if prob_under35:
+        if prob_under35 and prob_under35 >= 0.65:
             candidatos.append(("Under 3.5 gols", "NEUTRO", prob_under35, odd_under35))
-        if prob_under45:
+        if prob_under45 and prob_under45 >= 0.75:
             candidatos.append(("Under 4.5 gols", "NEUTRO", prob_under45, odd_under45))
-        if prob_over25:
+        if prob_over25 and prob_over25 >= 0.62:
             candidatos.append(("Over 2.5 gols", "NEUTRO", prob_over25, odds.get("over25")))
-        if prob_btts and prob_btts >= 0.50:
+        if prob_btts and prob_btts >= 0.63:
             candidatos.append(("BTTS — SIM", "NEUTRO", prob_btts, odd_btts_yes))
-        if prob_dc and prob_dc >= 0.60:
+        if prob_dc and prob_dc >= 0.72:
             home = str(jogo.get("homeTeam", ""))[:3].upper()
             candidatos.append((f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc, None))
         candidatos.sort(key=lambda x: x[2], reverse=True)
-        for nome, status, prob, odd in candidatos[:3]:
+        if candidatos:
+            nome, status, prob, odd = candidatos[0]
             add_mercado(nome, status, prob, odd)
     def normalizar_mercado(nome: str) -> str:
         base = nome.replace(" gols", "").strip()
@@ -131,6 +153,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
             return "Double Chance 12"
         if base.startswith("BTTS"):
             return "BTTS"
+        if base.startswith("Escanteios Over"):
+            return base  # Already in valid format
         return base
     if mercados:
         mercados_normalizados = [normalizar_mercado(m.get("mercado", "")) for m in mercados]

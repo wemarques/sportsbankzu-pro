@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-02
+**Última revisão:** 2026-02-22
 
 ---
 
@@ -33,10 +33,18 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Filtros por liga e periodo
 - Responsividade mobile/tablet (CSS customizado)
 
+### Dashboard Next.js (Produção)
+
+- Dashboard em [sportsbankzu-pro-well.vercel.app](https://sportsbankzu-pro-well.vercel.app/dashboard)
+- Seleção de ligas (22+ europeias e sul-americanas)
+- Aba Recomendadas 2026 com jogos de maior confiança
+- Análise IA (Mistral) por jogo
+- Favoritos com persistência em localStorage
+- **Compartilhar via WhatsApp**: captura da tela e envio (Web Share API ou download + link)
+
 ### Funcionalidades Opcionais
 
 - Sistema de autenticacao (depende de config.yaml ou Secrets)
-- Dashboard Next.js (configuracao separada)
 - CLI unificado (`python -m cli`) com Click
 - Testes E2E com Playwright
 
@@ -160,14 +168,12 @@ Acesse a interface em `http://localhost:8501/`.
 Por fim, inicie o dashboard moderno:
 
 ```bash
-# Instalar dependências
-npm i
-
-# Iniciar servidor de desenvolvimento
+cd frontend/next
+npm install
 npm run dev
 ```
 
-Acesse o dashboard em `http://localhost:3000/`.
+Acesse o dashboard em `http://localhost:3000/dashboard`. Em produção: [sportsbankzu-pro-well.vercel.app/dashboard](https://sportsbankzu-pro-well.vercel.app/dashboard).
 
 ### 4. CLI (Linha de Comando)
 
@@ -318,11 +324,33 @@ credentials:
 
 ### Variáveis do Dashboard Next.js
 
-Crie o arquivo `src/.env.local` (ou `.env.local` na raiz):
+O dashboard Next.js requer a variável `PY_BACKEND_URL` para conectar ao backend FastAPI e exibir dados reais. Sem essa variável, o sistema usa **mock data** como fallback (comportamento intencional para desenvolvimento local sem backend).
+
+**Setup local:**
 
 ```bash
-PY_BACKEND_URL=http://localhost:5001
+# Copiar o arquivo de exemplo
+tcp frontend/next/.env.example frontend/next/.env.local
+
+# Editar com a URL do backend local
+# PY_BACKEND_URL=http://localhost:5001
 ```
+
+**Deploy no Vercel (produção):**
+
+Para que o dashboard em produção use dados reais (e não mock data), configure a variável de ambiente no painel do Vercel:
+
+1. Acesse **Settings > Environment Variables** no projeto Vercel
+2. Adicione: `PY_BACKEND_URL` = URL do seu backend FastAPI (ex: `https://seu-endpoint.execute-api.us-east-1.amazonaws.com`)
+3. Aplique para os ambientes: **Production** e **Preview**
+4. Faça um novo deploy para que a variável tenha efeito
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `PY_BACKEND_URL` | Sim (produção) | URL do backend FastAPI. Sem ela, o dashboard usa mock data |
+| `NEXT_PUBLIC_PY_BACKEND_URL` | Não | Variante pública para fetches client-side |
+
+> **Importante:** A branch `main` deve ser sempre a fonte da verdade para deploys em produção. Certifique-se de que features desenvolvidas em branches de trabalho sejam mergeadas na `main` antes do deploy final.
 
 ---
 
@@ -447,7 +475,7 @@ A **tela de login** deve aparecer ao acessar pela primeira vez. Após autentica�
 
 Confirme o funcionamento do dashboard:
 
-A **página inicial** deve carregar o `MultiLeagueSelector` e `MatchesList`. O **botão "Analisar"** deve chamar `/api/decision/pre` e exibir os picks recomendados. A **navegação** deve ser fluida e responsiva.
+A **página inicial** (`/dashboard`) deve carregar jogos por liga com filtros Hoje/Amanhã/Próxima Rodada. A **aba Recomendadas 2026** exibe jogos com maior confiança. O **botão Compartilhar** captura a tela e permite enviar via WhatsApp (em dispositivos compatíveis) ou faz download da imagem e abre o WhatsApp com o link. A **navegação** é fluida e responsiva.
 
 ---
 
@@ -503,6 +531,22 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **Quadro-Resumo Profissional:** `PROMPT_IMPLEMENTACAO_QUADRO_RESUMO_FINAL.md`
 - **API do Backend:** Acesse `http://localhost:5001/docs` para documentação interativa (Swagger)
 - **Claude Code:** `CLAUDE.md` na raiz do projeto com instruções, comandos e referências Context7
+
+---
+
+## 🔄 Histórico de Alterações (Changelog)
+
+### 22 de Fevereiro de 2026
+
+- **fix(layout):** Corrige scroll independente dos painéis esquerdo e direito. O painel direito agora permanece fixo na tela com scroll interno, enquanto o painel esquerdo rola a lista de jogos de forma independente.
+- **fix(auditoria):** Adiciona scroll automático para o resultado da auditoria individual ao clicar em "Auditar", garantindo que o resultado seja sempre visível para o usuário.
+- **fix(auditoria):** Garante que o modal de auditoria em lote seja sempre visível, mesmo quando o backend está indisponível.
+
+### 21 de Fevereiro de 2026
+
+- **feat(dashboard):** Adiciona prognósticos de cartões e escanteios nas abas correspondentes.
+- **fix(dashboard):** Corrige a exibição de prognósticos abaixo dos jogos, que não apareciam devido a um problema de layout flex.
+- **fix(dashboard):s** Corrige a exibição de odds para cartões e escanteios, que mostravam "-" em vez dos valores corretos.
 
 ---
 

@@ -1,19 +1,6 @@
 import { NextRequest } from "next/server";
 import { AVAILABLE_LEAGUES } from "@/lib/leagues";
-
-type Match = {
-  id: string;
-  leagueId: string;
-  homeTeam: string;
-  awayTeam: string;
-  datetime: string;
-  stadium?: string;
-  status: "scheduled" | "live" | "finished";
-  odds?: { home?: number; draw?: number; away?: number };
-  stats?: { possession?: string; shots?: string; passes?: string };
-  ratings?: { home?: number; away?: number };
-  score?: { home: number; away: number };
-};
+import { generateMockMatches } from "@/lib/mockMatches";
 
 const ua =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
@@ -30,40 +17,6 @@ async function safeJson(url: string) {
   }
 }
 
-function mockMatches(leagueIds: string[]): Match[] {
-  const now = new Date();
-  const date = now.toISOString();
-  const base: Match[] = [
-    {
-      id: "m1",
-      leagueId: leagueIds[0] ?? "premier-league",
-      homeTeam: "Team A",
-      awayTeam: "Team B",
-      datetime: date,
-      stadium: "Stadium Alpha",
-      status: "scheduled",
-      odds: { home: 1.9, draw: 3.4, away: 2.2 },
-      stats: { possession: "52%-48%", shots: "12-9", passes: "410-380" },
-      ratings: { home: 6.7, away: 6.5 },
-      score: { home: 0, away: 0 },
-    },
-    {
-      id: "m2",
-      leagueId: leagueIds[1] ?? "la-liga",
-      homeTeam: "Team C",
-      awayTeam: "Team D",
-      datetime: date,
-      stadium: "Stadium Beta",
-      status: "live",
-      odds: { home: 2.1, draw: 3.1, away: 2.8 },
-      stats: { possession: "48%-52%", shots: "7-10", passes: "360-420" },
-      ratings: { home: 6.4, away: 6.8 },
-      score: { home: 1, away: 2 },
-    },
-  ];
-  return base;
-}
-
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const leagueIds: string[] = Array.isArray(body?.leagueIds) ? body.leagueIds : [];
@@ -73,14 +26,14 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ matches: [] }), { status: 200 });
   }
 
-  const results: Match[] = [];
+  const results: any[] = [];
 
   for (const id of ids) {
     const league = AVAILABLE_LEAGUES.find((l) => l.id === id)!;
     const sources = [
       { base: "https://footystats.org", path: league.apiEndpoints.footystats },
     ];
-    const fetched: Match[] = [];
+    const fetched: any[] = [];
     for (const s of sources) {
       const url = `${s.base}${s.path}`;
       const data = await safeJson(url);
@@ -103,7 +56,8 @@ export async function POST(req: NextRequest) {
       }
     }
     if (fetched.length === 0) {
-      results.push(...mockMatches([id]));
+      // Use shared mock data from mockMatches.ts instead of inline stub
+      results.push(...generateMockMatches([id]));
     } else {
       results.push(...fetched);
     }
@@ -114,4 +68,3 @@ export async function POST(req: NextRequest) {
     headers: { "content-type": "application/json" },
   });
 }
-

@@ -39,7 +39,7 @@ class CacheManager:
         conn.close()
 
     def _generate_key(self, type: str, home: str, away: str) -> str:
-        key_str = f"{type}:{home.lower()}:{away.lower()}"
+        key_str = f"{type}:{(home or '').lower()}:{(away or '').lower()}"
         return hashlib.md5(key_str.encode()).hexdigest()
 
     def get(self, type: str, home: str, away: str) -> Optional[Dict[str, Any]]:

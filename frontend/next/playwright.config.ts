@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { existsSync } from "fs";
+import { join } from "path";
+
+const hasProductionBuild = existsSync(join(__dirname, ".next", "BUILD_ID"));
+const useDevServer = !process.env.CI || !hasProductionBuild;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -8,7 +13,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3001",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -23,9 +28,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.CI ? "npm run build && npm run start" : "npm run dev",
-    url: "http://localhost:3000",
+    command: useDevServer ? "npm run dev" : "npm run start",
+    url: "http://localhost:3001",
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
+    env: { PORT: "3001" },
   },
 });

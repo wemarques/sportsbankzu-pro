@@ -10,7 +10,8 @@ test.describe("AI Audit Page", () => {
   });
 
   test("renders the AI Review Dashboard component", async ({ page }) => {
-    await expect(page.locator("main, [class*='audit'], [class*='review']").first()).toBeVisible();
+    // The AIReviewDashboard renders a div with an h1 "AI Audit" heading
+    await expect(page.locator("h1:has-text('AI Audit')")).toBeVisible();
   });
 
   test("displays Mistral AI status indicators", async ({ page }) => {

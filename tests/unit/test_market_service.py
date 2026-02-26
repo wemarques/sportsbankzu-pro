@@ -16,8 +16,8 @@ def test_selecionar_mercados_under35_safe():
         "stats": {
             "over25Prob": 0.50,
             "bttsProb": 0.55,
-            "under35Prob": 0.66,
-            "under45Prob": 0.80,
+            "under35Prob": 0.72,
+            "under45Prob": 0.88,
             "leagueAvgGoals": 2.6
         },
         "odds": {

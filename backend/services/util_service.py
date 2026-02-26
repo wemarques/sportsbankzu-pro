@@ -2,7 +2,7 @@ try:
     import pandas as pd  # type: ignore
 except Exception:
     pd = None
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 def status_map(s: str) -> str:
@@ -16,17 +16,20 @@ def status_map(s: str) -> str:
     return "scheduled"
 
 def parse_date(value: Any) -> Optional[datetime]:
+    """Parse date from various formats. Returns timezone-aware datetime in UTC."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
         try:
-            return datetime.utcfromtimestamp(int(value))
+            return datetime.fromtimestamp(int(value), tz=timezone.utc)
         except Exception:
             return None
     if isinstance(value, str):
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%b %d %Y - %I:%M%p"):
             try:
-                return datetime.strptime(value, fmt)
+                dt = datetime.strptime(value, fmt)
+                # FootyStats date_gmt fields are GMT — attach UTC timezone
+                return dt.replace(tzinfo=timezone.utc)
             except Exception:
                 continue
         try:
@@ -43,17 +46,30 @@ def pick_column(df: "pd.DataFrame", candidates: List[str]) -> Optional[str]:
 
 def compute_form(matches_df: "pd.DataFrame", team: str, max_len: int = 5) -> List[str]:
     if pd is None or matches_df is None:
-        return ["W", "D", "L", "W", "D"][:max_len]
+        return []
     df = matches_df.copy()
-    df["date_parsed"] = df.get("date_gmt") if "date_gmt" in df.columns else df.get("date_GMT")
+    # Parse dates — support both date_gmt string and unix timestamp columns
+    if "date_gmt" in df.columns:
+        df["date_parsed"] = df["date_gmt"]
+    elif "date_GMT" in df.columns:
+        df["date_parsed"] = df["date_GMT"]
+    elif "timestamp" in df.columns:
+        df["date_parsed"] = df["timestamp"]
+    else:
+        return []
     from backend.services.util_service import parse_date as _parse
     df["date_parsed"] = df["date_parsed"].apply(_parse)
     df = df.dropna(subset=["date_parsed"])
+    # Filter only finished matches (exclude scheduled, live, postponed)
+    status_col = pick_column(df, ["status"])
+    if status_col:
+        finished_statuses = ["complete", "finished", "ft"]
+        df = df[df[status_col].astype(str).str.lower().isin(finished_statuses)]
     df = df.sort_values("date_parsed", ascending=False)
     home_col = pick_column(df, ["home_team", "home_team_name", "team_a_name"])
     away_col = pick_column(df, ["away_team", "away_team_name", "team_b_name"])
     if not home_col or not away_col:
-        return ["D", "W", "L", "D", "W"][:max_len]
+        return []
     rows = df[(df[home_col] == team) | (df[away_col] == team)].head(20)
     form: List[str] = []
     for _, r in rows.iterrows():
@@ -82,6 +98,4 @@ def compute_form(matches_df: "pd.DataFrame", team: str, max_len: int = 5) -> Lis
                 form.append("L")
         if len(form) >= max_len:
             break
-    if not form:
-        form = ["D", "W", "L", "D", "W"][:max_len]
     return form

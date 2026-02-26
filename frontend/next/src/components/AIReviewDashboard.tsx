@@ -142,7 +142,7 @@ function transformAPIMatch(apiMatch: any, league: League): DisplayMatch {
   try {
     const dt = new Date(apiMatch.datetime);
     if (!isNaN(dt.getTime())) {
-      timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
     }
   } catch {
     /* fallback */
