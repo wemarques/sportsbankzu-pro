@@ -368,14 +368,35 @@ export default function AIReviewDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const leagueIds = Array.from(selectedLeagues).join(",");
+      const leagueIds = Array.from(selectedLeagues);
       const today = new Date().toISOString().split("T")[0];
-      const res = await fetch(
-        `/api/matches/fetch?leagues=${encodeURIComponent(leagueIds)}&date=${today}`,
-        { cache: "no-store" },
+
+      // Batch leagues into groups of 6 to avoid backend timeout with 22 leagues
+      const BATCH_SIZE = 6;
+      const batches: string[][] = [];
+      for (let i = 0; i < leagueIds.length; i += BATCH_SIZE) {
+        batches.push(leagueIds.slice(i, i + BATCH_SIZE));
+      }
+
+      const batchResults = await Promise.all(
+        batches.map(async (batch) => {
+          const res = await fetch(
+            `/api/matches/fetch?leagues=${encodeURIComponent(batch.join(","))}&date=${today}`,
+            { cache: "no-store" },
+          );
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            /* eslint-disable @typescript-eslint/no-explicit-any */
+            const serverMsg = (errData as any)?._error?.message;
+            /* eslint-enable @typescript-eslint/no-explicit-any */
+            throw new Error(serverMsg || `Servidor indisponível (${res.status})`);
+          }
+          const data = await res.json();
+          return (data.matches || data.fixtures || []) as unknown[];
+        }),
       );
-      const data = await res.json();
-      const rawMatches: unknown[] = data.matches || data.fixtures || [];
+
+      const rawMatches: unknown[] = batchResults.flat();
 
       if (!Array.isArray(rawMatches)) {
         setMatches([]);
@@ -408,7 +429,8 @@ export default function AIReviewDashboard() {
       setMatches(transformed);
     } catch (err) {
       console.error("Error fetching matches:", err);
-      setError("Erro ao carregar jogos. Verifique a conexão com o backend.");
+      const msg = err instanceof Error ? err.message : "Erro ao carregar jogos.";
+      setError(msg);
       setMatches([]);
     }
     setLoading(false);

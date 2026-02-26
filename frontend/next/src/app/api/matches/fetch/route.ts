@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       const res = await fetch(`${backend.replace(/\/$/, "")}/fixtures?${qs.toString()}`, { cache: "no-store" });
       const data = await res.json();
       return new Response(JSON.stringify(data), {
-        status: 200,
+        status: res.ok ? 200 : res.status,
         headers: { "content-type": "application/json" },
       });
     } else {
@@ -33,13 +33,13 @@ export async function GET(req: NextRequest) {
       });
       const data = await res.json();
       return new Response(JSON.stringify(data), {
-        status: 200,
+        status: res.ok ? 200 : res.status,
         headers: { "content-type": "application/json" },
       });
     }
   } catch {
-    return new Response(JSON.stringify({ matches: [] }), {
-      status: 200,
+    return new Response(JSON.stringify({ matches: [], _error: { message: "Erro interno ao buscar jogos." } }), {
+      status: 503,
       headers: { "content-type": "application/json" },
     });
   }
