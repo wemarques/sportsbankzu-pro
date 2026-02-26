@@ -49,6 +49,10 @@ def build_records_from_matches(
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
+        # Skip postponed / cancelled matches — do not generate predictions for them
+        if status in ("postponed", "cancelled"):
+            logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
+            continue
         # Extract score for finished matches
         _home_goals_raw = r.get("home_goals", r.get("home_team_goal_count", None))
         _away_goals_raw = r.get("away_goals", r.get("away_team_goal_count", None))

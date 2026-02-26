@@ -119,6 +119,11 @@ try:
     app.include_router(_r_audit_status.router)
 except Exception:
     pass
+try:
+    from backend.routes import combinadas as _r_combinadas
+    app.include_router(_r_combinadas.router)
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"

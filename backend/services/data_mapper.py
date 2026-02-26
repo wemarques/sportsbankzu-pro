@@ -2,8 +2,88 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import pandas as pd
 import logging
+from pydantic import BaseModel, field_validator, model_validator
 
 logger = logging.getLogger("sportsbank.mapper")
+
+
+class FootyStatsMatchInput(BaseModel):
+    """Validates raw match data from the FootyStats API before internal mapping.
+
+    All fields are Optional because FootyStats may omit stats for scheduled matches.
+    Coercion is used for numeric fields so string "0" → int 0 without raising errors.
+    """
+
+    id: Optional[int] = None
+    date_unix: Optional[int] = None
+    status: Optional[str] = None
+    home_name: Optional[str] = None
+    away_name: Optional[str] = None
+    homeID: Optional[int] = None
+    awayID: Optional[int] = None
+    homeGoalCount: Optional[int] = 0
+    awayGoalCount: Optional[int] = 0
+    totalGoalCount: Optional[int] = 0
+    team_a_corners: Optional[int] = -1
+    team_b_corners: Optional[int] = -1
+    team_a_possession: Optional[float] = -1.0
+    team_b_possession: Optional[float] = -1.0
+    team_a_shots: Optional[int] = -1
+    team_b_shots: Optional[int] = -1
+    team_a_shotsOnTarget: Optional[int] = -1
+    team_b_shotsOnTarget: Optional[int] = -1
+    team_a_xg: Optional[float] = 0.0
+    team_b_xg: Optional[float] = 0.0
+    btts_potential: Optional[float] = 0.0
+    o15_potential: Optional[float] = 0.0
+    o25_potential: Optional[float] = 0.0
+    o35_potential: Optional[float] = 0.0
+    o45_potential: Optional[float] = 0.0
+    corners_potential: Optional[float] = 0.0
+    corners_o85_potential: Optional[float] = 0.0
+    corners_o95_potential: Optional[float] = 0.0
+    corners_o105_potential: Optional[float] = 0.0
+    odds_corners_over_85: Optional[float] = 0.0
+    odds_corners_over_95: Optional[float] = 0.0
+    odds_corners_over_105: Optional[float] = 0.0
+    odds_corners_over_115: Optional[float] = 0.0
+    home_ppg: Optional[float] = 0.0
+    away_ppg: Optional[float] = 0.0
+    pre_match_home_ppg: Optional[float] = 0.0
+    pre_match_away_ppg: Optional[float] = 0.0
+    pre_match_teamA_overall_ppg: Optional[float] = 0.0
+    pre_match_teamB_overall_ppg: Optional[float] = 0.0
+    odds_ft_1: Optional[float] = 0.0
+    odds_ft_x: Optional[float] = 0.0
+    odds_ft_2: Optional[float] = 0.0
+    odds_ft_over15: Optional[float] = 0.0
+    odds_ft_over25: Optional[float] = 0.0
+    odds_ft_over35: Optional[float] = 0.0
+    odds_ft_over45: Optional[float] = 0.0
+    odds_btts_yes: Optional[float] = 0.0
+    competition_id: Optional[int] = None
+    game_week: Optional[int] = None
+
+    model_config = {"extra": "allow"}  # Preserve unknown fields for forward-compatibility
+
+    @field_validator("home_name", "away_name", mode="before")
+    @classmethod
+    def name_not_empty(cls, v: Any) -> Optional[str]:
+        """Coerce non-string names; return None if empty so downstream uses ID fallback."""
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+    @model_validator(mode="after")
+    def require_team_identity(self) -> "FootyStatsMatchInput":
+        """At least one of (home_name, homeID) must be present for the match to be identifiable."""
+        if not self.home_name and not self.homeID:
+            logger.warning("[FootyStatsMatchInput] Match missing both home_name and homeID — data may be corrupt")
+        if not self.away_name and not self.awayID:
+            logger.warning("[FootyStatsMatchInput] Match missing both away_name and awayID — data may be corrupt")
+        return self
+
 
 class DataMapper:
     """Traduz dados da API FootyStats para o formato interno baseado nos layouts CSV."""
@@ -93,8 +173,18 @@ class DataMapper:
 
     @classmethod
     def matches_to_df(cls, api_matches: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Converte uma lista de partidas da API em um DataFrame formatado como o CSV."""
-        mapped_matches = [cls.map_match_to_internal(m) for m in api_matches]
+        """Converte uma lista de partidas da API em um DataFrame formatado como o CSV.
+
+        Each record is validated via FootyStatsMatchInput before mapping so that
+        type coercions and missing-field warnings are applied consistently.
+        """
+        mapped_matches = []
+        for i, raw in enumerate(api_matches):
+            try:
+                validated = FootyStatsMatchInput.model_validate(raw)
+                mapped_matches.append(cls.map_match_to_internal(validated.model_dump()))
+            except Exception as exc:
+                logger.warning("[DataMapper] Skipping malformed match record #%d: %s", i, exc)
         return pd.DataFrame(mapped_matches)
 
     @classmethod

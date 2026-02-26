@@ -13,6 +13,8 @@ def status_map(s: str) -> str:
         return "live"
     if sl in ("postponed", "ppd"):
         return "postponed"
+    if sl in ("cancelled", "canceled", "void", "abandoned"):
+        return "cancelled"
     return "scheduled"
 
 def parse_date(value: Any) -> Optional[datetime]:

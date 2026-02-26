@@ -16,6 +16,8 @@ import {
   Loader2,
   RefreshCw,
   X,
+  Link2,
+  Layers,
 } from "lucide-react";
 import { AVAILABLE_LEAGUES, type League } from "@/lib/leagues";
 
@@ -59,6 +61,38 @@ interface DisplayMatch {
   prediction: MatchPrediction;
   mistral: MistralReview;
   featured?: boolean;
+}
+
+interface CombinadaLeg {
+  jogo: string;
+  homeTeam: string;
+  awayTeam: string;
+  leagueId: string;
+  leagueName: string;
+  datetime: string;
+  mercado: string;
+  status: string;
+  prob_min: number;
+  prob_max: number;
+  odd_minima: number;
+}
+
+interface Combinada {
+  tipo: "intra" | "inter";
+  leg1: CombinadaLeg;
+  leg2: CombinadaLeg;
+  odd_combinada: number;
+  prob_combinada_min: number;
+  prob_combinada_max: number;
+  status_combinada: "SAFE" | "MISTA" | "NEUTRO";
+}
+
+interface CombinadasData {
+  intra: Combinada[];
+  inter: Combinada[];
+  total_intra: number;
+  total_inter: number;
+  total_jogos: number;
 }
 
 /* ========================================
@@ -394,6 +428,194 @@ function MatchCard({ match }: { match: DisplayMatch }) {
   );
 }
 
+/* -------- helpers de combinada -------- */
+function statusCombinadaStyle(s: string) {
+  if (s === "SAFE") return { bg: "bg-[#00df82]/10 border-[#00df82]/30", badge: "bg-[#00df82]/20 text-[#00df82]" };
+  if (s === "MISTA") return { bg: "bg-[#9d50ff]/10 border-[#9d50ff]/30", badge: "bg-[#9d50ff]/20 text-purple-300" };
+  return { bg: "bg-orange-900/10 border-orange-900/30", badge: "bg-orange-900/20 text-orange-300" };
+}
+
+function CombinadaCard({ c }: { c: Combinada }) {
+  const st = statusCombinadaStyle(c.status_combinada);
+  const isIntra = c.tipo === "intra";
+
+  const timeStr = (dt: string) => {
+    try {
+      const d = new Date(dt);
+      return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    } catch { return "--:--"; }
+  };
+
+  return (
+    <div className={`rounded-xl border p-4 ${st.bg} space-y-3`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isIntra
+            ? <Layers size={13} className="text-purple-400" />
+            : <Link2 size={13} className="text-[#00df82]" />}
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            {isIntra ? "Intra-jogo" : "Inter-jogo"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-500">
+            {c.prob_combinada_min}–{c.prob_combinada_max}%
+          </span>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${st.badge}`}>
+            {c.status_combinada}
+          </span>
+        </div>
+      </div>
+
+      {/* Legs */}
+      <div className="space-y-2">
+        {([c.leg1, c.leg2] as CombinadaLeg[]).map((leg, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="mt-0.5 w-4 h-4 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[9px] font-bold text-gray-400 shrink-0">
+              {i + 1}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs font-semibold text-white truncate">
+                  {leg.homeTeam} <span className="text-gray-500">x</span> {leg.awayTeam}
+                </span>
+                <span className="text-[10px] text-gray-600">{timeStr(leg.datetime)}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className="text-[11px] text-[#00df82] font-medium">{leg.mercado}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                  leg.status.toUpperCase().startsWith("SAFE") ? "bg-[#00df82]/15 text-[#00df82]" : "bg-orange-900/20 text-orange-300"
+                }`}>
+                  {leg.status} {leg.prob_min}–{leg.prob_max}%
+                </span>
+                <span className="text-[10px] text-gray-500">@{leg.odd_minima.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Combined odds */}
+      <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <span className="text-[10px] text-gray-500 uppercase tracking-wider">Odd Combinada</span>
+        <span className="text-lg font-black text-white">{c.odd_combinada.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+function DuplasView({
+  data,
+  loading,
+  error,
+  onRefresh,
+  minStatus,
+  onMinStatusChange,
+}: {
+  data: CombinadasData | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  minStatus: "SAFE" | "NEUTRO";
+  onMinStatusChange: (v: "SAFE" | "NEUTRO") => void;
+}) {
+  const [subTab, setSubTab] = useState<"intra" | "inter">("intra");
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <Loader2 size={36} className="animate-spin text-[#9d50ff]" />
+        <p className="text-gray-400 text-sm">Calculando combinadas...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="px-4">
+        <div className="bg-red-900/20 border border-red-900/40 rounded-xl p-4 text-center">
+          <p className="text-red-400 text-sm">{error}</p>
+          <button onClick={onRefresh} className="mt-3 px-4 py-2 bg-red-900/30 rounded-lg text-sm text-red-300 hover:bg-red-900/50 transition-colors">
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const items = subTab === "intra" ? (data?.intra ?? []) : (data?.inter ?? []);
+
+  return (
+    <div className="px-4 space-y-4">
+      {/* Filter bar */}
+      <div className="flex items-center justify-between gap-3">
+        {/* Intra / Inter toggle */}
+        <div className="flex gap-1 bg-[#1a1a1a] p-1 rounded-xl">
+          {(["intra", "inter"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                subTab === t ? "bg-[#9d50ff] text-white" : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              {t === "intra" ? <Layers size={11} /> : <Link2 size={11} />}
+              {t === "intra" ? "Intra-jogo" : "Inter-jogo"}
+              <span className="ml-0.5 text-[9px] bg-white/10 px-1 py-0.5 rounded">
+                {t === "intra" ? (data?.total_intra ?? 0) : (data?.total_inter ?? 0)}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Min-status filter */}
+        <div className="flex gap-1">
+          {(["NEUTRO", "SAFE"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => onMinStatusChange(s)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                minStatus === s ? "bg-[#00df82]/20 text-[#00df82] border border-[#00df82]/30" : "text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Explanation pill */}
+      <p className="text-[11px] text-gray-600 px-1">
+        {subTab === "intra"
+          ? "Dois mercados do mesmo jogo combinados numa única aposta."
+          : "Um mercado de cada jogo diferente numa única aposta acumulada."}
+      </p>
+
+      {/* Cards */}
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Layers size={36} className="text-gray-700" />
+          <p className="text-gray-500 text-sm text-center">
+            {data === null
+              ? "Carregue as combinadas clicando em Atualizar."
+              : `Nenhuma combinada ${subTab} encontrada com status mínimo ${minStatus}.`}
+          </p>
+          {data === null && (
+            <button onClick={onRefresh} className="mt-2 px-4 py-2 bg-[#9d50ff]/20 border border-[#9d50ff]/40 rounded-lg text-sm text-purple-300 hover:bg-[#9d50ff]/30 transition-colors">
+              Carregar combinadas
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((c, i) => <CombinadaCard key={i} c={c} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LeagueFilterPanel({
   selectedLeagues,
   onToggle,
@@ -472,7 +694,53 @@ export default function AIReviewDashboard() {
     () => new Set(AVAILABLE_LEAGUES.map((l) => l.id)),
   );
 
-  const tabs = ["Predictions", "Top Value", "Mistral Picks"];
+  const tabs = ["Predictions", "Top Value", "Mistral Picks", "Duplas"];
+
+  // Combinadas state
+  const [combinadas, setCombinadas] = useState<CombinadasData | null>(null);
+  const [combinadasLoading, setCombindasLoading] = useState(false);
+  const [combinadasError, setCombindasError] = useState<string | null>(null);
+  const [combinadasMinStatus, setCombindasMinStatus] = useState<"SAFE" | "NEUTRO">("NEUTRO");
+
+  const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
+    setCombindasLoading(true);
+    setCombindasError(null);
+    try {
+      const leagueIds = Array.from(selectedLeagues);
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch(
+        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const errData = await res.json().catch(() => ({}));
+        const serverMsg = (errData as any)?._error?.message;
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+        throw new Error(serverMsg || `Erro ao carregar combinadas (${res.status})`);
+      }
+      const data: CombinadasData = await res.json();
+      setCombinadas(data);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao carregar combinadas.";
+      setCombindasError(msg);
+    }
+    setCombindasLoading(false);
+  }, [selectedLeagues]);
+
+  // Auto-fetch combinadas when tab is selected
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "Duplas" && combinadas === null && !combinadasLoading) {
+      fetchCombinadas(combinadasMinStatus);
+    }
+  };
+
+  const handleMinStatusChange = (s: "SAFE" | "NEUTRO") => {
+    setCombindasMinStatus(s);
+    setCombinadas(null);
+    fetchCombinadas(s);
+  };
 
   const fetchMatches = useCallback(async () => {
     setLoading(true);
@@ -617,7 +885,7 @@ export default function AIReviewDashboard() {
         {tabs.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => handleTabChange(tab)}
             className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-semibold transition-all ${
               activeTab === tab
                 ? "bg-[#00df82] text-black"
@@ -658,8 +926,32 @@ export default function AIReviewDashboard() {
         </div>
       </div>
 
+      {/* ===== DUPLAS TAB ===== */}
+      {activeTab === "Duplas" && (
+        <div className="pb-4">
+          {/* refresh button row */}
+          <div className="px-4 mb-4 flex justify-end">
+            <button
+              onClick={() => { setCombinadas(null); fetchCombinadas(combinadasMinStatus); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1a1a] rounded-lg text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <RefreshCw size={12} className={combinadasLoading ? "animate-spin" : ""} />
+              Atualizar
+            </button>
+          </div>
+          <DuplasView
+            data={combinadas}
+            loading={combinadasLoading}
+            error={combinadasError}
+            onRefresh={() => fetchCombinadas(combinadasMinStatus)}
+            minStatus={combinadasMinStatus}
+            onMinStatusChange={handleMinStatusChange}
+          />
+        </div>
+      )}
+
       {/* Loading */}
-      {loading && (
+      {activeTab !== "Duplas" && loading && (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Loader2 size={40} className="animate-spin text-[#9d50ff]" />
           <p className="text-gray-400 text-sm">
@@ -669,7 +961,7 @@ export default function AIReviewDashboard() {
       )}
 
       {/* Error */}
-      {!loading && error && (
+      {activeTab !== "Duplas" && !loading && error && (
         <div className="px-4">
           <div className="bg-red-900/20 border border-red-900/40 rounded-xl p-4 text-center">
             <p className="text-red-400 text-sm">{error}</p>
@@ -684,7 +976,7 @@ export default function AIReviewDashboard() {
       )}
 
       {/* Empty state */}
-      {!loading && !error && filteredMatches.length === 0 && (
+      {activeTab !== "Duplas" && !loading && !error && filteredMatches.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Trophy size={40} className="text-gray-600" />
           <p className="text-gray-500 text-sm text-center px-8">
@@ -696,7 +988,7 @@ export default function AIReviewDashboard() {
       )}
 
       {/* Match List agrupada por liga */}
-      {!loading && !error && filteredMatches.length > 0 && (
+      {activeTab !== "Duplas" && !loading && !error && filteredMatches.length > 0 && (
         <main className="px-4 space-y-8">
           {Object.entries(grouped).map(([league, leagueMatches]) => (
             <div key={league}>
