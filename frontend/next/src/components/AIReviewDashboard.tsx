@@ -25,6 +25,7 @@ import { AVAILABLE_LEAGUES, type League } from "@/lib/leagues";
 interface Team {
   name: string;
   logo: string;
+  fullName: string;
 }
 
 interface MistralReview {
@@ -32,6 +33,14 @@ interface MistralReview {
   auditOdds: string;
   explanation: string;
   color: "purple" | "orange" | "red";
+}
+
+interface MistralApiResponse {
+  summary: string;
+  key_points: string[];
+  recommendation: string;
+  confidence: number;
+  last_updated: string;
 }
 
 interface MatchPrediction {
@@ -161,6 +170,7 @@ function transformAPIMatch(apiMatch: any, league: League): DisplayMatch {
     time: timeStr,
     home: {
       name: homeName.length > 3 ? homeName.slice(0, 3).toUpperCase() : homeName.toUpperCase(),
+      fullName: homeName,
       logo:
         apiMatch.homeTeam?.logo ||
         apiMatch.home?.logo ||
@@ -168,6 +178,7 @@ function transformAPIMatch(apiMatch: any, league: League): DisplayMatch {
     },
     away: {
       name: awayName.length > 3 ? awayName.slice(0, 3).toUpperCase() : awayName.toUpperCase(),
+      fullName: awayName,
       logo:
         apiMatch.awayTeam?.logo ||
         apiMatch.away?.logo ||
@@ -200,18 +211,58 @@ function StatusBadge({ status, auditOdds }: { status: string; auditOdds: string 
   );
 }
 
+function confidenceToStatus(c: number): MistralReview["status"] {
+  if (c >= 70) return "CONFIRMED";
+  if (c >= 40) return "ADJUSTED";
+  return "REJECTED";
+}
+
+function confidenceToColor(c: number): MistralReview["color"] {
+  if (c >= 70) return "purple";
+  if (c >= 40) return "orange";
+  return "red";
+}
+
 function MatchCard({ match }: { match: DisplayMatch }) {
   const [expanded, setExpanded] = useState(false);
+  const [mistralData, setMistralData] = useState<MistralApiResponse | null>(null);
+  const [mistralLoading, setMistralLoading] = useState(false);
+  const [mistralError, setMistralError] = useState<string | null>(null);
+
+  const fetchMistral = async () => {
+    if (mistralLoading || mistralData) return;
+    setMistralLoading(true);
+    setMistralError(null);
+    try {
+      const qs = new URLSearchParams({
+        home_team: match.home.fullName,
+        away_team: match.away.fullName,
+      });
+      const res = await fetch(
+        `/api/ai/match/${encodeURIComponent(match.id)}/analysis?${qs.toString()}`,
+      );
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data: MistralApiResponse = await res.json();
+      setMistralData(data);
+    } catch {
+      setMistralError("Falha ao carregar análise Mistral");
+    }
+    setMistralLoading(false);
+  };
+
+  const activeStatus = mistralData ? confidenceToStatus(mistralData.confidence) : match.mistral.status;
+  const activeColor = mistralData ? confidenceToColor(mistralData.confidence) : match.mistral.color;
+
   const mistralCardClass =
-    match.mistral.status === "CONFIRMED"
+    activeStatus === "CONFIRMED"
       ? "card-mistral-confirmed"
-      : match.mistral.status === "REJECTED"
+      : activeStatus === "REJECTED"
         ? "card-mistral-rejected"
         : "card-mistral-adjusted";
   const accentColor =
-    match.mistral.status === "CONFIRMED"
+    activeStatus === "CONFIRMED"
       ? "text-purple-400"
-      : match.mistral.status === "REJECTED"
+      : activeStatus === "REJECTED"
         ? "text-red-400"
         : "text-orange-400";
 
@@ -258,26 +309,85 @@ function MatchCard({ match }: { match: DisplayMatch }) {
             <Cpu size={12} />
             Mistral AI Review
           </div>
-          <StatusBadge status={match.mistral.status} auditOdds={match.mistral.auditOdds} />
+          {mistralData ? (
+            <div className="flex items-center gap-2">
+              <StatusBadge status={activeStatus} auditOdds={`${mistralData.confidence}%`} />
+            </div>
+          ) : (
+            <StatusBadge status={activeStatus} auditOdds={match.mistral.auditOdds} />
+          )}
         </div>
-        <div className="text-sm leading-relaxed text-gray-300">
-          <span className={`font-black mr-1 ${accentColor}`}>{match.mistral.status}:</span>
-          {expanded
-            ? match.mistral.explanation
-            : match.mistral.explanation.slice(0, 80) +
-              (match.mistral.explanation.length > 80 ? "..." : "")}
-        </div>
-        {match.mistral.explanation.length > 80 && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-[11px] text-gray-500 hover:text-gray-300 mt-1 flex items-center gap-1 transition-colors"
-          >
-            {expanded ? "Ver menos" : "Ver mais"}
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${expanded ? "rotate-180" : ""}`}
-            />
-          </button>
+
+        {/* Conteúdo: real Mistral ou cálculo local */}
+        {mistralData ? (
+          <div className="space-y-2">
+            <p className="text-sm leading-relaxed text-gray-300">
+              <span className={`font-black mr-1 ${accentColor}`}>{activeStatus}:</span>
+              {expanded ? mistralData.summary : mistralData.summary.slice(0, 100) + (mistralData.summary.length > 100 ? "..." : "")}
+            </p>
+            {expanded && (
+              <>
+                {mistralData.key_points.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {mistralData.key_points.map((kp, i) => (
+                      <li key={i} className="text-[11px] text-gray-400 flex gap-1">
+                        <span className="text-[#9d50ff] mt-0.5">▸</span>
+                        {kp}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {mistralData.recommendation && (
+                  <p className="text-[11px] text-[#00df82] font-semibold mt-2">
+                    ✦ {mistralData.recommendation}
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-600 mt-1">
+                  Confiança: {mistralData.confidence}% · {mistralData.last_updated}
+                </p>
+              </>
+            )}
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-[11px] text-gray-500 hover:text-gray-300 mt-1 flex items-center gap-1 transition-colors"
+            >
+              {expanded ? "Ver menos" : "Ver mais"}
+              <ChevronDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="text-sm leading-relaxed text-gray-300">
+              <span className={`font-black mr-1 ${accentColor}`}>{activeStatus}:</span>
+              {expanded
+                ? match.mistral.explanation
+                : match.mistral.explanation.slice(0, 80) + (match.mistral.explanation.length > 80 ? "..." : "")}
+            </div>
+            {match.mistral.explanation.length > 80 && !mistralLoading && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-[11px] text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
+              >
+                {expanded ? "Ver menos" : "Ver mais"}
+                <ChevronDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+              </button>
+            )}
+            {mistralError && (
+              <p className="text-[11px] text-red-400">{mistralError}</p>
+            )}
+            <button
+              onClick={fetchMistral}
+              disabled={mistralLoading}
+              className="mt-1 flex items-center gap-1.5 px-3 py-1.5 bg-[#9d50ff]/20 border border-[#9d50ff]/40 rounded-lg text-[11px] text-purple-300 hover:bg-[#9d50ff]/30 disabled:opacity-60 transition-colors"
+            >
+              {mistralLoading ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Cpu size={11} />
+              )}
+              {mistralLoading ? "Analisando..." : "Analisar com Mistral AI"}
+            </button>
+          </div>
         )}
       </div>
     </div>
