@@ -104,11 +104,11 @@ function getBestTip(
   odds: Record<string, number>,
 ): { tip: string; odds: number; fairOdds: number } {
   const markets = [
-    { tip: "Home Win (1)", prob: stats.homeWinProb ?? 0, marketOdds: odds.home ?? 0 },
-    { tip: "Draw (X)", prob: stats.drawProb ?? 0, marketOdds: odds.draw ?? 0 },
-    { tip: "Away Win (2)", prob: stats.awayWinProb ?? 0, marketOdds: odds.away ?? 0 },
-    { tip: "Over 2.5", prob: stats.over25Prob ?? 0, marketOdds: odds.over25 ?? 0 },
-    { tip: "BTTS Yes", prob: stats.bttsProb ?? 0, marketOdds: odds.bttsYes ?? 0 },
+    { tip: "Vitória Casa (1)", prob: stats.homeWinProb ?? 0, marketOdds: odds.home ?? 0 },
+    { tip: "Empate (X)", prob: stats.drawProb ?? 0, marketOdds: odds.draw ?? 0 },
+    { tip: "Vitória Fora (2)", prob: stats.awayWinProb ?? 0, marketOdds: odds.away ?? 0 },
+    { tip: "Acima 2.5 Gols", prob: stats.over25Prob ?? 0, marketOdds: odds.over25 ?? 0 },
+    { tip: "Ambas Marcam", prob: stats.bttsProb ?? 0, marketOdds: odds.bttsYes ?? 0 },
   ];
 
   let best = markets[0];
@@ -162,11 +162,11 @@ function buildAIReview(
 
   let explanation: string;
   if (status === "CONFIRMED") {
-    explanation = `Market odds align with system model (fair: ${fairOdds.toFixed(2)} vs market: ${marketOdds.toFixed(2)}).${lambdaInfo}${h2hInfo}${regimeInfo}`;
+    explanation = `Odds alinhadas com o modelo (justo: ${fairOdds.toFixed(2)} vs mercado: ${marketOdds.toFixed(2)}).${lambdaInfo}${h2hInfo}${regimeInfo}`;
   } else if (status === "ADJUSTED") {
-    explanation = `Mild divergence detected between model and market (fair: ${fairOdds.toFixed(2)} vs market: ${marketOdds.toFixed(2)}). Consider external factors.${lambdaInfo}${h2hInfo}${regimeInfo}`;
+    explanation = `Divergência moderada entre modelo e mercado (justo: ${fairOdds.toFixed(2)} vs mercado: ${marketOdds.toFixed(2)}). Considere fatores externos.${lambdaInfo}${h2hInfo}${regimeInfo}`;
   } else {
-    explanation = `Significant divergence from market pricing (fair: ${fairOdds.toFixed(2)} vs market: ${marketOdds.toFixed(2)}). Model suggests caution.${lambdaInfo}${h2hInfo}${regimeInfo}`;
+    explanation = `Divergência significativa do preço de mercado (justo: ${fairOdds.toFixed(2)} vs mercado: ${marketOdds.toFixed(2)}). Modelo sugere cautela.${lambdaInfo}${h2hInfo}${regimeInfo}`;
   }
 
   return { status, auditOdds: fairOdds.toFixed(2), explanation, color };
@@ -232,6 +232,12 @@ function transformAPIMatch(apiMatch: any, league: League): DisplayMatch {
    Sub-componentes
    ======================================== */
 
+const STATUS_LABEL: Record<string, string> = {
+  CONFIRMED: "CONFIRMADO",
+  ADJUSTED: "AJUSTADO",
+  REJECTED: "REJEITADO",
+};
+
 function StatusBadge({ status, auditOdds }: { status: string; auditOdds: string }) {
   const styles: Record<string, string> = {
     CONFIRMED: "bg-purple-900/50 text-purple-300",
@@ -240,7 +246,7 @@ function StatusBadge({ status, auditOdds }: { status: string; auditOdds: string 
   };
   return (
     <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${styles[status] ?? styles.ADJUSTED}`}>
-      {status}: {auditOdds}
+      {STATUS_LABEL[status] ?? status}: {auditOdds}
     </div>
   );
 }
@@ -327,12 +333,12 @@ function MatchCard({ match }: { match: DisplayMatch }) {
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-wider">
             <Layout size={12} />
-            System Prediction
+            Previsão do Sistema
           </div>
           <span className="text-blue-400 font-bold odds-value">{match.prediction.odds}</span>
         </div>
         <div className="text-lg font-bold">
-          System Tip: <span className="text-white">{match.prediction.tip}</span>
+          Palpite: <span className="text-white">{match.prediction.tip}</span>
         </div>
       </div>
 
@@ -341,7 +347,7 @@ function MatchCard({ match }: { match: DisplayMatch }) {
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
             <Cpu size={12} />
-            Mistral AI Review
+            Revisão Mistral AI
           </div>
           {mistralData ? (
             <div className="flex items-center gap-2">
@@ -356,7 +362,7 @@ function MatchCard({ match }: { match: DisplayMatch }) {
         {mistralData ? (
           <div className="space-y-2">
             <p className="text-sm leading-relaxed text-gray-300">
-              <span className={`font-black mr-1 ${accentColor}`}>{activeStatus}:</span>
+              <span className={`font-black mr-1 ${accentColor}`}>{STATUS_LABEL[activeStatus] ?? activeStatus}:</span>
               {expanded ? mistralData.summary : mistralData.summary.slice(0, 100) + (mistralData.summary.length > 100 ? "..." : "")}
             </p>
             {expanded && (
@@ -392,7 +398,7 @@ function MatchCard({ match }: { match: DisplayMatch }) {
         ) : (
           <div className="space-y-2">
             <div className="text-sm leading-relaxed text-gray-300">
-              <span className={`font-black mr-1 ${accentColor}`}>{activeStatus}:</span>
+              <span className={`font-black mr-1 ${accentColor}`}>{STATUS_LABEL[activeStatus] ?? activeStatus}:</span>
               {expanded
                 ? match.mistral.explanation
                 : match.mistral.explanation.slice(0, 80) + (match.mistral.explanation.length > 80 ? "..." : "")}
@@ -684,7 +690,7 @@ function LeagueFilterPanel({
    ======================================== */
 
 export default function AIReviewDashboard() {
-  const [activeTab, setActiveTab] = useState("Predictions");
+  const [activeTab, setActiveTab] = useState("Prognósticos");
   const [activeNav, setActiveNav] = useState("AI AUDIT");
   const [matches, setMatches] = useState<DisplayMatch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -694,7 +700,7 @@ export default function AIReviewDashboard() {
     () => new Set(AVAILABLE_LEAGUES.map((l) => l.id)),
   );
 
-  const tabs = ["Predictions", "Top Value", "Mistral Picks", "Duplas"];
+  const tabs = ["Prognósticos", "Maior Valor", "Picks Mistral", "Duplas"];
 
   // Combinadas state
   const [combinadas, setCombinadas] = useState<CombinadasData | null>(null);
@@ -706,10 +712,13 @@ export default function AIReviewDashboard() {
     setCombindasLoading(true);
     setCombindasError(null);
     try {
-      const leagueIds = Array.from(selectedLeagues);
-      const today = new Date().toISOString().split("T")[0];
+      // Prefer leagues that already have loaded matches (avoid querying all 22 at once → timeout)
+      const leaguesWithMatches = matches.length > 0
+        ? Array.from(new Set(matches.map((m) => m.leagueId)))
+        : Array.from(selectedLeagues).slice(0, 8);
+      const leagueIds = leaguesWithMatches.length > 0 ? leaguesWithMatches : Array.from(selectedLeagues).slice(0, 8);
       const res = await fetch(
-        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
+        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=today&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
       if (!res.ok) {
@@ -747,7 +756,6 @@ export default function AIReviewDashboard() {
     setError(null);
     try {
       const leagueIds = Array.from(selectedLeagues);
-      const today = new Date().toISOString().split("T")[0];
 
       // Batch leagues into groups of 6 to avoid backend timeout with 22 leagues
       const BATCH_SIZE = 6;
@@ -759,7 +767,7 @@ export default function AIReviewDashboard() {
       const batchResults = await Promise.all(
         batches.map(async (batch) => {
           const res = await fetch(
-            `/api/matches/fetch?leagues=${encodeURIComponent(batch.join(","))}&date=${today}`,
+            `/api/matches/fetch?leagues=${encodeURIComponent(batch.join(","))}&date=today`,
             { cache: "no-store" },
           );
           if (!res.ok) {
@@ -837,8 +845,8 @@ export default function AIReviewDashboard() {
 
   // Filter matches based on active tab
   const filteredMatches = matches.filter((m) => {
-    if (activeTab === "Top Value") return m.featured;
-    if (activeTab === "Mistral Picks") return m.mistral.status === "CONFIRMED";
+    if (activeTab === "Maior Valor") return m.featured;
+    if (activeTab === "Picks Mistral") return m.mistral.status === "CONFIRMED";
     return true;
   });
 
@@ -905,21 +913,21 @@ export default function AIReviewDashboard() {
         </div>
         <div className="bg-[#1a1a1a] rounded-xl px-4 py-2 flex items-center gap-2 whitespace-nowrap">
           <span className="w-2 h-2 bg-purple-500 rounded-full" />
-          <span className="text-[10px] text-gray-500 uppercase">Confirmed</span>
+          <span className="text-[10px] text-gray-500 uppercase">Confirmado</span>
           <span className="text-sm font-bold text-purple-400">
             {matches.filter((m) => m.mistral.status === "CONFIRMED").length}
           </span>
         </div>
         <div className="bg-[#1a1a1a] rounded-xl px-4 py-2 flex items-center gap-2 whitespace-nowrap">
           <span className="w-2 h-2 bg-orange-500 rounded-full" />
-          <span className="text-[10px] text-gray-500 uppercase">Adjusted</span>
+          <span className="text-[10px] text-gray-500 uppercase">Ajustado</span>
           <span className="text-sm font-bold text-orange-400">
             {matches.filter((m) => m.mistral.status === "ADJUSTED").length}
           </span>
         </div>
         <div className="bg-[#1a1a1a] rounded-xl px-4 py-2 flex items-center gap-2 whitespace-nowrap">
           <span className="w-2 h-2 bg-red-500 rounded-full" />
-          <span className="text-[10px] text-gray-500 uppercase">Rejected</span>
+          <span className="text-[10px] text-gray-500 uppercase">Rejeitado</span>
           <span className="text-sm font-bold text-red-400">
             {matches.filter((m) => m.mistral.status === "REJECTED").length}
           </span>
@@ -982,7 +990,7 @@ export default function AIReviewDashboard() {
           <p className="text-gray-500 text-sm text-center px-8">
             {matches.length === 0
               ? "Nenhum jogo encontrado para as ligas selecionadas."
-              : `Nenhum jogo na aba "${activeTab}". Tente "Predictions" para ver todos.`}
+              : `Nenhum jogo na aba "${activeTab}". Tente "Prognósticos" para ver todos.`}
           </p>
         </div>
       )}
