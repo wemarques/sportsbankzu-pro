@@ -876,6 +876,45 @@ async def batch_audit(
         raise HTTPException(status_code=500, detail=f"Erro na auditoria em lote: {str(e)}")
 
 
+class MistralEvaluateRequest(BaseModel):
+    """Lightweight request for Mistral-only evaluation.
+    Receives pre-computed audit stats — no fixture fetching needed."""
+    total_audited: int = 0
+    overall_correct: int = 0
+    overall_total: int = 0
+    overall_accuracy_pct: float = 0.0
+    safe_correct: int = 0
+    safe_total: int = 0
+    safe_accuracy_pct: float = 0.0
+    neutro_correct: int = 0
+    neutro_total: int = 0
+    neutro_accuracy_pct: float = 0.0
+    avg_brier_score: float = 0.0
+    avg_lambda_error: float = 0.0
+    market_accuracy_text: str = ""
+    matches_summary_text: str = ""
+
+
+@router.post("/batch-audit/evaluate")
+async def batch_audit_evaluate(request: MistralEvaluateRequest):
+    """Mistral-only model evaluation — receives pre-computed audit summary.
+    No fixture fetching, no FootyStats API calls. Fast (~3-5s)."""
+    from backend.ai.mistral_auditor import MistralAuditor
+
+    try:
+        batch_summary = request.model_dump()
+        auditor = MistralAuditor()
+        model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
+        return {"status": "success", "model_evaluation": model_evaluation}
+    except Exception as e:
+        logger.error(f"Mistral evaluate error: {e}")
+        return {
+            "status": "error",
+            "message": f"Erro na avaliacao Mistral: {str(e)}",
+            "model_evaluation": None,
+        }
+
+
 @router.post("/batch-audit/apply")
 async def apply_batch_corrections(request: BatchCorrectionRequest):
     """Apply multiple corrections from a batch audit at once."""

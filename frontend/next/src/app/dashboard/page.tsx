@@ -11,7 +11,7 @@ import MatchDetailCard, {
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
-import { runLocalAudit } from "@/lib/localAudit";
+import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
@@ -723,15 +723,25 @@ export default function Dashboard() {
     return allMatches.filter((m) => m.status === "finished").length;
   }, [allMatches]);
 
-  const handleBatchAudit = useCallback(() => {
+  const handleBatchAudit = useCallback(async () => {
     if (batchAuditLoading) return;
     setBatchAuditLoading(true);
     try {
-      // Local deterministic audit — no backend call needed.
-      // Uses match data already loaded in the dashboard.
+      // 1. Local deterministic audit — instant, no network
       const result = runLocalAudit(allMatches);
       setBatchAuditResult(result);
       setBatchAuditOpen(true);
+
+      // 2. Fetch Mistral evaluation in background (lightweight call ~3-5s)
+      if (result.audited_matches > 0) {
+        fetchMistralEvaluation(result).then((evaluation) => {
+          if (evaluation) {
+            setBatchAuditResult((prev) =>
+              prev ? { ...prev, model_evaluation: evaluation } : prev
+            );
+          }
+        });
+      }
     } catch (err) {
       console.error("Batch audit error:", err);
       setBatchAuditResult({

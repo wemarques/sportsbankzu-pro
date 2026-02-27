@@ -220,6 +220,59 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
         : 0,
     market_accuracy: marketAccuracy,
     match_results: matchResults,
-    model_evaluation: null, // Mistral evaluation skipped (optional, can be added later)
+    model_evaluation: null,
   };
+}
+
+/**
+ * Fetch Mistral AI evaluation for pre-computed audit stats.
+ * Lightweight call — backend only runs Mistral, no fixture fetching (~3-5s).
+ * Returns the model_evaluation object or null on failure.
+ */
+export async function fetchMistralEvaluation(
+  result: BatchAuditResult
+): Promise<BatchAuditResult["model_evaluation"]> {
+  // Build market accuracy text
+  const marketLines = (result.market_accuracy || []).map(
+    (ma) => `- ${ma.market}: ${ma.correct}/${ma.total} (${ma.accuracy_pct.toFixed(1)}%)`
+  );
+
+  // Build matches summary text (first 20)
+  const matchLines = (result.match_results || []).slice(0, 20).map((mr) => {
+    const picks = mr.picks
+      .map((p) => `${p.mercado}:${p.resultado}`)
+      .join(", ");
+    return `- ${mr.home_team} ${mr.score} ${mr.away_team} (${mr.league}) | ${picks}`;
+  });
+
+  const body = {
+    total_audited: result.audited_matches,
+    overall_correct: result.safe_correct + result.neutro_correct,
+    overall_total: result.safe_total + result.neutro_total,
+    overall_accuracy_pct: result.overall_accuracy,
+    safe_correct: result.safe_correct,
+    safe_total: result.safe_total,
+    safe_accuracy_pct: result.safe_accuracy,
+    neutro_correct: result.neutro_correct,
+    neutro_total: result.neutro_total,
+    neutro_accuracy_pct: result.neutro_accuracy,
+    avg_brier_score: result.avg_brier_score,
+    avg_lambda_error: result.avg_lambda_error,
+    market_accuracy_text: marketLines.join("\n") || "Sem dados de mercado",
+    matches_summary_text: matchLines.join("\n") || "Sem detalhes",
+  };
+
+  try {
+    const res = await fetch("/api/ai/batch-audit/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.model_evaluation ?? null;
+  } catch {
+    return null;
+  }
 }
