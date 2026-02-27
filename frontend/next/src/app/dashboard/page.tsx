@@ -727,7 +727,7 @@ export default function Dashboard() {
     setBatchAuditLoading(true);
     try {
       // Send only leagues with loaded matches to avoid 22-league sequential scan
-      const leagueIds = [...new Set(allMatches.map((m) => m.leagueId).filter(Boolean))];
+      const leagueIds = Array.from(new Set(allMatches.map((m) => m.leagueId).filter(Boolean)));
       const result = await postBatchAudit(dateMode, leagueIds);
       if (result) {
         setBatchAuditResult(result);
