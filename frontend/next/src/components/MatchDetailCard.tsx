@@ -1,7 +1,7 @@
 // frontend/next/components/MatchDetailCard.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Component, type ErrorInfo, type ReactNode } from "react";
 import {
   Clock,
   MapPin,
@@ -17,6 +17,35 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import "../styles/match-detail-card.css";
+
+/* ── ERROR BOUNDARY ── */
+class AuditErrorBoundary extends Component<
+  { children: ReactNode; fallbackMessage?: string },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: ReactNode; fallbackMessage?: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[AuditErrorBoundary]", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 16, background: "rgba(255,68,68,0.1)", borderRadius: 8, margin: "8px 0" }}>
+          <p style={{ color: "#ff4444", fontSize: "0.8rem", margin: 0 }}>
+            {this.props.fallbackMessage ?? "Erro ao exibir resultado da auditoria. Tente novamente."}
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface AIAnalysis {
   summary: string;
@@ -518,17 +547,19 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                         </div>
 
                         {/* Key Points */}
-                        <div className="mdc-ai-key-points">
-                          <h4 className="mdc-ai-section-title">Pontos-Chave</h4>
-                          <ul className="mdc-ai-list">
-                            {match.aiAnalysis.key_points.map((point, index) => (
-                              <li key={index} className="mdc-ai-list-item">
-                                <span className="mdc-ai-bullet">{"\u2022"}</span>
-                                {fixAiPercentages(typeof point === "string" ? point : String(point ?? ""))}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        {Array.isArray(match.aiAnalysis.key_points) && match.aiAnalysis.key_points.length > 0 && (
+                          <div className="mdc-ai-key-points">
+                            <h4 className="mdc-ai-section-title">Pontos-Chave</h4>
+                            <ul className="mdc-ai-list">
+                              {match.aiAnalysis.key_points.map((point, index) => (
+                                <li key={index} className="mdc-ai-list-item">
+                                  <span className="mdc-ai-bullet">{"\u2022"}</span>
+                                  {fixAiPercentages(typeof point === "string" ? point : String(point ?? ""))}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
 
                         {/* Recommendation */}
                         {match.aiAnalysis.recommendation && (
@@ -584,7 +615,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
               {/* AUDIT RESULTS */}
               {auditResult && (
                 <div ref={auditResultRef}>
-                  <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
+                  <AuditErrorBoundary fallbackMessage="Erro ao exibir resultado da auditoria. Tente novamente.">
+                    <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
+                  </AuditErrorBoundary>
                 </div>
               )}
 
@@ -1015,6 +1048,18 @@ function AuditStatusBadge({ status }: { status: string }) {
 }
 
 function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: AuditResult; onApplyCorrection?: (c: AuditCorrection) => void }) {
+  // Defensive: ensure auditResult is an object
+  if (!auditResult || typeof auditResult !== "object") return null;
+
+  const picks = Array.isArray(auditResult.picks_evaluation) ? auditResult.picks_evaluation : [];
+  const validation = auditResult.validation && typeof auditResult.validation === "object" ? auditResult.validation : null;
+  const probs = validation?.probabilities && typeof validation.probabilities === "object" ? validation.probabilities : null;
+  const lambdas = validation?.lambdas && typeof validation.lambdas === "object" ? validation.lambdas : null;
+  const ev = validation?.ev && typeof validation.ev === "object" ? validation.ev : null;
+  const biases = Array.isArray(auditResult.biases_detected) ? auditResult.biases_detected : [];
+  const suggestions = Array.isArray(auditResult.suggestions) ? auditResult.suggestions : [];
+  const corrections = Array.isArray(auditResult.corrections) ? auditResult.corrections : [];
+
   return (
     <div className="mdc-audit-section">
       {/* Header */}
@@ -1022,12 +1067,12 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
         <ShieldCheck size={18} style={{ color: "#ffbb33" }} />
         <span className="mdc-audit-title">Resultado da Auditoria</span>
         <span className="mdc-audit-confidence">
-          Confianca: <strong>{auditResult.audit_confidence}%</strong>
+          Confianca: <strong>{auditResult.audit_confidence ?? 0}%</strong>
         </span>
       </div>
 
       {/* Picks Evaluation */}
-      {auditResult.picks_evaluation && auditResult.picks_evaluation.length > 0 && (
+      {picks.length > 0 && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Avaliacao dos Prognosticos</h4>
           <div className="mdc-audit-picks-table">
@@ -1036,14 +1081,14 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
               <span>Status</span>
               <span>Resultado</span>
             </div>
-            {auditResult.picks_evaluation.map((pick, i) => {
-              const isHit = (pick.resultado ?? "").toUpperCase().includes("ACERT");
+            {picks.map((pick, i) => {
+              const isHit = (pick?.resultado ?? "").toUpperCase().includes("ACERT");
               return (
                 <div key={i} className="mdc-audit-picks-row">
-                  <span className="mdc-audit-pick-market">{pick.mercado}</span>
-                  <span className="mdc-audit-pick-status">{pick.status_pick}</span>
+                  <span className="mdc-audit-pick-market">{pick?.mercado ?? ""}</span>
+                  <span className="mdc-audit-pick-status">{pick?.status_pick ?? ""}</span>
                   <span style={{ color: isHit ? "#00ff88" : "#ff4444", fontWeight: 600, fontSize: "0.75rem" }}>
-                    {pick.resultado}
+                    {pick?.resultado ?? ""}
                   </span>
                 </div>
               );
@@ -1053,51 +1098,51 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       )}
 
       {/* Validation Grid */}
-      {auditResult.validation && (
+      {validation && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Validacao</h4>
           <div className="mdc-audit-validation-grid">
             {/* Probabilities */}
-            {auditResult.validation.probabilities && (
+            {probs && (
               <div className="mdc-audit-validation-card">
                 <div className="mdc-audit-validation-card-header">
                   <span>Probabilidades</span>
-                  <AuditStatusBadge status={auditResult.validation.probabilities.status} />
+                  <AuditStatusBadge status={probs.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{auditResult.validation.probabilities.notes}</p>
-                {auditResult.validation.probabilities.brier_score != null && (
+                <p className="mdc-audit-validation-notes">{probs.notes ?? ""}</p>
+                {typeof probs.brier_score === "number" && (
                   <div className="mdc-audit-validation-metric">
-                    Brier Score: <strong>{auditResult.validation.probabilities.brier_score.toFixed(3)}</strong>
+                    Brier Score: <strong>{probs.brier_score.toFixed(3)}</strong>
                   </div>
                 )}
               </div>
             )}
             {/* Lambdas */}
-            {auditResult.validation.lambdas && (
+            {lambdas && (
               <div className="mdc-audit-validation-card">
                 <div className="mdc-audit-validation-card-header">
                   <span>Lambdas</span>
-                  <AuditStatusBadge status={auditResult.validation.lambdas.status} />
+                  <AuditStatusBadge status={lambdas.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{auditResult.validation.lambdas.notes}</p>
-                {auditResult.validation.lambdas.predicted_total != null && (
+                <p className="mdc-audit-validation-notes">{lambdas.notes ?? ""}</p>
+                {typeof lambdas.predicted_total === "number" && (
                   <div className="mdc-audit-validation-metric">
-                    Previsto: <strong>{auditResult.validation.lambdas.predicted_total.toFixed(1)}</strong>
-                    {auditResult.validation.lambdas.actual_total != null && (
-                      <> | Real: <strong>{auditResult.validation.lambdas.actual_total}</strong></>
+                    Previsto: <strong>{lambdas.predicted_total.toFixed(1)}</strong>
+                    {typeof lambdas.actual_total === "number" && (
+                      <> | Real: <strong>{lambdas.actual_total}</strong></>
                     )}
                   </div>
                 )}
               </div>
             )}
             {/* EV */}
-            {auditResult.validation.ev && (
+            {ev && (
               <div className="mdc-audit-validation-card">
                 <div className="mdc-audit-validation-card-header">
                   <span>Expected Value</span>
-                  <AuditStatusBadge status={auditResult.validation.ev.status} />
+                  <AuditStatusBadge status={ev.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{auditResult.validation.ev.notes}</p>
+                <p className="mdc-audit-validation-notes">{ev.notes ?? ""}</p>
               </div>
             )}
           </div>
@@ -1121,35 +1166,36 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       )}
 
       {/* Biases Detected */}
-      {auditResult.biases_detected && auditResult.biases_detected.length > 0 && (
+      {biases.length > 0 && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title" style={{ color: "#ff4444" }}>Vieses Detectados</h4>
           <ul className="mdc-audit-biases-list">
-            {auditResult.biases_detected.map((bias, i) => (
-              <li key={i} className="mdc-audit-bias-item">{bias}</li>
+            {biases.map((bias, i) => (
+              <li key={i} className="mdc-audit-bias-item">{typeof bias === "string" ? bias : String(bias ?? "")}</li>
             ))}
           </ul>
         </div>
       )}
 
       {/* Suggestions */}
-      {auditResult.suggestions && auditResult.suggestions.length > 0 && (
+      {suggestions.length > 0 && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Sugestoes</h4>
           <ul className="mdc-audit-biases-list" style={{ borderLeftColor: "#ffbb33" }}>
-            {auditResult.suggestions.map((sug, i) => (
-              <li key={i} className="mdc-audit-bias-item">{sug}</li>
+            {suggestions.map((sug, i) => (
+              <li key={i} className="mdc-audit-bias-item">{typeof sug === "string" ? sug : String(sug ?? "")}</li>
             ))}
           </ul>
         </div>
       )}
 
       {/* Corrections */}
-      {auditResult.corrections && auditResult.corrections.length > 0 && (
+      {corrections.length > 0 && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Correcoes Sugeridas</h4>
           <div className="mdc-audit-corrections">
-            {auditResult.corrections.map((corr, i) => {
+            {corrections.map((corr, i) => {
+              if (!corr || typeof corr !== "object") return null;
               const impactColor = corr.impact === "HIGH" ? "#ff4444" : corr.impact === "MEDIUM" ? "#ffbb33" : "#00ff88";
               return (
                 <div key={i} className="mdc-audit-correction-card">
