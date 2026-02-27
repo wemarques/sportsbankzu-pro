@@ -374,6 +374,7 @@ export default function Dashboard() {
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
+  const [aiAnalysisMatchId, setAiAnalysisMatchId] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
@@ -529,19 +530,24 @@ export default function Dashboard() {
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchAi() {
       if (!selectedMatch) {
         setAiAnalysis(null);
+        setAiAnalysisMatchId(null);
         setAuditResult(null);
         return;
       }
       setAiLoading(true);
       setAuditResult(null);
       const analysis = await getAiMatchAnalysis(selectedMatch.id, selectedMatch.homeTeam.name, selectedMatch.awayTeam.name);
+      if (cancelled) return; // Discard stale response from previous match
       setAiAnalysis(analysis);
+      setAiAnalysisMatchId(selectedMatch.id);
       setAiLoading(false);
     }
     fetchAi();
+    return () => { cancelled = true; };
   }, [selectedMatch]);
 
   const detailData = useMemo<MatchDetailData | null>(() => {
@@ -629,8 +635,10 @@ export default function Dashboard() {
         prob_max: p.prob_max,
         odd_minima: p.odd_minima,
       }));
-      const aiSummary = aiAnalysis
-        ? { summary: aiAnalysis.summary, key_points: aiAnalysis.key_points, recommendation: aiAnalysis.recommendation, confidence: aiAnalysis.confidence }
+      // Only use aiAnalysis if it belongs to the currently selected match (prevent race condition)
+      const safeAi = aiAnalysis && aiAnalysisMatchId === selectedMatch.id ? aiAnalysis : null;
+      const aiSummary = safeAi
+        ? { summary: safeAi.summary, key_points: safeAi.key_points, recommendation: safeAi.recommendation, confidence: safeAi.confidence }
         : undefined;
       const result = await postMatchAudit(
         selectedMatch.id,
@@ -685,7 +693,7 @@ export default function Dashboard() {
     } finally {
       setAuditLoading(false);
     }
-  }, [selectedMatch, aiAnalysis, auditLoading]);
+  }, [selectedMatch, aiAnalysis, aiAnalysisMatchId, auditLoading]);
 
   const handleApplyCorrection = useCallback(async (correction: AuditCorrection) => {
     if (!selectedMatch) return;
