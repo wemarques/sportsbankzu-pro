@@ -248,7 +248,26 @@ export interface BatchAuditResult {
   message?: string;
 }
 
+/**
+ * Fan-out batch audit: one request per league in parallel.
+ * Each single-league request completes within the 29-second API Gateway limit.
+ * Results are merged client-side into a unified BatchAuditResult.
+ */
 export async function postBatchAudit(date?: string, leagues?: string[]): Promise<BatchAuditResult | null> {
+  // No leagues or single league: direct call
+  if (!leagues || leagues.length <= 1) {
+    return _postBatchAuditSingle(date, leagues);
+  }
+
+  // Fan out: one request per league in parallel
+  const results = await Promise.allSettled(
+    leagues.map((league) => _postBatchAuditSingle(date, [league]))
+  );
+
+  return _mergeBatchAuditResults(results);
+}
+
+async function _postBatchAuditSingle(date?: string, leagues?: string[]): Promise<BatchAuditResult | null> {
   try {
     const body: Record<string, unknown> = {};
     if (date) body.date = date;
@@ -261,13 +280,97 @@ export async function postBatchAudit(date?: string, leagues?: string[]): Promise
     });
     const data = await res.json();
     if (!res.ok) {
-      // Return the error response so the dashboard can display the backend's message
       return { ...data, status: "error" } as BatchAuditResult;
     }
     return data;
   } catch {
     return null;
   }
+}
+
+function _mergeBatchAuditResults(
+  results: PromiseSettledResult<BatchAuditResult | null>[]
+): BatchAuditResult | null {
+  const successful = results
+    .filter(
+      (r): r is PromiseFulfilledResult<BatchAuditResult> =>
+        r.status === "fulfilled" && r.value !== null && r.value.status !== "error"
+    )
+    .map((r) => r.value);
+
+  if (successful.length === 0) {
+    // All failed — return first error for display
+    const firstError = results.find(
+      (r): r is PromiseFulfilledResult<BatchAuditResult> =>
+        r.status === "fulfilled" && r.value !== null
+    );
+    return firstError?.value ?? null;
+  }
+
+  // Aggregate numeric fields
+  const safeCorrect = successful.reduce((s, r) => s + (r.safe_correct || 0), 0);
+  const safeTotal = successful.reduce((s, r) => s + (r.safe_total || 0), 0);
+  const neutroCorrect = successful.reduce((s, r) => s + (r.neutro_correct || 0), 0);
+  const neutroTotal = successful.reduce((s, r) => s + (r.neutro_total || 0), 0);
+  const totalAudited = successful.reduce((s, r) => s + (r.audited_matches || 0), 0);
+
+  // Merge market accuracy
+  const marketMap = new Map<string, { correct: number; total: number }>();
+  for (const r of successful) {
+    for (const ma of r.market_accuracy || []) {
+      const existing = marketMap.get(ma.market) || { correct: 0, total: 0 };
+      existing.correct += ma.correct;
+      existing.total += ma.total;
+      marketMap.set(ma.market, existing);
+    }
+  }
+
+  // Pick model_evaluation from result with most audited matches
+  const withEval = successful.filter((r) => r.model_evaluation && r.audited_matches > 0);
+  const bestEval =
+    withEval.length > 0
+      ? withEval.reduce((best, r) => (r.audited_matches > best.audited_matches ? r : best))
+          .model_evaluation
+      : null;
+
+  const merged: BatchAuditResult = {
+    status: "success",
+    total_matches: successful.reduce((s, r) => s + (r.total_matches || 0), 0),
+    finished_matches: successful.reduce((s, r) => s + (r.finished_matches || 0), 0),
+    audited_matches: totalAudited,
+    safe_correct: safeCorrect,
+    safe_total: safeTotal,
+    neutro_correct: neutroCorrect,
+    neutro_total: neutroTotal,
+    overall_accuracy:
+      safeTotal + neutroTotal > 0
+        ? Math.round(((safeCorrect + neutroCorrect) / (safeTotal + neutroTotal)) * 1000) / 10
+        : 0,
+    safe_accuracy: safeTotal > 0 ? Math.round((safeCorrect / safeTotal) * 1000) / 10 : 0,
+    neutro_accuracy: neutroTotal > 0 ? Math.round((neutroCorrect / neutroTotal) * 1000) / 10 : 0,
+    avg_brier_score:
+      totalAudited > 0
+        ? successful.reduce((s, r) => s + (r.avg_brier_score || 0) * (r.audited_matches || 0), 0) /
+          totalAudited
+        : 0,
+    avg_lambda_error:
+      totalAudited > 0
+        ? successful.reduce(
+            (s, r) => s + (r.avg_lambda_error || 0) * (r.audited_matches || 0),
+            0
+          ) / totalAudited
+        : 0,
+    market_accuracy: Array.from(marketMap.entries()).map(([market, data]) => ({
+      market,
+      correct: data.correct,
+      total: data.total,
+      accuracy_pct: data.total > 0 ? Math.round((data.correct / data.total) * 1000) / 10 : 0,
+    })),
+    match_results: successful.flatMap((r) => r.match_results || []),
+    model_evaluation: bestEval,
+  };
+
+  return merged;
 }
 
 export async function applyBatchCorrections(
