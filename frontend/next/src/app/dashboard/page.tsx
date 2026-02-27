@@ -9,8 +9,9 @@ import MatchDetailCard, {
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
-import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, postBatchAudit, applyBatchCorrections } from "@/lib/api";
+import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
+import { runLocalAudit } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
@@ -722,39 +723,15 @@ export default function Dashboard() {
     return allMatches.filter((m) => m.status === "finished").length;
   }, [allMatches]);
 
-  const handleBatchAudit = useCallback(async () => {
+  const handleBatchAudit = useCallback(() => {
     if (batchAuditLoading) return;
     setBatchAuditLoading(true);
     try {
-      // Send only leagues with loaded matches to avoid 22-league sequential scan
-      const leagueIds = Array.from(new Set(allMatches.map((m) => m.leagueId).filter(Boolean)));
-      const result = await postBatchAudit(dateMode, leagueIds);
-      if (result) {
-        setBatchAuditResult(result);
-        setBatchAuditOpen(true);
-      } else {
-        // Show panel with error feedback
-        setBatchAuditResult({
-          status: "error",
-          total_matches: 0,
-          finished_matches: 0,
-          audited_matches: 0,
-          overall_accuracy: 0,
-          safe_accuracy: 0,
-          neutro_accuracy: 0,
-          safe_correct: 0,
-          safe_total: 0,
-          neutro_correct: 0,
-          neutro_total: 0,
-          avg_brier_score: 0,
-          avg_lambda_error: 0,
-          market_accuracy: [],
-          match_results: [],
-          model_evaluation: null,
-          message: "Servico de auditoria indisponivel. Verifique a conexao com o backend.",
-        });
-        setBatchAuditOpen(true);
-      }
+      // Local deterministic audit — no backend call needed.
+      // Uses match data already loaded in the dashboard.
+      const result = runLocalAudit(allMatches);
+      setBatchAuditResult(result);
+      setBatchAuditOpen(true);
     } catch (err) {
       console.error("Batch audit error:", err);
       setBatchAuditResult({
@@ -780,7 +757,7 @@ export default function Dashboard() {
     } finally {
       setBatchAuditLoading(false);
     }
-  }, [dateMode, batchAuditLoading, allMatches]);
+  }, [batchAuditLoading, allMatches]);
 
   const handleBatchApplyCorrections = useCallback(async (corrections: BatchAuditCorrection[]) => {
     try {
