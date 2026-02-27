@@ -291,30 +291,32 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
                 <span className="mdc-countdown__separator">:</span>
                 <span className="mdc-countdown__number">{String(timeRemaining.seconds).padStart(2, "0")}</span>
               </div>
-              <span
-                className="mdc-link-small"
-                style={{ cursor: "pointer", textDecoration: "underline" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (showStandings) {
-                    setShowStandings(false);
-                    return;
-                  }
-                  if (!match.leagueId) return;
-                  setStandingsLoading(true);
-                  setShowStandings(true);
-                  fetch(`/api/standings?league=${encodeURIComponent(match.leagueId)}`)
-                    .then((r) => r.json())
-                    .then((data) => {
-                      const rows = data.standings ?? [];
-                      if (rows.length === 0) setShowStandings(false);
-                      else setStandingsData(rows);
-                    })
-                    .catch(() => setShowStandings(false))
-                    .finally(() => setStandingsLoading(false));
-                }}
-              >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
             </div>
+          )}
+
+          {match.leagueId && (
+            <span
+              className="mdc-link-small"
+              style={{ cursor: "pointer", textDecoration: "underline", marginTop: 4, display: "inline-block" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (showStandings) {
+                  setShowStandings(false);
+                  return;
+                }
+                setStandingsLoading(true);
+                setShowStandings(true);
+                fetch(`/api/standings?league=${encodeURIComponent(match.leagueId!)}`)
+                  .then((r) => r.json())
+                  .then((data) => {
+                    const rows = data.standings ?? [];
+                    if (rows.length === 0) setShowStandings(false);
+                    else setStandingsData(rows);
+                  })
+                  .catch(() => setShowStandings(false))
+                  .finally(() => setStandingsLoading(false));
+              }}
+            >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
           )}
 
           {showStandings && (
