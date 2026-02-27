@@ -18,12 +18,12 @@ import {
 } from "lucide-react";
 import "../styles/match-detail-card.css";
 
-/* ── ERROR BOUNDARY ── */
-class AuditErrorBoundary extends Component<
-  { children: ReactNode; fallbackMessage?: string },
+/* ── ERROR BOUNDARY (reusable) ── */
+export class SafeErrorBoundary extends Component<
+  { children: ReactNode; fallbackMessage?: string; section?: string },
   { hasError: boolean; error?: Error }
 > {
-  constructor(props: { children: ReactNode; fallbackMessage?: string }) {
+  constructor(props: { children: ReactNode; fallbackMessage?: string; section?: string }) {
     super(props);
     this.state = { hasError: false };
   }
@@ -31,14 +31,14 @@ class AuditErrorBoundary extends Component<
     return { hasError: true, error };
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[AuditErrorBoundary]", error, info.componentStack);
+    console.error(`[SafeErrorBoundary:${this.props.section ?? "unknown"}]`, error, info.componentStack);
   }
   render() {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 16, background: "rgba(255,68,68,0.1)", borderRadius: 8, margin: "8px 0" }}>
           <p style={{ color: "#ff4444", fontSize: "0.8rem", margin: 0 }}>
-            {this.props.fallbackMessage ?? "Erro ao exibir resultado da auditoria. Tente novamente."}
+            {this.props.fallbackMessage ?? "Erro ao exibir este conteudo. Tente recarregar a pagina."}
           </p>
         </div>
       );
@@ -211,7 +211,15 @@ type Props = {
   onFavorite?: () => void;
 };
 
-export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.0", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+export default function MatchDetailCard(props: Props) {
+  return (
+    <SafeErrorBoundary section="MatchDetailCard" fallbackMessage="Erro ao exibir detalhes do jogo. Tente recarregar a pagina.">
+      <MatchDetailCardInner {...props} />
+    </SafeErrorBoundary>
+  );
+}
+
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.0", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -615,9 +623,9 @@ export default function MatchDetailCard({ match, aiLoading, onRegenerate, onAudi
               {/* AUDIT RESULTS */}
               {auditResult && (
                 <div ref={auditResultRef}>
-                  <AuditErrorBoundary fallbackMessage="Erro ao exibir resultado da auditoria. Tente novamente.">
+                  <SafeErrorBoundary section="audit" fallbackMessage="Erro ao exibir resultado da auditoria. Tente novamente.">
                     <AuditResultsSection auditResult={auditResult} onApplyCorrection={onApplyCorrection} />
-                  </AuditErrorBoundary>
+                  </SafeErrorBoundary>
                 </div>
               )}
 
@@ -1037,8 +1045,24 @@ function FormDisplay({ label, form }: { label: string; form?: string[] }) {
 
 /* ── AUDIT RESULTS SECTION ── */
 
-function AuditStatusBadge({ status }: { status: string }) {
-  const s = (status ?? "UNKNOWN").toUpperCase();
+/** Safely coerce ANY value from Mistral LLM to a renderable string.
+ *  Mistral may return objects/arrays where strings are expected. */
+function safeStr(v: unknown, fallback = ""): string {
+  if (v == null) return fallback;
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try { return JSON.stringify(v); } catch { return fallback; }
+}
+
+/** Safely extract a number, or return undefined */
+function safeNum(v: unknown): number | undefined {
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  if (typeof v === "string") { const n = parseFloat(v); if (!Number.isNaN(n)) return n; }
+  return undefined;
+}
+
+function AuditStatusBadge({ status }: { status: unknown }) {
+  const s = safeStr(status, "UNKNOWN").toUpperCase();
   const color = s === "OK" ? "#00ff88" : s === "WARNING" ? "#ffbb33" : "#ff4444";
   return (
     <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700, color: "#000", background: color }}>
@@ -1059,6 +1083,10 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
   const biases = Array.isArray(auditResult.biases_detected) ? auditResult.biases_detected : [];
   const suggestions = Array.isArray(auditResult.suggestions) ? auditResult.suggestions : [];
   const corrections = Array.isArray(auditResult.corrections) ? auditResult.corrections : [];
+  const brierScore = safeNum(probs?.brier_score);
+  const predictedTotal = safeNum(lambdas?.predicted_total);
+  const actualTotal = safeNum(lambdas?.actual_total);
+  const confidenceNum = safeNum(auditResult.audit_confidence) ?? 0;
 
   return (
     <div className="mdc-audit-section">
@@ -1067,7 +1095,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
         <ShieldCheck size={18} style={{ color: "#ffbb33" }} />
         <span className="mdc-audit-title">Resultado da Auditoria</span>
         <span className="mdc-audit-confidence">
-          Confianca: <strong>{auditResult.audit_confidence ?? 0}%</strong>
+          Confianca: <strong>{confidenceNum}%</strong>
         </span>
       </div>
 
@@ -1082,13 +1110,14 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
               <span>Resultado</span>
             </div>
             {picks.map((pick, i) => {
-              const isHit = (pick?.resultado ?? "").toUpperCase().includes("ACERT");
+              const resultado = safeStr(pick?.resultado);
+              const isHit = resultado.toUpperCase().includes("ACERT");
               return (
                 <div key={i} className="mdc-audit-picks-row">
-                  <span className="mdc-audit-pick-market">{pick?.mercado ?? ""}</span>
-                  <span className="mdc-audit-pick-status">{pick?.status_pick ?? ""}</span>
+                  <span className="mdc-audit-pick-market">{safeStr(pick?.mercado)}</span>
+                  <span className="mdc-audit-pick-status">{safeStr(pick?.status_pick)}</span>
                   <span style={{ color: isHit ? "#00ff88" : "#ff4444", fontWeight: 600, fontSize: "0.75rem" }}>
-                    {pick?.resultado ?? ""}
+                    {resultado}
                   </span>
                 </div>
               );
@@ -1109,10 +1138,10 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                   <span>Probabilidades</span>
                   <AuditStatusBadge status={probs.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{probs.notes ?? ""}</p>
-                {typeof probs.brier_score === "number" && (
+                <p className="mdc-audit-validation-notes">{safeStr(probs.notes)}</p>
+                {brierScore != null && (
                   <div className="mdc-audit-validation-metric">
-                    Brier Score: <strong>{probs.brier_score.toFixed(3)}</strong>
+                    Brier Score: <strong>{brierScore.toFixed(3)}</strong>
                   </div>
                 )}
               </div>
@@ -1124,12 +1153,12 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                   <span>Lambdas</span>
                   <AuditStatusBadge status={lambdas.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{lambdas.notes ?? ""}</p>
-                {typeof lambdas.predicted_total === "number" && (
+                <p className="mdc-audit-validation-notes">{safeStr(lambdas.notes)}</p>
+                {predictedTotal != null && (
                   <div className="mdc-audit-validation-metric">
-                    Previsto: <strong>{lambdas.predicted_total.toFixed(1)}</strong>
-                    {typeof lambdas.actual_total === "number" && (
-                      <> | Real: <strong>{lambdas.actual_total}</strong></>
+                    Previsto: <strong>{predictedTotal.toFixed(1)}</strong>
+                    {actualTotal != null && (
+                      <> | Real: <strong>{actualTotal}</strong></>
                     )}
                   </div>
                 )}
@@ -1142,7 +1171,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                   <span>Expected Value</span>
                   <AuditStatusBadge status={ev.status} />
                 </div>
-                <p className="mdc-audit-validation-notes">{ev.notes ?? ""}</p>
+                <p className="mdc-audit-validation-notes">{safeStr(ev.notes)}</p>
               </div>
             )}
           </div>
@@ -1153,7 +1182,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       {auditResult.ai_analysis_accuracy && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Precisao da Analise Mistral</h4>
-          <p className="mdc-audit-text">{auditResult.ai_analysis_accuracy}</p>
+          <p className="mdc-audit-text">{safeStr(auditResult.ai_analysis_accuracy)}</p>
         </div>
       )}
 
@@ -1161,7 +1190,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       {auditResult.accuracy_summary && (
         <div className="mdc-audit-block">
           <h4 className="mdc-audit-block-title">Resumo de Precisao</h4>
-          <p className="mdc-audit-text">{auditResult.accuracy_summary}</p>
+          <p className="mdc-audit-text">{safeStr(auditResult.accuracy_summary)}</p>
         </div>
       )}
 
@@ -1171,7 +1200,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
           <h4 className="mdc-audit-block-title" style={{ color: "#ff4444" }}>Vieses Detectados</h4>
           <ul className="mdc-audit-biases-list">
             {biases.map((bias, i) => (
-              <li key={i} className="mdc-audit-bias-item">{typeof bias === "string" ? bias : String(bias ?? "")}</li>
+              <li key={i} className="mdc-audit-bias-item">{safeStr(bias)}</li>
             ))}
           </ul>
         </div>
@@ -1183,7 +1212,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
           <h4 className="mdc-audit-block-title">Sugestoes</h4>
           <ul className="mdc-audit-biases-list" style={{ borderLeftColor: "#ffbb33" }}>
             {suggestions.map((sug, i) => (
-              <li key={i} className="mdc-audit-bias-item">{typeof sug === "string" ? sug : String(sug ?? "")}</li>
+              <li key={i} className="mdc-audit-bias-item">{safeStr(sug)}</li>
             ))}
           </ul>
         </div>
@@ -1196,21 +1225,25 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
           <div className="mdc-audit-corrections">
             {corrections.map((corr, i) => {
               if (!corr || typeof corr !== "object") return null;
-              const impactColor = corr.impact === "HIGH" ? "#ff4444" : corr.impact === "MEDIUM" ? "#ffbb33" : "#00ff88";
+              const impact = safeStr(corr.impact, "LOW").toUpperCase();
+              const impactColor = impact === "HIGH" ? "#ff4444" : impact === "MEDIUM" ? "#ffbb33" : "#00ff88";
+              const currentVal = safeNum(corr.current_value);
+              const suggestedVal = safeNum(corr.suggested_value);
+              const corrConfidence = safeNum(corr.confidence) ?? 0;
               return (
                 <div key={i} className="mdc-audit-correction-card">
                   <div className="mdc-audit-correction-header">
-                    <span className="mdc-audit-correction-param">{corr.parameter}</span>
-                    <span className="mdc-audit-correction-impact" style={{ color: impactColor }}>{corr.impact}</span>
+                    <span className="mdc-audit-correction-param">{safeStr(corr.parameter)}</span>
+                    <span className="mdc-audit-correction-impact" style={{ color: impactColor }}>{impact}</span>
                   </div>
                   <div className="mdc-audit-correction-values">
-                    <span className="mdc-audit-correction-old">{typeof corr.current_value === "number" ? corr.current_value.toFixed(3) : corr.current_value}</span>
+                    <span className="mdc-audit-correction-old">{currentVal != null ? currentVal.toFixed(3) : safeStr(corr.current_value, "-")}</span>
                     <span className="mdc-audit-correction-arrow">{"\u2192"}</span>
-                    <span className="mdc-audit-correction-new">{typeof corr.suggested_value === "number" ? corr.suggested_value.toFixed(3) : corr.suggested_value}</span>
+                    <span className="mdc-audit-correction-new">{suggestedVal != null ? suggestedVal.toFixed(3) : safeStr(corr.suggested_value, "-")}</span>
                   </div>
-                  <p className="mdc-audit-correction-reason">{corr.reason}</p>
+                  <p className="mdc-audit-correction-reason">{safeStr(corr.reason)}</p>
                   <div className="mdc-audit-correction-footer">
-                    <span style={{ fontSize: "0.65rem", color: "#888" }}>Confianca: {corr.confidence}%</span>
+                    <span style={{ fontSize: "0.65rem", color: "#888" }}>Confianca: {corrConfidence}%</span>
                     {onApplyCorrection && (
                       <button
                         className="mdc-audit-apply-btn"
@@ -1231,8 +1264,8 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       {auditResult.timestamp && (
         <div className="mdc-audit-footer">
           <Clock size={12} />
-          <span>Auditoria: {auditResult.timestamp}</span>
-          {auditResult.audit_type && <span> | Tipo: {auditResult.audit_type}</span>}
+          <span>Auditoria: {safeStr(auditResult.timestamp)}</span>
+          {auditResult.audit_type && <span> | Tipo: {safeStr(auditResult.audit_type)}</span>}
         </div>
       )}
     </div>
