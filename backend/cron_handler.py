@@ -18,7 +18,7 @@ import logging
 import os
 from datetime import datetime
 
-logger = logging.getLogger("sportsbank.cron")
+logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
 
 

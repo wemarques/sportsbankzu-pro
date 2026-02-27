@@ -7,7 +7,7 @@ from .mistral_client import MistralClient
 from .prompt_templates import PromptTemplates
 from .cache_manager import CacheManager
 
-logger = logging.getLogger("sportsbank.ai.auditor")
+logger = logging.getLogger("sportsbankzu.ai.auditor")
 
 
 def _strip_fences(s: str) -> str:

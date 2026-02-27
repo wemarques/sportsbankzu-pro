@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from backend.ai.mistral_client import MistralClient
 from backend.ai.cache_manager import CacheManager
 
-logger = logging.getLogger("sportsbank.ai.analysis")
+logger = logging.getLogger("sportsbankzu.ai.analysis")
 
 
 class AIAnalysisResponse(BaseModel):

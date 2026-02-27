@@ -11,7 +11,7 @@ from backend.services.footstats_client import FootyStatsClient
 from backend.services.data_mapper import DataMapper
 from backend.config.leagues_config import get_league_config
 
-logger = logging.getLogger("sportsbank.fixtures")
+logger = logging.getLogger("sportsbankzu.fixtures")
 router = APIRouter(tags=["fixtures"])
 footstats = FootyStatsClient()
 

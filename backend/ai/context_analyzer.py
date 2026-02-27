@@ -3,7 +3,7 @@ import logging
 from backend.ai.mistral_client import MistralClient
 from backend.ai.cache_manager import CacheManager
 
-logger = logging.getLogger("sportsbank.ai.analyzer")
+logger = logging.getLogger("sportsbankzu.ai.analyzer")
 
 class ContextAnalyzer:
     def __init__(self, model: str = "mistral-medium-latest", client: MistralClient | None = None):

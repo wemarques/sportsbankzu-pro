@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.ai.mistral_client import MistralClient
 
-logger = logging.getLogger("sportsbank.ai.match_analysis")
+logger = logging.getLogger("sportsbankzu.ai.match_analysis")
 
 
 def _strip_json_fences(text: str) -> str:

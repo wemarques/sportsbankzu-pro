@@ -1005,7 +1005,7 @@ function FormDisplay({ label, form }: { label: string; form?: string[] }) {
 /* ── AUDIT RESULTS SECTION ── */
 
 function AuditStatusBadge({ status }: { status: string }) {
-  const s = status.toUpperCase();
+  const s = (status ?? "UNKNOWN").toUpperCase();
   const color = s === "OK" ? "#00ff88" : s === "WARNING" ? "#ffbb33" : "#ff4444";
   return (
     <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700, color: "#000", background: color }}>
@@ -1037,7 +1037,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
               <span>Resultado</span>
             </div>
             {auditResult.picks_evaluation.map((pick, i) => {
-              const isHit = pick.resultado.toUpperCase().includes("ACERT");
+              const isHit = (pick.resultado ?? "").toUpperCase().includes("ACERT");
               return (
                 <div key={i} className="mdc-audit-picks-row">
                   <span className="mdc-audit-pick-market">{pick.mercado}</span>
@@ -1058,42 +1058,48 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
           <h4 className="mdc-audit-block-title">Validacao</h4>
           <div className="mdc-audit-validation-grid">
             {/* Probabilities */}
-            <div className="mdc-audit-validation-card">
-              <div className="mdc-audit-validation-card-header">
-                <span>Probabilidades</span>
-                <AuditStatusBadge status={auditResult.validation.probabilities.status} />
-              </div>
-              <p className="mdc-audit-validation-notes">{auditResult.validation.probabilities.notes}</p>
-              {auditResult.validation.probabilities.brier_score != null && (
-                <div className="mdc-audit-validation-metric">
-                  Brier Score: <strong>{auditResult.validation.probabilities.brier_score.toFixed(3)}</strong>
+            {auditResult.validation.probabilities && (
+              <div className="mdc-audit-validation-card">
+                <div className="mdc-audit-validation-card-header">
+                  <span>Probabilidades</span>
+                  <AuditStatusBadge status={auditResult.validation.probabilities.status} />
                 </div>
-              )}
-            </div>
+                <p className="mdc-audit-validation-notes">{auditResult.validation.probabilities.notes}</p>
+                {auditResult.validation.probabilities.brier_score != null && (
+                  <div className="mdc-audit-validation-metric">
+                    Brier Score: <strong>{auditResult.validation.probabilities.brier_score.toFixed(3)}</strong>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Lambdas */}
-            <div className="mdc-audit-validation-card">
-              <div className="mdc-audit-validation-card-header">
-                <span>Lambdas</span>
-                <AuditStatusBadge status={auditResult.validation.lambdas.status} />
-              </div>
-              <p className="mdc-audit-validation-notes">{auditResult.validation.lambdas.notes}</p>
-              {auditResult.validation.lambdas.predicted_total != null && (
-                <div className="mdc-audit-validation-metric">
-                  Previsto: <strong>{auditResult.validation.lambdas.predicted_total.toFixed(1)}</strong>
-                  {auditResult.validation.lambdas.actual_total != null && (
-                    <> | Real: <strong>{auditResult.validation.lambdas.actual_total}</strong></>
-                  )}
+            {auditResult.validation.lambdas && (
+              <div className="mdc-audit-validation-card">
+                <div className="mdc-audit-validation-card-header">
+                  <span>Lambdas</span>
+                  <AuditStatusBadge status={auditResult.validation.lambdas.status} />
                 </div>
-              )}
-            </div>
-            {/* EV */}
-            <div className="mdc-audit-validation-card">
-              <div className="mdc-audit-validation-card-header">
-                <span>Expected Value</span>
-                <AuditStatusBadge status={auditResult.validation.ev.status} />
+                <p className="mdc-audit-validation-notes">{auditResult.validation.lambdas.notes}</p>
+                {auditResult.validation.lambdas.predicted_total != null && (
+                  <div className="mdc-audit-validation-metric">
+                    Previsto: <strong>{auditResult.validation.lambdas.predicted_total.toFixed(1)}</strong>
+                    {auditResult.validation.lambdas.actual_total != null && (
+                      <> | Real: <strong>{auditResult.validation.lambdas.actual_total}</strong></>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="mdc-audit-validation-notes">{auditResult.validation.ev.notes}</p>
-            </div>
+            )}
+            {/* EV */}
+            {auditResult.validation.ev && (
+              <div className="mdc-audit-validation-card">
+                <div className="mdc-audit-validation-card-header">
+                  <span>Expected Value</span>
+                  <AuditStatusBadge status={auditResult.validation.ev.status} />
+                </div>
+                <p className="mdc-audit-validation-notes">{auditResult.validation.ev.notes}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1152,9 +1158,9 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                     <span className="mdc-audit-correction-impact" style={{ color: impactColor }}>{corr.impact}</span>
                   </div>
                   <div className="mdc-audit-correction-values">
-                    <span className="mdc-audit-correction-old">{corr.current_value.toFixed(3)}</span>
+                    <span className="mdc-audit-correction-old">{typeof corr.current_value === "number" ? corr.current_value.toFixed(3) : corr.current_value}</span>
                     <span className="mdc-audit-correction-arrow">{"\u2192"}</span>
-                    <span className="mdc-audit-correction-new">{corr.suggested_value.toFixed(3)}</span>
+                    <span className="mdc-audit-correction-new">{typeof corr.suggested_value === "number" ? corr.suggested_value.toFixed(3) : corr.suggested_value}</span>
                   </div>
                   <p className="mdc-audit-correction-reason">{corr.reason}</p>
                   <div className="mdc-audit-correction-footer">

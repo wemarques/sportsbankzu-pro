@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 from pydantic import BaseModel, field_validator, model_validator
 
-logger = logging.getLogger("sportsbank.mapper")
+logger = logging.getLogger("sportsbankzu.mapper")
 
 
 class FootyStatsMatchInput(BaseModel):

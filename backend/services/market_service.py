@@ -5,7 +5,7 @@ from backend.modeling.market_validator import (
     filtrar_mercados_permitidos,
 )
 
-logger = logging.getLogger("sportsbank")
+logger = logging.getLogger("sportsbankzu")
 
 
 def _get_dynamic_thresholds(market: str) -> dict:

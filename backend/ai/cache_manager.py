@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
-logger = logging.getLogger("sportsbank.ai.cache")
+logger = logging.getLogger("sportsbankzu.ai.cache")
 
 class CacheManager:
     """Gerencia cache de análises e auditorias para otimizar custos da API Mistral."""

@@ -19,7 +19,7 @@ DEFAULT_PG_CONFIG = {
 
 APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V3.1")
 
-audit_logger = logging.getLogger("sportsbank.audit")
+audit_logger = logging.getLogger("sportsbankzu.audit")
 audit_logger.setLevel(logging.INFO)
 
 # On Lambda the filesystem is read-only except /tmp

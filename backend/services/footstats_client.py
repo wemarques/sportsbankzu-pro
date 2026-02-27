@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
-logger = logging.getLogger("sportsbank.footstats")
+logger = logging.getLogger("sportsbankzu.footstats")
 
 class FootyStatsClient:
     """Cliente para integração com a API FootyStats (football-data-api.com)."""

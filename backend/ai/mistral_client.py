@@ -11,7 +11,7 @@ try:
 except Exception:
     Mistral = None
 
-logger = logging.getLogger("sportsbank.ai.client")
+logger = logging.getLogger("sportsbankzu.ai.client")
 
 # Transient HTTP status codes that warrant a retry
 _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}

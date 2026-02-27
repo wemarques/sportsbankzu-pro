@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import logging
 from typing import Dict, Optional
 
-logger = logging.getLogger("sportsbank.ai.data_collector")
+logger = logging.getLogger("sportsbankzu.ai.data_collector")
 
 class FootballDataCollector:
     """Coleta dados de múltiplas fontes de futebol para enriquecer o contexto da IA."""

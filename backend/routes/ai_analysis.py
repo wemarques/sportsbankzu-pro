@@ -11,7 +11,7 @@ import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
 
-logger = logging.getLogger("sportsbank.routes.ai_analysis")
+logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
 
 router = APIRouter(
     prefix="/api/ai",

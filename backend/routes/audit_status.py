@@ -12,7 +12,7 @@ from backend.audit import (
     get_recent_corrections,
 )
 
-logger = logging.getLogger("sportsbank.routes.audit_status")
+logger = logging.getLogger("sportsbankzu.routes.audit_status")
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 

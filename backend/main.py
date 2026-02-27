@@ -41,7 +41,7 @@ except Exception:
     Mangum = None  # type: ignore
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("sportsbank")
+logger = logging.getLogger("sportsbankzu")
 
 app = FastAPI(title="SportsBank Pro Backend", version="0.1.0")
 

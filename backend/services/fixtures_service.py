@@ -12,7 +12,7 @@ from backend.modeling.xg_filter import aplicar_filtro_completo
 from backend.modeling.chaos_detector import detectar_caos_jogo
 from backend.services.market_service import selecionar_mercados_jogo
 
-logger = logging.getLogger("sportsbank")
+logger = logging.getLogger("sportsbankzu")
 
 
 def _apply_confidence_adjustment(stats: dict, adjustment: dict) -> dict:
