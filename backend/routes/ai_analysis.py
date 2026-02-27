@@ -112,14 +112,28 @@ async def audit_match(
         is_finished = match_status in ("finished", "complete", "ft")
 
         if is_finished and full_match:
-            # Extract actual result from match data (FootyStats API fields)
-            home_goals = full_match.get("home_team_goal_count") or full_match.get("homeGoals") or 0
-            away_goals = full_match.get("away_team_goal_count") or full_match.get("awayGoals") or 0
+            # Extract actual result — fixtures service returns score: {"home": N, "away": N}
+            score_obj = full_match.get("score") or {}
+            home_goals = (
+                (score_obj.get("home") if isinstance(score_obj, dict) else None)
+                or full_match.get("home_team_goal_count")
+                or full_match.get("homeGoals")
+                or full_match.get("homeGoalCount")
+                or 0
+            )
+            away_goals = (
+                (score_obj.get("away") if isinstance(score_obj, dict) else None)
+                or full_match.get("away_team_goal_count")
+                or full_match.get("awayGoals")
+                or full_match.get("awayGoalCount")
+                or 0
+            )
             try:
                 home_goals = int(home_goals)
                 away_goals = int(away_goals)
             except (ValueError, TypeError):
                 home_goals, away_goals = 0, 0
+            logger.info(f"Audit score for {match_id}: {home_goals}x{away_goals} (from score_obj={score_obj})")
             total_goals = home_goals + away_goals
             btts = home_goals > 0 and away_goals > 0
             if home_goals > away_goals:
