@@ -86,6 +86,22 @@ def _safe_json_loads(text: str) -> dict:
     # Last resort: raise with sanitized text for better error message
     return json.loads(sanitized)
 
+def _friendly_error(exc: Exception) -> str:
+    """Convert raw Mistral/HTTP exceptions into user-friendly messages."""
+    msg = str(exc)
+    if "503" in msg or "Service Unavailable" in msg:
+        return "Servico Mistral AI temporariamente indisponivel. Tente novamente em alguns minutos."
+    if "429" in msg or "rate" in msg.lower():
+        return "Limite de requisicoes da Mistral AI atingido. Tente novamente em alguns minutos."
+    if "401" in msg or "unauthorized" in msg.lower() or "api_key" in msg.lower():
+        return "Chave da Mistral API invalida ou ausente. Verifique MISTRAL_API_KEY."
+    if "timeout" in msg.lower():
+        return "Tempo esgotado na chamada ao Mistral AI. Tente novamente."
+    if "500" in msg or "502" in msg or "504" in msg:
+        return "Erro interno no servico Mistral AI. Tente novamente em alguns minutos."
+    return f"Erro na auditoria: {msg[:120]}"
+
+
 class MistralAuditor:
     """Audita os cálculos estatísticos do sistema usando Mistral AI."""
     
@@ -128,11 +144,16 @@ class MistralAuditor:
             return audit_result
         except Exception as e:
             logger.error(f"Erro na auditoria Mistral para {home} vs {away}: {e}")
+            friendly_msg = _friendly_error(e)
             return {
                 "status": "error",
-                "message": str(e),
-                "validation": {"probabilities": {"status": "UNKNOWN"}, "lambdas": {"status": "UNKNOWN"}, "ev": {"status": "UNKNOWN"}},
-                "audit_confidence": 0
+                "message": friendly_msg,
+                "validation": {
+                    "probabilities": {"status": "UNKNOWN", "notes": friendly_msg},
+                    "lambdas": {"status": "UNKNOWN", "notes": friendly_msg},
+                    "ev": {"status": "UNKNOWN", "notes": friendly_msg},
+                },
+                "audit_confidence": 0,
             }
 
     def audit_match_vs_result(
@@ -197,15 +218,16 @@ class MistralAuditor:
             return audit_result
         except Exception as e:
             logger.error(f"Erro na auditoria pos-jogo para {home} vs {away}: {e}")
+            friendly_msg = _friendly_error(e)
             return {
                 "status": "error",
-                "message": str(e),
+                "message": friendly_msg,
                 "audit_type": "post_match",
                 "picks_evaluation": [],
                 "validation": {
-                    "probabilities": {"status": "UNKNOWN"},
-                    "lambdas": {"status": "UNKNOWN"},
-                    "ev": {"status": "UNKNOWN"},
+                    "probabilities": {"status": "UNKNOWN", "notes": friendly_msg},
+                    "lambdas": {"status": "UNKNOWN", "notes": friendly_msg},
+                    "ev": {"status": "UNKNOWN", "notes": friendly_msg},
                 },
                 "corrections": [],
                 "biases_detected": [],
@@ -237,7 +259,7 @@ class MistralAuditor:
             logger.error(f"Erro na avaliacao de modelos em lote: {e}")
             return {
                 "status": "error",
-                "message": str(e),
+                "message": _friendly_error(e),
                 "audit_type": "batch_model_evaluation",
                 "overall_assessment": "UNKNOWN",
                 "lambda_evaluation": {"status": "UNKNOWN", "notes": "Erro na avaliacao"},

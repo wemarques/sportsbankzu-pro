@@ -63,6 +63,8 @@ class FootyStatsMatchInput(BaseModel):
     odds_btts_yes: Optional[float] = 0.0
     competition_id: Optional[int] = None
     game_week: Optional[int] = None
+    stadium_name: Optional[str] = None
+    stadium_location: Optional[str] = None
 
     model_config = {"extra": "allow"}  # Preserve unknown fields for forward-compatibility
 
@@ -153,6 +155,8 @@ class DataMapper:
             "odds_btts_yes": api_match.get("odds_btts_yes", 0.0),
             "competition_id": api_match.get("competition_id"),
             "game_week": api_match.get("game_week"),
+            "stadium": api_match.get("stadium_name", ""),
+            "stadium_location": api_match.get("stadium_location", ""),
         }
 
     @staticmethod
