@@ -30,6 +30,8 @@ export async function POST(
       userMessage = "Tempo esgotado. O backend demorou para responder. Tente novamente.";
     } else if (kind === "CONNECTION_ERROR") {
       userMessage = "Nao foi possivel conectar ao backend. Verifique se o FastAPI esta rodando e PY_BACKEND_URL esta correto.";
+    } else if (kind === "HTTP_ERROR" && /50[234]/.test(msg)) {
+      userMessage = "Backend temporariamente indisponivel. O servidor pode estar reiniciando (cold start). Tente novamente em 10-15 segundos.";
     } else if (kind === "HTTP_ERROR" && msg) {
       userMessage = msg.length > 120 ? msg.slice(0, 120) + "..." : msg;
     }
