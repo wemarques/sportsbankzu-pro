@@ -143,8 +143,8 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
         </div>
 
         <div className="mdc-batch-audit__body">
-          {/* Empty state */}
-          {result.audited_matches === 0 && (
+          {/* Empty / error state */}
+          {(!result.audited_matches || result.status === "error") && (
             <div className="mdc-batch-audit__empty">
               <AlertTriangle size={32} />
               <p>{result.message || "Nenhum jogo finalizado encontrado para auditar."}</p>

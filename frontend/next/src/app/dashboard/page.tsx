@@ -726,7 +726,9 @@ export default function Dashboard() {
     if (batchAuditLoading) return;
     setBatchAuditLoading(true);
     try {
-      const result = await postBatchAudit(dateMode);
+      // Send only leagues with loaded matches to avoid 22-league sequential scan
+      const leagueIds = [...new Set(allMatches.map((m) => m.leagueId).filter(Boolean))];
+      const result = await postBatchAudit(dateMode, leagueIds);
       if (result) {
         setBatchAuditResult(result);
         setBatchAuditOpen(true);
@@ -778,7 +780,7 @@ export default function Dashboard() {
     } finally {
       setBatchAuditLoading(false);
     }
-  }, [dateMode, batchAuditLoading]);
+  }, [dateMode, batchAuditLoading, allMatches]);
 
   const handleBatchApplyCorrections = useCallback(async (corrections: BatchAuditCorrection[]) => {
     try {

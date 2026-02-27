@@ -507,6 +507,7 @@ def _get_matches_by_league_and_date(league: str, date: str, limit: int) -> list:
 
 class BatchAuditRequest(BaseModel):
     date: str = "today"  # today / tomorrow / week / YYYY-MM-DD
+    leagues: List[str] = []  # Optional: limit audit to specific leagues (avoids 22-league scan)
 
 
 class BatchCorrectionRequest(BaseModel):
@@ -561,14 +562,20 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
     return False
 
 
-def _get_all_finished_matches(date_filter: str, before_time_brt: str | None = None) -> list:
-    """Fetch all finished matches across all leagues for the given date range.
+def _get_all_finished_matches(
+    date_filter: str,
+    before_time_brt: str | None = None,
+    leagues: list[str] | None = None,
+) -> list:
+    """Fetch all finished matches across leagues for the given date range.
 
     Args:
         date_filter: 'today' | 'yesterday' | 'week'
         before_time_brt: Optional cutoff time in BRT (HH:MM). When set, only matches
             that finished strictly before this BRT time are included. Used by the
             today_audit cron action (23:45 BRT) to audit European matches same-day.
+        leagues: Optional list of league IDs to check. When provided, only these leagues
+            are queried instead of all 22 (avoids API Gateway timeout on cold Lambda).
     """
     from backend.routes.fixtures import fixtures as fixtures_endpoint
     from backend.config.leagues_config import LEAGUE_ID_ALIASES
@@ -580,10 +587,17 @@ def _get_all_finished_matches(date_filter: str, before_time_brt: str | None = No
     all_finished = []
     tried_leagues = set()
 
-    for alias, resolved in LEAGUE_ID_ALIASES.items():
-        if resolved in tried_leagues:
+    # If specific leagues provided, use them; otherwise scan all configured leagues
+    if leagues:
+        league_iter = [(lid, lid) for lid in leagues]
+    else:
+        league_iter = list(LEAGUE_ID_ALIASES.items())
+
+    for alias, resolved in league_iter:
+        resolved_id = LEAGUE_ID_ALIASES.get(alias, alias) if leagues else resolved
+        if resolved_id in tried_leagues:
             continue
-        tried_leagues.add(resolved)
+        tried_leagues.add(resolved_id)
         try:
             result = fixtures_endpoint(leagues=alias, date=date_filter)
             for m in result.get("matches", []):
@@ -627,10 +641,11 @@ async def batch_audit(
     from backend import audit as audit_db
 
     date_filter = request.date if request and request.date else date
+    leagues_filter = request.leagues if request and request.leagues else None
 
     try:
-        # 1. Get all finished matches
-        finished_matches = _get_all_finished_matches(date_filter)
+        # 1. Get all finished matches (scoped to specific leagues if provided)
+        finished_matches = _get_all_finished_matches(date_filter, leagues=leagues_filter)
 
         if not finished_matches:
             return {

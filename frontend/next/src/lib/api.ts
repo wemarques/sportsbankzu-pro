@@ -248,18 +248,23 @@ export interface BatchAuditResult {
   message?: string;
 }
 
-export async function postBatchAudit(date?: string): Promise<BatchAuditResult | null> {
+export async function postBatchAudit(date?: string, leagues?: string[]): Promise<BatchAuditResult | null> {
   try {
-    const body: Record<string, string> = {};
+    const body: Record<string, unknown> = {};
     if (date) body.date = date;
+    if (leagues && leagues.length > 0) body.leagues = leagues;
     const res = await fetch("/api/ai/batch-audit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
     });
-    if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      // Return the error response so the dashboard can display the backend's message
+      return { ...data, status: "error" } as BatchAuditResult;
+    }
+    return data;
   } catch {
     return null;
   }
