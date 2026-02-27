@@ -30,7 +30,7 @@ async def diagnostics(league: str = Query("premier-league")):
     try:
         fs = FootyStatsClient()
         # Step 1: resolve season
-        season_id = fs.resolve_season_id(config["country"], config["name"])
+        season_id = fs.resolve_season_id(config["country"], config["name"], alt_names=config.get("alt_names"))
         result["season_id"] = season_id
 
         if not season_id:

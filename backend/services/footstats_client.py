@@ -144,18 +144,30 @@ class FootyStatsClient:
         params = {"league_id": season_id} # O endpoint league-tables usa league_id mas refere-se ao season_id
         return self._request("league-tables", params, ttl_minutes=360)
 
-    def resolve_season_id(self, country: str, league_name: str) -> Optional[int]:
-        """Resolve o season_id dinamicamente buscando na lista de ligas da API."""
+    def resolve_season_id(self, country: str, league_name: str, alt_names: Optional[List[str]] = None) -> Optional[int]:
+        """Resolve o season_id dinamicamente buscando na lista de ligas da API.
+        Tries the primary league_name first, then alt_names for leagues with
+        multiple possible API names (e.g. Portugal: Primeira Liga / Liga NOS / Liga Portugal)."""
         leagues_data = self.get_league_list(chosen_only=False)
         if not leagues_data.get("success"):
+            logger.warning(f"resolve_season_id: league-list API failed for {country}/{league_name}")
             return None
-            
+
+        names_to_try = [league_name.lower()]
+        if alt_names:
+            names_to_try.extend(n.lower() for n in alt_names)
+
+        country_lower = country.lower()
         for league in leagues_data.get("data", []):
-            # A API retorna o nome como "USA MLS" ou "England Premier League"
             api_league_name = league.get("name", "").lower()
-            if country.lower() in api_league_name and league_name.lower() in api_league_name:
-                # Retorna o ID da temporada mais recente (último da lista)
-                seasons = league.get("season", [])
-                if seasons:
-                    return seasons[-1].get("id")
+            if country_lower not in api_league_name:
+                continue
+            for name in names_to_try:
+                if name in api_league_name:
+                    seasons = league.get("season", [])
+                    if seasons:
+                        sid = seasons[-1].get("id")
+                        logger.info(f"resolve_season_id: {country}/{league_name} -> '{api_league_name}' season_id={sid}")
+                        return sid
+        logger.warning(f"resolve_season_id: no match for {country} with names {names_to_try}")
         return None

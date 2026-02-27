@@ -58,7 +58,8 @@ LEAGUES_CONFIG = [
     
     # OUTROS EUROPA
     {"country": "Netherlands", "name": "Eredivisie", "id": "eredivisie"},
-    {"country": "Portugal", "name": "Primeira Liga", "id": "primeira-liga"},
+    {"country": "Portugal", "name": "Primeira Liga", "id": "primeira-liga",
+     "alt_names": ["liga nos", "liga portugal", "liga betclic"]},
     {"country": "Turkey", "name": "Süper Lig", "id": "super-lig"},
     {"country": "Belgium", "name": "Pro League", "id": "pro-league"},
     {"country": "Scotland", "name": "Premiership", "id": "premiership"},

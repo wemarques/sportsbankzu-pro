@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import os
 import logging
 try:
@@ -33,8 +33,11 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
 
         if league_config:
             try:
-                # Resolve season_id dinamicamente
-                season_id = footstats.resolve_season_id(league_config["country"], league_config["name"])
+                # Resolve season_id dinamicamente (with alt_names for leagues like Portugal)
+                season_id = footstats.resolve_season_id(
+                    league_config["country"], league_config["name"],
+                    alt_names=league_config.get("alt_names"),
+                )
                 if season_id:
                     matches_data = footstats.get_league_matches(season_id)
 
@@ -79,7 +82,7 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             out.extend(records)
                         else:
                             logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}'")
-                        # Mark API as found even with 0 records to avoid mock fallback
+                        # Mark API as found — even 0 records means API worked (no matches today)
                         found_via_api = True
                     else:
                         logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
@@ -87,8 +90,6 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                     logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
             except Exception as e:
                 logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
-            # League is configured for FootyStats — never fall back to mock
-            found_via_api = True
 
         # 2. FALLBACK: ARQUIVOS CSV LOCAIS (Se não encontrou via API ou se lid não está na config)
         if not found_via_api:
@@ -143,7 +144,10 @@ def standings(league: str = Query("")) -> Dict[str, Any]:
     if not league_config:
         return {"standings": [], "error": f"Liga '{league}' não configurada"}
     try:
-        season_id = footstats.resolve_season_id(league_config["country"], league_config["name"])
+        season_id = footstats.resolve_season_id(
+            league_config["country"], league_config["name"],
+            alt_names=league_config.get("alt_names"),
+        )
         if not season_id:
             return {"standings": [], "error": "Season não encontrada"}
         data = footstats.get_league_tables(season_id)
