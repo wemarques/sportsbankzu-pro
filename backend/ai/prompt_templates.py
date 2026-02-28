@@ -189,8 +189,8 @@ class PromptTemplates:
             }},
             "recommended_corrections": [
                 {{
-                    "type": "THRESHOLD|LAMBDA_WEIGHT|MARKET_FILTER|AI_PROMPT",
-                    "parameter": "nome especifico do parametro",
+                    "type": "THRESHOLD|LAMBDA_WEIGHT|MARKET_FILTER|AI_PROMPT|BTTS_THRESHOLD|BTTS_MULTIPLIER|CORNER_THRESHOLD|CORNER_MULTIPLIER",
+                    "parameter": "nome especifico do parametro (ex: btts_multiplier, corner_multiplier, lambda_home_multiplier)",
                     "current_value": 0.0,
                     "suggested_value": 0.0,
                     "reason": "Justificativa baseada nos dados da rodada",

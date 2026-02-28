@@ -29,10 +29,13 @@ def _get_dynamic_thresholds(market: str) -> dict:
         logger.debug(f"[Gap4] Could not read dynamic threshold for {market}: {_e}")
 
     _defaults: dict = {
-        "BTTS":          {"SAFE": 0.75, "NEUTRO": 0.68},
-        "Over/Under":    {"SAFE": 0.72, "NEUTRO": 0.65},
-        "Double Chance": {"SAFE": 0.82, "NEUTRO": 0.75},
-        "1X2":           {"SAFE": 0.60, "NEUTRO": 0.50},
+        "BTTS":                  {"SAFE": 0.75, "NEUTRO": 0.68},
+        "Over/Under":            {"SAFE": 0.72, "NEUTRO": 0.65},
+        "Double Chance":         {"SAFE": 0.82, "NEUTRO": 0.75},
+        "1X2":                   {"SAFE": 0.60, "NEUTRO": 0.50},
+        "Escanteios Over 8.5":   {"SAFE": 0.80, "NEUTRO": 0.72},
+        "Escanteios Over 9.5":   {"SAFE": 0.75, "NEUTRO": 0.65},
+        "Escanteios Over 10.5":  {"SAFE": 0.68, "NEUTRO": 0.58},
     }
     return _defaults.get(market, {"SAFE": 0.60, "NEUTRO": 0.50})
 
@@ -144,21 +147,25 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         status_dc = "SAFE" if prob_dc >= _th_dc["SAFE"] else "NEUTRO"
         add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
     # Corner market predictions (from FootyStats pre-match potentials)
+    # Use dynamic thresholds from audit DB (Gap 4 extension for corners)
+    _th_c85 = _get_dynamic_thresholds("Escanteios Over 8.5")
+    _th_c95 = _get_dynamic_thresholds("Escanteios Over 9.5")
+    _th_c105 = _get_dynamic_thresholds("Escanteios Over 10.5")
     corner_o85 = normalize_prob(stats.get("cornerOver85Prob"))
     corner_o95 = normalize_prob(stats.get("cornerOver95Prob"))
     corner_o105 = normalize_prob(stats.get("cornerOver105Prob"))
     odd_corners_o85 = odds.get("cornersOver85")
     odd_corners_o95 = odds.get("cornersOver95")
     odd_corners_o105 = odds.get("cornersOver105")
-    # Add corner markets when probability is high enough
-    if corner_o85 is not None and corner_o85 >= 0.72:
-        status_c = "SAFE" if corner_o85 >= 0.80 else "NEUTRO"
+    # Add corner markets when probability exceeds dynamic threshold
+    if corner_o85 is not None and corner_o85 >= _th_c85["NEUTRO"]:
+        status_c = "SAFE" if corner_o85 >= _th_c85["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 8.5", status_c, corner_o85, odd_corners_o85)
-    if corner_o95 is not None and corner_o95 >= 0.65:
-        status_c = "SAFE" if corner_o95 >= 0.75 else "NEUTRO"
+    if corner_o95 is not None and corner_o95 >= _th_c95["NEUTRO"]:
+        status_c = "SAFE" if corner_o95 >= _th_c95["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 9.5", status_c, corner_o95, odd_corners_o95)
-    if corner_o105 is not None and corner_o105 >= 0.58:
-        status_c = "SAFE" if corner_o105 >= 0.68 else "NEUTRO"
+    if corner_o105 is not None and corner_o105 >= _th_c105["NEUTRO"]:
+        status_c = "SAFE" if corner_o105 >= _th_c105["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
     if not mercados:
         # Fallback: only the single best candidate with stricter thresholds

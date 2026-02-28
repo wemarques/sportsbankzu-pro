@@ -128,12 +128,21 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         else:
             result_1x2 = "2"
 
+        # Extract total corners for corner market evaluation
+        home_corners = stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
+        away_corners = stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
+        try:
+            total_corners = int(home_corners) + int(away_corners)
+        except (ValueError, TypeError):
+            total_corners = 0
+
         actual_result = {
             "home_goals": home_goals,
             "away_goals": away_goals,
             "total_goals": total_goals,
             "btts": btts,
             "result_1x2": result_1x2,
+            "total_corners": total_corners,
         }
 
         picks_eval = []
@@ -178,9 +187,27 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             # Calculate EV for each pick
             odd_pick = merc.get("odd_minima", 0) or 0
             prob_pick = merc.get("prob_max", 0) / 100.0 if merc.get("prob_max") else 0
+            ev_pick = None
             if odd_pick > 0 and prob_pick > 0:
                 ev_pick = (prob_pick * (odd_pick - 1)) - (1 - prob_pick)
                 ev_values.append(ev_pick)
+
+            # Log individual pick to audit_results for calibrator training (Gap 3)
+            try:
+                _norm_market = merc_name.strip()
+                actual_outcome = "hit" if is_correct else "miss"
+                audit_db.log_pick(
+                    match_id=m.get("id", f"{home}-{away}"),
+                    league=league,
+                    market=_norm_market,
+                    predicted_probs={"prob": prob_pick, "market": _norm_market},
+                    pick_type=merc_status,
+                    ev=ev_pick,
+                    context={"regime": stats.get("leagueRegime", ""), "source": "cron_batch"},
+                    actual_result=actual_outcome,
+                )
+            except Exception as _log_err:
+                logger.debug(f"[Gap3] Could not log pick {merc_name}: {_log_err}")
 
         lambda_total = stats.get("lambdaTotal") or (
             (stats.get("lambdaHome") or 0) + (stats.get("lambdaAway") or 0)

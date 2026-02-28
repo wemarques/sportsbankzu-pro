@@ -428,6 +428,8 @@ def build_records_from_matches(
         )
 
         # Apply lambda corrections from audit DB (Gap 2 — feedback loop)
+        _btts_multiplier = None
+        _corner_multiplier = None
         try:
             from backend.modeling.lambda_calculator import get_lambda_corrections, LAMBDA_MIN, LAMBDA_MAX
             _lc = get_lambda_corrections(league_id)
@@ -435,6 +437,13 @@ def build_records_from_matches(
                 lam_home = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_home * float(_corr.get("value", 1.0))))
             if _corr := _lc.get("lambda_away_multiplier"):
                 lam_away = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_away * float(_corr.get("value", 1.0))))
+            # BTTS and corner multiplier corrections (Gap 2 extension)
+            if _corr := _lc.get("btts_multiplier"):
+                _btts_multiplier = float(_corr.get("value", 1.0))
+                logger.info(f"[Gap2] BTTS multiplier loaded: {_btts_multiplier:.3f}")
+            if _corr := _lc.get("corner_multiplier"):
+                _corner_multiplier = float(_corr.get("value", 1.0))
+                logger.info(f"[Gap2] Corner multiplier loaded: {_corner_multiplier:.3f}")
         except Exception as _e:
             logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {_e}")
 
@@ -450,6 +459,22 @@ def build_records_from_matches(
         over15 = 1.0 - poisson_cdf(1, lam_total)
         over25 = 1.0 - poisson_cdf(2, lam_total)
         over35 = 1.0 - poisson_cdf(3, lam_total)
+
+        # Apply BTTS audit correction multiplier (Gap 2 extension)
+        if _btts_multiplier is not None and btts_pct is not None:
+            btts_pct = min(100.0, max(0.0, float(btts_pct) * _btts_multiplier))
+        if _btts_multiplier is not None:
+            btts_poisson = min(1.0, max(0.0, btts_poisson * _btts_multiplier))
+
+        # Apply corner audit correction multiplier (Gap 2 extension)
+        if _corner_multiplier is not None:
+            if corners_o85_pct is not None:
+                corners_o85_pct = min(100.0, max(0.0, float(corners_o85_pct) * _corner_multiplier))
+            if corners_o95_pct is not None:
+                corners_o95_pct = min(100.0, max(0.0, float(corners_o95_pct) * _corner_multiplier))
+            if corners_o105_pct is not None:
+                corners_o105_pct = min(100.0, max(0.0, float(corners_o105_pct) * _corner_multiplier))
+
         data_source = "s3" if os.getenv("S3_BUCKET") else "local"
         total_gols = r.get("total_goal_count", None)
         try:

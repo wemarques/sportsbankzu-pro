@@ -522,7 +522,22 @@ def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
     btts = actual_result.get("btts", False)
     result_1x2 = actual_result.get("result_1x2", "")
 
-    # Over/Under markets
+    # Corner markets — evaluate against total_corners
+    if "ESCANTEIO" in mercado or "CORNER" in mercado:
+        total_corners = actual_result.get("total_corners", 0)
+        if "OVER" in mercado:
+            for threshold in (7.5, 8.5, 9.5, 10.5, 11.5, 12.5):
+                if str(threshold) in mercado:
+                    return total_corners > threshold
+        if "UNDER" in mercado:
+            for threshold in (7.5, 8.5, 9.5, 10.5, 11.5, 12.5):
+                if str(threshold) in mercado:
+                    return total_corners < threshold
+        # Bare corner market — cannot evaluate without threshold
+        logger.warning(f"Corner market without threshold: {mercado}")
+        return False
+
+    # Over/Under markets (goals)
     if "UNDER" in mercado or "MENOS" in mercado:
         for threshold in (0.5, 1.5, 2.5, 3.5, 4.5):
             if str(threshold) in mercado:
