@@ -1,4 +1,4 @@
-# SportsBank Pro V3.3
+# SportsBank Pro V3.3.1
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
 
@@ -43,6 +43,8 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Exportacao de dados (CSV, JSON, TXT)
 - Filtros por liga e periodo
 - Responsividade mobile/tablet (CSS customizado)
+- Ordenação de jogos por horário (asc/desc) no dashboard (V3.3.1)
+- Isolamento de erros por jogo/liga no backend — falha em um jogo não exclui os demais (V3.3.1)
 
 ### Dashboard Next.js (Produção)
 
@@ -546,6 +548,25 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
+
+#### UI / Dashboard
+- **fix(ui):** Botão "Ordenar" agora funcional — alterna entre ordem crescente/decrescente por horário do jogo
+- **fix(ui):** Placar não quebra mais em 2 linhas — CSS corrigido com `min-width: 40px` e `white-space: nowrap`
+- **fix(ui):** Aba "Perfil" agora visível e funcional — corrigido bug de valores falsy (`||` tratava `0` como falso, ocultando dados válidos); seção comparativa expandida por padrão
+- **fix(ui):** Todas as 6 abas comparativas (Perfil, Chutes, Finalizações, Faltas, Desempenho, Escanteios & Cartões) corrigidas com `!= null` em vez de `||`
+- **fix(ui):** Aba "Duplas" com mensagens de erro em pt-BR e agora envia apenas ligas carregadas (evita sobrecarga no backend)
+
+#### Backend — Resiliência
+- **fix(backend):** Isolamento de erros por jogo — `try-except` individual em cada match no `fixtures_service.py` com `exc_info=True` para tracebacks completos
+- **fix(backend):** `build_records_from_matches()` protegido contra crash total — fallback para `records = []`
+- **fix(backend):** `teams_to_df()` com tratamento por registro — times malformados são ignorados sem derrubar o lote
+- **fix(backend):** `league_df` e `get_league_season_stats()` com try-except individual — liga com dados incompletos não impede carregamento das demais
+
+#### Refatoração
+- **refactor:** Utilitário compartilhado `mapMatchStats()` em `src/lib/matchStats.ts` — elimina 55 linhas duplicadas entre dashboard e página de match
+- **refactor:** Dependências do `fetchCombinadas` estabilizadas via `useMemo` para IDs de ligas — evita re-fetches desnecessários
 
 ### V3.3 — 28 de Fevereiro de 2026 (Cobertura Total Leiautes CSV FootyStats)
 
