@@ -54,6 +54,17 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             if isinstance(season_data, dict):
                                 league_season_data = season_data
 
+                        # Busca dados de times com stats (cards, fouls, shots, etc.)
+                        try:
+                            teams_data = footstats.get_league_teams(season_id)
+                            if teams_data.get("success"):
+                                raw_teams = teams_data.get("data", [])
+                                if raw_teams:
+                                    teams_df = DataMapper.teams_to_df(raw_teams)
+                                    logger.info(f"[fixtures] {lid}: loaded {len(teams_df)} teams with stats")
+                        except Exception as e:
+                            logger.warning(f"[fixtures] {lid}: failed to load league-teams: {e}")
+
                         # Constrói league_df a partir de season stats para enriquecer cálculos
                         league_df = None
                         if league_season_data:
@@ -62,6 +73,8 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                                 "average_goals_per_match": league_season_data.get("seasonAVG_overall", 2.5),
                                 "average_corners_per_match": league_season_data.get("cornersAVG_overall", 10.0),
                                 "average_cards_per_match": league_season_data.get("cardsAVG_overall", 4.0),
+                                "average_fouls_per_match": league_season_data.get("foulsAVG_overall", 22.0),
+                                "average_shots_per_match": league_season_data.get("shotsAVG_overall", 24.0),
                             }])
 
                         # Constrói registros usando o serviço existente

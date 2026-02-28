@@ -168,6 +168,16 @@ class MistralAnalysisService:
             match_stats.get("prob_btts") or match_stats.get("bttsProb")
         )
 
+        # Team comparison stats
+        def _stat(key: str) -> str:
+            val = match_stats.get(key)
+            if val is None:
+                return "N/A"
+            try:
+                return f"{float(val):.1f}"
+            except (TypeError, ValueError):
+                return "N/A"
+
         prompt = f"""Voce e um analista profissional de apostas esportivas especializado em futebol.
 
 JOGO: {home_team} vs {away_team}
@@ -183,6 +193,14 @@ PROGNOSTICOS (valores JA em porcentagem 0-100 — use EXATAMENTE como mostrado, 
 LAMBDAS (taxa media de gols esperados — NAO sao probabilidades, sao contagens):
 - Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')} gols
 - Lambda Fora: {match_stats.get('lambda_away') or match_stats.get('lambdaAway', 'N/A')} gols
+
+COMPARATIVO TIMES (medias por jogo na temporada):
+- Posse de bola: {home_team} {_stat('homePossession')}% vs {away_team} {_stat('awayPossession')}%
+- Escanteios/jogo: {home_team} {_stat('homeCornersPerMatch')} vs {away_team} {_stat('awayCornersPerMatch')}
+- Cartoes/jogo: {home_team} {_stat('homeCardsPerMatch')} vs {away_team} {_stat('awayCardsPerMatch')}
+- Finalizacoes/jogo: {home_team} {_stat('homeShotsPerMatch')} vs {away_team} {_stat('awayShotsPerMatch')}
+- Chutes ao gol/jogo: {home_team} {_stat('homeShotsOnTarget')} vs {away_team} {_stat('awayShotsOnTarget')}
+- Faltas/jogo: {home_team} {_stat('homeFoulsPerMatch')} vs {away_team} {_stat('awayFoulsPerMatch')}
 
 ODDS DO MERCADO:
 - Casa (1): {odds.get('home', 'N/A')}
@@ -230,6 +248,7 @@ IMPORTANTE:
 - Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
 - Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
 - Exemplo correto: "probabilidade de vitoria de 85.5%". Exemplo INCORRETO: "8547.4%" ou "Casa (1.177) vs Fora (0.996)"
+- Use os dados do COMPARATIVO TIMES para fundamentar sua analise: um time com mais finalizacoes e chutes ao gol tende a ter mais oportunidades; times com muitas faltas/cartoes indicam jogo disputado; posse alta indica controle de jogo
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica

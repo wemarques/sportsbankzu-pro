@@ -139,6 +139,13 @@ class FootyStatsClient:
         params = {"season_id": season_id}
         return self._request("league-season", params, ttl_minutes=360) # Cache de 6h
 
+    def get_league_teams(self, season_id: int, include_stats: bool = True) -> Dict[str, Any]:
+        """Retorna os times de uma temporada com estatísticas agregadas (cards, fouls, shots, etc.)."""
+        params = {"season_id": season_id}
+        if include_stats:
+            params["include"] = "stats"
+        return self._request("league-teams", params, ttl_minutes=360)  # Cache de 6h
+
     def get_league_tables(self, season_id: int) -> Dict[str, Any]:
         """Retorna as tabelas de classificação da liga."""
         params = {"league_id": season_id} # O endpoint league-tables usa league_id mas refere-se ao season_id

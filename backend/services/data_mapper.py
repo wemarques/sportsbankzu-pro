@@ -32,6 +32,16 @@ class FootyStatsMatchInput(BaseModel):
     team_b_shots: Optional[int] = -1
     team_a_shotsOnTarget: Optional[int] = -1
     team_b_shotsOnTarget: Optional[int] = -1
+    team_a_yellow_cards: Optional[int] = -1
+    team_b_yellow_cards: Optional[int] = -1
+    team_a_red_cards: Optional[int] = -1
+    team_b_red_cards: Optional[int] = -1
+    team_a_fouls: Optional[int] = -1
+    team_b_fouls: Optional[int] = -1
+    team_a_offsides: Optional[int] = -1
+    team_b_offsides: Optional[int] = -1
+    team_a_shotsOffTarget: Optional[int] = -1
+    team_b_shotsOffTarget: Optional[int] = -1
     team_a_xg: Optional[float] = 0.0
     team_b_xg: Optional[float] = 0.0
     btts_potential: Optional[float] = 0.0
@@ -120,6 +130,16 @@ class DataMapper:
             "away_team_shots": api_match.get("team_b_shots", -1),
             "home_team_shots_on_target": api_match.get("team_a_shotsOnTarget", -1),
             "away_team_shots_on_target": api_match.get("team_b_shotsOnTarget", -1),
+            "home_team_yellow_cards": api_match.get("team_a_yellow_cards", -1),
+            "away_team_yellow_cards": api_match.get("team_b_yellow_cards", -1),
+            "home_team_red_cards": api_match.get("team_a_red_cards", -1),
+            "away_team_red_cards": api_match.get("team_b_red_cards", -1),
+            "home_team_fouls": api_match.get("team_a_fouls", -1),
+            "away_team_fouls": api_match.get("team_b_fouls", -1),
+            "home_team_offsides": api_match.get("team_a_offsides", -1),
+            "away_team_offsides": api_match.get("team_b_offsides", -1),
+            "home_team_shots_off_target": api_match.get("team_a_shotsOffTarget", -1),
+            "away_team_shots_off_target": api_match.get("team_b_shotsOffTarget", -1),
             "home_team_xg": api_match.get("team_a_xg", 0.0),
             "away_team_xg": api_match.get("team_b_xg", 0.0),
             "btts_percentage_pre_match": api_match.get("btts_potential", 0),
@@ -161,18 +181,93 @@ class DataMapper:
 
     @staticmethod
     def map_team_to_internal(api_team: Dict[str, Any]) -> Dict[str, Any]:
-        """Converte um objeto de time da API para o formato esperado pelo backend."""
-        # Mapeamento baseado no Team CSV - 186 Data Columns
+        """Converte um objeto de time da API para o formato esperado pelo backend.
+
+        Maps real FootyStats league-teams field names (cardsAVG_overall, foulsAVG_overall, etc.)
+        to the internal column names expected by fixtures_service helper functions.
+        """
+        stats = api_team.get("stats", {}) or {}
+
+        def _pick(primary_keys: list, fallback_keys: list = None, default=None):
+            """Try stats dict first, then api_team root."""
+            for key in primary_keys:
+                val = stats.get(key)
+                if val is not None:
+                    return val
+            for key in (fallback_keys or []):
+                val = api_team.get(key)
+                if val is not None:
+                    return val
+            return default
+
         return {
-            "team_name": api_team.get("name"),
+            "team_name": api_team.get("name") or api_team.get("cleanName"),
             "common_name": api_team.get("cleanName"),
             "season": api_team.get("season"),
             "country": api_team.get("country"),
-            "points_per_game": api_team.get("ppg_geral", 0.0),
-            "goals_scored": api_team.get("seasonGoals", 0),
-            "goals_conceded": api_team.get("seasonConceded", 0),
-            "average_possession": api_team.get("posse_media", 0),
-            "shots_on_target_per_match": api_team.get("chutes_no_gol_media", 0),
+            # PPG
+            "points_per_game": api_team.get("pointsPerGame", 0.0) or api_team.get("ppg", 0.0),
+            "points_per_game_overall": _pick(["pointsPerGame_overall"], ["pointsPerGame", "ppg"], 0.0),
+            # Goals
+            "goals_scored": api_team.get("seasonGoals_overall", 0) or api_team.get("seasonGoals", 0),
+            "goals_conceded": api_team.get("seasonConceded_overall", 0) or api_team.get("seasonConceded", 0),
+            "goals_scored_per_match_overall": _pick(["seasonScoredAVG_overall", "seasonGoalsAVG_overall"], default=None),
+            "goals_scored_per_match_home": _pick(["seasonScoredAVG_home", "seasonGoalsAVG_home"], default=None),
+            "goals_scored_per_match_away": _pick(["seasonScoredAVG_away", "seasonGoalsAVG_away"], default=None),
+            "goals_conceded_per_match_overall": _pick(["seasonConcededAVG_overall"], default=None),
+            "goals_conceded_per_match_home": _pick(["seasonConcededAVG_home"], default=None),
+            "goals_conceded_per_match_away": _pick(["seasonConcededAVG_away"], default=None),
+            "matches_played": api_team.get("matchesPlayed", None) or api_team.get("matchesPlayed_overall", None),
+            # Possession
+            "average_possession": _pick(
+                ["possessionAVG_overall"],
+                ["average_possession", "possessionAVG"],
+                None,
+            ),
+            # Corners per match
+            "corners_per_match": _pick(
+                ["cornersAVG_overall"],
+                ["cornersAVG", "corners_per_match"],
+                None,
+            ),
+            "corners_per_match_home": _pick(["cornersAVG_home"], default=None),
+            "corners_per_match_away": _pick(["cornersAVG_away"], default=None),
+            # Cards per match
+            "cards_per_match": _pick(
+                ["cardsAVG_overall"],
+                ["cardsAVG", "cards_per_match"],
+                None,
+            ),
+            "cards_per_match_home": _pick(["cardsAVG_home"], default=None),
+            "cards_per_match_away": _pick(["cardsAVG_away"], default=None),
+            "cards_total": _pick(["cardsTotal_overall"], default=None),
+            # Shots per match
+            "shots_per_match": _pick(
+                ["shotsAVG_overall"],
+                ["shotsAVG", "shots_per_match"],
+                None,
+            ),
+            "shots_per_match_home": _pick(["shotsAVG_home"], default=None),
+            "shots_per_match_away": _pick(["shotsAVG_away"], default=None),
+            # Shots on target per match
+            "shots_on_target_per_match": _pick(
+                ["shotsOnTargetAVG_overall"],
+                ["shotsOnTargetAVG", "shots_on_target_per_match"],
+                None,
+            ),
+            "shots_on_target_per_match_home": _pick(["shotsOnTargetAVG_home"], default=None),
+            "shots_on_target_per_match_away": _pick(["shotsOnTargetAVG_away"], default=None),
+            # Fouls per match
+            "fouls_per_match": _pick(
+                ["foulsAVG_overall"],
+                ["foulsAVG", "fouls_per_match"],
+                None,
+            ),
+            "fouls_per_match_home": _pick(["foulsAVG_home"], default=None),
+            "fouls_per_match_away": _pick(["foulsAVG_away"], default=None),
+            "fouls_total": _pick(["foulsTotal_overall"], default=None),
+            # Offsides per match
+            "offsides_per_match": _pick(["offsidesAVG_overall"], default=None),
         }
 
     @classmethod

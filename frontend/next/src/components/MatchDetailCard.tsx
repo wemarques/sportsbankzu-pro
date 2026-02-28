@@ -150,10 +150,14 @@ export interface MatchDetailData {
     awayCardsPerMatch?: number;
     homeShotsOnTarget?: number;
     awayShotsOnTarget?: number;
+    homeShotsPerMatch?: number;
+    awayShotsPerMatch?: number;
     homeFoulsPerMatch?: number;
     awayFoulsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
+    leagueAvgFouls?: number;
+    leagueAvgShots?: number;
     cornersPotential?: number;
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
@@ -799,19 +803,33 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {(match.matchStats.homeShotsOnTarget || match.matchStats.awayShotsOnTarget) ? (
                             <ComparativeBar label="Chutes ao Gol por Jogo" homeVal={match.matchStats.homeShotsOnTarget ?? 0} awayVal={match.matchStats.awayShotsOnTarget ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           ) : (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes ao gol nao disponiveis para este jogo.</div>
                           )}
                         </div>
                       )}
                       {comparativeTab === "finalizacoes" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Finalizacoes totais nao disponiveis na fonte de dados atual.</div>
+                          {(match.matchStats.homeShotsPerMatch || match.matchStats.awayShotsPerMatch) ? (
+                            <>
+                              <ComparativeBar label="Finalizacoes por Jogo" homeVal={match.matchStats.homeShotsPerMatch ?? 0} awayVal={match.matchStats.awayShotsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgShots?.toFixed(1) ?? "-"}</span></span>
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de finalizacoes nao disponiveis para este jogo.</div>
+                          )}
                         </div>
                       )}
                       {comparativeTab === "faltas" && match.matchStats && (
                         <div className="mdc-comparative-data">
                           {(match.matchStats.homeFoulsPerMatch || match.matchStats.awayFoulsPerMatch) ? (
-                            <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                            <>
+                              <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgFouls?.toFixed(1) ?? "-"}</span></span>
+                              </div>
+                            </>
                           ) : (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de faltas nao disponiveis para este jogo.</div>
                           )}

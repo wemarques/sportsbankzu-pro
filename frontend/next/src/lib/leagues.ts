@@ -73,10 +73,14 @@ export type Match = {
     awayCardsPerMatch?: number;
     homeShotsOnTarget?: number;
     awayShotsOnTarget?: number;
+    homeShotsPerMatch?: number;
+    awayShotsPerMatch?: number;
     homeFoulsPerMatch?: number;
     awayFoulsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
+    leagueAvgFouls?: number;
+    leagueAvgShots?: number;
     cornersPotential?: number;
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
