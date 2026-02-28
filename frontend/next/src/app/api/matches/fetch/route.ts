@@ -22,9 +22,25 @@ export async function GET(req: NextRequest) {
   if (backendBase) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
-    const result = await fetchBackend(`/fixtures?${qs.toString()}`, {
+    let result = await fetchBackend(`/fixtures?${qs.toString()}`, {
       timeoutMs: 55_000,
     });
+
+    // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
+    if (
+      !result.ok &&
+      result.error &&
+      (result.error.kind === "TIMEOUT" ||
+        result.error.kind === "CONNECTION_ERROR" ||
+        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
+    ) {
+      console.log(
+        `[fetch/route] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying (Lambda cold start)...`,
+      );
+      result = await fetchBackend(`/fixtures?${qs.toString()}`, {
+        timeoutMs: 55_000,
+      });
+    }
 
     if (result.ok) {
       const matches = (result.data as Record<string, unknown>)?.matches;

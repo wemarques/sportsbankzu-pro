@@ -507,8 +507,8 @@ export default function Dashboard() {
         let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
         let raw = res?.matches ?? [];
 
-        // Auto-retry once on timeout or 503 (Lambda cold start takes ~10-20s, second call is fast)
-        if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR")) {
+        // Auto-retry once on timeout, connection error, or 503 (Lambda cold start takes ~10-20s, second call is fast)
+        if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR" || res._error?.kind === "CONNECTION_ERROR")) {
           console.log(`[dashboard] ${res._error.kind} on first attempt, retrying (Lambda cold start)...`);
           res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
           raw = res?.matches ?? [];
@@ -812,35 +812,60 @@ export default function Dashboard() {
     }
   }, []);
 
-  const handleRetry = useCallback(() => {
-    // Force refetch by toggling dateMode (trigger useEffect)
-    setDateMode((prev) => prev);
-    // Since setting same value won't trigger useEffect, use a workaround
+  const handleRetry = useCallback(async () => {
     setLoading(true);
     setHasError(false);
     setErrorMessage(null);
+    setDataSource(null);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
-    getMatchesByLeague(allLeagueIds, dateMode).then((res) => {
-      const raw = res?.matches ?? [];
+
+    try {
+      let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateMode);
+      let raw = res?.matches ?? [];
+
+      // Auto-retry once on timeout/connection/503 (Lambda cold start)
+      if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR" || res._error?.kind === "CONNECTION_ERROR")) {
+        console.log(`[dashboard:retry] ${res._error.kind} on first attempt, retrying...`);
+        res = await getMatchesByLeague(allLeagueIds, dateMode);
+        raw = res?.matches ?? [];
+      }
+
       setDataSource(res._dataSource ?? null);
       setIsMockData(res._isMockData ?? false);
+
       if (res._error) {
         setHasError(true);
         setErrorMessage(res._error.message);
       }
+
+      // Auto-fallback: if today returns empty (and no error), try week
+      if (raw.length === 0 && dateMode === "today" && !res._error) {
+        res = await getMatchesByLeague(allLeagueIds, "week");
+        raw = res?.matches ?? [];
+        if (raw.length > 0) {
+          setDateMode("week");
+          setDataSource(res._dataSource ?? null);
+          setIsMockData(res._isMockData ?? false);
+        }
+        if (res._error) {
+          setHasError(true);
+          setErrorMessage(res._error.message);
+        }
+      }
+
       const normalized = raw.map((item: any, idx: number) => {
         const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
       setAllMatches(normalized);
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
-    }).catch(() => {
+    } catch {
       setAllMatches([]);
       setHasError(true);
       setErrorMessage("Erro inesperado ao carregar jogos. Tente novamente.");
-    }).finally(() => {
+    } finally {
       setLoading(false);
-    });
+    }
   }, [dateMode]);
 
   const handleEmptyDateChange = useCallback((direction: "prev" | "next") => {
