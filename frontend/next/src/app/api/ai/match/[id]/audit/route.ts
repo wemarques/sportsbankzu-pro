@@ -10,12 +10,35 @@ export async function POST(
   const matchId = params.id;
   try {
     const body = await req.json().catch(() => ({}));
+    const bodyStr = JSON.stringify(body);
     const url = new URL(req.url);
     const qs = url.search ? url.search : "";
-    const result = await fetchBackend(
-      `/api/ai/match/${encodeURIComponent(matchId)}/audit${qs}`,
-      { method: "POST", body: JSON.stringify(body), timeoutMs: 55_000 },
-    );
+    const endpoint = `/api/ai/match/${encodeURIComponent(matchId)}/audit${qs}`;
+    const AUDIT_TIMEOUT_MS = 28_000;
+
+    let result = await fetchBackend(endpoint, {
+      method: "POST",
+      body: bodyStr,
+      timeoutMs: AUDIT_TIMEOUT_MS,
+    });
+
+    // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
+    if (
+      !result.ok &&
+      result.error &&
+      (result.error.kind === "TIMEOUT" ||
+        result.error.kind === "CONNECTION_ERROR" ||
+        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
+    ) {
+      console.log(
+        `[ai/audit] ${result.error.kind} on first attempt (${result.error.durationMs ?? 0}ms), retrying (Lambda cold start)...`,
+      );
+      result = await fetchBackend(endpoint, {
+        method: "POST",
+        body: bodyStr,
+        timeoutMs: AUDIT_TIMEOUT_MS,
+      });
+    }
 
     if (result.ok) {
       return Response.json(result.data);

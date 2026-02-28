@@ -8,6 +8,7 @@ import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
 } from "@/components/MatchDetailCard";
+import { mapMatchStats } from "@/lib/matchStats";
 
 const PY_BACKEND = process.env.NEXT_PUBLIC_PY_BACKEND_URL || "http://127.0.0.1:5001";
 
@@ -17,9 +18,11 @@ const PY_BACKEND = process.env.NEXT_PUBLIC_PY_BACKEND_URL || "http://127.0.0.1:5
  */
 function mapFixtureToDetail(raw: Record<string, unknown>, matchId: string): MatchDetailData {
   const rawOdds = (raw.odds ?? {}) as Record<string, number>;
+  const rawStats = (raw.stats ?? {}) as Record<string, unknown>;
   return {
     id: String(raw.id ?? matchId),
     league: (raw.leagueName as string) ?? "",
+    leagueId: (raw.leagueId as string) ?? undefined,
     season: (raw.season as string) ?? undefined,
     homeTeam: (raw.homeTeam as string) ?? "",
     awayTeam: (raw.awayTeam as string) ?? "",
@@ -45,6 +48,7 @@ function mapFixtureToDetail(raw: Record<string, unknown>, matchId: string): Matc
       rawOdds.bttsYes || rawOdds.bttsNo
         ? { yes: rawOdds.bttsYes, no: rawOdds.bttsNo }
         : undefined,
+    matchStats: mapMatchStats(rawStats),
     round: (raw.round as string) ?? undefined,
   };
 }

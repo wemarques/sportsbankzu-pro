@@ -11,13 +11,13 @@ test.describe("Dashboard Page", () => {
   });
 
   test("renders main dashboard layout", async ({ page }) => {
-    await expect(page).toHaveTitle(/SportsBank Pro/i);
-    await expect(page.locator(".st-nav__logo")).toContainText("sportsbank");
+    await expect(page).toHaveTitle(/SportsBankZU Pro/i);
+    await expect(page.locator(".st-nav__logo")).toContainText("sportsbankzu");
   });
 
   test("renders scoretabs layout with branding", async ({ page }) => {
     await expect(page.locator(".st-nav__logo")).toBeVisible();
-    await expect(page.locator(".st-nav__logo")).toContainText("sportsbank");
+    await expect(page.locator(".st-nav__logo")).toContainText("sportsbankzu");
   });
 
   test("renders PRO badge", async ({ page }) => {

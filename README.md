@@ -1,4 +1,4 @@
-# SportsBank Pro V3.2
+# SportsBank Pro V3.3.1
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
 
@@ -34,10 +34,17 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Feedback loop para BTTS e escanteios com calibracao e correcoes automaticas (V3.2)
 - Comparativo de times completo: cartoes, faltas, finalizacoes, chutes ao gol, posse (V3.2)
 - Analise IA enriquecida com dados do comparativo de times (V3.2)
+- Cobertura completa dos 5 leiautes CSV FootyStats: 186+442 team, 64 match, 49 league, 45+ player (V3.3)
+- Perfil avancado por time: BTTS%, clean sheet%, FTS%, over 2.5%, xG for/against, posicao na liga (V3.3)
+- Nova aba "Perfil" no dashboard com comparativo xG, vitorias, over 2.5, clean sheet, BTTS (V3.3)
+- Dados de meio-tempo, timing de gols, cartoes por tempo, arbitro e publico (V3.3)
+- Liga enriquecida: home advantage%, gols casa/fora, clean sheet%, over 2.5%, xG medio (V3.3)
 - Geracao de relatorios automatizada
 - Exportacao de dados (CSV, JSON, TXT)
 - Filtros por liga e periodo
 - Responsividade mobile/tablet (CSS customizado)
+- Ordenação de jogos por horário (asc/desc) no dashboard (V3.3.1)
+- Isolamento de erros por jogo/liga no backend — falha em um jogo não exclui os demais (V3.3.1)
 
 ### Dashboard Next.js (Produção)
 
@@ -541,6 +548,74 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
+
+#### UI / Dashboard
+- **fix(ui):** Botão "Ordenar" agora funcional — alterna entre ordem crescente/decrescente por horário do jogo
+- **fix(ui):** Placar não quebra mais em 2 linhas — CSS corrigido com `min-width: 40px` e `white-space: nowrap`
+- **fix(ui):** Aba "Perfil" agora visível e funcional — corrigido bug de valores falsy (`||` tratava `0` como falso, ocultando dados válidos); seção comparativa expandida por padrão
+- **fix(ui):** Todas as 6 abas comparativas (Perfil, Chutes, Finalizações, Faltas, Desempenho, Escanteios & Cartões) corrigidas com `!= null` em vez de `||`
+- **fix(ui):** Aba "Duplas" com mensagens de erro em pt-BR e agora envia apenas ligas carregadas (evita sobrecarga no backend)
+
+#### Backend — Resiliência
+- **fix(backend):** Isolamento de erros por jogo — `try-except` individual em cada match no `fixtures_service.py` com `exc_info=True` para tracebacks completos
+- **fix(backend):** `build_records_from_matches()` protegido contra crash total — fallback para `records = []`
+- **fix(backend):** `teams_to_df()` com tratamento por registro — times malformados são ignorados sem derrubar o lote
+- **fix(backend):** `league_df` e `get_league_season_stats()` com try-except individual — liga com dados incompletos não impede carregamento das demais
+
+#### Refatoração
+- **refactor:** Utilitário compartilhado `mapMatchStats()` em `src/lib/matchStats.ts` — elimina 55 linhas duplicadas entre dashboard e página de match
+- **refactor:** Dependências do `fetchCombinadas` estabilizadas via `useMemo` para IDs de ligas — evita re-fetches desnecessários
+
+### V3.3 — 28 de Fevereiro de 2026 (Cobertura Total Leiautes CSV FootyStats)
+
+#### Match CSV — 64 Data Columns (novos campos)
+- **feat(match):** Half-time: `total_goals_at_half_time`, `home/away_team_goal_count_half_time`
+- **feat(match):** Goal timings: `home/away_team_goal_timings` (minutos dos gols)
+- **feat(match):** Card splits: `home/away_team_first_half_cards`, `home/away_team_second_half_cards`
+- **feat(match):** Context: `attendance` (público), `referee` (árbitro)
+- **feat(match):** Odds: `odds_btts_no` adicionado ao mapeamento
+
+#### Team CSV — 186 Data Columns (novos campos)
+- **feat(team):** Record: `wins/draws/losses`, `win/draw/loss_percentage`, `league_position` (overall/home/away)
+- **feat(team):** Clean sheets: `clean_sheets`, `clean_sheet_percentage` — crítico para análise BTTS
+- **feat(team):** BTTS: `btts_count`, `btts_percentage` — input direto para mercado BTTS
+- **feat(team):** FTS: `fts_count`, `fts_percentage` (failed to score) — complementa análise BTTS Não
+- **feat(team):** Over/Under: `over05~45_percentage`, `under15/25_percentage` — input direto para mercados O/U
+- **feat(team):** xG: `xg_for_avg`, `xg_against_avg` (overall/home/away) — melhora cálculo de lambdas
+- **feat(team):** Goals: `average_total_goals_per_match`, `goal_difference`, `minutes_per_goal_scored/conceded`
+- **feat(team):** Half-time: `goals_scored/conceded_half_time`, médias por jogo HT
+- **feat(team):** `home_advantage_percentage`, `prediction_risk`, `first_team_to_score_percentage`
+- **feat(team):** PPG: `points_per_game_home/away` adicionados
+
+#### Team CSV Pt.2 — 442 Data Columns (novos campos)
+- **feat(team):** Corners against: `corners_against_per_match` (overall/home/away) — escanteios do adversário
+- **feat(team):** Corner over %: `over85/95/105_corners_percentage` — input direto para mercado de escanteios
+- **feat(team):** `shots_off_target_per_match`
+- **feat(team):** BTTS compound: `btts_and_win_percentage`, `scored_both_halves_percentage`
+- **feat(team):** 2nd half: `goals_scored/conceded_2h_per_match`, `btts_2h_percentage`
+- **feat(team):** Goal timing: distribuição de gols por intervalo de 10 minutos (0-10 até 81-90)
+
+#### League CSV — 49 Data Columns (novos campos)
+- **feat(league):** Home advantage: `home_advantage_percentage`, `home_scored/defence_advantage_percentage`
+- **feat(league):** Goals home/away: `average_scored_home_team`, `average_scored_away_team`
+- **feat(league):** `clean_sheets_percentage` (nível liga)
+- **feat(league):** Over/Under %: `over_05~45_percentage` (benchmarks da liga)
+- **feat(league):** `xg_avg` (xG médio da liga), `prediction_risk`
+- **feat(league):** `matches_completed`, `total_matches` (progresso da temporada)
+
+#### Service & AI
+- **feat(service):** Helper genérico `_team_stat()` para extrair qualquer coluna do teams_df
+- **feat(service):** 21 novos stats extraídos por time: btts%, cs%, fts%, over25%, win%, xG for/against, corners_against, league_position, avg_total_goals
+- **feat(service):** League avgs expandidos: home_advantage, clean_sheets, over25, xG
+- **feat(ai):** Prompt Mistral com novas seções PERFIL DE GOLS e CLASSIFICACAO E DESEMPENHO
+- **feat(ai):** Instrucoes para Mistral usar xG, BTTS%, clean sheet%, FTS%, over 2.5%, posição na liga
+
+#### Frontend
+- **feat(frontend):** Nova aba "Perfil" com barras comparativas de xG médio, xG sofrido, média gols total
+- **feat(frontend):** Perfil mostra: % vitórias, Over 2.5%, Clean Sheet%, BTTS%, posição na liga
+- **feat(frontend):** 26 novos campos TypeScript em MatchDetailCard, leagues.ts e page.tsx
 
 ### V3.2 — 28 de Fevereiro de 2026 (Comparativo Times + Feedback Loop BTTS/Escanteios)
 

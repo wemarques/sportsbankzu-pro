@@ -452,5 +452,10 @@ class DataMapper:
     @classmethod
     def teams_to_df(cls, api_teams: List[Dict[str, Any]]) -> pd.DataFrame:
         """Converte uma lista de times da API em um DataFrame formatado como o CSV."""
-        mapped_teams = [cls.map_team_to_internal(t) for t in api_teams]
+        mapped_teams = []
+        for i, t in enumerate(api_teams):
+            try:
+                mapped_teams.append(cls.map_team_to_internal(t))
+            except Exception as exc:
+                logger.warning("[DataMapper] Skipping malformed team record #%d: %s", i, exc)
         return pd.DataFrame(mapped_teams)

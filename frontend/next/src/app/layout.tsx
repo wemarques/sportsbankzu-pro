@@ -4,7 +4,7 @@ import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
 
 export const metadata = {
-  title: "SportsBank Pro",
+  title: "SportsBankZU Pro",
   description: "Dashboard de análise esportiva profissional",
 };
 

@@ -9,6 +9,7 @@ import MatchDetailCard, {
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
+import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
 import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
@@ -51,7 +52,7 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const VERSION_FALLBACK = "pro V3.0";
+const VERSION_FALLBACK = "pro V3.3.1";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -120,7 +121,7 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
     </div>
   );
 }
-const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBank Pro.";
+const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBankZU Pro.";
 
 type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas";
 type ShareFeedbackTone = "success" | "error" | "info";
@@ -361,65 +362,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       drawOrAway: parseFloat((1 / (1 / d + 1 / a)).toFixed(2)),
     },
     btts: { yes: safeOdd(match.odds?.bttsYes, 2.0), no: safeOdd(match.odds?.bttsNo, 1.7) },
-    matchStats: {
-      homeWinProb: match.stats?.homeWinProb,
-      drawProb: match.stats?.drawProb,
-      awayWinProb: match.stats?.awayWinProb,
-      avgGoals: match.stats?.avgGoals,
-      bttsProb: match.stats?.bttsProb,
-      over15Prob: match.stats?.over15Prob,
-      over25Prob: match.stats?.over25Prob,
-      over35Prob: match.stats?.over35Prob,
-      over45Prob: match.stats?.over45Prob,
-      lambdaHome: match.stats?.lambdaHome,
-      lambdaAway: match.stats?.lambdaAway,
-      homePossession: match.stats?.homePossession,
-      awayPossession: match.stats?.awayPossession,
-      homeXG: match.stats?.homeXG,
-      awayXG: match.stats?.awayXG,
-      leagueRegime: match.stats?.leagueRegime,
-      leagueVolatility: match.stats?.leagueVolatility,
-      homeCornersPerMatch: match.stats?.homeCornersPerMatch,
-      awayCornersPerMatch: match.stats?.awayCornersPerMatch,
-      homeCardsPerMatch: match.stats?.homeCardsPerMatch,
-      awayCardsPerMatch: match.stats?.awayCardsPerMatch,
-      homeShotsOnTarget: match.stats?.homeShotsOnTarget,
-      awayShotsOnTarget: match.stats?.awayShotsOnTarget,
-      homeShotsPerMatch: match.stats?.homeShotsPerMatch,
-      awayShotsPerMatch: match.stats?.awayShotsPerMatch,
-      homeFoulsPerMatch: match.stats?.homeFoulsPerMatch,
-      awayFoulsPerMatch: match.stats?.awayFoulsPerMatch,
-      leagueAvgCorners: match.stats?.leagueAvgCorners,
-      leagueAvgCards: match.stats?.leagueAvgCards,
-      leagueAvgFouls: match.stats?.leagueAvgFouls,
-      leagueAvgShots: match.stats?.leagueAvgShots,
-      // League extended
-      leagueHomeAdvantage: match.stats?.leagueHomeAdvantage,
-      leagueCleanSheetsPct: match.stats?.leagueCleanSheetsPct,
-      leagueOver25Pct: match.stats?.leagueOver25Pct,
-      leagueXgAvg: match.stats?.leagueXgAvg,
-      // Team advanced
-      homeBttsPercentage: match.stats?.homeBttsPercentage,
-      awayBttsPercentage: match.stats?.awayBttsPercentage,
-      homeCleanSheetPct: match.stats?.homeCleanSheetPct,
-      awayCleanSheetPct: match.stats?.awayCleanSheetPct,
-      homeFtsPercentage: match.stats?.homeFtsPercentage,
-      awayFtsPercentage: match.stats?.awayFtsPercentage,
-      homeOver25Percentage: match.stats?.homeOver25Percentage,
-      awayOver25Percentage: match.stats?.awayOver25Percentage,
-      homeWinPercentage: match.stats?.homeWinPercentage,
-      awayWinPercentage: match.stats?.awayWinPercentage,
-      homeXgForAvg: match.stats?.homeXgForAvg,
-      awayXgForAvg: match.stats?.awayXgForAvg,
-      homeXgAgainstAvg: match.stats?.homeXgAgainstAvg,
-      awayXgAgainstAvg: match.stats?.awayXgAgainstAvg,
-      homeCornersAgainstPerMatch: match.stats?.homeCornersAgainstPerMatch,
-      awayCornersAgainstPerMatch: match.stats?.awayCornersAgainstPerMatch,
-      homeLeaguePosition: match.stats?.homeLeaguePosition,
-      awayLeaguePosition: match.stats?.awayLeaguePosition,
-      homeAvgTotalGoals: match.stats?.homeAvgTotalGoals,
-      awayAvgTotalGoals: match.stats?.awayAvgTotalGoals,
-    },
+    matchStats: mapMatchStats(match.stats as Record<string, unknown> | undefined),
     h2h: match.h2h,
     homeForm: match.stats?.homeForm ?? match.homeTeam.form,
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
@@ -453,6 +396,7 @@ export default function Dashboard() {
     return new Set();
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [shareLoading, setShareLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -526,25 +470,36 @@ export default function Dashboard() {
     }
   }, [selectedMatchId]);
 
+  // Stable league-ID string — only changes when the set of loaded leagues changes
+  const combinadasLeagues = useMemo(() => {
+    const ids = Array.from(new Set(allMatches.map((m) => m.leagueId))).sort();
+    return ids.length > 0 ? ids.join(",") : AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+  }, [allMatches]);
+
   const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
     setCombindasLoading(true);
     setCombindasError(null);
     try {
       const today = dateMode;
-      const leagueIds = AVAILABLE_LEAGUES.map((l) => l.id);
       const res = await fetch(
-        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
+        `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
-      const data: CombinadasData = await res.json();
-      if (!res.ok) throw new Error((data as any)._error?.message || `Erro ${res.status}`);
-      setCombinadas(data);
+      const data = await res.json();
+      if (!res.ok) {
+        const errKind = data?._error?.kind;
+        if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
+        if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
+        if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
+        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
+      setCombinadas(data as CombinadasData);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
       setCombindasLoading(false);
     }
-  }, [dateMode]);
+  }, [dateMode, combinadasLeagues]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
@@ -693,26 +648,26 @@ export default function Dashboard() {
         canvas.toBlob((b) => resolve(b), "image/png", 0.95)
       );
       if (!blob) throw new Error("Falha ao gerar imagem");
-      const file = new File([blob], "sportsbank-pro-dashboard.png", { type: "image/png" });
+      const file = new File([blob], "sportsbankzu-pro-dashboard.png", { type: "image/png" });
       const url = typeof window !== "undefined" ? window.location.href : "";
-      const msg = encodeURIComponent(`Confira o dashboard SportsBank Pro: ${url}`);
+      const msg = encodeURIComponent(`Confira o dashboard SportsBankZU Pro: ${url}`);
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({
-          title: "SportsBank Pro",
+          title: "SportsBankZU Pro",
           text: `Confira o dashboard: ${url}`,
           files: [file],
         });
       } else {
         const a = document.createElement("a");
         a.href = canvas.toDataURL("image/png");
-        a.download = "sportsbank-pro-dashboard.png";
+        a.download = "sportsbankzu-pro-dashboard.png";
         a.click();
         window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener");
       }
     } catch (err) {
       console.error("Share error:", err);
       const url = typeof window !== "undefined" ? window.location.href : "";
-      window.open(`https://wa.me/?text=${encodeURIComponent(`Confira o SportsBank Pro: ${url}`)}`, "_blank", "noopener");
+      window.open(`https://wa.me/?text=${encodeURIComponent(`Confira o SportsBankZU Pro: ${url}`)}`, "_blank", "noopener");
     } finally {
       setShareLoading(false);
     }
@@ -966,10 +921,11 @@ export default function Dashboard() {
     }
     return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+      const dir = sortOrder === "asc" ? 1 : -1;
       const sorted = [...matches].sort((a, b) => {
         const da = new Date(a.datetime).getTime();
         const db = new Date(b.datetime).getTime();
-        return da - db;
+        return (da - db) * dir;
       });
       return {
         leagueId,
@@ -980,7 +936,7 @@ export default function Dashboard() {
         collapsed: collapsedLeagues.has(leagueId),
       };
     });
-  }, [displayMatches, collapsedLeagues]);
+  }, [displayMatches, collapsedLeagues, sortOrder]);
 
   const leagueIdForCapture = useMemo(() => {
     if (navView !== "matches") return null;
@@ -1108,7 +1064,7 @@ export default function Dashboard() {
         && navigator.canShare({ files: [file] })
       ) {
         await navigator.share({
-          title: "SportsBank Pro",
+          title: "SportsBankZU Pro",
           text: SHARE_TEXT,
           files: [file],
         });
@@ -1145,7 +1101,7 @@ export default function Dashboard() {
       {/* TOP NAV */}
       <nav className="st-nav">
         <div className="st-nav__logo">
-          sports<span>bank</span>.
+          sports<span>bankzu</span>
         </div>
         <div className="st-nav__links">
           <button className={`st-nav__link ${navView === "campeonatos" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "campeonatos" ? "matches" : "campeonatos")}>
@@ -1510,7 +1466,14 @@ export default function Dashboard() {
                 {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
                 {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
               </button>
-              <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
+              <button
+                type="button"
+                className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
+                onClick={() => setSortOrder((v) => v === "asc" ? "desc" : "asc")}
+                title={sortOrder === "asc" ? "Ordenar: mais cedo primeiro" : "Ordenar: mais tarde primeiro"}
+              >
+                <SlidersHorizontal size={12} /> {sortOrder === "asc" ? "Mais cedo" : "Mais tarde"}
+              </button>
               <button
                 type="button"
                 className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}

@@ -54,6 +54,17 @@ def _apply_confidence_adjustment(stats: dict, adjustment: dict) -> dict:
     return stats
 
 
+def _safe_int(val: Any) -> Optional[int]:
+    """Convert to int if possible, return None for missing/invalid values."""
+    if val is None or val == -1:
+        return None
+    try:
+        v = int(val)
+        return v if v >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
@@ -82,6 +93,7 @@ def build_records_from_matches(
     # No automatic fallback — return only matches for the requested period
     records: List[Dict[str, Any]] = []
     for r in rows:
+      try:
         dt = row_date(r)
         if dt is None:
             continue
@@ -728,6 +740,9 @@ def build_records_from_matches(
                 "cornerOver85Prob": corners_o85_pct,
                 "cornerOver95Prob": corners_o95_pct,
                 "cornerOver105Prob": corners_o105_pct,
+                # Actual match corner counts (for audit evaluation)
+                "homeCornersCount": _safe_int(r.get("home_team_corner_count")),
+                "awayCornersCount": _safe_int(r.get("away_team_corner_count")),
             },
             "h2h": {
                 "totalMatches": totalMatches,
@@ -778,4 +793,8 @@ def build_records_from_matches(
         except Exception as e:
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
             records[-1]["mercados"] = []
+      except Exception as e:
+        _match_label = f"{r.get('home_team', '?')} vs {r.get('away_team', '?')}"
+        logger.error(f"[fixtures_service] Skipping match {_match_label}: {type(e).__name__}: {e}", exc_info=True)
+        continue
     return records
