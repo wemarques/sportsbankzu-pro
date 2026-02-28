@@ -214,11 +214,92 @@ def build_records_from_matches(
                         except Exception:
                             return None
             return None
-        league_avgs = { "avg_goals": None, "avg_corners": None, "avg_cards": None }
+        def team_shots_per_match(name: str) -> Optional[float]:
+            if teams is None:
+                return None
+            for col in ["shots_per_match", "shots_per_game", "shotsPerMatch", "shots_avg"]:
+                if col in teams.columns:
+                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+                    if not name_col:
+                        return None
+                    row = teams[teams[name_col] == name]
+                    if len(row) > 0:
+                        val = row.iloc[0].get(col, None)
+                        try:
+                            v = float(val)
+                            return v if v > 0 else None
+                        except Exception:
+                            return None
+            return None
+        def _team_stat(name: str, col: str) -> Optional[float]:
+            """Generic helper: extract a single float stat from teams_df for a team."""
+            if teams is None or col not in teams.columns:
+                return None
+            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+            if not name_col:
+                return None
+            row = teams[teams[name_col] == name]
+            if len(row) == 0:
+                return None
+            val = row.iloc[0].get(col, None)
+            if val is None:
+                return None
+            try:
+                v = float(val)
+                return v if v >= 0 else None
+            except (TypeError, ValueError):
+                return None
+
+        league_avgs = {
+            "avg_goals": None, "avg_corners": None, "avg_cards": None,
+            "avg_fouls": None, "avg_shots": None,
+            "home_advantage_pct": None, "avg_goals_home": None, "avg_goals_away": None,
+            "clean_sheets_pct": None, "over25_pct": None, "xg_avg": None,
+        }
         if league_df is not None:
-            league_avgs["avg_goals"] = float(league_df.iloc[0].get("average_goals_per_match", 2.5) or 2.5)
-            league_avgs["avg_corners"] = float(league_df.iloc[0].get("average_corners_per_match", 10.0) or 10.0)
-            league_avgs["avg_cards"] = float(league_df.iloc[0].get("average_cards_per_match", 4.0) or 4.0)
+            _lg = league_df.iloc[0]
+            league_avgs["avg_goals"] = float(_lg.get("average_goals_per_match", 2.5) or 2.5)
+            league_avgs["avg_corners"] = float(_lg.get("average_corners_per_match", 10.0) or 10.0)
+            league_avgs["avg_cards"] = float(_lg.get("average_cards_per_match", 4.0) or 4.0)
+            league_avgs["avg_fouls"] = float(_lg.get("average_fouls_per_match", 22.0) or 22.0)
+            league_avgs["avg_shots"] = float(_lg.get("average_shots_per_match", 24.0) or 24.0)
+            # Extended league stats (League CSV: 49 cols)
+            _ha = _lg.get("home_advantage_percentage")
+            if _ha is not None:
+                try:
+                    league_avgs["home_advantage_pct"] = float(_ha)
+                except (TypeError, ValueError):
+                    pass
+            _agh = _lg.get("average_scored_home_team")
+            if _agh is not None:
+                try:
+                    league_avgs["avg_goals_home"] = float(_agh)
+                except (TypeError, ValueError):
+                    pass
+            _aga = _lg.get("average_scored_away_team")
+            if _aga is not None:
+                try:
+                    league_avgs["avg_goals_away"] = float(_aga)
+                except (TypeError, ValueError):
+                    pass
+            _cs = _lg.get("clean_sheets_percentage")
+            if _cs is not None:
+                try:
+                    league_avgs["clean_sheets_pct"] = float(_cs)
+                except (TypeError, ValueError):
+                    pass
+            _o25 = _lg.get("over_25_percentage")
+            if _o25 is not None:
+                try:
+                    league_avgs["over25_pct"] = float(_o25)
+                except (TypeError, ValueError):
+                    pass
+            _xg = _lg.get("xg_avg")
+            if _xg is not None:
+                try:
+                    league_avgs["xg_avg"] = float(_xg)
+                except (TypeError, ValueError):
+                    pass
         homeRating = team_rating(home)
         awayRating = team_rating(away)
         home_poss = team_possession(home)
@@ -229,22 +310,77 @@ def build_records_from_matches(
         away_cards_pm = team_cards_per_match(away)
         home_shots_on_target = team_shots_on_target(home)
         away_shots_on_target = team_shots_on_target(away)
+        home_shots_pm = team_shots_per_match(home)
+        away_shots_pm = team_shots_per_match(away)
         home_fouls_pm = team_fouls_per_match(home)
         away_fouls_pm = team_fouls_per_match(away)
-        # Fallback: calcular media de escanteios a partir dos jogos do DataFrame
-        if home_corners_pm is None and "home_team_corner_count" in matches.columns:
-            hm = matches[matches[home_col] == home] if home_col else matches.head(0)
-            vals = hm["home_team_corner_count"].dropna()
+
+        # --- New team-level stats (Team CSV: 186 + Pt.2: 442) ---
+        home_btts_pct_team = _team_stat(home, "btts_percentage")
+        away_btts_pct_team = _team_stat(away, "btts_percentage")
+        home_cs_pct = _team_stat(home, "clean_sheet_percentage")
+        away_cs_pct = _team_stat(away, "clean_sheet_percentage")
+        home_fts_pct = _team_stat(home, "fts_percentage")
+        away_fts_pct = _team_stat(away, "fts_percentage")
+        home_over25_pct = _team_stat(home, "over25_percentage")
+        away_over25_pct = _team_stat(away, "over25_percentage")
+        home_win_pct = _team_stat(home, "win_percentage")
+        away_win_pct = _team_stat(away, "win_percentage")
+        home_xg_for = _team_stat(home, "xg_for_avg")
+        away_xg_for = _team_stat(away, "xg_for_avg")
+        home_xg_against = _team_stat(home, "xg_against_avg")
+        away_xg_against = _team_stat(away, "xg_against_avg")
+        home_corners_against = _team_stat(home, "corners_against_per_match")
+        away_corners_against = _team_stat(away, "corners_against_per_match")
+        home_league_pos = _team_stat(home, "league_position")
+        away_league_pos = _team_stat(away, "league_position")
+        home_avg_total_goals = _team_stat(home, "average_total_goals_per_match")
+        away_avg_total_goals = _team_stat(away, "average_total_goals_per_match")
+
+        # --- Fallback cascade: team stats from match history ---
+        def _avg_from_history(col_name: str, team_name: str, is_home: bool) -> Optional[float]:
+            """Compute per-match average from completed match history."""
+            if col_name not in matches.columns:
+                return None
+            tcol = home_col if is_home else away_col
+            if not tcol:
+                return None
+            subset = matches[matches[tcol] == team_name]
+            vals = subset[col_name].dropna()
             vals = vals[vals >= 0]
-            if len(vals) > 0:
-                home_corners_pm = round(float(vals.mean()), 1)
-        if away_corners_pm is None and "away_team_corner_count" in matches.columns:
-            am = matches[matches[away_col] == away] if away_col else matches.head(0)
-            vals = am["away_team_corner_count"].dropna()
-            vals = vals[vals >= 0]
-            if len(vals) > 0:
-                away_corners_pm = round(float(vals.mean()), 1)
-        # Fallback final: usar media da liga / 2
+            return round(float(vals.mean()), 1) if len(vals) > 0 else None
+
+        # Corners fallback from match history
+        if home_corners_pm is None:
+            home_corners_pm = _avg_from_history("home_team_corner_count", home, True)
+        if away_corners_pm is None:
+            away_corners_pm = _avg_from_history("away_team_corner_count", away, False)
+
+        # Cards fallback from match history (yellow_cards mapped from API)
+        if home_cards_pm is None:
+            home_cards_pm = _avg_from_history("home_team_yellow_cards", home, True)
+        if away_cards_pm is None:
+            away_cards_pm = _avg_from_history("away_team_yellow_cards", away, False)
+
+        # Shots fallback from match history
+        if home_shots_pm is None:
+            home_shots_pm = _avg_from_history("home_team_shots", home, True)
+        if away_shots_pm is None:
+            away_shots_pm = _avg_from_history("away_team_shots", away, False)
+
+        # Shots on target fallback from match history
+        if home_shots_on_target is None:
+            home_shots_on_target = _avg_from_history("home_team_shots_on_target", home, True)
+        if away_shots_on_target is None:
+            away_shots_on_target = _avg_from_history("away_team_shots_on_target", away, False)
+
+        # Fouls fallback from match history
+        if home_fouls_pm is None:
+            home_fouls_pm = _avg_from_history("home_team_fouls", home, True)
+        if away_fouls_pm is None:
+            away_fouls_pm = _avg_from_history("away_team_fouls", away, False)
+
+        # --- Final fallback: league average / 2 ---
         if home_corners_pm is None and league_avgs["avg_corners"]:
             home_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
         if away_corners_pm is None and league_avgs["avg_corners"]:
@@ -253,6 +389,14 @@ def build_records_from_matches(
             home_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
         if away_cards_pm is None and league_avgs["avg_cards"]:
             away_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
+        if home_shots_pm is None and league_avgs["avg_shots"]:
+            home_shots_pm = round(league_avgs["avg_shots"] / 2, 1)
+        if away_shots_pm is None and league_avgs["avg_shots"]:
+            away_shots_pm = round(league_avgs["avg_shots"] / 2, 1)
+        if home_fouls_pm is None and league_avgs["avg_fouls"]:
+            home_fouls_pm = round(league_avgs["avg_fouls"] / 2, 1)
+        if away_fouls_pm is None and league_avgs["avg_fouls"]:
+            away_fouls_pm = round(league_avgs["avg_fouls"] / 2, 1)
         over15_pct = r.get("over_15_percentage_pre_match", None)
         over25_pct = r.get("over_25_percentage_pre_match", None)
         over35_pct = r.get("over_35_percentage_pre_match", None)
@@ -428,6 +572,8 @@ def build_records_from_matches(
         )
 
         # Apply lambda corrections from audit DB (Gap 2 — feedback loop)
+        _btts_multiplier = None
+        _corner_multiplier = None
         try:
             from backend.modeling.lambda_calculator import get_lambda_corrections, LAMBDA_MIN, LAMBDA_MAX
             _lc = get_lambda_corrections(league_id)
@@ -435,6 +581,13 @@ def build_records_from_matches(
                 lam_home = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_home * float(_corr.get("value", 1.0))))
             if _corr := _lc.get("lambda_away_multiplier"):
                 lam_away = max(LAMBDA_MIN, min(LAMBDA_MAX, lam_away * float(_corr.get("value", 1.0))))
+            # BTTS and corner multiplier corrections (Gap 2 extension)
+            if _corr := _lc.get("btts_multiplier"):
+                _btts_multiplier = float(_corr.get("value", 1.0))
+                logger.info(f"[Gap2] BTTS multiplier loaded: {_btts_multiplier:.3f}")
+            if _corr := _lc.get("corner_multiplier"):
+                _corner_multiplier = float(_corr.get("value", 1.0))
+                logger.info(f"[Gap2] Corner multiplier loaded: {_corner_multiplier:.3f}")
         except Exception as _e:
             logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {_e}")
 
@@ -450,6 +603,22 @@ def build_records_from_matches(
         over15 = 1.0 - poisson_cdf(1, lam_total)
         over25 = 1.0 - poisson_cdf(2, lam_total)
         over35 = 1.0 - poisson_cdf(3, lam_total)
+
+        # Apply BTTS audit correction multiplier (Gap 2 extension)
+        if _btts_multiplier is not None and btts_pct is not None:
+            btts_pct = min(100.0, max(0.0, float(btts_pct) * _btts_multiplier))
+        if _btts_multiplier is not None:
+            btts_poisson = min(1.0, max(0.0, btts_poisson * _btts_multiplier))
+
+        # Apply corner audit correction multiplier (Gap 2 extension)
+        if _corner_multiplier is not None:
+            if corners_o85_pct is not None:
+                corners_o85_pct = min(100.0, max(0.0, float(corners_o85_pct) * _corner_multiplier))
+            if corners_o95_pct is not None:
+                corners_o95_pct = min(100.0, max(0.0, float(corners_o95_pct) * _corner_multiplier))
+            if corners_o105_pct is not None:
+                corners_o105_pct = min(100.0, max(0.0, float(corners_o105_pct) * _corner_multiplier))
+
         data_source = "s3" if os.getenv("S3_BUCKET") else "local"
         total_gols = r.get("total_goal_count", None)
         try:
@@ -518,10 +687,42 @@ def build_records_from_matches(
                 "awayCardsPerMatch": away_cards_pm,
                 "homeShotsOnTarget": home_shots_on_target,
                 "awayShotsOnTarget": away_shots_on_target,
+                "homeShotsPerMatch": home_shots_pm,
+                "awayShotsPerMatch": away_shots_pm,
                 "homeFoulsPerMatch": home_fouls_pm,
                 "awayFoulsPerMatch": away_fouls_pm,
                 "leagueAvgCorners": league_avgs["avg_corners"],
                 "leagueAvgCards": league_avgs["avg_cards"],
+                "leagueAvgFouls": league_avgs["avg_fouls"],
+                "leagueAvgShots": league_avgs["avg_shots"],
+                # League extended stats
+                "leagueHomeAdvantage": league_avgs.get("home_advantage_pct"),
+                "leagueAvgGoalsHome": league_avgs.get("avg_goals_home"),
+                "leagueAvgGoalsAway": league_avgs.get("avg_goals_away"),
+                "leagueCleanSheetsPct": league_avgs.get("clean_sheets_pct"),
+                "leagueOver25Pct": league_avgs.get("over25_pct"),
+                "leagueXgAvg": league_avgs.get("xg_avg"),
+                # Team-level advanced stats (Team CSV 186 + Pt.2 442)
+                "homeBttsPercentage": home_btts_pct_team,
+                "awayBttsPercentage": away_btts_pct_team,
+                "homeCleanSheetPct": home_cs_pct,
+                "awayCleanSheetPct": away_cs_pct,
+                "homeFtsPercentage": home_fts_pct,
+                "awayFtsPercentage": away_fts_pct,
+                "homeOver25Percentage": home_over25_pct,
+                "awayOver25Percentage": away_over25_pct,
+                "homeWinPercentage": home_win_pct,
+                "awayWinPercentage": away_win_pct,
+                "homeXgForAvg": home_xg_for,
+                "awayXgForAvg": away_xg_for,
+                "homeXgAgainstAvg": home_xg_against,
+                "awayXgAgainstAvg": away_xg_against,
+                "homeCornersAgainstPerMatch": home_corners_against,
+                "awayCornersAgainstPerMatch": away_corners_against,
+                "homeLeaguePosition": home_league_pos,
+                "awayLeaguePosition": away_league_pos,
+                "homeAvgTotalGoals": home_avg_total_goals,
+                "awayAvgTotalGoals": away_avg_total_goals,
                 # Corner predictions (from FootyStats pre-match potentials)
                 "cornersPotential": corners_potential,
                 "cornerOver85Prob": corners_o85_pct,

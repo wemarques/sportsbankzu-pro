@@ -17,7 +17,7 @@ DEFAULT_PG_CONFIG = {
     "port": int(os.getenv("PGPORT", "5432")),
 }
 
-APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V3.1")
+APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V3.2")
 
 audit_logger = logging.getLogger("sportsbankzu.audit")
 audit_logger.setLevel(logging.INFO)
@@ -599,6 +599,10 @@ ADJUSTMENT_LIMITS = {
     "LAMBDA_WEIGHT": {"min": 0.10, "max": 0.90, "max_delta": 0.15},
     "MARKET_FILTER": {"min": 0.0, "max": 1.0, "max_delta": 0.20},
     "AI_PROMPT": {"min": 0.0, "max": 1.0, "max_delta": 0.30},
+    "BTTS_THRESHOLD": {"min": 0.40, "max": 0.95, "max_delta": 0.12},
+    "CORNER_THRESHOLD": {"min": 0.30, "max": 0.95, "max_delta": 0.12},
+    "CORNER_MULTIPLIER": {"min": 0.70, "max": 1.40, "max_delta": 0.15},
+    "BTTS_MULTIPLIER": {"min": 0.70, "max": 1.40, "max_delta": 0.15},
 }
 
 

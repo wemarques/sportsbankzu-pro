@@ -54,14 +54,68 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                             if isinstance(season_data, dict):
                                 league_season_data = season_data
 
+                        # Busca dados de times com stats (cards, fouls, shots, etc.)
+                        try:
+                            teams_data = footstats.get_league_teams(season_id)
+                            if teams_data.get("success"):
+                                raw_teams = teams_data.get("data", [])
+                                if raw_teams:
+                                    teams_df = DataMapper.teams_to_df(raw_teams)
+                                    logger.info(f"[fixtures] {lid}: loaded {len(teams_df)} teams with stats")
+                        except Exception as e:
+                            logger.warning(f"[fixtures] {lid}: failed to load league-teams: {e}")
+
                         # Constrói league_df a partir de season stats para enriquecer cálculos
+                        # Baseado no League CSV - 49 Data Columns
                         league_df = None
                         if league_season_data:
                             league_df = pd.DataFrame([{
                                 "league_name": league_config.get("name", lid),
+                                # Core goals
                                 "average_goals_per_match": league_season_data.get("seasonAVG_overall", 2.5),
+                                "average_scored_home_team": league_season_data.get("seasonHomeAVG_overall",
+                                    league_season_data.get("averageScoredHomeTeam", None)),
+                                "average_scored_away_team": league_season_data.get("seasonAwayAVG_overall",
+                                    league_season_data.get("averageScoredAwayTeam", None)),
+                                # Corners
                                 "average_corners_per_match": league_season_data.get("cornersAVG_overall", 10.0),
+                                "average_corners_per_match_home_team": league_season_data.get("cornersAVG_home",
+                                    league_season_data.get("averageCornersPerMatchHomeTeam", None)),
+                                # Cards
                                 "average_cards_per_match": league_season_data.get("cardsAVG_overall", 4.0),
+                                "average_cards_per_match_home_team": league_season_data.get("cardsAVG_home",
+                                    league_season_data.get("averageCardsPerMatchHomeTeam", None)),
+                                "average_cards_per_match_away_team": league_season_data.get("cardsAVG_away",
+                                    league_season_data.get("averageCardsPerMatchAwayTeam", None)),
+                                # Fouls & Shots
+                                "average_fouls_per_match": league_season_data.get("foulsAVG_overall", 22.0),
+                                "average_shots_per_match": league_season_data.get("shotsAVG_overall", 24.0),
+                                # Home advantage
+                                "home_advantage_percentage": league_season_data.get("homeAdvantagePercentage",
+                                    league_season_data.get("home_advantage_percentage", None)),
+                                "home_scored_advantage_percentage": league_season_data.get("homeScoredAdvantagePercentage", None),
+                                "home_defence_advantage_percentage": league_season_data.get("homeDefenceAdvantagePercentage", None),
+                                # Clean sheets
+                                "clean_sheets_percentage": league_season_data.get("cleanSheetsPercentage",
+                                    league_season_data.get("clean_sheets_percentage", None)),
+                                # Over/Under percentages (league-level benchmarks)
+                                "over_05_percentage": league_season_data.get("over05Percentage", None),
+                                "over_15_percentage": league_season_data.get("over15Percentage", None),
+                                "over_25_percentage": league_season_data.get("over25Percentage", None),
+                                "over_35_percentage": league_season_data.get("over35Percentage", None),
+                                "over_45_percentage": league_season_data.get("over45Percentage", None),
+                                "under_25_percentage": league_season_data.get("under25Percentage", None),
+                                # xG
+                                "xg_avg": league_season_data.get("xgAVG",
+                                    league_season_data.get("xg_avg", None)),
+                                # Prediction risk
+                                "prediction_risk": league_season_data.get("predictionRisk",
+                                    league_season_data.get("prediction_risk", None)),
+                                # Progress
+                                "matches_completed": league_season_data.get("matchesCompleted",
+                                    league_season_data.get("matches_completed", None)),
+                                "total_matches": league_season_data.get("totalMatches",
+                                    league_season_data.get("total_matches", None)),
                             }])
 
                         # Constrói registros usando o serviço existente

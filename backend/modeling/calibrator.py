@@ -44,6 +44,9 @@ CALIBRATED_MARKETS = [
     "1X2_home",
     "1X2_draw",
     "1X2_away",
+    "Escanteios Over 8.5",
+    "Escanteios Over 9.5",
+    "Escanteios Over 10.5",
 ]
 
 # Approximate season-start months per league (Aug for most European, Feb for SA)
@@ -292,6 +295,9 @@ def calibrate_match_stats(
         "under15Prob": "Under 1.5",
         "under35Prob": "Under 3.5",
         "under45Prob": "Under 4.5",
+        "cornerOver85Prob": "Escanteios Over 8.5",
+        "cornerOver95Prob": "Escanteios Over 9.5",
+        "cornerOver105Prob": "Escanteios Over 10.5",
     }
 
     for stat_key, market in _mapping.items():

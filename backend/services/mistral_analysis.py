@@ -168,6 +168,16 @@ class MistralAnalysisService:
             match_stats.get("prob_btts") or match_stats.get("bttsProb")
         )
 
+        # Team comparison stats
+        def _stat(key: str) -> str:
+            val = match_stats.get(key)
+            if val is None:
+                return "N/A"
+            try:
+                return f"{float(val):.1f}"
+            except (TypeError, ValueError):
+                return "N/A"
+
         prompt = f"""Voce e um analista profissional de apostas esportivas especializado em futebol.
 
 JOGO: {home_team} vs {away_team}
@@ -183,6 +193,28 @@ PROGNOSTICOS (valores JA em porcentagem 0-100 — use EXATAMENTE como mostrado, 
 LAMBDAS (taxa media de gols esperados — NAO sao probabilidades, sao contagens):
 - Lambda Casa: {match_stats.get('lambda_home') or match_stats.get('lambdaHome', 'N/A')} gols
 - Lambda Fora: {match_stats.get('lambda_away') or match_stats.get('lambdaAway', 'N/A')} gols
+
+COMPARATIVO TIMES (medias por jogo na temporada):
+- Posse de bola: {home_team} {_stat('homePossession')}% vs {away_team} {_stat('awayPossession')}%
+- Escanteios/jogo: {home_team} {_stat('homeCornersPerMatch')} vs {away_team} {_stat('awayCornersPerMatch')}
+- Escanteios sofridos/jogo: {home_team} {_stat('homeCornersAgainstPerMatch')} vs {away_team} {_stat('awayCornersAgainstPerMatch')}
+- Cartoes/jogo: {home_team} {_stat('homeCardsPerMatch')} vs {away_team} {_stat('awayCardsPerMatch')}
+- Finalizacoes/jogo: {home_team} {_stat('homeShotsPerMatch')} vs {away_team} {_stat('awayShotsPerMatch')}
+- Chutes ao gol/jogo: {home_team} {_stat('homeShotsOnTarget')} vs {away_team} {_stat('awayShotsOnTarget')}
+- Faltas/jogo: {home_team} {_stat('homeFoulsPerMatch')} vs {away_team} {_stat('awayFoulsPerMatch')}
+
+PERFIL DE GOLS (medias na temporada):
+- xG medio/jogo: {home_team} {_stat('homeXgForAvg')} vs {away_team} {_stat('awayXgForAvg')}
+- xG sofrido/jogo: {home_team} {_stat('homeXgAgainstAvg')} vs {away_team} {_stat('awayXgAgainstAvg')}
+- Media gols total/jogo: {home_team} {_stat('homeAvgTotalGoals')} vs {away_team} {_stat('awayAvgTotalGoals')}
+- Over 2.5 %: {home_team} {_stat('homeOver25Percentage')}% vs {away_team} {_stat('awayOver25Percentage')}%
+- BTTS %: {home_team} {_stat('homeBttsPercentage')}% vs {away_team} {_stat('awayBttsPercentage')}%
+- Clean Sheet %: {home_team} {_stat('homeCleanSheetPct')}% vs {away_team} {_stat('awayCleanSheetPct')}%
+- Faltou Marcar (FTS) %: {home_team} {_stat('homeFtsPercentage')}% vs {away_team} {_stat('awayFtsPercentage')}%
+
+CLASSIFICACAO E DESEMPENHO:
+- Posicao na liga: {home_team} {_stat('homeLeaguePosition')}o vs {away_team} {_stat('awayLeaguePosition')}o
+- % Vitoria na temporada: {home_team} {_stat('homeWinPercentage')}% vs {away_team} {_stat('awayWinPercentage')}%
 
 ODDS DO MERCADO:
 - Casa (1): {odds.get('home', 'N/A')}
@@ -230,6 +262,13 @@ IMPORTANTE:
 - Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
 - Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
 - Exemplo correto: "probabilidade de vitoria de 85.5%". Exemplo INCORRETO: "8547.4%" ou "Casa (1.177) vs Fora (0.996)"
+- Use os dados do COMPARATIVO TIMES e PERFIL DE GOLS para fundamentar sua analise:
+  * xG alto + clean sheet baixo = time ofensivo mas vulneravel defensivamente
+  * BTTS% alto de ambos = forte indicador de ambas marcam
+  * FTS% alto = time nao marca com frequencia, considerar BTTS Nao
+  * Over 2.5% dos dois times alto = tendencia a jogos com muitos gols
+  * Escanteios contra/jogo alto do adversario = time pressiona muito, gera mais corners
+  * Posicao na liga indica forca relativa dos times
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica

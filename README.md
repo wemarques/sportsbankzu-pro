@@ -1,4 +1,4 @@
-# SportsBank Pro V3.1
+# SportsBank Pro V3.2
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
 
@@ -31,6 +31,9 @@ O **SportsBank Pro** é um sistema completo de análise e prognósticos esportiv
 - Auditoria continua com feedback loop completo (V3.1)
 - Calibracao de probabilidades via Isotonic Regression (V3.1)
 - Thresholds dinamicos de mercado ajustados pela auditoria (V3.1)
+- Feedback loop para BTTS e escanteios com calibracao e correcoes automaticas (V3.2)
+- Comparativo de times completo: cartoes, faltas, finalizacoes, chutes ao gol, posse (V3.2)
+- Analise IA enriquecida com dados do comparativo de times (V3.2)
 - Geracao de relatorios automatizada
 - Exportacao de dados (CSV, JSON, TXT)
 - Filtros por liga e periodo
@@ -538,6 +541,23 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.2 — 28 de Fevereiro de 2026 (Comparativo Times + Feedback Loop BTTS/Escanteios)
+
+- **feat(data):** Novos campos extraídos da API FootyStats: `yellow_cards`, `red_cards`, `fouls`, `offsides`, `shots_off_target` (nível de partida) — alimentam cálculos e comparativos
+- **feat(api):** Novo endpoint `league-teams` com `&include=stats` busca dados agregados por time (cartões, faltas, finalizações, chutes ao gol, posse, escanteios) — corrige gap onde `teams_df` era sempre `None` no path de API
+- **feat(mapper):** `map_team_to_internal()` reescrito com mapeamento completo dos campos reais da API FootyStats (`cardsAVG_overall`, `foulsAVG_overall`, `shotsAVG_overall`, `shotsOnTargetAVG_overall`, `cornersAVG_overall`, `possessionAVG_overall`, etc.)
+- **feat(stats):** Novo helper `team_shots_per_match()` e cascata de fallbacks: team stats → histórico de partidas → média da liga / 2 (para cartões, faltas, finalizações, chutes ao gol, escanteios)
+- **feat(stats):** Médias de liga para faltas (`foulsAVG_overall`) e finalizações (`shotsAVG_overall`) adicionadas a `league_df`
+- **feat(ai):** Prompt da Mistral enriquecido com seção COMPARATIVO TIMES: posse, escanteios/jogo, cartões/jogo, finalizações/jogo, chutes ao gol/jogo, faltas/jogo — melhora fundamentação da análise
+- **feat(frontend):** Aba "Finalizações" agora exibe dados reais (finalizações por jogo) com média da liga; aba "Faltas" agora exibe média da liga; tipos TypeScript atualizados
+- **fix(audit):** Feedback loop (Gap 2) agora aplica correções `btts_multiplier` e `corner_multiplier` do audit DB às probabilidades — anteriormente só aplicava `lambda_home/away_multiplier`
+- **fix(calibrator):** Mercados `Escanteios Over 8.5/9.5/10.5` adicionados a `CALIBRATED_MARKETS` e ao mapping `calibrate_match_stats`, permitindo calibração isotônica para escanteios
+- **fix(audit):** Batch audit agora registra picks individuais por mercado via `log_pick()`, alimentando o calibrador com dados de Brier Score per-market (BTTS, corners, etc.)
+- **fix(audit):** `_evaluate_pick_deterministic` agora avalia corretamente mercados de escanteios contra `total_corners` do jogo — anteriormente retornava sempre `False` (100% erro)
+- **fix(market):** Thresholds de escanteios agora usam `_get_dynamic_thresholds()` do audit DB com fallback para defaults, permitindo ajuste automático via auditoria
+- **fix(audit):** Novos tipos de correção `BTTS_THRESHOLD`, `BTTS_MULTIPLIER`, `CORNER_THRESHOLD`, `CORNER_MULTIPLIER` adicionados a `ADJUSTMENT_LIMITS`, permitindo que Mistral sugira e aplique correções para esses mercados
+- **fix(ai):** Prompt do Mistral atualizado para incluir os novos tipos de correção no schema de `recommended_corrections`
 
 ### 28 de Fevereiro de 2026 — Fix: Servidor Indisponível (Fan-out + Retry)
 

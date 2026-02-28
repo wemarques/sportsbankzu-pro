@@ -150,10 +150,40 @@ export interface MatchDetailData {
     awayCardsPerMatch?: number;
     homeShotsOnTarget?: number;
     awayShotsOnTarget?: number;
+    homeShotsPerMatch?: number;
+    awayShotsPerMatch?: number;
     homeFoulsPerMatch?: number;
     awayFoulsPerMatch?: number;
     leagueAvgCorners?: number;
     leagueAvgCards?: number;
+    leagueAvgFouls?: number;
+    leagueAvgShots?: number;
+    // League extended
+    leagueHomeAdvantage?: number;
+    leagueCleanSheetsPct?: number;
+    leagueOver25Pct?: number;
+    leagueXgAvg?: number;
+    // Team advanced stats
+    homeBttsPercentage?: number;
+    awayBttsPercentage?: number;
+    homeCleanSheetPct?: number;
+    awayCleanSheetPct?: number;
+    homeFtsPercentage?: number;
+    awayFtsPercentage?: number;
+    homeOver25Percentage?: number;
+    awayOver25Percentage?: number;
+    homeWinPercentage?: number;
+    awayWinPercentage?: number;
+    homeXgForAvg?: number;
+    awayXgForAvg?: number;
+    homeXgAgainstAvg?: number;
+    awayXgAgainstAvg?: number;
+    homeCornersAgainstPerMatch?: number;
+    awayCornersAgainstPerMatch?: number;
+    homeLeaguePosition?: number;
+    awayLeaguePosition?: number;
+    homeAvgTotalGoals?: number;
+    awayAvgTotalGoals?: number;
     cornersPotential?: number;
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
@@ -705,13 +735,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 {isComparativeExpanded && (
                   <div className="mdc-comparative__content">
                     <div className="mdc-comparative__tabs">
-                      {["gols", "btts", "escanteios", "chutes", "finalizacoes", "faltas", "cartoes"].map((tab) => (
+                      {["gols", "perfil", "btts", "escanteios", "chutes", "finalizacoes", "faltas", "cartoes"].map((tab) => (
                         <button
                           key={tab}
                           className={`mdc-comparative__tab ${comparativeTab === tab ? "mdc-comparative__tab--active" : ""}`}
                           onClick={() => setComparativeTab(tab)}
                         >
-                          {tab === "gols" ? "Gols" : tab === "btts" ? "BTTS" : tab === "escanteios" ? "Escanteios" : tab === "chutes" ? "Chutes ao Gol" : tab === "finalizacoes" ? "Finalizacoes" : tab === "faltas" ? "Faltas" : "Cartoes"}
+                          {tab === "gols" ? "Gols" : tab === "perfil" ? "Perfil" : tab === "btts" ? "BTTS" : tab === "escanteios" ? "Escanteios" : tab === "chutes" ? "Chutes ao Gol" : tab === "finalizacoes" ? "Finalizacoes" : tab === "faltas" ? "Faltas" : "Cartoes"}
                         </button>
                       ))}
                     </div>
@@ -724,6 +754,64 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             <span>Media de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
                             <span>Over 2.5: {formatProbValue(match.matchStats.over25Prob)}</span>
                           </div>
+                        </div>
+                      )}
+                      {comparativeTab === "perfil" && match.matchStats && (
+                        <div className="mdc-comparative-data">
+                          {(match.matchStats.homeXgForAvg || match.matchStats.awayXgForAvg) && (
+                            <ComparativeBar label="xG Medio por Jogo" homeVal={match.matchStats.homeXgForAvg ?? 0} awayVal={match.matchStats.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          )}
+                          {(match.matchStats.homeXgAgainstAvg || match.matchStats.awayXgAgainstAvg) && (
+                            <ComparativeBar label="xG Sofrido por Jogo" homeVal={match.matchStats.homeXgAgainstAvg ?? 0} awayVal={match.matchStats.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          )}
+                          {(match.matchStats.homeAvgTotalGoals || match.matchStats.awayAvgTotalGoals) && (
+                            <ComparativeBar label="Media Gols Total/Jogo" homeVal={match.matchStats.homeAvgTotalGoals ?? 0} awayVal={match.matchStats.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          )}
+                          <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
+                            {match.matchStats.homeWinPercentage != null && (
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ color: "#888", marginBottom: 2 }}>Vitorias %</div>
+                                <span style={{ color: "#4fc3f7" }}>{match.matchStats.homeWinPercentage?.toFixed(0)}%</span>
+                                <span style={{ color: "#666" }}> vs </span>
+                                <span style={{ color: "#ff8a65" }}>{match.matchStats.awayWinPercentage?.toFixed(0) ?? "-"}%</span>
+                              </div>
+                            )}
+                            {match.matchStats.homeOver25Percentage != null && (
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ color: "#888", marginBottom: 2 }}>Over 2.5 %</div>
+                                <span style={{ color: "#4fc3f7" }}>{match.matchStats.homeOver25Percentage?.toFixed(0)}%</span>
+                                <span style={{ color: "#666" }}> vs </span>
+                                <span style={{ color: "#ff8a65" }}>{match.matchStats.awayOver25Percentage?.toFixed(0) ?? "-"}%</span>
+                              </div>
+                            )}
+                            {match.matchStats.homeCleanSheetPct != null && (
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ color: "#888", marginBottom: 2 }}>Clean Sheet %</div>
+                                <span style={{ color: "#4fc3f7" }}>{match.matchStats.homeCleanSheetPct?.toFixed(0)}%</span>
+                                <span style={{ color: "#666" }}> vs </span>
+                                <span style={{ color: "#ff8a65" }}>{match.matchStats.awayCleanSheetPct?.toFixed(0) ?? "-"}%</span>
+                              </div>
+                            )}
+                            {match.matchStats.homeBttsPercentage != null && (
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ color: "#888", marginBottom: 2 }}>BTTS %</div>
+                                <span style={{ color: "#4fc3f7" }}>{match.matchStats.homeBttsPercentage?.toFixed(0)}%</span>
+                                <span style={{ color: "#666" }}> vs </span>
+                                <span style={{ color: "#ff8a65" }}>{match.matchStats.awayBttsPercentage?.toFixed(0) ?? "-"}%</span>
+                              </div>
+                            )}
+                            {match.matchStats.homeLeaguePosition != null && (
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ color: "#888", marginBottom: 2 }}>Posicao Liga</div>
+                                <span style={{ color: "#4fc3f7" }}>{match.matchStats.homeLeaguePosition?.toFixed(0)}o</span>
+                                <span style={{ color: "#666" }}> vs </span>
+                                <span style={{ color: "#ff8a65" }}>{match.matchStats.awayLeaguePosition?.toFixed(0) ?? "-"}o</span>
+                              </div>
+                            )}
+                          </div>
+                          {(!match.matchStats.homeXgForAvg && !match.matchStats.homeWinPercentage && !match.matchStats.homeLeaguePosition) && (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de perfil nao disponiveis para este jogo.</div>
+                          )}
                         </div>
                       )}
                       {comparativeTab === "btts" && match.matchStats && (
@@ -799,19 +887,33 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {(match.matchStats.homeShotsOnTarget || match.matchStats.awayShotsOnTarget) ? (
                             <ComparativeBar label="Chutes ao Gol por Jogo" homeVal={match.matchStats.homeShotsOnTarget ?? 0} awayVal={match.matchStats.awayShotsOnTarget ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           ) : (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes ao gol nao disponiveis para este jogo.</div>
                           )}
                         </div>
                       )}
                       {comparativeTab === "finalizacoes" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Finalizacoes totais nao disponiveis na fonte de dados atual.</div>
+                          {(match.matchStats.homeShotsPerMatch || match.matchStats.awayShotsPerMatch) ? (
+                            <>
+                              <ComparativeBar label="Finalizacoes por Jogo" homeVal={match.matchStats.homeShotsPerMatch ?? 0} awayVal={match.matchStats.awayShotsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgShots?.toFixed(1) ?? "-"}</span></span>
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de finalizacoes nao disponiveis para este jogo.</div>
+                          )}
                         </div>
                       )}
                       {comparativeTab === "faltas" && match.matchStats && (
                         <div className="mdc-comparative-data">
                           {(match.matchStats.homeFoulsPerMatch || match.matchStats.awayFoulsPerMatch) ? (
-                            <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                            <>
+                              <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
+                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgFouls?.toFixed(1) ?? "-"}</span></span>
+                              </div>
+                            </>
                           ) : (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de faltas nao disponiveis para este jogo.</div>
                           )}
