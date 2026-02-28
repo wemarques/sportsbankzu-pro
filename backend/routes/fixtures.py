@@ -78,9 +78,40 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
                                 raw_teams = teams_data.get("data", [])
                                 if raw_teams:
                                     teams_df = DataMapper.teams_to_df(raw_teams)
-                                    logger.info(f"[fixtures] {lid}: loaded {len(teams_df)} teams with stats")
+                                    logger.info(f"[fixtures] {lid}: loaded {len(teams_df)} teams with stats (cols: {list(teams_df.columns)[:10]})")
+                                else:
+                                    logger.warning(f"[fixtures] {lid}: league-teams success but empty data")
+                            else:
+                                logger.warning(f"[fixtures] {lid}: league-teams success=False: {teams_data.get('message','')}")
                         except Exception as e:
-                            logger.warning(f"[fixtures] {lid}: failed to load league-teams: {e}")
+                            logger.warning(f"[fixtures] {lid}: failed to load league-teams: {e}", exc_info=True)
+
+                        # Fallback: se teams_df falhou, tenta league-tables para posição e win%
+                        if teams_df is None:
+                            try:
+                                tables_data = footstats.get_league_tables(season_id)
+                                if tables_data.get("success"):
+                                    raw_tables = tables_data.get("data", [])
+                                    if raw_tables:
+                                        rows = []
+                                        for pos, t in enumerate(raw_tables, 1):
+                                            name = t.get("team_name") or t.get("name") or t.get("cleanName", "")
+                                            played = int(t.get("matchesPlayed", 0) or 0)
+                                            wins = int(t.get("seasonWins_overall", t.get("wins", 0)) or 0)
+                                            cs = int(t.get("seasonCS_overall", t.get("cleanSheets", 0)) or 0)
+                                            btts = int(t.get("seasonBTTS_overall", t.get("btts", 0)) or 0)
+                                            rows.append({
+                                                "team_name": name,
+                                                "league_position": pos,
+                                                "win_percentage": round(wins / played * 100, 1) if played > 0 else None,
+                                                "clean_sheet_percentage": round(cs / played * 100, 1) if played > 0 else None,
+                                                "btts_percentage": round(btts / played * 100, 1) if played > 0 else None,
+                                            })
+                                        if rows:
+                                            teams_df = pd.DataFrame(rows)
+                                            logger.info(f"[fixtures] {lid}: fallback league-tables loaded {len(teams_df)} teams")
+                            except Exception as e:
+                                logger.warning(f"[fixtures] {lid}: fallback league-tables also failed: {e}")
 
                         # Constrói league_df a partir de season stats para enriquecer cálculos
                         # Baseado no League CSV - 49 Data Columns

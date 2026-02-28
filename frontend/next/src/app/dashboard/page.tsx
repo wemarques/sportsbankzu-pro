@@ -121,7 +121,7 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
     </div>
   );
 }
-const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBank Pro.";
+const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBankZU Pro.";
 
 type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas";
 type ShareFeedbackTone = "success" | "error" | "info";
@@ -648,26 +648,26 @@ export default function Dashboard() {
         canvas.toBlob((b) => resolve(b), "image/png", 0.95)
       );
       if (!blob) throw new Error("Falha ao gerar imagem");
-      const file = new File([blob], "sportsbank-pro-dashboard.png", { type: "image/png" });
+      const file = new File([blob], "sportsbankzu-pro-dashboard.png", { type: "image/png" });
       const url = typeof window !== "undefined" ? window.location.href : "";
-      const msg = encodeURIComponent(`Confira o dashboard SportsBank Pro: ${url}`);
+      const msg = encodeURIComponent(`Confira o dashboard SportsBankZU Pro: ${url}`);
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({
-          title: "SportsBank Pro",
+          title: "SportsBankZU Pro",
           text: `Confira o dashboard: ${url}`,
           files: [file],
         });
       } else {
         const a = document.createElement("a");
         a.href = canvas.toDataURL("image/png");
-        a.download = "sportsbank-pro-dashboard.png";
+        a.download = "sportsbankzu-pro-dashboard.png";
         a.click();
         window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener");
       }
     } catch (err) {
       console.error("Share error:", err);
       const url = typeof window !== "undefined" ? window.location.href : "";
-      window.open(`https://wa.me/?text=${encodeURIComponent(`Confira o SportsBank Pro: ${url}`)}`, "_blank", "noopener");
+      window.open(`https://wa.me/?text=${encodeURIComponent(`Confira o SportsBankZU Pro: ${url}`)}`, "_blank", "noopener");
     } finally {
       setShareLoading(false);
     }
@@ -1064,7 +1064,7 @@ export default function Dashboard() {
         && navigator.canShare({ files: [file] })
       ) {
         await navigator.share({
-          title: "SportsBank Pro",
+          title: "SportsBankZU Pro",
           text: SHARE_TEXT,
           files: [file],
         });
@@ -1101,7 +1101,7 @@ export default function Dashboard() {
       {/* TOP NAV */}
       <nav className="st-nav">
         <div className="st-nav__logo">
-          sports<span>bank</span>.
+          sports<span>bankzu</span>
         </div>
         <div className="st-nav__links">
           <button className={`st-nav__link ${navView === "campeonatos" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "campeonatos" ? "matches" : "campeonatos")}>

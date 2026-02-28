@@ -29,13 +29,13 @@ def _get_dynamic_thresholds(market: str) -> dict:
         logger.debug(f"[Gap4] Could not read dynamic threshold for {market}: {_e}")
 
     _defaults: dict = {
-        "BTTS":                  {"SAFE": 0.75, "NEUTRO": 0.68},
+        "BTTS":                  {"SAFE": 0.78, "NEUTRO": 0.72},
         "Over/Under":            {"SAFE": 0.72, "NEUTRO": 0.65},
         "Double Chance":         {"SAFE": 0.82, "NEUTRO": 0.75},
         "1X2":                   {"SAFE": 0.60, "NEUTRO": 0.50},
-        "Escanteios Over 8.5":   {"SAFE": 0.80, "NEUTRO": 0.72},
-        "Escanteios Over 9.5":   {"SAFE": 0.75, "NEUTRO": 0.65},
-        "Escanteios Over 10.5":  {"SAFE": 0.68, "NEUTRO": 0.58},
+        "Escanteios Over 8.5":   {"SAFE": 0.88, "NEUTRO": 0.80},
+        "Escanteios Over 9.5":   {"SAFE": 0.85, "NEUTRO": 0.78},
+        "Escanteios Over 10.5":  {"SAFE": 0.80, "NEUTRO": 0.72},
     }
     return _defaults.get(market, {"SAFE": 0.60, "NEUTRO": 0.50})
 

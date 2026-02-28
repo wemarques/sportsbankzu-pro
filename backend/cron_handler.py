@@ -132,9 +132,13 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         home_corners = stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
         away_corners = stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
         try:
-            total_corners = int(home_corners) + int(away_corners)
+            home_corners = int(home_corners) if home_corners and int(home_corners) >= 0 else 0
+            away_corners = int(away_corners) if away_corners and int(away_corners) >= 0 else 0
+            total_corners = home_corners + away_corners
         except (ValueError, TypeError):
             total_corners = 0
+        if any("ESCANTEIO" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
+            logger.info(f"[audit] {home} vs {away}: corners home={home_corners} away={away_corners} total={total_corners}")
 
         actual_result = {
             "home_goals": home_goals,
