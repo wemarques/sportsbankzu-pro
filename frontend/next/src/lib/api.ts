@@ -14,14 +14,16 @@ export interface MatchesResponse {
   _latencyMs?: number;
 }
 
-export async function getMatchesByLeague(leagues: string, date?: string): Promise<MatchesResponse> {
+/**
+ * Fetch matches for a single batch of leagues (internal helper).
+ */
+async function _fetchMatchesBatch(leagues: string, date?: string): Promise<MatchesResponse> {
   try {
     const params = new URLSearchParams({ leagues });
     if (date) params.append("date", date);
     const res = await fetch(`/api/matches/fetch?${params.toString()}`, { cache: "no-store" });
     const data = await res.json();
 
-    // Proxy returned data (even if status is 503, parse the JSON for error info)
     return {
       matches: data.matches ?? [],
       _dataSource: data._dataSource,
@@ -30,7 +32,7 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
       _latencyMs: data._latencyMs,
     };
   } catch (error) {
-    console.error("Erro na API getMatchesByLeague:", error);
+    console.error("Erro na API _fetchMatchesBatch:", error);
     return {
       matches: [],
       _dataSource: "client-error",
@@ -41,6 +43,116 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
       },
     };
   }
+}
+
+/** Max leagues per batch — keeps each Lambda call under timeout */
+const LEAGUES_PER_BATCH = 3;
+
+/**
+ * Max concurrent batch requests — avoids overwhelming Lambda with
+ * too many simultaneous cold starts (8 at once → throttling).
+ * With 4 concurrent, the second wave reuses warm Lambda instances.
+ */
+const MAX_CONCURRENT = 4;
+
+/**
+ * Run async tasks with a concurrency limit (semaphore pattern).
+ * Returns PromiseSettledResult[] in the same order as input.
+ */
+async function parallelWithLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let nextIdx = 0;
+
+  async function worker() {
+    while (nextIdx < tasks.length) {
+      const i = nextIdx++;
+      try {
+        results[i] = { status: "fulfilled", value: await tasks[i]() };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, () => worker()),
+  );
+  return results;
+}
+
+/**
+ * Fan-out fetch: splits leagues into small parallel batches so each
+ * Lambda invocation handles only a few leagues and responds within timeout.
+ * Uses concurrency limiting to avoid overwhelming Lambda with cold starts.
+ * Merges results client-side into a single MatchesResponse.
+ */
+export async function getMatchesByLeague(leagues: string, date?: string): Promise<MatchesResponse> {
+  const leagueIds = leagues.split(",").map((s) => s.trim()).filter(Boolean);
+
+  // Single or few leagues: direct call (no fan-out overhead)
+  if (leagueIds.length <= LEAGUES_PER_BATCH) {
+    return _fetchMatchesBatch(leagues, date);
+  }
+
+  // Split into batches and fetch in parallel (concurrency-limited)
+  const batches: string[][] = [];
+  for (let i = 0; i < leagueIds.length; i += LEAGUES_PER_BATCH) {
+    batches.push(leagueIds.slice(i, i + LEAGUES_PER_BATCH));
+  }
+
+  console.log(`[api] Fan-out: ${leagueIds.length} leagues → ${batches.length} batches of ≤${LEAGUES_PER_BATCH} (max ${MAX_CONCURRENT} concurrent)`);
+
+  const results = await parallelWithLimit(
+    batches.map((batch) => () => _fetchMatchesBatch(batch.join(","), date)),
+    MAX_CONCURRENT,
+  );
+
+  // Merge results
+  const allMatches: unknown[] = [];
+  let lastError: MatchesResponse["_error"] | undefined;
+  let hasAnySuccess = false;
+  let isMockData = false;
+  let totalLatency = 0;
+  let failedCount = 0;
+
+  for (const r of results) {
+    if (r.status === "rejected") {
+      lastError = { kind: "NETWORK_ERROR", message: "Falha em uma das requisicoes paralelas." };
+      failedCount++;
+      continue;
+    }
+    const res = r.value;
+    if (res.matches.length > 0) {
+      allMatches.push(...res.matches);
+      hasAnySuccess = true;
+    }
+    if (res._isMockData) isMockData = true;
+    if (res._error) {
+      lastError = res._error;
+      failedCount++;
+    }
+    if (res._latencyMs) {
+      totalLatency = Math.max(totalLatency, res._latencyMs);
+    }
+    if (res._dataSource === "backend" || res._dataSource === "backend-empty") {
+      hasAnySuccess = true;
+    }
+  }
+
+  // Propagate retryable error kind even on partial success so dashboard
+  // can decide to retry. Only suppress error if majority succeeded.
+  const shouldSurfaceError = !hasAnySuccess || failedCount > batches.length / 2;
+
+  return {
+    matches: allMatches,
+    _dataSource: hasAnySuccess ? "backend" : lastError ? "error" : "backend-empty",
+    _isMockData: isMockData,
+    _error: shouldSurfaceError ? lastError : undefined,
+    _latencyMs: totalLatency,
+  };
 }
 
 export async function getAiMatchAnalysis(matchId: string, homeTeam?: string, awayTeam?: string) {

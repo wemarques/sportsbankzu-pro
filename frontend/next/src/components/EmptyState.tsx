@@ -12,6 +12,7 @@ export type EmptyStateVariant =
 interface EmptyStateProps {
   variant: EmptyStateVariant;
   errorMessage?: string;
+  errorCode?: string;
   dateLabel?: string;
   leagueName?: string;
   onRetry?: () => void;
@@ -21,6 +22,7 @@ interface EmptyStateProps {
 export default function EmptyState({
   variant,
   errorMessage,
+  errorCode,
   dateLabel,
   leagueName,
   onRetry,
@@ -33,6 +35,12 @@ export default function EmptyState({
       <div className="st-empty-state__icon">{config.icon}</div>
       <h3 className="st-empty-state__title">{config.title}</h3>
       <p className="st-empty-state__message">{config.message}</p>
+
+      {errorCode && (variant === "backend-offline" || variant === "client-error") && (
+        <p className="st-empty-state__error-code" style={{ fontSize: "0.7rem", color: "#666", fontFamily: "monospace", marginTop: 4 }}>
+          Codigo: {errorCode}
+        </p>
+      )}
 
       {config.suggestion && (
         <p className="st-empty-state__suggestion">{config.suggestion}</p>

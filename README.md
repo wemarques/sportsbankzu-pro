@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-26
+**Última revisão:** 2026-02-28
 
 ---
 
@@ -538,6 +538,13 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### 28 de Fevereiro de 2026 — Fix: Servidor Indisponível (Fan-out + Retry)
+
+- **fix(fetch):** Fan-out paralelo no carregamento de ligas — o dashboard agora divide as 22 ligas em batches de 3 e busca em paralelo via `Promise.allSettled`, evitando timeout do Lambda que processava tudo sequencialmente (45+ chamadas API FootyStats em série = 90-130s, estourando os 55s de timeout). Merge dos resultados é feito client-side em `getMatchesByLeague()` (`frontend/next/src/lib/api.ts`). **REGRA: NÃO remover este fan-out — sem ele, o sistema volta a dar timeout com as 22 ligas.**
+- **fix(fetch):** Auto-retry (1x) na API route `fetch/route.ts` para TIMEOUT, CONNECTION_ERROR e HTTP 502/503/504 (cold start do Lambda)
+- **fix(dashboard):** `handleRetry` agora replica a lógica completa do carregamento inicial (retry em cold start + fallback today→week)
+- **fix(dashboard):** CONNECTION_ERROR adicionado à lista de erros retentáveis no carregamento inicial
 
 ### V3.1 — 26 de Fevereiro de 2026 (Auditoria Contínua + Calibração)
 
