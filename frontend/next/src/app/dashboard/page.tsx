@@ -507,8 +507,9 @@ export default function Dashboard() {
         let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
         let raw = res?.matches ?? [];
 
-        // Auto-retry once on timeout, connection error, or 503 (Lambda cold start takes ~10-20s, second call is fast)
-        if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR" || res._error?.kind === "CONNECTION_ERROR")) {
+        // Auto-retry once on transient errors (Lambda cold start, network blip, etc.)
+        const retryKinds = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR", "UNKNOWN"]);
+        if (raw.length === 0 && res._error && retryKinds.has(res._error.kind)) {
           console.log(`[dashboard] ${res._error.kind} on first attempt, retrying (Lambda cold start)...`);
           res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
           raw = res?.matches ?? [];
@@ -823,8 +824,9 @@ export default function Dashboard() {
       let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateMode);
       let raw = res?.matches ?? [];
 
-      // Auto-retry once on timeout/connection/503 (Lambda cold start)
-      if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR" || res._error?.kind === "CONNECTION_ERROR")) {
+      // Auto-retry once on transient errors (Lambda cold start, network blip, etc.)
+      const retryKinds = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR", "UNKNOWN"]);
+      if (raw.length === 0 && res._error && retryKinds.has(res._error.kind)) {
         console.log(`[dashboard:retry] ${res._error.kind} on first attempt, retrying...`);
         res = await getMatchesByLeague(allLeagueIds, dateMode);
         raw = res?.matches ?? [];

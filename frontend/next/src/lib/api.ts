@@ -49,8 +49,44 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
 const LEAGUES_PER_BATCH = 3;
 
 /**
+ * Max concurrent batch requests — avoids overwhelming Lambda with
+ * too many simultaneous cold starts (8 at once → throttling).
+ * With 4 concurrent, the second wave reuses warm Lambda instances.
+ */
+const MAX_CONCURRENT = 4;
+
+/**
+ * Run async tasks with a concurrency limit (semaphore pattern).
+ * Returns PromiseSettledResult[] in the same order as input.
+ */
+async function parallelWithLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let nextIdx = 0;
+
+  async function worker() {
+    while (nextIdx < tasks.length) {
+      const i = nextIdx++;
+      try {
+        results[i] = { status: "fulfilled", value: await tasks[i]() };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, () => worker()),
+  );
+  return results;
+}
+
+/**
  * Fan-out fetch: splits leagues into small parallel batches so each
  * Lambda invocation handles only a few leagues and responds within timeout.
+ * Uses concurrency limiting to avoid overwhelming Lambda with cold starts.
  * Merges results client-side into a single MatchesResponse.
  */
 export async function getMatchesByLeague(leagues: string, date?: string): Promise<MatchesResponse> {
@@ -61,16 +97,17 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
     return _fetchMatchesBatch(leagues, date);
   }
 
-  // Split into batches and fetch in parallel
+  // Split into batches and fetch in parallel (concurrency-limited)
   const batches: string[][] = [];
   for (let i = 0; i < leagueIds.length; i += LEAGUES_PER_BATCH) {
     batches.push(leagueIds.slice(i, i + LEAGUES_PER_BATCH));
   }
 
-  console.log(`[api] Fan-out: ${leagueIds.length} leagues → ${batches.length} parallel batches of ${LEAGUES_PER_BATCH}`);
+  console.log(`[api] Fan-out: ${leagueIds.length} leagues → ${batches.length} batches of ≤${LEAGUES_PER_BATCH} (max ${MAX_CONCURRENT} concurrent)`);
 
-  const results = await Promise.allSettled(
-    batches.map((batch) => _fetchMatchesBatch(batch.join(","), date))
+  const results = await parallelWithLimit(
+    batches.map((batch) => () => _fetchMatchesBatch(batch.join(","), date)),
+    MAX_CONCURRENT,
   );
 
   // Merge results
@@ -79,11 +116,12 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
   let hasAnySuccess = false;
   let isMockData = false;
   let totalLatency = 0;
-  let successCount = 0;
+  let failedCount = 0;
 
   for (const r of results) {
     if (r.status === "rejected") {
       lastError = { kind: "NETWORK_ERROR", message: "Falha em uma das requisicoes paralelas." };
+      failedCount++;
       continue;
     }
     const res = r.value;
@@ -92,21 +130,27 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
       hasAnySuccess = true;
     }
     if (res._isMockData) isMockData = true;
-    if (res._error) lastError = res._error;
+    if (res._error) {
+      lastError = res._error;
+      failedCount++;
+    }
     if (res._latencyMs) {
       totalLatency = Math.max(totalLatency, res._latencyMs);
-      successCount++;
     }
     if (res._dataSource === "backend" || res._dataSource === "backend-empty") {
       hasAnySuccess = true;
     }
   }
 
+  // Propagate retryable error kind even on partial success so dashboard
+  // can decide to retry. Only suppress error if majority succeeded.
+  const shouldSurfaceError = !hasAnySuccess || failedCount > batches.length / 2;
+
   return {
     matches: allMatches,
     _dataSource: hasAnySuccess ? "backend" : lastError ? "error" : "backend-empty",
     _isMockData: isMockData,
-    _error: hasAnySuccess ? undefined : lastError,
+    _error: shouldSurfaceError ? lastError : undefined,
     _latencyMs: totalLatency,
   };
 }

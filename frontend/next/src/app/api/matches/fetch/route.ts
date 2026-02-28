@@ -22,8 +22,12 @@ export async function GET(req: NextRequest) {
   if (backendBase) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
+    // With fan-out each batch has ≤3 leagues (~15-25s).
+    // Timeout 25s + 1 retry = 50s, well within 60s maxDuration.
+    const BATCH_TIMEOUT_MS = 25_000;
+
     let result = await fetchBackend(`/fixtures?${qs.toString()}`, {
-      timeoutMs: 55_000,
+      timeoutMs: BATCH_TIMEOUT_MS,
     });
 
     // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
@@ -38,7 +42,7 @@ export async function GET(req: NextRequest) {
         `[fetch/route] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying (Lambda cold start)...`,
       );
       result = await fetchBackend(`/fixtures?${qs.toString()}`, {
-        timeoutMs: 55_000,
+        timeoutMs: BATCH_TIMEOUT_MS,
       });
     }
 
