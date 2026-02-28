@@ -781,6 +781,6 @@ def build_records_from_matches(
             records[-1]["mercados"] = []
       except Exception as e:
         _match_label = f"{r.get('home_team', '?')} vs {r.get('away_team', '?')}"
-        logger.error(f"[fixtures_service] Skipping match {_match_label}: {type(e).__name__}: {e}")
+        logger.error(f"[fixtures_service] Skipping match {_match_label}: {type(e).__name__}: {e}", exc_info=True)
         continue
     return records

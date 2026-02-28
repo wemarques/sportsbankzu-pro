@@ -884,7 +884,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       )}
                       {comparativeTab === "chutes" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          {(match.matchStats.homeShotsOnTarget || match.matchStats.awayShotsOnTarget) ? (
+                          {(match.matchStats.homeShotsOnTarget != null || match.matchStats.awayShotsOnTarget != null) ? (
                             <ComparativeBar label="Chutes ao Gol por Jogo" homeVal={match.matchStats.homeShotsOnTarget ?? 0} awayVal={match.matchStats.awayShotsOnTarget ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           ) : (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes ao gol nao disponiveis para este jogo.</div>
@@ -893,7 +893,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       )}
                       {comparativeTab === "finalizacoes" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          {(match.matchStats.homeShotsPerMatch || match.matchStats.awayShotsPerMatch) ? (
+                          {(match.matchStats.homeShotsPerMatch != null || match.matchStats.awayShotsPerMatch != null) ? (
                             <>
                               <ComparativeBar label="Finalizacoes por Jogo" homeVal={match.matchStats.homeShotsPerMatch ?? 0} awayVal={match.matchStats.awayShotsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
@@ -907,7 +907,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       )}
                       {comparativeTab === "faltas" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          {(match.matchStats.homeFoulsPerMatch || match.matchStats.awayFoulsPerMatch) ? (
+                          {(match.matchStats.homeFoulsPerMatch != null || match.matchStats.awayFoulsPerMatch != null) ? (
                             <>
                               <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
@@ -959,7 +959,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                     <StatRow label="BTTS" value={formatProbValue(match.matchStats.bttsProb)} />
                   </div>
 
-                  {(match.matchStats.homePossession || match.matchStats.homeXG) && (
+                  {(match.matchStats.homePossession != null || match.matchStats.homeXG != null) && (
                     <>
                       <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Desempenho</h4>
                       <ComparativeBar label="Posse de Bola" homeVal={match.matchStats.homePossession ?? 50} awayVal={match.matchStats.awayPossession ?? 50} homeTeam={match.homeTeam} awayTeam={match.awayTeam} suffix="%" />
@@ -967,7 +967,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                     </>
                   )}
 
-                  {(match.matchStats.homeCornersPerMatch || match.matchStats.homeCardsPerMatch || match.matchStats.cornerOver85Prob) && (
+                  {(match.matchStats.homeCornersPerMatch != null || match.matchStats.homeCardsPerMatch != null || match.matchStats.cornerOver85Prob != null) && (
                     <>
                       <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Escanteios & Cartoes</h4>
                       {match.matchStats.homeCornersPerMatch != null && (

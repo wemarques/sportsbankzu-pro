@@ -9,6 +9,7 @@ import MatchDetailCard, {
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
 import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
+import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
 import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
@@ -361,65 +362,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       drawOrAway: parseFloat((1 / (1 / d + 1 / a)).toFixed(2)),
     },
     btts: { yes: safeOdd(match.odds?.bttsYes, 2.0), no: safeOdd(match.odds?.bttsNo, 1.7) },
-    matchStats: {
-      homeWinProb: match.stats?.homeWinProb,
-      drawProb: match.stats?.drawProb,
-      awayWinProb: match.stats?.awayWinProb,
-      avgGoals: match.stats?.avgGoals,
-      bttsProb: match.stats?.bttsProb,
-      over15Prob: match.stats?.over15Prob,
-      over25Prob: match.stats?.over25Prob,
-      over35Prob: match.stats?.over35Prob,
-      over45Prob: match.stats?.over45Prob,
-      lambdaHome: match.stats?.lambdaHome,
-      lambdaAway: match.stats?.lambdaAway,
-      homePossession: match.stats?.homePossession,
-      awayPossession: match.stats?.awayPossession,
-      homeXG: match.stats?.homeXG,
-      awayXG: match.stats?.awayXG,
-      leagueRegime: match.stats?.leagueRegime,
-      leagueVolatility: match.stats?.leagueVolatility,
-      homeCornersPerMatch: match.stats?.homeCornersPerMatch,
-      awayCornersPerMatch: match.stats?.awayCornersPerMatch,
-      homeCardsPerMatch: match.stats?.homeCardsPerMatch,
-      awayCardsPerMatch: match.stats?.awayCardsPerMatch,
-      homeShotsOnTarget: match.stats?.homeShotsOnTarget,
-      awayShotsOnTarget: match.stats?.awayShotsOnTarget,
-      homeShotsPerMatch: match.stats?.homeShotsPerMatch,
-      awayShotsPerMatch: match.stats?.awayShotsPerMatch,
-      homeFoulsPerMatch: match.stats?.homeFoulsPerMatch,
-      awayFoulsPerMatch: match.stats?.awayFoulsPerMatch,
-      leagueAvgCorners: match.stats?.leagueAvgCorners,
-      leagueAvgCards: match.stats?.leagueAvgCards,
-      leagueAvgFouls: match.stats?.leagueAvgFouls,
-      leagueAvgShots: match.stats?.leagueAvgShots,
-      // League extended
-      leagueHomeAdvantage: match.stats?.leagueHomeAdvantage,
-      leagueCleanSheetsPct: match.stats?.leagueCleanSheetsPct,
-      leagueOver25Pct: match.stats?.leagueOver25Pct,
-      leagueXgAvg: match.stats?.leagueXgAvg,
-      // Team advanced
-      homeBttsPercentage: match.stats?.homeBttsPercentage,
-      awayBttsPercentage: match.stats?.awayBttsPercentage,
-      homeCleanSheetPct: match.stats?.homeCleanSheetPct,
-      awayCleanSheetPct: match.stats?.awayCleanSheetPct,
-      homeFtsPercentage: match.stats?.homeFtsPercentage,
-      awayFtsPercentage: match.stats?.awayFtsPercentage,
-      homeOver25Percentage: match.stats?.homeOver25Percentage,
-      awayOver25Percentage: match.stats?.awayOver25Percentage,
-      homeWinPercentage: match.stats?.homeWinPercentage,
-      awayWinPercentage: match.stats?.awayWinPercentage,
-      homeXgForAvg: match.stats?.homeXgForAvg,
-      awayXgForAvg: match.stats?.awayXgForAvg,
-      homeXgAgainstAvg: match.stats?.homeXgAgainstAvg,
-      awayXgAgainstAvg: match.stats?.awayXgAgainstAvg,
-      homeCornersAgainstPerMatch: match.stats?.homeCornersAgainstPerMatch,
-      awayCornersAgainstPerMatch: match.stats?.awayCornersAgainstPerMatch,
-      homeLeaguePosition: match.stats?.homeLeaguePosition,
-      awayLeaguePosition: match.stats?.awayLeaguePosition,
-      homeAvgTotalGoals: match.stats?.homeAvgTotalGoals,
-      awayAvgTotalGoals: match.stats?.awayAvgTotalGoals,
-    },
+    matchStats: mapMatchStats(match.stats as Record<string, unknown> | undefined),
     h2h: match.h2h,
     homeForm: match.stats?.homeForm ?? match.homeTeam.form,
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
@@ -527,16 +470,19 @@ export default function Dashboard() {
     }
   }, [selectedMatchId]);
 
+  // Stable league-ID string — only changes when the set of loaded leagues changes
+  const combinadasLeagues = useMemo(() => {
+    const ids = Array.from(new Set(allMatches.map((m) => m.leagueId))).sort();
+    return ids.length > 0 ? ids.join(",") : AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+  }, [allMatches]);
+
   const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
     setCombindasLoading(true);
     setCombindasError(null);
     try {
       const today = dateMode;
-      // Use only leagues that have loaded matches to avoid overloading backend
-      const loadedLeagueIds = Array.from(new Set(allMatches.map((m) => m.leagueId)));
-      const leagueIds = loadedLeagueIds.length > 0 ? loadedLeagueIds : AVAILABLE_LEAGUES.map((l) => l.id);
       const res = await fetch(
-        `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
+        `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
       const data = await res.json();
@@ -553,7 +499,7 @@ export default function Dashboard() {
     } finally {
       setCombindasLoading(false);
     }
-  }, [dateMode, allMatches]);
+  }, [dateMode, combinadasLeagues]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
