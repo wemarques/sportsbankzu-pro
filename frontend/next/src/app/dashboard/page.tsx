@@ -402,6 +402,7 @@ export default function Dashboard() {
   const [hasError, setHasError] = useState(false);
   const [isMockData, setIsMockData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -494,6 +495,7 @@ export default function Dashboard() {
       setHasError(false);
       setIsMockData(false);
       setErrorMessage(null);
+      setErrorCode(null);
       setDataSource(null);
 
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
@@ -522,6 +524,7 @@ export default function Dashboard() {
         if (res._error) {
           setHasError(true);
           setErrorMessage(res._error.message);
+          setErrorCode(res._error.kind ?? null);
         }
 
         // Auto-fallback: if today returns empty (and no error), try week
@@ -536,6 +539,7 @@ export default function Dashboard() {
           if (res._error) {
             setHasError(true);
             setErrorMessage(res._error.message);
+            setErrorCode(res._error.kind ?? null);
           }
         }
 
@@ -549,6 +553,7 @@ export default function Dashboard() {
         setAllMatches([]);
         setHasError(true);
         setErrorMessage("Erro inesperado ao carregar jogos. Tente novamente.");
+        setErrorCode("CLIENT_EXCEPTION");
       } finally {
         setLoading(false);
       }
@@ -817,6 +822,7 @@ export default function Dashboard() {
     setLoading(true);
     setHasError(false);
     setErrorMessage(null);
+    setErrorCode(null);
     setDataSource(null);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
@@ -838,6 +844,7 @@ export default function Dashboard() {
       if (res._error) {
         setHasError(true);
         setErrorMessage(res._error.message);
+        setErrorCode(res._error.kind ?? null);
       }
 
       // Auto-fallback: if today returns empty (and no error), try week
@@ -852,6 +859,7 @@ export default function Dashboard() {
         if (res._error) {
           setHasError(true);
           setErrorMessage(res._error.message);
+          setErrorCode(res._error.kind ?? null);
         }
       }
 
@@ -865,6 +873,7 @@ export default function Dashboard() {
       setAllMatches([]);
       setHasError(true);
       setErrorMessage("Erro inesperado ao carregar jogos. Tente novamente.");
+      setErrorCode("CLIENT_EXCEPTION");
     } finally {
       setLoading(false);
     }
@@ -1510,6 +1519,7 @@ export default function Dashboard() {
             <EmptyState
               variant={emptyVariant}
               errorMessage={errorMessage ?? undefined}
+              errorCode={errorCode ?? undefined}
               dateLabel={dateLabel}
               onRetry={handleRetry}
               onChangeDate={emptyVariant === "no-games-date" ? handleEmptyDateChange : undefined}

@@ -22,9 +22,10 @@ export async function GET(req: NextRequest) {
   if (backendBase) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
-    // With fan-out each batch has ≤3 leagues (~15-25s).
-    // Timeout 25s + 1 retry = 50s, well within 60s maxDuration.
-    const BATCH_TIMEOUT_MS = 25_000;
+    // With fan-out each batch has ≤3 leagues.
+    // Cold start (~10-20s) + 3 leagues (~10-15s) = ~20-35s.
+    // Timeout 28s + 1 retry = 56s, within 60s maxDuration.
+    const BATCH_TIMEOUT_MS = 28_000;
 
     let result = await fetchBackend(`/fixtures?${qs.toString()}`, {
       timeoutMs: BATCH_TIMEOUT_MS,
@@ -152,13 +153,17 @@ export async function GET(req: NextRequest) {
     }
 
     // In production: return error, never mock
+    const errorKind = result.error?.kind ?? "BACKEND_ERROR";
+    const friendlyMsg = _friendlyErrorMessage(errorKind, result.durationMs);
     return Response.json(
       {
         matches: [],
         _dataSource: "error",
         _error: {
-          kind: result.error?.kind ?? "BACKEND_ERROR",
-          message: "O servidor de dados esta temporariamente indisponivel. Tente novamente em alguns minutos.",
+          kind: errorKind,
+          message: friendlyMsg,
+          code: errorKind,
+          durationMs: result.durationMs,
         },
         _debug: debug ? {
           error: result.error,
@@ -203,4 +208,19 @@ export async function GET(req: NextRequest) {
     },
     { status: 503 },
   );
+}
+
+/** Maps error kind to a user-facing message with diagnostic hint. */
+function _friendlyErrorMessage(kind: string, durationMs?: number): string {
+  const dur = durationMs ? ` (${Math.round(durationMs / 1000)}s)` : "";
+  switch (kind) {
+    case "TIMEOUT":
+      return `O servidor demorou demais para responder${dur}. Lambda pode estar em cold start — tente novamente.`;
+    case "CONNECTION_ERROR":
+      return "Nao foi possivel conectar ao servidor de dados. Verifique se o backend esta ativo.";
+    case "HTTP_ERROR":
+      return `O servidor retornou um erro${dur}. Pode ser throttling ou reinicializacao do Lambda.`;
+    default:
+      return "O servidor de dados esta temporariamente indisponivel. Tente novamente em alguns minutos.";
+  }
 }
