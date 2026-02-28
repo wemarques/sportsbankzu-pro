@@ -23,15 +23,15 @@ export async function POST(
 
     const kind = result.error?.kind ?? "UNKNOWN";
     const msg = result.error?.message ?? "";
-    let userMessage = "Servico de auditoria indisponivel.";
+    let userMessage = "Auditoria individual indisponivel. Use 'Auditar Rodada' para resultado instantaneo.";
     if (kind === "CONNECTION_ERROR" && msg.includes("PY_BACKEND_URL")) {
-      userMessage = "Backend nao configurado. Defina PY_BACKEND_URL no Vercel (ou .env.local) com a URL do FastAPI.";
+      userMessage = "Backend nao configurado. Use 'Auditar Rodada' para auditoria local instantanea.";
     } else if (kind === "TIMEOUT") {
-      userMessage = "Tempo esgotado. O backend demorou para responder. Tente novamente.";
+      userMessage = "Tempo esgotado — o backend demorou para responder. Use 'Auditar Rodada' para resultado instantaneo.";
     } else if (kind === "CONNECTION_ERROR") {
-      userMessage = "Nao foi possivel conectar ao backend. Verifique se o FastAPI esta rodando e PY_BACKEND_URL esta correto.";
+      userMessage = "Backend indisponivel. Use 'Auditar Rodada' para auditoria local instantanea.";
     } else if (kind === "HTTP_ERROR" && /50[234]/.test(msg)) {
-      userMessage = "Backend temporariamente indisponivel. O servidor pode estar reiniciando (cold start). Tente novamente em 10-15 segundos.";
+      userMessage = "Backend reiniciando (cold start). Tente novamente em 10-15s, ou use 'Auditar Rodada'.";
     } else if (kind === "HTTP_ERROR" && msg) {
       userMessage = msg.length > 120 ? msg.slice(0, 120) + "..." : msg;
     }

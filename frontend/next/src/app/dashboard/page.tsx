@@ -507,9 +507,9 @@ export default function Dashboard() {
         let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
         let raw = res?.matches ?? [];
 
-        // Auto-retry once on timeout (Lambda cold start takes ~10-20s, second call is fast)
-        if (raw.length === 0 && res._error?.kind === "TIMEOUT") {
-          console.log("[dashboard] Timeout on first attempt, retrying (Lambda cold start)...");
+        // Auto-retry once on timeout or 503 (Lambda cold start takes ~10-20s, second call is fast)
+        if (raw.length === 0 && (res._error?.kind === "TIMEOUT" || res._error?.kind === "HTTP_ERROR")) {
+          console.log(`[dashboard] ${res._error.kind} on first attempt, retrying (Lambda cold start)...`);
           res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
           raw = res?.matches ?? [];
         }
@@ -701,12 +701,13 @@ export default function Dashboard() {
       }, 150);
     } catch (err) {
       console.error("Audit error:", err);
+      const errMsg = err instanceof Error ? err.message : "Erro desconhecido";
       setAuditResult({
         audit_confidence: 0,
         validation: {
-          probabilities: { status: "UNKNOWN", notes: "Erro ao executar auditoria." },
-          lambdas: { status: "UNKNOWN", notes: "Verifique a conexao com o backend." },
-          ev: { status: "UNKNOWN", notes: "Tente novamente." },
+          probabilities: { status: "UNKNOWN", notes: `Erro ao executar auditoria: ${errMsg}` },
+          lambdas: { status: "UNKNOWN", notes: "O backend pode estar indisponivel ou em cold start." },
+          ev: { status: "UNKNOWN", notes: "Use 'Auditar Rodada' para auditoria instantanea sem depender do backend." },
         },
         audit_type: "error",
       } as AuditResult);
