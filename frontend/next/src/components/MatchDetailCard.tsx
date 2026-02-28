@@ -253,7 +253,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
-  const [isComparativeExpanded, setIsComparativeExpanded] = useState(false);
+  const [isComparativeExpanded, setIsComparativeExpanded] = useState(true);
   const [comparativeTab, setComparativeTab] = useState<string>("gols");
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
   const [showStandings, setShowStandings] = useState(false);
