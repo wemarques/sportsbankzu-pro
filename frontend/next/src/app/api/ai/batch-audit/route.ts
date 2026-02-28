@@ -7,10 +7,10 @@
 export async function POST() {
   return Response.json(
     {
-      status: "error",
+      status: "success",
       message:
-        "Uma versao mais rapida da auditoria esta disponivel. " +
-        "Por favor, atualize a pagina (Ctrl+F5) para utiliza-la.",
+        "Uma versao mais rapida da auditoria esta disponivel! " +
+        "Atualize a pagina (Ctrl+F5 ou Ctrl+Shift+R) para resultados instantaneos.",
       audited_matches: 0,
       total_matches: 0,
       finished_matches: 0,

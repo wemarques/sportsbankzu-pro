@@ -422,6 +422,34 @@ export default function Dashboard() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Auto-refresh stale JS: compare client buildId with server buildId
+  useEffect(() => {
+    async function checkFreshness() {
+      try {
+        const res = await fetch("/", { method: "HEAD", cache: "no-store" });
+        // Next.js sets x-nextjs-matched-path or we can re-fetch the HTML
+        // Simpler: fetch the page and check if the JS chunk URLs match
+        const htmlRes = await fetch(window.location.href, { cache: "no-store" });
+        const html = await htmlRes.text();
+        // Extract buildId from server HTML
+        const match = html.match(/"buildId":"([^"]+)"/);
+        if (match) {
+          const serverBuildId = match[1];
+          const clientBuildId = (window as any).__NEXT_DATA__?.buildId;
+          if (clientBuildId && serverBuildId !== clientBuildId) {
+            console.log(`[stale-check] Build mismatch: client=${clientBuildId} server=${serverBuildId}. Reloading...`);
+            window.location.reload();
+          }
+        }
+      } catch {
+        // Silently ignore — freshness check is best-effort
+      }
+    }
+    // Check after 2s (let the page settle first)
+    const timer = setTimeout(checkFreshness, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Busca a versão real do backend (fica em sync com o cron de auditoria)
   useEffect(() => {
     fetch("/api/audit/status?days=1", { cache: "no-store" })
