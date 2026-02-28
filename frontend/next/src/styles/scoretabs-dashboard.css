@@ -521,12 +521,13 @@
 }
 
 .st-match-row__score {
-  width: 24px;
-  text-align: right;
+  min-width: 40px;
+  text-align: center;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--st-text);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .st-match-row__odds {

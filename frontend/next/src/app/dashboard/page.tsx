@@ -453,6 +453,7 @@ export default function Dashboard() {
     return new Set();
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [shareLoading, setShareLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -531,20 +532,28 @@ export default function Dashboard() {
     setCombindasError(null);
     try {
       const today = dateMode;
-      const leagueIds = AVAILABLE_LEAGUES.map((l) => l.id);
+      // Use only leagues that have loaded matches to avoid overloading backend
+      const loadedLeagueIds = Array.from(new Set(allMatches.map((m) => m.leagueId)));
+      const leagueIds = loadedLeagueIds.length > 0 ? loadedLeagueIds : AVAILABLE_LEAGUES.map((l) => l.id);
       const res = await fetch(
         `/api/combinadas?leagues=${encodeURIComponent(leagueIds.join(","))}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
-      const data: CombinadasData = await res.json();
-      if (!res.ok) throw new Error((data as any)._error?.message || `Erro ${res.status}`);
-      setCombinadas(data);
+      const data = await res.json();
+      if (!res.ok) {
+        const errKind = data?._error?.kind;
+        if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
+        if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
+        if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
+        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
+      setCombinadas(data as CombinadasData);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
       setCombindasLoading(false);
     }
-  }, [dateMode]);
+  }, [dateMode, allMatches]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
@@ -966,10 +975,11 @@ export default function Dashboard() {
     }
     return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+      const dir = sortOrder === "asc" ? 1 : -1;
       const sorted = [...matches].sort((a, b) => {
         const da = new Date(a.datetime).getTime();
         const db = new Date(b.datetime).getTime();
-        return da - db;
+        return (da - db) * dir;
       });
       return {
         leagueId,
@@ -980,7 +990,7 @@ export default function Dashboard() {
         collapsed: collapsedLeagues.has(leagueId),
       };
     });
-  }, [displayMatches, collapsedLeagues]);
+  }, [displayMatches, collapsedLeagues, sortOrder]);
 
   const leagueIdForCapture = useMemo(() => {
     if (navView !== "matches") return null;
@@ -1510,7 +1520,14 @@ export default function Dashboard() {
                 {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
                 {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
               </button>
-              <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Ordenar por data/hora"><SlidersHorizontal size={12} /> Ordenar</button>
+              <button
+                type="button"
+                className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
+                onClick={() => setSortOrder((v) => v === "asc" ? "desc" : "asc")}
+                title={sortOrder === "asc" ? "Ordenar: mais cedo primeiro" : "Ordenar: mais tarde primeiro"}
+              >
+                <SlidersHorizontal size={12} /> {sortOrder === "asc" ? "Mais cedo" : "Mais tarde"}
+              </button>
               <button
                 type="button"
                 className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}

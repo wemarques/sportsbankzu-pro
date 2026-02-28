@@ -758,13 +758,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       )}
                       {comparativeTab === "perfil" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          {(match.matchStats.homeXgForAvg || match.matchStats.awayXgForAvg) && (
+                          {(match.matchStats.homeXgForAvg != null || match.matchStats.awayXgForAvg != null) && (
                             <ComparativeBar label="xG Medio por Jogo" homeVal={match.matchStats.homeXgForAvg ?? 0} awayVal={match.matchStats.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           )}
-                          {(match.matchStats.homeXgAgainstAvg || match.matchStats.awayXgAgainstAvg) && (
+                          {(match.matchStats.homeXgAgainstAvg != null || match.matchStats.awayXgAgainstAvg != null) && (
                             <ComparativeBar label="xG Sofrido por Jogo" homeVal={match.matchStats.homeXgAgainstAvg ?? 0} awayVal={match.matchStats.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           )}
-                          {(match.matchStats.homeAvgTotalGoals || match.matchStats.awayAvgTotalGoals) && (
+                          {(match.matchStats.homeAvgTotalGoals != null || match.matchStats.awayAvgTotalGoals != null) && (
                             <ComparativeBar label="Media Gols Total/Jogo" homeVal={match.matchStats.homeAvgTotalGoals ?? 0} awayVal={match.matchStats.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           )}
                           <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
@@ -809,7 +809,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                               </div>
                             )}
                           </div>
-                          {(!match.matchStats.homeXgForAvg && !match.matchStats.homeWinPercentage && !match.matchStats.homeLeaguePosition) && (
+                          {(match.matchStats.homeXgForAvg == null && match.matchStats.homeWinPercentage == null && match.matchStats.homeLeaguePosition == null) && (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de perfil nao disponiveis para este jogo.</div>
                           )}
                         </div>
