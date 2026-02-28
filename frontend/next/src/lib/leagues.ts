@@ -81,6 +81,32 @@ export type Match = {
     leagueAvgCards?: number;
     leagueAvgFouls?: number;
     leagueAvgShots?: number;
+    // League extended
+    leagueHomeAdvantage?: number;
+    leagueCleanSheetsPct?: number;
+    leagueOver25Pct?: number;
+    leagueXgAvg?: number;
+    // Team advanced stats
+    homeBttsPercentage?: number;
+    awayBttsPercentage?: number;
+    homeCleanSheetPct?: number;
+    awayCleanSheetPct?: number;
+    homeFtsPercentage?: number;
+    awayFtsPercentage?: number;
+    homeOver25Percentage?: number;
+    awayOver25Percentage?: number;
+    homeWinPercentage?: number;
+    awayWinPercentage?: number;
+    homeXgForAvg?: number;
+    awayXgForAvg?: number;
+    homeXgAgainstAvg?: number;
+    awayXgAgainstAvg?: number;
+    homeCornersAgainstPerMatch?: number;
+    awayCornersAgainstPerMatch?: number;
+    homeLeaguePosition?: number;
+    awayLeaguePosition?: number;
+    homeAvgTotalGoals?: number;
+    awayAvgTotalGoals?: number;
     cornersPotential?: number;
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
