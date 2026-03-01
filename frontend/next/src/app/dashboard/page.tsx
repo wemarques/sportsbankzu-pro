@@ -470,13 +470,18 @@ export default function Dashboard() {
     }
   }, [selectedMatchId]);
 
-  // Stable league-ID string — only changes when the set of loaded leagues changes
+  // Stable league-ID string — only uses leagues that actually have loaded matches.
+  // Never falls back to ALL leagues to avoid overwhelming the backend.
   const combinadasLeagues = useMemo(() => {
     const ids = Array.from(new Set(allMatches.map((m) => m.leagueId))).sort();
-    return ids.length > 0 ? ids.join(",") : AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+    return ids.join(",");
   }, [allMatches]);
 
   const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
+    if (!combinadasLeagues) {
+      setCombindasError("Aguarde o carregamento dos jogos antes de calcular duplas.");
+      return;
+    }
     setCombindasLoading(true);
     setCombindasError(null);
     try {

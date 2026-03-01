@@ -45,15 +45,19 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
   }
 }
 
-/** Max leagues per batch — keeps each Lambda call under timeout */
-const LEAGUES_PER_BATCH = 3;
+/**
+ * Max leagues per batch — keeps each Lambda call under timeout.
+ * Backend processes leagues in parallel (ThreadPoolExecutor, 4 workers),
+ * so 5 leagues/batch ≈ 2 waves of parallel work ≈ 10-20s on warm cache.
+ */
+const LEAGUES_PER_BATCH = 5;
 
 /**
  * Max concurrent batch requests — avoids overwhelming Lambda with
- * too many simultaneous cold starts (8 at once → throttling).
- * With 4 concurrent, the second wave reuses warm Lambda instances.
+ * too many simultaneous cold starts.
+ * With 22 leagues / 5 per batch = 5 batches, 3 concurrent = 2 waves.
  */
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 3;
 
 /**
  * Run async tasks with a concurrency limit (semaphore pattern).
