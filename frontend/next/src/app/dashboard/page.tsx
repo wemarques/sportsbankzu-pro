@@ -240,6 +240,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
   return {
     id: item.id ?? `${leagueId}-${idx}-${home}-${away}`,
+    footystatsId: item.footystatsId ?? undefined,
     leagueId,
     leagueName: league?.name ?? leagueId,
     homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
@@ -354,6 +355,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayTeamLogo: match.awayTeam.logo || undefined,
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
+    score: match.score,
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -586,6 +588,45 @@ export default function Dashboard() {
     fetchAll();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
+
+  // Live score polling — every 60s, update scores for live/finished matches
+  const hasMatches = allMatches.length > 0;
+  const hasLiveMatches = useMemo(() => allMatches.some((m) => m.status === "live"), [allMatches]);
+  useEffect(() => {
+    if (!hasMatches) return;
+    const pollMs = hasLiveMatches ? 60_000 : 120_000;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/matches/live", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const liveMatches: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; minute?: number }> = data.matches ?? [];
+        if (liveMatches.length === 0) return;
+        setAllMatches((prev) => {
+          let changed = false;
+          const updated = prev.map((m) => {
+            // Match by footystatsId (numeric) or by team names
+            const live = liveMatches.find((lm) => {
+              const fid = (m as any).footystatsId;
+              if (fid && lm.id === fid) return true;
+              return lm.homeTeam === m.homeTeam.name && lm.awayTeam === m.awayTeam.name;
+            });
+            if (!live) return m;
+            const newStatus = live.status as Match["status"];
+            const scoreChanged = m.score?.home !== live.score.home || m.score?.away !== live.score.away;
+            const statusChanged = m.status !== newStatus;
+            if (!scoreChanged && !statusChanged) return m;
+            changed = true;
+            return { ...m, status: newStatus, score: live.score };
+          });
+          return changed ? updated : prev;
+        });
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, pollMs);
+    return () => clearInterval(interval);
+  }, [hasMatches, hasLiveMatches]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -1572,6 +1613,11 @@ export default function Dashboard() {
                 <span className="st-league-name">
                   {group.leagueName}
                   <span className="st-league-count"> ({group.matches.length})</span>
+                  {group.matches.some((m) => m.status === "live") && (
+                    <span className="st-league-live-badge">
+                      <span className="st-live-dot" /> {group.matches.filter((m) => m.status === "live").length} AO VIVO
+                    </span>
+                  )}
                 </span>
                 <div className="st-league-actions" data-share-hide="true">
                   <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
@@ -1601,6 +1647,7 @@ export default function Dashboard() {
                     <div className="st-match-row__status">
                       <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
                       <div className={`st-match-row__status-label ${si.cssClass}`}>
+                        {match.status === "live" && <span className="st-live-dot" />}
                         {si.label || formatTime(match.datetime)}
                       </div>
                       {si.label && (
@@ -1626,7 +1673,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     {match.score && (
-                      <div className="st-match-row__score">
+                      <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
                         {match.score.home ?? 0} - {match.score.away ?? 0}
                       </div>
                     )}

@@ -395,6 +395,19 @@
   font-weight: 400;
 }
 
+.st-league-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--st-live);
+  background: rgba(255, 68, 68, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 .st-league-actions {
   display: flex;
   align-items: center;
@@ -462,6 +475,9 @@
 
 .st-match-row__status-label--live {
   color: var(--st-live);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .st-match-row__status-label--scheduled {
@@ -528,6 +544,13 @@
   color: var(--st-text);
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.st-match-row__score--live {
+  color: var(--st-live);
+  font-size: 0.95rem;
+  font-weight: 700;
+  animation: st-pulse 2s infinite;
 }
 
 .st-match-row__odds {

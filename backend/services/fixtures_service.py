@@ -105,13 +105,23 @@ def build_records_from_matches(
         if status in ("postponed", "cancelled"):
             logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
             continue
-        # Extract score for finished matches
+        # Extract score for finished and live matches
         _home_goals_raw = r.get("home_goals", r.get("home_team_goal_count", None))
         _away_goals_raw = r.get("away_goals", r.get("away_team_goal_count", None))
+        _ht_home_raw = r.get("home_team_goal_count_half_time", None)
+        _ht_away_raw = r.get("away_team_goal_count_half_time", None)
         match_score = None
-        if status == "finished" and _home_goals_raw is not None and _away_goals_raw is not None:
+        if status in ("finished", "live") and _home_goals_raw is not None and _away_goals_raw is not None:
             try:
+                _ht = None
+                if _ht_home_raw is not None and _ht_away_raw is not None:
+                    _ht_h = int(_ht_home_raw)
+                    _ht_a = int(_ht_away_raw)
+                    if _ht_h >= 0 and _ht_a >= 0:
+                        _ht = {"home": _ht_h, "away": _ht_a}
                 match_score = {"home": int(_home_goals_raw), "away": int(_away_goals_raw)}
+                if _ht:
+                    match_score["halftime"] = _ht
             except (ValueError, TypeError):
                 match_score = None
         odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))

@@ -171,6 +171,11 @@ class FootyStatsClient:
             params["date"] = date
         return self._request("todays-matches", params, ttl_minutes=30) # Cache de 30min para jogos do dia
 
+    def get_live_scores(self, timezone: str = "America/Sao_Paulo") -> Dict[str, Any]:
+        """Retorna jogos do dia com cache curto (1 min) para placares ao vivo."""
+        params = {"timezone": timezone}
+        return self._request("todays-matches", params, ttl_minutes=1)  # Cache de 1 min para live scores
+
     def get_match_details(self, match_id: int) -> Dict[str, Any]:
         """Retorna detalhes profundos de uma partida (Lineups, Trends, H2H)."""
         params = {"match_id": match_id}

@@ -14,6 +14,7 @@ export type League = {
 
 export type Match = {
   id: string;
+  footystatsId?: number;
   leagueId: string;
   leagueName: string;
   homeTeam: {
