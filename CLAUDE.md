@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SportsBank Pro is a professional sports prediction system with a 3-layer architecture:
+SportsBankZU Pro is a professional sports prediction system with a 3-layer architecture:
 - **Backend**: FastAPI (Python) serving fixtures, probabilities, lambdas, and stats
 - **Frontend 1**: Streamlit (app.py) with tables and probability charts
 - **Frontend 2**: Next.js 14 dashboard with multi-league selector and match analysis

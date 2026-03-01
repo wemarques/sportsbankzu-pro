@@ -622,6 +622,36 @@ def build_records_from_matches(
         if _btts_multiplier is not None:
             btts_poisson = min(1.0, max(0.0, btts_poisson * _btts_multiplier))
 
+        # BTTS fusion: blend available sources for more robust estimate
+        # Sources: (1) FootyStats pre-match %, (2) Poisson model, (3) team-level BTTS %
+        btts_final: float
+        _btts_sources = []
+        if btts_pct is not None:
+            _btts_sources.append(("footystats", float(btts_pct)))
+        _btts_sources.append(("poisson", round(btts_poisson * 100.0, 1)))
+        if home_btts_pct_team is not None and away_btts_pct_team is not None:
+            # Average of both teams' BTTS percentages as an independent estimator
+            _btts_team_avg = (float(home_btts_pct_team) + float(away_btts_pct_team)) / 2.0
+            _btts_sources.append(("team_avg", round(_btts_team_avg, 1)))
+
+        if len(_btts_sources) >= 3:
+            # 3 sources: weighted average (FootyStats 40%, Poisson 30%, Team avg 30%)
+            _w = {"footystats": 0.40, "poisson": 0.30, "team_avg": 0.30}
+            btts_final = sum(v * _w[k] for k, v in _btts_sources)
+        elif len(_btts_sources) == 2:
+            k1, v1 = _btts_sources[0]
+            k2, v2 = _btts_sources[1]
+            if k1 == "footystats":
+                # FootyStats + Poisson: 60/40
+                btts_final = v1 * 0.60 + v2 * 0.40
+            else:
+                # Poisson + Team avg: 50/50
+                btts_final = v1 * 0.50 + v2 * 0.50
+        else:
+            # Single source (Poisson only)
+            btts_final = _btts_sources[0][1]
+        btts_final = round(min(100.0, max(0.0, btts_final)), 1)
+
         # Apply corner audit correction multiplier (Gap 2 extension)
         if _corner_multiplier is not None:
             if corners_o85_pct is not None:
@@ -669,7 +699,7 @@ def build_records_from_matches(
                 "drawProb": round(drawProb, 1),
                 "awayWinProb": round(awayProb, 1),
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
-                "bttsProb": float(btts_pct) if btts_pct is not None else round(btts_poisson * 100.0, 1),
+                "bttsProb": btts_final,
                 "over05Prob": round(over05 * 100.0, 1),
                 "over15Prob": float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1),
                 "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),

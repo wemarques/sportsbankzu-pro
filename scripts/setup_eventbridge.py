@@ -57,7 +57,7 @@ def create_rule():
         "--name", RULE_NAME,
         "--schedule-expression", SCHEDULE,
         "--state", "ENABLED",
-        "--description", "SportsBank Pro - Auditoria automatizada diaria (20h BRT)",
+        "--description", "SportsBankZU Pro - Auditoria automatizada diaria (20h BRT)",
     ], capture=False)
 
     lambda_arn = get_lambda_arn()

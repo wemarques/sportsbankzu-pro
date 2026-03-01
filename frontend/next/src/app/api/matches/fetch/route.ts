@@ -22,10 +22,10 @@ export async function GET(req: NextRequest) {
   if (backendBase) {
     const date = url.searchParams.get("date") || "today";
     const qs = new URLSearchParams({ leagues: leagueIds.join(","), date });
-    // With fan-out each batch has ≤3 leagues.
-    // Cold start (~10-20s) + 3 leagues (~10-15s) = ~20-35s.
-    // Timeout 28s + 1 retry = 56s, within 60s maxDuration.
-    const BATCH_TIMEOUT_MS = 28_000;
+    // With fan-out each batch has ≤5 leagues (parallel backend processing).
+    // Cold start (~10-20s) + 5 leagues parallel (~8-15s) = ~18-35s.
+    // Timeout 35s + 1 retry = meets 60s maxDuration.
+    const BATCH_TIMEOUT_MS = 35_000;
 
     let result = await fetchBackend(`/fixtures?${qs.toString()}`, {
       timeoutMs: BATCH_TIMEOUT_MS,

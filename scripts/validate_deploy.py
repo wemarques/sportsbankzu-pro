@@ -39,7 +39,7 @@ def validate_streamlit(streamlit_url: str) -> Tuple[bool, str]:
 
 
 def main() -> int:
-    print("Validando deploy do SportsBank Pro
+    print("Validando deploy do SportsBankZU Pro
 ")
     backend_url = input("URL do Backend (ex: https://seu-backend.com): ").strip()
     streamlit_url = input("URL do Streamlit (ex: https://seu-app.streamlit.app): ").strip()

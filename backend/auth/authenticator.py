@@ -50,7 +50,7 @@ class Authenticator:
             st.session_state['authentication_status'] = None
         if st.session_state['authentication_status']:
             return True
-        st.markdown("# 🔐 Login - SportsBank Pro")
+        st.markdown("# 🔐 Login - SportsBankZU Pro")
         st.markdown("### Sistema de Prognósticos Esportivos")
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])

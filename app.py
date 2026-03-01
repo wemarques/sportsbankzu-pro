@@ -10,7 +10,7 @@ from backend.summary_report import generate_summary_report
 from auth import Authenticator
 
 # Configurar página
-st.set_page_config(page_title="SportsBank Pro Streamlit", layout="wide")
+st.set_page_config(page_title="SportsBankZU Pro Streamlit", layout="wide")
 st.markdown(
   """
   <style>
@@ -247,7 +247,7 @@ def format_match_row(m: dict):
     "Cartões/Partida": f"{m.get('stats', {}).get('homeCardsPerMatch') or '-'} / {m.get('stats', {}).get('awayCardsPerMatch') or '-'}",
   }
 
-st.title("SportsBank Pro - Streamlit")
+st.title("SportsBankZU Pro - Streamlit")
 st.caption(f"Backend: {BACKEND_URL}")
 health = get_health()
 if health:
