@@ -44,16 +44,28 @@ export async function GET(req: NextRequest) {
     return Response.json({ ...(result.data as object), _latencyMs: result.durationMs });
   }
 
+  const errorKind = result.error?.kind ?? "BACKEND_ERROR";
   console.error(
-    `[combinadas] ${result.error?.kind ?? "UNKNOWN"} | ${result.error?.message ?? ""} | ${result.durationMs}ms`,
+    `[combinadas] ${errorKind} | ${result.error?.message ?? ""} | ${result.durationMs}ms`,
   );
+
+  // Build friendly message for the dashboard
+  const friendlyMsg =
+    errorKind === "TIMEOUT"
+      ? "O servidor demorou para responder. O Lambda pode estar iniciando — tente novamente em 30s."
+      : errorKind === "CONNECTION_ERROR"
+        ? "Nao foi possivel conectar ao servidor. Verifique se o backend esta ativo."
+        : errorKind === "HTTP_ERROR"
+          ? "O servidor retornou um erro temporario. Tente novamente em instantes."
+          : "Servidor de duplas temporariamente indisponivel. Tente novamente.";
+
   return Response.json(
     {
       intra: [],
       inter: [],
       total_intra: 0,
       total_inter: 0,
-      _error: result.error ?? { kind: "BACKEND_ERROR" },
+      _error: { kind: errorKind, message: friendlyMsg },
       _latencyMs: result.durationMs,
     },
     { status: 503 },

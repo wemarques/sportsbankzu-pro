@@ -756,104 +756,121 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           </div>
                         </div>
                       )}
-                      {comparativeTab === "perfil" && match.matchStats && (() => {
-                        const hasTeamData = match.matchStats!.homeXgForAvg != null || match.matchStats!.homeWinPercentage != null || match.matchStats!.homeLeaguePosition != null;
+                      {comparativeTab === "perfil" && (() => {
+                        const ms = match.matchStats;
+                        if (!ms) {
+                          return (
+                            <div className="mdc-comparative-data" style={{ textAlign: "center", padding: 16 }}>
+                              <div style={{ color: "#888", fontSize: "0.75rem" }}>Carregando dados do jogo...</div>
+                            </div>
+                          );
+                        }
+                        const hasTeamData = ms.homeXgForAvg != null || ms.homeWinPercentage != null || ms.homeLeaguePosition != null;
+                        const hasModelData = (ms.lambdaHome != null && ms.lambdaHome > 0) || (ms.homeWinProb != null && ms.homeWinProb > 0);
                         return (
                         <div className="mdc-comparative-data">
                           {/* Team-level data (from league-teams API) */}
-                          {(match.matchStats!.homeXgForAvg != null || match.matchStats!.awayXgForAvg != null) && (
-                            <ComparativeBar label="xG Medio por Jogo" homeVal={match.matchStats!.homeXgForAvg ?? 0} awayVal={match.matchStats!.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
-                          )}
-                          {(match.matchStats!.homeXgAgainstAvg != null || match.matchStats!.awayXgAgainstAvg != null) && (
-                            <ComparativeBar label="xG Sofrido por Jogo" homeVal={match.matchStats!.homeXgAgainstAvg ?? 0} awayVal={match.matchStats!.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
-                          )}
-                          {(match.matchStats!.homeAvgTotalGoals != null || match.matchStats!.awayAvgTotalGoals != null) && (
-                            <ComparativeBar label="Media Gols Total/Jogo" homeVal={match.matchStats!.homeAvgTotalGoals ?? 0} awayVal={match.matchStats!.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
-                          )}
-                          <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
-                            {match.matchStats!.homeWinPercentage != null && (
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ color: "#888", marginBottom: 2 }}>Vitorias %</div>
-                                <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeWinPercentage?.toFixed(0)}%</span>
-                                <span style={{ color: "#666" }}> vs </span>
-                                <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayWinPercentage?.toFixed(0) ?? "-"}%</span>
-                              </div>
-                            )}
-                            {match.matchStats!.homeOver25Percentage != null && (
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ color: "#888", marginBottom: 2 }}>Over 2.5 %</div>
-                                <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeOver25Percentage?.toFixed(0)}%</span>
-                                <span style={{ color: "#666" }}> vs </span>
-                                <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayOver25Percentage?.toFixed(0) ?? "-"}%</span>
-                              </div>
-                            )}
-                            {match.matchStats!.homeCleanSheetPct != null && (
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ color: "#888", marginBottom: 2 }}>Clean Sheet %</div>
-                                <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeCleanSheetPct?.toFixed(0)}%</span>
-                                <span style={{ color: "#666" }}> vs </span>
-                                <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayCleanSheetPct?.toFixed(0) ?? "-"}%</span>
-                              </div>
-                            )}
-                            {match.matchStats!.homeBttsPercentage != null && (
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ color: "#888", marginBottom: 2 }}>BTTS %</div>
-                                <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeBttsPercentage?.toFixed(0)}%</span>
-                                <span style={{ color: "#666" }}> vs </span>
-                                <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayBttsPercentage?.toFixed(0) ?? "-"}%</span>
-                              </div>
-                            )}
-                            {match.matchStats!.homeLeaguePosition != null && (
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ color: "#888", marginBottom: 2 }}>Posicao Liga</div>
-                                <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeLeaguePosition?.toFixed(0)}o</span>
-                                <span style={{ color: "#666" }}> vs </span>
-                                <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayLeaguePosition?.toFixed(0) ?? "-"}o</span>
-                              </div>
-                            )}
-                          </div>
-                          {/* Model-data fallback: always show calculated stats when team data unavailable */}
-                          {!hasTeamData && (
+                          {hasTeamData && (
                             <>
-                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Dados do modelo (time indisponivel)</div>
-                              {(match.matchStats!.lambdaHome != null || match.matchStats!.lambdaAway != null) && (
-                                <ComparativeBar label="Lambda (Gols Esperados)" homeVal={match.matchStats!.lambdaHome ?? 0} awayVal={match.matchStats!.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              {(ms.homeXgForAvg != null || ms.awayXgForAvg != null) && (
+                                <ComparativeBar label="xG Medio por Jogo" homeVal={ms.homeXgForAvg ?? 0} awayVal={ms.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              )}
+                              {(ms.homeXgAgainstAvg != null || ms.awayXgAgainstAvg != null) && (
+                                <ComparativeBar label="xG Sofrido por Jogo" homeVal={ms.homeXgAgainstAvg ?? 0} awayVal={ms.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              )}
+                              {(ms.homeAvgTotalGoals != null || ms.awayAvgTotalGoals != null) && (
+                                <ComparativeBar label="Media Gols Total/Jogo" homeVal={ms.homeAvgTotalGoals ?? 0} awayVal={ms.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               )}
                               <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
-                                {match.matchStats!.homeWinProb != null && (
+                                {ms.homeWinPercentage != null && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Prob. Vitoria</div>
-                                    <span style={{ color: "#4fc3f7" }}>{match.matchStats!.homeWinProb?.toFixed(1)}%</span>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Vitorias %</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeWinPercentage?.toFixed(0)}%</span>
                                     <span style={{ color: "#666" }}> vs </span>
-                                    <span style={{ color: "#ff8a65" }}>{match.matchStats!.awayWinProb?.toFixed(1) ?? "-"}%</span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayWinPercentage?.toFixed(0) ?? "-"}%</span>
                                   </div>
                                 )}
-                                {match.matchStats!.drawProb != null && (
+                                {ms.homeOver25Percentage != null && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Empate</div>
-                                    <span style={{ color: "#ccc" }}>{match.matchStats!.drawProb?.toFixed(1)}%</span>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Over 2.5 %</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeOver25Percentage?.toFixed(0)}%</span>
+                                    <span style={{ color: "#666" }}> vs </span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayOver25Percentage?.toFixed(0) ?? "-"}%</span>
                                   </div>
                                 )}
-                                {match.matchStats!.over25Prob != null && (
+                                {ms.homeCleanSheetPct != null && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Over 2.5</div>
-                                    <span style={{ color: "#ccc" }}>{match.matchStats!.over25Prob?.toFixed(1)}%</span>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Clean Sheet %</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeCleanSheetPct?.toFixed(0)}%</span>
+                                    <span style={{ color: "#666" }}> vs </span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayCleanSheetPct?.toFixed(0) ?? "-"}%</span>
                                   </div>
                                 )}
-                                {match.matchStats!.bttsProb != null && (
+                                {ms.homeBttsPercentage != null && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>BTTS</div>
-                                    <span style={{ color: "#ccc" }}>{match.matchStats!.bttsProb?.toFixed(1)}%</span>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>BTTS %</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeBttsPercentage?.toFixed(0)}%</span>
+                                    <span style={{ color: "#666" }}> vs </span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayBttsPercentage?.toFixed(0) ?? "-"}%</span>
                                   </div>
                                 )}
-                                {match.matchStats!.avgGoals != null && (
+                                {ms.homeLeaguePosition != null && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Media Gols</div>
-                                    <span style={{ color: "#ccc" }}>{match.matchStats!.avgGoals?.toFixed(2)}</span>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Posicao Liga</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeLeaguePosition?.toFixed(0)}o</span>
+                                    <span style={{ color: "#666" }}> vs </span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayLeaguePosition?.toFixed(0) ?? "-"}o</span>
                                   </div>
                                 )}
                               </div>
                             </>
+                          )}
+                          {/* Model-data fallback: show Poisson model stats when team data unavailable */}
+                          {!hasTeamData && hasModelData && (
+                            <>
+                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Analise estatistica (modelo Poisson)</div>
+                              <ComparativeBar label="Lambda (Gols Esperados)" homeVal={ms.lambdaHome ?? 0} awayVal={ms.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                              <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
+                                {ms.homeWinProb != null && ms.homeWinProb > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Prob. Vitoria</div>
+                                    <span style={{ color: "#4fc3f7" }}>{ms.homeWinProb?.toFixed(1)}%</span>
+                                    <span style={{ color: "#666" }}> vs </span>
+                                    <span style={{ color: "#ff8a65" }}>{ms.awayWinProb?.toFixed(1) ?? "-"}%</span>
+                                  </div>
+                                )}
+                                {ms.drawProb != null && ms.drawProb > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Empate</div>
+                                    <span style={{ color: "#ccc" }}>{ms.drawProb?.toFixed(1)}%</span>
+                                  </div>
+                                )}
+                                {ms.over25Prob != null && ms.over25Prob > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Over 2.5</div>
+                                    <span style={{ color: "#ccc" }}>{ms.over25Prob?.toFixed(1)}%</span>
+                                  </div>
+                                )}
+                                {ms.bttsProb != null && ms.bttsProb > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>BTTS</div>
+                                    <span style={{ color: "#ccc" }}>{ms.bttsProb?.toFixed(1)}%</span>
+                                  </div>
+                                )}
+                                {ms.avgGoals != null && ms.avgGoals > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Media Gols</div>
+                                    <span style={{ color: "#ccc" }}>{ms.avgGoals?.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          {/* No data at all */}
+                          {!hasTeamData && !hasModelData && (
+                            <div style={{ textAlign: "center", padding: 16, color: "#666", fontSize: "0.75rem" }}>
+                              Dados de perfil serao exibidos apos o carregamento completo dos jogos.
+                            </div>
                           )}
                         </div>
                         );

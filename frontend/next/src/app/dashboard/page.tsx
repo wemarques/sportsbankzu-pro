@@ -427,6 +427,11 @@ export default function Dashboard() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Fire-and-forget: ping backend health to warm up Lambda before main data load
+  useEffect(() => {
+    fetch("/api/backend/health", { cache: "no-store" }).catch(() => {});
+  }, []);
+
   // Auto-refresh stale JS: compare client buildId with server buildId
   useEffect(() => {
     async function checkFreshness() {
