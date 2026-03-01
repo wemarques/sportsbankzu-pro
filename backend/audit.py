@@ -17,7 +17,7 @@ DEFAULT_PG_CONFIG = {
     "port": int(os.getenv("PGPORT", "5432")),
 }
 
-APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V3.3.1")
+APP_VERSION = os.getenv("SPORTSBANK_VERSION", "pro V3.4")
 
 audit_logger = logging.getLogger("sportsbankzu.audit")
 audit_logger.setLevel(logging.INFO)

@@ -254,6 +254,7 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
 @router.get("/live-scores")
 def live_scores() -> Dict[str, Any]:
     """Retorna placares ao vivo dos jogos do dia (cache de 1 min)."""
+    import time as _time
     from backend.services.util_service import status_map
     try:
         data = footstats.get_live_scores()
@@ -262,6 +263,7 @@ def live_scores() -> Dict[str, Any]:
         raw_list = data.get("data", [])
         if not raw_list:
             return {"matches": []}
+        now_ts = int(_time.time())
         result = []
         for m in raw_list:
             status = status_map(str(m.get("status", "")))
@@ -274,23 +276,48 @@ def live_scores() -> Dict[str, Any]:
             ht_home = m.get("home_team_goal_count_half_time")
             ht_away = m.get("away_team_goal_count_half_time")
             halftime = None
+            has_ht = False
             if ht_home is not None and ht_away is not None:
                 try:
                     _hth, _hta = int(ht_home), int(ht_away)
                     if _hth >= 0 and _hta >= 0:
                         halftime = {"home": _hth, "away": _hta}
+                        has_ht = True
                 except (ValueError, TypeError):
                     pass
             score = {"home": int(home_goals), "away": int(away_goals)}
             if halftime:
                 score["halftime"] = halftime
+            # Determine period and approximate minute for live matches
+            period = None
+            minute = None
+            if status == "live":
+                kickoff_ts = m.get("date_unix")
+                if kickoff_ts:
+                    try:
+                        elapsed = max(0, (now_ts - int(kickoff_ts)) // 60)
+                        if elapsed <= 47:
+                            period = "1T"
+                            minute = min(elapsed, 45)
+                        elif elapsed <= 62:
+                            period = "HT"
+                            minute = None
+                        else:
+                            period = "2T"
+                            minute = min(elapsed - 15, 90)
+                    except (ValueError, TypeError):
+                        pass
+                # Override: if halftime data exists, at least 2nd half
+                if has_ht and period == "1T":
+                    period = "2T"
             result.append({
                 "id": m.get("id"),
                 "homeTeam": m.get("home_name", ""),
                 "awayTeam": m.get("away_name", ""),
                 "status": status,
                 "score": score,
-                "minute": m.get("minute", None),
+                "period": period,
+                "minute": minute,
             })
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:
