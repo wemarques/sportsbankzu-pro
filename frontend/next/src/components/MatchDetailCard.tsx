@@ -104,6 +104,7 @@ export interface MatchDetailData {
   awayTeamLogo?: string;
   startTime?: string;
   status?: "scheduled" | "live" | "finished";
+  score?: { home: number; away: number; halftime?: { home: number; away: number } };
   venue?: {
     name: string;
     capacity?: number;
@@ -348,7 +349,29 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
         <div className="match-detail-card__center">
           <h3 className="mdc-team-name">{match.homeTeam}</h3>
 
-          {timeRemaining && (
+          {match.status === "live" && match.score ? (
+            <div className="mdc-live-score">
+              <div className="mdc-live-score__value">
+                {match.score.home} - {match.score.away}
+              </div>
+              {match.score.halftime && (
+                <div className="mdc-live-score__ht">
+                  HT: {match.score.halftime.home} - {match.score.halftime.away}
+                </div>
+              )}
+            </div>
+          ) : match.status === "finished" && match.score ? (
+            <div className="mdc-final-score">
+              <div className="mdc-final-score__value">
+                {match.score.home} - {match.score.away}
+              </div>
+              {match.score.halftime && (
+                <div className="mdc-final-score__ht">
+                  HT: {match.score.halftime.home} - {match.score.halftime.away}
+                </div>
+              )}
+            </div>
+          ) : timeRemaining ? (
             <div className="mdc-countdown">
               <div className="mdc-countdown__label">Inicia em</div>
               <div className="mdc-countdown__time">
@@ -359,7 +382,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 <span className="mdc-countdown__number">{String(timeRemaining.seconds).padStart(2, "0")}</span>
               </div>
             </div>
-          )}
+          ) : null}
 
           {match.leagueId && (
             <span

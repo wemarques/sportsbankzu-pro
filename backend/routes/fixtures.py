@@ -251,6 +251,53 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     return {"matches": out}
 
 
+@router.get("/live-scores")
+def live_scores() -> Dict[str, Any]:
+    """Retorna placares ao vivo dos jogos do dia (cache de 1 min)."""
+    from backend.services.util_service import status_map
+    try:
+        data = footstats.get_live_scores()
+        if not data.get("success"):
+            return {"matches": [], "error": "Falha ao buscar placares"}
+        raw_list = data.get("data", [])
+        if not raw_list:
+            return {"matches": []}
+        result = []
+        for m in raw_list:
+            status = status_map(str(m.get("status", "")))
+            if status not in ("live", "finished"):
+                continue
+            home_goals = m.get("homeGoalCount")
+            away_goals = m.get("awayGoalCount")
+            if home_goals is None or away_goals is None:
+                continue
+            ht_home = m.get("home_team_goal_count_half_time")
+            ht_away = m.get("away_team_goal_count_half_time")
+            halftime = None
+            if ht_home is not None and ht_away is not None:
+                try:
+                    _hth, _hta = int(ht_home), int(ht_away)
+                    if _hth >= 0 and _hta >= 0:
+                        halftime = {"home": _hth, "away": _hta}
+                except (ValueError, TypeError):
+                    pass
+            score = {"home": int(home_goals), "away": int(away_goals)}
+            if halftime:
+                score["halftime"] = halftime
+            result.append({
+                "id": m.get("id"),
+                "homeTeam": m.get("home_name", ""),
+                "awayTeam": m.get("away_name", ""),
+                "status": status,
+                "score": score,
+                "minute": m.get("minute", None),
+            })
+        return {"matches": result, "nextUpdate": 60}
+    except Exception as e:
+        logger.error(f"[live-scores] Error: {e}")
+        return {"matches": [], "error": str(e)}
+
+
 @router.get("/standings")
 def standings(league: str = Query("")) -> Dict[str, Any]:
     """Retorna a tabela de classificação de uma liga via FootyStats API."""
