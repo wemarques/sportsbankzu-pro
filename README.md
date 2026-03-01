@@ -1,4 +1,4 @@
-# SportsBank Pro V3.3.1
+# SportsBankZU Pro V3.3.1
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
 
@@ -14,7 +14,7 @@
 
 ## 📊 Visão Geral
 
-O **SportsBank Pro** é um sistema completo de análise e prognósticos esportivos que combina modelos estatísticos avançados com uma interface intuitiva e profissional.
+O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esportivos que combina modelos estatísticos avançados com uma interface intuitiva e profissional.
 
 ---
 
@@ -84,7 +84,7 @@ O sistema oferece análise estatística baseada em modelos de Poisson, Expected 
 
 ## 🔐 Sistema de Autenticação
 
-O SportsBank Pro inclui um sistema de autenticacao opcional que protege o acesso ao sistema atraves de login com usuario e senha.
+O SportsBankZU Pro inclui um sistema de autenticacao opcional que protege o acesso ao sistema atraves de login com usuario e senha.
 
 ### Características
 

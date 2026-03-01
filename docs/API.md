@@ -1,4 +1,4 @@
-# SportsBank Pro API
+# SportsBankZU Pro API
 
 ## Endpoints
 

@@ -1,4 +1,4 @@
-"""SportsBank Pro CLI entry point."""
+"""SportsBankZU Pro CLI entry point."""
 
 import logging
 
@@ -15,7 +15,7 @@ from cli.commands.utils import utils
 @click.version_option(version=__version__, prog_name="sportsbank")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose/debug logging")
 def cli(verbose):
-    """SportsBank Pro - Professional sports prediction system.
+    """SportsBankZU Pro - Professional sports prediction system.
 
     Use the subcommands below to manage data, run analysis,
     start servers, and perform utility tasks.

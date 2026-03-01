@@ -1,5 +1,5 @@
 """
-Sistema de Autenticação para SportsBank Pro
+Sistema de Autenticação para SportsBankZU Pro
 Autor: SportsBank Team
 Data: 2026-01-22
 """
@@ -136,7 +136,7 @@ class Authenticator:
             return True
         
         # Exibir formulário de login
-        st.markdown("# 🔐 Login - SportsBank Pro")
+        st.markdown("# 🔐 Login - SportsBankZU Pro")
         st.markdown("### Sistema de Prognósticos Esportivos")
         st.markdown("---")
         

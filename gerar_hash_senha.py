@@ -1,5 +1,5 @@
 """
-Gerador de Hash de Senha para SportsBank Pro
+Gerador de Hash de Senha para SportsBankZU Pro
 Utilize este script para gerar hashes SHA-256 de senhas
 """
 
@@ -19,7 +19,7 @@ def gerar_hash_senha(senha):
 
 def main():
     print("=" * 60)
-    print("🔐 GERADOR DE HASH DE SENHA - SportsBank Pro")
+    print("🔐 GERADOR DE HASH DE SENHA - SportsBankZU Pro")
     print("=" * 60)
     print()
     

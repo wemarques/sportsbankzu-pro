@@ -24,7 +24,7 @@ def test_title_present():
     """Testa se o titulo principal esta presente."""
     at = AppTest.from_file("app.py")
     at.run()
-    assert "SportsBank Pro" in str(at.title)
+    assert "SportsBankZU Pro" in str(at.title)
 
 
 def test_backend_url_displayed():

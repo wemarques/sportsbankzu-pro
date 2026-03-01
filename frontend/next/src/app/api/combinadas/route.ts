@@ -23,12 +23,30 @@ export async function GET(req: NextRequest) {
     limite_inter: url.searchParams.get("limite_inter") ?? "8",
   });
 
-  const result = await fetchBackend(`/combinadas?${qs.toString()}`, { timeoutMs: 55_000 });
+  const COMBINADAS_TIMEOUT_MS = 55_000;
+  let result = await fetchBackend(`/combinadas?${qs.toString()}`, { timeoutMs: COMBINADAS_TIMEOUT_MS });
+
+  // Auto-retry once on transient errors (Lambda cold start)
+  if (
+    !result.ok &&
+    result.error &&
+    (result.error.kind === "TIMEOUT" ||
+      result.error.kind === "CONNECTION_ERROR" ||
+      (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
+  ) {
+    console.log(
+      `[combinadas] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying...`,
+    );
+    result = await fetchBackend(`/combinadas?${qs.toString()}`, { timeoutMs: COMBINADAS_TIMEOUT_MS });
+  }
 
   if (result.ok) {
     return Response.json({ ...(result.data as object), _latencyMs: result.durationMs });
   }
 
+  console.error(
+    `[combinadas] ${result.error?.kind ?? "UNKNOWN"} | ${result.error?.message ?? ""} | ${result.durationMs}ms`,
+  );
   return Response.json(
     {
       intra: [],
