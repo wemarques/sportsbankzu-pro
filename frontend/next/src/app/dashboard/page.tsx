@@ -52,7 +52,7 @@ import {
 } from "lucide-react";
 import "@/styles/scoretabs-dashboard.css";
 
-const VERSION_FALLBACK = "pro V3.3.1";
+const VERSION_FALLBACK = "pro V3.4";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {

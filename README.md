@@ -1,6 +1,6 @@
-# SportsBankZU Pro V3.3.1
+# SportsBankZU Pro V3.4
 
-> Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, auditoria contínua por IA e calibração de modelos
+> Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, placares ao vivo, auditoria contínua por IA e calibração de modelos
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green.svg)](https://fastapi.tiangolo.com/)
@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-02-28
+**Última revisão:** 2026-03-01
 
 ---
 
@@ -45,6 +45,9 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Responsividade mobile/tablet (CSS customizado)
 - Ordenação de jogos por horário (asc/desc) no dashboard (V3.3.1)
 - Isolamento de erros por jogo/liga no backend — falha em um jogo não exclui os demais (V3.3.1)
+- Placares ao vivo via FootyStats API com polling automatico a cada 60s (V3.4)
+- Identificacao visual de jogos em andamento com badge "AO VIVO" pulsante e placar em destaque (V3.4)
+- Endpoint `/live-scores` no backend com cache de 1 minuto para eficiencia de rate limit (V3.4)
 
 ### Dashboard Next.js (Produção)
 
@@ -54,6 +57,7 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Análise IA (Mistral) por jogo
 - Favoritos com persistência em localStorage
 - **Compartilhar via WhatsApp**: captura da tela e envio (Web Share API ou download + link)
+- **Placares ao vivo**: atualizacao automatica de placares durante jogos em andamento com indicador visual
 
 ### Funcionalidades Opcionais
 
@@ -474,6 +478,9 @@ GET http://localhost:5001/fixtures?leagues=premier-league,la-liga&date=today
 # Descobrir ligas disponíveis
 GET http://localhost:5001/discover
 
+# Placares ao vivo (cache 1 min)
+GET http://localhost:5001/live-scores
+
 # Gerar quadro-resumo profissional
 GET http://localhost:5001/quadro-resumo?league=premier-league&date=week&incluir_simples=true&incluir_duplas=true&incluir_triplas=false&incluir_governanca=true
 ```
@@ -488,7 +495,7 @@ A **tela de login** deve aparecer ao acessar pela primeira vez. Após autentica�
 
 Confirme o funcionamento do dashboard:
 
-A **página inicial** (`/dashboard`) deve carregar jogos por liga com filtros Hoje/Amanhã/Próxima Rodada. A **aba Recomendadas 2026** exibe jogos com maior confiança. O **botão Compartilhar** captura a tela e permite enviar via WhatsApp (em dispositivos compatíveis) ou faz download da imagem e abre o WhatsApp com o link. A **navegação** é fluida e responsiva.
+A **página inicial** (`/dashboard`) deve carregar jogos por liga com filtros Hoje/Amanhã/Próxima Rodada. A **aba Recomendadas 2026** exibe jogos com maior confiança. O **botão Compartilhar** captura a tela e permite enviar via WhatsApp (em dispositivos compatíveis) ou faz download da imagem e abre o WhatsApp com o link. **Jogos ao vivo** exibem placar atualizado automaticamente a cada 60s com indicador vermelho pulsante. A **navegação** é fluida e responsiva.
 
 ---
 
@@ -548,6 +555,22 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.4 — 1 de Marco de 2026 (Placares ao Vivo)
+
+#### Backend
+- **feat(api):** Novo endpoint `/live-scores` retorna placares e status de jogos em andamento/finalizados via FootyStats `todays-matches`
+- **feat(api):** Metodo `get_live_scores()` no FootyStatsClient com cache de 1 minuto (vs 30 min do `todays-matches` padrao) para eficiencia de rate limit
+- **feat(service):** `fixtures_service.py` agora extrai placar para jogos com status `live` (antes apenas `finished`), incluindo placar do intervalo (halftime)
+
+#### Frontend / Dashboard
+- **feat(live):** Polling automatico de placares a cada 60s quando ha jogos ao vivo (120s quando nao ha) via `/api/matches/live`
+- **feat(live):** Rota `/api/matches/live` reescrita — substituido mock `simulateLive()` por chamada real ao backend
+- **feat(ui):** Indicador visual "AO VIVO" com ponto vermelho pulsante na linha do jogo e no cabeçalho da liga
+- **feat(ui):** Placar ao vivo em destaque (vermelho, fonte maior, pulsante) nas linhas de jogos e no card de detalhes
+- **feat(ui):** Placar final com intervalo (HT) exibido no card de detalhes para jogos finalizados
+- **feat(ui):** Badge de contagem de jogos ao vivo no cabeçalho da liga (ex: "2 AO VIVO")
+- **feat(type):** Campo `footystatsId` adicionado ao tipo `Match` para correlacao precisa no polling
 
 ### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
 
