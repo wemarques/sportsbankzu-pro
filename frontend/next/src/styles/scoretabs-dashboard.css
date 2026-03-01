@@ -450,9 +450,17 @@
 }
 
 .st-match-row__status {
-  width: 52px;
+  width: 56px;
   text-align: center;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.st-match-row--live {
+  background: rgba(255, 68, 68, 0.04);
 }
 
 .st-match-row__status-date {
@@ -469,19 +477,49 @@
   line-height: 1.2;
 }
 
-.st-match-row__status-label--ft {
-  color: var(--st-finished);
-}
-
-.st-match-row__status-label--live {
-  color: var(--st-live);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .st-match-row__status-label--scheduled {
   color: var(--st-text-muted);
+}
+
+.st-match-row__status-tag {
+  font-size: 0.55rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  line-height: 1.3;
+}
+
+.st-match-row__status-tag--live {
+  background: var(--st-live);
+  color: #fff;
+  animation: st-pulse 2s infinite;
+}
+
+.st-match-row__status-tag--ft {
+  background: rgba(0, 204, 102, 0.15);
+  color: var(--st-finished);
+  font-size: 0.6rem;
+}
+
+.st-match-row__status-tag--soon {
+  background: rgba(255, 187, 51, 0.2);
+  color: #ffbb33;
+}
+
+.st-match-row__status-period {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--st-live);
+  line-height: 1.2;
+}
+
+.st-match-row__status-minute {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--st-text-muted);
+  line-height: 1.1;
 }
 
 .st-match-row__status-time {

@@ -349,12 +349,12 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
         <div className="match-detail-card__center">
           <h3 className="mdc-team-name">{match.homeTeam}</h3>
 
-          {match.status === "live" && match.score ? (
+          {match.status === "live" ? (
             <div className="mdc-live-score">
               <div className="mdc-live-score__value">
-                {match.score.home} - {match.score.away}
+                {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
               </div>
-              {match.score.halftime && (
+              {match.score?.halftime && (
                 <div className="mdc-live-score__ht">
                   HT: {match.score.halftime.home} - {match.score.halftime.away}
                 </div>

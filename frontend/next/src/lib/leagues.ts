@@ -37,6 +37,8 @@ export type Match = {
     away: number;
     halftime?: { home: number; away: number };
   };
+  period?: "1T" | "HT" | "2T" | null;
+  minute?: number | null;
   odds: {
     home: number;
     draw: number;

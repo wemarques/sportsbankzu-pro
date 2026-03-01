@@ -185,16 +185,32 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
-function statusInfo(status: Match["status"]) {
-  switch (status) {
-    case "live":
-      return { label: "AO VIVO", cssClass: "st-match-row__status-label--live" };
-    case "finished":
-      return { label: "FT", cssClass: "st-match-row__status-label--ft" };
-    case "postponed":
-      return { label: "ADIADO", cssClass: "st-match-row__status-label--ft" };
-    default:
-      return { label: "", cssClass: "st-match-row__status-label--scheduled" };
+/** Compute live period from kickoff time when backend hasn't supplied it yet. */
+function computeLiveInfo(match: Match): { period: string; minute: number | null } | null {
+  if (match.status !== "live") return null;
+  // Use backend-provided period/minute if available
+  if (match.period) return { period: match.period, minute: match.minute ?? null };
+  // Fallback: estimate from kickoff
+  try {
+    const kickoff = new Date(match.datetime).getTime();
+    const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
+    if (elapsed < 0) return null;
+    if (elapsed <= 47) return { period: "1T", minute: Math.min(elapsed, 45) };
+    if (elapsed <= 62) return { period: "HT", minute: null };
+    return { period: "2T", minute: Math.min(elapsed - 15, 90) };
+  } catch {
+    return { period: "1T", minute: null };
+  }
+}
+
+/** Minutes until match kickoff (null if already started). */
+function minutesToKickoff(datetime: string): number | null {
+  try {
+    const diff = new Date(datetime).getTime() - Date.now();
+    if (diff <= 0) return null;
+    return Math.floor(diff / 60_000);
+  } catch {
+    return null;
   }
 }
 
@@ -249,6 +265,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
     score: item.score,
+    period: item.period ?? undefined,
+    minute: item.minute ?? undefined,
     odds: {
       home: item.odds?.home ?? 0,
       draw: item.odds?.draw ?? 0,
@@ -600,24 +618,24 @@ export default function Dashboard() {
         const res = await fetch("/api/matches/live", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        const liveMatches: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; minute?: number }> = data.matches ?? [];
+        const liveMatches: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
         if (liveMatches.length === 0) return;
         setAllMatches((prev) => {
           let changed = false;
           const updated = prev.map((m) => {
-            // Match by footystatsId (numeric) or by team names
             const live = liveMatches.find((lm) => {
-              const fid = (m as any).footystatsId;
-              if (fid && lm.id === fid) return true;
+              if (m.footystatsId && lm.id === m.footystatsId) return true;
               return lm.homeTeam === m.homeTeam.name && lm.awayTeam === m.awayTeam.name;
             });
             if (!live) return m;
             const newStatus = live.status as Match["status"];
             const scoreChanged = m.score?.home !== live.score.home || m.score?.away !== live.score.away;
             const statusChanged = m.status !== newStatus;
-            if (!scoreChanged && !statusChanged) return m;
+            const periodChanged = m.period !== (live.period as Match["period"]);
+            const minuteChanged = m.minute !== live.minute;
+            if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
             changed = true;
-            return { ...m, status: newStatus, score: live.score };
+            return { ...m, status: newStatus, score: live.score, period: live.period as Match["period"], minute: live.minute };
           });
           return changed ? updated : prev;
         });
@@ -1631,27 +1649,49 @@ export default function Dashboard() {
               </div>
 
                 {!group.collapsed && group.matches.map((match) => {
-                const si = statusInfo(match.status);
                 const h = safeOdd(match.odds?.home);
                 const d = safeOdd(match.odds?.draw);
                 const a = safeOdd(match.odds?.away);
                 const lowestIdx = getLowestOddIndex(h, d, a);
                 const isSelected = match.id === selectedMatchId;
+                const liveInfo = computeLiveInfo(match);
+                const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
 
                 return (
                   <div
                     key={match.id}
-                    className={`st-match-row ${isSelected ? "st-match-row--selected" : ""}`}
+                    className={`st-match-row ${isSelected ? "st-match-row--selected" : ""} ${match.status === "live" ? "st-match-row--live" : ""}`}
                     onClick={() => setSelectedMatchId(match.id)}
                   >
                     <div className="st-match-row__status">
-                      <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                      <div className={`st-match-row__status-label ${si.cssClass}`}>
-                        {match.status === "live" && <span className="st-live-dot" />}
-                        {si.label || formatTime(match.datetime)}
-                      </div>
-                      {si.label && (
-                        <div className="st-match-row__status-time">{formatTime(match.datetime)}</div>
+                      {match.status === "live" && liveInfo ? (
+                        <>
+                          <div className="st-match-row__status-tag st-match-row__status-tag--live">VIVO</div>
+                          <div className="st-match-row__status-period">{liveInfo.period}</div>
+                          {liveInfo.minute != null && liveInfo.period !== "HT" && (
+                            <div className="st-match-row__status-minute">{liveInfo.minute}&apos;</div>
+                          )}
+                        </>
+                      ) : match.status === "finished" ? (
+                        <>
+                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
+                          <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
+                        </>
+                      ) : match.status === "postponed" ? (
+                        <>
+                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
+                          <div className="st-match-row__status-tag st-match-row__status-tag--ft">ADIADO</div>
+                        </>
+                      ) : minsToKick != null && minsToKick <= 30 ? (
+                        <>
+                          <div className="st-match-row__status-tag st-match-row__status-tag--soon">BREVE</div>
+                          <div className="st-match-row__status-minute">{minsToKick}&apos;</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
+                          <div className="st-match-row__status-label st-match-row__status-label--scheduled">{formatTime(match.datetime)}</div>
+                        </>
                       )}
                     </div>
                     <div className="st-match-row__teams">
@@ -1672,9 +1712,9 @@ export default function Dashboard() {
                         <span className="st-match-row__team-name">{match.awayTeam.name}</span>
                       </div>
                     </div>
-                    {match.score && (
+                    {(match.score || match.status === "live") && (
                       <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
-                        {match.score.home ?? 0} - {match.score.away ?? 0}
+                        {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
                       </div>
                     )}
                     {oddsTab === "1x2" && (
