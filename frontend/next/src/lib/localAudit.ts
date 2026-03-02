@@ -11,6 +11,7 @@ import type {
   BatchAuditResult,
   BatchAuditMatchResult,
   BatchAuditMarketAccuracy,
+  ModelUpdateRecommendation,
 } from "./api";
 
 /** Evaluate a single pick against the actual result. */
@@ -63,6 +64,120 @@ function evaluatePick(
   }
 
   return false;
+}
+
+/**
+ * Compute model update recommendation based on audit metrics.
+ * Uses Brier score, lambda error, and accuracy thresholds to determine
+ * whether the model needs recalibration/retraining.
+ */
+function computeModelUpdateRecommendation(
+  overallAccuracy: number,
+  safeAccuracy: number,
+  avgBrier: number,
+  avgLambdaError: number,
+  marketAccuracy: BatchAuditMarketAccuracy[],
+  auditedMatches: number,
+): ModelUpdateRecommendation {
+  const reasons: string[] = [];
+  const actions: string[] = [];
+  let score = 0; // higher = more urgent
+
+  // Not enough data to make a recommendation
+  if (auditedMatches < 3) {
+    return {
+      needs_update: false,
+      urgency: "BAIXA",
+      reasons: ["Dados insuficientes para avaliação (mínimo 3 jogos finalizados)"],
+      recommended_actions: ["Aguardar mais jogos finalizados para avaliação"],
+      next_retrain_suggestion: "Após acumular mais resultados",
+    };
+  }
+
+  // 1. Brier Score evaluation (lower is better, >0.25 is concerning, >0.35 is bad)
+  if (avgBrier > 0.35) {
+    reasons.push(`Brier Score muito alto (${avgBrier.toFixed(4)}) — calibração das probabilidades está fraca`);
+    actions.push("Recalibrar modelos de probabilidade (Isotonic Regression)");
+    score += 3;
+  } else if (avgBrier > 0.25) {
+    reasons.push(`Brier Score acima do ideal (${avgBrier.toFixed(4)}) — probabilidades precisam de ajuste`);
+    actions.push("Ajustar thresholds de probabilidade");
+    score += 1;
+  }
+
+  // 2. Lambda error evaluation (>1.5 goals off is concerning, >2.0 is bad)
+  if (avgLambdaError > 2.0) {
+    reasons.push(`Erro médio de lambda muito alto (${avgLambdaError.toFixed(2)} gols) — modelo Poisson desajustado`);
+    actions.push("Re-treinar parâmetros lambda do modelo Poisson");
+    score += 3;
+  } else if (avgLambdaError > 1.5) {
+    reasons.push(`Erro médio de lambda elevado (${avgLambdaError.toFixed(2)} gols)`);
+    actions.push("Revisar multiplicadores lambda");
+    score += 1;
+  }
+
+  // 3. Overall accuracy (< 40% is bad, < 50% is concerning)
+  if (overallAccuracy < 40) {
+    reasons.push(`Acurácia geral muito baixa (${overallAccuracy.toFixed(1)}%) — modelo precisa de revisão`);
+    actions.push("Revisão completa dos modelos estatísticos");
+    score += 3;
+  } else if (overallAccuracy < 50) {
+    reasons.push(`Acurácia geral abaixo de 50% (${overallAccuracy.toFixed(1)}%)`);
+    actions.push("Ajustar pesos dos mercados e thresholds");
+    score += 2;
+  }
+
+  // 4. SAFE accuracy (should be higher than overall; < 55% is a problem)
+  if (safeAccuracy < 50) {
+    reasons.push(`Picks SAFE com acurácia muito baixa (${safeAccuracy.toFixed(1)}%) — thresholds SAFE precisam recalibração`);
+    actions.push("Elevar thresholds mínimos para classificação SAFE");
+    score += 3;
+  } else if (safeAccuracy < 60) {
+    reasons.push(`Picks SAFE com acurácia abaixo do esperado (${safeAccuracy.toFixed(1)}%)`);
+    actions.push("Revisar critérios de classificação SAFE");
+    score += 1;
+  }
+
+  // 5. Market-specific issues (any market with >=5 picks and <30% accuracy)
+  for (const ma of marketAccuracy) {
+    if (ma.total >= 5 && ma.accuracy_pct < 30) {
+      reasons.push(`Mercado "${ma.market}" com acurácia crítica (${ma.accuracy_pct.toFixed(1)}% em ${ma.total} picks)`);
+      actions.push(`Recalibrar ou desativar mercado "${ma.market}"`);
+      score += 2;
+    }
+  }
+
+  // Determine urgency
+  let urgency: ModelUpdateRecommendation["urgency"];
+  if (score >= 7) urgency = "CRITICA";
+  else if (score >= 4) urgency = "ALTA";
+  else if (score >= 2) urgency = "MEDIA";
+  else urgency = "BAIXA";
+
+  const needsUpdate = score >= 2;
+
+  // Next retrain suggestion
+  let nextRetrain: string;
+  if (score >= 7) nextRetrain = "Imediato — recalibração urgente necessária";
+  else if (score >= 4) nextRetrain = "Próximas 24h — agendar recalibração";
+  else if (score >= 2) nextRetrain = "Próxima segunda-feira (cron semanal)";
+  else nextRetrain = "Manter ciclo semanal atual";
+
+  if (actions.length === 0) {
+    actions.push("Manter configuração atual — modelo dentro dos parâmetros");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("Todos os indicadores dentro dos parâmetros aceitáveis");
+  }
+
+  return {
+    needs_update: needsUpdate,
+    urgency,
+    reasons,
+    recommended_actions: actions,
+    next_retrain_suggestion: nextRetrain,
+  };
 }
 
 /**
@@ -189,19 +304,35 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
           : 0,
     }));
 
+  const overallAcc = overallTotal > 0
+    ? Math.round((overallCorrect / overallTotal) * 1000) / 10
+    : 0;
+  const safeAcc = safeTotal > 0
+    ? Math.round((safeCorrect / safeTotal) * 1000) / 10
+    : 0;
+  const avgBrier = brierScores.length > 0
+    ? brierScores.reduce((a, b) => a + b, 0) / brierScores.length
+    : 0;
+  const avgLambda = lambdaErrors.length > 0
+    ? lambdaErrors.reduce((a, b) => a + b, 0) / lambdaErrors.length
+    : 0;
+
+  const modelUpdateRec = computeModelUpdateRecommendation(
+    overallAcc,
+    safeAcc,
+    avgBrier,
+    avgLambda,
+    marketAccuracy,
+    matchResults.length,
+  );
+
   return {
     status: "success",
     total_matches: finished.length,
     finished_matches: finished.length,
     audited_matches: matchResults.length,
-    overall_accuracy:
-      overallTotal > 0
-        ? Math.round((overallCorrect / overallTotal) * 1000) / 10
-        : 0,
-    safe_accuracy:
-      safeTotal > 0
-        ? Math.round((safeCorrect / safeTotal) * 1000) / 10
-        : 0,
+    overall_accuracy: overallAcc,
+    safe_accuracy: safeAcc,
     neutro_accuracy:
       neutroTotal > 0
         ? Math.round((neutroCorrect / neutroTotal) * 1000) / 10
@@ -210,17 +341,12 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     safe_total: safeTotal,
     neutro_correct: neutroCorrect,
     neutro_total: neutroTotal,
-    avg_brier_score:
-      brierScores.length > 0
-        ? brierScores.reduce((a, b) => a + b, 0) / brierScores.length
-        : 0,
-    avg_lambda_error:
-      lambdaErrors.length > 0
-        ? lambdaErrors.reduce((a, b) => a + b, 0) / lambdaErrors.length
-        : 0,
+    avg_brier_score: avgBrier,
+    avg_lambda_error: avgLambda,
     market_accuracy: marketAccuracy,
     match_results: matchResults,
     model_evaluation: null,
+    model_update_recommendation: modelUpdateRec,
   };
 }
 

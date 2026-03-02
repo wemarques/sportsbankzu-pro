@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-03-01
+**Última revisão:** 2026-03-02
 
 ---
 
@@ -48,6 +48,7 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Placares ao vivo via FootyStats API com polling automatico a cada 60s (V3.4)
 - Identificacao visual de jogos em andamento com badge "AO VIVO" pulsante e placar em destaque (V3.4)
 - Endpoint `/live-scores` no backend com cache de 1 minuto para eficiencia de rate limit (V3.4)
+- Recomendação de atualização do modelo na Auditoria da Rodada com diagnóstico, urgência e ações recomendadas (V3.4)
 
 ### Dashboard Next.js (Produção)
 
@@ -556,12 +557,14 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 
 ## 🔄 Histórico de Alterações (Changelog)
 
-### V3.4 — 1 de Marco de 2026 (Placares ao Vivo)
+### V3.4 — Marco de 2026 (Placares ao Vivo + Recomendação de Atualização do Modelo)
 
 #### Backend
 - **feat(api):** Novo endpoint `/live-scores` retorna placares e status de jogos em andamento/finalizados via FootyStats `todays-matches`
 - **feat(api):** Metodo `get_live_scores()` no FootyStatsClient com cache de 1 minuto (vs 30 min do `todays-matches` padrao) para eficiencia de rate limit
 - **feat(service):** `fixtures_service.py` agora extrai placar para jogos com status `live` (antes apenas `finished`), incluindo placar do intervalo (halftime)
+- **feat(ai):** Prompt Mistral de auditoria em lote atualizado com campo `model_update_recommendation` no schema JSON — IA agora recomenda se modelo precisa re-treino
+- **feat(ai):** Fallback de erro no `MistralAuditor` inclui `model_update_recommendation` padrão
 
 #### Frontend / Dashboard
 - **feat(live):** Polling automatico de placares a cada 60s quando ha jogos ao vivo (120s quando nao ha) via `/api/matches/live`
@@ -571,6 +574,11 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(ui):** Placar final com intervalo (HT) exibido no card de detalhes para jogos finalizados
 - **feat(ui):** Badge de contagem de jogos ao vivo no cabeçalho da liga (ex: "2 AO VIVO")
 - **feat(type):** Campo `footystatsId` adicionado ao tipo `Match` para correlacao precisa no polling
+- **feat(audit):** Recomendação de atualização do modelo na "Auditoria da Rodada" — calculo determinístico local (instantâneo) baseado em Brier Score, erro lambda, acurácia geral/SAFE e acurácia por mercado
+- **feat(audit):** Niveis de urgência: BAIXA, MEDIA, ALTA, CRITICA — com diagnóstico detalhado, ações recomendadas e sugestão de próximo re-treino
+- **feat(audit):** Quando disponível, avaliação Mistral AI substitui cálculo local (análise mais rica)
+- **feat(audit):** Novo tipo `ModelUpdateRecommendation` com `needs_update`, `urgency`, `reasons`, `recommended_actions`, `next_retrain_suggestion`
+- **feat(ui):** Seção visual "Modelo Precisa de Atualização" / "Modelo Dentro dos Parâmetros" com badge de urgência colorido, lista de diagnósticos e ações
 
 ### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
 

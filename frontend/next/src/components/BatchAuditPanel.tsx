@@ -18,6 +18,7 @@ import type {
   BatchAuditResult,
   BatchAuditCorrection,
   BatchAuditMatchResult,
+  ModelUpdateRecommendation,
 } from "@/lib/api";
 
 interface BatchAuditPanelProps {
@@ -62,6 +63,59 @@ function StatusBadge({ status }: { status: string }) {
           ? "mdc-batch-audit__status--critical"
           : "mdc-batch-audit__status--unknown";
   return <span className={`mdc-batch-audit__status ${cls}`}>{status}</span>;
+}
+
+function UrgencyBadge({ urgency }: { urgency: string }) {
+  const cls =
+    urgency === "CRITICA"
+      ? "mdc-batch-audit__urgency--critica"
+      : urgency === "ALTA"
+        ? "mdc-batch-audit__urgency--alta"
+        : urgency === "MEDIA"
+          ? "mdc-batch-audit__urgency--media"
+          : "mdc-batch-audit__urgency--baixa";
+  return <span className={`mdc-batch-audit__urgency ${cls}`}>{urgency}</span>;
+}
+
+function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
+  return (
+    <div className={`mdc-batch-audit__model-update ${rec.needs_update ? "mdc-batch-audit__model-update--needs" : "mdc-batch-audit__model-update--ok"}`}>
+      <div className="mdc-batch-audit__model-update-header">
+        <div className="mdc-batch-audit__model-update-title">
+          {rec.needs_update ? (
+            <AlertTriangle size={18} className="mdc-batch-audit__model-update-icon--warning" />
+          ) : (
+            <CheckCircle2 size={18} className="mdc-batch-audit__model-update-icon--ok" />
+          )}
+          <span>{rec.needs_update ? "Modelo Precisa de Atualização" : "Modelo Dentro dos Parâmetros"}</span>
+        </div>
+        <UrgencyBadge urgency={rec.urgency} />
+      </div>
+
+      <div className="mdc-batch-audit__model-update-reasons">
+        <h4>Diagnóstico</h4>
+        <ul>
+          {rec.reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mdc-batch-audit__model-update-actions">
+        <h4>Ações Recomendadas</h4>
+        <ul>
+          {rec.recommended_actions.map((a, i) => (
+            <li key={i}>{a}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mdc-batch-audit__model-update-retrain">
+        <Wrench size={14} />
+        <span>Próximo re-treino: <strong>{rec.next_retrain_suggestion}</strong></span>
+      </div>
+    </div>
+  );
 }
 
 function MatchItem({ match }: { match: BatchAuditMatchResult }) {
@@ -196,6 +250,11 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                   <span className="mdc-batch-audit__metric-value">{result.avg_lambda_error.toFixed(2)} gols</span>
                 </div>
               </div>
+
+              {/* Model Update Recommendation */}
+              {result.model_update_recommendation && (
+                <ModelUpdateSection rec={result.model_update_recommendation} />
+              )}
 
               {/* Market accuracy table */}
               {result.market_accuracy.length > 0 && (

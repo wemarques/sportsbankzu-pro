@@ -267,5 +267,12 @@ class MistralAuditor:
                 "market_biases": [],
                 "ai_self_evaluation": {"alignment_with_results": "UNKNOWN", "factors_to_emphasize": [], "factors_to_reduce": [], "notes": "Erro"},
                 "recommended_corrections": [],
+                "model_update_recommendation": {
+                    "needs_update": False,
+                    "urgency": "BAIXA",
+                    "reasons": ["Erro na avaliacao — dados insuficientes"],
+                    "recommended_actions": ["Tentar novamente"],
+                    "next_retrain_suggestion": "Aguardar proxima avaliacao",
+                },
                 "audit_confidence": 0,
             }

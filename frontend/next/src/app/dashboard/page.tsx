@@ -533,6 +533,38 @@ export default function Dashboard() {
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
+  // Shared function: fetch live scores from backend and merge into allMatches
+  const fetchLiveScores = useCallback(async () => {
+    try {
+      const res = await fetch("/api/matches/live", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
+      if (liveList.length === 0) return;
+      setAllMatches((prev) => {
+        let changed = false;
+        const updated = prev.map((m) => {
+          const live = liveList.find((lm) => {
+            if (m.footystatsId && lm.id === m.footystatsId) return true;
+            return lm.homeTeam === m.homeTeam.name && lm.awayTeam === m.awayTeam.name;
+          });
+          if (!live) return m;
+          const newStatus = live.status as Match["status"];
+          const scoreChanged = m.score?.home !== live.score.home || m.score?.away !== live.score.away;
+          const statusChanged = m.status !== newStatus;
+          const periodChanged = m.period !== (live.period as Match["period"]);
+          const minuteChanged = m.minute !== live.minute;
+          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
+          changed = true;
+          return { ...m, status: newStatus, score: live.score, period: live.period as Match["period"], minute: live.minute };
+        });
+        return changed ? updated : prev;
+      });
+    } catch {
+      // Silently ignore live score fetch errors
+    }
+  }, []);
+
   /* Fetch all leagues — fallback to "week" if today returns empty */
   useEffect(() => {
     async function fetchAll() {
@@ -594,6 +626,12 @@ export default function Dashboard() {
         });
         setAllMatches(normalized);
         if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
+
+        // Immediately fetch live scores to overlay real-time data
+        // (league-matches used by /fixtures has stale goal counts for live matches)
+        if (normalized.length > 0) {
+          fetchLiveScores();
+        }
       } catch {
         setAllMatches([]);
         setHasError(true);
@@ -607,44 +645,15 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
 
-  // Live score polling — every 60s, update scores for live/finished matches
+  // Live score polling — every 60s when live matches exist, 120s otherwise
   const hasMatches = allMatches.length > 0;
   const hasLiveMatches = useMemo(() => allMatches.some((m) => m.status === "live"), [allMatches]);
   useEffect(() => {
     if (!hasMatches) return;
     const pollMs = hasLiveMatches ? 60_000 : 120_000;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch("/api/matches/live", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const liveMatches: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
-        if (liveMatches.length === 0) return;
-        setAllMatches((prev) => {
-          let changed = false;
-          const updated = prev.map((m) => {
-            const live = liveMatches.find((lm) => {
-              if (m.footystatsId && lm.id === m.footystatsId) return true;
-              return lm.homeTeam === m.homeTeam.name && lm.awayTeam === m.awayTeam.name;
-            });
-            if (!live) return m;
-            const newStatus = live.status as Match["status"];
-            const scoreChanged = m.score?.home !== live.score.home || m.score?.away !== live.score.away;
-            const statusChanged = m.status !== newStatus;
-            const periodChanged = m.period !== (live.period as Match["period"]);
-            const minuteChanged = m.minute !== live.minute;
-            if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
-            changed = true;
-            return { ...m, status: newStatus, score: live.score, period: live.period as Match["period"], minute: live.minute };
-          });
-          return changed ? updated : prev;
-        });
-      } catch {
-        // Silently ignore polling errors
-      }
-    }, pollMs);
+    const interval = setInterval(fetchLiveScores, pollMs);
     return () => clearInterval(interval);
-  }, [hasMatches, hasLiveMatches]);
+  }, [hasMatches, hasLiveMatches, fetchLiveScores]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -855,9 +864,17 @@ export default function Dashboard() {
       if (result.audited_matches > 0) {
         fetchMistralEvaluation(result).then((evaluation) => {
           if (evaluation) {
-            setBatchAuditResult((prev) =>
-              prev ? { ...prev, model_evaluation: evaluation } : prev
-            );
+            setBatchAuditResult((prev) => {
+              if (!prev) return prev;
+              const updates: Partial<typeof prev> = { model_evaluation: evaluation };
+              // If Mistral returned a model_update_recommendation, use it (overrides local)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const mistralRec = (evaluation as any).model_update_recommendation;
+              if (mistralRec && typeof mistralRec === "object") {
+                updates.model_update_recommendation = mistralRec as typeof prev.model_update_recommendation;
+              }
+              return { ...prev, ...updates };
+            });
           }
         });
       }
