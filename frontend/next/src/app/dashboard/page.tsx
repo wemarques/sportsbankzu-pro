@@ -864,9 +864,17 @@ export default function Dashboard() {
       if (result.audited_matches > 0) {
         fetchMistralEvaluation(result).then((evaluation) => {
           if (evaluation) {
-            setBatchAuditResult((prev) =>
-              prev ? { ...prev, model_evaluation: evaluation } : prev
-            );
+            setBatchAuditResult((prev) => {
+              if (!prev) return prev;
+              const updates: Partial<typeof prev> = { model_evaluation: evaluation };
+              // If Mistral returned a model_update_recommendation, use it (overrides local)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const mistralRec = (evaluation as any).model_update_recommendation;
+              if (mistralRec && typeof mistralRec === "object") {
+                updates.model_update_recommendation = mistralRec as typeof prev.model_update_recommendation;
+              }
+              return { ...prev, ...updates };
+            });
           }
         });
       }

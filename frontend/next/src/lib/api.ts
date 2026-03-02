@@ -308,6 +308,14 @@ export interface BatchAuditMarketBias {
   severity: "LOW" | "MEDIUM" | "HIGH";
 }
 
+export interface ModelUpdateRecommendation {
+  needs_update: boolean;
+  urgency: "BAIXA" | "MEDIA" | "ALTA" | "CRITICA";
+  reasons: string[];
+  recommended_actions: string[];
+  next_retrain_suggestion: string;
+}
+
 export interface BatchAuditModelEvaluation {
   overall_assessment: "SATISFATORIO" | "NECESSITA_AJUSTE" | "CRITICO" | "UNKNOWN";
   overall_notes?: string;
@@ -330,6 +338,7 @@ export interface BatchAuditModelEvaluation {
     notes: string;
   };
   recommended_corrections?: BatchAuditCorrection[];
+  model_update_recommendation?: ModelUpdateRecommendation;
   audit_confidence: number;
   timestamp?: string;
 }
@@ -361,6 +370,7 @@ export interface BatchAuditResult {
   market_accuracy: BatchAuditMarketAccuracy[];
   match_results: BatchAuditMatchResult[];
   model_evaluation: BatchAuditModelEvaluation | null;
+  model_update_recommendation?: ModelUpdateRecommendation;
   message?: string;
 }
 

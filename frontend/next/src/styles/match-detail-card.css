@@ -1780,6 +1780,121 @@
   margin-top: 8px;
 }
 
+/* Model Update Recommendation */
+.mdc-batch-audit__model-update {
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border: 1px solid;
+}
+.mdc-batch-audit__model-update--needs {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.mdc-batch-audit__model-update--ok {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.mdc-batch-audit__model-update-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.mdc-batch-audit__model-update-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.mdc-batch-audit__model-update-icon--warning {
+  color: #f59e0b;
+}
+.mdc-batch-audit__model-update-icon--ok {
+  color: #22c55e;
+}
+.mdc-batch-audit__urgency {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mdc-batch-audit__urgency--critica {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.mdc-batch-audit__urgency--alta {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.mdc-batch-audit__urgency--media {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+.mdc-batch-audit__urgency--baixa {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.mdc-batch-audit__model-update-reasons,
+.mdc-batch-audit__model-update-actions {
+  margin-bottom: 8px;
+}
+.mdc-batch-audit__model-update-reasons h4,
+.mdc-batch-audit__model-update-actions h4 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.mdc-batch-audit__model-update-reasons ul,
+.mdc-batch-audit__model-update-actions ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.mdc-batch-audit__model-update-reasons li,
+.mdc-batch-audit__model-update-actions li {
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  padding: 2px 0;
+  padding-left: 14px;
+  position: relative;
+}
+.mdc-batch-audit__model-update-reasons li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #f59e0b;
+}
+.mdc-batch-audit__model-update-actions li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: #3b82f6;
+}
+.mdc-batch-audit__model-update-retrain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+.mdc-batch-audit__model-update-retrain strong {
+  color: #e2e8f0;
+}
+
 /* Corrections */
 .mdc-batch-audit__corrections-list {
   display: flex;

@@ -157,6 +157,12 @@ class PromptTemplates:
         4. A AI (voce mesmo) — seus fatores de analise estao alinhados com os resultados?
            Quais fatores deve enfatizar mais? Quais deve reduzir?
         5. Correcoes especificas com tipo, parametro, valor atual, valor sugerido
+        6. O modelo precisa ser atualizado/re-treinado? Avalie com base em:
+           - Brier Score medio (>0.25 preocupante, >0.35 critico)
+           - Erro lambda medio (>1.5 preocupante, >2.0 critico)
+           - Acuracia geral (<50% preocupante, <40% critico)
+           - Acuracia SAFE (<60% preocupante, <50% critico)
+           - Mercados especificos com performance muito baixa
 
         Responda EXCLUSIVAMENTE em JSON valido (sem markdown, sem ```, apenas JSON puro):
         {{
@@ -198,6 +204,13 @@ class PromptTemplates:
                     "impact": "LOW|MEDIUM|HIGH"
                 }}
             ],
+            "model_update_recommendation": {{
+                "needs_update": true,
+                "urgency": "BAIXA|MEDIA|ALTA|CRITICA",
+                "reasons": ["razao 1 baseada nos dados", "razao 2"],
+                "recommended_actions": ["acao especifica 1", "acao especifica 2"],
+                "next_retrain_suggestion": "Descricao de quando re-treinar (ex: Imediato, Proximas 24h, Proxima segunda-feira)"
+            }},
             "audit_confidence": 80
         }}
         """
