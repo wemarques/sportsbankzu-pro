@@ -480,22 +480,22 @@
 
 .st-match-row__status-date {
   font-size: 0.6rem;
-  color: var(--st-text-secondary);
-  font-weight: 600;
+  color: var(--st-accent);
+  font-weight: 700;
   line-height: 1.1;
   margin-bottom: 1px;
   font-variant-numeric: tabular-nums;
 }
 
 .st-match-row__status-label {
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 800;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .st-match-row__status-label--scheduled {
-  color: var(--st-text-muted);
+  color: var(--st-text);
 }
 
 /* Base tag — shared across VIVO/FT/BREVE/ADIADO */
