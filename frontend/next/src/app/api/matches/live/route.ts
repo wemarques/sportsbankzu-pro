@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchBackend, getBackendUrl } from "@/lib/backend";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
 export async function GET() {

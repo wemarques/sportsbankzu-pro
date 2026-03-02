@@ -50,8 +50,6 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-import "@/styles/scoretabs-dashboard.css";
-
 const VERSION_FALLBACK = "pro V3.4";
 
 /* ── Tipos de Combinadas (duplas) ── */
