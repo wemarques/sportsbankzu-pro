@@ -1695,14 +1695,11 @@ export default function Dashboard() {
                                 )}
                               </>
                             ) : match.status === "finished" ? (
-                              <>
-                                <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                                <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
-                              </>
+                              <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
                             ) : match.status === "postponed" ? (
                               <>
                                 <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                                <div className="st-match-row__status-tag st-match-row__status-tag--ft">ADIADO</div>
+                                <div className="st-match-row__status-tag st-match-row__status-tag--postponed">ADIADO</div>
                               </>
                             ) : minsToKick != null && minsToKick <= 30 ? (
                               <>
