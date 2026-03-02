@@ -97,8 +97,8 @@ def build_records_from_matches(
         dt = row_date(r)
         if dt is None:
             continue
-        home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "")
-        away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
+        home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "").strip()
+        away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "").strip()
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
         # Skip postponed / cancelled matches — do not generate predictions for them
