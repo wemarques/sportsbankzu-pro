@@ -49,6 +49,8 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Identificacao visual de jogos em andamento com badge "AO VIVO" pulsante e placar em destaque (V3.4)
 - Endpoint `/live-scores` no backend com cache de 1 minuto para eficiencia de rate limit (V3.4)
 - Recomendação de atualização do modelo na Auditoria da Rodada com diagnóstico, urgência e ações recomendadas (V3.4)
+- Auditoria em lote instantânea no navegador (sem backend) com avaliação Mistral AI opcional (V3.4)
+- Auto-refresh de JS desatualizado após deploys Vercel via comparação de buildId (V3.4)
 
 ### Dashboard Next.js (Produção)
 
@@ -59,6 +61,7 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Favoritos com persistência em localStorage
 - **Compartilhar via WhatsApp**: captura da tela e envio (Web Share API ou download + link)
 - **Placares ao vivo**: atualizacao automatica de placares durante jogos em andamento com indicador visual
+- **Auditoria da Rodada instantânea**: avaliação de picks (ACERTOU/ERROU) roda no navegador sem backend, com análise Mistral AI opcional
 
 ### Funcionalidades Opcionais
 
@@ -557,7 +560,7 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 
 ## 🔄 Histórico de Alterações (Changelog)
 
-### V3.4 — Marco de 2026 (Placares ao Vivo + Recomendação de Atualização do Modelo)
+### V3.4 — Marco de 2026 (Placares ao Vivo + Auditoria Local Instantânea + Recomendação do Modelo)
 
 #### Backend
 - **feat(api):** Novo endpoint `/live-scores` retorna placares e status de jogos em andamento/finalizados via FootyStats `todays-matches`
@@ -565,6 +568,8 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(service):** `fixtures_service.py` agora extrai placar para jogos com status `live` (antes apenas `finished`), incluindo placar do intervalo (halftime)
 - **feat(ai):** Prompt Mistral de auditoria em lote atualizado com campo `model_update_recommendation` no schema JSON — IA agora recomenda se modelo precisa re-treino
 - **feat(ai):** Fallback de erro no `MistralAuditor` inclui `model_update_recommendation` padrão
+- **fix(ai):** Otimizacao de custos da API Mistral mudando modelo padrao em todos os servicos (ContextAnalyzer, ReportGenerator, etc.) de `mistral-medium-latest`/`large` para o veloz e eficiente `mistral-small-latest`
+- **fix(service):** Corrigido mapeamento em `status_map` (ignorando `incomplete`) para evitar que jogos agendados sobreponham o status "VIVO" no dashboard
 
 #### Frontend / Dashboard
 - **feat(live):** Polling automatico de placares a cada 60s quando ha jogos ao vivo (120s quando nao ha) via `/api/matches/live`
@@ -579,6 +584,18 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(audit):** Quando disponível, avaliação Mistral AI substitui cálculo local (análise mais rica)
 - **feat(audit):** Novo tipo `ModelUpdateRecommendation` com `needs_update`, `urgency`, `reasons`, `recommended_actions`, `next_retrain_suggestion`
 - **feat(ui):** Seção visual "Modelo Precisa de Atualização" / "Modelo Dentro dos Parâmetros" com badge de urgência colorido, lista de diagnósticos e ações
+- **fix(ui):** Chamada de Analise IA em `dashboard/page.tsx` nao e mais feita automaticamente no `useEffect` para economizar custos, trocada por um botão "Gerar Análise AI" de ativacao manual no `MatchDetailCard`
+- **feat(audit):** Auditoria em lote ("Auditar Rodada") agora executa inteiramente no navegador via `localAudit.ts` — avaliação determinística instantânea (ACERTOU/ERROU) para todos os mercados (1X2, Over/Under, BTTS, Double Chance) sem depender do backend Lambda
+- **feat(audit):** Avaliação qualitativa Mistral AI separada em endpoint leve `/api/ai/batch-audit/evaluate` — recebe apenas estatísticas pré-computadas pelo browser (3-5s vs 30s+ anterior)
+- **fix(audit):** Rota antiga `/api/ai/batch-audit` deprecada — retorna `status: "success"` com mensagem de atualização para navegadores com JS cacheado de deploys anteriores
+- **fix(audit):** Mecanismo de auto-refresh via comparação de `buildId` — detecta JS desatualizado após deploys Vercel e recarrega a página automaticamente
+- **fix(fetch):** Retry de carregamento de jogos estendido para incluir HTTP 503 (além de TIMEOUT) — cobre cold starts do Lambda que retornam 503
+- **fix(audit):** Mensagens de erro da auditoria individual agora direcionam o usuário para "Auditar Rodada" como alternativa confiável (em vez do genérico "Serviço indisponível")
+- **fix(ui):** Botão "Gerar Análise AI" restaurado no `MatchDetailCard` após ser sobrescrito durante resolução de conflito de layout
+- **feat(ui):** Redesenho da coluna de status inspirado em broadcast esportivo — tags coloridas: VIVO (vermelha pulsante com gradiente e glow), FT (verde), BREVE (amarela com glow suave), ADIADO (cinza atenuado)
+- **feat(ui):** Status ao vivo exibe período (1T/HT/2T) e minuto estimado a partir do `date_unix` do kickoff com heurística de override por dados de halftime
+- **feat(ui):** Linha de jogo ao vivo com borda lateral vermelha e fundo avermelhado sutil; placar com text-shadow e numeração tabular
+- **feat(ui):** Tag FT simplificada (sem data redundante) — display limpo e proeminente para jogos finalizados
 
 ### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
 

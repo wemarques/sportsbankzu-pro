@@ -409,7 +409,7 @@ export default function Dashboard() {
       try {
         const s = localStorage.getItem("sb-favorites");
         if (s) return new Set(JSON.parse(s));
-      } catch {}
+      } catch { }
     }
     return new Set();
   });
@@ -447,7 +447,7 @@ export default function Dashboard() {
 
   // Fire-and-forget: ping backend health to warm up Lambda before main data load
   useEffect(() => {
-    fetch("/api/backend/health", { cache: "no-store" }).catch(() => {});
+    fetch("/api/backend/health", { cache: "no-store" }).catch(() => { });
   }, []);
 
   // Auto-refresh stale JS: compare client buildId with server buildId
@@ -652,7 +652,7 @@ export default function Dashboard() {
       }
     }
     fetchAll();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
 
   // Live score polling — every 60s when live matches exist, 120s otherwise
@@ -668,25 +668,26 @@ export default function Dashboard() {
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function fetchAi() {
-      if (!selectedMatch) {
-        setAiAnalysis(null);
-        setAiAnalysisMatchId(null);
-        setAuditResult(null);
-        return;
-      }
-      setAiLoading(true);
+    if (selectedMatch?.id !== aiAnalysisMatchId) {
+      setAiAnalysis(null);
+      setAiAnalysisMatchId(selectedMatch?.id ?? null);
       setAuditResult(null);
+    }
+  }, [selectedMatch, aiAnalysisMatchId]);
+
+  const handleGenerateAiAnalysis = useCallback(async () => {
+    if (!selectedMatch) return;
+    setAiLoading(true);
+    setAuditResult(null);
+    try {
       const analysis = await getAiMatchAnalysis(selectedMatch.id, selectedMatch.homeTeam.name, selectedMatch.awayTeam.name);
-      if (cancelled) return; // Discard stale response from previous match
       setAiAnalysis(analysis);
       setAiAnalysisMatchId(selectedMatch.id);
+    } finally {
       setAiLoading(false);
     }
-    fetchAi();
-    return () => { cancelled = true; };
   }, [selectedMatch]);
+
 
   const detailData = useMemo<MatchDetailData | null>(() => {
     if (!selectedMatch) return null;
@@ -715,7 +716,7 @@ export default function Dashboard() {
       else next.add(matchId);
       try {
         localStorage.setItem("sb-favorites", JSON.stringify(Array.from(next)));
-      } catch {}
+      } catch { }
       return next;
     });
   }, []);
@@ -1244,662 +1245,664 @@ export default function Dashboard() {
       <div className="st-main" ref={mainContentRef}>
         {/* LEFT PANEL - Em mobile, esconder quando um jogo está selecionado */}
         {(!isMobile || !selectedMatchId) && (
-        <div className="st-panel-left" ref={capturePanelRef}>
+          <div className="st-panel-left" ref={capturePanelRef}>
 
-          {/* ── CAMPEONATOS VIEW ── */}
-          {navView === "campeonatos" && (
-            <div className="st-view-panel">
-              <div className="st-view-header">
-                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                <h2 className="st-view-title"><Trophy size={16} /> Campeonatos</h2>
-              </div>
-              <div className="st-view-content">
-                {AVAILABLE_LEAGUES.map((league) => {
-                  const matchCount = allMatches.filter((m) => m.leagueId === league.id).length;
-                  return (
-                    <div
-                      key={league.id}
-                      className="st-league-card"
-                      onClick={() => { setSelectedLeague(league.id); setNavView("matches"); }}
-                    >
-                      <span className="st-league-card__flag">{league.countryFlag}</span>
-                      <div className="st-league-card__info">
-                        <span className="st-league-card__name">{league.name}</span>
-                        <span className="st-league-card__country">{league.country} &middot; {league.season}</span>
-                      </div>
-                      <div className="st-league-card__right">
-                        {matchCount > 0 && (
-                          <span className="st-league-card__badge">{matchCount} jogos</span>
-                        )}
-                        <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── FERRAMENTAS VIEW ── */}
-          {navView === "ferramentas" && (
-            <div className="st-view-panel">
-              <div className="st-view-header">
-                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                <h2 className="st-view-title"><Wrench size={16} /> Ferramentas</h2>
-              </div>
-              <div className="st-view-content">
-                <a href="/ai-audit" className="st-tool-card">
-                  <div className="st-tool-card__icon" style={{ background: "rgba(0,255,136,0.1)" }}><Brain size={20} style={{ color: "#00ff88" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Auditoria AI (Mistral)</span>
-                    <span className="st-tool-card__desc">Analise inteligente com recomendacoes de apostas</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                </a>
-                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("goals"); }}>
-                  <div className="st-tool-card__icon" style={{ background: "rgba(255,187,51,0.1)" }}><BarChart3 size={20} style={{ color: "#ffbb33" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Comparativo de Gols</span>
-                    <span className="st-tool-card__desc">Lambda, xG, Over/Under e medias por liga</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+            {/* ── CAMPEONATOS VIEW ── */}
+            {navView === "campeonatos" && (
+              <div className="st-view-panel">
+                <div className="st-view-header">
+                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <h2 className="st-view-title"><Trophy size={16} /> Campeonatos</h2>
                 </div>
-                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("btts"); }}>
-                  <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Target size={20} style={{ color: "#9d50ff" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Analise BTTS</span>
-                    <span className="st-tool-card__desc">Both Teams To Score — probabilidades e odds</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                </div>
-                <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("corners"); }}>
-                  <div className="st-tool-card__icon" style={{ background: "rgba(0,187,255,0.1)" }}><Zap size={20} style={{ color: "#00bbff" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Escanteios & Cartoes</span>
-                    <span className="st-tool-card__desc">Medias de escanteios e cartoes por equipe</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                </div>
-                <div className="st-tool-card" onClick={() => setNavView("recomendadas")}>
-                  <div className="st-tool-card__icon" style={{ background: "rgba(255,68,68,0.1)" }}><Sparkles size={20} style={{ color: "#ff4444" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Recomendadas do Dia</span>
-                    <span className="st-tool-card__desc">Jogos com maior confianca da analise AI</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                </div>
-                <div className="st-tool-card" onClick={() => { setNavView("duplas"); if (!combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
-                  <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Layers size={20} style={{ color: "#c4a0ff" }} /></div>
-                  <div className="st-tool-card__info">
-                    <span className="st-tool-card__name">Duplas (Intra/Inter)</span>
-                    <span className="st-tool-card__desc">Combinadas intra-jogo e inter-jogo com alta probabilidade</span>
-                  </div>
-                  <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── RECOMENDADAS VIEW ── */}
-          {navView === "recomendadas" && (
-            <div className="st-view-panel">
-              <div className="st-view-header">
-                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                <h2 className="st-view-title"><Sparkles size={16} /> Destaques do Dia</h2>
-              </div>
-              <div className="st-view-subtitle">Jogos com maior potencial — saiba por que cada jogo está em destaque</div>
-              <div className="st-view-content">
-                {allMatches.length === 0 && (
-                  <div className="st-empty">
-                    <div className="st-empty__icon">&#9917;</div>
-                    Carregando jogos para analise...
-                  </div>
-                )}
-                {allMatches
-                  .filter((m) => m.status === "scheduled")
-                  .sort((a, b) => {
-                    // Score: higher homeWinProb or awayWinProb + high over25 + btts data
-                    const scoreA = Math.max(a.stats?.homeWinProb ?? 0, a.stats?.awayWinProb ?? 0) + (a.stats?.over25Prob ?? 0) * 0.5;
-                    const scoreB = Math.max(b.stats?.homeWinProb ?? 0, b.stats?.awayWinProb ?? 0) + (b.stats?.over25Prob ?? 0) * 0.5;
-                    return scoreB - scoreA;
-                  })
-                  .slice(0, 15)
-                  .map((match) => {
-                    const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
-                    const maxProb = Math.max(match.stats?.homeWinProb ?? 0, match.stats?.awayWinProb ?? 0);
-                    const maxProbPct = toPercent(maxProb);
-                    const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
-                    const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
-                    const highlightReason = getHighlightReason(match);
-                    const safePicks = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
+                <div className="st-view-content">
+                  {AVAILABLE_LEAGUES.map((league) => {
+                    const matchCount = allMatches.filter((m) => m.leagueId === league.id).length;
                     return (
                       <div
-                        key={match.id}
-                        className="st-rec-card"
-                        onClick={() => { setSelectedMatchId(match.id); setNavView("matches"); }}
+                        key={league.id}
+                        className="st-league-card"
+                        onClick={() => { setSelectedLeague(league.id); setNavView("matches"); }}
                       >
-                        <div className="st-rec-card__header">
-                          <span className="st-rec-card__league">{league?.countryFlag} {league?.name ?? match.leagueId}</span>
-                          <span className="st-rec-card__time">{formatTime(match.datetime)}</span>
+                        <span className="st-league-card__flag">{league.countryFlag}</span>
+                        <div className="st-league-card__info">
+                          <span className="st-league-card__name">{league.name}</span>
+                          <span className="st-league-card__country">{league.country} &middot; {league.season}</span>
                         </div>
-                        <div className="st-rec-card__teams">
-                          <span className="st-rec-card__team">{match.homeTeam.name}</span>
-                          <span className="st-rec-card__vs">vs</span>
-                          <span className="st-rec-card__team">{match.awayTeam.name}</span>
+                        <div className="st-league-card__right">
+                          {matchCount > 0 && (
+                            <span className="st-league-card__badge">{matchCount} jogos</span>
+                          )}
+                          <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                         </div>
-                        <div style={{ fontSize: "0.68rem", color: "#ffbb33", padding: "4px 0 2px", fontStyle: "italic" }}>
-                          ★ {highlightReason}
-                        </div>
-                        <div className="st-rec-card__stats">
-                          <div className="st-rec-card__stat">
-                            <span className="st-rec-card__stat-label">Favorito</span>
-                            <span className="st-rec-card__stat-value" style={{ color: confidenceColor }}>{probLabel}</span>
-                          </div>
-                          <div className="st-rec-card__stat">
-                            <span className="st-rec-card__stat-label">Over 2.5</span>
-                            <span className="st-rec-card__stat-value">{formatProb(match.stats?.over25Prob)}</span>
-                          </div>
-                          <div className="st-rec-card__stat">
-                            <span className="st-rec-card__stat-label">BTTS</span>
-                            <span className="st-rec-card__stat-value">{formatProb(match.stats?.bttsProb)}</span>
-                          </div>
-                        </div>
-                        {safePicks.length > 0 && (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
-                            {safePicks.slice(0, 3).map((p, i) => (
-                              <span key={i} style={{ fontSize: "0.65rem", background: "rgba(0,255,136,0.12)", color: "#00ff88", borderRadius: 4, padding: "2px 6px", border: "1px solid rgba(0,255,136,0.3)" }}>
-                                SAFE: {p.mercado}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {match.odds?.home > 0 && (
-                          <div className="st-rec-card__odds">
-                            <span className="st-rec-card__odd">1: {match.odds.home.toFixed(2)}</span>
-                            <span className="st-rec-card__odd">X: {match.odds.draw.toFixed(2)}</span>
-                            <span className="st-rec-card__odd">2: {match.odds.away.toFixed(2)}</span>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
-              </div>
-            </div>
-          )}
-
-          {/* ── DUPLAS VIEW ── */}
-          {navView === "duplas" && (
-            <div className="st-view-panel">
-              <div className="st-view-header">
-                <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                <h2 className="st-view-title"><Layers size={16} /> Duplas</h2>
-              </div>
-              <div className="st-view-subtitle">Combinadas intra-jogo e inter-jogo com maior probabilidade</div>
-
-              {/* Sub-tabs + filtro */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px 4px" }}>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {(["intra", "inter"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setCombindasSubTab(tab)}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700,
-                        background: combinadasSubTab === tab ? "rgba(157,80,255,0.18)" : "rgba(255,255,255,0.05)",
-                        color: combinadasSubTab === tab ? "#c4a0ff" : "#777" }}
-                    >
-                      {tab === "intra" ? "Intra-jogo" : "Inter-jogo"}
-                    </button>
-                  ))}
                 </div>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <span style={{ fontSize: "0.65rem", color: "#555" }}>Mín:</span>
-                  {(["NEUTRO", "SAFE"] as const).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => { setCombindasMinStatus(s); fetchCombinadas(s); }}
-                      style={{ padding: "3px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 700,
-                        background: combinadasMinStatus === s ? (s === "SAFE" ? "rgba(0,223,130,0.15)" : "rgba(255,136,0,0.12)") : "rgba(255,255,255,0.05)",
-                        color: combinadasMinStatus === s ? (s === "SAFE" ? "#00df82" : "#ffaa44") : "#666" }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => fetchCombinadas(combinadasMinStatus)}
-                    disabled={combinadasLoading}
-                    style={{ marginLeft: 4, padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.06)", color: "#888" }}
-                    title="Recarregar"
-                  >
-                    <RefreshCw size={11} style={{ display: "block", animation: combinadasLoading ? "spin 1s linear infinite" : "none" }} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="st-view-content">
-                {combinadasLoading && (
-                  <div style={{ textAlign: "center", padding: "40px 0", color: "#555" }}>
-                    <Loader2 size={24} style={{ display: "inline-block", animation: "spin 1s linear infinite", marginBottom: 8 }} />
-                    <div style={{ fontSize: "0.78rem" }}>Calculando combinadas...</div>
-                  </div>
-                )}
-                {!combinadasLoading && combinadasError && (
-                  <div style={{ textAlign: "center", padding: "32px 14px", color: "#ff5555", fontSize: "0.8rem" }}>
-                    <div style={{ marginBottom: 8 }}>Erro ao carregar duplas.</div>
-                    <div style={{ color: "#555", fontSize: "0.72rem" }}>{combinadasError}</div>
-                    <button onClick={() => fetchCombinadas(combinadasMinStatus)} style={{ marginTop: 12, padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.3)", background: "transparent", color: "#ff5555", cursor: "pointer", fontSize: "0.72rem" }}>
-                      Tentar novamente
-                    </button>
-                  </div>
-                )}
-                {!combinadasLoading && !combinadasError && !combinadas && (
-                  <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
-                    Clique em Duplas na barra de navegação para carregar as combinadas do dia.
-                  </div>
-                )}
-                {!combinadasLoading && !combinadasError && combinadas && (() => {
-                  const list = combinadasSubTab === "intra" ? (combinadas.intra ?? []) : (combinadas.inter ?? []);
-                  const total = combinadasSubTab === "intra" ? combinadas.total_intra : combinadas.total_inter;
-                  if (list.length === 0) {
-                    return (
-                      <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
-                        <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{combinadasSubTab === "intra" ? "🔗" : "⛓️"}</div>
-                        Nenhuma dupla {combinadasSubTab === "intra" ? "intra-jogo" : "inter-jogo"} encontrada com status mínimo {combinadasMinStatus}.
-                      </div>
-                    );
-                  }
-                  return (
-                    <>
-                      <div style={{ fontSize: "0.65rem", color: "#555", padding: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        {total} {combinadasSubTab === "intra" ? "combinadas intra-jogo" : "combinadas inter-jogo"}
-                      </div>
-                      {list.map((c, i) => <CombinadaCardDash key={i} c={c} />)}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* ── MATCHES VIEW (default) ── */}
-          {navView === "matches" && <>
-          {/* Sticky header: filter bar + odds tabs */}
-          <div className="st-sticky-header">
-            {/* Filter bar */}
-            <div className="st-filters">
-              <div className="st-date-nav">
-                <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
-                <span className="st-date-label">{dateLabel}</span>
-                <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
-              </div>
-              <div className="st-live-dot" />
-              <button
-                type="button"
-                className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
-                onClick={handleCopyScreen}
-                data-share-control="true"
-                disabled={shareBusy !== null}
-              >
-                {shareBusy === "copy" ? <Loader2 size={12} className="st-spin-icon" /> : <Copy size={12} />}
-                Copiar tela
-              </button>
-              <button
-                type="button"
-                className={`st-filter-btn ${shareBusy === "whatsapp" ? "st-filter-btn--active" : ""}`}
-                onClick={handleShareWhatsApp}
-                data-share-control="true"
-                disabled={shareBusy !== null}
-              >
-                {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
-                WhatsApp
-              </button>
-              <button
-                type="button"
-                className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
-                onClick={handleBatchAudit}
-                disabled={batchAuditLoading || finishedCount === 0}
-                title={finishedCount === 0 ? "Nenhum jogo finalizado para auditar" : `Auditar ${finishedCount} jogos finalizados`}
-              >
-                {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
-                {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
-              </button>
-              <button
-                type="button"
-                className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
-                onClick={() => setSortOrder((v) => v === "asc" ? "desc" : "asc")}
-                title={sortOrder === "asc" ? "Ordenar: mais cedo primeiro" : "Ordenar: mais tarde primeiro"}
-              >
-                <SlidersHorizontal size={12} /> {sortOrder === "asc" ? "Mais cedo" : "Mais tarde"}
-              </button>
-              <button
-                type="button"
-                className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
-                onClick={() => setShowFavoritesOnly((v) => !v)}
-              >
-                <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
-              </button>
-              <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
-            </div>
-            {shareFeedback && (
-              <div
-                className={`st-share-feedback st-share-feedback--${shareFeedbackTone}`}
-                role="status"
-                data-share-control="true"
-              >
-                {shareFeedback}
               </div>
             )}
 
-            <AuditBanner />
+            {/* ── FERRAMENTAS VIEW ── */}
+            {navView === "ferramentas" && (
+              <div className="st-view-panel">
+                <div className="st-view-header">
+                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <h2 className="st-view-title"><Wrench size={16} /> Ferramentas</h2>
+                </div>
+                <div className="st-view-content">
+                  <a href="/ai-audit" className="st-tool-card">
+                    <div className="st-tool-card__icon" style={{ background: "rgba(0,255,136,0.1)" }}><Brain size={20} style={{ color: "#00ff88" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Auditoria AI (Mistral)</span>
+                      <span className="st-tool-card__desc">Analise inteligente com recomendacoes de apostas</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </a>
+                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("goals"); }}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(255,187,51,0.1)" }}><BarChart3 size={20} style={{ color: "#ffbb33" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Comparativo de Gols</span>
+                      <span className="st-tool-card__desc">Lambda, xG, Over/Under e medias por liga</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("btts"); }}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Target size={20} style={{ color: "#9d50ff" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Analise BTTS</span>
+                      <span className="st-tool-card__desc">Both Teams To Score — probabilidades e odds</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("corners"); }}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(0,187,255,0.1)" }}><Zap size={20} style={{ color: "#00bbff" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Escanteios & Cartoes</span>
+                      <span className="st-tool-card__desc">Medias de escanteios e cartoes por equipe</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                  <div className="st-tool-card" onClick={() => setNavView("recomendadas")}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(255,68,68,0.1)" }}><Sparkles size={20} style={{ color: "#ff4444" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Recomendadas do Dia</span>
+                      <span className="st-tool-card__desc">Jogos com maior confianca da analise AI</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                  <div className="st-tool-card" onClick={() => { setNavView("duplas"); if (!combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Layers size={20} style={{ color: "#c4a0ff" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Duplas (Intra/Inter)</span>
+                      <span className="st-tool-card__desc">Combinadas intra-jogo e inter-jogo com alta probabilidade</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* Odds tabs */}
-            <div className="st-odds-tabs">
-              <span style={{ fontSize: "0.7rem", color: "var(--st-text-muted)", padding: "10px 8px 10px 0", whiteSpace: "nowrap" }}>COTACOES</span>
-              {oddsTabs.map((t) => (
-                <button
-                  key={t.key}
-                  className={`st-odds-tab ${oddsTab === t.key ? "st-odds-tab--active" : ""}`}
-                  onClick={() => setOddsTab(t.key)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {selectedLeague && (
-            <div style={{ padding: "8px 12px" }}>
-              <button
-                onClick={() => setSelectedLeague(null)}
-                style={{
-                  background: "rgba(255,165,0,0.15)",
-                  border: "1px solid rgba(255,165,0,0.3)",
-                  borderRadius: 6,
-                  padding: "4px 12px",
-                  color: "#ffaa33",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                ✕ {AVAILABLE_LEAGUES.find((l) => l.id === selectedLeague)?.name ?? selectedLeague} — Ver todas as ligas
-              </button>
-            </div>
-          )}
-
-          {/* Mock data dev banner */}
-          {!loading && isMockData && allMatches.length > 0 && (
-            <MockDataBanner />
-          )}
-
-          {/* Empty state / Error state */}
-          {!loading && leagueGroups.length === 0 && emptyVariant && (
-            <EmptyState
-              variant={emptyVariant}
-              errorMessage={errorMessage ?? undefined}
-              errorCode={errorCode ?? undefined}
-              dateLabel={dateLabel}
-              onRetry={handleRetry}
-              onChangeDate={emptyVariant === "no-games-date" ? handleEmptyDateChange : undefined}
-            />
-          )}
-
-          {!loading && leagueGroups.map((group) => {
-            const isCaptureTarget = group.leagueId === leagueIdForCapture;
-            return (
-              <div
-                key={group.leagueId}
-                className="st-league-group"
-                data-capture-target={isCaptureTarget ? "true" : "false"}
-              >
-                <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
-                <span className="st-league-flag">{group.countryFlag}</span>
-                <span className="st-league-name">
-                  {group.leagueName}
-                  <span className="st-league-count"> ({group.matches.length})</span>
-                  {group.matches.some((m) => m.status === "live") && (
-                    <span className="st-league-live-badge">
-                      <span className="st-live-dot" /> {group.matches.filter((m) => m.status === "live").length} AO VIVO
-                    </span>
+            {/* ── RECOMENDADAS VIEW ── */}
+            {navView === "recomendadas" && (
+              <div className="st-view-panel">
+                <div className="st-view-header">
+                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <h2 className="st-view-title"><Sparkles size={16} /> Destaques do Dia</h2>
+                </div>
+                <div className="st-view-subtitle">Jogos com maior potencial — saiba por que cada jogo está em destaque</div>
+                <div className="st-view-content">
+                  {allMatches.length === 0 && (
+                    <div className="st-empty">
+                      <div className="st-empty__icon">&#9917;</div>
+                      Carregando jogos para analise...
+                    </div>
                   )}
-                </span>
-                <div className="st-league-actions" data-share-hide="true">
-                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
-                    <Star size={14} />
+                  {allMatches
+                    .filter((m) => m.status === "scheduled")
+                    .sort((a, b) => {
+                      // Score: higher homeWinProb or awayWinProb + high over25 + btts data
+                      const scoreA = Math.max(a.stats?.homeWinProb ?? 0, a.stats?.awayWinProb ?? 0) + (a.stats?.over25Prob ?? 0) * 0.5;
+                      const scoreB = Math.max(b.stats?.homeWinProb ?? 0, b.stats?.awayWinProb ?? 0) + (b.stats?.over25Prob ?? 0) * 0.5;
+                      return scoreB - scoreA;
+                    })
+                    .slice(0, 15)
+                    .map((match) => {
+                      const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
+                      const maxProb = Math.max(match.stats?.homeWinProb ?? 0, match.stats?.awayWinProb ?? 0);
+                      const maxProbPct = toPercent(maxProb);
+                      const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
+                      const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
+                      const highlightReason = getHighlightReason(match);
+                      const safePicks = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
+                      return (
+                        <div
+                          key={match.id}
+                          className="st-rec-card"
+                          onClick={() => { setSelectedMatchId(match.id); setNavView("matches"); }}
+                        >
+                          <div className="st-rec-card__header">
+                            <span className="st-rec-card__league">{league?.countryFlag} {league?.name ?? match.leagueId}</span>
+                            <span className="st-rec-card__time">{formatTime(match.datetime)}</span>
+                          </div>
+                          <div className="st-rec-card__teams">
+                            <span className="st-rec-card__team">{match.homeTeam.name}</span>
+                            <span className="st-rec-card__vs">vs</span>
+                            <span className="st-rec-card__team">{match.awayTeam.name}</span>
+                          </div>
+                          <div style={{ fontSize: "0.68rem", color: "#ffbb33", padding: "4px 0 2px", fontStyle: "italic" }}>
+                            ★ {highlightReason}
+                          </div>
+                          <div className="st-rec-card__stats">
+                            <div className="st-rec-card__stat">
+                              <span className="st-rec-card__stat-label">Favorito</span>
+                              <span className="st-rec-card__stat-value" style={{ color: confidenceColor }}>{probLabel}</span>
+                            </div>
+                            <div className="st-rec-card__stat">
+                              <span className="st-rec-card__stat-label">Over 2.5</span>
+                              <span className="st-rec-card__stat-value">{formatProb(match.stats?.over25Prob)}</span>
+                            </div>
+                            <div className="st-rec-card__stat">
+                              <span className="st-rec-card__stat-label">BTTS</span>
+                              <span className="st-rec-card__stat-value">{formatProb(match.stats?.bttsProb)}</span>
+                            </div>
+                          </div>
+                          {safePicks.length > 0 && (
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
+                              {safePicks.slice(0, 3).map((p, i) => (
+                                <span key={i} style={{ fontSize: "0.65rem", background: "rgba(0,255,136,0.12)", color: "#00ff88", borderRadius: 4, padding: "2px 6px", border: "1px solid rgba(0,255,136,0.3)" }}>
+                                  SAFE: {p.mercado}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {match.odds?.home > 0 && (
+                            <div className="st-rec-card__odds">
+                              <span className="st-rec-card__odd">1: {match.odds.home.toFixed(2)}</span>
+                              <span className="st-rec-card__odd">X: {match.odds.draw.toFixed(2)}</span>
+                              <span className="st-rec-card__odd">2: {match.odds.away.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* ── DUPLAS VIEW ── */}
+            {navView === "duplas" && (
+              <div className="st-view-panel">
+                <div className="st-view-header">
+                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <h2 className="st-view-title"><Layers size={16} /> Duplas</h2>
+                </div>
+                <div className="st-view-subtitle">Combinadas intra-jogo e inter-jogo com maior probabilidade</div>
+
+                {/* Sub-tabs + filtro */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px 4px" }}>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {(["intra", "inter"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setCombindasSubTab(tab)}
+                        style={{
+                          padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700,
+                          background: combinadasSubTab === tab ? "rgba(157,80,255,0.18)" : "rgba(255,255,255,0.05)",
+                          color: combinadasSubTab === tab ? "#c4a0ff" : "#777"
+                        }}
+                      >
+                        {tab === "intra" ? "Intra-jogo" : "Inter-jogo"}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <span style={{ fontSize: "0.65rem", color: "#555" }}>Mín:</span>
+                    {(["NEUTRO", "SAFE"] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { setCombindasMinStatus(s); fetchCombinadas(s); }}
+                        style={{
+                          padding: "3px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 700,
+                          background: combinadasMinStatus === s ? (s === "SAFE" ? "rgba(0,223,130,0.15)" : "rgba(255,136,0,0.12)") : "rgba(255,255,255,0.05)",
+                          color: combinadasMinStatus === s ? (s === "SAFE" ? "#00df82" : "#ffaa44") : "#666"
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => fetchCombinadas(combinadasMinStatus)}
+                      disabled={combinadasLoading}
+                      style={{ marginLeft: 4, padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.06)", color: "#888" }}
+                      title="Recarregar"
+                    >
+                      <RefreshCw size={11} style={{ display: "block", animation: combinadasLoading ? "spin 1s linear infinite" : "none" }} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="st-view-content">
+                  {combinadasLoading && (
+                    <div style={{ textAlign: "center", padding: "40px 0", color: "#555" }}>
+                      <Loader2 size={24} style={{ display: "inline-block", animation: "spin 1s linear infinite", marginBottom: 8 }} />
+                      <div style={{ fontSize: "0.78rem" }}>Calculando combinadas...</div>
+                    </div>
+                  )}
+                  {!combinadasLoading && combinadasError && (
+                    <div style={{ textAlign: "center", padding: "32px 14px", color: "#ff5555", fontSize: "0.8rem" }}>
+                      <div style={{ marginBottom: 8 }}>Erro ao carregar duplas.</div>
+                      <div style={{ color: "#555", fontSize: "0.72rem" }}>{combinadasError}</div>
+                      <button onClick={() => fetchCombinadas(combinadasMinStatus)} style={{ marginTop: 12, padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.3)", background: "transparent", color: "#ff5555", cursor: "pointer", fontSize: "0.72rem" }}>
+                        Tentar novamente
+                      </button>
+                    </div>
+                  )}
+                  {!combinadasLoading && !combinadasError && !combinadas && (
+                    <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
+                      Clique em Duplas na barra de navegação para carregar as combinadas do dia.
+                    </div>
+                  )}
+                  {!combinadasLoading && !combinadasError && combinadas && (() => {
+                    const list = combinadasSubTab === "intra" ? (combinadas.intra ?? []) : (combinadas.inter ?? []);
+                    const total = combinadasSubTab === "intra" ? combinadas.total_intra : combinadas.total_inter;
+                    if (list.length === 0) {
+                      return (
+                        <div style={{ textAlign: "center", padding: "40px 14px", color: "#555", fontSize: "0.8rem" }}>
+                          <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{combinadasSubTab === "intra" ? "🔗" : "⛓️"}</div>
+                          Nenhuma dupla {combinadasSubTab === "intra" ? "intra-jogo" : "inter-jogo"} encontrada com status mínimo {combinadasMinStatus}.
+                        </div>
+                      );
+                    }
+                    return (
+                      <>
+                        <div style={{ fontSize: "0.65rem", color: "#555", padding: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {total} {combinadasSubTab === "intra" ? "combinadas intra-jogo" : "combinadas inter-jogo"}
+                        </div>
+                        {list.map((c, i) => <CombinadaCardDash key={i} c={c} />)}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* ── MATCHES VIEW (default) ── */}
+            {navView === "matches" && <>
+              {/* Sticky header: filter bar + odds tabs */}
+              <div className="st-sticky-header">
+                {/* Filter bar */}
+                <div className="st-filters">
+                  <div className="st-date-nav">
+                    <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "week" ? "tomorrow" : prev === "tomorrow" ? "today" : "today")}><ChevronLeft size={14} /></button>
+                    <span className="st-date-label">{dateLabel}</span>
+                    <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
+                  </div>
+                  <div className="st-live-dot" />
+                  <button
+                    type="button"
+                    className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
+                    onClick={handleCopyScreen}
+                    data-share-control="true"
+                    disabled={shareBusy !== null}
+                  >
+                    {shareBusy === "copy" ? <Loader2 size={12} className="st-spin-icon" /> : <Copy size={12} />}
+                    Copiar tela
                   </button>
-                  <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
-                    <SlidersHorizontal size={14} />
+                  <button
+                    type="button"
+                    className={`st-filter-btn ${shareBusy === "whatsapp" ? "st-filter-btn--active" : ""}`}
+                    onClick={handleShareWhatsApp}
+                    data-share-control="true"
+                    disabled={shareBusy !== null}
+                  >
+                    {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
+                    WhatsApp
                   </button>
-                  {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  <button
+                    type="button"
+                    className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
+                    onClick={handleBatchAudit}
+                    disabled={batchAuditLoading || finishedCount === 0}
+                    title={finishedCount === 0 ? "Nenhum jogo finalizado para auditar" : `Auditar ${finishedCount} jogos finalizados`}
+                  >
+                    {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
+                    {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
+                    onClick={() => setSortOrder((v) => v === "asc" ? "desc" : "asc")}
+                    title={sortOrder === "asc" ? "Ordenar: mais cedo primeiro" : "Ordenar: mais tarde primeiro"}
+                  >
+                    <SlidersHorizontal size={12} /> {sortOrder === "asc" ? "Mais cedo" : "Mais tarde"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`st-filter-btn st-filter-btn--mobile-hidden ${showFavoritesOnly ? "st-filter-btn--active" : ""}`}
+                    onClick={() => setShowFavoritesOnly((v) => !v)}
+                  >
+                    <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
+                  </button>
+                  <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
+                </div>
+                {shareFeedback && (
+                  <div
+                    className={`st-share-feedback st-share-feedback--${shareFeedbackTone}`}
+                    role="status"
+                    data-share-control="true"
+                  >
+                    {shareFeedback}
+                  </div>
+                )}
+
+                <AuditBanner />
+
+                {/* Odds tabs */}
+                <div className="st-odds-tabs">
+                  <span style={{ fontSize: "0.7rem", color: "var(--st-text-muted)", padding: "10px 8px 10px 0", whiteSpace: "nowrap" }}>COTACOES</span>
+                  {oddsTabs.map((t) => (
+                    <button
+                      key={t.key}
+                      className={`st-odds-tab ${oddsTab === t.key ? "st-odds-tab--active" : ""}`}
+                      onClick={() => setOddsTab(t.key)}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-                {!group.collapsed && group.matches.map((match) => {
-                const h = safeOdd(match.odds?.home);
-                const d = safeOdd(match.odds?.draw);
-                const a = safeOdd(match.odds?.away);
-                const lowestIdx = getLowestOddIndex(h, d, a);
-                const isSelected = match.id === selectedMatchId;
-                const liveInfo = computeLiveInfo(match);
-                const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
+              {selectedLeague && (
+                <div style={{ padding: "8px 12px" }}>
+                  <button
+                    onClick={() => setSelectedLeague(null)}
+                    style={{
+                      background: "rgba(255,165,0,0.15)",
+                      border: "1px solid rgba(255,165,0,0.3)",
+                      borderRadius: 6,
+                      padding: "4px 12px",
+                      color: "#ffaa33",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    ✕ {AVAILABLE_LEAGUES.find((l) => l.id === selectedLeague)?.name ?? selectedLeague} — Ver todas as ligas
+                  </button>
+                </div>
+              )}
 
+              {/* Mock data dev banner */}
+              {!loading && isMockData && allMatches.length > 0 && (
+                <MockDataBanner />
+              )}
+
+              {/* Empty state / Error state */}
+              {!loading && leagueGroups.length === 0 && emptyVariant && (
+                <EmptyState
+                  variant={emptyVariant}
+                  errorMessage={errorMessage ?? undefined}
+                  errorCode={errorCode ?? undefined}
+                  dateLabel={dateLabel}
+                  onRetry={handleRetry}
+                  onChangeDate={emptyVariant === "no-games-date" ? handleEmptyDateChange : undefined}
+                />
+              )}
+
+              {!loading && leagueGroups.map((group) => {
+                const isCaptureTarget = group.leagueId === leagueIdForCapture;
                 return (
                   <div
-                    key={match.id}
-                    className={`st-match-row ${isSelected ? "st-match-row--selected" : ""} ${match.status === "live" ? "st-match-row--live" : ""}`}
-                    onClick={() => setSelectedMatchId(match.id)}
+                    key={group.leagueId}
+                    className="st-league-group"
+                    data-capture-target={isCaptureTarget ? "true" : "false"}
                   >
-                    <div className="st-match-row__status">
-                      {match.status === "live" && liveInfo ? (
-                        <>
-                          <div className="st-match-row__status-tag st-match-row__status-tag--live">VIVO</div>
-                          <div className="st-match-row__status-period">{liveInfo.period}</div>
-                          {liveInfo.minute != null && liveInfo.period !== "HT" && (
-                            <div className="st-match-row__status-minute">{liveInfo.minute}&apos;</div>
-                          )}
-                        </>
-                      ) : match.status === "finished" ? (
-                        <>
-                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                          <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
-                        </>
-                      ) : match.status === "postponed" ? (
-                        <>
-                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                          <div className="st-match-row__status-tag st-match-row__status-tag--ft">ADIADO</div>
-                        </>
-                      ) : minsToKick != null && minsToKick <= 30 ? (
-                        <>
-                          <div className="st-match-row__status-tag st-match-row__status-tag--soon">BREVE</div>
-                          <div className="st-match-row__status-minute">{minsToKick}&apos;</div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
-                          <div className="st-match-row__status-label st-match-row__status-label--scheduled">{formatTime(match.datetime)}</div>
-                        </>
-                      )}
-                    </div>
-                    <div className="st-match-row__teams">
-                      <div className="st-match-row__team">
-                        {match.homeTeam.logo ? (
-                          <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
-                        ) : (
-                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">H</div>
+                    <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
+                      <span className="st-league-flag">{group.countryFlag}</span>
+                      <span className="st-league-name">
+                        {group.leagueName}
+                        <span className="st-league-count"> ({group.matches.length})</span>
+                        {group.matches.some((m) => m.status === "live") && (
+                          <span className="st-league-live-badge">
+                            <span className="st-live-dot" /> {group.matches.filter((m) => m.status === "live").length} AO VIVO
+                          </span>
                         )}
-                        <span className="st-match-row__team-name">{match.homeTeam.name}</span>
-                      </div>
-                      <div className="st-match-row__team">
-                        {match.awayTeam.logo ? (
-                          <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
-                        ) : (
-                          <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">A</div>
-                        )}
-                        <span className="st-match-row__team-name">{match.awayTeam.name}</span>
+                      </span>
+                      <div className="st-league-actions" data-share-hide="true">
+                        <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                          <Star size={14} />
+                        </button>
+                        <button className="st-league-action-btn" onClick={(e) => { e.stopPropagation(); }}>
+                          <SlidersHorizontal size={14} />
+                        </button>
+                        {group.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                       </div>
                     </div>
-                    {(match.score || match.status === "live") && (
-                      <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
-                        {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
-                      </div>
-                    )}
-                    {oddsTab === "1x2" && (
-                      <div className="st-match-row__odds">
-                        <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
-                          <span className="st-match-row__odd-label">1</span>
-                          <span className="st-match-row__odd-value">{h.toFixed(2)}</span>
-                        </div>
-                        <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
-                          <span className="st-match-row__odd-label">X</span>
-                          <span className="st-match-row__odd-value">{d.toFixed(2)}</span>
-                        </div>
-                        <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
-                          <span className="st-match-row__odd-label">2</span>
-                          <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )}
-                    {oddsTab === "double-chance" && (() => {
-                      const dc1x = h > 0 && d > 0 ? parseFloat((1 / (1/h + 1/d)).toFixed(2)) : 0;
-                      const dc12 = h > 0 && a > 0 ? parseFloat((1 / (1/h + 1/a)).toFixed(2)) : 0;
-                      const dcx2 = d > 0 && a > 0 ? parseFloat((1 / (1/d + 1/a)).toFixed(2)) : 0;
+
+                    {!group.collapsed && group.matches.map((match) => {
+                      const h = safeOdd(match.odds?.home);
+                      const d = safeOdd(match.odds?.draw);
+                      const a = safeOdd(match.odds?.away);
+                      const lowestIdx = getLowestOddIndex(h, d, a);
+                      const isSelected = match.id === selectedMatchId;
+                      const liveInfo = computeLiveInfo(match);
+                      const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
+
                       return (
-                        <div className="st-match-row__odds">
-                          <div className="st-match-row__odd">
-                            <span className="st-match-row__odd-label">1X</span>
-                            <span className="st-match-row__odd-value">{dc1x > 0 ? dc1x.toFixed(2) : "-"}</span>
+                        <div
+                          key={match.id}
+                          className={`st-match-row ${isSelected ? "st-match-row--selected" : ""} ${match.status === "live" ? "st-match-row--live" : ""}`}
+                          onClick={() => setSelectedMatchId(match.id)}
+                        >
+                          <div className="st-match-row__status">
+                            {match.status === "live" && liveInfo ? (
+                              <>
+                                <div className="st-match-row__status-tag st-match-row__status-tag--live">VIVO</div>
+                                <div className="st-match-row__status-period">{liveInfo.period}</div>
+                                {liveInfo.minute != null && liveInfo.period !== "HT" && (
+                                  <div className="st-match-row__status-minute">{liveInfo.minute}&apos;</div>
+                                )}
+                              </>
+                            ) : match.status === "finished" ? (
+                              <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
+                            ) : match.status === "postponed" ? (
+                              <>
+                                <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
+                                <div className="st-match-row__status-tag st-match-row__status-tag--postponed">ADIADO</div>
+                              </>
+                            ) : minsToKick != null && minsToKick <= 30 ? (
+                              <>
+                                <div className="st-match-row__status-tag st-match-row__status-tag--soon">BREVE</div>
+                                <div className="st-match-row__status-minute">{minsToKick}&apos;</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
+                                <div className="st-match-row__status-label st-match-row__status-label--scheduled">{formatTime(match.datetime)}</div>
+                              </>
+                            )}
                           </div>
-                          <div className="st-match-row__odd">
-                            <span className="st-match-row__odd-label">12</span>
-                            <span className="st-match-row__odd-value">{dc12 > 0 ? dc12.toFixed(2) : "-"}</span>
+                          <div className="st-match-row__teams">
+                            <div className="st-match-row__team">
+                              {match.homeTeam.logo ? (
+                                <img src={match.homeTeam.logo} alt="" className="st-match-row__team-logo" />
+                              ) : (
+                                <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">H</div>
+                              )}
+                              <span className="st-match-row__team-name">{match.homeTeam.name}</span>
+                            </div>
+                            <div className="st-match-row__team">
+                              {match.awayTeam.logo ? (
+                                <img src={match.awayTeam.logo} alt="" className="st-match-row__team-logo" />
+                              ) : (
+                                <div className="st-match-row__team-logo st-match-row__team-logo--placeholder">A</div>
+                              )}
+                              <span className="st-match-row__team-name">{match.awayTeam.name}</span>
+                            </div>
                           </div>
-                          <div className="st-match-row__odd">
-                            <span className="st-match-row__odd-label">X2</span>
-                            <span className="st-match-row__odd-value">{dcx2 > 0 ? dcx2.toFixed(2) : "-"}</span>
-                          </div>
+                          {(match.score || match.status === "live") && (
+                            <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
+                              {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
+                            </div>
+                          )}
+                          {oddsTab === "1x2" && (
+                            <div className="st-match-row__odds">
+                              <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
+                                <span className="st-match-row__odd-label">1</span>
+                                <span className="st-match-row__odd-value">{h.toFixed(2)}</span>
+                              </div>
+                              <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
+                                <span className="st-match-row__odd-label">X</span>
+                                <span className="st-match-row__odd-value">{d.toFixed(2)}</span>
+                              </div>
+                              <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
+                                <span className="st-match-row__odd-label">2</span>
+                                <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          )}
+                          {oddsTab === "double-chance" && (() => {
+                            const dc1x = h > 0 && d > 0 ? parseFloat((1 / (1 / h + 1 / d)).toFixed(2)) : 0;
+                            const dc12 = h > 0 && a > 0 ? parseFloat((1 / (1 / h + 1 / a)).toFixed(2)) : 0;
+                            const dcx2 = d > 0 && a > 0 ? parseFloat((1 / (1 / d + 1 / a)).toFixed(2)) : 0;
+                            return (
+                              <div className="st-match-row__odds">
+                                <div className="st-match-row__odd">
+                                  <span className="st-match-row__odd-label">1X</span>
+                                  <span className="st-match-row__odd-value">{dc1x > 0 ? dc1x.toFixed(2) : "-"}</span>
+                                </div>
+                                <div className="st-match-row__odd">
+                                  <span className="st-match-row__odd-label">12</span>
+                                  <span className="st-match-row__odd-value">{dc12 > 0 ? dc12.toFixed(2) : "-"}</span>
+                                </div>
+                                <div className="st-match-row__odd">
+                                  <span className="st-match-row__odd-label">X2</span>
+                                  <span className="st-match-row__odd-value">{dcx2 > 0 ? dcx2.toFixed(2) : "-"}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {oddsTab === "btts" && (
+                            <div className="st-match-row__odds">
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Sim</span>
+                                <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsYes) > 0 ? safeOdd(match.odds?.bttsYes).toFixed(2) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Nao</span>
+                                <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsNo) > 0 ? safeOdd(match.odds?.bttsNo).toFixed(2) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                                <span className="st-match-row__odd-label">Prob%</span>
+                                <span className="st-match-row__odd-value">{match.stats?.bttsProb > 0 ? `${match.stats.bttsProb.toFixed(0)}%` : "-"}</span>
+                              </div>
+                            </div>
+                          )}
+                          {oddsTab === "goals" && (
+                            <div className="st-match-row__odds">
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">O 1.5</span>
+                                <span className="st-match-row__odd-value">{safeOdd(match.odds?.over15) > 0 ? safeOdd(match.odds?.over15).toFixed(2) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd st-match-row__odd--highlight">
+                                <span className="st-match-row__odd-label">O 2.5</span>
+                                <span className="st-match-row__odd-value">{safeOdd(match.odds?.over25) > 0 ? safeOdd(match.odds?.over25).toFixed(2) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">O 3.5</span>
+                                <span className="st-match-row__odd-value">{safeOdd(match.odds?.over35) > 0 ? safeOdd(match.odds?.over35).toFixed(2) : "-"}</span>
+                              </div>
+                            </div>
+                          )}
+                          {oddsTab === "cards" && (
+                            <div className="st-match-row__odds">
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Casa</span>
+                                <span className="st-match-row__odd-value">{match.stats?.homeCardsPerMatch ? match.stats.homeCardsPerMatch.toFixed(1) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Fora</span>
+                                <span className="st-match-row__odd-value">{match.stats?.awayCardsPerMatch ? match.stats.awayCardsPerMatch.toFixed(1) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                                <span className="st-match-row__odd-label">Liga</span>
+                                <span className="st-match-row__odd-value">{match.stats?.leagueAvgCards ? match.stats.leagueAvgCards.toFixed(1) : "-"}</span>
+                              </div>
+                            </div>
+                          )}
+                          {oddsTab === "corners" && (
+                            <div className="st-match-row__odds">
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Casa</span>
+                                <span className="st-match-row__odd-value">{match.stats?.homeCornersPerMatch ? match.stats.homeCornersPerMatch.toFixed(1) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd">
+                                <span className="st-match-row__odd-label">Fora</span>
+                                <span className="st-match-row__odd-value">{match.stats?.awayCornersPerMatch ? match.stats.awayCornersPerMatch.toFixed(1) : "-"}</span>
+                              </div>
+                              <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
+                                <span className="st-match-row__odd-label">Liga</span>
+                                <span className="st-match-row__odd-value">{match.stats?.leagueAvgCorners ? match.stats.leagueAvgCorners.toFixed(1) : "-"}</span>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="st-match-row__favorite"
+                            data-share-hide="true"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(match.id); }}
+                            aria-label={favoriteIds.has(match.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                          >
+                            <Star size={14} fill={favoriteIds.has(match.id) ? "currentColor" : "none"} />
+                          </button>
+                          {match.predictions && match.predictions.length > 0 && (
+                            <div className="st-match-row__predictions">
+                              {match.predictions.map((pred, pidx) => (
+                                <div key={pidx} className="st-prediction-badge">
+                                  <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                    {pred.status}
+                                  </span>
+                                  <span className="st-prediction-market">{pred.mercado}</span>
+                                  <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  <span className="st-prediction-odd">EV+ &gt;= {pred.odd_minima != null ? pred.odd_minima.toFixed(2) : "-"}</span>
+                                  {pred.alerta && <span className="st-prediction-alert">△ {pred.alerta}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
-                    })()}
-                    {oddsTab === "btts" && (
-                      <div className="st-match-row__odds">
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Sim</span>
-                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsYes) > 0 ? safeOdd(match.odds?.bttsYes).toFixed(2) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Nao</span>
-                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsNo) > 0 ? safeOdd(match.odds?.bttsNo).toFixed(2) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
-                          <span className="st-match-row__odd-label">Prob%</span>
-                          <span className="st-match-row__odd-value">{match.stats?.bttsProb > 0 ? `${match.stats.bttsProb.toFixed(0)}%` : "-"}</span>
-                        </div>
-                      </div>
-                    )}
-                    {oddsTab === "goals" && (
-                      <div className="st-match-row__odds">
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">O 1.5</span>
-                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over15) > 0 ? safeOdd(match.odds?.over15).toFixed(2) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd st-match-row__odd--highlight">
-                          <span className="st-match-row__odd-label">O 2.5</span>
-                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over25) > 0 ? safeOdd(match.odds?.over25).toFixed(2) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">O 3.5</span>
-                          <span className="st-match-row__odd-value">{safeOdd(match.odds?.over35) > 0 ? safeOdd(match.odds?.over35).toFixed(2) : "-"}</span>
-                        </div>
-                      </div>
-                    )}
-                    {oddsTab === "cards" && (
-                      <div className="st-match-row__odds">
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Casa</span>
-                          <span className="st-match-row__odd-value">{match.stats?.homeCardsPerMatch ? match.stats.homeCardsPerMatch.toFixed(1) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Fora</span>
-                          <span className="st-match-row__odd-value">{match.stats?.awayCardsPerMatch ? match.stats.awayCardsPerMatch.toFixed(1) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
-                          <span className="st-match-row__odd-label">Liga</span>
-                          <span className="st-match-row__odd-value">{match.stats?.leagueAvgCards ? match.stats.leagueAvgCards.toFixed(1) : "-"}</span>
-                        </div>
-                      </div>
-                    )}
-                    {oddsTab === "corners" && (
-                      <div className="st-match-row__odds">
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Casa</span>
-                          <span className="st-match-row__odd-value">{match.stats?.homeCornersPerMatch ? match.stats.homeCornersPerMatch.toFixed(1) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd">
-                          <span className="st-match-row__odd-label">Fora</span>
-                          <span className="st-match-row__odd-value">{match.stats?.awayCornersPerMatch ? match.stats.awayCornersPerMatch.toFixed(1) : "-"}</span>
-                        </div>
-                        <div className="st-match-row__odd" style={{ opacity: 0.7 }}>
-                          <span className="st-match-row__odd-label">Liga</span>
-                          <span className="st-match-row__odd-value">{match.stats?.leagueAvgCorners ? match.stats.leagueAvgCorners.toFixed(1) : "-"}</span>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="st-match-row__favorite"
-                      data-share-hide="true"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(match.id); }}
-                      aria-label={favoriteIds.has(match.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                    >
-                      <Star size={14} fill={favoriteIds.has(match.id) ? "currentColor" : "none"} />
-                    </button>
-                    {match.predictions && match.predictions.length > 0 && (
-                      <div className="st-match-row__predictions">
-                        {match.predictions.map((pred, pidx) => (
-                          <div key={pidx} className="st-prediction-badge">
-                            <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                              {pred.status}
-                            </span>
-                            <span className="st-prediction-market">{pred.mercado}</span>
-                            <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
-                            <span className="st-prediction-odd">EV+ &gt;= {pred.odd_minima != null ? pred.odd_minima.toFixed(2) : "-"}</span>
-                            {pred.alerta && <span className="st-prediction-alert">△ {pred.alerta}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    })}
                   </div>
                 );
-                })}
-              </div>
-            );
-          })}
-          </>}
-        </div>
+              })}
+            </>}
+          </div>
         )}
 
         {/* RIGHT PANEL - Em mobile, esconder quando nenhum jogo está selecionado */}
         {(!isMobile || selectedMatchId) && (
-        <section ref={rightPanelRef} className="st-panel-right detail-card-section">
-          {detailData ? (
-            <MatchDetailCard
-              match={detailData}
-              version={appVersion}
-              onAudit={handleAudit}
-              onApplyCorrection={handleApplyCorrection}
-              auditResult={auditResult}
-              auditLoading={auditLoading}
-              auditResultRef={auditResultRef}
-              onBack={() => setSelectedMatchId(null)}
-              showBackButton={isMobile}
-              isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
-              onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
-            />
-          ) : (
-            <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
-          )}
-        </section>
+          <section ref={rightPanelRef} className="st-panel-right detail-card-section">
+            {detailData ? (
+              <MatchDetailCard
+                match={detailData}
+                version={appVersion}
+                onAudit={handleAudit}
+                onApplyCorrection={handleApplyCorrection}
+                auditResult={auditResult}
+                auditLoading={auditLoading}
+                auditResultRef={auditResultRef}
+                onBack={() => setSelectedMatchId(null)}
+                showBackButton={isMobile}
+                isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
+                onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
+                onRegenerate={handleGenerateAiAnalysis}
+              />
+            ) : (
+              <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
+            )}
+          </section>
         )}
       </div>
 

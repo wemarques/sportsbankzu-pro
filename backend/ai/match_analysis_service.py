@@ -41,7 +41,7 @@ def analyze_match(
     """
     stats = stats or {}
     odds = odds or {}
-    client = client or MistralClient(model="mistral-medium-latest")
+    client = client or MistralClient(model="mistral-small-latest")
 
     prompt = f"""Você é um analista profissional de apostas esportivas especializado em futebol.
 

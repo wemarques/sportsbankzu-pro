@@ -1,0 +1,92 @@
+[    5171ms] [WARNING] Unrecognized feature: 'ambient-light-sensor'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'battery'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'document-domain'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'layout-animations'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'legacy-image-formats'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'oversized-images'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'vr'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5171ms] [WARNING] Unrecognized feature: 'wake-lock'. @ https://dashboard-ana.streamlit.app/-/build/assets/index-BCOs3Liy.js:33
+[    5472ms] [WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing. @ https://dashboard-ana.streamlit.app/~/+/:0
+[   96870ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96870ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96870ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96923ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96923ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96923ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96956ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96957ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   96957ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97021ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97021ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97022ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97125ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97126ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97126ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97171ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97172ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97172ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97225ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97226ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97226ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97361ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97362ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97362ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97513ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97514ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   97514ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   98066ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   98066ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[   98066ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1449577ms] [WARNING] WebSocket onclose @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:150
+[ 1449585ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1449586ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1449586ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450136ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450136ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450137ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450368ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450369ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1450369ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1452790ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1452790ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1452791ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1501346ms] [ERROR] Failed to load resource: net::ERR_NAME_NOT_RESOLVED @ https://dashboard-ana.streamlit.app/api/v2/app/status:0
+[ 1512876ms] [WARNING] WebSocket onclose @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:150
+[ 1512880ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1512881ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1512881ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513131ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513132ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513132ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513211ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513211ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513211ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513597ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513597ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 1513598ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313488ms] [WARNING] WebSocket onclose @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:150
+[ 3313495ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313495ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313495ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313774ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313774ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313774ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313815ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313815ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3313815ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3314280ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3314280ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3314280ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958669ms] [WARNING] WebSocket onclose @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:150
+[ 3958673ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958673ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958673ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958909ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958910ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3958910ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3959024ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3959024ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3959024ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3961306ms] [WARNING] Invalid color passed for widgetBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3961306ms] [WARNING] Invalid color passed for widgetBorderColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49
+[ 3961307ms] [WARNING] Invalid color passed for skeletonBackgroundColor in theme.sidebar: "" @ https://dashboard-ana.streamlit.app/~/+/static/js/index.Drusyo5m.js:49

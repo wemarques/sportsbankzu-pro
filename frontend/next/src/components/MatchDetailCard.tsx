@@ -481,70 +481,70 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
       {/* ODDS SECTION — só quando aba Cotacoes ativa */}
       {activeTab === "odds" && (
-      <div className="match-detail-card__odds-section">
-        <div className="mdc-odds-title">RESULTADO DA PARTIDA</div>
-        <div className="mdc-odds-main-grid">
-          <div className="mdc-odd-main">
-            <span className="mdc-odd-main__label">1</span>
-            <span className="mdc-odd-main__value">
-              {match.odds?.home?.toFixed(2) ?? "-"}
-              {getOddVariation(match.odds?.homeVariation)}
-            </span>
+        <div className="match-detail-card__odds-section">
+          <div className="mdc-odds-title">RESULTADO DA PARTIDA</div>
+          <div className="mdc-odds-main-grid">
+            <div className="mdc-odd-main">
+              <span className="mdc-odd-main__label">1</span>
+              <span className="mdc-odd-main__value">
+                {match.odds?.home?.toFixed(2) ?? "-"}
+                {getOddVariation(match.odds?.homeVariation)}
+              </span>
+            </div>
+            <div className="mdc-odd-main">
+              <span className="mdc-odd-main__label">X</span>
+              <span className="mdc-odd-main__value">
+                {match.odds?.draw?.toFixed(2) ?? "-"}
+                {getOddVariation(match.odds?.drawVariation)}
+              </span>
+            </div>
+            <div className="mdc-odd-main">
+              <span className="mdc-odd-main__label">2</span>
+              <span className="mdc-odd-main__value">
+                {match.odds?.away?.toFixed(2) ?? "-"}
+                {getOddVariation(match.odds?.awayVariation)}
+              </span>
+            </div>
           </div>
-          <div className="mdc-odd-main">
-            <span className="mdc-odd-main__label">X</span>
-            <span className="mdc-odd-main__value">
-              {match.odds?.draw?.toFixed(2) ?? "-"}
-              {getOddVariation(match.odds?.drawVariation)}
-            </span>
-          </div>
-          <div className="mdc-odd-main">
-            <span className="mdc-odd-main__label">2</span>
-            <span className="mdc-odd-main__value">
-              {match.odds?.away?.toFixed(2) ?? "-"}
-              {getOddVariation(match.odds?.awayVariation)}
-            </span>
-          </div>
+
+          {/* DUPLA CHANCE */}
+          {match.doubleChance && (
+            <>
+              <div className="mdc-odds-title mt-md">DUPLA CHANCE</div>
+              <div className="mdc-odds-secondary-grid">
+                <div className="mdc-odd-secondary">
+                  <span className="mdc-odd-secondary__label">1X</span>
+                  <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrDraw?.toFixed(2) ?? "-"}</span>
+                </div>
+                <div className="mdc-odd-secondary">
+                  <span className="mdc-odd-secondary__label">12</span>
+                  <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrAway?.toFixed(2) ?? "-"}</span>
+                </div>
+                <div className="mdc-odd-secondary">
+                  <span className="mdc-odd-secondary__label">X2</span>
+                  <span className="mdc-odd-secondary__value">{match.doubleChance.drawOrAway?.toFixed(2) ?? "-"}</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* AMBAS MARCAM */}
+          {match.btts && (
+            <>
+              <div className="mdc-odds-title mt-md">AMBAS MARCAM</div>
+              <div className="mdc-odds-secondary-grid">
+                <div className="mdc-odd-secondary">
+                  <span className="mdc-odd-secondary__label">Sim</span>
+                  <span className="mdc-odd-secondary__value">{match.btts.yes?.toFixed(2) ?? "-"}</span>
+                </div>
+                <div className="mdc-odd-secondary">
+                  <span className="mdc-odd-secondary__label">Nao</span>
+                  <span className="mdc-odd-secondary__value">{match.btts.no?.toFixed(2) ?? "-"}</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-
-        {/* DUPLA CHANCE */}
-        {match.doubleChance && (
-          <>
-            <div className="mdc-odds-title mt-md">DUPLA CHANCE</div>
-            <div className="mdc-odds-secondary-grid">
-              <div className="mdc-odd-secondary">
-                <span className="mdc-odd-secondary__label">1X</span>
-                <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrDraw?.toFixed(2) ?? "-"}</span>
-              </div>
-              <div className="mdc-odd-secondary">
-                <span className="mdc-odd-secondary__label">12</span>
-                <span className="mdc-odd-secondary__value">{match.doubleChance.homeOrAway?.toFixed(2) ?? "-"}</span>
-              </div>
-              <div className="mdc-odd-secondary">
-                <span className="mdc-odd-secondary__label">X2</span>
-                <span className="mdc-odd-secondary__value">{match.doubleChance.drawOrAway?.toFixed(2) ?? "-"}</span>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* AMBAS MARCAM */}
-        {match.btts && (
-          <>
-            <div className="mdc-odds-title mt-md">AMBAS MARCAM</div>
-            <div className="mdc-odds-secondary-grid">
-              <div className="mdc-odd-secondary">
-                <span className="mdc-odd-secondary__label">Sim</span>
-                <span className="mdc-odd-secondary__value">{match.btts.yes?.toFixed(2) ?? "-"}</span>
-              </div>
-              <div className="mdc-odd-secondary">
-                <span className="mdc-odd-secondary__label">Nao</span>
-                <span className="mdc-odd-secondary__value">{match.btts.no?.toFixed(2) ?? "-"}</span>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
       )}
 
       {/* SUB-TABS */}
@@ -666,7 +666,16 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
                     {!aiLoading && !match.aiAnalysis && (
                       <div style={{ textAlign: "center", fontSize: "0.8rem", color: "#666", padding: 16 }}>
-                        Analise AI nao disponivel para este jogo.
+                        <div style={{ marginBottom: 12 }}>Nenhuma análise AI gerada para este jogo.</div>
+                        {onRegenerate && (
+                          <button
+                            onClick={onRegenerate}
+                            style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(0,255,136,0.15)", color: "#00ff88", border: "1px solid rgba(0,255,136,0.3)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}
+                          >
+                            <Sparkles size={14} />
+                            Gerar Análise AI
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -907,8 +916,8 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             <div style={{ fontSize: "0.7rem", color: "#888", marginTop: 4 }}>Probabilidade BTTS</div>
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-around", padding: "8px 0", fontSize: "0.75rem" }}>
-                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Sim</span><br/><span style={{ color: "#00ff88" }}>{match.btts?.yes?.toFixed(2) ?? "-"}</span></div>
-                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Nao</span><br/><span style={{ color: "#ff4444" }}>{match.btts?.no?.toFixed(2) ?? "-"}</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Sim</span><br /><span style={{ color: "#00ff88" }}>{match.btts?.yes?.toFixed(2) ?? "-"}</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Nao</span><br /><span style={{ color: "#ff4444" }}>{match.btts?.no?.toFixed(2) ?? "-"}</span></div>
                           </div>
                         </div>
                       )}

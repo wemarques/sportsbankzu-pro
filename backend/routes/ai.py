@@ -4,8 +4,8 @@ from backend.ai.context_analyzer import ContextAnalyzer
 from backend.ai.report_generator import ReportGenerator
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-analyzer = ContextAnalyzer(model="mistral-medium-latest")
-reporter = ReportGenerator(model="mistral-medium-latest")
+analyzer = ContextAnalyzer(model="mistral-small-latest")
+reporter = ReportGenerator(model="mistral-small-latest")
 
 class AnalyzeContextRequest(BaseModel):
     home_team: str

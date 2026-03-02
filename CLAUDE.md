@@ -68,3 +68,4 @@ Context7 MCP is configured for this project. Use it to fetch up-to-date document
 - Prediction markets: 1X2, Over/Under (1.5-4.5), BTTS, Double Chance
 - Status levels: SAFE, NEUTRO, ALERTA
 - Regimes: NORMAL, HIPER-OFENSIVA
+- Sempre que solicitado a realizar análises financeiras ou previsões esportivas, utilize as ferramentas mapeadas no Antigravity localizadas em `backend/services` e `backend/modeling`. Não tente simular a lógica de cálculo manualmente.

@@ -6,7 +6,7 @@ from backend.ai.cache_manager import CacheManager
 logger = logging.getLogger("sportsbankzu.ai.analyzer")
 
 class ContextAnalyzer:
-    def __init__(self, model: str = "mistral-medium-latest", client: MistralClient | None = None):
+    def __init__(self, model: str = "mistral-small-latest", client: MistralClient | None = None):
         self.client = client or MistralClient(model=model)
         self.cache = CacheManager(ttl_hours=6) # Cache tático mais curto (6h)
 
