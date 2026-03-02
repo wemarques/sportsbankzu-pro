@@ -42,7 +42,7 @@ class MistralAnalysisService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("MISTRAL_API_KEY")
         self.base_url = "https://api.mistral.ai/v1"
-        self.model = "mistral-large-latest"
+        self.model = "mistral-small-latest"
         self.client = MistralClient()
         self.cache = CacheManager(ttl_hours=6)
 

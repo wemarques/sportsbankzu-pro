@@ -20,7 +20,7 @@ _BACKOFF_BASE = 1.5  # seconds
 
 
 class MistralClient:
-    def __init__(self, model: str = "mistral-medium-latest"):
+    def __init__(self, model: str = "mistral-small-latest"):
         if load_dotenv:
             load_dotenv()
         self.api_key = os.getenv("MISTRAL_API_KEY")

@@ -565,6 +565,8 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(service):** `fixtures_service.py` agora extrai placar para jogos com status `live` (antes apenas `finished`), incluindo placar do intervalo (halftime)
 - **feat(ai):** Prompt Mistral de auditoria em lote atualizado com campo `model_update_recommendation` no schema JSON — IA agora recomenda se modelo precisa re-treino
 - **feat(ai):** Fallback de erro no `MistralAuditor` inclui `model_update_recommendation` padrão
+- **fix(ai):** Otimizacao de custos da API Mistral mudando modelo padrao em todos os servicos (ContextAnalyzer, ReportGenerator, etc.) de `mistral-medium-latest`/`large` para o veloz e eficiente `mistral-small-latest`
+- **fix(service):** Corrigido mapeamento em `status_map` (ignorando `incomplete`) para evitar que jogos agendados sobreponham o status "VIVO" no dashboard
 
 #### Frontend / Dashboard
 - **feat(live):** Polling automatico de placares a cada 60s quando ha jogos ao vivo (120s quando nao ha) via `/api/matches/live`
@@ -579,6 +581,7 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(audit):** Quando disponível, avaliação Mistral AI substitui cálculo local (análise mais rica)
 - **feat(audit):** Novo tipo `ModelUpdateRecommendation` com `needs_update`, `urgency`, `reasons`, `recommended_actions`, `next_retrain_suggestion`
 - **feat(ui):** Seção visual "Modelo Precisa de Atualização" / "Modelo Dentro dos Parâmetros" com badge de urgência colorido, lista de diagnósticos e ações
+- **fix(ui):** Chamada de Analise IA em `dashboard/page.tsx` nao e mais feita automaticamente no `useEffect` para economizar custos, trocada por um botão "Gerar Análise AI" de ativacao manual no `MatchDetailCard`
 
 ### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
 
