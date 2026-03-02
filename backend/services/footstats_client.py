@@ -51,15 +51,29 @@ class FootyStatsClient:
         key_str = f"{endpoint}:{params_str}"
         return hashlib.md5(key_str.encode()).hexdigest()
 
-    def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Busca dados no cache se ainda forem válidos."""
+    def _get_from_cache(self, cache_key: str, max_age_minutes: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Busca dados no cache se ainda forem válidos.
+
+        Args:
+            cache_key: chave do cache
+            max_age_minutes: se fornecido, rejeita entradas mais velhas que este valor
+                             (mesmo que expires_at ainda não tenha passado).
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT response FROM api_cache WHERE cache_key = ? AND expires_at > ?", 
-                (cache_key, datetime.now())
-            )
+            if max_age_minutes is not None:
+                # Respeita o TTL solicitado pelo chamador, não apenas o TTL original
+                min_created = datetime.now() - timedelta(minutes=max_age_minutes)
+                cursor.execute(
+                    "SELECT response FROM api_cache WHERE cache_key = ? AND expires_at > ? AND created_at > ?",
+                    (cache_key, datetime.now(), min_created)
+                )
+            else:
+                cursor.execute(
+                    "SELECT response FROM api_cache WHERE cache_key = ? AND expires_at > ?",
+                    (cache_key, datetime.now())
+                )
             row = cursor.fetchone()
             conn.close()
             if row:
@@ -92,8 +106,8 @@ class FootyStatsClient:
         params["key"] = self.api_key
         cache_key = self._generate_cache_key(endpoint, params)
 
-        # Tenta cache primeiro
-        cached_data = self._get_from_cache(cache_key)
+        # Tenta cache primeiro (respeitando o TTL solicitado pelo chamador)
+        cached_data = self._get_from_cache(cache_key, max_age_minutes=ttl_minutes)
         if cached_data:
             logger.info(f"Usando dados do cache para {endpoint}")
             return cached_data
