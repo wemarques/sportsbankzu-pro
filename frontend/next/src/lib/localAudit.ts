@@ -11,6 +11,8 @@ import type {
   BatchAuditResult,
   BatchAuditMatchResult,
   BatchAuditMarketAccuracy,
+  BatchAuditCorrection,
+  BatchAuditModelEvaluation,
   ModelUpdateRecommendation,
 } from "./api";
 
@@ -181,6 +183,189 @@ function computeModelUpdateRecommendation(
 }
 
 /**
+ * Compute deterministic correction suggestions based on audit metrics.
+ * These appear immediately (before Mistral AI responds).
+ */
+function computeLocalCorrections(
+  overallAccuracy: number,
+  safeAccuracy: number,
+  avgBrier: number,
+  avgLambdaError: number,
+  marketAccuracy: BatchAuditMarketAccuracy[],
+): BatchAuditCorrection[] {
+  const corrections: BatchAuditCorrection[] = [];
+
+  // Lambda multiplier correction
+  if (avgLambdaError > 1.5) {
+    const direction = avgLambdaError > 0 ? "reduzir" : "aumentar";
+    const factor = avgLambdaError > 2.0 ? 0.90 : 0.95;
+    corrections.push({
+      type: "LAMBDA_WEIGHT",
+      parameter: "lambda_home_multiplier",
+      current_value: 1.0,
+      suggested_value: factor,
+      reason: `Erro médio de lambda ${avgLambdaError.toFixed(2)} gols — ${direction} multiplicador para compensar`,
+      confidence: avgLambdaError > 2.0 ? 75 : 60,
+      impact: avgLambdaError > 2.0 ? "HIGH" : "MEDIUM",
+    });
+  }
+
+  // SAFE threshold correction
+  if (safeAccuracy > 0 && safeAccuracy < 60) {
+    const bump = safeAccuracy < 50 ? 0.05 : 0.03;
+    corrections.push({
+      type: "THRESHOLD",
+      parameter: "safe_threshold_1x2",
+      current_value: 0.60,
+      suggested_value: +(0.60 + bump).toFixed(2),
+      reason: `Acurácia SAFE em ${safeAccuracy.toFixed(1)}% — elevar threshold mínimo para filtrar picks menos confiáveis`,
+      confidence: safeAccuracy < 50 ? 80 : 65,
+      impact: safeAccuracy < 50 ? "HIGH" : "MEDIUM",
+    });
+  }
+
+  // Brier score → probability calibration
+  if (avgBrier > 0.25) {
+    corrections.push({
+      type: "THRESHOLD",
+      parameter: "calibration_retrain",
+      current_value: avgBrier,
+      suggested_value: 0.20,
+      reason: `Brier Score ${avgBrier.toFixed(4)} acima do ideal (0.25) — recalibrar Isotonic Regression`,
+      confidence: avgBrier > 0.35 ? 85 : 65,
+      impact: avgBrier > 0.35 ? "HIGH" : "MEDIUM",
+    });
+  }
+
+  // Market-specific corrections
+  for (const ma of marketAccuracy) {
+    if (ma.total >= 4 && ma.accuracy_pct < 35) {
+      // BTTS market
+      if (ma.market.includes("BTTS") || ma.market.includes("AMBAS")) {
+        corrections.push({
+          type: "BTTS_MULTIPLIER",
+          parameter: "btts_multiplier",
+          current_value: 1.0,
+          suggested_value: ma.accuracy_pct < 25 ? 0.85 : 0.92,
+          reason: `Mercado ${ma.market} com ${ma.accuracy_pct.toFixed(1)}% acurácia (${ma.correct}/${ma.total}) — ajustar multiplicador BTTS`,
+          confidence: 70,
+          impact: "MEDIUM",
+        });
+      }
+      // Over/Under markets
+      else if (ma.market.includes("OVER") || ma.market.includes("UNDER") || ma.market.includes("ACIMA") || ma.market.includes("ABAIXO")) {
+        corrections.push({
+          type: "THRESHOLD",
+          parameter: `threshold_${ma.market.toLowerCase().replace(/\s+/g, "_")}`,
+          current_value: 0.55,
+          suggested_value: 0.60,
+          reason: `Mercado ${ma.market} com ${ma.accuracy_pct.toFixed(1)}% acurácia — elevar threshold para reduzir falsos positivos`,
+          confidence: 65,
+          impact: "MEDIUM",
+        });
+      }
+    }
+  }
+
+  // Overall accuracy correction
+  if (overallAccuracy > 0 && overallAccuracy < 45) {
+    corrections.push({
+      type: "THRESHOLD",
+      parameter: "neutro_threshold_global",
+      current_value: 0.50,
+      suggested_value: 0.55,
+      reason: `Acurácia geral ${overallAccuracy.toFixed(1)}% — elevar threshold NEUTRO para filtrar picks de baixa confiança`,
+      confidence: 70,
+      impact: overallAccuracy < 35 ? "HIGH" : "MEDIUM",
+    });
+  }
+
+  return corrections;
+}
+
+/**
+ * Build a local model evaluation object with deterministic corrections.
+ * This provides immediate feedback before Mistral AI responds.
+ */
+function buildLocalModelEvaluation(
+  overallAccuracy: number,
+  safeAccuracy: number,
+  avgBrier: number,
+  avgLambdaError: number,
+  marketAccuracy: BatchAuditMarketAccuracy[],
+  modelUpdateRec: ModelUpdateRecommendation,
+  auditedMatches: number,
+): BatchAuditModelEvaluation | null {
+  if (auditedMatches < 2) return null;
+
+  const corrections = computeLocalCorrections(
+    overallAccuracy,
+    safeAccuracy,
+    avgBrier,
+    avgLambdaError,
+    marketAccuracy,
+  );
+
+  // Determine overall assessment
+  let assessment: BatchAuditModelEvaluation["overall_assessment"] = "SATISFATORIO";
+  if (modelUpdateRec.urgency === "CRITICA" || modelUpdateRec.urgency === "ALTA") {
+    assessment = "CRITICO";
+  } else if (modelUpdateRec.urgency === "MEDIA" || corrections.length > 2) {
+    assessment = "NECESSITA_AJUSTE";
+  }
+
+  // Lambda evaluation
+  let lambdaStatus: string = "OK";
+  let lambdaDirection: string = "BALANCED";
+  if (avgLambdaError > 2.0) { lambdaStatus = "CRITICAL"; lambdaDirection = "OVER_ESTIMATING"; }
+  else if (avgLambdaError > 1.5) { lambdaStatus = "WARNING"; lambdaDirection = "OVER_ESTIMATING"; }
+
+  // Threshold evaluation
+  let safeStatus: string = "OK";
+  if (safeAccuracy > 0 && safeAccuracy < 50) safeStatus = "CRITICAL";
+  else if (safeAccuracy > 0 && safeAccuracy < 60) safeStatus = "WARNING";
+
+  let neutroStatus: string = "OK";
+  const neutroAcc = overallAccuracy; // overall includes neutro
+  if (neutroAcc > 0 && neutroAcc < 40) neutroStatus = "CRITICAL";
+  else if (neutroAcc > 0 && neutroAcc < 50) neutroStatus = "WARNING";
+
+  // Market biases
+  const biases = marketAccuracy
+    .filter((ma) => ma.total >= 4 && ma.accuracy_pct < 40)
+    .map((ma) => ({
+      market: ma.market,
+      bias_type: ma.accuracy_pct < 25 ? "SYSTEMATIC_ERROR" : "OVER_CONFIDENT",
+      description: `${ma.accuracy_pct.toFixed(1)}% acurácia em ${ma.total} picks`,
+      severity: (ma.accuracy_pct < 25 ? "HIGH" : ma.accuracy_pct < 35 ? "MEDIUM" : "LOW") as "HIGH" | "MEDIUM" | "LOW",
+    }));
+
+  return {
+    overall_assessment: assessment,
+    overall_notes: `Avaliação local (determinística): ${corrections.length} correções sugeridas. Aguardando avaliação Mistral AI para análise mais detalhada.`,
+    lambda_evaluation: {
+      status: lambdaStatus,
+      direction: lambdaDirection,
+      avg_error: avgLambdaError,
+      notes: avgLambdaError > 1.5
+        ? `Erro médio de ${avgLambdaError.toFixed(2)} gols — lambdas precisam de ajuste`
+        : `Erro médio de ${avgLambdaError.toFixed(2)} gols — dentro do aceitável`,
+    },
+    threshold_evaluation: {
+      safe_status: safeStatus,
+      neutro_status: neutroStatus,
+      notes: safeStatus !== "OK" || neutroStatus !== "OK"
+        ? "Thresholds precisam de revisão com base nos resultados da rodada"
+        : "Thresholds dentro dos parâmetros esperados",
+    },
+    market_biases: biases,
+    recommended_corrections: corrections,
+    model_update_recommendation: modelUpdateRec,
+    audit_confidence: Math.min(90, Math.max(30, auditedMatches * 8)),
+  };
+}
+
+/**
  * Run deterministic audit on loaded matches — no backend call needed.
  * Returns the same BatchAuditResult shape as the backend endpoint.
  */
@@ -326,6 +511,16 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     matchResults.length,
   );
 
+  const localEvaluation = buildLocalModelEvaluation(
+    overallAcc,
+    safeAcc,
+    avgBrier,
+    avgLambda,
+    marketAccuracy,
+    modelUpdateRec,
+    matchResults.length,
+  );
+
   return {
     status: "success",
     total_matches: finished.length,
@@ -345,7 +540,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     avg_lambda_error: avgLambda,
     market_accuracy: marketAccuracy,
     match_results: matchResults,
-    model_evaluation: null,
+    model_evaluation: localEvaluation,
     model_update_recommendation: modelUpdateRec,
   };
 }

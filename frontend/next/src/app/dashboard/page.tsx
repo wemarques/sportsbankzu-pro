@@ -50,8 +50,6 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-import "@/styles/scoretabs-dashboard.css";
-
 const VERSION_FALLBACK = "pro V3.4";
 
 /* ── Tipos de Combinadas (duplas) ── */
@@ -545,8 +543,20 @@ export default function Dashboard() {
         let changed = false;
         const updated = prev.map((m) => {
           const live = liveList.find((lm) => {
-            if (m.footystatsId && lm.id === m.footystatsId) return true;
-            return lm.homeTeam === m.homeTeam.name && lm.awayTeam === m.awayTeam.name;
+            // Match by FootyStats ID (coerce to number for safe comparison)
+            if (m.footystatsId != null && lm.id != null) {
+              if (Number(m.footystatsId) === Number(lm.id)) return true;
+            }
+            // Fallback: normalized team name comparison (trim + lowercase)
+            const mHome = m.homeTeam.name.trim().toLowerCase();
+            const mAway = m.awayTeam.name.trim().toLowerCase();
+            const lHome = lm.homeTeam.trim().toLowerCase();
+            const lAway = lm.awayTeam.trim().toLowerCase();
+            if (mHome === lHome && mAway === lAway) return true;
+            // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
+            if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
+                lAway && mAway && (mAway.includes(lAway) || lAway.includes(mAway))) return true;
+            return false;
           });
           if (!live) return m;
           const newStatus = live.status as Match["status"];

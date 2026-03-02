@@ -97,8 +97,8 @@ def build_records_from_matches(
         dt = row_date(r)
         if dt is None:
             continue
-        home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "")
-        away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "")
+        home = str(r.get("home_team", r.get("home_team_name", r.get("team_a_name", ""))) or "").strip()
+        away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "").strip()
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
         # Skip postponed / cancelled matches — do not generate predictions for them
@@ -124,6 +124,31 @@ def build_records_from_matches(
                     match_score["halftime"] = _ht
             except (ValueError, TypeError):
                 match_score = None
+        # Compute period/minute for live matches (same logic as /live-scores)
+        period = None
+        minute = None
+        if status == "live":
+            import time as _time
+            now_ts = int(_time.time())
+            kickoff_ts = r.get("date_unix")
+            has_ht = match_score and match_score.get("halftime") is not None
+            if kickoff_ts:
+                try:
+                    elapsed = max(0, (now_ts - int(kickoff_ts)) // 60)
+                    if elapsed <= 47:
+                        period = "1T"
+                        minute = min(elapsed, 45)
+                    elif elapsed <= 62:
+                        period = "HT"
+                        minute = None
+                    else:
+                        period = "2T"
+                        minute = min(elapsed - 15, 90)
+                except (ValueError, TypeError):
+                    pass
+            if has_ht and period == "1T":
+                period = "2T"
+
         odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
         odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
         odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
@@ -688,6 +713,8 @@ def build_records_from_matches(
             "stadium": stadium,
             "status": status,
             "score": match_score,
+            "period": period,
+            "minute": minute,
             "odds": {
                 "home": float(odds_home) if odds_home else None,
                 "draw": float(odds_draw) if odds_draw else None,

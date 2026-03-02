@@ -269,10 +269,37 @@ def live_scores() -> Dict[str, Any]:
             status = status_map(str(m.get("status", "")))
             if status not in ("live", "finished"):
                 continue
+
+            # Read goal count — try multiple field names (API returns camelCase
+            # or snake_case depending on endpoint/version)
             home_goals = m.get("homeGoalCount")
+            if home_goals is None:
+                home_goals = m.get("home_team_goal_count")
+            if home_goals is None:
+                home_goals = m.get("home_goals")
+
             away_goals = m.get("awayGoalCount")
+            if away_goals is None:
+                away_goals = m.get("away_team_goal_count")
+            if away_goals is None:
+                away_goals = m.get("away_goals")
+
+            # For live matches: never skip — default to 0 if goal fields are missing.
+            # The match IS in progress so it should appear in the overlay.
+            # For finished matches: skip if no goal data (incomplete record).
             if home_goals is None or away_goals is None:
-                continue
+                if status == "live":
+                    home_goals = home_goals if home_goals is not None else 0
+                    away_goals = away_goals if away_goals is not None else 0
+                else:
+                    continue
+
+            try:
+                home_goals = int(home_goals)
+                away_goals = int(away_goals)
+            except (ValueError, TypeError):
+                home_goals, away_goals = 0, 0
+
             ht_home = m.get("home_team_goal_count_half_time")
             ht_away = m.get("away_team_goal_count_half_time")
             halftime = None
@@ -285,7 +312,7 @@ def live_scores() -> Dict[str, Any]:
                         has_ht = True
                 except (ValueError, TypeError):
                     pass
-            score = {"home": int(home_goals), "away": int(away_goals)}
+            score = {"home": home_goals, "away": away_goals}
             if halftime:
                 score["halftime"] = halftime
             # Determine period and approximate minute for live matches
@@ -310,15 +337,21 @@ def live_scores() -> Dict[str, Any]:
                 # Override: if halftime data exists, at least 2nd half
                 if has_ht and period == "1T":
                     period = "2T"
+
+            # Normalize team names: strip whitespace for reliable frontend matching
+            home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
+            away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+
             result.append({
                 "id": m.get("id"),
-                "homeTeam": m.get("home_name", ""),
-                "awayTeam": m.get("away_name", ""),
+                "homeTeam": home_name,
+                "awayTeam": away_name,
                 "status": status,
                 "score": score,
                 "period": period,
                 "minute": minute,
             })
+        logger.info(f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw)")
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:
         logger.error(f"[live-scores] Error: {e}")

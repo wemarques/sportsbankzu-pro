@@ -1,4 +1,5 @@
 import "./globals.css";
+import "@/styles/scoretabs-dashboard.css";
 import "@/styles/match-detail-card.css";
 import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
