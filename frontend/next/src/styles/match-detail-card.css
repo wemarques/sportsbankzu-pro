@@ -1527,6 +1527,35 @@
   margin-top: 8px;
 }
 
+.mdc-batch-audit__league-group {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mdc-batch-audit__league-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.mdc-batch-audit__league-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+}
+.mdc-batch-audit__league-group-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mdc-batch-audit__league-group-count {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
 .mdc-batch-audit__match-item {
   border-radius: 8px;
   overflow: hidden;

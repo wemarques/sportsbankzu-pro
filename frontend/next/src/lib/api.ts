@@ -353,6 +353,14 @@ export interface BatchAuditCorrection {
   impact: "LOW" | "MEDIUM" | "HIGH";
 }
 
+export interface LeagueAuditStats {
+  league: string;
+  matches_audited: number;
+  picks_correct: number;
+  picks_total: number;
+  accuracy_pct: number;
+}
+
 export interface BatchAuditResult {
   status: string;
   total_matches: number;
@@ -370,6 +378,7 @@ export interface BatchAuditResult {
   market_accuracy: BatchAuditMarketAccuracy[];
   match_results: BatchAuditMatchResult[];
   model_evaluation: BatchAuditModelEvaluation | null;
+  league_accuracy?: LeagueAuditStats[];
   model_update_recommendation?: ModelUpdateRecommendation;
   message?: string;
 }

@@ -124,6 +124,9 @@ def build_records_from_matches(
                     match_score["halftime"] = _ht
             except (ValueError, TypeError):
                 match_score = None
+        # Live matches always need a score — default to 0-0 if goal data is missing
+        if status == "live" and match_score is None:
+            match_score = {"home": 0, "away": 0}
         # Compute period/minute for live matches (same logic as /live-scores)
         period = None
         minute = None

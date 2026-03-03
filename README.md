@@ -1,4 +1,4 @@
-# SportsBankZU Pro V3.4
+# SportsBankZU Pro V3.5
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, placares ao vivo, auditoria contínua por IA e calibração de modelos
 
@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-03-02
+**Última revisão:** 2026-03-03
 
 ---
 
@@ -51,11 +51,16 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Recomendação de atualização do modelo na Auditoria da Rodada com diagnóstico, urgência e ações recomendadas (V3.4)
 - Auditoria em lote instantânea no navegador (sem backend) com avaliação Mistral AI opcional (V3.4)
 - Auto-refresh de JS desatualizado após deploys Vercel via comparação de buildId (V3.4)
+- **Motor Safe Bets** com arquitetura de 3 camadas: League DNA (33 ligas), Risk Semaphore e Strategy Algorithms (V3.5)
+- League DNA Matrix com categorização estática (DEFENSIVE/BALANCED/OFFENSIVE) e mercados habilitados por liga (V3.5)
+- Estratégias Safe Bets: Under 3.5 Defensivo, BTTS Não, Safe Corners Over 9.5, Timing 2º Tempo (V3.5)
+- Badge visual Safe Bets no dashboard com indicadores de risco (SAFE/MODERADO/NO BET) e tags por estratégia (V3.5)
+- Cobertura expandida de 22 para 33 ligas monitoradas com DNA configurado (V3.5)
 
 ### Dashboard Next.js (Produção)
 
 - Dashboard em [sportsbankzu-pro-well.vercel.app](https://sportsbankzu-pro-well.vercel.app/dashboard)
-- Seleção de ligas (22+ europeias e sul-americanas)
+- Seleção de ligas (33 europeias, asiáticas e sul-americanas)
 - Aba Recomendadas 2026 com jogos de maior confiança
 - Análise IA (Mistral) por jogo
 - Favoritos com persistência em localStorage
@@ -282,32 +287,45 @@ npm run test:e2e:report
 
 ---
 
-## ⚽ Ligas Suportadas (22)
+## ⚽ Ligas Suportadas (33)
 
-| # | País | Liga | ID |
-|---|------|------|----|
-| 1 | England | Premier League | `premier-league` |
-| 2 | England | Championship | `championship` |
-| 3 | Argentina | Primera Division | `primera-division` |
-| 4 | Australia | A-League | `a-league` |
-| 5 | Austria | Bundesliga | `austria-bundesliga` |
-| 6 | Belgium | Pro League | `pro-league` |
-| 7 | Brazil | Serie A | `brazil-serie-a` |
-| 8 | Brazil | Serie B | `brazil-serie-b` |
-| 9 | Denmark | Superliga | `denmark-superliga` |
-| 10 | France | Ligue 1 | `france-ligue-1` |
-| 11 | France | Ligue 2 | `france-ligue-2` |
-| 12 | Germany | Bundesliga | `germany-bundesliga` |
-| 13 | Germany | 2. Bundesliga | `germany-2-bundesliga` |
-| 14 | Italy | Serie A | `italy-serie-a` |
-| 15 | Italy | Serie B | `italy-serie-b` |
-| 16 | Netherlands | Eredivisie | `netherlands-eredivisie` |
-| 17 | Portugal | Liga NOS | `portugal-liga-nos` |
-| 18 | Saudi Arabia | Professional League | `saudi-professional-league` |
-| 19 | Scotland | Premiership | `scotland-premiership` |
-| 20 | Spain | La Liga | `spain-la-liga` |
-| 21 | Switzerland | Super League | `switzerland-super-league` |
-| 22 | Turkey | Süper Lig | `turkey-super-lig` |
+| # | País | Liga | ID | DNA |
+|---|------|------|----|-----|
+| 1 | England | Premier League | `premier-league` | OFFENSIVE |
+| 2 | England | Championship | `championship` | BALANCED |
+| 3 | England | League One | `league-one` | DEFENSIVE |
+| 4 | England | League Two | `league-two` | DEFENSIVE |
+| 5 | Argentina | Primera Division | `primera-division` | BALANCED |
+| 6 | Australia | A-League | `a-league` | BALANCED |
+| 7 | Austria | Bundesliga | `austrian-bundesliga` | BALANCED |
+| 8 | Belgium | Pro League | `pro-league` | BALANCED |
+| 9 | Brazil | Serie A | `brasileirao-serie-a` | OFFENSIVE |
+| 10 | Brazil | Serie B | `brasileirao-serie-b` | BALANCED |
+| 11 | Colombia | Primera A | `colombian-primera-a` | BALANCED |
+| 12 | Czech Republic | First League | `czech-first-league` | DEFENSIVE |
+| 13 | Denmark | Superliga | `superliga` | BALANCED |
+| 14 | France | Ligue 1 | `ligue-1` | BALANCED |
+| 15 | France | Ligue 2 | `ligue-2` | DEFENSIVE |
+| 16 | Germany | Bundesliga | `bundesliga` | OFFENSIVE |
+| 17 | Germany | 2. Bundesliga | `2-bundesliga` | BALANCED |
+| 18 | Greece | Super League | `super-league-greece` | BALANCED |
+| 19 | Italy | Serie A | `serie-a` | BALANCED |
+| 20 | Italy | Serie B | `serie-b` | DEFENSIVE |
+| 21 | Japan | J-League | `j-league` | DEFENSIVE |
+| 22 | Netherlands | Eredivisie | `eredivisie` | BALANCED |
+| 23 | Netherlands | Eerste Divisie | `eerste-divisie` | BALANCED |
+| 24 | Norway | Eliteserien | `eliteserien` | DEFENSIVE |
+| 25 | Portugal | Primeira Liga | `primeira-liga` | BALANCED |
+| 26 | Saudi Arabia | Professional League | `professional-league` | BALANCED |
+| 27 | Scotland | Premiership | `premiership` | BALANCED |
+| 28 | South Korea | K-League | `k-league` | DEFENSIVE |
+| 29 | Spain | La Liga | `la-liga` | BALANCED |
+| 30 | Spain | Segunda Division | `segunda-division` | BALANCED |
+| 31 | Sweden | Allsvenskan | `allsvenskan` | DEFENSIVE |
+| 32 | Switzerland | Super League | `super-league` | BALANCED |
+| 33 | Turkey | Süper Lig | `super-lig` | BALANCED |
+| 34 | UAE | Pro League | `uae-pro-league` | BALANCED |
+| 35 | USA | MLS | `mls` | BALANCED |
 
 ---
 
@@ -559,6 +577,33 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.5 — Março de 2026 (Motor Safe Bets — 3 Camadas)
+
+#### Backend — Safe Bets Engine
+- **feat(engine):** Motor Safe Bets com arquitetura de 3 camadas: Layer 1 (League DNA), Layer 2 (Risk Semaphore) e Layer 3 (Strategy Algorithms)
+- **feat(dna):** League DNA Matrix — categorização estática de 33 ligas em DEFENSIVE/BALANCED/OFFENSIVE + eixo independente AGGRESSIVE (cartões > 3.5/jogo)
+- **feat(dna):** Classificação dinâmica via season stats ao vivo com fallback para perfil estático — função `classify_league_dna()`
+- **feat(risk):** Risk Semaphore bloqueia jogos com `prediction_risk > 0.65` antes de aplicar estratégias
+- **feat(strategy):** Estratégia A — Under 3.5 Defensivo Conservador: cruza média de gols da liga (< 2.6) com média de gols sofridos dos times (< 1.1)
+- **feat(strategy):** Estratégia B — BTTS Não: avalia BTTS% da liga (< 45%), clean sheet% mandante (> 50%) e FTS% visitante (> 40%)
+- **feat(strategy):** Estratégia C — Safe Corners Over 9.5: valida média de escanteios da liga (> 10.2) e combinada dos times (> 10.5), com sub-tag Corners HT (> 4.5)
+- **feat(strategy):** Estratégia D — Timing 2º Tempo: probabilidade combinada de gols no 2º tempo (> 88%)
+- **feat(model):** Modelos Pydantic completos: `SafeBetsMatchInput`, `SafeBetsResult`, `StrategyResult`, `SafeBetsResponse` com enums `SafeBetTag`, `RiskLevel`, `LeagueCategory`
+- **feat(model):** `TeamSafeBetsStats` com `model_validator` para flatten automático de nested stats da API FootyStats
+- **feat(api):** Endpoint `POST /safe-bets/evaluate` — avaliação em batch de matches com stats pré-carregados
+- **feat(api):** Endpoint `GET /safe-bets/league-dna` — consulta de perfis DNA por liga ou todas as 33
+- **feat(api):** Endpoint `GET /safe-bets/leagues` — listagem de todas as ligas monitoradas com DNA integrado
+
+#### Configuração — Ligas
+- **feat(config):** `leagues_config.py` expandido de 22 para 33 ligas com nomes alternativos para matching fuzzy
+- **feat(config):** Novas ligas: J-League, K-League, Eliteserien, Allsvenskan, MLS, Colombian Primera A, UAE Pro League, Super League Greece, Czech First League, League One, League Two
+- **feat(sql):** Migration `002_add_safe_bets_leagues.sql` com DDL para novas tabelas e inserção de season IDs
+
+#### Frontend — Dashboard
+- **feat(ui):** Componente `SafeBetsBadge` com indicadores visuais: badge de risco (SAFE verde, MODERADO amarelo, NO BET vermelho) e tags por estratégia
+- **feat(ui):** Tipos TypeScript para Safe Bets: `SafeBetTag`, `RiskLevel`, `SafeBetsResult`, `StrategyResult` + config de labels/cores em `SAFE_BET_TAG_CONFIG`
+- **feat(api):** Rota proxy `POST /api/safe-bets` encaminha avaliação ao backend com timeout de 30s
 
 ### V3.4 — Marco de 2026 (Placares ao Vivo + Auditoria Local Instantânea + Recomendação do Modelo)
 

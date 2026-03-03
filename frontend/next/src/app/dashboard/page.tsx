@@ -50,7 +50,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.4";
+const VERSION_FALLBACK = "pro V3.5";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -273,7 +273,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
-    score: item.score,
+    score: item.score ?? ((item.status ?? "scheduled") === "live" ? { home: 0, away: 0 } : undefined),
     period: item.period ?? undefined,
     minute: item.minute ?? undefined,
     odds: {
