@@ -262,7 +262,21 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
-    score: item.score ?? (["live", "finished"].includes(item.status ?? "") ? { home: 0, away: 0 } : undefined),
+    score: (() => {
+      const raw = item.score;
+      if (raw && typeof raw.home === "number" && typeof raw.away === "number") {
+        return raw;
+      }
+      // Coerce string/null fields to numbers if score object exists
+      if (raw && (raw.home != null || raw.away != null)) {
+        return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
+      }
+      // Default 0-0 for live/finished matches without score
+      if (["live", "finished"].includes(item.status ?? "")) {
+        return { home: 0, away: 0 };
+      }
+      return undefined;
+    })(),
     period: item.period ?? undefined,
     minute: item.minute ?? undefined,
     odds: {
@@ -1741,13 +1755,23 @@ export default function Dashboard() {
                               <span className="st-match-row__team-name">{match.awayTeam.name}</span>
                             </div>
                           </div>
-                          {(match.score || match.status === "live" || match.status === "finished") ? (
-                            <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
-                              {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
-                            </div>
-                          ) : (
-                            <div className="st-match-row__score st-match-row__score--vs">vs</div>
-                          )}
+                          {(() => {
+                            const sh = match.score?.home;
+                            const sa = match.score?.away;
+                            const hasValidScore = typeof sh === "number" && typeof sa === "number";
+                            const isLive = match.status === "live";
+                            const isFinished = match.status === "finished";
+                            if (hasValidScore || isLive || isFinished) {
+                              const h2 = typeof sh === "number" ? sh : 0;
+                              const a2 = typeof sa === "number" ? sa : 0;
+                              return (
+                                <div className={`st-match-row__score ${isLive ? "st-match-row__score--live" : ""}`}>
+                                  {h2} - {a2}
+                                </div>
+                              );
+                            }
+                            return <div className="st-match-row__score st-match-row__score--vs">vs</div>;
+                          })()}
                           {oddsTab === "1x2" && (
                             <div className="st-match-row__odds">
                               <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
