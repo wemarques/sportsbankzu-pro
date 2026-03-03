@@ -429,4 +429,217 @@ export const AVAILABLE_LEAGUES: League[] = [
       footystats: "/turkey/super-lig",
     },
   },
+  // --- 11 NEW LEAGUES (Safe Bets Engine v3.5) ---
+  {
+    id: "japan-j-league",
+    name: "J-League",
+    country: "Japão",
+    countryFlag: "🇯🇵",
+    logo: "/logos/j-league.png",
+    season: "2026",
+    totalMatches: 306,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/japan/j1-league",
+    },
+  },
+  {
+    id: "south-korea-k-league",
+    name: "K-League",
+    country: "Coreia do Sul",
+    countryFlag: "🇰🇷",
+    logo: "/logos/k-league.png",
+    season: "2026",
+    totalMatches: 264,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/south-korea/k-league-1",
+    },
+  },
+  {
+    id: "norway-eliteserien",
+    name: "Eliteserien",
+    country: "Noruega",
+    countryFlag: "🇳🇴",
+    logo: "/logos/eliteserien.png",
+    season: "2026",
+    totalMatches: 240,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/norway/eliteserien",
+    },
+  },
+  {
+    id: "sweden-allsvenskan",
+    name: "Allsvenskan",
+    country: "Suécia",
+    countryFlag: "🇸🇪",
+    logo: "/logos/allsvenskan.png",
+    season: "2026",
+    totalMatches: 240,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/sweden/allsvenskan",
+    },
+  },
+  {
+    id: "uae-pro-league",
+    name: "UAE Pro League",
+    country: "Emirados Árabes",
+    countryFlag: "🇦🇪",
+    logo: "/logos/uae-pro-league.png",
+    season: "2025/26",
+    totalMatches: 182,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/uae/uae-pro-league",
+    },
+  },
+  {
+    id: "netherlands-eerste-divisie",
+    name: "Eerste Divisie",
+    country: "Holanda",
+    countryFlag: "🇳🇱",
+    logo: "/logos/eerste-divisie.png",
+    season: "2025/26",
+    totalMatches: 380,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/netherlands/eerste-divisie",
+    },
+  },
+  {
+    id: "greece-super-league",
+    name: "Super League",
+    country: "Grécia",
+    countryFlag: "🇬🇷",
+    logo: "/logos/greece-super-league.png",
+    season: "2025/26",
+    totalMatches: 182,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/greece/super-league-greece",
+    },
+  },
+  {
+    id: "usa-mls",
+    name: "MLS",
+    country: "Estados Unidos",
+    countryFlag: "🇺🇸",
+    logo: "/logos/mls.png",
+    season: "2026",
+    totalMatches: 510,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/usa/mls",
+    },
+  },
+  {
+    id: "czech-first-league",
+    name: "Czech First League",
+    country: "Rep. Tcheca",
+    countryFlag: "🇨🇿",
+    logo: "/logos/czech-first-league.png",
+    season: "2025/26",
+    totalMatches: 240,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/czech-republic/czech-first-league",
+    },
+  },
+  {
+    id: "colombia-primera-a",
+    name: "Campeonato Colombiano",
+    country: "Colômbia",
+    countryFlag: "🇨🇴",
+    logo: "/logos/colombian-primera-a.png",
+    season: "2026",
+    totalMatches: 200,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/colombia/colombian-primera-a",
+    },
+  },
 ];
+
+// =============================================================================
+// Safe Bets Types
+// =============================================================================
+
+export type SafeBetTag =
+  | "UNDER_35"
+  | "BTTS_NO"
+  | "SAFE_CORNERS"
+  | "SAFE_CORNERS_HT"
+  | "TIMING_2H"
+  | "NO_BET";
+
+export type RiskLevel = "SAFE" | "MODERATE" | "NO_BET";
+
+export type StrategyResult = {
+  strategy: string;
+  tag: SafeBetTag;
+  passed: boolean;
+  confidence: number | null;
+  reason: string;
+  market_label: string;
+  details?: Record<string, unknown>;
+};
+
+export type SafeBetsResult = {
+  match_id: string;
+  league_id: string;
+  home_team: string;
+  away_team: string;
+  tags: SafeBetTag[];
+  risk_level: RiskLevel;
+  layer1_dna: Record<string, unknown>;
+  layer2_risk: Record<string, unknown>;
+  layer3_strategies: StrategyResult[];
+  blocked: boolean;
+  block_reason: string;
+};
+
+export type SafeBetsResponse = {
+  success: boolean;
+  total_matches: number;
+  safe_count: number;
+  blocked_count: number;
+  results: SafeBetsResult[];
+};
+
+export const SAFE_BET_TAG_CONFIG: Record<
+  SafeBetTag,
+  { label: string; color: string; description: string }
+> = {
+  UNDER_35: {
+    label: "Under 3.5",
+    color: "bg-blue-600 text-white",
+    description: "Under 3.5 Gols — Liga defensiva com baixa média de gols sofridos",
+  },
+  BTTS_NO: {
+    label: "BTTS Não",
+    color: "bg-indigo-600 text-white",
+    description: "Ambos Marcam: Não — Mandante com CS alto + visitante sem marcar",
+  },
+  SAFE_CORNERS: {
+    label: "Escanteios 9.5+",
+    color: "bg-amber-600 text-white",
+    description: "Over 9.5 Escanteios — Liga e times com alta média de escanteios",
+  },
+  SAFE_CORNERS_HT: {
+    label: "Escanteios HT 4.5+",
+    color: "bg-amber-500 text-white",
+    description: "Over 4.5 Escanteios 1T — Alta média de escanteios no 1º tempo",
+  },
+  TIMING_2H: {
+    label: "Gols 2T",
+    color: "bg-emerald-600 text-white",
+    description: "Over 0.5 Gols 2T — Alta probabilidade de gols no 2º tempo",
+  },
+  NO_BET: {
+    label: "Sem Aposta",
+    color: "bg-red-600 text-white",
+    description: "Risco elevado — Partida bloqueada pelo motor de segurança",
+  },
+};

@@ -124,6 +124,11 @@ try:
     app.include_router(_r_combinadas.router)
 except Exception:
     pass
+try:
+    from backend.routes import safe_bets as _r_safe_bets
+    app.include_router(_r_safe_bets.router)
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"
