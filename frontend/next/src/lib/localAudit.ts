@@ -14,6 +14,7 @@ import type {
   BatchAuditCorrection,
   BatchAuditModelEvaluation,
   ModelUpdateRecommendation,
+  LeagueAuditStats,
 } from "./api";
 
 /** Evaluate a single pick against the actual result. */
@@ -521,6 +522,29 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     matchResults.length,
   );
 
+  // League-level aggregation
+  const leagueMap = new Map<string, { correct: number; total: number; matches: number }>();
+  for (const mr of matchResults) {
+    const ls = leagueMap.get(mr.league) || { correct: 0, total: 0, matches: 0 };
+    ls.matches++;
+    ls.correct += mr.picks_correct;
+    ls.total += mr.picks_total;
+    leagueMap.set(mr.league, ls);
+  }
+  const leagueAccuracy: LeagueAuditStats[] = Array.from(leagueMap.entries())
+    .sort(([, a], [, b]) => {
+      const pctA = a.total > 0 ? a.correct / a.total : 0;
+      const pctB = b.total > 0 ? b.correct / b.total : 0;
+      return pctB - pctA;
+    })
+    .map(([league, d]) => ({
+      league,
+      matches_audited: d.matches,
+      picks_correct: d.correct,
+      picks_total: d.total,
+      accuracy_pct: d.total > 0 ? Math.round((d.correct / d.total) * 1000) / 10 : 0,
+    }));
+
   return {
     status: "success",
     total_matches: finished.length,
@@ -539,6 +563,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     avg_brier_score: avgBrier,
     avg_lambda_error: avgLambda,
     market_accuracy: marketAccuracy,
+    league_accuracy: leagueAccuracy,
     match_results: matchResults,
     model_evaluation: localEvaluation,
     model_update_recommendation: modelUpdateRec,

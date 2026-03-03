@@ -19,6 +19,7 @@ import type {
   BatchAuditCorrection,
   BatchAuditMatchResult,
   ModelUpdateRecommendation,
+  LeagueAuditStats,
 } from "@/lib/api";
 
 interface BatchAuditPanelProps {
@@ -287,7 +288,40 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                 </div>
               )}
 
-              {/* Match results (collapsible) */}
+              {/* League accuracy table */}
+              {result.league_accuracy && result.league_accuracy.length > 0 && (
+                <div className="mdc-batch-audit__block">
+                  <h3 className="mdc-batch-audit__block-title">Acurácia por Liga</h3>
+                  <div className="mdc-batch-audit__market-table-wrap">
+                    <table className="mdc-batch-audit__market-table">
+                      <thead>
+                        <tr>
+                          <th>Liga</th>
+                          <th>Jogos</th>
+                          <th>Acertos</th>
+                          <th>Total</th>
+                          <th>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.league_accuracy.map((la) => (
+                          <tr key={la.league}>
+                            <td>{la.league}</td>
+                            <td>{la.matches_audited}</td>
+                            <td>{la.picks_correct}</td>
+                            <td>{la.picks_total}</td>
+                            <td>
+                              <AccuracyColor pct={la.accuracy_pct} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Match results grouped by league (collapsible) */}
               {result.match_results.length > 0 && (
                 <div className="mdc-batch-audit__block">
                   <button
@@ -301,8 +335,25 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                   </button>
                   {matchesExpanded && (
                     <div className="mdc-batch-audit__matches-list">
-                      {result.match_results.map((mr) => (
-                        <MatchItem key={mr.match_id} match={mr} />
+                      {Object.entries(
+                        result.match_results.reduce<Record<string, BatchAuditMatchResult[]>>((acc, mr) => {
+                          const key = mr.league || "Outros";
+                          if (!acc[key]) acc[key] = [];
+                          acc[key].push(mr);
+                          return acc;
+                        }, {})
+                      ).map(([league, matches]) => (
+                        <div key={league} className="mdc-batch-audit__league-group">
+                          <div className="mdc-batch-audit__league-group-header">
+                            <span className="mdc-batch-audit__league-group-title">{league}</span>
+                            <span className="mdc-batch-audit__league-group-count">
+                              {matches.reduce((s, m) => s + m.picks_correct, 0)}/{matches.reduce((s, m) => s + m.picks_total, 0)} picks
+                            </span>
+                          </div>
+                          {matches.map((mr) => (
+                            <MatchItem key={mr.match_id} match={mr} />
+                          ))}
+                        </div>
                       ))}
                     </div>
                   )}
