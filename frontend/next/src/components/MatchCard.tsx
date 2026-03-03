@@ -4,6 +4,8 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { format, parseISO } from "date-fns";
+import SafeBetsBadge from "./SafeBetsBadge";
+import type { SafeBetsResult } from "@/lib/leagues";
 
 export type Match = {
   id: string;
@@ -77,6 +79,7 @@ type Props = {
   selected?: boolean;
   onSelectChange?: (id: string, selected: boolean) => void;
   onAnalyze?: (id: string) => void;
+  safeBets?: SafeBetsResult | null;
 };
 
 function TeamCell({
@@ -145,7 +148,7 @@ function ProbRow({
   );
 }
 
-export default function MatchCard({ data, selected, onSelectChange, onAnalyze }: Props) {
+export default function MatchCard({ data, selected, onSelectChange, onAnalyze, safeBets }: Props) {
   const dt = parseISO(data.datetime);
   const dtLabel = isNaN(dt.getTime()) ? data.datetime : format(dt, "dd/MM HH:mm");
   const last = parseISO(data.lastUpdated);
@@ -237,6 +240,12 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze }:
             </div>
           </div>
         </div>
+
+        {safeBets && (
+          <div className="mt-4 border-t border-[var(--border)] pt-3">
+            <SafeBetsBadge result={safeBets} />
+          </div>
+        )}
 
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
