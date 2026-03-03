@@ -423,9 +423,9 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                         </div>
                         <div className="mdc-batch-audit__correction-param">{c.parameter}</div>
                         <div className="mdc-batch-audit__correction-values">
-                          <span className="mdc-batch-audit__correction-old">{c.current_value}</span>
+                          <span className="mdc-batch-audit__correction-old">{typeof c.current_value === "number" ? (Number.isInteger(c.current_value) ? String(c.current_value) : parseFloat(c.current_value.toFixed(2))) : c.current_value}</span>
                           <span className="mdc-batch-audit__correction-arrow">→</span>
-                          <span className="mdc-batch-audit__correction-new">{c.suggested_value}</span>
+                          <span className="mdc-batch-audit__correction-new">{typeof c.suggested_value === "number" ? (Number.isInteger(c.suggested_value) ? String(c.suggested_value) : parseFloat(c.suggested_value.toFixed(2))) : c.suggested_value}</span>
                         </div>
                         <p className="mdc-batch-audit__correction-reason">{c.reason}</p>
                         <div className="mdc-batch-audit__correction-confidence">
