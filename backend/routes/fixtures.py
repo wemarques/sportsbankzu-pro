@@ -350,6 +350,7 @@ def live_scores() -> Dict[str, Any]:
                 "score": score,
                 "period": period,
                 "minute": minute,
+                "dateUnix": m.get("date_unix"),
             })
         logger.info(f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw)")
         return {"matches": result, "nextUpdate": 60}
