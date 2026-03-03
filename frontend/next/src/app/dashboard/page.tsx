@@ -262,7 +262,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
-    score: item.score ?? ((item.status ?? "scheduled") === "live" ? { home: 0, away: 0 } : undefined),
+    score: item.score ?? (["live", "finished"].includes(item.status ?? "") ? { home: 0, away: 0 } : undefined),
     period: item.period ?? undefined,
     minute: item.minute ?? undefined,
     odds: {
@@ -1741,10 +1741,12 @@ export default function Dashboard() {
                               <span className="st-match-row__team-name">{match.awayTeam.name}</span>
                             </div>
                           </div>
-                          {(match.score || match.status === "live") && (
+                          {(match.score || match.status === "live" || match.status === "finished") ? (
                             <div className={`st-match-row__score ${match.status === "live" ? "st-match-row__score--live" : ""}`}>
                               {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
                             </div>
+                          ) : (
+                            <div className="st-match-row__score st-match-row__score--vs">vs</div>
                           )}
                           {oddsTab === "1x2" && (
                             <div className="st-match-row__odds">
