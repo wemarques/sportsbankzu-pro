@@ -1,8 +1,4 @@
 {
-  "enabledMcpjsonServers": [
-    "playwright"
-  ],
-  "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
       "Bash(npm run *)",
@@ -26,11 +22,17 @@
       "WebSearch",
       "Task",
       "MCP(playwright)",
-      "MCP(claude_ai_Vercel)"
+      "MCP(claude_ai_Vercel)",
+      "mcp__Vercel__list_deployments",
+      "mcp__Vercel__get_project"
     ],
     "deny": [
       "Bash(rm -rf /)",
       "Bash(rm -rf /*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "playwright"
+  ]
 }
