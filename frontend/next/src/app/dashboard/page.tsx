@@ -143,6 +143,17 @@ function safeOdd(value?: number, fallback = 0) {
   return value;
 }
 
+/** Normalize team name for matching: remove accents, periods, extra spaces. */
+function normalizeTeamName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")  // Remove diacritics (é→e, ñ→n)
+    .replace(/\./g, "")               // Remove periods (Dep. → Dep)
+    .replace(/\s+/g, " ");            // Collapse whitespace
+}
+
 function formatTime(dt: string) {
   try {
     const d = new Date(dt);
@@ -561,11 +572,11 @@ export default function Dashboard() {
             if (m.footystatsId != null && lm.id != null) {
               if (Number(m.footystatsId) === Number(lm.id)) return true;
             }
-            // Fallback: normalized team name comparison (trim + lowercase)
-            const mHome = m.homeTeam.name.trim().toLowerCase();
-            const mAway = m.awayTeam.name.trim().toLowerCase();
-            const lHome = lm.homeTeam.trim().toLowerCase();
-            const lAway = lm.awayTeam.trim().toLowerCase();
+            // Fallback: normalized team name comparison (accents, periods, case)
+            const mHome = normalizeTeamName(m.homeTeam.name);
+            const mAway = normalizeTeamName(m.awayTeam.name);
+            const lHome = normalizeTeamName(lm.homeTeam);
+            const lAway = normalizeTeamName(lm.awayTeam);
             if (mHome === lHome && mAway === lAway) return true;
             // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
             if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
@@ -1703,24 +1714,49 @@ export default function Dashboard() {
                       const liveInfo = computeLiveInfo(match);
                       const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
 
+                      // Safety net: infer live/finished when kickoff passed but overlay didn't update
+                      let displayStatus = match.status;
+                      let inferredLiveInfo: { period: string; minute: number | null } | null = null;
+                      if (match.status === "scheduled" && minsToKick === null) {
+                        try {
+                          const elapsed = Math.floor((Date.now() - new Date(match.datetime).getTime()) / 60_000);
+                          if (elapsed >= 0 && elapsed < 120) {
+                            displayStatus = "live";
+                            if (elapsed <= 47) inferredLiveInfo = { period: "1T", minute: Math.min(elapsed, 45) };
+                            else if (elapsed <= 62) inferredLiveInfo = { period: "HT", minute: null };
+                            else inferredLiveInfo = { period: "2T", minute: Math.min(elapsed - 15, 90) };
+                          } else if (elapsed >= 120) {
+                            displayStatus = "finished";
+                          }
+                        } catch { /* invalid datetime — keep scheduled */ }
+                      }
+                      // Normalize: "live" without liveInfo means match hasn't started
+                      if (match.status === "live" && !liveInfo) {
+                        const mk = minutesToKickoff(match.datetime);
+                        if (mk !== null && mk > 0) {
+                          displayStatus = "scheduled";
+                        }
+                      }
+                      const effectiveLiveInfo = liveInfo ?? inferredLiveInfo;
+
                       return (
                         <div
                           key={match.id}
-                          className={`st-match-row ${isSelected ? "st-match-row--selected" : ""} ${match.status === "live" ? "st-match-row--live" : ""}`}
+                          className={`st-match-row ${isSelected ? "st-match-row--selected" : ""} ${displayStatus === "live" ? "st-match-row--live" : ""}`}
                           onClick={() => setSelectedMatchId(match.id)}
                         >
                           <div className="st-match-row__status">
-                            {match.status === "live" && liveInfo ? (
+                            {displayStatus === "live" && effectiveLiveInfo ? (
                               <>
                                 <div className="st-match-row__status-tag st-match-row__status-tag--live">VIVO</div>
-                                <div className="st-match-row__status-period">{liveInfo.period}</div>
-                                {liveInfo.minute != null && liveInfo.period !== "HT" && (
-                                  <div className="st-match-row__status-minute">{liveInfo.minute}&apos;</div>
+                                <div className="st-match-row__status-period">{effectiveLiveInfo.period}</div>
+                                {effectiveLiveInfo.minute != null && effectiveLiveInfo.period !== "HT" && (
+                                  <div className="st-match-row__status-minute">{effectiveLiveInfo.minute}&apos;</div>
                                 )}
                               </>
-                            ) : match.status === "finished" ? (
+                            ) : displayStatus === "finished" ? (
                               <div className="st-match-row__status-tag st-match-row__status-tag--ft">FT</div>
-                            ) : match.status === "postponed" ? (
+                            ) : displayStatus === "postponed" ? (
                               <>
                                 <div className="st-match-row__status-date">{formatDate(match.datetime)}</div>
                                 <div className="st-match-row__status-tag st-match-row__status-tag--postponed">ADIADO</div>
@@ -1755,23 +1791,11 @@ export default function Dashboard() {
                               <span className="st-match-row__team-name">{match.awayTeam.name}</span>
                             </div>
                           </div>
-                          {(() => {
-                            const sh = match.score?.home;
-                            const sa = match.score?.away;
-                            const hasValidScore = typeof sh === "number" && typeof sa === "number";
-                            const isLive = match.status === "live";
-                            const isFinished = match.status === "finished";
-                            if (hasValidScore || isLive || isFinished) {
-                              const h2 = typeof sh === "number" ? sh : 0;
-                              const a2 = typeof sa === "number" ? sa : 0;
-                              return (
-                                <div className={`st-match-row__score ${isLive ? "st-match-row__score--live" : ""}`}>
-                                  {h2} - {a2}
-                                </div>
-                              );
-                            }
-                            return <div className="st-match-row__score st-match-row__score--vs">vs</div>;
-                          })()}
+                          {(match.score || displayStatus === "live") && (
+                            <div className={`st-match-row__score ${displayStatus === "live" ? "st-match-row__score--live" : ""}`}>
+                              {match.score ? `${match.score.home} - ${match.score.away}` : (inferredLiveInfo ? "—" : "0 - 0")}
+                            </div>
+                          )}
                           {oddsTab === "1x2" && (
                             <div className="st-match-row__odds">
                               <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>

@@ -1432,9 +1432,9 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                     <span className="mdc-audit-correction-impact" style={{ color: impactColor }}>{impact}</span>
                   </div>
                   <div className="mdc-audit-correction-values">
-                    <span className="mdc-audit-correction-old">{currentVal != null ? currentVal.toFixed(3) : safeStr(corr.current_value, "-")}</span>
+                    <span className="mdc-audit-correction-old">{currentVal != null ? (Number.isInteger(currentVal) ? String(currentVal) : currentVal.toFixed(2)) : safeStr(corr.current_value, "-")}</span>
                     <span className="mdc-audit-correction-arrow">{"\u2192"}</span>
-                    <span className="mdc-audit-correction-new">{suggestedVal != null ? suggestedVal.toFixed(3) : safeStr(corr.suggested_value, "-")}</span>
+                    <span className="mdc-audit-correction-new">{suggestedVal != null ? (Number.isInteger(suggestedVal) ? String(suggestedVal) : suggestedVal.toFixed(2)) : safeStr(corr.suggested_value, "-")}</span>
                   </div>
                   <p className="mdc-audit-correction-reason">{safeStr(corr.reason)}</p>
                   <div className="mdc-audit-correction-footer">
