@@ -565,8 +565,14 @@ export default function Dashboard() {
       const data = await res.json();
       const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
       if (liveList.length === 0) return;
+      // Diagnostic: log live overlay data
+      if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
+        console.log(`[live-scores] Overlay: ${liveList.length} matches`, liveList.map((lm) => `${lm.homeTeam} ${lm.score?.home}-${lm.score?.away} ${lm.awayTeam} (id=${lm.id})`));
+      }
       setAllMatches((prev) => {
         let changed = false;
+        let matched = 0;
+        let unmatched = 0;
         const updated = prev.map((m) => {
           const live = liveList.find((lm) => {
             // Match by FootyStats ID (coerce to number for safe comparison)
@@ -585,15 +591,23 @@ export default function Dashboard() {
             return false;
           });
           if (!live) return m;
+          matched++;
           const newStatus = live.status as Match["status"];
-          const scoreChanged = m.score?.home !== live.score.home || m.score?.away !== live.score.away;
+          const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
+          const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
+          const liveScore = { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+          const scoreChanged = m.score?.home !== liveScoreHome || m.score?.away !== liveScoreAway;
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
           if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
           changed = true;
-          return { ...m, status: newStatus, score: live.score, period: live.period as Match["period"], minute: live.minute };
+          return { ...m, status: newStatus, score: liveScore, period: live.period as Match["period"], minute: live.minute };
         });
+        unmatched = liveList.length - matched;
+        if (unmatched > 0) {
+          console.warn(`[live-scores] ${matched} matched, ${unmatched} unmatched from overlay`);
+        }
         return changed ? updated : prev;
       });
     } catch {
