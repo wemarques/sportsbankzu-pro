@@ -1798,7 +1798,7 @@ export default function Dashboard() {
                             </div>
                           ) : displayStatus === "live" ? (
                             <div className="st-match-row__score st-match-row__score--live">
-                              {inferredLiveInfo ? "—" : "0 - 0"}
+                              0 - 0
                             </div>
                           ) : null}
                           {oddsTab === "1x2" && (
