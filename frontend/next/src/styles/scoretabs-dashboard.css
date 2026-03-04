@@ -629,6 +629,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.st-match-row__score--vs {
+  color: var(--st-text-muted, #64748b);
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.6;
+}
+
 .st-match-row__odds {
   display: flex;
   gap: 4px;

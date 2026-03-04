@@ -352,9 +352,9 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
           {match.status === "live" ? (
             <div className="mdc-live-score">
               <div className="mdc-live-score__value">
-                {match.score ? `${match.score.home} - ${match.score.away}` : "0 - 0"}
+                {typeof match.score?.home === "number" ? match.score.home : 0} - {typeof match.score?.away === "number" ? match.score.away : 0}
               </div>
-              {match.score?.halftime && (
+              {match.score?.halftime && typeof match.score.halftime.home === "number" && (
                 <div className="mdc-live-score__ht">
                   HT: {match.score.halftime.home} - {match.score.halftime.away}
                 </div>
@@ -363,9 +363,9 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
           ) : match.status === "finished" && match.score ? (
             <div className="mdc-final-score">
               <div className="mdc-final-score__value">
-                {match.score.home} - {match.score.away}
+                {typeof match.score.home === "number" ? match.score.home : 0} - {typeof match.score.away === "number" ? match.score.away : 0}
               </div>
-              {match.score.halftime && (
+              {match.score.halftime && typeof match.score.halftime.home === "number" && (
                 <div className="mdc-final-score__ht">
                   HT: {match.score.halftime.home} - {match.score.halftime.away}
                 </div>

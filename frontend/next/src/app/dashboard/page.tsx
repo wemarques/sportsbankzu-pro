@@ -273,7 +273,21 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
-    score: item.score ?? ((item.status ?? "scheduled") === "live" ? { home: 0, away: 0 } : undefined),
+    score: (() => {
+      const raw = item.score;
+      if (raw && typeof raw.home === "number" && typeof raw.away === "number") {
+        return raw;
+      }
+      // Coerce string/null fields to numbers if score object exists
+      if (raw && (raw.home != null || raw.away != null)) {
+        return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
+      }
+      // Default 0-0 for live/finished matches without score
+      if (["live", "finished"].includes(item.status ?? "")) {
+        return { home: 0, away: 0 };
+      }
+      return undefined;
+    })(),
     period: item.period ?? undefined,
     minute: item.minute ?? undefined,
     odds: {
