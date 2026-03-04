@@ -185,12 +185,12 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
           <div className="text-center">
             <div className="text-sm muted">{data.venue}</div>
             <div className="text-xl font-semibold">{dtLabel}</div>
-            {data.score && (
+            {data.score && typeof data.score.home === "number" && typeof data.score.away === "number" && (
               <div className="mt-1">
                 <Badge variant="accent">
                   {data.score.home} - {data.score.away}
                 </Badge>
-                {data.score.halftime && (
+                {data.score.halftime && typeof data.score.halftime.home === "number" && (
                   <span className="muted text-xs ml-2">
                     HT {data.score.halftime.home}-{data.score.halftime.away}
                   </span>

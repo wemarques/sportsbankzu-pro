@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
             odds: m.odds ?? undefined,
             stats: m.stats ?? undefined,
             ratings: m.ratings ?? undefined,
-            score: m.score ?? undefined,
+            score: m.score && typeof m.score.home === "number" && typeof m.score.away === "number"
+              ? m.score
+              : m.score && (m.score.home != null || m.score.away != null)
+                ? { home: Number(m.score.home) || 0, away: Number(m.score.away) || 0, halftime: m.score.halftime }
+                : undefined,
           });
         }
       }

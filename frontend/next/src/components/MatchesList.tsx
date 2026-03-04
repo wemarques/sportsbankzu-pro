@@ -257,7 +257,7 @@ function InlineMatchCard({
           </div>
         </div>
 
-        {match.score && (
+        {match.score && typeof match.score.home === "number" && typeof match.score.away === "number" && (
           <div className="text-2xl font-bold">
             {match.score.home} - {match.score.away}
           </div>

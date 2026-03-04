@@ -278,14 +278,15 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       if (raw && typeof raw.home === "number" && typeof raw.away === "number") {
         return raw;
       }
-      // Coerce string/null fields to numbers if score object exists
-      if (raw && (raw.home != null || raw.away != null)) {
+      // Coerce any non-null fields to numbers
+      if (raw && raw.home != null && raw.away != null) {
         return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
       }
-      // Default 0-0 for live/finished matches without score
+      // Default 0-0 for live/finished matches without valid score
       if (["live", "finished"].includes(item.status ?? "")) {
         return { home: 0, away: 0 };
       }
+      // Discard invalid score objects (e.g. {home: null, away: null})
       return undefined;
     })(),
     period: item.period ?? undefined,
@@ -1791,11 +1792,15 @@ export default function Dashboard() {
                               <span className="st-match-row__team-name">{match.awayTeam.name}</span>
                             </div>
                           </div>
-                          {(match.score || displayStatus === "live") && (
+                          {(match.score && typeof match.score.home === "number" && typeof match.score.away === "number") ? (
                             <div className={`st-match-row__score ${displayStatus === "live" ? "st-match-row__score--live" : ""}`}>
-                              {match.score ? `${match.score.home} - ${match.score.away}` : (inferredLiveInfo ? "—" : "0 - 0")}
+                              {match.score.home} - {match.score.away}
                             </div>
-                          )}
+                          ) : displayStatus === "live" ? (
+                            <div className="st-match-row__score st-match-row__score--live">
+                              {inferredLiveInfo ? "—" : "0 - 0"}
+                            </div>
+                          ) : null}
                           {oddsTab === "1x2" && (
                             <div className="st-match-row__odds">
                               <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
