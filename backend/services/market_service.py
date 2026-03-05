@@ -107,14 +107,17 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
             item["alerta"] = alerta
         mercados.append(item)
     league_avg_goals = stats.get("leagueAvgGoals") or 2.7
+    # Hysteresis margin: lower thresholds by 2% to prevent flip-flop between
+    # Under 3.5 and Under 4.5 when probability fluctuates near the boundary.
+    _hysteresis = 0.02
     if league_avg_goals < 2.5:
-        threshold_u35 = 0.72
+        threshold_u35 = 0.72 - _hysteresis
         threshold_u45 = 0.82
     elif league_avg_goals < 3.0:
-        threshold_u35 = 0.68
+        threshold_u35 = 0.68 - _hysteresis
         threshold_u45 = 0.78
     else:
-        threshold_u35 = 0.75
+        threshold_u35 = 0.75 - _hysteresis
         threshold_u45 = 0.85
     logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
     _u35_check = (prob_under35 >= threshold_u35) if prob_under35 is not None else False

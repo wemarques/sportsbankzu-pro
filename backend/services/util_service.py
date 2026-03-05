@@ -9,7 +9,7 @@ def status_map(s: str) -> str:
     sl = (s or "").lower()
     if sl in ("complete", "finished", "ft"):
         return "finished"
-    if sl in ("live", "inplay", "playing", "halftime"):
+    if sl in ("live", "inplay", "playing", "halftime", "incomplete"):
         return "live"
     if sl in ("postponed", "ppd"):
         return "postponed"
