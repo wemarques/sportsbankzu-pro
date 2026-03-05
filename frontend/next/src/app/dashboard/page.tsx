@@ -1709,7 +1709,7 @@ export default function Dashboard() {
                     <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
                       <span className="st-league-flag">{group.countryFlag}</span>
                       <span className="st-league-name">
-                        {group.leagueName}
+                        {group.country ? `${group.country} - ` : ""}{group.leagueName}
                         <span className="st-league-count"> ({group.matches.length})</span>
                         {group.matches.some((m) => m.status === "live") && (
                           <span className="st-league-live-badge">

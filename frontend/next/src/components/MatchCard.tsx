@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { format, parseISO } from "date-fns";
 import SafeBetsBadge from "./SafeBetsBadge";
-import type { SafeBetsResult } from "@/lib/leagues";
+import { AVAILABLE_LEAGUES, type SafeBetsResult } from "@/lib/leagues";
 
 export type Match = {
   id: string;
@@ -166,7 +166,7 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">{data.leagueName}</span>
+            <span className="font-semibold">{(() => { const league = AVAILABLE_LEAGUES.find((l) => l.id === data.leagueId); return league?.country ? `${league.country} - ` : ""; })()}{data.leagueName}</span>
             <Badge variant={statusColor as any}>{data.status}</Badge>
             <Badge variant="default">{data.source}</Badge>
           </div>
@@ -184,7 +184,7 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
           />
           <div className="text-center">
             <div className="text-sm muted">{data.venue}</div>
-            <div className="text-xl font-semibold">{dtLabel}</div>
+            <div className="text-sm">{dtLabel}</div>
             {data.score && typeof data.score.home === "number" && typeof data.score.away === "number" && (
               <div className="mt-1">
                 <Badge variant="accent">
