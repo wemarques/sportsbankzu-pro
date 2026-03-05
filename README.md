@@ -59,6 +59,7 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Eliminação de placares falsos 0-0 que corrompiam métricas de auditoria — scores nulos agora propagados como `None` (V3.5.1)
 - Endpoint `POST /api/ai/score-correction` para correção manual de resultados com re-auditoria (V3.5.1)
 - Auditoria de duplas (combinadas INTRA e INTER) com taxa de acerto por tipo no cron batch audit (V3.5.1)
+- Resultado visual de auditoria de duplas (ACERTOU/ERROU) com resumo de acurácia no painel de Auditoria da Rodada (V3.5.1)
 
 ### Dashboard Next.js (Produção)
 
@@ -606,6 +607,12 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(audit):** Contadores detalhados: `dupla_intra_correct/total`, `dupla_inter_correct/total`
 - **feat(audit):** Lookup de resultado real por match ID e por homeTeam+awayTeam para avaliação de cada perna da dupla
 - **fix(audit):** Dupla accuracy tracking agora valida score `None` antes de incluir no lookup — evita avaliação contra dados fantasma
+
+#### Frontend — Resultado de Auditoria de Duplas
+- **feat(ui):** Badge ACERTOU/ERROU/PENDENTE em cada card de dupla no painel de Auditoria da Rodada (`BatchAuditPanel`)
+- **feat(ui):** Resumo de acurácia de duplas com cards Intra-jogo, Inter-jogo e Geral no topo da seção de Duplas Recomendadas
+- **feat(audit):** `localAudit.ts` agora avalia cada dupla contra resultados reais dos jogos finalizados — avaliação determinística no browser
+- **feat(type):** Campo `resultado` (`ACERTOU`/`ERROU`/`PENDENTE`) adicionado a `AuditCombinada`; campos de accuracy adicionados a `AuditCombinadas`
 
 ### V3.5 — Março de 2026 (Motor Safe Bets — 3 Camadas)
 

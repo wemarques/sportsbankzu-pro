@@ -198,6 +198,9 @@ function CombinadaCard({ c }: { c: AuditCombinada }) {
   const legStatusBg = (s: string) => s.toUpperCase().startsWith("SAFE") ? "rgba(0,223,130,0.12)" : "rgba(255,136,0,0.12)";
   const legStatusColor = (s: string) => s.toUpperCase().startsWith("SAFE") ? "#00df82" : "#ffaa44";
 
+  const resultadoColor = c.resultado === "ACERTOU" ? "#00df82" : c.resultado === "ERROU" ? "#ef4444" : "#666";
+  const resultadoBg = c.resultado === "ACERTOU" ? "rgba(0,223,130,0.15)" : c.resultado === "ERROU" ? "rgba(239,68,68,0.15)" : "rgba(100,100,100,0.1)";
+
   return (
     <div style={{ borderRadius: 10, border: `1px solid ${stBorder}`, background: stBg, padding: "10px 12px", marginBottom: 6 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -210,6 +213,12 @@ function CombinadaCard({ c }: { c: AuditCombinada }) {
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ fontSize: "0.6rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
           <span style={{ fontSize: "0.6rem", fontWeight: 700, borderRadius: 4, padding: "1px 5px", background: `${stColor}22`, color: stColor }}>{c.status_combinada}</span>
+          {c.resultado && (
+            <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "0.6rem", fontWeight: 700, borderRadius: 4, padding: "1px 6px", background: resultadoBg, color: resultadoColor }}>
+              {c.resultado === "ACERTOU" ? <CheckCircle2 size={10} /> : c.resultado === "ERROU" ? <XCircle size={10} /> : null}
+              {c.resultado}
+            </span>
+          )}
         </div>
       </div>
       {([c.leg1, c.leg2] as AuditCombinadaLeg[]).map((leg, i) => (
@@ -244,11 +253,58 @@ function CombinadasSection({ data }: { data: AuditCombinadas }) {
 
   if (data.total_intra === 0 && data.total_inter === 0) return null;
 
+  const hasAccuracy = (data.dupla_intra_total ?? 0) > 0 || (data.dupla_inter_total ?? 0) > 0;
+
   return (
     <div className="mdc-batch-audit__block">
       <h3 className="mdc-batch-audit__block-title">
         <Layers size={16} /> Duplas Recomendadas ({data.total_jogos} jogos)
       </h3>
+
+      {/* Dupla accuracy summary */}
+      {hasAccuracy && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          {(data.dupla_intra_total ?? 0) > 0 && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(157,80,255,0.06)", border: "1px solid rgba(157,80,255,0.15)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Intra-jogo</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_intra_accuracy ?? 0} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>{data.dupla_intra_correct}/{data.dupla_intra_total}</span>
+              </div>
+            </div>
+          )}
+          {(data.dupla_inter_total ?? 0) > 0 && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(0,223,130,0.06)", border: "1px solid rgba(0,223,130,0.15)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Inter-jogo</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_inter_accuracy ?? 0} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>{data.dupla_inter_correct}/{data.dupla_inter_total}</span>
+              </div>
+            </div>
+          )}
+          {(data.dupla_overall_accuracy != null) && ((data.dupla_intra_total ?? 0) + (data.dupla_inter_total ?? 0) > 0) && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Geral Duplas</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_overall_accuracy} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>
+                  {(data.dupla_intra_correct ?? 0) + (data.dupla_inter_correct ?? 0)}/{(data.dupla_intra_total ?? 0) + (data.dupla_inter_total ?? 0)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         {(["intra", "inter"] as const).map((t) => (
           <button

@@ -407,6 +407,7 @@ export interface AuditCombinada {
   prob_combinada_min: number;
   prob_combinada_max: number;
   status_combinada: "SAFE" | "MISTA" | "NEUTRO";
+  resultado?: "ACERTOU" | "ERROU" | "PENDENTE";
 }
 
 export interface AuditCombinadas {
@@ -415,6 +416,13 @@ export interface AuditCombinadas {
   total_intra: number;
   total_inter: number;
   total_jogos: number;
+  dupla_intra_correct?: number;
+  dupla_intra_total?: number;
+  dupla_intra_accuracy?: number;
+  dupla_inter_correct?: number;
+  dupla_inter_total?: number;
+  dupla_inter_accuracy?: number;
+  dupla_overall_accuracy?: number;
 }
 
 /**

@@ -429,15 +429,53 @@ function _oddCombinada(legs: AuditCombinadaLeg[]): number {
   return Math.round(r * 100) / 100;
 }
 
+/** Actual result for a match, used for dupla evaluation. */
+interface MatchActualResult {
+  totalGoals: number;
+  btts: boolean;
+  result1x2: "1" | "X" | "2";
+}
+
 /**
- * Compute intra-game and inter-game combinadas from matches with predictions.
- * Mirrors backend combinadas_service.py logic.
+ * Compute intra-game and inter-game combinadas from matches with predictions,
+ * and evaluate finished duplas against actual results.
  */
 function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
   // Use ALL matches with predictions (scheduled, live, and finished)
   const withPredictions = matches.filter(
     (m) => m.predictions && m.predictions.length > 0
   );
+
+  // Build actual result lookup for finished matches (for dupla evaluation)
+  const actualByKey = new Map<string, MatchActualResult>();
+  for (const m of matches) {
+    if (m.status !== "finished" || !m.score) continue;
+    const hg = m.score.home;
+    const ag = m.score.away;
+    const tg = hg + ag;
+    const actual: MatchActualResult = {
+      totalGoals: tg,
+      btts: hg > 0 && ag > 0,
+      result1x2: hg > ag ? "1" : hg === ag ? "X" : "2",
+    };
+    // Index by homeTeam|awayTeam (lowercase) for leg matching
+    const key = `${m.homeTeam.name.trim().toLowerCase()}|${m.awayTeam.name.trim().toLowerCase()}`;
+    actualByKey.set(key, actual);
+  }
+
+  function _findActualForLeg(leg: AuditCombinadaLeg): MatchActualResult | null {
+    const key = `${leg.homeTeam.trim().toLowerCase()}|${leg.awayTeam.trim().toLowerCase()}`;
+    return actualByKey.get(key) ?? null;
+  }
+
+  function _evaluateDupla(dupla: AuditCombinada): "ACERTOU" | "ERROU" | "PENDENTE" {
+    const a1 = _findActualForLeg(dupla.leg1);
+    const a2 = dupla.tipo === "intra" ? a1 : _findActualForLeg(dupla.leg2);
+    if (!a1 || !a2) return "PENDENTE";
+    const hit1 = evaluatePick(dupla.leg1.mercado, a1.totalGoals, a1.btts, a1.result1x2);
+    const hit2 = evaluatePick(dupla.leg2.mercado, a2.totalGoals, a2.btts, a2.result1x2);
+    return hit1 && hit2 ? "ACERTOU" : "ERROU";
+  }
 
   const intra: AuditCombinada[] = [];
   const inter: AuditCombinada[] = [];
@@ -453,7 +491,9 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
         const odd = _oddCombinada(legs);
         if (odd < 1.5) continue;
         const [pMin, pMax] = _probCombinada(legs);
-        intra.push({ tipo: "intra", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) });
+        const d: AuditCombinada = { tipo: "intra", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) };
+        d.resultado = _evaluateDupla(d);
+        intra.push(d);
       }
     }
   }
@@ -473,7 +513,9 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
           const odd = _oddCombinada(legs);
           if (odd < 1.8) continue;
           const [pMin, pMax] = _probCombinada(legs);
-          inter.push({ tipo: "inter", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) });
+          const d: AuditCombinada = { tipo: "inter", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) };
+          d.resultado = _evaluateDupla(d);
+          inter.push(d);
         }
       }
     }
@@ -484,12 +526,27 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
   intra.sort((a, b) => prio(b.status_combinada) - prio(a.status_combinada) || b.odd_combinada - a.odd_combinada);
   inter.sort((a, b) => prio(b.status_combinada) - prio(a.status_combinada) || b.prob_combinada_min - a.prob_combinada_min);
 
+  // Compute dupla accuracy stats (only for evaluated duplas, not PENDENTE)
+  const intraEvaluated = intra.filter((d) => d.resultado !== "PENDENTE");
+  const interEvaluated = inter.filter((d) => d.resultado !== "PENDENTE");
+  const intraCorrect = intraEvaluated.filter((d) => d.resultado === "ACERTOU").length;
+  const interCorrect = interEvaluated.filter((d) => d.resultado === "ACERTOU").length;
+  const totalEvaluated = intraEvaluated.length + interEvaluated.length;
+  const totalCorrect = intraCorrect + interCorrect;
+
   return {
     intra: intra.slice(0, 10),
     inter: inter.slice(0, 10),
     total_intra: intra.length,
     total_inter: inter.length,
     total_jogos: withPredictions.length,
+    dupla_intra_correct: intraCorrect,
+    dupla_intra_total: intraEvaluated.length,
+    dupla_intra_accuracy: intraEvaluated.length > 0 ? Math.round((intraCorrect / intraEvaluated.length) * 1000) / 10 : 0,
+    dupla_inter_correct: interCorrect,
+    dupla_inter_total: interEvaluated.length,
+    dupla_inter_accuracy: interEvaluated.length > 0 ? Math.round((interCorrect / interEvaluated.length) * 1000) / 10 : 0,
+    dupla_overall_accuracy: totalEvaluated > 0 ? Math.round((totalCorrect / totalEvaluated) * 1000) / 10 : 0,
   };
 }
 
