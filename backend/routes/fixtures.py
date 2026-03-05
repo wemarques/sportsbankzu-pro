@@ -192,10 +192,14 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
         except Exception as e:
             logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
 
-    # FALLBACK: CSV files
+    # FALLBACK: CSV files (skip mock data in production to avoid poisoning batches)
+    _is_production = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL"))
     if not found_via_api:
         from backend.main import resolve_league_dir, generate_mock_fixtures as gen_mock
         if pd is None or not os.path.isdir(base):
+            if _is_production:
+                logger.info(f"[fixtures] {lid}: no data available, returning empty (production mode)")
+                return []
             return gen_mock(lid, date)
 
         league_dir = resolve_league_dir(base, lid)
@@ -206,6 +210,9 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
         players_path = os.path.join(league_dir, "players.csv")
 
         if not os.path.exists(matches_path):
+            if _is_production:
+                logger.info(f"[fixtures] {lid}: no CSV data, returning empty (production mode)")
+                return []
             return gen_mock(lid, date)
 
         try:
@@ -229,8 +236,9 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     r["dataSource"] = "Arquivos CSV (Histórico)"
         except Exception as e:
             logger.error(f"Erro ao ler CSV para {lid}: {e}")
-            from backend.main import generate_mock_fixtures as gen_mock2
-            records = gen_mock2(lid, date)
+            if not _is_production:
+                from backend.main import generate_mock_fixtures as gen_mock2
+                records = gen_mock2(lid, date)
 
     return records
 
