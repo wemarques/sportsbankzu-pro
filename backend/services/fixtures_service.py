@@ -835,28 +835,32 @@ def build_records_from_matches(
             _regime = record["stats"].get("leagueRegime", "NORMAL")
             _volatilidade = record["stats"].get("leagueVolatility", "MODERADA")
 
-            # Apply Mistral confidence_adjustment (Gap 3 — contextual bridge)
-            # Only called when MISTRAL_API_KEY is set; CacheManager(6h) prevents re-calls.
-            if os.getenv("MISTRAL_API_KEY"):
-                try:
-                    from backend.ai.context_analyzer import ContextAnalyzer
-                    ctx_result = ContextAnalyzer().analyze_match_context(home, away)
-                    _adj = ctx_result.get("confidence_adjustment", {})
-                    if _adj and _adj.get("recommendation", "MANTER") != "MANTER":
-                        record["stats"] = _apply_confidence_adjustment(record["stats"], _adj)
-                        logger.info(
-                            f"[Gap3] Confidence adjustment {_adj.get('recommendation')} "
-                            f"{_adj.get('impact_percentage', 10)}% applied to {home} vs {away}"
-                        )
-                except Exception as _ctx_err:
-                    logger.debug(f"[Gap3] Context analysis skipped for {home} vs {away}: {_ctx_err}")
+            # For finished matches: compute mercados from raw FootyStats probabilities
+            # only — skip Mistral AI and calibration adjustments that cause instability
+            # (e.g. Under 3.5 → Under 4.5 flip when recalculated post-match).
+            if status != "finished":
+                # Apply Mistral confidence_adjustment (Gap 3 — contextual bridge)
+                # Only called when MISTRAL_API_KEY is set; CacheManager(6h) prevents re-calls.
+                if os.getenv("MISTRAL_API_KEY"):
+                    try:
+                        from backend.ai.context_analyzer import ContextAnalyzer
+                        ctx_result = ContextAnalyzer().analyze_match_context(home, away)
+                        _adj = ctx_result.get("confidence_adjustment", {})
+                        if _adj and _adj.get("recommendation", "MANTER") != "MANTER":
+                            record["stats"] = _apply_confidence_adjustment(record["stats"], _adj)
+                            logger.info(
+                                f"[Gap3] Confidence adjustment {_adj.get('recommendation')} "
+                                f"{_adj.get('impact_percentage', 10)}% applied to {home} vs {away}"
+                            )
+                    except Exception as _ctx_err:
+                        logger.debug(f"[Gap3] Context analysis skipped for {home} vs {away}: {_ctx_err}")
 
-            # Apply Isotonic Regression calibration (Gap 5)
-            try:
-                from backend.modeling.calibrator import calibrate_match_stats
-                record["stats"] = calibrate_match_stats(record["stats"], league_id, _regime)
-            except Exception as _cal_err:
-                logger.debug(f"[Gap5] Calibration skipped for {home} vs {away}: {_cal_err}")
+                # Apply Isotonic Regression calibration (Gap 5)
+                try:
+                    from backend.modeling.calibrator import calibrate_match_stats
+                    record["stats"] = calibrate_match_stats(record["stats"], league_id, _regime)
+                except Exception as _cal_err:
+                    logger.debug(f"[Gap5] Calibration skipped for {home} vs {away}: {_cal_err}")
 
             mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
             record["mercados"] = mercados

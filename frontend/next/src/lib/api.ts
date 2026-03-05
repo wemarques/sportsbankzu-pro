@@ -380,6 +380,7 @@ export interface BatchAuditResult {
   model_evaluation: BatchAuditModelEvaluation | null;
   league_accuracy?: LeagueAuditStats[];
   model_update_recommendation?: ModelUpdateRecommendation;
+  mistral_recommendation?: ModelUpdateRecommendation;
   combinadas?: AuditCombinadas;
   message?: string;
 }

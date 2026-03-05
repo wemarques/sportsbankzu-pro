@@ -434,9 +434,9 @@ function _oddCombinada(legs: AuditCombinadaLeg[]): number {
  * Mirrors backend combinadas_service.py logic.
  */
 function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
-  // Use scheduled/live matches that have predictions
+  // Use ALL matches with predictions (scheduled, live, and finished)
   const withPredictions = matches.filter(
-    (m) => (m.status === "scheduled" || m.status === "live") && m.predictions && m.predictions.length > 0
+    (m) => m.predictions && m.predictions.length > 0
   );
 
   const intra: AuditCombinada[] = [];

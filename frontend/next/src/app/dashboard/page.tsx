@@ -918,11 +918,12 @@ export default function Dashboard() {
             setBatchAuditResult((prev) => {
               if (!prev) return prev;
               const updates: Partial<typeof prev> = { model_evaluation: evaluation };
-              // If Mistral returned a model_update_recommendation, use it (overrides local)
+              // Store Mistral's recommendation separately for side-by-side comparison.
+              // Local model_update_recommendation (deterministic) remains the primary.
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const mistralRec = (evaluation as any).model_update_recommendation;
               if (mistralRec && typeof mistralRec === "object") {
-                updates.model_update_recommendation = mistralRec as typeof prev.model_update_recommendation;
+                updates.mistral_recommendation = mistralRec as typeof prev.model_update_recommendation;
               }
               return { ...prev, ...updates };
             });
