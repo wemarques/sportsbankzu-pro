@@ -293,34 +293,39 @@ def live_scores() -> Dict[str, Any]:
 
             # Read goal count — try multiple field names (API returns camelCase
             # or snake_case depending on endpoint/version)
-            home_goals = m.get("homeGoalCount")
-            if home_goals is None:
-                home_goals = m.get("home_team_goal_count")
-            if home_goals is None:
-                home_goals = m.get("home_goals")
-            if home_goals is None:
-                home_goals = m.get("team_a_goals")
+            _GOAL_HOME_FIELDS = ("homeGoalCount", "home_team_goal_count", "home_goals",
+                                 "team_a_goals", "homeScore", "home_score")
+            _GOAL_AWAY_FIELDS = ("awayGoalCount", "away_team_goal_count", "away_goals",
+                                 "team_b_goals", "awayScore", "away_score")
+            home_goals = None
+            for _f in _GOAL_HOME_FIELDS:
+                home_goals = m.get(_f)
+                if home_goals is not None:
+                    break
+            away_goals = None
+            for _f in _GOAL_AWAY_FIELDS:
+                away_goals = m.get(_f)
+                if away_goals is not None:
+                    break
 
-            away_goals = m.get("awayGoalCount")
-            if away_goals is None:
-                away_goals = m.get("away_team_goal_count")
-            if away_goals is None:
-                away_goals = m.get("away_goals")
-            if away_goals is None:
-                away_goals = m.get("team_b_goals")
+            # If individual goal fields are missing, check if we have a
+            # totalGoalCount — at least we know goals happened even if we
+            # can't split home/away.
+            _has_goal_data = home_goals is not None and away_goals is not None
 
-            # For live matches: never skip — default to 0 if goal fields are missing.
-            # Log missing score fields for diagnostics.
-            if home_goals is None or away_goals is None:
+            if not _has_goal_data:
                 if status == "live":
                     score_keys = [k for k in m.keys() if "goal" in k.lower() or "score" in k.lower()]
                     logger.warning(
                         f"[live-scores] Missing goal fields for live match: "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(raw_status={raw_status!r}, score_keys={score_keys})"
+                        f"(raw_status={raw_status!r}, score_keys={score_keys}, "
+                        f"all_keys={list(m.keys())})"
                     )
-                    home_goals = home_goals if home_goals is not None else 0
-                    away_goals = away_goals if away_goals is not None else 0
+                    # Do NOT default to 0-0 when goal data is missing —
+                    # returning a fake 0-0 overwrites any correct score the
+                    # frontend already has from the fixtures endpoint.
+                    continue
                 else:
                     continue
 
