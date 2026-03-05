@@ -171,19 +171,24 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         # Fallback: league-matches may not include today's fixtures on page 1
                         # (pagination issue for leagues deep into their season).
                         # Use the todays-matches endpoint which returns all of today's matches.
-                        records = _fallback_todays_matches(lid, league_config, date)
+                        records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
                         if records:
                             logger.info(f"[fixtures] {lid}: todays-matches fallback found {len(records)} records")
                     found_via_api = True
                 else:
                     logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
                     # Fallback to todays-matches when league-matches fails
-                    records = _fallback_todays_matches(lid, league_config, date)
+                    records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
                     if records:
                         logger.info(f"[fixtures] {lid}: todays-matches fallback (after league-matches fail) found {len(records)} records")
                         found_via_api = True
             else:
                 logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
+                # Try todays-matches even without season_id (name-based matching)
+                records = _fallback_todays_matches(lid, league_config, date, season_id=None)
+                if records:
+                    logger.info(f"[fixtures] {lid}: todays-matches fallback (no season_id) found {len(records)} records")
+                    found_via_api = True
         except Exception as e:
             logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
 
@@ -230,10 +235,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     return records
 
 
-def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[Dict[str, Any]]:
+def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id: int = None) -> List[Dict[str, Any]]:
     """Fallback: use todays-matches endpoint when league-matches has no records for today.
     This endpoint returns all matches across all leagues for today in one call,
-    so we filter by country+league name to extract only the relevant ones."""
+    so we filter by competition_id (season_id) or country+league name to extract only the relevant ones."""
     if date not in ("today", "tomorrow"):
         return []
     try:
@@ -262,8 +267,25 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[D
 
         matched = []
         for m in raw_list:
-            # FootyStats todays-matches uses "competition_name" or "league_name"
-            comp = (m.get("competition_name") or m.get("league_name") or m.get("name") or "").lower()
+            # Primary matching: by competition_id / league_id (most reliable)
+            if season_id is not None:
+                m_comp_id = m.get("competition_id") or m.get("league_id")
+                if m_comp_id is not None:
+                    try:
+                        if int(m_comp_id) == int(season_id):
+                            matched.append(m)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+            # Secondary matching: by country + competition name (string-based)
+            # Try multiple field name patterns (API returns vary)
+            comp_raw = m.get("competition_name") or m.get("league_name") or ""
+            if not comp_raw and isinstance(m.get("competition"), dict):
+                comp_raw = m["competition"].get("name", "")
+            if not comp_raw:
+                comp_raw = m.get("name") or ""
+            comp = comp_raw.lower()
             # Also check "country" field if available
             m_country = (m.get("country") or "").lower()
             country_match = country in comp or country == m_country
@@ -274,9 +296,22 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[D
             matched.append(m)
 
         if not matched:
+            # Log sample competition names for debugging
+            sample_comps = set()
+            for m in raw_list[:20]:
+                cn = m.get("competition_name") or m.get("league_name") or ""
+                if not cn and isinstance(m.get("competition"), dict):
+                    cn = m["competition"].get("name", "")
+                if cn:
+                    sample_comps.add(cn)
+            logger.warning(
+                f"[fixtures] {lid}: todays-matches fallback found 0 matches "
+                f"(season_id={season_id}, country={country}, names={names_to_match}, "
+                f"total_raw={len(raw_list)}, sample_comps={list(sample_comps)[:10]})"
+            )
             return []
 
-        logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures")
+        logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures (season_id={season_id})")
 
         # Build minimal records from todays-matches data
         from backend.main import date_range
