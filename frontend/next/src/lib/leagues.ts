@@ -404,6 +404,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
+    id: "spain-segunda-division",
+    name: "Segunda División",
+    country: "Espanha",
+    countryFlag: "🇪🇸",
+    logo: "/logos/segunda-division.png",
+    season: "2025/26",
+    totalMatches: 462,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/spain/segunda-division",
+    },
+  },
+  {
     id: "switzerland-super-league",
     name: "Super League",
     country: "Suíça",

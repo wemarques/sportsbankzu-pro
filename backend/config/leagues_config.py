@@ -27,6 +27,7 @@ LEAGUE_ID_ALIASES = {
     "denmark-superliga": "superliga",
     "switzerland-super-league": "super-league",
     "turkey-super-lig": "super-lig",
+    "spain-segunda-division": "segunda-division",
     # --- 11 new leagues (Safe Bets Engine v3.5) ---
     "japan-j-league": "j-league",
     "south-korea-k-league": "k-league",
