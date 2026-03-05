@@ -298,18 +298,27 @@ def live_scores() -> Dict[str, Any]:
                 home_goals = m.get("home_team_goal_count")
             if home_goals is None:
                 home_goals = m.get("home_goals")
+            if home_goals is None:
+                home_goals = m.get("team_a_goals")
 
             away_goals = m.get("awayGoalCount")
             if away_goals is None:
                 away_goals = m.get("away_team_goal_count")
             if away_goals is None:
                 away_goals = m.get("away_goals")
+            if away_goals is None:
+                away_goals = m.get("team_b_goals")
 
             # For live matches: never skip — default to 0 if goal fields are missing.
-            # The match IS in progress so it should appear in the overlay.
-            # For finished matches: skip if no goal data (incomplete record).
+            # Log missing score fields for diagnostics.
             if home_goals is None or away_goals is None:
                 if status == "live":
+                    score_keys = [k for k in m.keys() if "goal" in k.lower() or "score" in k.lower()]
+                    logger.warning(
+                        f"[live-scores] Missing goal fields for live match: "
+                        f"{m.get('home_name')} vs {m.get('away_name')} "
+                        f"(raw_status={raw_status!r}, score_keys={score_keys})"
+                    )
                     home_goals = home_goals if home_goals is not None else 0
                     away_goals = away_goals if away_goals is not None else 0
                 else:

@@ -72,12 +72,18 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function UrgencyBadge({ urgency }: { urgency: string }) {
+  // Normalize: strip accents and uppercase for robust matching (Mistral may return "MÉDIA")
+  const norm = urgency
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
   const cls =
-    urgency === "CRITICA"
+    norm === "CRITICA"
       ? "mdc-batch-audit__urgency--critica"
-      : urgency === "ALTA"
+      : norm === "ALTA"
         ? "mdc-batch-audit__urgency--alta"
-        : urgency === "MEDIA"
+        : norm === "MEDIA"
           ? "mdc-batch-audit__urgency--media"
           : "mdc-batch-audit__urgency--baixa";
   return <span className={`mdc-batch-audit__urgency ${cls}`}>{urgency}</span>;
