@@ -329,6 +329,14 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             ("Olympiacos", "Panathinaikos"), ("PAOK", "AEK Athens"),
             ("Aris Thessaloniki", "Asteras Tripolis"),
         ],
+        "colombian-primera-a": [
+            ("Junior", "Alianza Petrolera"), ("Atlético Nacional", "Millonarios"),
+            ("Deportivo Cali", "América de Cali"), ("Llaneros", "La Equidad"),
+        ],
+        "colombia-primera-a": [
+            ("Junior", "Alianza Petrolera"), ("Atlético Nacional", "Millonarios"),
+            ("Deportivo Cali", "América de Cali"), ("Llaneros", "La Equidad"),
+        ],
         # RESTO DO MUNDO
         "primera-division": [
             ("Boca Juniors", "River Plate"), ("Racing Club", "Independiente"),
@@ -372,6 +380,7 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "primera-division": "Primera División", "a-league": "A-League",
         "professional-league": "Professional League",
         "saudi-professional-league": "Professional League",
+        "colombian-primera-a": "Campeonato Colombiano", "colombia-primera-a": "Campeonato Colombiano",
     }
 
     # Offensive leagues get HIPER-OFENSIVA regime
