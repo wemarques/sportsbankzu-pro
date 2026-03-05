@@ -9,12 +9,15 @@ def status_map(s: str) -> str:
     sl = (s or "").lower()
     if sl in ("complete", "finished", "ft"):
         return "finished"
-    if sl in ("live", "inplay", "playing", "halftime", "incomplete"):
+    if sl in ("live", "inplay", "playing", "halftime"):
         return "live"
     if sl in ("postponed", "ppd"):
         return "postponed"
     if sl in ("cancelled", "canceled", "void", "abandoned"):
         return "cancelled"
+    # "incomplete" means match data is not yet complete (not played yet) —
+    # treat as scheduled and let kickoff-time heuristics promote to "live"
+    # when appropriate (e.g. in /live-scores endpoint).
     return "scheduled"
 
 def parse_date(value: Any) -> Optional[datetime]:
