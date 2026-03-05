@@ -917,9 +917,15 @@ export default function Dashboard() {
           if (evaluation) {
             setBatchAuditResult((prev) => {
               if (!prev) return prev;
-              // Only update model_evaluation (AI text). Keep local model_update_recommendation
-              // (urgency, actions) which is deterministic and should not be overridden by AI.
-              return { ...prev, model_evaluation: evaluation };
+              const updates: Partial<typeof prev> = { model_evaluation: evaluation };
+              // Store Mistral's recommendation separately for side-by-side comparison.
+              // Local model_update_recommendation (deterministic) remains the primary.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const mistralRec = (evaluation as any).model_update_recommendation;
+              if (mistralRec && typeof mistralRec === "object") {
+                updates.mistral_recommendation = mistralRec as typeof prev.model_update_recommendation;
+              }
+              return { ...prev, ...updates };
             });
           }
         });

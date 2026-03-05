@@ -71,13 +71,12 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`mdc-batch-audit__status ${cls}`}>{status}</span>;
 }
 
+function normalizeUrgency(u: string): string {
+  return u.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+}
+
 function UrgencyBadge({ urgency }: { urgency: string }) {
-  // Normalize: strip accents and uppercase for robust matching (Mistral may return "MÉDIA")
-  const norm = urgency
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .trim();
+  const norm = normalizeUrgency(urgency);
   const cls =
     norm === "CRITICA"
       ? "mdc-batch-audit__urgency--critica"
@@ -89,9 +88,13 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
   return <span className={`mdc-batch-audit__urgency ${cls}`}>{urgency}</span>;
 }
 
-function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
+function ModelUpdateSection({ rec, mistralRec }: { rec: ModelUpdateRecommendation; mistralRec?: ModelUpdateRecommendation }) {
+  const hasMistral = !!mistralRec;
+  const diverges = hasMistral && normalizeUrgency(mistralRec.urgency) !== normalizeUrgency(rec.urgency);
+
   return (
     <div className={`mdc-batch-audit__model-update ${rec.needs_update ? "mdc-batch-audit__model-update--needs" : "mdc-batch-audit__model-update--ok"}`}>
+      {/* Local (deterministic) assessment */}
       <div className="mdc-batch-audit__model-update-header">
         <div className="mdc-batch-audit__model-update-title">
           {rec.needs_update ? (
@@ -101,8 +104,40 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
           )}
           <span>{rec.needs_update ? "Modelo Precisa de Atualização" : "Modelo Dentro dos Parâmetros"}</span>
         </div>
-        <UrgencyBadge urgency={rec.urgency} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase" }}>Modelo</span>
+          <UrgencyBadge urgency={rec.urgency} />
+        </div>
       </div>
+
+      {/* Mistral AI assessment (side-by-side) */}
+      {hasMistral && (
+        <div className="mdc-batch-audit__model-update-header" style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(148,163,184,0.15)" }}>
+          <div className="mdc-batch-audit__model-update-title">
+            <Brain size={18} style={{ color: "#a78bfa" }} />
+            <span>Avaliação Mistral AI</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: "0.65rem", color: "#a78bfa", textTransform: "uppercase" }}>Mistral</span>
+            <UrgencyBadge urgency={mistralRec.urgency} />
+          </div>
+        </div>
+      )}
+
+      {/* Divergence alert — signal for fine-tuning */}
+      {diverges && (
+        <div style={{
+          marginTop: 8, padding: "6px 10px", borderRadius: 6,
+          background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)",
+          display: "flex", alignItems: "center", gap: 6,
+          fontSize: "0.75rem", color: "#f59e0b"
+        }}>
+          <AlertTriangle size={14} />
+          <span>
+            Divergência detectada: Modelo avalia <strong>{rec.urgency}</strong>, Mistral avalia <strong>{mistralRec.urgency}</strong> — considerar ajuste fino nos thresholds
+          </span>
+        </div>
+      )}
 
       <div className="mdc-batch-audit__model-update-reasons">
         <h4>Diagnóstico</h4>
@@ -111,6 +146,16 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
             <li key={i}>{r}</li>
           ))}
         </ul>
+        {hasMistral && mistralRec.reasons?.length > 0 && (
+          <>
+            <h4 style={{ marginTop: 8, color: "#a78bfa" }}>Diagnóstico Mistral</h4>
+            <ul>
+              {mistralRec.reasons.map((r, i) => (
+                <li key={`m-${i}`} style={{ color: "#c4b5fd" }}>{r}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className="mdc-batch-audit__model-update-actions">
@@ -120,6 +165,16 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
             <li key={i}>{a}</li>
           ))}
         </ul>
+        {hasMistral && mistralRec.recommended_actions?.length > 0 && (
+          <>
+            <h4 style={{ marginTop: 8, color: "#a78bfa" }}>Ações Mistral</h4>
+            <ul>
+              {mistralRec.recommended_actions.map((a, i) => (
+                <li key={`m-${i}`} style={{ color: "#c4b5fd" }}>{a}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className="mdc-batch-audit__model-update-retrain">
@@ -362,9 +417,9 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                 </div>
               </div>
 
-              {/* Model Update Recommendation */}
+              {/* Model Update Recommendation — local vs Mistral comparison */}
               {result.model_update_recommendation && (
-                <ModelUpdateSection rec={result.model_update_recommendation} />
+                <ModelUpdateSection rec={result.model_update_recommendation} mistralRec={result.mistral_recommendation} />
               )}
 
               {/* Market accuracy table */}
