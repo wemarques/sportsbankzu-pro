@@ -270,22 +270,32 @@ def live_scores() -> Dict[str, Any]:
             raw_status = str(m.get("status", ""))
             status = status_map(raw_status)
 
-            # FootyStats may return "incomplete" for in-progress matches.
+            kickoff_ts = m.get("date_unix")
+            elapsed_min = None
+            if kickoff_ts:
+                try:
+                    elapsed_min = (now_ts - int(kickoff_ts)) // 60
+                except (ValueError, TypeError):
+                    pass
+
+            # Guard: if API reports "live" but kickoff is in the future, demote to "scheduled".
+            # FootyStats sometimes returns "incomplete"/"live" for matches not yet started.
+            if status == "live" and elapsed_min is not None and elapsed_min < -2:
+                logger.info(
+                    f"[live-scores] Overriding 'live' → 'scheduled': "
+                    f"{m.get('home_name')} vs {m.get('away_name')} "
+                    f"(raw_status={raw_status!r}, kickoff in {abs(elapsed_min)} min)"
+                )
+                status = "scheduled"
+
             # Detect live matches by checking if kickoff time has passed.
-            if status == "scheduled":
-                kickoff_ts = m.get("date_unix")
-                if kickoff_ts:
-                    try:
-                        elapsed_min = (now_ts - int(kickoff_ts)) // 60
-                        if 0 <= elapsed_min < 150:
-                            status = "live"
-                            logger.info(
-                                f"[live-scores] Inferred live from kickoff: "
-                                f"{m.get('home_name')} vs {m.get('away_name')} "
-                                f"(raw_status={raw_status!r}, elapsed={elapsed_min}min)"
-                            )
-                    except (ValueError, TypeError):
-                        pass
+            if status == "scheduled" and elapsed_min is not None and 0 <= elapsed_min < 150:
+                status = "live"
+                logger.info(
+                    f"[live-scores] Inferred live from kickoff: "
+                    f"{m.get('home_name')} vs {m.get('away_name')} "
+                    f"(raw_status={raw_status!r}, elapsed={elapsed_min}min)"
+                )
 
             if status not in ("live", "finished"):
                 skipped_statuses[raw_status] = skipped_statuses.get(raw_status, 0) + 1

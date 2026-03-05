@@ -608,6 +608,11 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(audit):** Lookup de resultado real por match ID e por homeTeam+awayTeam para avaliação de cada perna da dupla
 - **fix(audit):** Dupla accuracy tracking agora valida score `None` antes de incluir no lookup — evita avaliação contra dados fantasma
 
+#### Backend — Fix False Live Status
+- **fix(status):** `status_map()` — removido `"incomplete"` do mapeamento para `"live"` em `util_service.py`; agora cai em `"scheduled"` (FootyStats usa "incomplete" para jogos não iniciados)
+- **fix(fixtures):** Guard de kickoff-time em `fixtures_service.py` — se API retorna `"live"` mas kickoff é > 2 min no futuro, override para `"scheduled"` com logging
+- **fix(live-scores):** Guard de kickoff-time em `/live-scores` — demote `"live"` → `"scheduled"` quando `elapsed_min < -2`, previne badges "AO VIVO" falsos
+
 #### Frontend — Resultado de Auditoria de Duplas
 - **feat(ui):** Badge ACERTOU/ERROU/PENDENTE em cada card de dupla no painel de Auditoria da Rodada (`BatchAuditPanel`)
 - **feat(ui):** Resumo de acurácia de duplas com cards Intra-jogo, Inter-jogo e Geral no topo da seção de Duplas Recomendadas

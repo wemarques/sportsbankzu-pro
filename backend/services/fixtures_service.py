@@ -101,6 +101,23 @@ def build_records_from_matches(
         away = str(r.get("away_team", r.get("away_team_name", r.get("team_b_name", ""))) or "").strip()
         stadium = str(r.get("stadium", "")) if "stadium" in r else ""
         status = status_map(str(r.get("status", "scheduled")))
+        # Guard: if API reports "live" but kickoff is in the future, override to "scheduled".
+        # FootyStats sometimes returns "incomplete" or even "live" for matches that haven't
+        # kicked off yet. We check date_unix to confirm the match has actually started.
+        if status == "live":
+            import time as _time
+            _kickoff_ts = r.get("date_unix") or r.get("timestamp")
+            if _kickoff_ts:
+                try:
+                    _elapsed_min = (int(_time.time()) - int(_kickoff_ts)) // 60
+                    if _elapsed_min < -2:  # More than 2 minutes before kickoff
+                        logger.info(
+                            f"[fixtures_service] Overriding 'live' → 'scheduled' for {home} vs {away} "
+                            f"(kickoff in {abs(_elapsed_min)} min, raw_status={r.get('status')!r})"
+                        )
+                        status = "scheduled"
+                except (ValueError, TypeError):
+                    pass
         # Skip postponed / cancelled matches — do not generate predictions for them
         if status in ("postponed", "cancelled"):
             logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
