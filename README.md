@@ -60,6 +60,8 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Endpoint `POST /api/ai/score-correction` para correção manual de resultados com re-auditoria (V3.5.1)
 - Auditoria de duplas (combinadas INTRA e INTER) com taxa de acerto por tipo no cron batch audit (V3.5.1)
 - Resultado visual de auditoria de duplas (ACERTOU/ERROU) com resumo de acurácia no painel de Auditoria da Rodada (V3.5.1)
+- Fix status falso "AO VIVO" — guard de kickoff-time impede que jogos agendados apareçam como live (V3.5.1)
+- Regra de Investigação Obrigatória adicionada ao `CLAUDE.md` — 7 passos de verificação antes de qualquer correção (V3.5.1)
 
 ### Dashboard Next.js (Produção)
 
@@ -580,13 +582,13 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **Sistema de Autenticação:** `solucao_autenticacao_streamlit.md`
 - **Quadro-Resumo Profissional:** `PROMPT_IMPLEMENTACAO_QUADRO_RESUMO_FINAL.md`
 - **API do Backend:** Acesse `http://localhost:5001/docs` para documentação interativa (Swagger)
-- **Claude Code:** `CLAUDE.md` na raiz do projeto com instruções, comandos e referências Context7
+- **Claude Code:** `CLAUDE.md` na raiz do projeto com instruções, comandos, referências Context7 e regra de investigação obrigatória
 
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
 
-### V3.5.1 — 5 de Março de 2026 (Fix Score Accuracy + Dupla Audit)
+### V3.5.1 — 5 de Março de 2026 (Fix Score Accuracy + Dupla Audit + Fix Live Status)
 
 #### Backend — Score Accuracy Fix (Problema Lanús 0-3 Boca → 0-0 no sistema)
 - **fix(mapper):** `FootyStatsMatchInput` — defaults de `homeGoalCount`, `awayGoalCount`, `totalGoalCount` alterados de `0` para `None` em `data_mapper.py`, eliminando a confusão entre "0 gols" e "dados ausentes"
@@ -612,6 +614,16 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **fix(status):** `status_map()` — removido `"incomplete"` do mapeamento para `"live"` em `util_service.py`; agora cai em `"scheduled"` (FootyStats usa "incomplete" para jogos não iniciados)
 - **fix(fixtures):** Guard de kickoff-time em `fixtures_service.py` — se API retorna `"live"` mas kickoff é > 2 min no futuro, override para `"scheduled"` com logging
 - **fix(live-scores):** Guard de kickoff-time em `/live-scores` — demote `"live"` → `"scheduled"` quando `elapsed_min < -2`, previne badges "AO VIVO" falsos
+
+#### Processo — Regra de Investigação Obrigatória
+- **docs(claude):** Adicionada seção "Regra de Investigação Obrigatória" ao `CLAUDE.md` com 7 passos mandatórios antes de qualquer correção:
+  1. Não assumir causa raiz — investigar todos os caminhos de código
+  2. Traçar fluxo completo da API externa até a renderização no browser
+  3. Verificar todos os pontos de entrada (mapper, service, route, overlay, polling)
+  4. Considerar caching e deploy (SQLite TTL, Vercel build, Lambda cold start)
+  5. Validar com dados reais via logging em vez de supor valores
+  6. Implementar defesa em profundidade em múltiplas camadas
+  7. Testar cenário completo simulando o fluxo com dados do bug reportado
 
 #### Frontend — Resultado de Auditoria de Duplas
 - **feat(ui):** Badge ACERTOU/ERROU/PENDENTE em cada card de dupla no painel de Auditoria da Rodada (`BatchAuditPanel`)
