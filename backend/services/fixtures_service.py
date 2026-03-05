@@ -123,38 +123,46 @@ def build_records_from_matches(
             logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
             continue
         # Extract score for finished and live matches
-        _home_goals_raw = r.get("home_goals", r.get("home_team_goal_count", None))
-        _away_goals_raw = r.get("away_goals", r.get("away_team_goal_count", None))
-        _ht_home_raw = r.get("home_team_goal_count_half_time", None)
-        _ht_away_raw = r.get("away_team_goal_count_half_time", None)
-        match_score = None
-        if status in ("finished", "live") and _home_goals_raw is not None and _away_goals_raw is not None:
+        # FootyStats uses -1 to mean "no data available" — treat as None
+        def _valid_goal_count(val):
+            if val is None:
+                return None
             try:
-                _ht = None
-                if _ht_home_raw is not None and _ht_away_raw is not None:
-                    _ht_h = int(_ht_home_raw)
-                    _ht_a = int(_ht_away_raw)
-                    if _ht_h >= 0 and _ht_a >= 0:
-                        _ht = {"home": _ht_h, "away": _ht_a}
-                match_score = {"home": int(_home_goals_raw), "away": int(_away_goals_raw)}
-                if _ht:
-                    match_score["halftime"] = _ht
+                v = int(val)
+                return v if v >= 0 else None
             except (ValueError, TypeError):
-                match_score = None
+                return None
+
+        _home_goals = _valid_goal_count(r.get("home_goals", r.get("home_team_goal_count", None)))
+        _away_goals = _valid_goal_count(r.get("away_goals", r.get("away_team_goal_count", None)))
+        _ht_home = _valid_goal_count(r.get("home_team_goal_count_half_time", None))
+        _ht_away = _valid_goal_count(r.get("away_team_goal_count_half_time", None))
+        match_score = None
+        if status in ("finished", "live") and _home_goals is not None and _away_goals is not None:
+            _ht = None
+            if _ht_home is not None and _ht_away is not None:
+                _ht = {"home": _ht_home, "away": _ht_away}
+            match_score = {"home": _home_goals, "away": _away_goals}
+            if _ht:
+                match_score["halftime"] = _ht
         # Log finished matches with missing goal data — indicates API coverage gap
         if status == "finished" and match_score is None:
+            _raw_h = r.get("home_goals", r.get("home_team_goal_count", None))
+            _raw_a = r.get("away_goals", r.get("away_team_goal_count", None))
             logger.warning(
                 f"[fixtures_service] Finished match {home} vs {away} has NO goal data — "
-                f"score will be null (raw home_goals={_home_goals_raw}, away_goals={_away_goals_raw}). "
+                f"score will be null (raw home_goals={_raw_h}, away_goals={_raw_a}). "
                 f"Possible API coverage gap for this league."
             )
         # Do NOT default live matches to 0-0 when goal data is missing —
         # a fake 0-0 corrupts audit accuracy (e.g. Lanús vs Boca 0-3 shown as 0-0).
         # Instead, leave match_score as None so the frontend knows data is unavailable.
         if status == "live" and match_score is None:
+            _raw_h = r.get("home_goals", r.get("home_team_goal_count", None))
+            _raw_a = r.get("away_goals", r.get("away_team_goal_count", None))
             logger.warning(
                 f"[fixtures_service] Live match {home} vs {away} has no goal data — "
-                f"NOT defaulting to 0-0 (raw home_goals={_home_goals_raw}, away_goals={_away_goals_raw})"
+                f"NOT defaulting to 0-0 (raw home_goals={_raw_h}, away_goals={_raw_a})"
             )
         # Compute period/minute for live matches (same logic as /live-scores)
         period = None

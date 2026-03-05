@@ -503,30 +503,57 @@ def live_scores() -> Dict[str, Any]:
                                  "team_a_goals", "homeScore", "home_score")
             _GOAL_AWAY_FIELDS = ("awayGoalCount", "away_team_goal_count", "away_goals",
                                  "team_b_goals", "awayScore", "away_score")
+            def _valid_goal(val):
+                """Return int if val is a valid goal count (>= 0), else None."""
+                if val is None:
+                    return None
+                try:
+                    v = int(val)
+                    return v if v >= 0 else None  # -1 = no data
+                except (ValueError, TypeError):
+                    return None
+
             home_goals = None
             for _f in _GOAL_HOME_FIELDS:
-                home_goals = m.get(_f)
+                home_goals = _valid_goal(m.get(_f))
                 if home_goals is not None:
                     break
             away_goals = None
             for _f in _GOAL_AWAY_FIELDS:
-                away_goals = m.get(_f)
+                away_goals = _valid_goal(m.get(_f))
                 if away_goals is not None:
                     break
 
-            # If individual goal fields are missing, check if we have a
-            # totalGoalCount — at least we know goals happened even if we
-            # can't split home/away.
+            # If individual goal fields are missing, try totalGoalCount as evidence
+            # that goals were scored (even if we can't split home/away)
             _has_goal_data = home_goals is not None and away_goals is not None
+            if not _has_goal_data:
+                _total = _valid_goal(m.get("totalGoalCount"))
+                if _total is not None and _total > 0:
+                    # We know goals happened but can't split — use total as hint
+                    # Try to infer from half-time data if available
+                    _ht_h = _valid_goal(m.get("home_team_goal_count_half_time"))
+                    _ht_a = _valid_goal(m.get("away_team_goal_count_half_time"))
+                    if _ht_h is not None and _ht_a is not None:
+                        home_goals = home_goals if home_goals is not None else _ht_h
+                        away_goals = away_goals if away_goals is not None else _ht_a
+                        _has_goal_data = True
+                        logger.info(
+                            f"[live-scores] Using HT data as fallback for "
+                            f"{m.get('home_name')} vs {m.get('away_name')} "
+                            f"(totalGoalCount={_total}, ht={_ht_h}-{_ht_a})"
+                        )
 
             if not _has_goal_data:
                 if status == "live":
-                    score_keys = [k for k in m.keys() if "goal" in k.lower() or "score" in k.lower()]
+                    # Log all goal/score related fields and their raw values for debugging
+                    goal_fields = {k: m.get(k) for k in m.keys() if "goal" in k.lower() or "score" in k.lower() or "Goal" in k}
                     logger.warning(
                         f"[live-scores] Missing goal fields for live match: "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(raw_status={raw_status!r}, score_keys={score_keys}, "
-                        f"all_keys={list(m.keys())})"
+                        f"(raw_status={raw_status!r}, goal_fields={goal_fields}, "
+                        f"totalGoalCount={m.get('totalGoalCount')}, "
+                        f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
                     )
                     # Do NOT default to 0-0 when goal data is missing —
                     # returning a fake 0-0 overwrites any correct score the
@@ -535,11 +562,9 @@ def live_scores() -> Dict[str, Any]:
                 else:
                     continue
 
-            try:
-                home_goals = int(home_goals)
-                away_goals = int(away_goals)
-            except (ValueError, TypeError):
-                home_goals, away_goals = 0, 0
+            # _valid_goal already returns int, but ensure type safety
+            home_goals = int(home_goals)
+            away_goals = int(away_goals)
 
             ht_home = m.get("home_team_goal_count_half_time")
             ht_away = m.get("away_team_goal_count_half_time")
