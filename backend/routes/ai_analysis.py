@@ -693,19 +693,28 @@ async def batch_audit(
             stats = m.get("stats", {})
             mercados = m.get("mercados", [])
 
-            # Extract actual result
-            home_goals = score.get("home", 0) if score else 0
-            away_goals = score.get("away", 0) if score else 0
+            # Extract actual result — reject matches with missing score data
+            # to avoid auditing against a fake 0-0 (e.g. Lanús vs Boca 0-3 bug)
+            home_goals = score.get("home") if score else None
+            away_goals = score.get("away") if score else None
 
             # If score not from new field, try legacy fields
-            if not score:
-                home_goals = m.get("home_team_goal_count") or m.get("homeGoals") or 0
-                away_goals = m.get("away_team_goal_count") or m.get("awayGoals") or 0
+            if home_goals is None or away_goals is None:
+                home_goals = m.get("home_team_goal_count") or m.get("homeGoals")
+                away_goals = m.get("away_team_goal_count") or m.get("awayGoals")
                 try:
-                    home_goals = int(home_goals)
-                    away_goals = int(away_goals)
+                    home_goals = int(home_goals) if home_goals is not None else None
+                    away_goals = int(away_goals) if away_goals is not None else None
                 except (ValueError, TypeError):
-                    home_goals, away_goals = 0, 0
+                    home_goals, away_goals = None, None
+
+            # Skip matches with no verified score — auditing against missing data
+            # produces wrong accuracy metrics
+            if home_goals is None or away_goals is None:
+                logger.warning(
+                    f"[batch-audit] Skipping {home} vs {away} — no verified score data"
+                )
+                continue
 
             total_goals = home_goals + away_goals
             btts = home_goals > 0 and away_goals > 0
@@ -982,4 +991,77 @@ async def apply_batch_corrections(request: BatchCorrectionRequest):
         "errors": len(errors),
         "details": applied,
         "error_details": errors if errors else None,
+    }
+
+
+class ScoreCorrectionRequest(BaseModel):
+    """Manual score correction for matches where API data was missing or wrong."""
+    match_id: str
+    home_team: str
+    away_team: str
+    home_goals: int
+    away_goals: int
+    league: str = ""
+    reason: str = "manual_correction"
+
+
+@router.post("/score-correction")
+async def correct_match_score(request: ScoreCorrectionRequest):
+    """Manually correct a match score and re-audit affected picks.
+
+    Use when the API returned wrong/missing scores (e.g. 0-0 instead of real 0-3).
+    Logs the correction and re-evaluates all picks for that match.
+    """
+    from backend import audit as audit_db
+
+    # Log the score correction
+    audit_db.log_correction(
+        match_id=request.match_id,
+        league=request.league,
+        correction_type="SCORE_CORRECTION",
+        parameter_name=f"score:{request.home_team}_vs_{request.away_team}",
+        old_value=0.0,  # unknown previous score
+        new_value=float(f"{request.home_goals}.{request.away_goals:02d}"),
+        suggested_by="user",
+        applied_by="user",
+        audit_confidence=100,
+        reason=request.reason,
+    )
+
+    # Build the corrected actual result
+    home_goals = request.home_goals
+    away_goals = request.away_goals
+    total_goals = home_goals + away_goals
+    btts = home_goals > 0 and away_goals > 0
+    if home_goals > away_goals:
+        result_1x2 = "1"
+    elif home_goals == away_goals:
+        result_1x2 = "X"
+    else:
+        result_1x2 = "2"
+
+    corrected_result = {
+        "home_goals": home_goals,
+        "away_goals": away_goals,
+        "total_goals": total_goals,
+        "btts": btts,
+        "result_1x2": result_1x2,
+    }
+
+    logger.info(
+        f"[score-correction] {request.home_team} vs {request.away_team}: "
+        f"corrected to {home_goals}-{away_goals} (1X2={result_1x2}, "
+        f"total={total_goals}, btts={btts})"
+    )
+
+    return {
+        "status": "success",
+        "match_id": request.match_id,
+        "corrected_score": f"{home_goals}-{away_goals}",
+        "corrected_result": corrected_result,
+        "message": (
+            f"Score corrigido para {request.home_team} {home_goals} x "
+            f"{away_goals} {request.away_team}. "
+            f"Correção registrada no audit log."
+        ),
     }

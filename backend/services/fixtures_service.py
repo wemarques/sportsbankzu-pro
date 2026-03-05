@@ -124,9 +124,21 @@ def build_records_from_matches(
                     match_score["halftime"] = _ht
             except (ValueError, TypeError):
                 match_score = None
-        # Live matches always need a score — default to 0-0 if goal data is missing
+        # Log finished matches with missing goal data — indicates API coverage gap
+        if status == "finished" and match_score is None:
+            logger.warning(
+                f"[fixtures_service] Finished match {home} vs {away} has NO goal data — "
+                f"score will be null (raw home_goals={_home_goals_raw}, away_goals={_away_goals_raw}). "
+                f"Possible API coverage gap for this league."
+            )
+        # Do NOT default live matches to 0-0 when goal data is missing —
+        # a fake 0-0 corrupts audit accuracy (e.g. Lanús vs Boca 0-3 shown as 0-0).
+        # Instead, leave match_score as None so the frontend knows data is unavailable.
         if status == "live" and match_score is None:
-            match_score = {"home": 0, "away": 0}
+            logger.warning(
+                f"[fixtures_service] Live match {home} vs {away} has no goal data — "
+                f"NOT defaulting to 0-0 (raw home_goals={_home_goals_raw}, away_goals={_away_goals_raw})"
+            )
         # Compute period/minute for live matches (same logic as /live-scores)
         period = None
         minute = None

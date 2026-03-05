@@ -107,17 +107,24 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         stats = m.get("stats", {})
         mercados = m.get("mercados", [])
 
-        home_goals = score.get("home", 0) if score else 0
-        away_goals = score.get("away", 0) if score else 0
+        home_goals = score.get("home") if score else None
+        away_goals = score.get("away") if score else None
 
-        if not score:
-            home_goals = m.get("home_team_goal_count") or m.get("homeGoals") or 0
-            away_goals = m.get("away_team_goal_count") or m.get("awayGoals") or 0
+        if home_goals is None or away_goals is None:
+            home_goals = m.get("home_team_goal_count") or m.get("homeGoals")
+            away_goals = m.get("away_team_goal_count") or m.get("awayGoals")
             try:
-                home_goals = int(home_goals)
-                away_goals = int(away_goals)
+                home_goals = int(home_goals) if home_goals is not None else None
+                away_goals = int(away_goals) if away_goals is not None else None
             except (ValueError, TypeError):
-                home_goals, away_goals = 0, 0
+                home_goals, away_goals = None, None
+
+        # Skip matches with no verified score data
+        if home_goals is None or away_goals is None:
+            logger.warning(
+                f"[cron_audit] Skipping {home} vs {away} — no verified score data"
+            )
+            continue
 
         total_goals = home_goals + away_goals
         btts = home_goals > 0 and away_goals > 0
@@ -241,11 +248,18 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     for m in finished_matches:
         mid = m.get("id", "")
         score = m.get("score") or {}
-        hg = score.get("home", 0) if score else 0
-        ag = score.get("away", 0) if score else 0
-        if not score:
-            hg = int(m.get("home_team_goal_count") or m.get("homeGoals") or 0)
-            ag = int(m.get("away_team_goal_count") or m.get("awayGoals") or 0)
+        hg = score.get("home") if score else None
+        ag = score.get("away") if score else None
+        if hg is None or ag is None:
+            _hg_raw = m.get("home_team_goal_count") or m.get("homeGoals")
+            _ag_raw = m.get("away_team_goal_count") or m.get("awayGoals")
+            try:
+                hg = int(_hg_raw) if _hg_raw is not None else None
+                ag = int(_ag_raw) if _ag_raw is not None else None
+            except (ValueError, TypeError):
+                hg, ag = None, None
+        if hg is None or ag is None:
+            continue  # Skip matches without verified score
         tg = hg + ag
         _btts = hg > 0 and ag > 0
         _1x2 = "1" if hg > ag else ("X" if hg == ag else "2")
