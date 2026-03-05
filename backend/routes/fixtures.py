@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query
 from typing import Dict, Any, List
 import os
 import logging
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
     import pandas as pd  # type: ignore
@@ -166,10 +167,21 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         for r in records:
                             r["dataSource"] = "FootyStats API (Tempo Real)"
                     else:
-                        logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}'")
+                        logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}', trying todays-matches fallback")
+                        # Fallback: league-matches may not include today's fixtures on page 1
+                        # (pagination issue for leagues deep into their season).
+                        # Use the todays-matches endpoint which returns all of today's matches.
+                        records = _fallback_todays_matches(lid, league_config, date)
+                        if records:
+                            logger.info(f"[fixtures] {lid}: todays-matches fallback found {len(records)} records")
                     found_via_api = True
                 else:
                     logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
+                    # Fallback to todays-matches when league-matches fails
+                    records = _fallback_todays_matches(lid, league_config, date)
+                    if records:
+                        logger.info(f"[fixtures] {lid}: todays-matches fallback (after league-matches fail) found {len(records)} records")
+                        found_via_api = True
             else:
                 logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
         except Exception as e:
@@ -216,6 +228,147 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
             records = gen_mock2(lid, date)
 
     return records
+
+
+def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[Dict[str, Any]]:
+    """Fallback: use todays-matches endpoint when league-matches has no records for today.
+    This endpoint returns all matches across all leagues for today in one call,
+    so we filter by country+league name to extract only the relevant ones."""
+    if date not in ("today", "tomorrow"):
+        return []
+    try:
+        from backend.services.util_service import status_map
+        import time as _time
+
+        date_param = None
+        if date == "tomorrow":
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            BRT = _tz(timedelta(hours=-3))
+            tomorrow = _dt.now(BRT) + _td(days=1)
+            date_param = tomorrow.strftime("%Y-%m-%d")
+
+        todays_data = footstats.get_todays_matches(date=date_param)
+        if not todays_data.get("success"):
+            return []
+
+        raw_list = todays_data.get("data", [])
+        if not raw_list:
+            return []
+
+        country = league_config["country"].lower()
+        name = league_config["name"].lower()
+        alt_names = [n.lower() for n in league_config.get("alt_names", [])]
+        names_to_match = [name] + alt_names
+
+        matched = []
+        for m in raw_list:
+            # FootyStats todays-matches uses "competition_name" or "league_name"
+            comp = (m.get("competition_name") or m.get("league_name") or m.get("name") or "").lower()
+            # Also check "country" field if available
+            m_country = (m.get("country") or "").lower()
+            country_match = country in comp or country == m_country
+            if not country_match:
+                continue
+            if not any(n in comp for n in names_to_match):
+                continue
+            matched.append(m)
+
+        if not matched:
+            return []
+
+        logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures")
+
+        # Build minimal records from todays-matches data
+        from backend.main import date_range
+        records = []
+        for m in matched:
+            home = (m.get("home_name") or m.get("homeTeam") or "").strip()
+            away = (m.get("away_name") or m.get("awayTeam") or "").strip()
+            if not home or not away:
+                continue
+
+            raw_status = str(m.get("status", "scheduled"))
+            match_status = status_map(raw_status)
+
+            # Guard kickoff time for live status
+            kickoff_ts = m.get("date_unix")
+            if match_status == "live" and kickoff_ts:
+                try:
+                    elapsed = (int(_time.time()) - int(kickoff_ts)) // 60
+                    if elapsed < -2:
+                        match_status = "scheduled"
+                except (ValueError, TypeError):
+                    pass
+
+            dt_unix = m.get("date_unix")
+            dt_str = ""
+            if dt_unix:
+                try:
+                    dt_str = datetime.utcfromtimestamp(int(dt_unix)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                except (ValueError, TypeError):
+                    dt_str = ""
+
+            # Read odds
+            odds_home = _safe_float(m.get("odds_ft_1"))
+            odds_draw = _safe_float(m.get("odds_ft_x"))
+            odds_away = _safe_float(m.get("odds_ft_2"))
+            odds_over25 = _safe_float(m.get("odds_ft_over25"))
+            odds_under25 = _safe_float(m.get("odds_ft_under25"))
+            odds_btts_yes = _safe_float(m.get("odds_btts_yes"))
+            odds_btts_no = _safe_float(m.get("odds_btts_no"))
+
+            # Basic probability from odds (implied)
+            from backend.services.math_service import implied_probs
+            probs = implied_probs(odds_home, odds_draw, odds_away)
+
+            record = {
+                "id": f"{lid}-todays-{m.get('id', '')}",
+                "footystatsId": m.get("id"),
+                "leagueId": lid,
+                "leagueName": league_config["name"],
+                "homeTeam": {"name": home, "logo": "", "form": [], "rating": 0},
+                "awayTeam": {"name": away, "logo": "", "form": [], "rating": 0},
+                "datetime": dt_str,
+                "match_date": dt_str,
+                "venue": m.get("stadium", "") or "",
+                "stadium": m.get("stadium", "") or "",
+                "status": match_status,
+                "odds": {
+                    "home": odds_home, "draw": odds_draw, "away": odds_away,
+                    "over25": odds_over25, "under25": odds_under25,
+                    "bttsYes": odds_btts_yes, "bttsNo": odds_btts_no,
+                    "over15": _safe_float(m.get("odds_ft_over15")),
+                    "over35": _safe_float(m.get("odds_ft_over35")),
+                    "over45": _safe_float(m.get("odds_ft_over45")),
+                },
+                "stats": {
+                    "homeWinProb": round(probs[0], 1) if probs else 0,
+                    "drawProb": round(probs[1], 1) if probs else 0,
+                    "awayWinProb": round(probs[2], 1) if probs else 0,
+                    "avgGoals": 0,
+                    "bttsProb": 0,
+                    "over25Prob": 0,
+                },
+                "h2h": {"totalMatches": 0, "homeWins": 0, "draws": 0, "awayWins": 0, "avgGoals": 0},
+                "source": "footystats",
+                "dataSource": "FootyStats API (Jogos do Dia)",
+                "lastUpdated": datetime.utcnow().isoformat() + "Z",
+            }
+            records.append(record)
+
+        return records
+    except Exception as e:
+        logger.error(f"[fixtures] {lid}: todays-matches fallback error: {e}")
+        return []
+
+
+def _safe_float(val) -> float:
+    if val is None:
+        return 0.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
 
 
 @router.get("/fixtures")
