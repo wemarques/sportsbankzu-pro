@@ -15,6 +15,9 @@ import type {
   BatchAuditModelEvaluation,
   ModelUpdateRecommendation,
   LeagueAuditStats,
+  AuditCombinadas,
+  AuditCombinada,
+  AuditCombinadaLeg,
 } from "./api";
 
 /** Evaluate a single pick against the actual result. */
@@ -366,6 +369,130 @@ function buildLocalModelEvaluation(
   };
 }
 
+// ── Combinadas (duplas) computation ──────────────────────────────────────
+
+const _INTRA_INCOMPATIBLE = [
+  ["Over 2.5 gols", "Under 2.5 gols"],
+  ["Over 3.5 gols", "Under 3.5 gols"],
+  ["Over 1.5 gols", "Under 1.5 gols"],
+  ["Over 4.5 gols", "Under 4.5 gols"],
+  ["BTTS — SIM", "BTTS — NÃO"],
+  ["DC 1X", "DC X2"],
+].map(([a, b]) => `${a}||${b}`);
+
+function _isIncompatible(a: string, b: string): boolean {
+  const key1 = `${a}||${b}`;
+  const key2 = `${b}||${a}`;
+  return _INTRA_INCOMPATIBLE.includes(key1) || _INTRA_INCOMPATIBLE.includes(key2);
+}
+
+type Prediction = NonNullable<Match["predictions"]>[number];
+
+function _validMercado(p: Prediction): boolean {
+  const s = (p.status || "").toUpperCase();
+  if (s !== "SAFE" && s !== "NEUTRO") return false;
+  return (p.odd_minima ?? 0) >= 1.01;
+}
+
+function _buildLeg(match: Match, p: Prediction): AuditCombinadaLeg {
+  return {
+    jogo: `${match.homeTeam.name} x ${match.awayTeam.name}`,
+    homeTeam: match.homeTeam.name,
+    awayTeam: match.awayTeam.name,
+    leagueId: match.leagueId,
+    leagueName: match.leagueName,
+    datetime: match.datetime,
+    mercado: p.mercado,
+    status: p.status,
+    prob_min: p.prob_min,
+    prob_max: p.prob_max,
+    odd_minima: p.odd_minima ?? 1.0,
+  };
+}
+
+function _statusCombinada(legs: AuditCombinadaLeg[]): "SAFE" | "MISTA" | "NEUTRO" {
+  const statuses = legs.map((l) => l.status.toUpperCase());
+  if (statuses.every((s) => s === "SAFE" || s === "SAFE*")) return "SAFE";
+  if (statuses.some((s) => s === "SAFE" || s === "SAFE*") && statuses.every((s) => s === "SAFE" || s === "SAFE*" || s === "NEUTRO")) return "MISTA";
+  return "NEUTRO";
+}
+
+function _probCombinada(legs: AuditCombinadaLeg[]): [number, number] {
+  let pMin = 1, pMax = 1;
+  for (const l of legs) { pMin *= l.prob_min / 100; pMax *= l.prob_max / 100; }
+  return [Math.round(pMin * 1000) / 10, Math.round(pMax * 1000) / 10];
+}
+
+function _oddCombinada(legs: AuditCombinadaLeg[]): number {
+  let r = 1;
+  for (const l of legs) r *= l.odd_minima;
+  return Math.round(r * 100) / 100;
+}
+
+/**
+ * Compute intra-game and inter-game combinadas from matches with predictions.
+ * Mirrors backend combinadas_service.py logic.
+ */
+function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
+  // Use scheduled/live matches that have predictions
+  const withPredictions = matches.filter(
+    (m) => (m.status === "scheduled" || m.status === "live") && m.predictions && m.predictions.length > 0
+  );
+
+  const intra: AuditCombinada[] = [];
+  const inter: AuditCombinada[] = [];
+
+  // Intra-game: two markets from the same match
+  for (const match of withPredictions) {
+    const eligible = (match.predictions ?? []).filter(_validMercado);
+    if (eligible.length < 2) continue;
+    for (let i = 0; i < eligible.length; i++) {
+      for (let j = i + 1; j < eligible.length; j++) {
+        if (_isIncompatible(eligible[i].mercado, eligible[j].mercado)) continue;
+        const legs = [_buildLeg(match, eligible[i]), _buildLeg(match, eligible[j])];
+        const odd = _oddCombinada(legs);
+        if (odd < 1.5) continue;
+        const [pMin, pMax] = _probCombinada(legs);
+        intra.push({ tipo: "intra", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) });
+      }
+    }
+  }
+
+  // Inter-game: one market from each of two different matches
+  const matchMercados: Array<{ match: Match; eligible: Prediction[] }> = [];
+  for (const match of withPredictions) {
+    const eligible = (match.predictions ?? []).filter(_validMercado);
+    if (eligible.length > 0) matchMercados.push({ match, eligible });
+  }
+
+  for (let i = 0; i < matchMercados.length; i++) {
+    for (let j = i + 1; j < matchMercados.length; j++) {
+      for (const m1 of matchMercados[i].eligible) {
+        for (const m2 of matchMercados[j].eligible) {
+          const legs = [_buildLeg(matchMercados[i].match, m1), _buildLeg(matchMercados[j].match, m2)];
+          const odd = _oddCombinada(legs);
+          if (odd < 1.8) continue;
+          const [pMin, pMax] = _probCombinada(legs);
+          inter.push({ tipo: "inter", leg1: legs[0], leg2: legs[1], odd_combinada: odd, prob_combinada_min: pMin, prob_combinada_max: pMax, status_combinada: _statusCombinada(legs) });
+        }
+      }
+    }
+  }
+
+  // Sort: SAFE first, then by probability
+  const prio = (s: string) => s === "SAFE" ? 2 : s === "MISTA" ? 1 : 0;
+  intra.sort((a, b) => prio(b.status_combinada) - prio(a.status_combinada) || b.odd_combinada - a.odd_combinada);
+  inter.sort((a, b) => prio(b.status_combinada) - prio(a.status_combinada) || b.prob_combinada_min - a.prob_combinada_min);
+
+  return {
+    intra: intra.slice(0, 10),
+    inter: inter.slice(0, 10),
+    total_intra: intra.length,
+    total_inter: inter.length,
+    total_jogos: withPredictions.length,
+  };
+}
+
 /**
  * Run deterministic audit on loaded matches — no backend call needed.
  * Returns the same BatchAuditResult shape as the backend endpoint.
@@ -545,6 +672,9 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
       accuracy_pct: d.total > 0 ? Math.round((d.correct / d.total) * 1000) / 10 : 0,
     }));
 
+  // Compute combinadas from scheduled/live matches with predictions
+  const combinadas = computeLocalCombinadas(allMatches);
+
   return {
     status: "success",
     total_matches: finished.length,
@@ -567,6 +697,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     match_results: matchResults,
     model_evaluation: localEvaluation,
     model_update_recommendation: modelUpdateRec,
+    combinadas,
   };
 }
 

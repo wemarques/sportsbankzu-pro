@@ -380,7 +380,40 @@ export interface BatchAuditResult {
   model_evaluation: BatchAuditModelEvaluation | null;
   league_accuracy?: LeagueAuditStats[];
   model_update_recommendation?: ModelUpdateRecommendation;
+  combinadas?: AuditCombinadas;
   message?: string;
+}
+
+export interface AuditCombinadaLeg {
+  jogo: string;
+  homeTeam: string;
+  awayTeam: string;
+  leagueId: string;
+  leagueName: string;
+  datetime: string;
+  mercado: string;
+  status: string;
+  prob_min: number;
+  prob_max: number;
+  odd_minima: number;
+}
+
+export interface AuditCombinada {
+  tipo: "intra" | "inter";
+  leg1: AuditCombinadaLeg;
+  leg2: AuditCombinadaLeg;
+  odd_combinada: number;
+  prob_combinada_min: number;
+  prob_combinada_max: number;
+  status_combinada: "SAFE" | "MISTA" | "NEUTRO";
+}
+
+export interface AuditCombinadas {
+  intra: AuditCombinada[];
+  inter: AuditCombinada[];
+  total_intra: number;
+  total_inter: number;
+  total_jogos: number;
 }
 
 /**

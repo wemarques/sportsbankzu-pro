@@ -265,9 +265,30 @@ def live_scores() -> Dict[str, Any]:
             return {"matches": []}
         now_ts = int(_time.time())
         result = []
+        skipped_statuses: Dict[str, int] = {}
         for m in raw_list:
-            status = status_map(str(m.get("status", "")))
+            raw_status = str(m.get("status", ""))
+            status = status_map(raw_status)
+
+            # FootyStats may return "incomplete" for in-progress matches.
+            # Detect live matches by checking if kickoff time has passed.
+            if status == "scheduled":
+                kickoff_ts = m.get("date_unix")
+                if kickoff_ts:
+                    try:
+                        elapsed_min = (now_ts - int(kickoff_ts)) // 60
+                        if 0 <= elapsed_min < 150:
+                            status = "live"
+                            logger.info(
+                                f"[live-scores] Inferred live from kickoff: "
+                                f"{m.get('home_name')} vs {m.get('away_name')} "
+                                f"(raw_status={raw_status!r}, elapsed={elapsed_min}min)"
+                            )
+                    except (ValueError, TypeError):
+                        pass
+
             if status not in ("live", "finished"):
+                skipped_statuses[raw_status] = skipped_statuses.get(raw_status, 0) + 1
                 continue
 
             # Read goal count — try multiple field names (API returns camelCase
@@ -342,8 +363,9 @@ def live_scores() -> Dict[str, Any]:
             home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
             away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
 
+            _raw_id = m.get("id")
             result.append({
-                "id": m.get("id"),
+                "id": int(_raw_id) if _raw_id is not None else None,
                 "homeTeam": home_name,
                 "awayTeam": away_name,
                 "status": status,
@@ -352,7 +374,12 @@ def live_scores() -> Dict[str, Any]:
                 "minute": minute,
                 "dateUnix": m.get("date_unix"),
             })
-        logger.info(f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw)")
+        if skipped_statuses:
+            logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
+        logger.info(
+            f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
+            f"| scores: {[(r['homeTeam'][:12], r['score']['home'], r['score']['away']) for r in result[:5]]}"
+        )
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:
         logger.error(f"[live-scores] Error: {e}")

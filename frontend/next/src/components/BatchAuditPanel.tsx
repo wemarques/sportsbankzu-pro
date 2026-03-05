@@ -13,6 +13,8 @@ import {
   Brain,
   Wrench,
   AlertTriangle,
+  Layers,
+  Link2,
 } from "lucide-react";
 import type {
   BatchAuditResult,
@@ -20,6 +22,9 @@ import type {
   BatchAuditMatchResult,
   ModelUpdateRecommendation,
   LeagueAuditStats,
+  AuditCombinada,
+  AuditCombinadaLeg,
+  AuditCombinadas,
 } from "@/lib/api";
 
 interface BatchAuditPanelProps {
@@ -115,6 +120,105 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
         <Wrench size={14} />
         <span>Próximo re-treino: <strong>{rec.next_retrain_suggestion}</strong></span>
       </div>
+    </div>
+  );
+}
+
+function CombinadaCard({ c }: { c: AuditCombinada }) {
+  const isIntra = c.tipo === "intra";
+  const stColor = c.status_combinada === "SAFE" ? "#00df82" : c.status_combinada === "MISTA" ? "#c4a0ff" : "#ffaa44";
+  const stBg = c.status_combinada === "SAFE" ? "rgba(0,223,130,0.08)" : c.status_combinada === "MISTA" ? "rgba(157,80,255,0.08)" : "rgba(255,136,0,0.06)";
+  const stBorder = c.status_combinada === "SAFE" ? "rgba(0,223,130,0.25)" : c.status_combinada === "MISTA" ? "rgba(157,80,255,0.25)" : "rgba(255,136,0,0.2)";
+  const timeStr = (dt: string) => {
+    try { const d = new Date(dt); return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }); }
+    catch { return "--:--"; }
+  };
+
+  const legStatusBg = (s: string) => s.toUpperCase().startsWith("SAFE") ? "rgba(0,223,130,0.12)" : "rgba(255,136,0,0.12)";
+  const legStatusColor = (s: string) => s.toUpperCase().startsWith("SAFE") ? "#00df82" : "#ffaa44";
+
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${stBorder}`, background: stBg, padding: "10px 12px", marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {isIntra ? <Layers size={11} style={{ color: "#c4a0ff" }} /> : <Link2 size={11} style={{ color: "#00df82" }} />}
+          <span style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888" }}>
+            {isIntra ? "Intra-jogo" : "Inter-jogo"}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: "0.6rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
+          <span style={{ fontSize: "0.6rem", fontWeight: 700, borderRadius: 4, padding: "1px 5px", background: `${stColor}22`, color: stColor }}>{c.status_combinada}</span>
+        </div>
+      </div>
+      {([c.leg1, c.leg2] as AuditCombinadaLeg[]).map((leg, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+          <span style={{ width: 14, height: 14, borderRadius: "50%", background: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.55rem", color: "#888", flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {leg.homeTeam} <span style={{ color: "#666" }}>x</span> {leg.awayTeam} <span style={{ color: "#555", fontWeight: 400 }}>{timeStr(leg.datetime)}</span>
+            </div>
+            <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 1, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.65rem", color: "#00df82", fontWeight: 500 }}>{leg.mercado}</span>
+              <span style={{ fontSize: "0.6rem", borderRadius: 4, padding: "1px 4px", fontWeight: 700, background: legStatusBg(leg.status), color: legStatusColor(leg.status) }}>
+                {leg.status} {leg.prob_min}–{leg.prob_max}%
+              </span>
+              <span style={{ fontSize: "0.6rem", color: "#555" }}>@{leg.odd_minima.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: 2 }}>
+        <span style={{ fontSize: "0.6rem", color: "#555", textTransform: "uppercase", letterSpacing: "0.05em" }}>Odd Combinada</span>
+        <span style={{ fontSize: "1rem", fontWeight: 900, color: "#fff" }}>{c.odd_combinada.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CombinadasSection({ data }: { data: AuditCombinadas }) {
+  const [tab, setTab] = useState<"intra" | "inter">("intra");
+  const list = tab === "intra" ? data.intra : data.inter;
+  const total = tab === "intra" ? data.total_intra : data.total_inter;
+
+  if (data.total_intra === 0 && data.total_inter === 0) return null;
+
+  return (
+    <div className="mdc-batch-audit__block">
+      <h3 className="mdc-batch-audit__block-title">
+        <Layers size={16} /> Duplas Recomendadas ({data.total_jogos} jogos)
+      </h3>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {(["intra", "inter"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)",
+              background: tab === t ? "rgba(157,80,255,0.18)" : "rgba(255,255,255,0.03)",
+              color: tab === t ? "#c4a0ff" : "#777", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            {t === "intra" ? "Intra-jogo" : "Inter-jogo"} ({t === "intra" ? data.total_intra : data.total_inter})
+          </button>
+        ))}
+      </div>
+      {list.length === 0 ? (
+        <div style={{ color: "#555", fontSize: "0.75rem", textAlign: "center", padding: "16px 0" }}>
+          Nenhuma dupla {tab === "intra" ? "intra-jogo" : "inter-jogo"} encontrada.
+        </div>
+      ) : (
+        <div>
+          {list.map((c, i) => (
+            <CombinadaCard key={i} c={c} />
+          ))}
+          {total > list.length && (
+            <div style={{ fontSize: "0.65rem", color: "#555", textAlign: "center", marginTop: 4 }}>
+              Mostrando {list.length} de {total} duplas
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -319,6 +423,11 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                     </table>
                   </div>
                 </div>
+              )}
+
+              {/* Combinadas (duplas) section */}
+              {result.combinadas && (
+                <CombinadasSection data={result.combinadas} />
               )}
 
               {/* Match results grouped by league (collapsible) */}

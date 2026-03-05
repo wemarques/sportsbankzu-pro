@@ -707,7 +707,7 @@ def build_records_from_matches(
             total_gols = None
         records.append({
             "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
-            "footystatsId": r.get("id"),
+            "footystatsId": int(r.get("id")) if r.get("id") is not None else None,
             "leagueId": league_id,
             "leagueName": league_id.replace("-", " ").title(),
             "homeTeam": home,
