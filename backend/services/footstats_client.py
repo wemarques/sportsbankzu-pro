@@ -213,10 +213,17 @@ class FootyStatsClient:
         params = {"league_id": season_id} # O endpoint league-tables usa league_id mas refere-se ao season_id
         return self._request("league-tables", params, ttl_minutes=360)
 
+    # Suffixes that indicate cup/reserve/youth/playoff competitions.
+    # Used by resolve_season_id to deprioritize these when looking for the main league.
+    _CUP_SUFFIXES = ("cup", "playoff", "play-off", "play off", "reserve", "u19", "u21", "women", "super cup")
+
     def resolve_season_id(self, country: str, league_name: str, alt_names: Optional[List[str]] = None) -> Optional[int]:
         """Resolve o season_id dinamicamente buscando na lista de ligas da API.
         Tries the primary league_name first, then alt_names for leagues with
-        multiple possible API names (e.g. Portugal: Primeira Liga / Liga NOS / Liga Portugal)."""
+        multiple possible API names (e.g. Portugal: Primeira Liga / Liga NOS / Liga Portugal).
+
+        Deprioritizes cup/reserve/youth competitions to avoid false matches
+        (e.g. "J-League Cup" when looking for "J1 League")."""
         leagues_data = self.get_league_list(chosen_only=False)
         if not leagues_data.get("success"):
             logger.warning(f"resolve_season_id: league-list API failed for {country}/{league_name}")
@@ -227,6 +234,8 @@ class FootyStatsClient:
             names_to_try.extend(n.lower() for n in alt_names)
 
         country_lower = country.lower()
+        best_match = None  # (season_id, api_league_name, is_cup)
+
         for league in leagues_data.get("data", []):
             api_league_name = league.get("name", "").lower()
             if country_lower not in api_league_name:
@@ -234,9 +243,30 @@ class FootyStatsClient:
             for name in names_to_try:
                 if name in api_league_name:
                     seasons = league.get("season", [])
-                    if seasons:
-                        sid = seasons[-1].get("id")
-                        logger.info(f"resolve_season_id: {country}/{league_name} -> '{api_league_name}' season_id={sid}")
-                        return sid
+                    if not seasons:
+                        continue
+                    sid = seasons[-1].get("id")
+                    is_cup = any(s in api_league_name for s in self._CUP_SUFFIXES)
+
+                    # Prefer non-cup matches; if we already have a non-cup match, skip cups
+                    if best_match is not None:
+                        if best_match[2] and not is_cup:
+                            # Current best is a cup, this is not — upgrade
+                            best_match = (sid, api_league_name, is_cup)
+                        # Otherwise keep the first non-cup match
+                    else:
+                        best_match = (sid, api_league_name, is_cup)
+
+                    # If we found a non-cup match, no need to keep searching
+                    if not is_cup:
+                        break
+            # If we already have a non-cup match, stop iterating leagues
+            if best_match and not best_match[2]:
+                break
+
+        if best_match:
+            logger.info(f"resolve_season_id: {country}/{league_name} -> '{best_match[1]}' season_id={best_match[0]}")
+            return best_match[0]
+
         logger.warning(f"resolve_season_id: no match for {country} with names {names_to_try}")
         return None

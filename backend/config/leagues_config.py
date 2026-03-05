@@ -27,6 +27,7 @@ LEAGUE_ID_ALIASES = {
     "denmark-superliga": "superliga",
     "switzerland-super-league": "super-league",
     "turkey-super-lig": "super-lig",
+    "spain-segunda-division": "segunda-division",
     # --- 11 new leagues (Safe Bets Engine v3.5) ---
     "japan-j-league": "j-league",
     "south-korea-k-league": "k-league",
@@ -85,8 +86,8 @@ LEAGUES_CONFIG = [
 
     # --- 11 NOVAS LIGAS (Safe Bets Engine v3.5) ---
     # ÁSIA
-    {"country": "Japan", "name": "J-League", "id": "j-league",
-     "alt_names": ["j1-league", "meiji yasuda j1 league"]},
+    {"country": "Japan", "name": "J1 League", "id": "j-league",
+     "alt_names": ["j1 league", "j-league", "meiji yasuda j1 league"]},
     {"country": "South Korea", "name": "K-League", "id": "k-league",
      "alt_names": ["k league 1", "hana 1 bank k league 1"]},
 
