@@ -8,7 +8,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E-green.svg)](https://playwright.dev/)
 
-**Última revisão:** 2026-03-03
+**Última revisão:** 2026-03-05
 
 ---
 
@@ -56,6 +56,9 @@ O **SportsBankZU Pro** é um sistema completo de análise e prognósticos esport
 - Estratégias Safe Bets: Under 3.5 Defensivo, BTTS Não, Safe Corners Over 9.5, Timing 2º Tempo (V3.5)
 - Badge visual Safe Bets no dashboard com indicadores de risco (SAFE/MODERADO/NO BET) e tags por estratégia (V3.5)
 - Cobertura expandida de 22 para 33 ligas monitoradas com DNA configurado (V3.5)
+- Eliminação de placares falsos 0-0 que corrompiam métricas de auditoria — scores nulos agora propagados como `None` (V3.5.1)
+- Endpoint `POST /api/ai/score-correction` para correção manual de resultados com re-auditoria (V3.5.1)
+- Auditoria de duplas (combinadas INTRA e INTER) com taxa de acerto por tipo no cron batch audit (V3.5.1)
 
 ### Dashboard Next.js (Produção)
 
@@ -505,6 +508,10 @@ GET http://localhost:5001/live-scores
 
 # Gerar quadro-resumo profissional
 GET http://localhost:5001/quadro-resumo?league=premier-league&date=week&incluir_simples=true&incluir_duplas=true&incluir_triplas=false&incluir_governanca=true
+
+# Corrigir score de jogo com dados ausentes/errados
+POST http://localhost:5001/api/ai/score-correction
+# Body: {"match_id": "...", "home_team": "Lanús", "away_team": "Boca Juniors", "home_goals": 0, "away_goals": 3, "league": "primera-division"}
 ```
 
 ### Streamlit
@@ -577,6 +584,28 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 ---
 
 ## 🔄 Histórico de Alterações (Changelog)
+
+### V3.5.1 — 5 de Março de 2026 (Fix Score Accuracy + Dupla Audit)
+
+#### Backend — Score Accuracy Fix (Problema Lanús 0-3 Boca → 0-0 no sistema)
+- **fix(mapper):** `FootyStatsMatchInput` — defaults de `homeGoalCount`, `awayGoalCount`, `totalGoalCount` alterados de `0` para `None` em `data_mapper.py`, eliminando a confusão entre "0 gols" e "dados ausentes"
+- **fix(mapper):** `map_match_to_internal()` — fallback `0` removido do mapeamento de gols; campos agora propagam `None` quando a API não retorna dados
+- **fix(fixtures):** `fixtures_service.py` — jogos ao vivo com dados de gol ausentes **não são mais defaultados para 0-0**; sistema loga warning e mantém `match_score = None`
+- **fix(fixtures):** Logging de warning adicionado para jogos finalizados sem dados de gol — indica gap de cobertura da API para a liga
+- **fix(audit):** `ai_analysis.py` batch audit agora **pula** jogos sem score verificado em vez de auditar contra 0-0 falso
+- **fix(audit):** `cron_handler.py` — mesma validação de score `None` aplicada ao cron audit e ao tracking de dupla accuracy
+
+#### Backend — Score Correction Endpoint
+- **feat(api):** Novo endpoint `POST /api/ai/score-correction` para correção manual de resultados quando API retorna dados errados/ausentes
+- **feat(api):** Correções registradas no audit DB como `SCORE_CORRECTION` com confiança 100% e rastreabilidade completa
+- **feat(api):** Resposta inclui resultado corrigido calculado (1X2, total_goals, btts) para validação imediata
+
+#### Backend — Dupla (Combinada) Audit
+- **feat(audit):** Auditoria de duplas INTRA e INTER adicionada ao `cron_handler.py` batch audit
+- **feat(audit):** Tracking de taxa de acerto por tipo: `dupla_intra_accuracy_pct`, `dupla_inter_accuracy_pct`, `dupla_overall_accuracy_pct`
+- **feat(audit):** Contadores detalhados: `dupla_intra_correct/total`, `dupla_inter_correct/total`
+- **feat(audit):** Lookup de resultado real por match ID e por homeTeam+awayTeam para avaliação de cada perna da dupla
+- **fix(audit):** Dupla accuracy tracking agora valida score `None` antes de incluir no lookup — evita avaliação contra dados fantasma
 
 ### V3.5 — Março de 2026 (Motor Safe Bets — 3 Camadas)
 
