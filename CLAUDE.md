@@ -61,6 +61,18 @@ Context7 MCP is configured for this project. Use it to fetch up-to-date document
 - `FUTEBOL_ROOT` / `DATA_ROOT` — Root data directory for backend
 - `S3_BUCKET` — Optional S3 bucket for data storage
 
+## Regra de Investigação Obrigatória
+
+Antes de propor ou implementar qualquer correção:
+
+1. **Não assuma a causa raiz** — investigue todos os caminhos de código envolvidos, do backend ao frontend, incluindo mappers, services, routes e componentes React
+2. **Trace o fluxo completo** — siga o dado desde a origem (API externa) até a renderização final no browser, identificando cada transformação intermediária
+3. **Verifique todos os pontos de entrada** — um mesmo campo pode ser setado em múltiplos locais (mapper, service, route, endpoint de overlay, polling do frontend). Cheque todos antes de concluir
+4. **Considere caching e deploy** — cache da API (SQLite TTL), cache do browser, builds desatualizados no Vercel e cold starts do Lambda podem mascarar ou perpetuar bugs
+5. **Valide com dados reais** — quando possível, adicione logging temporário ou leia logs existentes para confirmar qual valor a API externa realmente retorna, em vez de supor
+6. **Implemente defesa em profundidade** — não confie em uma única camada de correção. Se o bug pode ocorrer por múltiplas causas (ex: status "incomplete", "live", campo numérico inesperado), adicione guards em cada camada relevante
+7. **Teste o cenário completo** — após implementar, simule mentalmente o fluxo com os dados do bug reportado e confirme que TODAS as variantes são cobertas antes de declarar resolvido
+
 ## Conventions
 
 - Language: Portuguese (pt-BR) for UI, English for code and comments

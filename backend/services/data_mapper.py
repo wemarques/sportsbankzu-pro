@@ -21,9 +21,9 @@ class FootyStatsMatchInput(BaseModel):
     away_name: Optional[str] = None
     homeID: Optional[int] = None
     awayID: Optional[int] = None
-    homeGoalCount: Optional[int] = 0
-    awayGoalCount: Optional[int] = 0
-    totalGoalCount: Optional[int] = 0
+    homeGoalCount: Optional[int] = None
+    awayGoalCount: Optional[int] = None
+    totalGoalCount: Optional[int] = None
     # Half-time
     total_goals_at_half_time: Optional[int] = -1
     home_team_goal_count_half_time: Optional[int] = -1
@@ -137,9 +137,9 @@ class DataMapper:
             "team_b_name": api_match.get("away_name") or api_match.get("awayID"),
             "attendance": api_match.get("attendance", -1),
             "referee": api_match.get("referee") or api_match.get("refree"),
-            "home_team_goal_count": api_match.get("homeGoalCount", 0),
-            "away_team_goal_count": api_match.get("awayGoalCount", 0),
-            "total_goal_count": api_match.get("totalGoalCount", 0),
+            "home_team_goal_count": api_match.get("homeGoalCount"),
+            "away_team_goal_count": api_match.get("awayGoalCount"),
+            "total_goal_count": api_match.get("totalGoalCount"),
             # Half-time
             "total_goals_at_half_time": api_match.get("total_goals_at_half_time", -1),
             "home_team_goal_count_half_time": api_match.get("home_team_goal_count_half_time", -1),
