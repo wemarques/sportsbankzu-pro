@@ -195,6 +195,11 @@ class FootyStatsClient:
         params = {"match_id": match_id}
         return self._request("match", params, ttl_minutes=60)
 
+    def get_match_live_details(self, match_id: int) -> Dict[str, Any]:
+        """Retorna detalhes de uma partida com cache curto (1 min) para scores ao vivo."""
+        params = {"match_id": match_id}
+        return self._request("match", params, ttl_minutes=1)
+
     def get_league_season_stats(self, season_id: int) -> Dict[str, Any]:
         """Retorna estatísticas agregadas da temporada e times."""
         params = {"season_id": season_id}

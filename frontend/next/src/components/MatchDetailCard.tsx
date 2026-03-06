@@ -364,7 +364,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 )}
               </div>
               <div className="mdc-live-score__value">
-                {typeof match.score?.home === "number" ? match.score.home : 0} - {typeof match.score?.away === "number" ? match.score.away : 0}
+                {typeof match.score?.home === "number" ? match.score.home : "-"} - {typeof match.score?.away === "number" ? match.score.away : "-"}
               </div>
               {match.score?.halftime && typeof match.score.halftime.home === "number" && (
                 <div className="mdc-live-score__ht">
