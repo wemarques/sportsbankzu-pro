@@ -171,26 +171,35 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         # Fallback: league-matches may not include today's fixtures on page 1
                         # (pagination issue for leagues deep into their season).
                         # Use the todays-matches endpoint which returns all of today's matches.
-                        records = _fallback_todays_matches(lid, league_config, date)
+                        records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
                         if records:
                             logger.info(f"[fixtures] {lid}: todays-matches fallback found {len(records)} records")
                     found_via_api = True
                 else:
                     logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
                     # Fallback to todays-matches when league-matches fails
-                    records = _fallback_todays_matches(lid, league_config, date)
+                    records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
                     if records:
                         logger.info(f"[fixtures] {lid}: todays-matches fallback (after league-matches fail) found {len(records)} records")
                         found_via_api = True
             else:
                 logger.warning(f"[fixtures] {lid}: could not resolve season_id for {league_config}")
+                # Try todays-matches even without season_id (name-based matching)
+                records = _fallback_todays_matches(lid, league_config, date, season_id=None)
+                if records:
+                    logger.info(f"[fixtures] {lid}: todays-matches fallback (no season_id) found {len(records)} records")
+                    found_via_api = True
         except Exception as e:
             logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
 
-    # FALLBACK: CSV files
+    # FALLBACK: CSV files (skip mock data in production to avoid poisoning batches)
+    _is_production = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL"))
     if not found_via_api:
         from backend.main import resolve_league_dir, generate_mock_fixtures as gen_mock
         if pd is None or not os.path.isdir(base):
+            if _is_production:
+                logger.info(f"[fixtures] {lid}: no data available, returning empty (production mode)")
+                return []
             return gen_mock(lid, date)
 
         league_dir = resolve_league_dir(base, lid)
@@ -201,6 +210,9 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
         players_path = os.path.join(league_dir, "players.csv")
 
         if not os.path.exists(matches_path):
+            if _is_production:
+                logger.info(f"[fixtures] {lid}: no CSV data, returning empty (production mode)")
+                return []
             return gen_mock(lid, date)
 
         try:
@@ -224,16 +236,17 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     r["dataSource"] = "Arquivos CSV (Histórico)"
         except Exception as e:
             logger.error(f"Erro ao ler CSV para {lid}: {e}")
-            from backend.main import generate_mock_fixtures as gen_mock2
-            records = gen_mock2(lid, date)
+            if not _is_production:
+                from backend.main import generate_mock_fixtures as gen_mock2
+                records = gen_mock2(lid, date)
 
     return records
 
 
-def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[Dict[str, Any]]:
+def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id: int = None) -> List[Dict[str, Any]]:
     """Fallback: use todays-matches endpoint when league-matches has no records for today.
     This endpoint returns all matches across all leagues for today in one call,
-    so we filter by country+league name to extract only the relevant ones."""
+    so we filter by competition_id (season_id) or country+league name to extract only the relevant ones."""
     if date not in ("today", "tomorrow"):
         return []
     try:
@@ -262,8 +275,25 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[D
 
         matched = []
         for m in raw_list:
-            # FootyStats todays-matches uses "competition_name" or "league_name"
-            comp = (m.get("competition_name") or m.get("league_name") or m.get("name") or "").lower()
+            # Primary matching: by competition_id / league_id (most reliable)
+            if season_id is not None:
+                m_comp_id = m.get("competition_id") or m.get("league_id")
+                if m_comp_id is not None:
+                    try:
+                        if int(m_comp_id) == int(season_id):
+                            matched.append(m)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+            # Secondary matching: by country + competition name (string-based)
+            # Try multiple field name patterns (API returns vary)
+            comp_raw = m.get("competition_name") or m.get("league_name") or ""
+            if not comp_raw and isinstance(m.get("competition"), dict):
+                comp_raw = m["competition"].get("name", "")
+            if not comp_raw:
+                comp_raw = m.get("name") or ""
+            comp = comp_raw.lower()
             # Also check "country" field if available
             m_country = (m.get("country") or "").lower()
             country_match = country in comp or country == m_country
@@ -274,9 +304,22 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str) -> List[D
             matched.append(m)
 
         if not matched:
+            # Log sample competition names for debugging
+            sample_comps = set()
+            for m in raw_list[:20]:
+                cn = m.get("competition_name") or m.get("league_name") or ""
+                if not cn and isinstance(m.get("competition"), dict):
+                    cn = m["competition"].get("name", "")
+                if cn:
+                    sample_comps.add(cn)
+            logger.warning(
+                f"[fixtures] {lid}: todays-matches fallback found 0 matches "
+                f"(season_id={season_id}, country={country}, names={names_to_match}, "
+                f"total_raw={len(raw_list)}, sample_comps={list(sample_comps)[:10]})"
+            )
             return []
 
-        logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures")
+        logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures (season_id={season_id})")
 
         # Build minimal records from todays-matches data
         from backend.main import date_range
@@ -460,30 +503,57 @@ def live_scores() -> Dict[str, Any]:
                                  "team_a_goals", "homeScore", "home_score")
             _GOAL_AWAY_FIELDS = ("awayGoalCount", "away_team_goal_count", "away_goals",
                                  "team_b_goals", "awayScore", "away_score")
+            def _valid_goal(val):
+                """Return int if val is a valid goal count (>= 0), else None."""
+                if val is None:
+                    return None
+                try:
+                    v = int(val)
+                    return v if v >= 0 else None  # -1 = no data
+                except (ValueError, TypeError):
+                    return None
+
             home_goals = None
             for _f in _GOAL_HOME_FIELDS:
-                home_goals = m.get(_f)
+                home_goals = _valid_goal(m.get(_f))
                 if home_goals is not None:
                     break
             away_goals = None
             for _f in _GOAL_AWAY_FIELDS:
-                away_goals = m.get(_f)
+                away_goals = _valid_goal(m.get(_f))
                 if away_goals is not None:
                     break
 
-            # If individual goal fields are missing, check if we have a
-            # totalGoalCount — at least we know goals happened even if we
-            # can't split home/away.
+            # If individual goal fields are missing, try totalGoalCount as evidence
+            # that goals were scored (even if we can't split home/away)
             _has_goal_data = home_goals is not None and away_goals is not None
+            if not _has_goal_data:
+                _total = _valid_goal(m.get("totalGoalCount"))
+                if _total is not None and _total > 0:
+                    # We know goals happened but can't split — use total as hint
+                    # Try to infer from half-time data if available
+                    _ht_h = _valid_goal(m.get("home_team_goal_count_half_time"))
+                    _ht_a = _valid_goal(m.get("away_team_goal_count_half_time"))
+                    if _ht_h is not None and _ht_a is not None:
+                        home_goals = home_goals if home_goals is not None else _ht_h
+                        away_goals = away_goals if away_goals is not None else _ht_a
+                        _has_goal_data = True
+                        logger.info(
+                            f"[live-scores] Using HT data as fallback for "
+                            f"{m.get('home_name')} vs {m.get('away_name')} "
+                            f"(totalGoalCount={_total}, ht={_ht_h}-{_ht_a})"
+                        )
 
             if not _has_goal_data:
                 if status == "live":
-                    score_keys = [k for k in m.keys() if "goal" in k.lower() or "score" in k.lower()]
+                    # Log all goal/score related fields and their raw values for debugging
+                    goal_fields = {k: m.get(k) for k in m.keys() if "goal" in k.lower() or "score" in k.lower() or "Goal" in k}
                     logger.warning(
                         f"[live-scores] Missing goal fields for live match: "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(raw_status={raw_status!r}, score_keys={score_keys}, "
-                        f"all_keys={list(m.keys())})"
+                        f"(raw_status={raw_status!r}, goal_fields={goal_fields}, "
+                        f"totalGoalCount={m.get('totalGoalCount')}, "
+                        f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
                     )
                     # Do NOT default to 0-0 when goal data is missing —
                     # returning a fake 0-0 overwrites any correct score the
@@ -492,11 +562,9 @@ def live_scores() -> Dict[str, Any]:
                 else:
                     continue
 
-            try:
-                home_goals = int(home_goals)
-                away_goals = int(away_goals)
-            except (ValueError, TypeError):
-                home_goals, away_goals = 0, 0
+            # _valid_goal already returns int, but ensure type safety
+            home_goals = int(home_goals)
+            away_goals = int(away_goals)
 
             ht_home = m.get("home_team_goal_count_half_time")
             ht_away = m.get("away_team_goal_count_half_time")
