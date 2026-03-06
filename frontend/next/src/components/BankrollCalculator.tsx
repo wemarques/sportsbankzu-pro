@@ -188,6 +188,8 @@ function BankSlider({
   icon,
   color,
   description,
+  allocations,
+  bankroll,
 }: {
   label: string;
   value: number;
@@ -195,7 +197,13 @@ function BankSlider({
   icon: React.ReactNode;
   color: string;
   description: string;
+  allocations?: BetAllocation[];
+  bankroll?: number;
 }) {
+  const [showGames, setShowGames] = useState(false);
+  const catBudget = bankroll ? bankroll * (value / 100) : 0;
+  const totalStaked = allocations?.reduce((s, a) => s + a.stake, 0) ?? 0;
+
   return (
     <div className="group relative">
       <div className="flex items-center justify-between mb-2">
@@ -241,6 +249,85 @@ function BankSlider({
         className="absolute bottom-0 left-0 w-full h-2 opacity-0 cursor-pointer"
         style={{ zIndex: 2 }}
       />
+
+      {/* Game allocations inline */}
+      {allocations && allocations.length > 0 && (
+        <div className="mt-3">
+          <button
+            onClick={() => setShowGames(!showGames)}
+            className="flex items-center gap-1.5 text-[0.65rem] font-semibold transition-colors"
+            style={{ color: `${color}cc` }}
+          >
+            {showGames ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {allocations.length} {allocations.length === 1 ? "jogo" : "jogos"} &middot;{" "}
+            {formatCurrency(totalStaked)} de {formatCurrency(catBudget)}
+          </button>
+
+          {showGames && (
+            <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              {allocations.map((a) => {
+                const isDupla =
+                  a.bet.category === "dupla_intra" || a.bet.category === "dupla_inter";
+                return (
+                  <div
+                    key={a.bet.id}
+                    className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border"
+                    style={{
+                      background: `${color}06`,
+                      borderColor: `${color}15`,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                        {a.bet.homeTeam}{" "}
+                        <span className="text-[var(--color-text-muted)]">x</span>{" "}
+                        {a.bet.awayTeam}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span
+                          className="text-[0.6rem] font-medium px-1.5 py-px rounded"
+                          style={{ background: `${color}15`, color }}
+                        >
+                          {a.bet.market}
+                        </span>
+                        {isDupla && a.bet.leg2Market && (
+                          <>
+                            <span className="text-[0.5rem] text-[var(--color-text-muted)]">+</span>
+                            <span
+                              className="text-[0.6rem] font-medium px-1.5 py-px rounded"
+                              style={{ background: `${color}15`, color }}
+                            >
+                              {a.bet.leg2Market}
+                            </span>
+                          </>
+                        )}
+                        <span className="text-[0.58rem] text-[var(--color-text-muted)]">
+                          {a.bet.leagueName}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div
+                        className="text-[0.78rem] font-black tabular-nums"
+                        style={{ color }}
+                      >
+                        {formatCurrency(a.stake)}
+                      </div>
+                      <div className="text-[0.55rem] text-[var(--color-text-muted)]">
+                        odd {a.bet.odd.toFixed(2)} &middot; EV{" "}
+                        <span style={{ color: evColor(a.ev) }}>
+                          {a.ev > 0 ? "+" : ""}
+                          {(a.ev * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -723,6 +810,8 @@ export default function BankrollCalculator() {
               icon={<Target size={16} style={{ color: "#22c55e" }} />}
               color="#22c55e"
               description="Apostas unitarias com alto EV"
+              allocations={distribution?.simples}
+              bankroll={settings.bankroll}
             />
 
             <BankSlider
@@ -732,6 +821,8 @@ export default function BankrollCalculator() {
               icon={<Layers size={16} style={{ color: "#c4a0ff" }} />}
               color="#c4a0ff"
               description="Dois mercados no mesmo jogo"
+              allocations={distribution?.dupla_intra}
+              bankroll={settings.bankroll}
             />
 
             <BankSlider
@@ -741,6 +832,8 @@ export default function BankrollCalculator() {
               icon={<Link2 size={16} style={{ color: "#00bbff" }} />}
               color="#00bbff"
               description="Mercados em jogos diferentes"
+              allocations={distribution?.dupla_inter}
+              bankroll={settings.bankroll}
             />
 
             {totalPct !== 100 && (
