@@ -9,6 +9,7 @@ import { AVAILABLE_LEAGUES, type SafeBetsResult } from "@/lib/leagues";
 
 export type Match = {
   id: string;
+  footystatsId?: number;
   leagueId: string;
   leagueName: string;
   homeTeam: {
@@ -31,6 +32,8 @@ export type Match = {
     away: number;
     halftime?: { home: number; away: number };
   };
+  period?: "1T" | "HT" | "2T" | null;
+  minute?: number | null;
   odds: {
     home: number;
     draw: number;
@@ -155,19 +158,27 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
   const lastLabel = isNaN(last.getTime()) ? data.lastUpdated : format(last, "dd/MM HH:mm");
   const statusColor =
     data.status === "live"
-      ? "success"
+      ? "danger"
       : data.status === "finished"
       ? "info"
       : data.status === "postponed"
       ? "warning"
       : "default";
+  const statusLabel =
+    data.status === "live"
+      ? "AO VIVO"
+      : data.status === "finished"
+      ? "FINALIZADO"
+      : data.status === "postponed"
+      ? "ADIADO"
+      : "AGENDADO";
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-semibold">{(() => { const league = AVAILABLE_LEAGUES.find((l) => l.id === data.leagueId); return league?.country ? `${league.country} - ` : ""; })()}{data.leagueName}</span>
-            <Badge variant={statusColor as any}>{data.status}</Badge>
+            <Badge variant={statusColor as any}>{statusLabel}</Badge>
             <Badge variant="default">{data.source}</Badge>
           </div>
           <div className="muted text-xs">Atualizado: {lastLabel}</div>
@@ -185,7 +196,28 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
           <div className="text-center">
             <div className="text-sm muted">{data.venue}</div>
             <div className="text-sm">{dtLabel}</div>
-            {data.score && typeof data.score.home === "number" && typeof data.score.away === "number" && (
+            {data.status === "live" ? (
+              <div className="mt-2">
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff4444", display: "inline-block", animation: "pulse 2s infinite" }} />
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#ff4444", letterSpacing: "0.5px" }}>AO VIVO</span>
+                  {data.period && (
+                    <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#ff4444" }}>{data.period}</span>
+                  )}
+                  {data.minute != null && data.period !== "HT" && (
+                    <span style={{ fontSize: "0.65rem", color: "var(--text-muted, #aaa)" }}>{data.minute}&apos;</span>
+                  )}
+                </div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ff4444", fontVariantNumeric: "tabular-nums", textShadow: "0 0 10px rgba(255,68,68,0.3)" }}>
+                  {data.score ? `${data.score.home} - ${data.score.away}` : "0 - 0"}
+                </div>
+                {data.score?.halftime && typeof data.score.halftime.home === "number" && (
+                  <span className="muted text-xs">
+                    HT {data.score.halftime.home}-{data.score.halftime.away}
+                  </span>
+                )}
+              </div>
+            ) : data.score && typeof data.score.home === "number" && typeof data.score.away === "number" ? (
               <div className="mt-1">
                 <Badge variant="accent">
                   {data.score.home} - {data.score.away}
@@ -196,7 +228,7 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
                   </span>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
           <TeamCell
             name={data.awayTeam.name}

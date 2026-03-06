@@ -741,20 +741,62 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+}
+
+.mdc-live-score__indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.mdc-live-score__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: mdc-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(255, 68, 68, 0.6);
+}
+
+.mdc-live-score__label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #ff4444;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.mdc-live-score__period {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.12);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.mdc-live-score__minute {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--mdc-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .mdc-live-score__value {
-  font-size: 1.6rem;
+  font-size: 1.8rem;
   font-weight: 800;
   color: #ff4444;
-  animation: mdc-pulse 2s infinite;
-  font-family: 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(255, 68, 68, 0.4);
+  letter-spacing: 2px;
 }
 
 .mdc-live-score__ht {
   font-size: 0.65rem;
   color: var(--mdc-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .mdc-final-score {

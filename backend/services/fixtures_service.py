@@ -104,20 +104,28 @@ def build_records_from_matches(
         # Guard: if API reports "live" but kickoff is in the future, override to "scheduled".
         # FootyStats sometimes returns "incomplete" or even "live" for matches that haven't
         # kicked off yet. We check date_unix to confirm the match has actually started.
+        import time as _time
+        _kickoff_ts = r.get("date_unix") or r.get("timestamp")
+        _elapsed_min = None
+        if _kickoff_ts:
+            try:
+                _elapsed_min = (int(_time.time()) - int(_kickoff_ts)) // 60
+            except (ValueError, TypeError):
+                pass
         if status == "live":
-            import time as _time
-            _kickoff_ts = r.get("date_unix") or r.get("timestamp")
-            if _kickoff_ts:
-                try:
-                    _elapsed_min = (int(_time.time()) - int(_kickoff_ts)) // 60
-                    if _elapsed_min < -2:  # More than 2 minutes before kickoff
-                        logger.info(
-                            f"[fixtures_service] Overriding 'live' → 'scheduled' for {home} vs {away} "
-                            f"(kickoff in {abs(_elapsed_min)} min, raw_status={r.get('status')!r})"
-                        )
-                        status = "scheduled"
-                except (ValueError, TypeError):
-                    pass
+            if _elapsed_min is not None and _elapsed_min < -2:  # More than 2 minutes before kickoff
+                logger.info(
+                    f"[fixtures_service] Overriding 'live' → 'scheduled' for {home} vs {away} "
+                    f"(kickoff in {abs(_elapsed_min)} min, raw_status={r.get('status')!r})"
+                )
+                status = "scheduled"
+        # Promote scheduled → live when kickoff has passed (same heuristic as /live-scores)
+        if status == "scheduled" and _elapsed_min is not None and 0 <= _elapsed_min < 150:
+            logger.info(
+                f"[fixtures_service] Promoting 'scheduled' → 'live' for {home} vs {away} "
+                f"(elapsed={_elapsed_min}min, raw_status={r.get('status')!r})"
+            )
+            status = "live"
         # Skip postponed / cancelled matches — do not generate predictions for them
         if status in ("postponed", "cancelled"):
             logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
@@ -164,17 +172,14 @@ def build_records_from_matches(
                 f"[fixtures_service] Live match {home} vs {away} has no goal data — "
                 f"NOT defaulting to 0-0 (raw home_goals={_raw_h}, away_goals={_raw_a})"
             )
-        # Compute period/minute for live matches (same logic as /live-scores)
+        # Compute period/minute for live matches using _elapsed_min from above
         period = None
         minute = None
         if status == "live":
-            import time as _time
-            now_ts = int(_time.time())
-            kickoff_ts = r.get("date_unix")
             has_ht = match_score and match_score.get("halftime") is not None
-            if kickoff_ts:
+            if _elapsed_min is not None:
                 try:
-                    elapsed = max(0, (now_ts - int(kickoff_ts)) // 60)
+                    elapsed = max(0, _elapsed_min)
                     if elapsed <= 47:
                         period = "1T"
                         minute = min(elapsed, 45)
