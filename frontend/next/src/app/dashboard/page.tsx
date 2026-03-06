@@ -51,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.5";
+const VERSION_FALLBACK = "pro V3.6";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
