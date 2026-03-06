@@ -283,8 +283,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       if (raw && raw.home != null && raw.away != null) {
         return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
       }
-      // Default 0-0 for live/finished matches without valid score
-      if (["live", "finished"].includes(item.status ?? "")) {
+      // Default 0-0 only for finished matches — for live matches, leave undefined
+      // so the UI shows a loading indicator instead of a fake 0-0 score.
+      // The /live-scores overlay will update with the real score when available.
+      if (item.status === "finished") {
         return { home: 0, away: 0 };
       }
       // Discard invalid score objects (e.g. {home: null, away: null})
@@ -1861,8 +1863,8 @@ export default function Dashboard() {
                               )}
                             </div>
                           ) : displayStatus === "live" ? (
-                            <div className="st-match-row__score st-match-row__score--live">
-                              <span className="st-match-row__score-main">0 - 0</span>
+                            <div className="st-match-row__score st-match-row__score--live st-match-row__score--loading">
+                              <span className="st-match-row__score-main">- : -</span>
                             </div>
                           ) : null}
                           {oddsTab === "1x2" && (

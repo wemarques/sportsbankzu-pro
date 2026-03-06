@@ -591,45 +591,77 @@ def live_scores() -> Dict[str, Any]:
 
             if not _has_goal_data:
                 if status == "live":
-                    # Log all goal/score related fields and their raw values for debugging
-                    goal_fields = {k: m.get(k) for k in m.keys() if "goal" in k.lower() or "score" in k.lower() or "Goal" in k}
-                    logger.warning(
-                        f"[live-scores] Missing goal fields for live match: "
-                        f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(raw_status={raw_status!r}, goal_fields={goal_fields}, "
-                        f"totalGoalCount={m.get('totalGoalCount')}, "
-                        f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
-                    )
-                    # Still include the match so the frontend can update status
-                    # to "live" — but with score=null so it won't overwrite any
-                    # valid score the frontend already has.
-                    home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
-                    away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+                    # Fallback: fetch individual match details (1-min cache) for live goal data.
+                    # The todays-matches endpoint often returns -1 for goal counts during live matches.
                     _raw_id = m.get("id")
-                    # Compute period/minute even without goal data
-                    _ng_period = None
-                    _ng_minute = None
-                    if elapsed_min is not None and elapsed_min >= 0:
-                        if elapsed_min <= 47:
-                            _ng_period = "1T"
-                            _ng_minute = min(elapsed_min, 45)
-                        elif elapsed_min <= 62:
-                            _ng_period = "HT"
-                            _ng_minute = None
-                        else:
-                            _ng_period = "2T"
-                            _ng_minute = min(elapsed_min - 15, 90)
-                    result.append({
-                        "id": int(_raw_id) if _raw_id is not None else None,
-                        "homeTeam": home_name,
-                        "awayTeam": away_name,
-                        "status": status,
-                        "score": None,
-                        "period": _ng_period,
-                        "minute": _ng_minute,
-                        "dateUnix": m.get("date_unix"),
-                    })
-                    continue
+                    _fallback_ok = False
+                    if _raw_id is not None:
+                        try:
+                            detail = footstats.get_match_live_details(int(_raw_id))
+                            if detail.get("success"):
+                                dd = detail.get("data", {})
+                                # match endpoint may wrap in a list
+                                if isinstance(dd, list) and dd:
+                                    dd = dd[0]
+                                _fb_home = _valid_goal(dd.get("homeGoalCount"))
+                                _fb_away = _valid_goal(dd.get("awayGoalCount"))
+                                if _fb_home is not None and _fb_away is not None:
+                                    home_goals = _fb_home
+                                    away_goals = _fb_away
+                                    _has_goal_data = True
+                                    _fallback_ok = True
+                                    # Also extract halftime from detail
+                                    _fb_ht_h = _valid_goal(dd.get("home_team_goal_count_half_time"))
+                                    _fb_ht_a = _valid_goal(dd.get("away_team_goal_count_half_time"))
+                                    if _fb_ht_h is not None and _fb_ht_a is not None:
+                                        ht_home = _fb_ht_h
+                                        ht_away = _fb_ht_a
+                                    logger.info(
+                                        f"[live-scores] match-detail fallback OK for "
+                                        f"{m.get('home_name')} vs {m.get('away_name')} "
+                                        f"(id={_raw_id}, score={_fb_home}-{_fb_away})"
+                                    )
+                        except Exception as _fb_err:
+                            logger.warning(f"[live-scores] match-detail fallback failed for id={_raw_id}: {_fb_err}")
+
+                    if not _fallback_ok:
+                        goal_fields = {k: m.get(k) for k in m.keys() if "goal" in k.lower() or "score" in k.lower() or "Goal" in k}
+                        logger.warning(
+                            f"[live-scores] Missing goal fields for live match: "
+                            f"{m.get('home_name')} vs {m.get('away_name')} "
+                            f"(raw_status={raw_status!r}, goal_fields={goal_fields}, "
+                            f"totalGoalCount={m.get('totalGoalCount')}, "
+                            f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
+                        )
+                        # Still include the match so the frontend can update status
+                        # to "live" — but with score=null so it won't overwrite any
+                        # valid score the frontend already has.
+                        home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
+                        away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+                        # Compute period/minute even without goal data
+                        _ng_period = None
+                        _ng_minute = None
+                        if elapsed_min is not None and elapsed_min >= 0:
+                            if elapsed_min <= 47:
+                                _ng_period = "1T"
+                                _ng_minute = min(elapsed_min, 45)
+                            elif elapsed_min <= 62:
+                                _ng_period = "HT"
+                                _ng_minute = None
+                            else:
+                                _ng_period = "2T"
+                                _ng_minute = min(elapsed_min - 15, 90)
+                        result.append({
+                            "id": int(_raw_id) if _raw_id is not None else None,
+                            "homeTeam": home_name,
+                            "awayTeam": away_name,
+                            "status": status,
+                            "score": None,
+                            "period": _ng_period,
+                            "minute": _ng_minute,
+                            "dateUnix": m.get("date_unix"),
+                        })
+                        continue
                 else:
                     continue
 
@@ -694,7 +726,7 @@ def live_scores() -> Dict[str, Any]:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
         logger.info(
             f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
-            f"| scores: {[(r['homeTeam'][:12], r['score']['home'], r['score']['away']) for r in result[:5]]}"
+            f"| scores: {[(r['homeTeam'][:12], r['score']['home'] if r.get('score') else '?', r['score']['away'] if r.get('score') else '?') for r in result[:5]]}"
         )
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:

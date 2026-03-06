@@ -209,7 +209,7 @@ export default function MatchCard({ data, selected, onSelectChange, onAnalyze, s
                   )}
                 </div>
                 <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ff4444", fontVariantNumeric: "tabular-nums", textShadow: "0 0 10px rgba(255,68,68,0.3)" }}>
-                  {data.score ? `${data.score.home} - ${data.score.away}` : "0 - 0"}
+                  {data.score ? `${data.score.home} - ${data.score.away}` : "- : -"}
                 </div>
                 {data.score?.halftime && typeof data.score.halftime.home === "number" && (
                   <span className="muted text-xs">

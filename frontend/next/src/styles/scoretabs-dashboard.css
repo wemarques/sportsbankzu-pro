@@ -670,6 +670,11 @@
   opacity: 0.6;
 }
 
+.st-match-row__score--loading .st-match-row__score-main {
+  opacity: 0.5;
+  animation: st-pulse 1.5s infinite;
+}
+
 .st-match-row__score--vs {
   color: var(--st-text-muted, #64748b);
   font-size: 0.7rem;
