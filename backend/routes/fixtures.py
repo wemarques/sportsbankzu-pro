@@ -364,6 +364,48 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
             from backend.services.math_service import implied_probs
             probs = implied_probs(odds_home, odds_draw, odds_away)
 
+            # Extract score for live/finished matches (sanitize -1 sentinel)
+            def _valid_goal_fb(val):
+                if val is None:
+                    return None
+                try:
+                    v = int(val)
+                    return v if v >= 0 else None
+                except (ValueError, TypeError):
+                    return None
+
+            _home_goals = _valid_goal_fb(m.get("homeGoalCount"))
+            _away_goals = _valid_goal_fb(m.get("awayGoalCount"))
+            _ht_home = _valid_goal_fb(m.get("home_team_goal_count_half_time"))
+            _ht_away = _valid_goal_fb(m.get("away_team_goal_count_half_time"))
+
+            match_score = None
+            if match_status in ("finished", "live") and _home_goals is not None and _away_goals is not None:
+                match_score = {"home": _home_goals, "away": _away_goals}
+                if _ht_home is not None and _ht_away is not None:
+                    match_score["halftime"] = {"home": _ht_home, "away": _ht_away}
+
+            # Compute period/minute for live matches
+            period_fb = None
+            minute_fb = None
+            if match_status == "live" and kickoff_ts:
+                try:
+                    elapsed = max(0, (int(_time.time()) - int(kickoff_ts)) // 60)
+                    has_ht = match_score and match_score.get("halftime") is not None
+                    if elapsed <= 47:
+                        period_fb = "1T"
+                        minute_fb = min(elapsed, 45)
+                    elif elapsed <= 62:
+                        period_fb = "HT"
+                        minute_fb = None
+                    else:
+                        period_fb = "2T"
+                        minute_fb = min(elapsed - 15, 90)
+                    if has_ht and period_fb == "1T":
+                        period_fb = "2T"
+                except (ValueError, TypeError):
+                    pass
+
             record = {
                 "id": f"{lid}-todays-{m.get('id', '')}",
                 "footystatsId": m.get("id"),
@@ -376,6 +418,9 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                 "venue": m.get("stadium", "") or "",
                 "stadium": m.get("stadium", "") or "",
                 "status": match_status,
+                "score": match_score,
+                "period": period_fb,
+                "minute": minute_fb,
                 "odds": {
                     "home": odds_home, "draw": odds_draw, "away": odds_away,
                     "over25": odds_over25, "under25": odds_under25,

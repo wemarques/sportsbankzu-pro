@@ -35,9 +35,22 @@ const MATCH_STATS_KEYS: (keyof MatchStats)[] = [
 ];
 
 /**
+ * Sanitize a stat value from the FootyStats API.
+ * The API uses -1 (and -2 for total shots) as sentinel values
+ * meaning "data not available". This converts them to undefined
+ * so the UI shows "N/A" instead of misleading negative numbers.
+ */
+function sanitizeStatValue(val: unknown): unknown {
+  if (val === undefined || val === null) return undefined;
+  if (typeof val === "number" && (val === -1 || val === -2)) return undefined;
+  return val;
+}
+
+/**
  * Pick matchStats fields from any stats-like source object.
  * Works with both typed `Match["stats"]` objects and raw
  * `Record<string, unknown>` API responses.
+ * Applies sanitization to filter out FootyStats sentinel values (-1, -2).
  */
 export function mapMatchStats(
   source: Record<string, unknown> | null | undefined,
@@ -45,7 +58,7 @@ export function mapMatchStats(
   if (!source) return undefined;
   const out: Record<string, unknown> = {};
   for (const key of MATCH_STATS_KEYS) {
-    const val = source[key];
+    const val = sanitizeStatValue(source[key]);
     if (val !== undefined && val !== null) {
       out[key] = val;
     }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useLivePolling } from "@/hooks/useLivePolling";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -712,15 +713,16 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
 
-  // Live score polling — every 60s when live matches exist, 120s otherwise
+  // Live score polling — 30s when live matches exist, 120s otherwise.
+  // Pauses when browser tab is hidden to save bandwidth.
   const hasMatches = allMatches.length > 0;
   const hasLiveMatches = useMemo(() => allMatches.some((m) => m.status === "live"), [allMatches]);
-  useEffect(() => {
-    if (!hasMatches) return;
-    const pollMs = hasLiveMatches ? 60_000 : 120_000;
-    const interval = setInterval(fetchLiveScores, pollMs);
-    return () => clearInterval(interval);
-  }, [hasMatches, hasLiveMatches, fetchLiveScores]);
+  const { lastUpdated: liveLastUpdated } = useLivePolling(fetchLiveScores, {
+    hasMatches,
+    hasLiveMatches,
+    liveIntervalMs: 30_000,
+    idleIntervalMs: 120_000,
+  });
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -1601,7 +1603,12 @@ export default function Dashboard() {
                     <span className="st-date-label">{dateLabel}</span>
                     <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
                   </div>
-                  <div className="st-live-dot" />
+                  {hasLiveMatches && (
+                    <span className="st-live-indicator" title={liveLastUpdated ? `Atualizado: ${liveLastUpdated.toLocaleTimeString("pt-BR")}` : "Polling ativo"}>
+                      <span className="st-live-dot" />
+                      <span className="st-live-text">LIVE</span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
