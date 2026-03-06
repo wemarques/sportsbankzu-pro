@@ -600,9 +600,35 @@ def live_scores() -> Dict[str, Any]:
                         f"totalGoalCount={m.get('totalGoalCount')}, "
                         f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
                     )
-                    # Do NOT default to 0-0 when goal data is missing —
-                    # returning a fake 0-0 overwrites any correct score the
-                    # frontend already has from the fixtures endpoint.
+                    # Still include the match so the frontend can update status
+                    # to "live" — but with score=null so it won't overwrite any
+                    # valid score the frontend already has.
+                    home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
+                    away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+                    _raw_id = m.get("id")
+                    # Compute period/minute even without goal data
+                    _ng_period = None
+                    _ng_minute = None
+                    if elapsed_min is not None and elapsed_min >= 0:
+                        if elapsed_min <= 47:
+                            _ng_period = "1T"
+                            _ng_minute = min(elapsed_min, 45)
+                        elif elapsed_min <= 62:
+                            _ng_period = "HT"
+                            _ng_minute = None
+                        else:
+                            _ng_period = "2T"
+                            _ng_minute = min(elapsed_min - 15, 90)
+                    result.append({
+                        "id": int(_raw_id) if _raw_id is not None else None,
+                        "homeTeam": home_name,
+                        "awayTeam": away_name,
+                        "status": status,
+                        "score": None,
+                        "period": _ng_period,
+                        "minute": _ng_minute,
+                        "dateUnix": m.get("date_unix"),
+                    })
                     continue
                 else:
                     continue

@@ -596,17 +596,22 @@ export default function Dashboard() {
           if (!live) return m;
           matched++;
           const newStatus = live.status as Match["status"];
-          const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
-          const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
-          // Guard: never overwrite a non-zero score with 0-0 from live overlay
-          // (protects against API returning missing/stale goal data)
-          const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
-          const liveTotal = liveScoreHome + liveScoreAway;
-          const useExistingScore = existingTotal > 0 && liveTotal === 0;
-          const liveScore = useExistingScore
-            ? m.score!
-            : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
-          const scoreChanged = m.score?.home !== liveScore.home || m.score?.away !== liveScore.away;
+          // When score is null/undefined from overlay (missing goal data),
+          // keep existing score but still update status/period/minute.
+          const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
+          let liveScore = m.score;
+          if (hasLiveScore) {
+            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
+            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
+            // Guard: never overwrite a non-zero score with 0-0 from live overlay
+            const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
+            const liveTotal = liveScoreHome + liveScoreAway;
+            const useExistingScore = existingTotal > 0 && liveTotal === 0;
+            liveScore = useExistingScore
+              ? m.score!
+              : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+          }
+          const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
