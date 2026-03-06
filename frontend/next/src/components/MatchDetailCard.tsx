@@ -105,6 +105,8 @@ export interface MatchDetailData {
   startTime?: string;
   status?: "scheduled" | "live" | "finished";
   score?: { home: number; away: number; halftime?: { home: number; away: number } };
+  period?: "1T" | "HT" | "2T" | null;
+  minute?: number | null;
   venue?: {
     name: string;
     capacity?: number;
@@ -351,6 +353,16 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
           {match.status === "live" ? (
             <div className="mdc-live-score">
+              <div className="mdc-live-score__indicator">
+                <span className="mdc-live-score__dot" />
+                <span className="mdc-live-score__label">AO VIVO</span>
+                {match.period && (
+                  <span className="mdc-live-score__period">{match.period}</span>
+                )}
+                {match.minute != null && match.period !== "HT" && (
+                  <span className="mdc-live-score__minute">{match.minute}&apos;</span>
+                )}
+              </div>
               <div className="mdc-live-score__value">
                 {typeof match.score?.home === "number" ? match.score.home : 0} - {typeof match.score?.away === "number" ? match.score.away : 0}
               </div>

@@ -399,6 +399,8 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
+    period: match.period,
+    minute: match.minute,
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -1848,11 +1850,14 @@ export default function Dashboard() {
                           </div>
                           {(match.score && typeof match.score.home === "number" && typeof match.score.away === "number") ? (
                             <div className={`st-match-row__score ${displayStatus === "live" ? "st-match-row__score--live" : ""}`}>
-                              {match.score.home} - {match.score.away}
+                              <span className="st-match-row__score-main">{match.score.home} - {match.score.away}</span>
+                              {match.score.halftime && typeof match.score.halftime.home === "number" && (
+                                <span className="st-match-row__score-ht">HT {match.score.halftime.home}-{match.score.halftime.away}</span>
+                              )}
                             </div>
                           ) : displayStatus === "live" ? (
                             <div className="st-match-row__score st-match-row__score--live">
-                              0 - 0
+                              <span className="st-match-row__score-main">0 - 0</span>
                             </div>
                           ) : null}
                           {oddsTab === "1x2" && (
