@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useLivePolling } from "@/hooks/useLivePolling";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -712,15 +713,16 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
 
-  // Live score polling — every 60s when live matches exist, 120s otherwise
+  // Live score polling — 30s when live matches exist, 120s otherwise.
+  // Pauses when browser tab is hidden to save bandwidth.
   const hasMatches = allMatches.length > 0;
   const hasLiveMatches = useMemo(() => allMatches.some((m) => m.status === "live"), [allMatches]);
-  useEffect(() => {
-    if (!hasMatches) return;
-    const pollMs = hasLiveMatches ? 60_000 : 120_000;
-    const interval = setInterval(fetchLiveScores, pollMs);
-    return () => clearInterval(interval);
-  }, [hasMatches, hasLiveMatches, fetchLiveScores]);
+  const { lastUpdated: liveLastUpdated } = useLivePolling(fetchLiveScores, {
+    hasMatches,
+    hasLiveMatches,
+    liveIntervalMs: 30_000,
+    idleIntervalMs: 120_000,
+  });
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -1402,6 +1404,14 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
+                  <a href="/bankroll" className="st-tool-card">
+                    <div className="st-tool-card__icon" style={{ background: "rgba(34,197,94,0.1)" }}><Calculator size={20} style={{ color: "#22c55e" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Gestao de Banca</span>
+                      <span className="st-tool-card__desc">Distribua sua banca com criterio de Kelly entre simples e duplas</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </a>
                 </div>
               </div>
             )}
@@ -1601,7 +1611,12 @@ export default function Dashboard() {
                     <span className="st-date-label">{dateLabel}</span>
                     <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
                   </div>
-                  <div className="st-live-dot" />
+                  {hasLiveMatches && (
+                    <span className="st-live-indicator" title={liveLastUpdated ? `Atualizado: ${liveLastUpdated.toLocaleTimeString("pt-BR")}` : "Polling ativo"}>
+                      <span className="st-live-dot" />
+                      <span className="st-live-text">LIVE</span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}

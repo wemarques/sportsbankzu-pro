@@ -298,6 +298,23 @@
   animation: st-pulse 2s infinite;
 }
 
+.st-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 51, 51, 0.1);
+  cursor: default;
+}
+
+.st-live-text {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--st-primary);
+  letter-spacing: 0.5px;
+}
+
 @keyframes st-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

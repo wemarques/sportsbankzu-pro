@@ -7,6 +7,30 @@ from pydantic import BaseModel, field_validator, model_validator
 logger = logging.getLogger("sportsbankzu.mapper")
 
 
+def sanitize_api_value(val: Any, *, treat_minus2: bool = False) -> Any:
+    """Normalize FootyStats sentinel values to None.
+
+    The FootyStats API uses -1 (and -2 for total shots) to indicate
+    "data not available".  This helper converts those sentinels to None
+    so downstream code never sees fake negative stats.
+
+    Args:
+        val: raw value from the API.
+        treat_minus2: if True, also treat -2 as unavailable (for shots fields).
+    """
+    if val is None:
+        return None
+    try:
+        numeric = float(val)
+    except (ValueError, TypeError):
+        return val
+    if numeric == -1:
+        return None
+    if treat_minus2 and numeric == -2:
+        return None
+    return val
+
+
 class FootyStatsMatchInput(BaseModel):
     """Validates raw match data from the FootyStats API before internal mapping.
 
@@ -128,6 +152,14 @@ class DataMapper:
             except Exception:
                 pass
 
+        _s = sanitize_api_value
+        _s2 = lambda v: sanitize_api_value(v, treat_minus2=True)
+
+        # Goal counts: sanitize -1 (API sentinel for "no data") to None
+        home_goals = _s(api_match.get("homeGoalCount"))
+        away_goals = _s(api_match.get("awayGoalCount"))
+        total_goals = _s(api_match.get("totalGoalCount"))
+
         return {
             "id": api_match.get("id"),
             "timestamp": date_unix,
@@ -135,41 +167,41 @@ class DataMapper:
             "status": api_match.get("status"),
             "team_a_name": api_match.get("home_name") or api_match.get("homeID"),
             "team_b_name": api_match.get("away_name") or api_match.get("awayID"),
-            "attendance": api_match.get("attendance", -1),
+            "attendance": _s(api_match.get("attendance", -1)),
             "referee": api_match.get("referee") or api_match.get("refree"),
-            "home_team_goal_count": api_match.get("homeGoalCount"),
-            "away_team_goal_count": api_match.get("awayGoalCount"),
-            "total_goal_count": api_match.get("totalGoalCount"),
+            "home_team_goal_count": home_goals,
+            "away_team_goal_count": away_goals,
+            "total_goal_count": total_goals,
             # Half-time
-            "total_goals_at_half_time": api_match.get("total_goals_at_half_time", -1),
-            "home_team_goal_count_half_time": api_match.get("home_team_goal_count_half_time", -1),
-            "away_team_goal_count_half_time": api_match.get("away_team_goal_count_half_time", -1),
+            "total_goals_at_half_time": _s(api_match.get("total_goals_at_half_time", -1)),
+            "home_team_goal_count_half_time": _s(api_match.get("home_team_goal_count_half_time", -1)),
+            "away_team_goal_count_half_time": _s(api_match.get("away_team_goal_count_half_time", -1)),
             # Goal timings
             "home_team_goal_timings": api_match.get("home_team_goal_timings", ""),
             "away_team_goal_timings": api_match.get("away_team_goal_timings", ""),
-            "home_team_corner_count": api_match.get("team_a_corners", -1),
-            "away_team_corner_count": api_match.get("team_b_corners", -1),
-            "home_team_possession": api_match.get("team_a_possession", -1),
-            "away_team_possession": api_match.get("team_b_possession", -1),
-            "home_team_shots": api_match.get("team_a_shots", -1),
-            "away_team_shots": api_match.get("team_b_shots", -1),
-            "home_team_shots_on_target": api_match.get("team_a_shotsOnTarget", -1),
-            "away_team_shots_on_target": api_match.get("team_b_shotsOnTarget", -1),
-            "home_team_yellow_cards": api_match.get("team_a_yellow_cards", -1),
-            "away_team_yellow_cards": api_match.get("team_b_yellow_cards", -1),
-            "home_team_red_cards": api_match.get("team_a_red_cards", -1),
-            "away_team_red_cards": api_match.get("team_b_red_cards", -1),
+            "home_team_corner_count": _s(api_match.get("team_a_corners", -1)),
+            "away_team_corner_count": _s(api_match.get("team_b_corners", -1)),
+            "home_team_possession": _s(api_match.get("team_a_possession", -1)),
+            "away_team_possession": _s(api_match.get("team_b_possession", -1)),
+            "home_team_shots": _s2(api_match.get("team_a_shots", -2)),
+            "away_team_shots": _s2(api_match.get("team_b_shots", -2)),
+            "home_team_shots_on_target": _s(api_match.get("team_a_shotsOnTarget", -1)),
+            "away_team_shots_on_target": _s(api_match.get("team_b_shotsOnTarget", -1)),
+            "home_team_yellow_cards": _s(api_match.get("team_a_yellow_cards", -1)),
+            "away_team_yellow_cards": _s(api_match.get("team_b_yellow_cards", -1)),
+            "home_team_red_cards": _s(api_match.get("team_a_red_cards", -1)),
+            "away_team_red_cards": _s(api_match.get("team_b_red_cards", -1)),
             # Card splits by half
-            "home_team_first_half_cards": api_match.get("home_team_first_half_cards", -1),
-            "away_team_first_half_cards": api_match.get("away_team_first_half_cards", -1),
-            "home_team_second_half_cards": api_match.get("home_team_second_half_cards", -1),
-            "away_team_second_half_cards": api_match.get("away_team_second_half_cards", -1),
-            "home_team_fouls": api_match.get("team_a_fouls", -1),
-            "away_team_fouls": api_match.get("team_b_fouls", -1),
-            "home_team_offsides": api_match.get("team_a_offsides", -1),
-            "away_team_offsides": api_match.get("team_b_offsides", -1),
-            "home_team_shots_off_target": api_match.get("team_a_shotsOffTarget", -1),
-            "away_team_shots_off_target": api_match.get("team_b_shotsOffTarget", -1),
+            "home_team_first_half_cards": _s(api_match.get("home_team_first_half_cards", -1)),
+            "away_team_first_half_cards": _s(api_match.get("away_team_first_half_cards", -1)),
+            "home_team_second_half_cards": _s(api_match.get("home_team_second_half_cards", -1)),
+            "away_team_second_half_cards": _s(api_match.get("away_team_second_half_cards", -1)),
+            "home_team_fouls": _s(api_match.get("team_a_fouls", -1)),
+            "away_team_fouls": _s(api_match.get("team_b_fouls", -1)),
+            "home_team_offsides": _s(api_match.get("team_a_offsides", -1)),
+            "away_team_offsides": _s(api_match.get("team_b_offsides", -1)),
+            "home_team_shots_off_target": _s(api_match.get("team_a_shotsOffTarget", -1)),
+            "away_team_shots_off_target": _s(api_match.get("team_b_shotsOffTarget", -1)),
             "home_team_xg": api_match.get("team_a_xg", 0.0),
             "away_team_xg": api_match.get("team_b_xg", 0.0),
             "btts_percentage_pre_match": api_match.get("btts_potential", 0),
