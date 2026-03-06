@@ -1404,6 +1404,14 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
+                  <a href="/bankroll" className="st-tool-card">
+                    <div className="st-tool-card__icon" style={{ background: "rgba(34,197,94,0.1)" }}><Calculator size={20} style={{ color: "#22c55e" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Gestao de Banca</span>
+                      <span className="st-tool-card__desc">Distribua sua banca com criterio de Kelly entre simples e duplas</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </a>
                 </div>
               </div>
             )}
