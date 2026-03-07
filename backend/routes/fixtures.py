@@ -252,13 +252,17 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
     try:
         from backend.services.util_service import status_map
         import time as _time
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
-        date_param = None
+        # Always pass explicit BRT date to the API to avoid UTC/BRT day boundary mismatch.
+        # Without an explicit date, the API uses its own timezone (likely UTC) to determine
+        # "today", which after 21:00 BRT (00:00 UTC) would return next-day matches.
+        BRT = _tz(timedelta(hours=-3))
+        now_brt = _dt.now(BRT)
         if date == "tomorrow":
-            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-            BRT = _tz(timedelta(hours=-3))
-            tomorrow = _dt.now(BRT) + _td(days=1)
-            date_param = tomorrow.strftime("%Y-%m-%d")
+            date_param = (now_brt + _td(days=1)).strftime("%Y-%m-%d")
+        else:
+            date_param = now_brt.strftime("%Y-%m-%d")
 
         todays_data = footstats.get_todays_matches(date=date_param)
         if not todays_data.get("success"):
@@ -319,10 +323,32 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
             )
             return []
 
+        # Date guard: filter matched results by BRT date range to prevent
+        # next-day matches from leaking into "today" results.
+        from backend.main import date_range
+        range_start, range_end = date_range(date)
+        date_guarded = []
+        for m in matched:
+            du = m.get("date_unix")
+            if du:
+                try:
+                    match_dt = _dt.fromtimestamp(int(du), tz=_tz.utc)
+                    if not (range_start <= match_dt <= range_end):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            date_guarded.append(m)
+
+        if len(date_guarded) < len(matched):
+            logger.info(
+                f"[fixtures] {lid}: date guard filtered {len(matched) - len(date_guarded)} "
+                f"out-of-range matches from todays-matches fallback"
+            )
+        matched = date_guarded
+
         logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures (season_id={season_id})")
 
         # Build minimal records from todays-matches data
-        from backend.main import date_range
         records = []
         for m in matched:
             home = (m.get("home_name") or m.get("homeTeam") or "").strip()
