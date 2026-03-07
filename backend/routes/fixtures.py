@@ -390,6 +390,27 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
             from backend.services.math_service import implied_probs
             probs = implied_probs(odds_home, odds_draw, odds_away)
 
+            # Compute over25/btts probabilities from odds (implied probability)
+            over25_prob = 0.0
+            btts_prob = 0.0
+            if odds_over25 > 0:
+                raw_over25 = 1.0 / odds_over25
+                # Normalize with under25 if available
+                if odds_under25 > 0:
+                    raw_under25 = 1.0 / odds_under25
+                    total = raw_over25 + raw_under25
+                    over25_prob = round(raw_over25 / total * 100.0, 1) if total > 0 else 0.0
+                else:
+                    over25_prob = round(raw_over25 * 100.0, 1)
+            if odds_btts_yes > 0:
+                raw_btts = 1.0 / odds_btts_yes
+                if odds_btts_no > 0:
+                    raw_btts_no = 1.0 / odds_btts_no
+                    total = raw_btts + raw_btts_no
+                    btts_prob = round(raw_btts / total * 100.0, 1) if total > 0 else 0.0
+                else:
+                    btts_prob = round(raw_btts * 100.0, 1)
+
             # Extract score for live/finished matches (sanitize -1 sentinel)
             def _valid_goal_fb(val):
                 if val is None:
@@ -460,8 +481,8 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                     "drawProb": round(probs[1], 1) if probs else 0,
                     "awayWinProb": round(probs[2], 1) if probs else 0,
                     "avgGoals": 0,
-                    "bttsProb": 0,
-                    "over25Prob": 0,
+                    "bttsProb": btts_prob,
+                    "over25Prob": over25_prob,
                 },
                 "h2h": {"totalMatches": 0, "homeWins": 0, "draws": 0, "awayWins": 0, "avgGoals": 0},
                 "source": "footystats",
