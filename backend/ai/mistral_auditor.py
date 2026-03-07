@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from .mistral_client import MistralClient
 from .prompt_templates import PromptTemplates
 from .cache_manager import CacheManager
+from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.ai.auditor")
 
@@ -117,9 +118,9 @@ class MistralAuditor:
             match_data: Dicionário contendo as probabilidades, lambdas e EV calculados.
         """
         match_id = match_data.get("id")
-        home = match_data.get("homeTeam") or match_data.get("home_team") or ""
-        away = match_data.get("awayTeam") or match_data.get("away_team") or ""
-        
+        home = team_name(match_data.get("homeTeam") or match_data.get("home_team") or "")
+        away = team_name(match_data.get("awayTeam") or match_data.get("away_team") or "")
+
         # 1. Verificar Cache
         cached_result = self.cache.get("audit", home, away)
         if cached_result:
@@ -172,8 +173,8 @@ class MistralAuditor:
             ai_analysis: Mistral AI analysis (summary, key_points, recommendation)
             actual_result: {home_goals, away_goals, total_goals, btts, result_1x2}
         """
-        home = match_data.get("homeTeam") or match_data.get("home_team") or ""
-        away = match_data.get("awayTeam") or match_data.get("away_team") or ""
+        home = team_name(match_data.get("homeTeam") or match_data.get("home_team") or "")
+        away = team_name(match_data.get("awayTeam") or match_data.get("away_team") or "")
 
         # Check cache
         cached = self.cache.get("audit_post", home, away)

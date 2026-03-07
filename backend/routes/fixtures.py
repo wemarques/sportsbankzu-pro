@@ -11,6 +11,7 @@ except Exception:
 from backend.services.fixtures_service import build_records_from_matches
 from backend.services.footstats_client import FootyStatsClient
 from backend.services.data_mapper import DataMapper
+from backend.services.util_service import team_name
 from backend.config.leagues_config import get_league_config
 
 logger = logging.getLogger("sportsbankzu.fixtures")
@@ -351,8 +352,8 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
         # Build minimal records from todays-matches data
         records = []
         for m in matched:
-            home = (m.get("home_name") or m.get("homeTeam") or "").strip()
-            away = (m.get("away_name") or m.get("awayTeam") or "").strip()
+            home = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+            away = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
             if not home or not away:
                 continue
 
@@ -683,8 +684,8 @@ def live_scores() -> Dict[str, Any]:
                         # Still include the match so the frontend can update status
                         # to "live" — but with score=null so it won't overwrite any
                         # valid score the frontend already has.
-                        home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
-                        away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+                        home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+                        away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
                         # Compute period/minute even without goal data
                         _ng_period = None
                         _ng_minute = None
@@ -755,8 +756,8 @@ def live_scores() -> Dict[str, Any]:
                     period = "2T"
 
             # Normalize team names: strip whitespace for reliable frontend matching
-            home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
-            away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+            home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+            away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
 
             _raw_id = m.get("id")
             result.append({

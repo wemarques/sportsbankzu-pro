@@ -5,6 +5,13 @@ except Exception:
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+def team_name(val: Any) -> str:
+    """Extract team name from either a string or a dict with 'name' key."""
+    if isinstance(val, dict):
+        return str(val.get("name", ""))
+    return str(val) if val else ""
+
+
 def status_map(s: str) -> str:
     sl = (s or "").lower()
     if sl in ("complete", "finished", "ft"):
