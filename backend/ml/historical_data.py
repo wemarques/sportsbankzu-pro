@@ -121,9 +121,16 @@ def collect_league_history(
 
         # Augment each match with season metadata
         for match in season_matches:
-            # Only include completed matches (status = "complete")
+            # Only include completed matches
+            # FootyStats uses "complete" for finished, "incomplete" for scheduled/live
             status = str(match.get("status", "")).lower()
-            if status not in ("complete", "finished", "ft"):
+            if status not in ("complete", "finished", "ft", "played"):
+                continue
+            # Skip matches with no goal data (sentinel: homeGoalCount=0 + totalGoalCount=0
+            # can be a real 0-0, but if status is complete we trust it)
+            home_gc = match.get("homeGoalCount", match.get("home_goals"))
+            away_gc = match.get("awayGoalCount", match.get("away_goals"))
+            if home_gc is None and away_gc is None:
                 continue
 
             match["_season_index"] = idx
