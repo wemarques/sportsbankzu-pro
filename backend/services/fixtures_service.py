@@ -915,6 +915,49 @@ def build_records_from_matches(
                 except Exception as _cal_err:
                     logger.debug(f"[Gap5] Calibration skipped for {home} vs {away}: {_cal_err}")
 
+                # ML Ensemble — Champion/Challenger (Gap 6)
+                # Uses trained RF + XGBoost models when available; falls back to Poisson.
+                try:
+                    from backend.ml.predictor import predict_1x2, is_ml_available, champion_vs_challenger
+                    if is_ml_available(league_id):
+                        _ml_features = {
+                            "home_goals_scored_avg_r5": record["stats"].get("lambdaHome", 1.3),
+                            "away_goals_scored_avg_r5": record["stats"].get("lambdaAway", 1.0),
+                            "home_goals_conceded_avg_r5": record["stats"].get("lambdaAway", 1.0),
+                            "away_goals_conceded_avg_r5": record["stats"].get("lambdaHome", 1.3),
+                            "home_xg_avg_r5": xg_home_team or 0.0,
+                            "away_xg_avg_r5": xg_away_team or 0.0,
+                            "home_possession_avg_r5": home_poss or 50.0,
+                            "away_possession_avg_r5": away_poss or 50.0,
+                            "home_corners_avg_r5": home_corners_pm or 5.0,
+                            "away_corners_avg_r5": away_corners_pm or 5.0,
+                            "home_shots_avg_r5": home_shots_pm or 12.0,
+                            "away_shots_avg_r5": away_shots_pm or 10.0,
+                            "elo_diff": (homeRating - awayRating) if homeRating and awayRating else 0.0,
+                            "home_elo": homeRating or 1500.0,
+                            "away_elo": awayRating or 1500.0,
+                            "league_avg_goals": league_avgs.get("avg_goals", 2.5),
+                            "league_avg_corners": league_avgs.get("avg_corners", 10.0),
+                            "league_avg_cards": league_avgs.get("avg_cards", 3.5),
+                        }
+                        _poisson_probs = {
+                            "homeWinProb": record["stats"].get("homeWinProb", 0),
+                            "drawProb": record["stats"].get("drawProb", 0),
+                            "awayWinProb": record["stats"].get("awayWinProb", 0),
+                        }
+                        _ml_result = predict_1x2(_ml_features, league_id)
+                        _final = champion_vs_challenger(_poisson_probs, _ml_result, league_id)
+                        if _final.get("_source") == "ml_ensemble":
+                            record["stats"]["homeWinProb"] = _final.get("home_win", record["stats"]["homeWinProb"])
+                            record["stats"]["drawProb"] = _final.get("draw", record["stats"]["drawProb"])
+                            record["stats"]["awayWinProb"] = _final.get("away_win", record["stats"]["awayWinProb"])
+                            record["stats"]["predictionSource"] = "ml_ensemble"
+                            logger.info(f"[Gap6] ML prediction applied to {home} vs {away}")
+                        else:
+                            record["stats"]["predictionSource"] = "poisson"
+                except Exception as _ml_err:
+                    logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
+
             mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
             record["mercados"] = mercados
         except Exception as e:
