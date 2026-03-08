@@ -83,11 +83,11 @@ class FootyStatsMatchInput(BaseModel):
     team_b_shotsOffTarget: Optional[int] = -1
     team_a_xg: Optional[float] = 0.0
     team_b_xg: Optional[float] = 0.0
-    btts_potential: Optional[float] = 0.0
-    o15_potential: Optional[float] = 0.0
-    o25_potential: Optional[float] = 0.0
-    o35_potential: Optional[float] = 0.0
-    o45_potential: Optional[float] = 0.0
+    btts_potential: Optional[float] = None
+    o15_potential: Optional[float] = None
+    o25_potential: Optional[float] = None
+    o35_potential: Optional[float] = None
+    o45_potential: Optional[float] = None
     corners_potential: Optional[float] = 0.0
     corners_o85_potential: Optional[float] = 0.0
     corners_o95_potential: Optional[float] = 0.0

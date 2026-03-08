@@ -489,11 +489,22 @@ def build_records_from_matches(
             home_fouls_pm = round(league_avgs["avg_fouls"] / 2, 1)
         if away_fouls_pm is None and league_avgs["avg_fouls"]:
             away_fouls_pm = round(league_avgs["avg_fouls"] / 2, 1)
-        over15_pct = r.get("over_15_percentage_pre_match", None)
-        over25_pct = r.get("over_25_percentage_pre_match", None)
-        over35_pct = r.get("over_35_percentage_pre_match", None)
-        over45_pct = r.get("over_45_percentage_pre_match", None)
-        btts_pct = r.get("btts_percentage_pre_match", None)
+        # Pre-match probabilities from FootyStats (0-100 scale).
+        # Guard: treat 0 or near-zero as missing — early-season / MLS-start data
+        # often returns 0 which would suppress the Poisson model fallback.
+        def _valid_pct(val):
+            """Return val only if it's a positive percentage, else None."""
+            try:
+                v = float(val) if val is not None else None
+            except (ValueError, TypeError):
+                return None
+            return v if v is not None and v > 0.0 else None
+
+        over15_pct = _valid_pct(r.get("over_15_percentage_pre_match"))
+        over25_pct = _valid_pct(r.get("over_25_percentage_pre_match"))
+        over35_pct = _valid_pct(r.get("over_35_percentage_pre_match"))
+        over45_pct = _valid_pct(r.get("over_45_percentage_pre_match"))
+        btts_pct = _valid_pct(r.get("btts_percentage_pre_match"))
         odds_over15 = r.get("odds_ft_over15", None)
         odds_over35 = r.get("odds_ft_over35", None)
         odds_over45 = r.get("odds_ft_over45", None)
