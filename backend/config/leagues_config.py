@@ -93,27 +93,27 @@ LEAGUES_CONFIG = [
 
     # NÓRDICAS
     {"country": "Norway", "name": "Eliteserien", "id": "eliteserien",
-     "alt_names": ["toppserien", "norwegian premier league"]},
+     "alt_names": ["toppserien", "norwegian premier league", "norway eliteserien"]},
     {"country": "Sweden", "name": "Allsvenskan", "id": "allsvenskan",
-     "alt_names": ["swedish premier league"]},
+     "alt_names": ["swedish premier league", "sweden allsvenskan"]},
 
     # ORIENTE MÉDIO
-    {"country": "UAE", "name": "UAE Pro League", "id": "uae-pro-league",
-     "alt_names": ["arabian gulf league", "adnoc pro league"]},
+    {"country": "UAE", "name": "Arabian Gulf League", "id": "uae-pro-league",
+     "alt_names": ["uae pro league", "adnoc pro league", "uae arabian gulf league"]},
 
     # EUROPA (adicionais)
     {"country": "Netherlands", "name": "Eerste Divisie", "id": "eerste-divisie",
      "alt_names": ["dutch second division", "keuken kampioen divisie"]},
     {"country": "Greece", "name": "Super League", "id": "super-league-greece",
-     "alt_names": ["super league 1", "greek super league"]},
+     "alt_names": ["super league 1", "greek super league", "greece super league"]},
     {"country": "Czech Republic", "name": "Czech First League", "id": "czech-first-league",
-     "alt_names": ["chance liga", "fortuna liga", "first league"]},
+     "alt_names": ["chance liga", "fortuna liga", "first league", "czech republic first league"]},
 
     # AMÉRICAS (adicionais)
     {"country": "USA", "name": "MLS", "id": "mls",
      "alt_names": ["major league soccer"]},
-    {"country": "Colombia", "name": "Campeonato Colombiano", "id": "colombian-primera-a",
-     "alt_names": ["liga betplay", "primera a", "categoría primera a"]},
+    {"country": "Colombia", "name": "Categoria Primera A", "id": "colombian-primera-a",
+     "alt_names": ["liga betplay", "primera a", "categoría primera a", "colombia categoria primera a", "campeonato colombiano"]},
 ]
 
 

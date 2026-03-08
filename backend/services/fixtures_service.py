@@ -513,11 +513,11 @@ def build_records_from_matches(
             corners_o95_pct = None
             corners_o105_pct = None
         try:
-            over15_pct = float(over15_pct) if over15_pct is not None else None
-            over25_pct = float(over25_pct) if over25_pct is not None else None
-            over35_pct = float(over35_pct) if over35_pct is not None else None
-            over45_pct = float(over45_pct) if over45_pct is not None else None
-            btts_pct = float(btts_pct) if btts_pct is not None else None
+            over15_pct = float(over15_pct) if over15_pct is not None and float(over15_pct) > 0 else None
+            over25_pct = float(over25_pct) if over25_pct is not None and float(over25_pct) > 0 else None
+            over35_pct = float(over35_pct) if over35_pct is not None and float(over35_pct) > 0 else None
+            over45_pct = float(over45_pct) if over45_pct is not None and float(over45_pct) > 0 else None
+            btts_pct = float(btts_pct) if btts_pct is not None and float(btts_pct) > 0 else None
         except Exception:
             over15_pct = None
             over25_pct = None

@@ -15,6 +15,8 @@ class FootyStatsClient:
     
     def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.football-data-api.com"):
         self.api_key = api_key or os.getenv("FOOTYSTATS_API_KEY", "example")
+        if self.api_key == "example":
+            logger.warning("FootyStatsClient initialized with 'example' API key. Live data will likely fail.")
         self.base_url = base_url
         
         # Configuração de Cache
