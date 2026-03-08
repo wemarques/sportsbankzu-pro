@@ -9,6 +9,7 @@ from cli.commands.data import data
 from cli.commands.analysis import analysis
 from cli.commands.server import server
 from cli.commands.utils import utils
+from cli.commands.ml import ml
 
 
 @click.group()
@@ -28,6 +29,7 @@ cli.add_command(data)
 cli.add_command(analysis)
 cli.add_command(server)
 cli.add_command(utils)
+cli.add_command(ml)
 
 
 if __name__ == "__main__":
