@@ -15,7 +15,10 @@ import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +268,8 @@ def predict_market(
 
     Returns probability (0-100 scale) or None if model unavailable.
     """
+    if np is None:
+        return None
     league_dir = _MODELS_DIR / league_id
     model_path = league_dir / f"{market}_models.pkl"
 

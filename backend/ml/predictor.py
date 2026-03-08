@@ -17,7 +17,10 @@ import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,8 @@ def _load_models(league_id: str) -> Optional[Dict[str, Any]]:
 
 def is_ml_available(league_id: str) -> bool:
     """Check if ML models are available and validated for a league."""
+    if np is None:
+        return False
     bundle = _load_models(league_id)
     if not bundle:
         return False

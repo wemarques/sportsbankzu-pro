@@ -28,6 +28,8 @@ LEAGUE_ID_ALIASES = {
     "switzerland-super-league": "super-league",
     "turkey-super-lig": "super-lig",
     "spain-segunda-division": "segunda-division",
+    "england-league-one": "league-one",
+    "england-league-two": "league-two",
     # --- 11 new leagues (Safe Bets Engine v3.5) ---
     "japan-j-league": "j-league",
     "south-korea-k-league": "k-league",
