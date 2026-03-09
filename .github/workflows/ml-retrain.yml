@@ -59,13 +59,19 @@ jobs:
       - name: Run ML training pipeline
         run: |
           python -c "
-          import json, logging, sys
+          import json, logging, os, sys
           logging.basicConfig(level=logging.INFO)
+
+          # Ensure DATA_ROOT is set before importing train_model (module-level _MODELS_DIR)
+          os.makedirs(os.environ.get('DATA_ROOT', '/tmp/ml_data'), exist_ok=True)
 
           from backend.services.footstats_client import FootyStatsClient
           from backend.ml.historical_data import collect_all_leagues_history, collect_league_history, save_training_data
-          from backend.ml.train_model import train_all_leagues
+          from backend.ml.train_model import train_all_leagues, _MODELS_DIR
           from backend.config.leagues_config import LEAGUES_CONFIG
+
+          print(f'DATA_ROOT={os.environ.get(\"DATA_ROOT\", \"NOT SET\")}')
+          print(f'_MODELS_DIR={_MODELS_DIR}')
 
           leagues_input = '${{ github.event.inputs.leagues || '' }}'
           n_seasons = int('${{ github.event.inputs.n_seasons || '3' }}')
@@ -105,15 +111,31 @@ jobs:
           for r in failed:
               print(f'  {r.get(\"league_id\", \"?\")}: {r.get(\"status\", \"unknown\")} - {r.get(\"error\", \"\")}')
 
+          # Show where models were saved
+          print(f'\\n=== Model Files ===')
+          print(f'_MODELS_DIR: {_MODELS_DIR}')
+          if _MODELS_DIR.exists():
+              for p in sorted(_MODELS_DIR.rglob('*')):
+                  print(f'  {p} ({p.stat().st_size} bytes)' if p.is_file() else f'  {p}/')
+          else:
+              print(f'  WARNING: {_MODELS_DIR} does not exist!')
+
           with open('/tmp/ml_data/training_summary.json', 'w') as f:
               json.dump(results, f, indent=2, default=str)
           "
+
+      - name: List model files (debug)
+        if: always()
+        run: |
+          echo "=== /tmp/ml_data contents ==="
+          ls -laR /tmp/ml_data/ 2>/dev/null | head -100 || echo "Directory not found"
 
       - name: Upload trained models
         uses: actions/upload-artifact@v4
         with:
           name: ml-models-${{ github.run_number }}
           path: /tmp/ml_data/.ml_models/
+          include-hidden-files: true
           retention-days: 90
 
       - name: Upload training summary
