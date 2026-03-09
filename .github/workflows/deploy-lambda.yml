@@ -61,6 +61,28 @@ jobs:
             --python-version 3.11 \
             --upgrade
 
+      - name: Strip unnecessary files from dependencies
+        run: |
+          echo "Size before cleanup: $(du -sh lambda_build | cut -f1)"
+          # Remove tests, docs, examples, type stubs
+          find lambda_build -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -name "*.pyi" -delete 2>/dev/null || true
+          find lambda_build -name "*.pyx" -delete 2>/dev/null || true
+          find lambda_build -name "*.c" -delete 2>/dev/null || true
+          find lambda_build -name "*.h" -delete 2>/dev/null || true
+          # sklearn: remove bundled datasets, images, and test data
+          rm -rf lambda_build/sklearn/datasets/data 2>/dev/null || true
+          rm -rf lambda_build/sklearn/datasets/descr 2>/dev/null || true
+          rm -rf lambda_build/sklearn/datasets/images 2>/dev/null || true
+          # scipy: remove test data and Fortran sources
+          find lambda_build/scipy -type d -name "_unuran" -exec rm -rf {} + 2>/dev/null || true
+          # xgboost: remove demo/examples
+          rm -rf lambda_build/xgboost/demo 2>/dev/null || true
+          echo "Size after cleanup: $(du -sh lambda_build | cut -f1)"
+
       - name: Copy backend code
         run: |
           # Remove any pre-existing backend/ dir from pip to avoid nesting
