@@ -53,8 +53,9 @@ jobs:
             --only-binary=:all: \
             --python-version 3.11 \
             --upgrade
+          # XGBoost only (no sklearn/scipy) — uses native JSON format for inference
           pip install \
-            -r backend/requirements-ml.txt \
+            "xgboost>=2.0.0" \
             --target lambda_build \
             --platform manylinux2014_x86_64 \
             --only-binary=:all: \

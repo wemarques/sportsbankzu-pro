@@ -1,13 +1,17 @@
-"""Production inference module for ML ensemble predictions.
+"""Production inference module for ML predictions.
 
-Loads trained RF + XGBoost models and generates probability predictions
+Loads trained XGBoost models and generates probability predictions
 for upcoming matches. Falls back to Poisson-based predictions if ML
 models are unavailable or underperform.
 
 Champion/Challenger logic:
     - ML prediction is the "Challenger"
     - Poisson (lambda_calculator) is the "Champion"
-    - ML only activates if validation Brier Score improved >= 10%
+    - ML only activates if validation Brier Score < 0.60
+
+Supports two loading modes:
+    1. Native XGBoost format (.json) — no sklearn needed (Lambda production)
+    2. Pickle format (.pkl) with RF+XGB ensemble — requires sklearn (local dev)
 """
 
 import json
@@ -15,19 +19,21 @@ import logging
 import os
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 try:
     import numpy as np
 except ImportError:
     np = None  # type: ignore
 
+try:
+    import xgboost as xgb
+except ImportError:
+    xgb = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 _MODELS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".ml_models"
-
-# Brier improvement threshold to activate ML over Poisson
-BRIER_IMPROVEMENT_THRESHOLD = 0.10
 
 # Cache loaded models in memory
 _model_cache: Dict[str, Dict[str, Any]] = {}
@@ -50,27 +56,32 @@ def _download_from_s3(league_id: str) -> bool:
     except ImportError:
         return False
 
-    expected_files = ["rf_model.pkl", "xgb_model.pkl", "metadata.json"]
+    # Try native format first (xgb_model.json), then pkl
+    files_to_try = ["xgb_model.json", "metadata.json", "rf_model.pkl", "xgb_model.pkl"]
 
-    # Use /tmp for writable storage (Lambda /var/task is read-only)
     local_dir = Path("/tmp/.ml_models") / league_id
     local_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         s3 = boto3.client("s3")
 
-        downloaded = 0
-        for filename in expected_files:
+        downloaded = []
+        for filename in files_to_try:
             s3_key = f".ml_models/{league_id}/{filename}"
             local_path = local_dir / filename
             try:
                 s3.download_file(bucket, s3_key, str(local_path))
-                downloaded += 1
+                downloaded.append(filename)
             except Exception:
                 pass
 
-        if downloaded == len(expected_files):
-            logger.info(f"Models downloaded from S3 for {league_id}")
+        # Need at least xgb_model.json + metadata.json OR xgb_model.pkl + metadata.json
+        has_metadata = "metadata.json" in downloaded
+        has_native = "xgb_model.json" in downloaded
+        has_pkl = "xgb_model.pkl" in downloaded
+
+        if has_metadata and (has_native or has_pkl):
+            logger.info(f"Models downloaded from S3 for {league_id}: {downloaded}")
             return True
 
         _s3_failed.add(league_id)
@@ -80,6 +91,19 @@ def _download_from_s3(league_id: str) -> bool:
         logger.debug(f"S3 download failed for {league_id}: {e}")
         _s3_failed.add(league_id)
         return False
+
+
+def _load_xgb_native(model_path: Path) -> Optional[Any]:
+    """Load XGBoost model from native JSON format (no sklearn needed)."""
+    if xgb is None:
+        return None
+    try:
+        booster = xgb.Booster()
+        booster.load_model(str(model_path))
+        return booster
+    except Exception as e:
+        logger.debug(f"Failed to load native XGBoost from {model_path}: {e}")
+        return None
 
 
 def _load_models(league_id: str) -> Optional[Dict[str, Any]]:
@@ -93,44 +117,71 @@ def _load_models(league_id: str) -> Optional[Dict[str, Any]]:
         Path("/tmp/.ml_models") / league_id,
     ]
 
-    rf_path = xgb_path = meta_path = None
-    for league_dir in candidates:
-        rf = league_dir / "rf_model.pkl"
-        xgb = league_dir / "xgb_model.pkl"
-        meta = league_dir / "metadata.json"
-        if rf.exists() and xgb.exists() and meta.exists():
-            rf_path, xgb_path, meta_path = rf, xgb, meta
+    league_dir = None
+    for d in candidates:
+        meta = d / "metadata.json"
+        has_model = (d / "xgb_model.json").exists() or (d / "xgb_model.pkl").exists()
+        if meta.exists() and has_model:
+            league_dir = d
             break
 
     # If not found locally, try downloading from S3
-    if rf_path is None:
+    if league_dir is None:
         if _download_from_s3(league_id):
-            s3_dir = Path("/tmp/.ml_models") / league_id
-            rf_path = s3_dir / "rf_model.pkl"
-            xgb_path = s3_dir / "xgb_model.pkl"
-            meta_path = s3_dir / "metadata.json"
+            league_dir = Path("/tmp/.ml_models") / league_id
         elif league_id != "global":
             return _load_models("global")
         else:
             return None
 
     try:
-        with open(rf_path, "rb") as f:
-            rf_model = pickle.load(f)
-        with open(xgb_path, "rb") as f:
-            xgb_model = pickle.load(f)
-        with open(meta_path, "r") as f:
+        with open(league_dir / "metadata.json", "r") as f:
             metadata = json.load(f)
 
-        bundle = {
-            "rf": rf_model,
-            "xgb": xgb_model,
+        feature_names = metadata.get("feature_names", [])
+        bundle: Dict[str, Any] = {
             "metadata": metadata,
-            "feature_names": metadata.get("feature_names", []),
+            "feature_names": feature_names,
             "ensemble_weights": metadata.get("ensemble_weights", {"rf": 0.40, "xgb": 0.60}),
+            "mode": "xgb_only",  # default
         }
+
+        # Try native XGBoost format first (no sklearn needed)
+        xgb_native_path = league_dir / "xgb_model.json"
+        if xgb_native_path.exists():
+            booster = _load_xgb_native(xgb_native_path)
+            if booster:
+                bundle["xgb_booster"] = booster
+                bundle["mode"] = "xgb_native"
+                logger.info(f"XGBoost native model loaded for {league_id}")
+
+        # Try pickle format (RF + XGB ensemble, requires sklearn)
+        rf_path = league_dir / "rf_model.pkl"
+        xgb_pkl_path = league_dir / "xgb_model.pkl"
+        if rf_path.exists() and xgb_pkl_path.exists():
+            try:
+                with open(rf_path, "rb") as f:
+                    bundle["rf"] = pickle.load(f)
+                with open(xgb_pkl_path, "rb") as f:
+                    bundle["xgb"] = pickle.load(f)
+                bundle["mode"] = "ensemble"
+                logger.info(f"Full ensemble (RF+XGB) loaded for {league_id}")
+            except Exception as e:
+                # sklearn not available — that's OK, use native XGBoost
+                logger.debug(f"Pickle load failed for {league_id} (sklearn not available): {e}")
+
+        if bundle.get("mode") == "xgb_only" and "xgb_booster" not in bundle:
+            # No model loaded at all
+            logger.warning(f"No usable model found for {league_id}")
+            if league_id != "global":
+                return _load_models("global")
+            return None
+
         _model_cache[league_id] = bundle
-        logger.info(f"Models loaded for {league_id} (trained {metadata.get('trained_at', '?')})")
+        logger.info(
+            f"Models loaded for {league_id} (mode={bundle['mode']}, "
+            f"trained {metadata.get('trained_at', '?')})"
+        )
         return bundle
 
     except Exception as e:
@@ -146,7 +197,6 @@ def is_ml_available(league_id: str) -> bool:
     if not bundle:
         return False
 
-    # Check validation Brier score exists and is acceptable
     meta = bundle.get("metadata", {})
     val_brier = meta.get("validation_brier")
     if val_brier is None:
@@ -160,37 +210,42 @@ def predict_1x2(
     features: Dict[str, float],
     league_id: str = "global",
 ) -> Optional[Dict[str, float]]:
-    """Generate 1X2 probability prediction using the ML ensemble.
+    """Generate 1X2 probability prediction using ML.
 
-    Args:
-        features: Dict of feature_name -> value (must match training features)
-        league_id: League for model selection
-
-    Returns:
-        Dict with keys: home_win, draw, away_win (probabilities 0-100 scale)
-        or None if ML unavailable
+    Uses full RF+XGB ensemble if sklearn is available,
+    otherwise XGBoost-only via native format.
     """
     bundle = _load_models(league_id)
     if not bundle:
         return None
 
     feature_names = bundle["feature_names"]
-    weights = bundle["ensemble_weights"]
+    mode = bundle.get("mode", "xgb_only")
 
     # Build feature vector in correct order
     X = np.array([[features.get(f, 0.0) for f in feature_names]], dtype=np.float64)
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
     try:
-        rf_probs = bundle["rf"].predict_proba(X)[0]
-        xgb_probs = bundle["xgb"].predict_proba(X)[0]
+        if mode == "ensemble" and "rf" in bundle and "xgb" in bundle:
+            # Full ensemble: RF (40%) + XGB (60%)
+            weights = bundle["ensemble_weights"]
+            rf_probs = bundle["rf"].predict_proba(X)[0]
+            xgb_probs = bundle["xgb"].predict_proba(X)[0]
 
-        # Weighted ensemble
-        w_rf = weights.get("rf", 0.40)
-        w_xgb = weights.get("xgb", 0.60)
-        total_w = w_rf + w_xgb
+            w_rf = weights.get("rf", 0.40)
+            w_xgb = weights.get("xgb", 0.60)
+            ensemble_probs = (rf_probs * w_rf + xgb_probs * w_xgb) / (w_rf + w_xgb)
+            source = "ml_ensemble"
 
-        ensemble_probs = (rf_probs * w_rf + xgb_probs * w_xgb) / total_w
+        elif "xgb_booster" in bundle:
+            # XGBoost-only via native Booster (no sklearn needed)
+            dmatrix = xgb.DMatrix(X, feature_names=feature_names)
+            ensemble_probs = bundle["xgb_booster"].predict(dmatrix)[0]
+            source = "ml_xgboost"
+
+        else:
+            return None
 
         # Normalize to sum to 1
         total = ensemble_probs.sum()
@@ -201,7 +256,7 @@ def predict_1x2(
             "home_win": round(float(ensemble_probs[0]) * 100, 1),
             "draw": round(float(ensemble_probs[1]) * 100, 1),
             "away_win": round(float(ensemble_probs[2]) * 100, 1),
-            "source": "ml_ensemble",
+            "source": source,
             "model_league": league_id,
         }
 
@@ -223,13 +278,13 @@ def predict_markets(
     """
     result = {}
 
-    # 1X2 from ML ensemble
+    # 1X2 from ML
     p1x2 = predict_1x2(features, league_id)
     if p1x2:
         result["homeWinProb"] = p1x2["home_win"]
         result["drawProb"] = p1x2["draw"]
         result["awayWinProb"] = p1x2["away_win"]
-        result["_ml_source"] = "ensemble"
+        result["_ml_source"] = p1x2.get("source", "ml")
     else:
         result["_ml_source"] = "fallback_poisson"
         return result
@@ -239,7 +294,6 @@ def predict_markets(
     away_goals_avg = features.get("away_goals_scored_avg_r5", 1.0)
     expected_total = home_goals_avg + away_goals_avg
 
-    # Use Poisson CDF for Over/Under derivation from expected total goals
     try:
         from backend.services.math_service import poisson_cdf
 
@@ -255,7 +309,7 @@ def predict_markets(
         pass
 
     # BTTS estimation from team-level goal averages
-    home_score_prob = 1.0 - (2.718 ** (-home_goals_avg))  # P(home scores >= 1)
+    home_score_prob = 1.0 - (2.718 ** (-home_goals_avg))
     away_score_prob = 1.0 - (2.718 ** (-away_goals_avg))
     btts_prob = home_score_prob * away_score_prob
     result["bttsProb"] = round(btts_prob * 100, 1)
@@ -278,6 +332,7 @@ def get_model_info(league_id: str) -> Optional[Dict[str, Any]]:
         "validation_brier": meta.get("validation_brier"),
         "validation_accuracy": meta.get("validation_accuracy"),
         "ensemble_weights": meta.get("ensemble_weights"),
+        "inference_mode": bundle.get("mode", "unknown"),
         "top_features": list(meta.get("rf_importance_top20", {}).keys())[:10],
         "class_distribution": meta.get("class_distribution"),
     }
@@ -286,6 +341,7 @@ def get_model_info(league_id: str) -> Optional[Dict[str, Any]]:
 def clear_model_cache():
     """Clear in-memory model cache (for retraining scenarios)."""
     _model_cache.clear()
+    _s3_failed.clear()
     logger.info("ML model cache cleared")
 
 
@@ -297,11 +353,6 @@ def champion_vs_challenger(
     """Champion/Challenger model selection.
 
     Returns ML predictions if available and validated, otherwise Poisson.
-
-    Args:
-        poisson_probs: Poisson-based probabilities (Champion)
-        ml_probs: ML ensemble probabilities (Challenger), or None
-        league_id: League for validation check
     """
     if ml_probs is None or not is_ml_available(league_id):
         return {**poisson_probs, "_source": "poisson"}
@@ -315,4 +366,4 @@ def champion_vs_challenger(
                 f"using {'ML' if val_brier < 0.60 else 'Poisson'}"
             )
 
-    return {**ml_probs, "_source": "ml_ensemble"}
+    return {**ml_probs, "_source": ml_probs.get("source", "ml_ensemble")}

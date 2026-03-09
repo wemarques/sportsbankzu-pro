@@ -317,6 +317,10 @@ def train_and_save(
     with open(xgb_path, "wb") as f:
         pickle.dump(xgb, f)
 
+    # Save XGBoost in native JSON format (loads without sklearn on Lambda)
+    xgb_native_path = league_dir / "xgb_model.json"
+    xgb.get_booster().save_model(str(xgb_native_path))
+
     # Feature importance (top 20)
     rf_importance = dict(
         sorted(
