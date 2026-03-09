@@ -53,13 +53,15 @@ jobs:
             --only-binary=:all: \
             --python-version 3.11 \
             --upgrade
-          # XGBoost only (no sklearn/scipy) — uses native JSON format for inference
+          # XGBoost only, no-deps to avoid pulling scipy (~130MB)
+          # numpy is already installed via requirements.txt
           pip install \
             "xgboost>=2.0.0" \
             --target lambda_build \
             --platform manylinux2014_x86_64 \
             --only-binary=:all: \
             --python-version 3.11 \
+            --no-deps \
             --upgrade
 
       - name: Strip unnecessary files from dependencies
