@@ -6,12 +6,22 @@ on:
     - cron: "0 6 * * 2"
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Modo de execução"
+        required: true
+        default: "ml_train"
+        type: choice
+        options:
+          - ml_train
+          - retrain_calibrators
+          - adjust_thresholds
+          - batch_audit
       leagues:
-        description: "Comma-separated league IDs (empty = all)"
+        description: "Comma-separated league IDs (empty = all, only for ml_train)"
         required: false
         default: ""
       n_seasons:
-        description: "Number of historical seasons"
+        description: "Number of historical seasons (only for ml_train)"
         required: false
         default: "3"
 
@@ -20,7 +30,9 @@ env:
   DATA_ROOT: /tmp/ml_data
 
 jobs:
-  retrain:
+  # Job 1: ML Model Training (RF + XGBoost ensemble)
+  ml-train:
+    if: ${{ github.event.inputs.mode == 'ml_train' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -84,7 +96,7 @@ jobs:
           # Summary
           success = [r for r in results if r.get('status') == 'success']
           failed = [r for r in results if r.get('status') != 'success']
-          print(f'\\n=== Training Summary ===')
+          print(f'\n=== Training Summary ===')
           print(f'Success: {len(success)} leagues')
           print(f'Failed/Skipped: {len(failed)} leagues')
           for r in success:
@@ -110,3 +122,45 @@ jobs:
           name: training-summary-${{ github.run_number }}
           path: /tmp/ml_data/training_summary.json
           retention-days: 30
+
+  # Job 2: Lambda-based operations (calibrators, thresholds, audit)
+  lambda-action:
+    if: ${{ github.event.inputs.mode == 'retrain_calibrators' || github.event.inputs.mode == 'adjust_thresholds' || github.event.inputs.mode == 'batch_audit' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Invoke Lambda — ${{ inputs.mode }}
+        run: |
+          echo "Invoking sportsbank-pro-backend with action: ${{ inputs.mode }}"
+          aws lambda invoke \
+            --function-name sportsbank-pro-backend \
+            --payload "$(echo '{"source":"github_actions","action":"${{ inputs.mode }}"}' | base64)" \
+            --cli-binary-format raw-in-base64-out \
+            response.json \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text | base64 --decode || true
+
+      - name: Show response
+        run: |
+          echo "=== Lambda Response ==="
+          cat response.json | python3 -m json.tool 2>/dev/null || cat response.json
+
+      - name: Verify success
+        run: |
+          STATUS=$(python3 -c "import json; r=json.load(open('response.json')); print(r.get('status','unknown'))" 2>/dev/null || echo "unknown")
+          echo "Status: $STATUS"
+          if [ "$STATUS" != "success" ]; then
+            echo "::error::Lambda returned status: $STATUS"
+            cat response.json
+            exit 1
+          fi
+          echo "Action completed successfully!"

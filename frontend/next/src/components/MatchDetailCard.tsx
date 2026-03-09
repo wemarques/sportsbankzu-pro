@@ -203,6 +203,14 @@ export interface MatchDetailData {
   awayForm?: string[];
   round?: string;
   aiAnalysis?: AIAnalysis;
+  predictions?: {
+    mercado: string;
+    status: string;
+    prob_min: number;
+    prob_max: number;
+    odd_minima: number | null;
+    alerta?: string;
+  }[];
 }
 
 /** Normaliza probabilidade para exibição (0-1 ou 0-100 -> X.X%) */
@@ -597,6 +605,28 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       <div className="mdc-loading">
                         <Loader2 size={16} className="mdc-loading-spinner" />
                         Gerando analise AI...
+                      </div>
+                    )}
+
+                    {/* Prognóstico — always visible when predictions exist */}
+                    {match.predictions && match.predictions.length > 0 && (
+                      <div className="mdc-prognostico">
+                        <h4 className="mdc-ai-section-title">Prognostico</h4>
+                        <div className="mdc-prognostico__list">
+                          {match.predictions.map((pred, idx) => (
+                            <div key={idx} className={`mdc-prognostico__item mdc-prognostico__item--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                              <span className={`mdc-prognostico__status mdc-prognostico__status--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                {pred.status}
+                              </span>
+                              <span className="mdc-prognostico__market">{pred.mercado}</span>
+                              <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
+                              {pred.odd_minima != null && (
+                                <span className="mdc-prognostico__ev">EV+ &gt;= {pred.odd_minima.toFixed(2)}</span>
+                              )}
+                              {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 

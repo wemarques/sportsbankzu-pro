@@ -694,6 +694,7 @@ Para informações mais detalhadas sobre componentes específicos, consulte:
 - **feat(ui):** Status ao vivo exibe período (1T/HT/2T) e minuto estimado a partir do `date_unix` do kickoff com heurística de override por dados de halftime
 - **feat(ui):** Linha de jogo ao vivo com borda lateral vermelha e fundo avermelhado sutil; placar com text-shadow e numeração tabular
 - **feat(ui):** Tag FT simplificada (sem data redundante) — display limpo e proeminente para jogos finalizados
+- **feat(ui):** Seção "Prognóstico" no painel de análise AI — exibe predictions (SAFE/NEUTRO/ALERTA) com mercado, faixa de probabilidade e odd mínima de valor esperado (EV+)
 
 ### V3.3.1 — 28 de Fevereiro de 2026 (Estabilidade & Qualidade)
 

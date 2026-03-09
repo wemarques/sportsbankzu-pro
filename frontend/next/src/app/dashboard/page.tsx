@@ -417,6 +417,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
+    predictions: match.predictions,
   };
 }
 
@@ -641,6 +642,9 @@ export default function Dashboard() {
       setErrorMessage(null);
       setErrorCode(null);
       setDataSource(null);
+      // Clear stale matches when date mode changes to prevent cross-date leakage
+      // (e.g. "week" data persisting when switching back to "today")
+      setAllMatches([]);
 
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
@@ -691,17 +695,7 @@ export default function Dashboard() {
           const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
-        // Merge: preserve existing matches from leagues not present in new results
-        // (prevents batch failures from removing previously loaded matches)
-        setAllMatches((prev) => {
-          if (prev.length === 0) return normalized;
-          if (normalized.length === 0) return prev;
-          const newLeagues = new Set(normalized.map((m) => m.leagueId));
-          // Keep previous matches whose league wasn't in ANY successful batch
-          const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-          const merged = [...normalized, ...preserved];
-          return merged;
-        });
+        setAllMatches(normalized);
         if (normalized.length > 0) setSelectedMatchId((prev) => prev ?? normalized[0].id);
 
         // Immediately fetch live scores to overlay real-time data
@@ -1005,6 +999,7 @@ export default function Dashboard() {
     setErrorMessage(null);
     setErrorCode(null);
     setDataSource(null);
+    setAllMatches([]);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
     try {
@@ -1048,14 +1043,7 @@ export default function Dashboard() {
         const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
-      // Merge: preserve existing matches from leagues not in new results
-      setAllMatches((prev) => {
-        if (prev.length === 0) return normalized;
-        if (normalized.length === 0) return prev;
-        const newLeagues = new Set(normalized.map((m) => m.leagueId));
-        const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-        return [...normalized, ...preserved];
-      });
+      setAllMatches(normalized);
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
     } catch {
       // Don't clear matches on error — preserve what we have
