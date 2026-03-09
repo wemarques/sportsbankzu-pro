@@ -1,0 +1,55 @@
+name: ML Model Retrain
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Ação a executar na Lambda"
+        required: true
+        default: "retrain_calibrators"
+        type: choice
+        options:
+          - retrain_calibrators
+          - adjust_thresholds
+          - batch_audit
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Invoke Lambda — ${{ inputs.action }}
+        run: |
+          echo "Invoking sportsbank-pro-backend with action: ${{ inputs.action }}"
+          aws lambda invoke \
+            --function-name sportsbank-pro-backend \
+            --payload "$(echo '{"source":"github_actions","action":"${{ inputs.action }}"}' | base64)" \
+            --cli-binary-format raw-in-base64-out \
+            response.json \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text | base64 --decode || true
+
+      - name: Show response
+        run: |
+          echo "=== Lambda Response ==="
+          cat response.json | python3 -m json.tool 2>/dev/null || cat response.json
+
+      - name: Verify success
+        run: |
+          STATUS=$(python3 -c "import json; r=json.load(open('response.json')); print(r.get('status','unknown'))" 2>/dev/null || echo "unknown")
+          echo "Status: $STATUS"
+          if [ "$STATUS" != "success" ]; then
+            echo "::error::Lambda returned status: $STATUS"
+            cat response.json
+            exit 1
+          fi
+          echo "ML Retrain completed successfully!"
