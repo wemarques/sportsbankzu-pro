@@ -422,42 +422,81 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                 except (ValueError, TypeError):
                     return None
 
-            # Try multiple field names — todays-matches API can return goal counts
-            # under different keys depending on match status and API version.
-            # For live matches, some fields may be stale (0) while others have the
-            # real score. We take the MAX across all fields to avoid showing 0-0.
-            _GOAL_HOME_FB = ("homeGoalCount", "home_team_goal_count", "home_goals",
-                             "team_a_goals", "homeScore", "home_score")
-            _GOAL_AWAY_FB = ("awayGoalCount", "away_team_goal_count", "away_goals",
-                             "team_b_goals", "awayScore", "away_score")
-            _home_goals = None
-            _away_goals = None
+            def _count_goal_timings(val) -> Optional[int]:
+                """Count goals from homeGoals/awayGoals field.
+
+                FootyStats API returns goal timings as:
+                  - JSON string: '["13","55"]' or '[]' (todays-matches)
+                  - Python list: ["13","55"] (league-matches)
+                The number of elements = number of goals scored.
+                """
+                if val is None:
+                    return None
+                if isinstance(val, str):
+                    val = val.strip()
+                    if val in ("[]", "", "null"):
+                        return 0
+                    try:
+                        import json as _json
+                        parsed = _json.loads(val)
+                        if isinstance(parsed, list):
+                            return len(parsed)
+                    except (ValueError, TypeError):
+                        pass
+                    return None
+                if isinstance(val, list):
+                    return len(val)
+                return None
+
+            # Primary: homeGoalCount / awayGoalCount (reliable for finished matches)
+            _home_goals = _valid_goal_fb(m.get("homeGoalCount"))
+            _away_goals = _valid_goal_fb(m.get("awayGoalCount"))
+
+            # Secondary: count goal timings from homeGoals/awayGoals arrays.
+            # During live matches, homeGoalCount may stay 0 while homeGoals
+            # array gets updated with goal timings (e.g. ["13", "55"] = 2 goals).
+            _home_from_timings = _count_goal_timings(m.get("homeGoals"))
+            _away_from_timings = _count_goal_timings(m.get("awayGoals"))
+
+            # Tertiary: totalGoalCount as cross-check
+            _total_goal_count = _valid_goal_fb(m.get("totalGoalCount"))
+
+            # For live matches: take the MAX between homeGoalCount and len(homeGoals)
+            # because one source may lag behind the other.
             if match_status == "live":
-                # For live matches: check ALL fields and take the highest valid value,
-                # because some API fields lag behind (report 0) while others are current.
-                _h_candidates = [_valid_goal_fb(m.get(_f)) for _f in _GOAL_HOME_FB]
-                _a_candidates = [_valid_goal_fb(m.get(_f)) for _f in _GOAL_AWAY_FB]
-                _h_valid = [v for v in _h_candidates if v is not None]
-                _a_valid = [v for v in _a_candidates if v is not None]
-                _home_goals = max(_h_valid) if _h_valid else None
-                _away_goals = max(_a_valid) if _a_valid else None
+                candidates_h = [v for v in [_home_goals, _home_from_timings] if v is not None]
+                candidates_a = [v for v in [_away_goals, _away_from_timings] if v is not None]
+                _home_goals = max(candidates_h) if candidates_h else None
+                _away_goals = max(candidates_a) if candidates_a else None
+
+                # Cross-check: if totalGoalCount > sum of individual goals,
+                # something is stale — but we can't split the total without more data
+                if _home_goals is not None and _away_goals is not None and _total_goal_count is not None:
+                    if _total_goal_count > (_home_goals + _away_goals):
+                        logger.warning(
+                            f"[fixtures] Goal count mismatch for {home} vs {away}: "
+                            f"total={_total_goal_count}, home={_home_goals}, away={_away_goals}"
+                        )
             else:
-                # For finished/scheduled: first valid value wins
-                for _gf in _GOAL_HOME_FB:
-                    _home_goals = _valid_goal_fb(m.get(_gf))
-                    if _home_goals is not None:
-                        break
-                for _gf in _GOAL_AWAY_FB:
-                    _away_goals = _valid_goal_fb(m.get(_gf))
-                    if _away_goals is not None:
-                        break
-            _ht_home = _valid_goal_fb(m.get("home_team_goal_count_half_time"))
-            _ht_away = _valid_goal_fb(m.get("away_team_goal_count_half_time"))
+                # For finished matches: prefer homeGoalCount, fallback to timings
+                if _home_goals is None and _home_from_timings is not None:
+                    _home_goals = _home_from_timings
+                if _away_goals is None and _away_from_timings is not None:
+                    _away_goals = _away_from_timings
+
+            # HT scores
+            _ht_home = _valid_goal_fb(m.get("ht_goals_team_a")) or _valid_goal_fb(m.get("home_team_goal_count_half_time"))
+            _ht_away = _valid_goal_fb(m.get("ht_goals_team_b")) or _valid_goal_fb(m.get("away_team_goal_count_half_time"))
 
             match_score = None
             _has_goals_fb = _home_goals is not None and _away_goals is not None
-            # Fallback: fetch individual match details if live and goal fields missing
-            if not _has_goals_fb and match_status == "live":
+            # Fallback: fetch individual match details if live and goal data missing/zero
+            _needs_detail_fb = (
+                not _has_goals_fb
+                or (match_status == "live" and _home_goals == 0 and _away_goals == 0
+                    and _total_goal_count is not None and _total_goal_count > 0)
+            )
+            if _needs_detail_fb and match_status == "live":
                 _fb_id = m.get("id")
                 if _fb_id is not None:
                     try:
@@ -466,19 +505,27 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                             _fb_dd = _fb_detail.get("data", {})
                             if isinstance(_fb_dd, list) and _fb_dd:
                                 _fb_dd = _fb_dd[0]
+                            # Try homeGoalCount first, then count homeGoals timings
                             _fb_h = _valid_goal_fb(_fb_dd.get("homeGoalCount"))
                             _fb_a = _valid_goal_fb(_fb_dd.get("awayGoalCount"))
-                            if _fb_h is not None and _fb_a is not None:
-                                _home_goals = _fb_h
-                                _away_goals = _fb_a
-                                _has_goals_fb = True
-                                _fb_ht_h = _valid_goal_fb(_fb_dd.get("home_team_goal_count_half_time"))
-                                _fb_ht_a = _valid_goal_fb(_fb_dd.get("away_team_goal_count_half_time"))
+                            _fb_h_timings = _count_goal_timings(_fb_dd.get("homeGoals"))
+                            _fb_a_timings = _count_goal_timings(_fb_dd.get("awayGoals"))
+                            # Take max between count and timings
+                            _fb_h_final = max(v for v in [_fb_h, _fb_h_timings] if v is not None) if any(v is not None for v in [_fb_h, _fb_h_timings]) else None
+                            _fb_a_final = max(v for v in [_fb_a, _fb_a_timings] if v is not None) if any(v is not None for v in [_fb_a, _fb_a_timings]) else None
+                            if _fb_h_final is not None and _fb_a_final is not None:
+                                # Only update if detail has more goals (never regress)
+                                if (_fb_h_final + _fb_a_final) >= ((_home_goals or 0) + (_away_goals or 0)):
+                                    _home_goals = _fb_h_final
+                                    _away_goals = _fb_a_final
+                                    _has_goals_fb = True
+                                _fb_ht_h = _valid_goal_fb(_fb_dd.get("ht_goals_team_a")) or _valid_goal_fb(_fb_dd.get("home_team_goal_count_half_time"))
+                                _fb_ht_a = _valid_goal_fb(_fb_dd.get("ht_goals_team_b")) or _valid_goal_fb(_fb_dd.get("away_team_goal_count_half_time"))
                                 if _fb_ht_h is not None and _fb_ht_a is not None:
                                     _ht_home = _fb_ht_h
                                     _ht_away = _fb_ht_a
                                 logger.info(
-                                    f"[fixtures] match-detail fallback for {home} vs {away}: {_fb_h}-{_fb_a}"
+                                    f"[fixtures] match-detail fallback for {home} vs {away}: {_fb_h_final}-{_fb_a_final}"
                                 )
                     except Exception as _fb_err:
                         logger.debug(f"[fixtures] match-detail fallback failed for {home} vs {away}: {_fb_err}")
@@ -645,41 +692,62 @@ def live_scores() -> Dict[str, Any]:
                 skipped_statuses[raw_status] = skipped_statuses.get(raw_status, 0) + 1
                 continue
 
-            # Read goal count — try multiple field names (API returns camelCase
-            # or snake_case depending on endpoint/version)
-            _GOAL_HOME_FIELDS = ("homeGoalCount", "home_team_goal_count", "home_goals",
-                                 "team_a_goals", "homeScore", "home_score")
-            _GOAL_AWAY_FIELDS = ("awayGoalCount", "away_team_goal_count", "away_goals",
-                                 "team_b_goals", "awayScore", "away_score")
+            # Read goal count from FootyStats API fields.
+            # Per API docs, todays-matches returns:
+            #   homeGoalCount (int, 0 default), homeGoals (JSON string of timing array)
+            # For live matches, homeGoalCount may stay 0 while homeGoals array
+            # gets populated with goal timings. We use both sources.
             def _valid_goal(val):
                 """Return int if val is a valid goal count (>= 0), else None."""
                 if val is None:
                     return None
                 try:
                     v = int(val)
-                    return v if v >= 0 else None  # -1 = no data
+                    return v if v >= 0 else None
                 except (ValueError, TypeError):
                     return None
 
-            # For live matches: take MAX across all goal fields to avoid stale 0
-            # (some API fields lag behind while others are current).
-            _h_candidates = [_valid_goal(m.get(_f)) for _f in _GOAL_HOME_FIELDS]
-            _a_candidates = [_valid_goal(m.get(_f)) for _f in _GOAL_AWAY_FIELDS]
-            _h_valid = [v for v in _h_candidates if v is not None]
-            _a_valid = [v for v in _a_candidates if v is not None]
-            home_goals = max(_h_valid) if _h_valid else None
-            away_goals = max(_a_valid) if _a_valid else None
+            def _count_goal_timings_ls(val) -> Optional[int]:
+                """Count goals from homeGoals/awayGoals timing arrays."""
+                if val is None:
+                    return None
+                if isinstance(val, str):
+                    val = val.strip()
+                    if val in ("[]", "", "null"):
+                        return 0
+                    try:
+                        import json as _json
+                        parsed = _json.loads(val)
+                        if isinstance(parsed, list):
+                            return len(parsed)
+                    except (ValueError, TypeError):
+                        pass
+                    return None
+                if isinstance(val, list):
+                    return len(val)
+                return None
+
+            # Primary: homeGoalCount/awayGoalCount
+            home_goals = _valid_goal(m.get("homeGoalCount"))
+            away_goals = _valid_goal(m.get("awayGoalCount"))
+            # Secondary: count goal timings from homeGoals/awayGoals arrays
+            _home_timings = _count_goal_timings_ls(m.get("homeGoals"))
+            _away_timings = _count_goal_timings_ls(m.get("awayGoals"))
+            # Take MAX between count and timings (one may lag behind the other)
+            _h_all = [v for v in [home_goals, _home_timings] if v is not None]
+            _a_all = [v for v in [away_goals, _away_timings] if v is not None]
+            home_goals = max(_h_all) if _h_all else None
+            away_goals = max(_a_all) if _a_all else None
+
+            _total = _valid_goal(m.get("totalGoalCount"))
 
             # If individual goal fields are missing, try totalGoalCount as evidence
-            # that goals were scored (even if we can't split home/away)
             _has_goal_data = home_goals is not None and away_goals is not None
             if not _has_goal_data:
-                _total = _valid_goal(m.get("totalGoalCount"))
                 if _total is not None and _total > 0:
-                    # We know goals happened but can't split — use total as hint
-                    # Try to infer from half-time data if available
-                    _ht_h = _valid_goal(m.get("home_team_goal_count_half_time"))
-                    _ht_a = _valid_goal(m.get("away_team_goal_count_half_time"))
+                    # Try HT data as fallback
+                    _ht_h = _valid_goal(m.get("ht_goals_team_a")) or _valid_goal(m.get("home_team_goal_count_half_time"))
+                    _ht_a = _valid_goal(m.get("ht_goals_team_b")) or _valid_goal(m.get("away_team_goal_count_half_time"))
                     if _ht_h is not None and _ht_a is not None:
                         home_goals = home_goals if home_goals is not None else _ht_h
                         away_goals = away_goals if away_goals is not None else _ht_a
@@ -690,10 +758,15 @@ def live_scores() -> Dict[str, Any]:
                             f"(totalGoalCount={_total}, ht={_ht_h}-{_ht_a})"
                         )
 
-            if not _has_goal_data:
+            # Also trigger detail fallback if score is 0-0 but totalGoalCount says otherwise
+            _score_suspect = (
+                _has_goal_data and home_goals == 0 and away_goals == 0
+                and _total is not None and _total > 0
+            )
+            if not _has_goal_data or _score_suspect:
                 if status == "live":
                     # Fallback: fetch individual match details (1-min cache) for live goal data.
-                    # The todays-matches endpoint often returns -1 for goal counts during live matches.
+                    # The todays-matches endpoint may return stale 0 for goal counts.
                     _raw_id = m.get("id")
                     _fallback_ok = False
                     if _raw_id is not None:
@@ -706,14 +779,21 @@ def live_scores() -> Dict[str, Any]:
                                     dd = dd[0]
                                 _fb_home = _valid_goal(dd.get("homeGoalCount"))
                                 _fb_away = _valid_goal(dd.get("awayGoalCount"))
+                                # Also count goal timings (may be more current)
+                                _fb_h_t = _count_goal_timings_ls(dd.get("homeGoals"))
+                                _fb_a_t = _count_goal_timings_ls(dd.get("awayGoals"))
+                                _fb_h_vals = [v for v in [_fb_home, _fb_h_t] if v is not None]
+                                _fb_a_vals = [v for v in [_fb_away, _fb_a_t] if v is not None]
+                                _fb_home = max(_fb_h_vals) if _fb_h_vals else None
+                                _fb_away = max(_fb_a_vals) if _fb_a_vals else None
                                 if _fb_home is not None and _fb_away is not None:
                                     home_goals = _fb_home
                                     away_goals = _fb_away
                                     _has_goal_data = True
                                     _fallback_ok = True
                                     # Also extract halftime from detail
-                                    _fb_ht_h = _valid_goal(dd.get("home_team_goal_count_half_time"))
-                                    _fb_ht_a = _valid_goal(dd.get("away_team_goal_count_half_time"))
+                                    _fb_ht_h = _valid_goal(dd.get("ht_goals_team_a")) or _valid_goal(dd.get("home_team_goal_count_half_time"))
+                                    _fb_ht_a = _valid_goal(dd.get("ht_goals_team_b")) or _valid_goal(dd.get("away_team_goal_count_half_time"))
                                     if _fb_ht_h is not None and _fb_ht_a is not None:
                                         ht_home = _fb_ht_h
                                         ht_away = _fb_ht_a
