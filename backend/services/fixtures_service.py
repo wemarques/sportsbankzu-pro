@@ -1006,6 +1006,16 @@ def build_records_from_matches(
                             logger.info(f"[Gap6] ML prediction applied to {home} vs {away}")
                         else:
                             record["stats"]["predictionSource"] = "poisson"
+                        # Market models (Over/Under + BTTS) from ML
+                        try:
+                            from backend.ml.market_models import predict_all_markets
+                            _market_preds = predict_all_markets(_ml_features, league_id)
+                            for mkt, prob in _market_preds.items():
+                                if prob is not None:
+                                    record["stats"][f"ml_{mkt}"] = prob
+                        except Exception as _mkt_err:
+                            logger.debug(f"[Gap6] Market ML skipped for {home} vs {away}: {_mkt_err}")
+
                 except Exception as _ml_err:
                     logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
 
