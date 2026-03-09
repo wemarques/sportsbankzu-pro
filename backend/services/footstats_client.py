@@ -183,7 +183,7 @@ class FootyStatsClient:
         params = {"timezone": timezone}
         if date:
             params["date"] = date
-        return self._request("todays-matches", params, ttl_minutes=30) # Cache de 30min para jogos do dia
+        return self._request("todays-matches", params, ttl_minutes=5) # Cache de 5min (reduzido de 30min para placares ao vivo)
 
     def get_live_scores(self, timezone: str = "America/Sao_Paulo") -> Dict[str, Any]:
         """Retorna jogos do dia com cache curto (1 min) para placares ao vivo."""
