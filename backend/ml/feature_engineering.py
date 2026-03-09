@@ -145,21 +145,78 @@ class RollingStatsTracker:
 
 
 def _extract_match_stats(match: Dict[str, Any], is_home: bool) -> Dict[str, float]:
-    """Extract per-team stats from a raw FootyStats match dict."""
+    """Extract per-team stats from a raw FootyStats match dict.
+
+    FootyStats API uses two naming conventions:
+        - league-matches endpoint: team_a_* (home) / team_b_* (away)
+        - match detail endpoint:   homeXxx / awayXxx
+    We check both to handle data from either endpoint.
+    """
+    # team_a = home, team_b = away in FootyStats convention
+    team_letter = "a" if is_home else "b"
+    opp_letter = "b" if is_home else "a"
     prefix = "home" if is_home else "away"
     opp_prefix = "away" if is_home else "home"
 
+    def _get(primary: str, *fallbacks: str) -> float:
+        """Try primary key, then fallbacks, return first valid value."""
+        for key in (primary, *fallbacks):
+            val = match.get(key)
+            if val is not None and val != -1 and val != -2 and val != "":
+                return _safe_float(val)
+        return 0.0
+
     return {
-        "goals_scored": _safe_float(match.get(f"{prefix}GoalCount", match.get(f"{prefix}_goals"))),
-        "goals_conceded": _safe_float(match.get(f"{opp_prefix}GoalCount", match.get(f"{opp_prefix}_goals"))),
-        "xg": _safe_float(match.get(f"team_{prefix[0]}_xg", match.get(f"{prefix}_xg"))),
-        "xg_conceded": _safe_float(match.get(f"team_{opp_prefix[0]}_xg", match.get(f"{opp_prefix}_xg"))),
-        "shots": _safe_float(match.get(f"{prefix}Shots", match.get(f"{prefix}_shots"))),
-        "shots_on_target": _safe_float(match.get(f"{prefix}ShotsOnTarget", match.get(f"{prefix}_shotsOnTarget"))),
-        "corners": _safe_float(match.get(f"{prefix}Corners", match.get(f"{prefix}_corners"))),
-        "cards": _safe_float(match.get(f"{prefix}Cards", match.get(f"{prefix}_cards"))),
-        "possession": _safe_float(match.get(f"{prefix}Possession", match.get(f"{prefix}_possession"))),
-        "fouls": _safe_float(match.get(f"{prefix}Fouls", match.get(f"{prefix}_fouls"))),
+        "goals_scored": _get(
+            f"{prefix}GoalCount",
+            f"{prefix}_goals",
+            f"home_team_goal_count" if is_home else "away_team_goal_count",
+        ),
+        "goals_conceded": _get(
+            f"{opp_prefix}GoalCount",
+            f"{opp_prefix}_goals",
+            f"home_team_goal_count" if not is_home else "away_team_goal_count",
+        ),
+        "xg": _get(
+            f"team_{team_letter}_xg",
+            f"{prefix}_xg",
+            f"home_xg" if is_home else "away_xg",
+        ),
+        "xg_conceded": _get(
+            f"team_{opp_letter}_xg",
+            f"{opp_prefix}_xg",
+            f"home_xg" if not is_home else "away_xg",
+        ),
+        "shots": _get(
+            f"team_{team_letter}_shots",
+            f"{prefix}Shots",
+            f"{prefix}_shots",
+        ),
+        "shots_on_target": _get(
+            f"team_{team_letter}_shotsOnTarget",
+            f"{prefix}ShotsOnTarget",
+            f"{prefix}_shotsOnTarget",
+        ),
+        "corners": _get(
+            f"team_{team_letter}_corners",
+            f"{prefix}Corners",
+            f"home_team_corner_count" if is_home else "away_team_corner_count",
+        ),
+        "cards": _get(
+            f"team_{team_letter}_cards_num",
+            f"team_{team_letter}_yellow_cards",
+            f"{prefix}Cards",
+        ),
+        "possession": _get(
+            f"team_{team_letter}_possession",
+            f"{prefix}Possession",
+            f"{prefix}_possession",
+        ),
+        "fouls": _get(
+            f"team_{team_letter}_fouls",
+            f"{prefix}Fouls",
+            f"{prefix}_fouls",
+        ),
     }
 
 

@@ -45,8 +45,10 @@ LEAGUES_CONFIG = [
     # INGLATERRA
     {"country": "England", "name": "Premier League", "id": "premier-league"},
     {"country": "England", "name": "Championship", "id": "championship"},
-    {"country": "England", "name": "League One", "id": "league-one"},
-    {"country": "England", "name": "League Two", "id": "league-two"},
+    {"country": "England", "name": "League One", "id": "league-one",
+     "alt_names": ["efl league one", "sky bet league one"]},
+    {"country": "England", "name": "League Two", "id": "league-two",
+     "alt_names": ["efl league two", "sky bet league two"]},
 
     # ESPANHA
     {"country": "Spain", "name": "La Liga", "id": "la-liga"},
@@ -66,7 +68,8 @@ LEAGUES_CONFIG = [
 
     # BRASIL
     {"country": "Brazil", "name": "Serie A", "id": "brasileirao-serie-a"},
-    {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b"},
+    {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b",
+     "alt_names": ["brasileirão série b", "campeonato brasileiro série b"]},
 
     # OUTROS EUROPA
     {"country": "Netherlands", "name": "Eredivisie", "id": "eredivisie"},
