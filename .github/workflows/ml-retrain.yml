@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -r backend/requirements.txt
-          python -m pip install scikit-learn xgboost
+          python -m pip install -r backend/requirements-ml.txt
 
       - name: Download previous models (if any)
         uses: actions/cache@v4
