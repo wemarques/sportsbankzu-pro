@@ -32,34 +32,99 @@ BRIER_IMPROVEMENT_THRESHOLD = 0.10
 # Cache loaded models in memory
 _model_cache: Dict[str, Dict[str, Any]] = {}
 
+# Track S3 download failures to avoid repeated attempts
+_s3_failed: set = set()
+
+
+def _download_from_s3(league_id: str) -> bool:
+    """Download model files from S3 to local disk. Returns True if successful."""
+    if league_id in _s3_failed:
+        return False
+
+    bucket = os.getenv("S3_BUCKET")
+    if not bucket:
+        return False
+
+    try:
+        import boto3
+    except ImportError:
+        return False
+
+    expected_files = ["rf_model.pkl", "xgb_model.pkl", "metadata.json"]
+
+    # Use /tmp for writable storage (Lambda /var/task is read-only)
+    local_dir = Path("/tmp/.ml_models") / league_id
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        s3 = boto3.client("s3")
+
+        downloaded = 0
+        for filename in expected_files:
+            s3_key = f".ml_models/{league_id}/{filename}"
+            local_path = local_dir / filename
+            try:
+                s3.download_file(bucket, s3_key, str(local_path))
+                downloaded += 1
+            except Exception:
+                pass
+
+        if downloaded == len(expected_files):
+            logger.info(f"Models downloaded from S3 for {league_id}")
+            return True
+
+        _s3_failed.add(league_id)
+        return False
+
+    except Exception as e:
+        logger.debug(f"S3 download failed for {league_id}: {e}")
+        _s3_failed.add(league_id)
+        return False
+
 
 def _load_models(league_id: str) -> Optional[Dict[str, Any]]:
-    """Load trained models and metadata for a league from disk."""
+    """Load trained models and metadata for a league from disk or S3."""
     if league_id in _model_cache:
         return _model_cache[league_id]
 
-    league_dir = _MODELS_DIR / league_id
-    rf_path = league_dir / "rf_model.pkl"
-    xgb_path = league_dir / "xgb_model.pkl"
-    meta_path = league_dir / "metadata.json"
+    # Check multiple possible locations
+    candidates = [
+        _MODELS_DIR / league_id,
+        Path("/tmp/.ml_models") / league_id,
+    ]
 
-    if not rf_path.exists() or not xgb_path.exists() or not meta_path.exists():
-        # Try global model as fallback
-        if league_id != "global":
+    rf_path = xgb_path = meta_path = None
+    for league_dir in candidates:
+        rf = league_dir / "rf_model.pkl"
+        xgb = league_dir / "xgb_model.pkl"
+        meta = league_dir / "metadata.json"
+        if rf.exists() and xgb.exists() and meta.exists():
+            rf_path, xgb_path, meta_path = rf, xgb, meta
+            break
+
+    # If not found locally, try downloading from S3
+    if rf_path is None:
+        if _download_from_s3(league_id):
+            s3_dir = Path("/tmp/.ml_models") / league_id
+            rf_path = s3_dir / "rf_model.pkl"
+            xgb_path = s3_dir / "xgb_model.pkl"
+            meta_path = s3_dir / "metadata.json"
+        elif league_id != "global":
             return _load_models("global")
-        return None
+        else:
+            return None
 
     try:
         with open(rf_path, "rb") as f:
-            rf = pickle.load(f)
+            rf_model = pickle.load(f)
         with open(xgb_path, "rb") as f:
-            xgb = pickle.load(f)
+            xgb_model = pickle.load(f)
         with open(meta_path, "r") as f:
             metadata = json.load(f)
 
         bundle = {
-            "rf": rf,
-            "xgb": xgb,
+            "rf": rf_model,
+            "xgb": xgb_model,
             "metadata": metadata,
             "feature_names": metadata.get("feature_names", []),
             "ensemble_weights": metadata.get("ensemble_weights", {"rf": 0.40, "xgb": 0.60}),

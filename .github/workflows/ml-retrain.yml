@@ -124,6 +124,26 @@ jobs:
               json.dump(results, f, indent=2, default=str)
           "
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload models to S3
+        run: |
+          if [ -d "/tmp/ml_data/.ml_models" ]; then
+            echo "Syncing trained models to S3..."
+            aws s3 sync /tmp/ml_data/.ml_models/ s3://meu-bucket-sportsbank/.ml_models/ \
+              --delete --exclude "*.pyc" --exclude "__pycache__/*"
+            echo ""
+            echo "=== Models in S3 ==="
+            aws s3 ls s3://meu-bucket-sportsbank/.ml_models/ --recursive --human-readable
+          else
+            echo "::warning::No .ml_models directory found at /tmp/ml_data/.ml_models"
+          fi
+
       - name: List model files (debug)
         if: always()
         run: |

@@ -53,6 +53,13 @@ jobs:
             --only-binary=:all: \
             --python-version 3.11 \
             --upgrade
+          pip install \
+            -r backend/requirements-ml.txt \
+            --target lambda_build \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --python-version 3.11 \
+            --upgrade
 
       - name: Copy backend code
         run: |
