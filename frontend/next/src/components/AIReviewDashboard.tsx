@@ -18,6 +18,7 @@ import {
   X,
   Link2,
   Layers,
+  ArrowLeft,
 } from "lucide-react";
 import { AVAILABLE_LEAGUES, type League } from "@/lib/leagues";
 
@@ -860,7 +861,17 @@ export default function AIReviewDashboard() {
   return (
     <div className="bg-[#0a0a0a] min-h-screen text-gray-100 font-sans pb-24">
       {/* Header */}
-      <header className="p-4 flex items-center justify-between sticky top-0 glass-effect z-10">
+      <header className="sticky top-0 glass-effect z-10">
+        <div className="px-4 pt-3 pb-1">
+          <a
+            href="/dashboard"
+            className="inline-flex items-center gap-1 text-[0.72rem] text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            <ArrowLeft size={14} />
+            Dashboard
+          </a>
+        </div>
+        <div className="px-4 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="bg-[#00df82] p-1.5 rounded-lg">
             <TrendingUp size={20} className="text-black" />
@@ -885,6 +896,7 @@ export default function AIReviewDashboard() {
             <Bell size={20} />
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-black pulse-active" />
           </button>
+        </div>
         </div>
       </header>
 

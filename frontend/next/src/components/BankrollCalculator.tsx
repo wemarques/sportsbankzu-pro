@@ -200,7 +200,8 @@ function BankSlider({
   allocations?: BetAllocation[];
   bankroll?: number;
 }) {
-  const [showGames, setShowGames] = useState(false);
+  const hasAllocations = allocations && allocations.length > 0;
+  const [showGames, setShowGames] = useState(true);
   const catBudget = bankroll ? bankroll * (value / 100) : 0;
   const totalStaked = allocations?.reduce((s, a) => s + a.stake, 0) ?? 0;
 
@@ -251,7 +252,7 @@ function BankSlider({
       />
 
       {/* Game allocations inline */}
-      {allocations && allocations.length > 0 && (
+      {hasAllocations && (
         <div className="mt-3">
           <button
             onClick={() => setShowGames(!showGames)}
@@ -271,17 +272,22 @@ function BankSlider({
                 return (
                   <div
                     key={a.bet.id}
-                    className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border"
+                    className="flex items-center justify-between gap-2 px-2.5 py-2.5 rounded-lg border"
                     style={{
                       background: `${color}06`,
                       borderColor: `${color}15`,
                     }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
-                        {a.bet.homeTeam}{" "}
-                        <span className="text-[var(--color-text-muted)]">x</span>{" "}
-                        {a.bet.awayTeam}
+                      <div className="flex items-center gap-1.5">
+                        <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                          {a.bet.homeTeam}{" "}
+                          <span className="text-[var(--color-text-muted)]">x</span>{" "}
+                          {a.bet.awayTeam}
+                        </div>
+                        <span className="text-[0.58rem] text-[var(--color-text-muted)] shrink-0">
+                          {formatTime(a.bet.datetime)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span
@@ -304,11 +310,17 @@ function BankSlider({
                         <span className="text-[0.58rem] text-[var(--color-text-muted)]">
                           {a.bet.leagueName}
                         </span>
+                        <span
+                          className="text-[0.55rem] font-bold px-1 py-px rounded"
+                          style={{ background: `${color}12`, color }}
+                        >
+                          {a.bet.status}
+                        </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
                       <div
-                        className="text-[0.78rem] font-black tabular-nums"
+                        className="text-[0.82rem] font-black tabular-nums"
                         style={{ color }}
                       >
                         {formatCurrency(a.stake)}
@@ -428,7 +440,7 @@ function AllocationCard({
 
         {/* Stats bar */}
         <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/5">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <div className="text-center">
               <div className="text-[0.6rem] text-[var(--color-text-muted)] uppercase tracking-wider">
                 Odd
@@ -900,7 +912,7 @@ export default function BankrollCalculator() {
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               {(
                 [
                   { mode: "quarter" as const, label: "1/4 Kelly", desc: "Conservador" },
@@ -911,7 +923,7 @@ export default function BankrollCalculator() {
                 <button
                   key={mode}
                   onClick={() => updateSetting("kellyMode", mode)}
-                  className="relative py-3 px-2 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02]"
+                  className="relative py-2.5 px-1.5 sm:py-3 sm:px-2 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02]"
                   style={{
                     background:
                       settings.kellyMode === mode
@@ -933,7 +945,7 @@ export default function BankrollCalculator() {
                     />
                   )}
                   <div
-                    className="text-sm font-bold mb-0.5"
+                    className="text-[0.78rem] sm:text-sm font-bold mb-0.5"
                     style={{
                       color:
                         settings.kellyMode === mode
@@ -943,7 +955,7 @@ export default function BankrollCalculator() {
                   >
                     {label}
                   </div>
-                  <div className="text-[0.6rem] text-[var(--color-text-muted)]">{desc}</div>
+                  <div className="text-[0.55rem] sm:text-[0.6rem] text-[var(--color-text-muted)]">{desc}</div>
                 </button>
               ))}
             </div>
