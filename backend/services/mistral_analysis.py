@@ -278,6 +278,7 @@ CONTEXTO ADICIONAL:
 - Forma Fora (ultimos 5): {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
 - Lesoes/Suspensoes: {context.get('absences', 'Nenhuma informacao')}
+- Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 """
             if context.get("footystats_analysis"):
                 prompt += f"""

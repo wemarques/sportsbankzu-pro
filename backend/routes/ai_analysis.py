@@ -342,8 +342,9 @@ def _match_to_ai_input(m: dict) -> dict:
     away_form = stats.get("awayForm") or m.get("awayForm") or []
     h2h = m.get("h2h", {})
 
-    # Enrich with FootyStats match details (gpt_en analysis, H2H, etc.)
+    # Enrich with FootyStats match details (gpt_en analysis, H2H, lineups, etc.)
     footystats_analysis = ""
+    footystats_lineup = ""
     footystats_match_id = m.get("footystatsId")
     if footystats_match_id:
         try:
@@ -367,6 +368,36 @@ def _match_to_ai_input(m: dict) -> dict:
                         "bttsPercentage": betting.get("bttsPercentage", 0),
                         "over25Percentage": betting.get("over25Percentage", 0),
                     }
+                # Extract lineups if available
+                raw_lineup = detail_data.get("lineup", {})
+                raw_bench = detail_data.get("bench", {})
+                if raw_lineup and isinstance(raw_lineup, dict):
+                    lineup_parts = []
+                    for side, label in [("home", "Casa"), ("away", "Fora")]:
+                        players = raw_lineup.get(side, [])
+                        if players and isinstance(players, list):
+                            names = [
+                                f"{p.get('name', '?')} ({p.get('position', '?')})"
+                                for p in players if isinstance(p, dict)
+                            ]
+                            if names:
+                                lineup_parts.append(f"{label}: {', '.join(names)}")
+                    bench_parts = []
+                    if raw_bench and isinstance(raw_bench, dict):
+                        for side, label in [("home", "Casa"), ("away", "Fora")]:
+                            players = raw_bench.get(side, [])
+                            if players and isinstance(players, list):
+                                names = [
+                                    p.get("name", "?")
+                                    for p in players if isinstance(p, dict)
+                                ]
+                                if names:
+                                    bench_parts.append(f"{label}: {', '.join(names)}")
+                    if lineup_parts:
+                        lineup_text = "Titulares — " + " | ".join(lineup_parts)
+                        if bench_parts:
+                            lineup_text += " || Banco — " + " | ".join(bench_parts)
+                        footystats_lineup = lineup_text
         except Exception as e:
             logger.warning(f"Could not fetch match details for {footystats_match_id}: {e}")
 
@@ -381,6 +412,8 @@ def _match_to_ai_input(m: dict) -> dict:
     }
     if footystats_analysis:
         context["footystats_analysis"] = footystats_analysis
+    if footystats_lineup:
+        context["lineups"] = footystats_lineup
 
     home_name = team_name(m.get("homeTeam", ""))
     away_name = team_name(m.get("awayTeam", ""))
