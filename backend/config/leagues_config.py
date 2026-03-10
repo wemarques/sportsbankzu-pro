@@ -1,6 +1,6 @@
-# Mapeamento das 33 Ligas monitoradas (País - Liga)
+# Mapeamento das 34 Ligas monitoradas (País - Liga)
 # Este dicionário associa o nome amigável ao nome técnico da FootyStats para busca via API.
-# Expansão v3.5: 22 ligas originais + 11 novas ligas (Safe Bets Engine)
+# Expansão v3.5: 22 ligas originais + 11 novas ligas (Safe Bets Engine) + Liga MX
 
 # Aliases: IDs do frontend -> IDs do backend (para FootyStats API)
 # Permite que o frontend use IDs como "spain-la-liga" e o backend resolva para a config correta
@@ -41,6 +41,7 @@ LEAGUE_ID_ALIASES = {
     "usa-mls": "mls",
     "czech-first-league": "czech-first-league",
     "colombia-primera-a": "colombian-primera-a",
+    "mexico-liga-mx": "liga-mx",
 }
 
 LEAGUES_CONFIG = [
@@ -119,6 +120,10 @@ LEAGUES_CONFIG = [
      "alt_names": ["major league soccer"]},
     {"country": "Colombia", "name": "Campeonato Colombiano", "id": "colombian-primera-a",
      "alt_names": ["liga betplay", "primera a", "categoría primera a"]},
+
+    # MÉXICO
+    {"country": "Mexico", "name": "Liga MX", "id": "liga-mx",
+     "alt_names": ["liga bbva mx", "liga bbva bancomer", "primera division de mexico"]},
 ]
 
 

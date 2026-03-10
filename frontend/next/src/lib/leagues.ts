@@ -573,6 +573,19 @@ export const AVAILABLE_LEAGUES: League[] = [
       footystats: "/colombia/colombian-primera-a",
     },
   },
+  {
+    id: "mexico-liga-mx",
+    name: "Liga MX",
+    country: "México",
+    countryFlag: "🇲🇽",
+    logo: "/logos/liga-mx.png",
+    season: "2025/26",
+    totalMatches: 306,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/mexico/liga-mx",
+    },
+  },
 ];
 
 // =============================================================================

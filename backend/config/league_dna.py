@@ -1,7 +1,7 @@
 """
 League DNA — Consolidated Profile Matrix (Layer 1)
 
-Static categorization of all 33 monitored leagues based on historical averages.
+Static categorization of all 34 monitored leagues based on historical averages.
 This defines which markets are eligible for each league BEFORE individual match analysis.
 
 Categories:
@@ -32,7 +32,7 @@ class LeagueDNA:
     corners_disabled: bool = False
 
 
-# Static DNA matrix for all 33 leagues
+# Static DNA matrix for all 34 leagues
 LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
     # === DEFENSIVE LEAGUES (< 2.2 goals) — Under / BTTS No ===
     "j-league": LeagueDNA(
@@ -181,6 +181,11 @@ LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
         league_id="colombian-primera-a", category="BALANCED", is_aggressive=True,
         markets_enabled=["UNDER_35", "BTTS_NO"],
         avg_goals=2.25, avg_corners=9.0, avg_cards=4.5, btts_pct=42.0,
+    ),
+    "liga-mx": LeagueDNA(
+        league_id="liga-mx", category="BALANCED", is_aggressive=True,
+        markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
+        avg_goals=2.45, avg_corners=9.8, avg_cards=4.3, btts_pct=46.0,
     ),
     "brasileirao-serie-b": LeagueDNA(
         league_id="brasileirao-serie-b", category="BALANCED", is_aggressive=True,
