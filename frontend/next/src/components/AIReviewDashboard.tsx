@@ -291,8 +291,27 @@ function MatchCard({ match }: { match: DisplayMatch }) {
     setMistralLoading(false);
   };
 
-  const activeStatus = mistralData ? confidenceToStatus(mistralData.confidence) : match.mistral.status;
-  const activeColor = mistralData ? confidenceToColor(mistralData.confidence) : match.mistral.color;
+  // Combine local audit status (odds divergence) with Mistral confidence.
+  // If the local audit says REJECTED (odds divergence > 15%), keep ADJUSTED at most
+  // even if Mistral confidence is high — prevents misleading CONFIRMADO status.
+  const activeStatus = mistralData
+    ? (() => {
+        const mistralStatus = confidenceToStatus(mistralData.confidence);
+        if (match.mistral.status === "REJECTED" && mistralStatus === "CONFIRMED") {
+          return "ADJUSTED";
+        }
+        return mistralStatus;
+      })()
+    : match.mistral.status;
+  const activeColor = mistralData
+    ? (() => {
+        const mistralColor = confidenceToColor(mistralData.confidence);
+        if (match.mistral.status === "REJECTED" && confidenceToStatus(mistralData.confidence) === "CONFIRMED") {
+          return "orange" as const;
+        }
+        return mistralColor;
+      })()
+    : match.mistral.color;
 
   const mistralCardClass =
     activeStatus === "CONFIRMED"
@@ -378,7 +397,7 @@ function MatchCard({ match }: { match: DisplayMatch }) {
                     ))}
                   </ul>
                 )}
-                {mistralData.recommendation && (
+                {mistralData.recommendation && !/indispon[ií]vel|aguarde|consulte as estat/i.test(mistralData.recommendation) && (
                   <p className="text-[11px] text-[#00df82] font-semibold mt-2">
                     ✦ {mistralData.recommendation}
                   </p>

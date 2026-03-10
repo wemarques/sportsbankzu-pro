@@ -273,6 +273,7 @@ IMPORTANTE:
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica
+- OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "BTTS Sim @1.67" ou "Over 2.5 @1.80"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
 - Retorne APENAS o JSON, sem texto adicional
 """
         return prompt
@@ -325,9 +326,21 @@ IMPORTANTE:
 
             data = json.loads(cleaned)
 
-            recommendation = (data.get("recommendation") or "").strip()
-            if not recommendation:
-                recommendation = "Recomendacao indisponivel. Consulte as estatisticas e odds apresentadas para tomar sua decisao."
+            recommendation = data.get("recommendation", "")
+
+            # Detect generic/unavailable recommendations that Mistral sometimes returns
+            # instead of a real data-driven recommendation
+            _GENERIC_PATTERNS = (
+                "indisponivel",
+                "indisponível",
+                "aguarde",
+                "tente novamente",
+                "consulte as estatisticas",
+                "consulte as estatísticas",
+            )
+            if recommendation and any(p in recommendation.lower() for p in _GENERIC_PATTERNS):
+                logger.warning(f"Mistral returned generic recommendation, discarding: {recommendation[:80]}")
+                recommendation = ""
 
             return AIAnalysisResponse(
                 summary=data.get("summary", ""),

@@ -382,7 +382,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "austrian-bundesliga": "Bundesliga (Austria)", "austria-bundesliga": "Bundesliga (Austria)",
         "superliga": "Superliga", "denmark-superliga": "Superliga",
         "super-league": "Super League", "switzerland-super-league": "Super League",
-        "super-league-greece": "Super League Greece", "greece-super-league": "Super League Greece",
         "primera-division": "Primera División", "a-league": "A-League",
         "professional-league": "Professional League",
         "saudi-professional-league": "Professional League",
