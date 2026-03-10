@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
 import { Progress } from "./ui/progress";
 import { type Match } from "./MatchCard";
+import { AVAILABLE_LEAGUES } from "@/lib/leagues";
 import { startOfDay, endOfDay, addDays } from "date-fns";
 
 type MatchesListProps = {
@@ -107,7 +108,7 @@ export default function MatchesList({
             {Object.entries(matchesByLeague).map(([leagueId, { leagueName, matches }]) => (
               <div key={leagueId}>
                 <h4 className="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2">
-                  {leagueName}
+                  {(() => { const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId); return league?.country ? `${league.country} - ` : ""; })()}{leagueName}
                   <Badge variant="outline" className="text-xs">
                     {matches.length} jogos
                   </Badge>

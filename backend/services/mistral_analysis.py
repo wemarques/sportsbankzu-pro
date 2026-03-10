@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
+from backend.services.util_service import team_name
 
 try:
     import httpx
@@ -106,8 +107,8 @@ class MistralAnalysisService:
 
     def analyze_match_sync(self, match_data: Dict) -> AIAnalysisResponse:
         """Synchronous version for non-async contexts."""
-        home = match_data.get("home_team") or match_data.get("homeTeam", "Home")
-        away = match_data.get("away_team") or match_data.get("awayTeam", "Away")
+        home = team_name(match_data.get("home_team") or match_data.get("homeTeam", "Home"))
+        away = team_name(match_data.get("away_team") or match_data.get("awayTeam", "Away"))
         league = match_data.get("league") or match_data.get("leagueName", "")
         stats = match_data.get("stats", {})
         odds = match_data.get("odds", {})
@@ -293,7 +294,7 @@ IMPORTANTE:
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
-                    "max_tokens": 1000,
+                    "max_tokens": 2048,
                 },
                 timeout=30.0,
             )

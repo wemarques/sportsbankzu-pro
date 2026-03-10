@@ -13,6 +13,8 @@ import {
   Brain,
   Wrench,
   AlertTriangle,
+  Layers,
+  Link2,
 } from "lucide-react";
 import type {
   BatchAuditResult,
@@ -20,6 +22,9 @@ import type {
   BatchAuditMatchResult,
   ModelUpdateRecommendation,
   LeagueAuditStats,
+  AuditCombinada,
+  AuditCombinadaLeg,
+  AuditCombinadas,
 } from "@/lib/api";
 
 interface BatchAuditPanelProps {
@@ -66,21 +71,30 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`mdc-batch-audit__status ${cls}`}>{status}</span>;
 }
 
+function normalizeUrgency(u: string): string {
+  return u.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+}
+
 function UrgencyBadge({ urgency }: { urgency: string }) {
+  const norm = normalizeUrgency(urgency);
   const cls =
-    urgency === "CRITICA"
+    norm === "CRITICA"
       ? "mdc-batch-audit__urgency--critica"
-      : urgency === "ALTA"
+      : norm === "ALTA"
         ? "mdc-batch-audit__urgency--alta"
-        : urgency === "MEDIA"
+        : norm === "MEDIA"
           ? "mdc-batch-audit__urgency--media"
           : "mdc-batch-audit__urgency--baixa";
   return <span className={`mdc-batch-audit__urgency ${cls}`}>{urgency}</span>;
 }
 
-function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
+function ModelUpdateSection({ rec, mistralRec }: { rec: ModelUpdateRecommendation; mistralRec?: ModelUpdateRecommendation }) {
+  const hasMistral = !!mistralRec;
+  const diverges = hasMistral && normalizeUrgency(mistralRec.urgency) !== normalizeUrgency(rec.urgency);
+
   return (
     <div className={`mdc-batch-audit__model-update ${rec.needs_update ? "mdc-batch-audit__model-update--needs" : "mdc-batch-audit__model-update--ok"}`}>
+      {/* Local (deterministic) assessment */}
       <div className="mdc-batch-audit__model-update-header">
         <div className="mdc-batch-audit__model-update-title">
           {rec.needs_update ? (
@@ -90,8 +104,40 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
           )}
           <span>{rec.needs_update ? "Modelo Precisa de Atualização" : "Modelo Dentro dos Parâmetros"}</span>
         </div>
-        <UrgencyBadge urgency={rec.urgency} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase" }}>Modelo</span>
+          <UrgencyBadge urgency={rec.urgency} />
+        </div>
       </div>
+
+      {/* Mistral AI assessment (side-by-side) */}
+      {hasMistral && (
+        <div className="mdc-batch-audit__model-update-header" style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(148,163,184,0.15)" }}>
+          <div className="mdc-batch-audit__model-update-title">
+            <Brain size={18} style={{ color: "#a78bfa" }} />
+            <span>Avaliação Mistral AI</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: "0.65rem", color: "#a78bfa", textTransform: "uppercase" }}>Mistral</span>
+            <UrgencyBadge urgency={mistralRec.urgency} />
+          </div>
+        </div>
+      )}
+
+      {/* Divergence alert — signal for fine-tuning */}
+      {diverges && (
+        <div style={{
+          marginTop: 8, padding: "6px 10px", borderRadius: 6,
+          background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)",
+          display: "flex", alignItems: "center", gap: 6,
+          fontSize: "0.75rem", color: "#f59e0b"
+        }}>
+          <AlertTriangle size={14} />
+          <span>
+            Divergência detectada: Modelo avalia <strong>{rec.urgency}</strong>, Mistral avalia <strong>{mistralRec.urgency}</strong> — considerar ajuste fino nos thresholds
+          </span>
+        </div>
+      )}
 
       <div className="mdc-batch-audit__model-update-reasons">
         <h4>Diagnóstico</h4>
@@ -100,6 +146,16 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
             <li key={i}>{r}</li>
           ))}
         </ul>
+        {hasMistral && mistralRec.reasons?.length > 0 && (
+          <>
+            <h4 style={{ marginTop: 8, color: "#a78bfa" }}>Diagnóstico Mistral</h4>
+            <ul>
+              {mistralRec.reasons.map((r, i) => (
+                <li key={`m-${i}`} style={{ color: "#c4b5fd" }}>{r}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className="mdc-batch-audit__model-update-actions">
@@ -109,12 +165,177 @@ function ModelUpdateSection({ rec }: { rec: ModelUpdateRecommendation }) {
             <li key={i}>{a}</li>
           ))}
         </ul>
+        {hasMistral && mistralRec.recommended_actions?.length > 0 && (
+          <>
+            <h4 style={{ marginTop: 8, color: "#a78bfa" }}>Ações Mistral</h4>
+            <ul>
+              {mistralRec.recommended_actions.map((a, i) => (
+                <li key={`m-${i}`} style={{ color: "#c4b5fd" }}>{a}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className="mdc-batch-audit__model-update-retrain">
         <Wrench size={14} />
         <span>Próximo re-treino: <strong>{rec.next_retrain_suggestion}</strong></span>
       </div>
+    </div>
+  );
+}
+
+function CombinadaCard({ c }: { c: AuditCombinada }) {
+  const isIntra = c.tipo === "intra";
+  const stColor = c.status_combinada === "SAFE" ? "#00df82" : c.status_combinada === "MISTA" ? "#c4a0ff" : "#ffaa44";
+  const stBg = c.status_combinada === "SAFE" ? "rgba(0,223,130,0.08)" : c.status_combinada === "MISTA" ? "rgba(157,80,255,0.08)" : "rgba(255,136,0,0.06)";
+  const stBorder = c.status_combinada === "SAFE" ? "rgba(0,223,130,0.25)" : c.status_combinada === "MISTA" ? "rgba(157,80,255,0.25)" : "rgba(255,136,0,0.2)";
+  const timeStr = (dt: string) => {
+    try { const d = new Date(dt); return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }); }
+    catch { return "--:--"; }
+  };
+
+  const legStatusBg = (s: string) => s.toUpperCase().startsWith("SAFE") ? "rgba(0,223,130,0.12)" : "rgba(255,136,0,0.12)";
+  const legStatusColor = (s: string) => s.toUpperCase().startsWith("SAFE") ? "#00df82" : "#ffaa44";
+
+  const resultadoColor = c.resultado === "ACERTOU" ? "#00df82" : c.resultado === "ERROU" ? "#ef4444" : "#666";
+  const resultadoBg = c.resultado === "ACERTOU" ? "rgba(0,223,130,0.15)" : c.resultado === "ERROU" ? "rgba(239,68,68,0.15)" : "rgba(100,100,100,0.1)";
+
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${stBorder}`, background: stBg, padding: "10px 12px", marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {isIntra ? <Layers size={11} style={{ color: "#c4a0ff" }} /> : <Link2 size={11} style={{ color: "#00df82" }} />}
+          <span style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888" }}>
+            {isIntra ? "Intra-jogo" : "Inter-jogo"}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: "0.6rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
+          <span style={{ fontSize: "0.6rem", fontWeight: 700, borderRadius: 4, padding: "1px 5px", background: `${stColor}22`, color: stColor }}>{c.status_combinada}</span>
+          {c.resultado && (
+            <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "0.6rem", fontWeight: 700, borderRadius: 4, padding: "1px 6px", background: resultadoBg, color: resultadoColor }}>
+              {c.resultado === "ACERTOU" ? <CheckCircle2 size={10} /> : c.resultado === "ERROU" ? <XCircle size={10} /> : null}
+              {c.resultado}
+            </span>
+          )}
+        </div>
+      </div>
+      {([c.leg1, c.leg2] as AuditCombinadaLeg[]).map((leg, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+          <span style={{ width: 14, height: 14, borderRadius: "50%", background: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.55rem", color: "#888", flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {leg.homeTeam} <span style={{ color: "#666" }}>x</span> {leg.awayTeam} <span style={{ color: "#555", fontWeight: 400 }}>{timeStr(leg.datetime)}</span>
+            </div>
+            <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 1, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.65rem", color: "#00df82", fontWeight: 500 }}>{leg.mercado}</span>
+              <span style={{ fontSize: "0.6rem", borderRadius: 4, padding: "1px 4px", fontWeight: 700, background: legStatusBg(leg.status), color: legStatusColor(leg.status) }}>
+                {leg.status} {leg.prob_min}–{leg.prob_max}%
+              </span>
+              <span style={{ fontSize: "0.6rem", color: "#555" }}>@{leg.odd_minima.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: 2 }}>
+        <span style={{ fontSize: "0.6rem", color: "#555", textTransform: "uppercase", letterSpacing: "0.05em" }}>Odd Combinada</span>
+        <span style={{ fontSize: "1rem", fontWeight: 900, color: "#fff" }}>{c.odd_combinada.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CombinadasSection({ data }: { data: AuditCombinadas }) {
+  const [tab, setTab] = useState<"intra" | "inter">("intra");
+  const list = tab === "intra" ? data.intra : data.inter;
+  const total = tab === "intra" ? data.total_intra : data.total_inter;
+
+  if (data.total_intra === 0 && data.total_inter === 0) return null;
+
+  const hasAccuracy = (data.dupla_intra_total ?? 0) > 0 || (data.dupla_inter_total ?? 0) > 0;
+
+  return (
+    <div className="mdc-batch-audit__block">
+      <h3 className="mdc-batch-audit__block-title">
+        <Layers size={16} /> Duplas Recomendadas ({data.total_jogos} jogos)
+      </h3>
+
+      {/* Dupla accuracy summary */}
+      {hasAccuracy && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          {(data.dupla_intra_total ?? 0) > 0 && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(157,80,255,0.06)", border: "1px solid rgba(157,80,255,0.15)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Intra-jogo</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_intra_accuracy ?? 0} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>{data.dupla_intra_correct}/{data.dupla_intra_total}</span>
+              </div>
+            </div>
+          )}
+          {(data.dupla_inter_total ?? 0) > 0 && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(0,223,130,0.06)", border: "1px solid rgba(0,223,130,0.15)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Inter-jogo</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_inter_accuracy ?? 0} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>{data.dupla_inter_correct}/{data.dupla_inter_total}</span>
+              </div>
+            </div>
+          )}
+          {(data.dupla_overall_accuracy != null) && ((data.dupla_intra_total ?? 0) + (data.dupla_inter_total ?? 0) > 0) && (
+            <div style={{
+              flex: 1, minWidth: 120, padding: "8px 10px", borderRadius: 8,
+              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <div style={{ fontSize: "0.55rem", color: "#888", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Geral Duplas</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <AccuracyColor pct={data.dupla_overall_accuracy} />
+                <span style={{ fontSize: "0.65rem", color: "#666" }}>
+                  {(data.dupla_intra_correct ?? 0) + (data.dupla_inter_correct ?? 0)}/{(data.dupla_intra_total ?? 0) + (data.dupla_inter_total ?? 0)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {(["intra", "inter"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)",
+              background: tab === t ? "rgba(157,80,255,0.18)" : "rgba(255,255,255,0.03)",
+              color: tab === t ? "#c4a0ff" : "#777", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            {t === "intra" ? "Intra-jogo" : "Inter-jogo"} ({t === "intra" ? data.total_intra : data.total_inter})
+          </button>
+        ))}
+      </div>
+      {list.length === 0 ? (
+        <div style={{ color: "#555", fontSize: "0.75rem", textAlign: "center", padding: "16px 0" }}>
+          Nenhuma dupla {tab === "intra" ? "intra-jogo" : "inter-jogo"} encontrada.
+        </div>
+      ) : (
+        <div>
+          {list.map((c, i) => (
+            <CombinadaCard key={i} c={c} />
+          ))}
+          {total > list.length && (
+            <div style={{ fontSize: "0.65rem", color: "#555", textAlign: "center", marginTop: 4 }}>
+              Mostrando {list.length} de {total} duplas
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -252,9 +473,9 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                 </div>
               </div>
 
-              {/* Model Update Recommendation */}
+              {/* Model Update Recommendation — local vs Mistral comparison */}
               {result.model_update_recommendation && (
-                <ModelUpdateSection rec={result.model_update_recommendation} />
+                <ModelUpdateSection rec={result.model_update_recommendation} mistralRec={result.mistral_recommendation} />
               )}
 
               {/* Market accuracy table */}
@@ -319,6 +540,11 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                     </table>
                   </div>
                 </div>
+              )}
+
+              {/* Combinadas (duplas) section */}
+              {result.combinadas && (
+                <CombinadasSection data={result.combinadas} />
               )}
 
               {/* Match results grouped by league (collapsible) */}

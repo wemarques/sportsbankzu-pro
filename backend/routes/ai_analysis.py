@@ -10,6 +10,7 @@ import logging
 import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
+from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
 
@@ -157,8 +158,8 @@ async def audit_match(
 
             # Include team names in stats dict for audit metadata
             audit_stats = dict(match_data.get("stats", {}))
-            audit_stats["homeTeam"] = match_data.get("homeTeam", "")
-            audit_stats["awayTeam"] = match_data.get("awayTeam", "")
+            audit_stats["homeTeam"] = team_name(match_data.get("homeTeam", ""))
+            audit_stats["awayTeam"] = team_name(match_data.get("awayTeam", ""))
             audit_result = auditor.audit_match_vs_result(
                 match_data=audit_stats,
                 predictions=predictions,
@@ -258,8 +259,8 @@ def _get_full_match_record(match_id: str, home_team: str = None, away_team: str 
                 if str(m.get("id")) == str(match_id):
                     return m
                 if home_team and away_team:
-                    h = str(m.get("homeTeam", ""))
-                    a = str(m.get("awayTeam", ""))
+                    h = team_name(m.get("homeTeam", ""))
+                    a = team_name(m.get("awayTeam", ""))
                     if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                        (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                         return m
@@ -381,8 +382,8 @@ def _match_to_ai_input(m: dict) -> dict:
     if footystats_analysis:
         context["footystats_analysis"] = footystats_analysis
 
-    home_name = m.get("homeTeam", "")
-    away_name = m.get("awayTeam", "")
+    home_name = team_name(m.get("homeTeam", ""))
+    away_name = team_name(m.get("awayTeam", ""))
     return {
         "id": m.get("id"),
         "footystatsId": footystats_match_id,
@@ -419,8 +420,8 @@ def _get_match_data(match_id: str, home_team: str = None, away_team: str = None)
             # 2. Try matching by team names (handles ID format mismatches)
             if home_team and away_team:
                 for m in result.get("matches", []):
-                    h = str(m.get("homeTeam", ""))
-                    a = str(m.get("awayTeam", ""))
+                    h = team_name(m.get("homeTeam", ""))
+                    a = team_name(m.get("awayTeam", ""))
                     if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                        (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                         logger.info(f"Found match by team names: {h} vs {a} (date={date_filter})")
@@ -433,8 +434,8 @@ def _get_match_data(match_id: str, home_team: str = None, away_team: str = None)
                 try:
                     result = fixtures_endpoint(leagues=alias, date="today")
                     for m in result.get("matches", []):
-                        h = str(m.get("homeTeam", ""))
-                        a = str(m.get("awayTeam", ""))
+                        h = team_name(m.get("homeTeam", ""))
+                        a = team_name(m.get("awayTeam", ""))
                         if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                            (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                             logger.info(f"Found match by team names in {alias}: {h} vs {a}")
@@ -686,26 +687,35 @@ async def batch_audit(
         brier_scores = []
 
         for m in finished_matches:
-            home = m.get("homeTeam", "")
-            away = m.get("awayTeam", "")
+            home = team_name(m.get("homeTeam", ""))
+            away = team_name(m.get("awayTeam", ""))
             league = m.get("leagueName", m.get("leagueId", ""))
             score = m.get("score") or {}
             stats = m.get("stats", {})
             mercados = m.get("mercados", [])
 
-            # Extract actual result
-            home_goals = score.get("home", 0) if score else 0
-            away_goals = score.get("away", 0) if score else 0
+            # Extract actual result — reject matches with missing score data
+            # to avoid auditing against a fake 0-0 (e.g. Lanús vs Boca 0-3 bug)
+            home_goals = score.get("home") if score else None
+            away_goals = score.get("away") if score else None
 
             # If score not from new field, try legacy fields
-            if not score:
-                home_goals = m.get("home_team_goal_count") or m.get("homeGoals") or 0
-                away_goals = m.get("away_team_goal_count") or m.get("awayGoals") or 0
+            if home_goals is None or away_goals is None:
+                home_goals = m.get("home_team_goal_count") or m.get("homeGoals")
+                away_goals = m.get("away_team_goal_count") or m.get("awayGoals")
                 try:
-                    home_goals = int(home_goals)
-                    away_goals = int(away_goals)
+                    home_goals = int(home_goals) if home_goals is not None else None
+                    away_goals = int(away_goals) if away_goals is not None else None
                 except (ValueError, TypeError):
-                    home_goals, away_goals = 0, 0
+                    home_goals, away_goals = None, None
+
+            # Skip matches with no verified score — auditing against missing data
+            # produces wrong accuracy metrics
+            if home_goals is None or away_goals is None:
+                logger.warning(
+                    f"[batch-audit] Skipping {home} vs {away} — no verified score data"
+                )
+                continue
 
             total_goals = home_goals + away_goals
             btts = home_goals > 0 and away_goals > 0
@@ -982,4 +992,77 @@ async def apply_batch_corrections(request: BatchCorrectionRequest):
         "errors": len(errors),
         "details": applied,
         "error_details": errors if errors else None,
+    }
+
+
+class ScoreCorrectionRequest(BaseModel):
+    """Manual score correction for matches where API data was missing or wrong."""
+    match_id: str
+    home_team: str
+    away_team: str
+    home_goals: int
+    away_goals: int
+    league: str = ""
+    reason: str = "manual_correction"
+
+
+@router.post("/score-correction")
+async def correct_match_score(request: ScoreCorrectionRequest):
+    """Manually correct a match score and re-audit affected picks.
+
+    Use when the API returned wrong/missing scores (e.g. 0-0 instead of real 0-3).
+    Logs the correction and re-evaluates all picks for that match.
+    """
+    from backend import audit as audit_db
+
+    # Log the score correction
+    audit_db.log_correction(
+        match_id=request.match_id,
+        league=request.league,
+        correction_type="SCORE_CORRECTION",
+        parameter_name=f"score:{request.home_team}_vs_{request.away_team}",
+        old_value=0.0,  # unknown previous score
+        new_value=float(f"{request.home_goals}.{request.away_goals:02d}"),
+        suggested_by="user",
+        applied_by="user",
+        audit_confidence=100,
+        reason=request.reason,
+    )
+
+    # Build the corrected actual result
+    home_goals = request.home_goals
+    away_goals = request.away_goals
+    total_goals = home_goals + away_goals
+    btts = home_goals > 0 and away_goals > 0
+    if home_goals > away_goals:
+        result_1x2 = "1"
+    elif home_goals == away_goals:
+        result_1x2 = "X"
+    else:
+        result_1x2 = "2"
+
+    corrected_result = {
+        "home_goals": home_goals,
+        "away_goals": away_goals,
+        "total_goals": total_goals,
+        "btts": btts,
+        "result_1x2": result_1x2,
+    }
+
+    logger.info(
+        f"[score-correction] {request.home_team} vs {request.away_team}: "
+        f"corrected to {home_goals}-{away_goals} (1X2={result_1x2}, "
+        f"total={total_goals}, btts={btts})"
+    )
+
+    return {
+        "status": "success",
+        "match_id": request.match_id,
+        "corrected_score": f"{home_goals}-{away_goals}",
+        "corrected_result": corrected_result,
+        "message": (
+            f"Score corrigido para {request.home_team} {home_goals} x "
+            f"{away_goals} {request.away_team}. "
+            f"Correção registrada no audit log."
+        ),
     }

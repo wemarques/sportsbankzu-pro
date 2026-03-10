@@ -404,6 +404,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
+    id: "spain-segunda-division",
+    name: "Segunda División",
+    country: "Espanha",
+    countryFlag: "🇪🇸",
+    logo: "/logos/segunda-division.png",
+    season: "2025/26",
+    totalMatches: 462,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/spain/segunda-division",
+    },
+  },
+  {
     id: "switzerland-super-league",
     name: "Super League",
     country: "Suíça",
@@ -558,6 +571,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/colombia/colombian-primera-a",
+    },
+  },
+  {
+    id: "mexico-liga-mx",
+    name: "Liga MX",
+    country: "México",
+    countryFlag: "🇲🇽",
+    logo: "/logos/liga-mx.png",
+    season: "2025/26",
+    totalMatches: 306,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/mexico/liga-mx",
     },
   },
 ];

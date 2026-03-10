@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
@@ -100,24 +101,31 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     match_results = []
 
     for m in finished_matches:
-        home = m.get("homeTeam", "")
-        away = m.get("awayTeam", "")
+        home = team_name(m.get("homeTeam", ""))
+        away = team_name(m.get("awayTeam", ""))
         league = m.get("leagueName", m.get("leagueId", ""))
         score = m.get("score") or {}
         stats = m.get("stats", {})
         mercados = m.get("mercados", [])
 
-        home_goals = score.get("home", 0) if score else 0
-        away_goals = score.get("away", 0) if score else 0
+        home_goals = score.get("home") if score else None
+        away_goals = score.get("away") if score else None
 
-        if not score:
-            home_goals = m.get("home_team_goal_count") or m.get("homeGoals") or 0
-            away_goals = m.get("away_team_goal_count") or m.get("awayGoals") or 0
+        if home_goals is None or away_goals is None:
+            home_goals = m.get("home_team_goal_count") or m.get("homeGoals")
+            away_goals = m.get("away_team_goal_count") or m.get("awayGoals")
             try:
-                home_goals = int(home_goals)
-                away_goals = int(away_goals)
+                home_goals = int(home_goals) if home_goals is not None else None
+                away_goals = int(away_goals) if away_goals is not None else None
             except (ValueError, TypeError):
-                home_goals, away_goals = 0, 0
+                home_goals, away_goals = None, None
+
+        # Skip matches with no verified score data
+        if home_goals is None or away_goals is None:
+            logger.warning(
+                f"[cron_audit] Skipping {home} vs {away} — no verified score data"
+            )
+            continue
 
         total_goals = home_goals + away_goals
         btts = home_goals > 0 and away_goals > 0
@@ -235,6 +243,71 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             "picks_total": match_total,
         })
 
+    # ── Dupla (combinada) accuracy: INTRA and INTER ──
+    # Build actual_result lookup by match ID for leg evaluation
+    _actual_by_id: dict[str, dict] = {}
+    for m in finished_matches:
+        mid = m.get("id", "")
+        score = m.get("score") or {}
+        hg = score.get("home") if score else None
+        ag = score.get("away") if score else None
+        if hg is None or ag is None:
+            _hg_raw = m.get("home_team_goal_count") or m.get("homeGoals")
+            _ag_raw = m.get("away_team_goal_count") or m.get("awayGoals")
+            try:
+                hg = int(_hg_raw) if _hg_raw is not None else None
+                ag = int(_ag_raw) if _ag_raw is not None else None
+            except (ValueError, TypeError):
+                hg, ag = None, None
+        if hg is None or ag is None:
+            continue  # Skip matches without verified score
+        tg = hg + ag
+        _btts = hg > 0 and ag > 0
+        _1x2 = "1" if hg > ag else ("X" if hg == ag else "2")
+        _actual_by_id[mid] = {"total_goals": tg, "btts": _btts, "result_1x2": _1x2}
+        # Also index by homeTeam+awayTeam for leg matching
+        hname = team_name(m.get("homeTeam")).strip().lower()
+        aname = team_name(m.get("awayTeam")).strip().lower()
+        if hname and aname:
+            _actual_by_id[f"{hname}|{aname}"] = _actual_by_id[mid]
+
+    def _find_actual_for_leg(leg: dict) -> dict | None:
+        """Find actual result for a dupla leg by team names."""
+        h = team_name(leg.get("homeTeam")).strip().lower()
+        a = team_name(leg.get("awayTeam")).strip().lower()
+        if h and a:
+            key = f"{h}|{a}"
+            if key in _actual_by_id:
+                return _actual_by_id[key]
+        return None
+
+    dupla_stats = {"intra": {"correct": 0, "total": 0}, "inter": {"correct": 0, "total": 0}}
+    try:
+        from backend.services.combinadas_service import gerar_combinadas
+        combinadas = gerar_combinadas(finished_matches, tipos=["intra", "inter"])
+        for tipo in ("intra", "inter"):
+            for dupla in combinadas.get(tipo, []):
+                leg1 = dupla.get("leg1", {})
+                leg2 = dupla.get("leg2", {})
+                actual1 = _find_actual_for_leg(leg1)
+                actual2 = _find_actual_for_leg(leg2)
+                if actual1 is None or actual2 is None:
+                    continue
+                hit1 = _evaluate_pick_deterministic({"mercado": leg1.get("mercado", "")}, actual1)
+                hit2 = _evaluate_pick_deterministic({"mercado": leg2.get("mercado", "")}, actual2)
+                dupla_stats[tipo]["total"] += 1
+                if hit1 and hit2:
+                    dupla_stats[tipo]["correct"] += 1
+    except Exception as e:
+        logger.warning(f"[audit] Dupla accuracy calculation failed: {e}")
+
+    intra_acc = (dupla_stats["intra"]["correct"] / dupla_stats["intra"]["total"] * 100.0) if dupla_stats["intra"]["total"] > 0 else 0.0
+    inter_acc = (dupla_stats["inter"]["correct"] / dupla_stats["inter"]["total"] * 100.0) if dupla_stats["inter"]["total"] > 0 else 0.0
+    logger.info(
+        f"[audit] Duplas: INTRA {dupla_stats['intra']['correct']}/{dupla_stats['intra']['total']} ({intra_acc:.1f}%) | "
+        f"INTER {dupla_stats['inter']['correct']}/{dupla_stats['inter']['total']} ({inter_acc:.1f}%)"
+    )
+
     # Aggregate
     overall_accuracy_pct = (overall_correct / overall_total * 100.0) if overall_total > 0 else 0.0
     safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else 0.0
@@ -272,6 +345,12 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "avg_ev": avg_ev,
         "market_accuracy_text": "\n".join(market_accuracy_list) or "Sem dados",
         "matches_summary_text": "\n".join(matches_summary_lines) or "Sem detalhes",
+        "dupla_intra_correct": dupla_stats["intra"]["correct"],
+        "dupla_intra_total": dupla_stats["intra"]["total"],
+        "dupla_intra_accuracy_pct": intra_acc,
+        "dupla_inter_correct": dupla_stats["inter"]["correct"],
+        "dupla_inter_total": dupla_stats["inter"]["total"],
+        "dupla_inter_accuracy_pct": inter_acc,
     }
 
     # ONE Mistral call for model evaluation
@@ -368,6 +447,10 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "avg_brier_score": round(avg_brier, 4),
         "avg_ev": round(avg_ev, 4),
         "model_assessment": model_evaluation.get("overall_assessment", "") if model_evaluation else "N/A",
+        "dupla_intra_accuracy": round(intra_acc, 1),
+        "dupla_intra_total": dupla_stats["intra"]["total"],
+        "dupla_inter_accuracy": round(inter_acc, 1),
+        "dupla_inter_total": dupla_stats["inter"]["total"],
         "auto_corrections_applied": len(auto_applied),
         "auto_corrections": auto_applied,
         "rejected_corrections": len(rejected),
