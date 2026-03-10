@@ -665,15 +665,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         )}
 
                         {/* Recommendation */}
-                        {match.aiAnalysis.recommendation && (
-                          <div className="mdc-ai-recommendation">
-                            <h4 className="mdc-ai-section-title">Recomendacao</h4>
-                            <div className="mdc-ai-recommendation-box">
-                              <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation ?? "")}</p>
-                            </div>
+                        <div className="mdc-ai-recommendation">
+                          <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                          <div className="mdc-ai-recommendation-box">
+                            <Sparkles size={16} className="mdc-ai-recommendation-icon" />
+                            <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
                           </div>
-                        )}
+                        </div>
 
                         {/* Timestamp + Regenerate + Audit */}
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
