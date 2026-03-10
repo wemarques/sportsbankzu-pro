@@ -993,7 +993,7 @@ export default function BankrollCalculator() {
   }, [bets, settings, stakeOverrides]);
 
   const handleRemoveBet = useCallback((betId: string) => {
-    setExcludedBets((prev) => new Set([...prev, betId]));
+    setExcludedBets((prev) => { const next = new Set(Array.from(prev)); next.add(betId); return next; });
     setStakeOverrides((prev) => {
       const next = { ...prev };
       delete next[betId];
