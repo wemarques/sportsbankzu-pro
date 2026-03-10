@@ -108,7 +108,8 @@ function combinadasToBets(data: CombinadasData): BetInput[] {
   for (const c of [...data.intra, ...data.inter]) {
     for (const leg of [c.leg1, c.leg2]) {
       const key = `${leg.homeTeam}-${leg.awayTeam}-${leg.mercado}`;
-      if (!seenLegs.has(key) && leg.status.toUpperCase().startsWith("SAFE")) {
+      const st = leg.status.toUpperCase();
+      if (!seenLegs.has(key) && (st.startsWith("SAFE") || st.startsWith("NEUTRO"))) {
         seenLegs.add(key);
         bets.push({
           id: `simple-${key}`,
@@ -1441,6 +1442,40 @@ export default function BankrollCalculator() {
             >
               <RefreshCw size={12} />
               Tentar novamente
+            </button>
+          </div>
+        )}
+
+        {/* ── Empty state when no bets available ── */}
+        {!distribution && !loading && !error && (
+          <div
+            className="rounded-2xl border p-8 text-center"
+            style={{
+              background: "var(--color-bg-card)",
+              borderColor: "var(--color-border)",
+            }}
+          >
+            <ShieldCheck
+              size={32}
+              className="mx-auto mb-3 text-[var(--color-text-muted)]"
+            />
+            <div className="text-sm text-[var(--color-text-muted)]">
+              Nenhuma aposta disponivel no momento.
+            </div>
+            <div className="text-[0.7rem] text-[var(--color-text-muted)] mt-1">
+              Aguarde os jogos do dia serem carregados ou verifique se o backend esta ativo.
+            </div>
+            <button
+              onClick={fetchData}
+              className="inline-flex items-center gap-1.5 px-4 py-2 mt-3 rounded-lg text-[0.72rem] font-semibold transition-colors"
+              style={{
+                background: "rgba(157,80,255,0.1)",
+                color: "#c4a0ff",
+                border: "1px solid rgba(157,80,255,0.2)",
+              }}
+            >
+              <RefreshCw size={12} />
+              Recarregar
             </button>
           </div>
         )}
