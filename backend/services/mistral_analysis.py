@@ -293,7 +293,7 @@ IMPORTANTE:
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
-                    "max_tokens": 1000,
+                    "max_tokens": 2048,
                 },
                 timeout=30.0,
             )
@@ -325,10 +325,14 @@ IMPORTANTE:
 
             data = json.loads(cleaned)
 
+            recommendation = (data.get("recommendation") or "").strip()
+            if not recommendation:
+                recommendation = "Recomendacao indisponivel. Consulte as estatisticas e odds apresentadas para tomar sua decisao."
+
             return AIAnalysisResponse(
                 summary=data.get("summary", ""),
                 key_points=data.get("key_points", [])[:5],
-                recommendation=data.get("recommendation", ""),
+                recommendation=recommendation,
                 confidence=min(max(int(data.get("confidence", 50)), 0), 100),
                 last_updated=datetime.now().strftime("%d/%m/%Y as %H:%M"),
             )
