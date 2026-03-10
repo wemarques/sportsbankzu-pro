@@ -661,68 +661,11 @@ function BankSlider({
                 return (
                   <SimpleGameCard
                     key={a.bet.id}
-                    className="flex items-center justify-between gap-2 px-2.5 py-2.5 rounded-lg border"
-                    style={{
-                      background: `${color}06`,
-                      borderColor: `${color}15`,
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
-                          {a.bet.homeTeam}{" "}
-                          <span className="text-[var(--color-text-muted)]">x</span>{" "}
-                          {a.bet.awayTeam}
-                        </div>
-                        <span className="text-[0.58rem] text-[var(--color-text-muted)] shrink-0">
-                          {formatTime(a.bet.datetime)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span
-                          className="text-[0.6rem] font-medium px-1.5 py-px rounded"
-                          style={{ background: `${color}15`, color }}
-                        >
-                          {a.bet.market}
-                        </span>
-                        {isDupla && a.bet.leg2Market && (
-                          <>
-                            <span className="text-[0.5rem] text-[var(--color-text-muted)]">+</span>
-                            <span
-                              className="text-[0.6rem] font-medium px-1.5 py-px rounded"
-                              style={{ background: `${color}15`, color }}
-                            >
-                              {a.bet.leg2Market}
-                            </span>
-                          </>
-                        )}
-                        <span className="text-[0.58rem] text-[var(--color-text-muted)]">
-                          {a.bet.leagueName}
-                        </span>
-                        <span
-                          className="text-[0.55rem] font-bold px-1 py-px rounded"
-                          style={{ background: `${color}12`, color }}
-                        >
-                          {a.bet.status}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div
-                        className="text-[0.82rem] font-black tabular-nums"
-                        style={{ color }}
-                      >
-                        {formatCurrency(a.stake)}
-                      </div>
-                      <div className="text-[0.55rem] text-[var(--color-text-muted)]">
-                        odd {a.bet.odd.toFixed(2)} &middot; EV{" "}
-                        <span style={{ color: evColor(a.ev) }}>
-                          {a.ev > 0 ? "+" : ""}
-                          {(a.ev * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                    a={a}
+                    color={color}
+                    onRemove={onRemoveBet ?? (() => {})}
+                    onStakeChange={onStakeChange ?? (() => {})}
+                  />
                 );
               })}
             </div>
