@@ -76,6 +76,7 @@ CONTEXTO ADICIONAL:
 - Forma Casa: {context.get('home_form', 'N/A')}
 - Forma Fora: {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
+- Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 """
 
     prompt += """
