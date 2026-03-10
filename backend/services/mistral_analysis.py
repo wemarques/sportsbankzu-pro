@@ -261,9 +261,14 @@ ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds que n
 - Under 4.5: {self._derive_under_odd(odds, 'over45', 'under45')}
 - BTTS Sim: {odds.get('btts_yes') or odds.get('bttsYes', 'N/A')}
 - BTTS Nao: {odds.get('btts_no') or odds.get('bttsNo', 'N/A')}
+- Escanteios Over 8.5: {odds.get('cornersOver85', 'N/A')}
+- Escanteios Over 9.5: {odds.get('cornersOver95', 'N/A')}
+- Escanteios Over 10.5: {odds.get('cornersOver105', 'N/A')}
+- Escanteios Over 11.5: {odds.get('cornersOver115', 'N/A')}
 
 ATENCAO: Se um mercado acima mostra "N/A", ele NAO esta disponivel. NAO recomende mercados com odd N/A.
 Nos key_points, NAO cite odds de mercados que nao estejam listados acima. Cite apenas porcentagens e dados estatisticos.
+NAO existem mercados de Double Chance, Cartoes ou Draw No Bet neste sistema — NAO os recomende.
 """
 
         if context:
@@ -437,6 +442,10 @@ IMPORTANTE:
             "bttsYes": "BTTS Sim", "bttsNo": "BTTS Nao",
             "btts_yes": "BTTS Sim", "btts_no": "BTTS Nao",
             "over_25": "Over 2.5",
+            "cornersOver85": "Escanteios Over 8.5",
+            "cornersOver95": "Escanteios Over 9.5",
+            "cornersOver105": "Escanteios Over 10.5",
+            "cornersOver115": "Escanteios Over 11.5",
         }
         for key, val in enriched.items():
             if val is not None:
