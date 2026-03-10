@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
@@ -100,8 +101,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     match_results = []
 
     for m in finished_matches:
-        home = m.get("homeTeam", "")
-        away = m.get("awayTeam", "")
+        home = team_name(m.get("homeTeam", ""))
+        away = team_name(m.get("awayTeam", ""))
         league = m.get("leagueName", m.get("leagueId", ""))
         score = m.get("score") or {}
         stats = m.get("stats", {})
@@ -265,15 +266,15 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         _1x2 = "1" if hg > ag else ("X" if hg == ag else "2")
         _actual_by_id[mid] = {"total_goals": tg, "btts": _btts, "result_1x2": _1x2}
         # Also index by homeTeam+awayTeam for leg matching
-        hname = (m.get("homeTeam") or "").strip().lower()
-        aname = (m.get("awayTeam") or "").strip().lower()
+        hname = team_name(m.get("homeTeam")).strip().lower()
+        aname = team_name(m.get("awayTeam")).strip().lower()
         if hname and aname:
             _actual_by_id[f"{hname}|{aname}"] = _actual_by_id[mid]
 
     def _find_actual_for_leg(leg: dict) -> dict | None:
         """Find actual result for a dupla leg by team names."""
-        h = (leg.get("homeTeam") or "").strip().lower()
-        a = (leg.get("awayTeam") or "").strip().lower()
+        h = team_name(leg.get("homeTeam")).strip().lower()
+        a = team_name(leg.get("awayTeam")).strip().lower()
         if h and a:
             key = f"{h}|{a}"
             if key in _actual_by_id:

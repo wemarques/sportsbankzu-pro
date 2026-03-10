@@ -1,0 +1,4 @@
+# ML-specific dependencies (not needed for Lambda / production API)
+# Install alongside backend/requirements.txt for training and local dev
+scikit-learn>=1.4.0
+xgboost>=2.0.0

@@ -20,6 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -r backend/requirements.txt
+          python -m pip install -r backend/requirements-ml.txt
           python -m pip install -r requirements.txt
           python -m pip install pytest
       - name: Run tests
@@ -52,6 +53,38 @@ jobs:
             --only-binary=:all: \
             --python-version 3.11 \
             --upgrade
+          # XGBoost only, no-deps to avoid pulling scipy (~130MB)
+          # numpy is already installed via requirements.txt
+          pip install \
+            "xgboost>=2.0.0" \
+            --target lambda_build \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --python-version 3.11 \
+            --no-deps \
+            --upgrade
+
+      - name: Strip unnecessary files from dependencies
+        run: |
+          echo "Size before cleanup: $(du -sh lambda_build | cut -f1)"
+          # Remove tests, docs, examples, type stubs
+          find lambda_build -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find lambda_build -name "*.pyi" -delete 2>/dev/null || true
+          find lambda_build -name "*.pyx" -delete 2>/dev/null || true
+          find lambda_build -name "*.c" -delete 2>/dev/null || true
+          find lambda_build -name "*.h" -delete 2>/dev/null || true
+          # sklearn: remove bundled datasets, images, and test data
+          rm -rf lambda_build/sklearn/datasets/data 2>/dev/null || true
+          rm -rf lambda_build/sklearn/datasets/descr 2>/dev/null || true
+          rm -rf lambda_build/sklearn/datasets/images 2>/dev/null || true
+          # scipy: remove test data and Fortran sources
+          find lambda_build/scipy -type d -name "_unuran" -exec rm -rf {} + 2>/dev/null || true
+          # xgboost: remove demo/examples
+          rm -rf lambda_build/xgboost/demo 2>/dev/null || true
+          echo "Size after cleanup: $(du -sh lambda_build | cut -f1)"
 
       - name: Copy backend code
         run: |
@@ -91,6 +124,8 @@ jobs:
           LEAGUES=(
             "premier-league"
             "championship"
+            "england-league-one"
+            "england-league-two"
             "primera-division"
             "a-league"
             "austria-bundesliga"
@@ -109,8 +144,19 @@ jobs:
             "saudi-professional-league"
             "scotland-premiership"
             "spain-la-liga"
+            "spain-segunda-division"
             "switzerland-super-league"
             "turkey-super-lig"
+            "japan-j-league"
+            "south-korea-k-league"
+            "norway-eliteserien"
+            "sweden-allsvenskan"
+            "uae-pro-league"
+            "netherlands-eerste-divisie"
+            "greece-super-league"
+            "usa-mls"
+            "czech-first-league"
+            "colombia-primera-a"
           )
 
           echo "Starting cache warm-up for ${#LEAGUES[@]} leagues..."

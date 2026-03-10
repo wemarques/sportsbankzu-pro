@@ -6,6 +6,7 @@ Serviço de combinadas (duplas) intra e inter jogos.
 """
 from itertools import combinations
 from typing import Dict, Any, List, Tuple
+from backend.services.util_service import team_name
 
 # Status priority: higher = more reliable
 _STATUS_PRIORITY = {"SAFE": 2, "SAFE*": 2, "NEUTRO": 1, "ALERTA": 0}
@@ -23,9 +24,9 @@ _INTRA_INCOMPATIBLE_PAIRS = {
 
 def _leg(jogo: Dict[str, Any], merc: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "jogo": f"{jogo.get('homeTeam', '')} x {jogo.get('awayTeam', '')}",
-        "homeTeam": jogo.get("homeTeam", ""),
-        "awayTeam": jogo.get("awayTeam", ""),
+        "jogo": f"{team_name(jogo.get('homeTeam', ''))} x {team_name(jogo.get('awayTeam', ''))}",
+        "homeTeam": team_name(jogo.get("homeTeam", "")),
+        "awayTeam": team_name(jogo.get("awayTeam", "")),
         "leagueId": jogo.get("leagueId", ""),
         "leagueName": jogo.get("leagueName", ""),
         "datetime": jogo.get("datetime", ""),

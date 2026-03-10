@@ -11,6 +11,7 @@ except Exception:
 from backend.services.fixtures_service import build_records_from_matches
 from backend.services.footstats_client import FootyStatsClient
 from backend.services.data_mapper import DataMapper
+from backend.services.util_service import team_name
 from backend.config.leagues_config import get_league_config
 
 logger = logging.getLogger("sportsbankzu.fixtures")
@@ -252,13 +253,17 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
     try:
         from backend.services.util_service import status_map
         import time as _time
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
-        date_param = None
+        # Always pass explicit BRT date to the API to avoid UTC/BRT day boundary mismatch.
+        # Without an explicit date, the API uses its own timezone (likely UTC) to determine
+        # "today", which after 21:00 BRT (00:00 UTC) would return next-day matches.
+        BRT = _tz(timedelta(hours=-3))
+        now_brt = _dt.now(BRT)
         if date == "tomorrow":
-            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-            BRT = _tz(timedelta(hours=-3))
-            tomorrow = _dt.now(BRT) + _td(days=1)
-            date_param = tomorrow.strftime("%Y-%m-%d")
+            date_param = (now_brt + _td(days=1)).strftime("%Y-%m-%d")
+        else:
+            date_param = now_brt.strftime("%Y-%m-%d")
 
         todays_data = footstats.get_todays_matches(date=date_param)
         if not todays_data.get("success"):
@@ -319,14 +324,36 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
             )
             return []
 
+        # Date guard: filter matched results by BRT date range to prevent
+        # next-day matches from leaking into "today" results.
+        from backend.main import date_range
+        range_start, range_end = date_range(date)
+        date_guarded = []
+        for m in matched:
+            du = m.get("date_unix")
+            if du:
+                try:
+                    match_dt = _dt.fromtimestamp(int(du), tz=_tz.utc)
+                    if not (range_start <= match_dt <= range_end):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            date_guarded.append(m)
+
+        if len(date_guarded) < len(matched):
+            logger.info(
+                f"[fixtures] {lid}: date guard filtered {len(matched) - len(date_guarded)} "
+                f"out-of-range matches from todays-matches fallback"
+            )
+        matched = date_guarded
+
         logger.info(f"[fixtures] {lid}: todays-matches matched {len(matched)} fixtures (season_id={season_id})")
 
         # Build minimal records from todays-matches data
-        from backend.main import date_range
         records = []
         for m in matched:
-            home = (m.get("home_name") or m.get("homeTeam") or "").strip()
-            away = (m.get("away_name") or m.get("awayTeam") or "").strip()
+            home = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+            away = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
             if not home or not away:
                 continue
 
@@ -364,6 +391,27 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
             from backend.services.math_service import implied_probs
             probs = implied_probs(odds_home, odds_draw, odds_away)
 
+            # Compute over25/btts probabilities from odds (implied probability)
+            over25_prob = 0.0
+            btts_prob = 0.0
+            if odds_over25 > 0:
+                raw_over25 = 1.0 / odds_over25
+                # Normalize with under25 if available
+                if odds_under25 > 0:
+                    raw_under25 = 1.0 / odds_under25
+                    total = raw_over25 + raw_under25
+                    over25_prob = round(raw_over25 / total * 100.0, 1) if total > 0 else 0.0
+                else:
+                    over25_prob = round(raw_over25 * 100.0, 1)
+            if odds_btts_yes > 0:
+                raw_btts = 1.0 / odds_btts_yes
+                if odds_btts_no > 0:
+                    raw_btts_no = 1.0 / odds_btts_no
+                    total = raw_btts + raw_btts_no
+                    btts_prob = round(raw_btts / total * 100.0, 1) if total > 0 else 0.0
+                else:
+                    btts_prob = round(raw_btts * 100.0, 1)
+
             # Extract score for live/finished matches (sanitize -1 sentinel)
             def _valid_goal_fb(val):
                 if val is None:
@@ -374,13 +422,94 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                 except (ValueError, TypeError):
                     return None
 
+            def _count_goal_timings(val) -> Optional[int]:
+                """Count goals from homeGoals/awayGoals field.
+
+                FootyStats API returns goal timings as:
+                  - JSON string: '["13","55"]' or '[]' (todays-matches)
+                  - Python list: ["13","55"] (league-matches)
+                The number of elements = number of goals scored.
+                """
+                if val is None:
+                    return None
+                if isinstance(val, str):
+                    val = val.strip()
+                    if val in ("[]", "", "null"):
+                        return 0
+                    try:
+                        import json as _json
+                        parsed = _json.loads(val)
+                        if isinstance(parsed, list):
+                            return len(parsed)
+                    except (ValueError, TypeError):
+                        pass
+                    return None
+                if isinstance(val, list):
+                    return len(val)
+                return None
+
+            # Primary: homeGoalCount / awayGoalCount (reliable for finished matches)
             _home_goals = _valid_goal_fb(m.get("homeGoalCount"))
             _away_goals = _valid_goal_fb(m.get("awayGoalCount"))
-            _ht_home = _valid_goal_fb(m.get("home_team_goal_count_half_time"))
-            _ht_away = _valid_goal_fb(m.get("away_team_goal_count_half_time"))
 
-            match_score = None
-            if match_status in ("finished", "live") and _home_goals is not None and _away_goals is not None:
+            # Secondary: count goal timings from homeGoals/awayGoals arrays.
+            # During live matches, homeGoalCount may stay 0 while homeGoals
+            # array gets updated with goal timings (e.g. ["13", "55"] = 2 goals).
+            _home_from_timings = _count_goal_timings(m.get("homeGoals"))
+            _away_from_timings = _count_goal_timings(m.get("awayGoals"))
+
+            # Tertiary: totalGoalCount as cross-check
+            _total_goal_count = _valid_goal_fb(m.get("totalGoalCount"))
+
+            # For finished matches: prefer homeGoalCount, fallback to timings
+            if match_status != "live":
+                if _home_goals is None and _home_from_timings is not None:
+                    _home_goals = _home_from_timings
+                if _away_goals is None and _away_from_timings is not None:
+                    _away_goals = _away_from_timings
+
+            # HT scores (from todays-matches — may be 0/null for live)
+            _ht_home = _valid_goal_fb(m.get("ht_goals_team_a")) or _valid_goal_fb(m.get("home_team_goal_count_half_time"))
+            _ht_away = _valid_goal_fb(m.get("ht_goals_team_b")) or _valid_goal_fb(m.get("away_team_goal_count_half_time"))
+
+            # ALWAYS fetch individual match details for live matches.
+            # The todays-matches endpoint returns homeGoalCount=0, awayGoalCount=0,
+            # homeGoals="[]" for ALL incomplete/live matches — it NEVER updates
+            # during the match. Only the individual /match endpoint has live scores.
+            _has_goals_fb = _home_goals is not None and _away_goals is not None
+            if match_status == "live":
+                _fb_id = m.get("id")
+                if _fb_id is not None:
+                    try:
+                        _fb_detail = footstats.get_match_live_details(int(_fb_id))
+                        if _fb_detail.get("success"):
+                            _fb_dd = _fb_detail.get("data", {})
+                            if isinstance(_fb_dd, list) and _fb_dd:
+                                _fb_dd = _fb_dd[0]
+                            _fb_h = _valid_goal_fb(_fb_dd.get("homeGoalCount"))
+                            _fb_a = _valid_goal_fb(_fb_dd.get("awayGoalCount"))
+                            _fb_h_timings = _count_goal_timings(_fb_dd.get("homeGoals"))
+                            _fb_a_timings = _count_goal_timings(_fb_dd.get("awayGoals"))
+                            _fb_h_vals = [v for v in [_fb_h, _fb_h_timings] if v is not None]
+                            _fb_a_vals = [v for v in [_fb_a, _fb_a_timings] if v is not None]
+                            _fb_h_final = max(_fb_h_vals) if _fb_h_vals else None
+                            _fb_a_final = max(_fb_a_vals) if _fb_a_vals else None
+                            if _fb_h_final is not None and _fb_a_final is not None:
+                                _home_goals = _fb_h_final
+                                _away_goals = _fb_a_final
+                                _has_goals_fb = True
+                                _fb_ht_h = _valid_goal_fb(_fb_dd.get("ht_goals_team_a")) or _valid_goal_fb(_fb_dd.get("home_team_goal_count_half_time"))
+                                _fb_ht_a = _valid_goal_fb(_fb_dd.get("ht_goals_team_b")) or _valid_goal_fb(_fb_dd.get("away_team_goal_count_half_time"))
+                                if _fb_ht_h is not None and _fb_ht_a is not None:
+                                    _ht_home = _fb_ht_h
+                                    _ht_away = _fb_ht_a
+                                logger.info(
+                                    f"[fixtures] match-detail for {home} vs {away}: {_fb_h_final}-{_fb_a_final}"
+                                )
+                    except Exception as _fb_err:
+                        logger.debug(f"[fixtures] match-detail failed for {home} vs {away}: {_fb_err}")
+
+            if match_status in ("finished", "live") and _has_goals_fb:
                 match_score = {"home": _home_goals, "away": _away_goals}
                 if _ht_home is not None and _ht_away is not None:
                     match_score["halftime"] = {"home": _ht_home, "away": _ht_away}
@@ -434,8 +563,8 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                     "drawProb": round(probs[1], 1) if probs else 0,
                     "awayWinProb": round(probs[2], 1) if probs else 0,
                     "avgGoals": 0,
-                    "bttsProb": 0,
-                    "over25Prob": 0,
+                    "bttsProb": btts_prob,
+                    "over25Prob": over25_prob,
                 },
                 "h2h": {"totalMatches": 0, "homeWins": 0, "draws": 0, "awayWins": 0, "avgGoals": 0},
                 "source": "footystats",
@@ -542,43 +671,62 @@ def live_scores() -> Dict[str, Any]:
                 skipped_statuses[raw_status] = skipped_statuses.get(raw_status, 0) + 1
                 continue
 
-            # Read goal count — try multiple field names (API returns camelCase
-            # or snake_case depending on endpoint/version)
-            _GOAL_HOME_FIELDS = ("homeGoalCount", "home_team_goal_count", "home_goals",
-                                 "team_a_goals", "homeScore", "home_score")
-            _GOAL_AWAY_FIELDS = ("awayGoalCount", "away_team_goal_count", "away_goals",
-                                 "team_b_goals", "awayScore", "away_score")
+            # Read goal count from FootyStats API fields.
+            # Per API docs, todays-matches returns:
+            #   homeGoalCount (int, 0 default), homeGoals (JSON string of timing array)
+            # For live matches, homeGoalCount may stay 0 while homeGoals array
+            # gets populated with goal timings. We use both sources.
             def _valid_goal(val):
                 """Return int if val is a valid goal count (>= 0), else None."""
                 if val is None:
                     return None
                 try:
                     v = int(val)
-                    return v if v >= 0 else None  # -1 = no data
+                    return v if v >= 0 else None
                 except (ValueError, TypeError):
                     return None
 
-            home_goals = None
-            for _f in _GOAL_HOME_FIELDS:
-                home_goals = _valid_goal(m.get(_f))
-                if home_goals is not None:
-                    break
-            away_goals = None
-            for _f in _GOAL_AWAY_FIELDS:
-                away_goals = _valid_goal(m.get(_f))
-                if away_goals is not None:
-                    break
+            def _count_goal_timings_ls(val) -> Optional[int]:
+                """Count goals from homeGoals/awayGoals timing arrays."""
+                if val is None:
+                    return None
+                if isinstance(val, str):
+                    val = val.strip()
+                    if val in ("[]", "", "null"):
+                        return 0
+                    try:
+                        import json as _json
+                        parsed = _json.loads(val)
+                        if isinstance(parsed, list):
+                            return len(parsed)
+                    except (ValueError, TypeError):
+                        pass
+                    return None
+                if isinstance(val, list):
+                    return len(val)
+                return None
+
+            # Primary: homeGoalCount/awayGoalCount
+            home_goals = _valid_goal(m.get("homeGoalCount"))
+            away_goals = _valid_goal(m.get("awayGoalCount"))
+            # Secondary: count goal timings from homeGoals/awayGoals arrays
+            _home_timings = _count_goal_timings_ls(m.get("homeGoals"))
+            _away_timings = _count_goal_timings_ls(m.get("awayGoals"))
+            # Take MAX between count and timings (one may lag behind the other)
+            _h_all = [v for v in [home_goals, _home_timings] if v is not None]
+            _a_all = [v for v in [away_goals, _away_timings] if v is not None]
+            home_goals = max(_h_all) if _h_all else None
+            away_goals = max(_a_all) if _a_all else None
+
+            _total = _valid_goal(m.get("totalGoalCount"))
 
             # If individual goal fields are missing, try totalGoalCount as evidence
-            # that goals were scored (even if we can't split home/away)
             _has_goal_data = home_goals is not None and away_goals is not None
             if not _has_goal_data:
-                _total = _valid_goal(m.get("totalGoalCount"))
                 if _total is not None and _total > 0:
-                    # We know goals happened but can't split — use total as hint
-                    # Try to infer from half-time data if available
-                    _ht_h = _valid_goal(m.get("home_team_goal_count_half_time"))
-                    _ht_a = _valid_goal(m.get("away_team_goal_count_half_time"))
+                    # Try HT data as fallback
+                    _ht_h = _valid_goal(m.get("ht_goals_team_a")) or _valid_goal(m.get("home_team_goal_count_half_time"))
+                    _ht_a = _valid_goal(m.get("ht_goals_team_b")) or _valid_goal(m.get("away_team_goal_count_half_time"))
                     if _ht_h is not None and _ht_a is not None:
                         home_goals = home_goals if home_goals is not None else _ht_h
                         away_goals = away_goals if away_goals is not None else _ht_a
@@ -589,23 +737,78 @@ def live_scores() -> Dict[str, Any]:
                             f"(totalGoalCount={_total}, ht={_ht_h}-{_ht_a})"
                         )
 
-            if not _has_goal_data:
-                if status == "live":
-                    # Log all goal/score related fields and their raw values for debugging
-                    goal_fields = {k: m.get(k) for k in m.keys() if "goal" in k.lower() or "score" in k.lower() or "Goal" in k}
+            # ALWAYS fetch individual match details for live matches.
+            # The todays-matches endpoint returns homeGoalCount=0, awayGoalCount=0,
+            # homeGoals="[]" for ALL incomplete/live matches — it NEVER updates
+            # during the match. Only the individual /match endpoint has live scores.
+            if status == "live":
+                _raw_id = m.get("id")
+                _detail_ok = False
+                if _raw_id is not None:
+                    try:
+                        detail = footstats.get_match_live_details(int(_raw_id))
+                        if detail.get("success"):
+                            dd = detail.get("data", {})
+                            if isinstance(dd, list) and dd:
+                                dd = dd[0]
+                            _fb_home = _valid_goal(dd.get("homeGoalCount"))
+                            _fb_away = _valid_goal(dd.get("awayGoalCount"))
+                            _fb_h_t = _count_goal_timings_ls(dd.get("homeGoals"))
+                            _fb_a_t = _count_goal_timings_ls(dd.get("awayGoals"))
+                            _fb_h_vals = [v for v in [_fb_home, _fb_h_t] if v is not None]
+                            _fb_a_vals = [v for v in [_fb_away, _fb_a_t] if v is not None]
+                            _fb_home = max(_fb_h_vals) if _fb_h_vals else None
+                            _fb_away = max(_fb_a_vals) if _fb_a_vals else None
+                            if _fb_home is not None and _fb_away is not None:
+                                home_goals = _fb_home
+                                away_goals = _fb_away
+                                _has_goal_data = True
+                                _detail_ok = True
+                                _fb_ht_h = _valid_goal(dd.get("ht_goals_team_a")) or _valid_goal(dd.get("home_team_goal_count_half_time"))
+                                _fb_ht_a = _valid_goal(dd.get("ht_goals_team_b")) or _valid_goal(dd.get("away_team_goal_count_half_time"))
+                                logger.info(
+                                    f"[live-scores] match-detail OK for "
+                                    f"{m.get('home_name')} vs {m.get('away_name')} "
+                                    f"(id={_raw_id}, score={_fb_home}-{_fb_away})"
+                                )
+                    except Exception as _fb_err:
+                        logger.warning(f"[live-scores] match-detail failed for id={_raw_id}: {_fb_err}")
+
+                if not _detail_ok:
+                    # Match detail endpoint failed — emit with score=null
+                    # so frontend keeps any valid score it already has.
                     logger.warning(
-                        f"[live-scores] Missing goal fields for live match: "
+                        f"[live-scores] No live score for "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(raw_status={raw_status!r}, goal_fields={goal_fields}, "
-                        f"totalGoalCount={m.get('totalGoalCount')}, "
-                        f"homeGoalCount={m.get('homeGoalCount')}, awayGoalCount={m.get('awayGoalCount')})"
+                        f"(id={_raw_id}, raw_status={raw_status!r})"
                     )
-                    # Do NOT default to 0-0 when goal data is missing —
-                    # returning a fake 0-0 overwrites any correct score the
-                    # frontend already has from the fixtures endpoint.
+                    home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+                    away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
+                    _ng_period = None
+                    _ng_minute = None
+                    if elapsed_min is not None and elapsed_min >= 0:
+                        if elapsed_min <= 47:
+                            _ng_period = "1T"
+                            _ng_minute = min(elapsed_min, 45)
+                        elif elapsed_min <= 62:
+                            _ng_period = "HT"
+                            _ng_minute = None
+                        else:
+                            _ng_period = "2T"
+                            _ng_minute = min(elapsed_min - 15, 90)
+                    result.append({
+                        "id": int(_raw_id) if _raw_id is not None else None,
+                        "homeTeam": home_name,
+                        "awayTeam": away_name,
+                        "status": status,
+                        "score": None,
+                        "period": _ng_period,
+                        "minute": _ng_minute,
+                        "dateUnix": m.get("date_unix"),
+                    })
                     continue
-                else:
-                    continue
+            elif status != "finished":
+                continue
 
             # _valid_goal already returns int, but ensure type safety
             home_goals = int(home_goals)
@@ -650,8 +853,8 @@ def live_scores() -> Dict[str, Any]:
                     period = "2T"
 
             # Normalize team names: strip whitespace for reliable frontend matching
-            home_name = (m.get("home_name") or m.get("homeTeam") or "").strip()
-            away_name = (m.get("away_name") or m.get("awayTeam") or "").strip()
+            home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
+            away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
 
             _raw_id = m.get("id")
             result.append({
@@ -668,7 +871,7 @@ def live_scores() -> Dict[str, Any]:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
         logger.info(
             f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
-            f"| scores: {[(r['homeTeam'][:12], r['score']['home'], r['score']['away']) for r in result[:5]]}"
+            f"| scores: {[(r['homeTeam'][:12], r['score']['home'] if r.get('score') else '?', r['score']['away'] if r.get('score') else '?') for r in result[:5]]}"
         )
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:

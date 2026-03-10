@@ -51,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.5";
+const VERSION_FALLBACK = "pro V3.6";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -269,8 +269,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     footystatsId: item.footystatsId ?? undefined,
     leagueId,
     leagueName: league?.name ?? leagueId,
-    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
-    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
+    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? item.awayForm ?? [], rating: item.awayTeam?.rating || item.ratings?.away || 0 },
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
@@ -283,8 +283,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       if (raw && raw.home != null && raw.away != null) {
         return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
       }
-      // Default 0-0 for live/finished matches without valid score
-      if (["live", "finished"].includes(item.status ?? "")) {
+      // Default 0-0 only for finished matches — for live matches, leave undefined
+      // so the UI shows a loading indicator instead of a fake 0-0 score.
+      // The /live-scores overlay will update with the real score when available.
+      if (item.status === "finished") {
         return { home: 0, away: 0 };
       }
       // Discard invalid score objects (e.g. {home: null, away: null})
@@ -399,6 +401,8 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
+    period: match.period,
+    minute: match.minute,
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -413,6 +417,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
+    predictions: match.predictions,
   };
 }
 
@@ -594,17 +599,22 @@ export default function Dashboard() {
           if (!live) return m;
           matched++;
           const newStatus = live.status as Match["status"];
-          const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
-          const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
-          // Guard: never overwrite a non-zero score with 0-0 from live overlay
-          // (protects against API returning missing/stale goal data)
-          const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
-          const liveTotal = liveScoreHome + liveScoreAway;
-          const useExistingScore = existingTotal > 0 && liveTotal === 0;
-          const liveScore = useExistingScore
-            ? m.score!
-            : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
-          const scoreChanged = m.score?.home !== liveScore.home || m.score?.away !== liveScore.away;
+          // When score is null/undefined from overlay (missing goal data),
+          // keep existing score but still update status/period/minute.
+          const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
+          let liveScore = m.score;
+          if (hasLiveScore) {
+            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
+            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
+            // Guard: never overwrite a non-zero score with 0-0 from live overlay
+            const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
+            const liveTotal = liveScoreHome + liveScoreAway;
+            const useExistingScore = existingTotal > 0 && liveTotal === 0;
+            liveScore = useExistingScore
+              ? m.score!
+              : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+          }
+          const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
@@ -632,6 +642,9 @@ export default function Dashboard() {
       setErrorMessage(null);
       setErrorCode(null);
       setDataSource(null);
+      // Clear stale matches when date mode changes to prevent cross-date leakage
+      // (e.g. "week" data persisting when switching back to "today")
+      setAllMatches([]);
 
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
@@ -682,17 +695,7 @@ export default function Dashboard() {
           const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
-        // Merge: preserve existing matches from leagues not present in new results
-        // (prevents batch failures from removing previously loaded matches)
-        setAllMatches((prev) => {
-          if (prev.length === 0) return normalized;
-          if (normalized.length === 0) return prev;
-          const newLeagues = new Set(normalized.map((m) => m.leagueId));
-          // Keep previous matches whose league wasn't in ANY successful batch
-          const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-          const merged = [...normalized, ...preserved];
-          return merged;
-        });
+        setAllMatches(normalized);
         if (normalized.length > 0) setSelectedMatchId((prev) => prev ?? normalized[0].id);
 
         // Immediately fetch live scores to overlay real-time data
@@ -996,6 +999,7 @@ export default function Dashboard() {
     setErrorMessage(null);
     setErrorCode(null);
     setDataSource(null);
+    setAllMatches([]);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
     try {
@@ -1039,14 +1043,7 @@ export default function Dashboard() {
         const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
-      // Merge: preserve existing matches from leagues not in new results
-      setAllMatches((prev) => {
-        if (prev.length === 0) return normalized;
-        if (normalized.length === 0) return prev;
-        const newLeagues = new Set(normalized.map((m) => m.leagueId));
-        const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-        return [...normalized, ...preserved];
-      });
+      setAllMatches(normalized);
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
     } catch {
       // Don't clear matches on error — preserve what we have
@@ -1848,11 +1845,14 @@ export default function Dashboard() {
                           </div>
                           {(match.score && typeof match.score.home === "number" && typeof match.score.away === "number") ? (
                             <div className={`st-match-row__score ${displayStatus === "live" ? "st-match-row__score--live" : ""}`}>
-                              {match.score.home} - {match.score.away}
+                              <span className="st-match-row__score-main">{match.score.home} - {match.score.away}</span>
+                              {match.score.halftime && typeof match.score.halftime.home === "number" && (
+                                <span className="st-match-row__score-ht">HT {match.score.halftime.home}-{match.score.halftime.away}</span>
+                              )}
                             </div>
                           ) : displayStatus === "live" ? (
-                            <div className="st-match-row__score st-match-row__score--live">
-                              0 - 0
+                            <div className="st-match-row__score st-match-row__score--live st-match-row__score--loading">
+                              <span className="st-match-row__score-main">- : -</span>
                             </div>
                           ) : null}
                           {oddsTab === "1x2" && (

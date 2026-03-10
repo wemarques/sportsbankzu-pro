@@ -394,6 +394,85 @@
   padding-top: 0;
 }
 
+/* Prognóstico Section */
+.mdc-prognostico {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mdc-border, #2a2a2a);
+}
+
+.mdc-prognostico__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mdc-prognostico__item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 255, 136, 0.04);
+  border: 1px solid rgba(0, 255, 136, 0.1);
+  font-size: 0.75rem;
+}
+
+.mdc-prognostico__item--neutro {
+  background: rgba(255, 187, 51, 0.04);
+  border-color: rgba(255, 187, 51, 0.1);
+}
+
+.mdc-prognostico__item--alerta {
+  background: rgba(255, 68, 68, 0.04);
+  border-color: rgba(255, 68, 68, 0.1);
+}
+
+.mdc-prognostico__status {
+  font-size: 0.6rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 255, 136, 0.15);
+  color: #00ff88;
+}
+
+.mdc-prognostico__status--neutro {
+  background: rgba(255, 187, 51, 0.15);
+  color: #ffbb33;
+}
+
+.mdc-prognostico__status--safe-star {
+  background: rgba(0, 255, 136, 0.1);
+  color: #00cc66;
+}
+
+.mdc-prognostico__market {
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.mdc-prognostico__prob {
+  color: #00ff88;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdc-prognostico__ev {
+  color: #888;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdc-prognostico__alert {
+  color: #ffbb33;
+  font-size: 0.65rem;
+  font-style: italic;
+}
+
 /* Confidence Bar */
 .mdc-confidence {
   margin-bottom: 16px;
@@ -741,20 +820,62 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+}
+
+.mdc-live-score__indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.mdc-live-score__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: mdc-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(255, 68, 68, 0.6);
+}
+
+.mdc-live-score__label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #ff4444;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.mdc-live-score__period {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.12);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.mdc-live-score__minute {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--mdc-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .mdc-live-score__value {
-  font-size: 1.6rem;
+  font-size: 1.8rem;
   font-weight: 800;
   color: #ff4444;
-  animation: mdc-pulse 2s infinite;
-  font-family: 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(255, 68, 68, 0.4);
+  letter-spacing: 2px;
 }
 
 .mdc-live-score__ht {
   font-size: 0.65rem;
   color: var(--mdc-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .mdc-final-score {

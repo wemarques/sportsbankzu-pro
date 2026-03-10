@@ -10,6 +10,7 @@ import logging
 import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
+from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
 
@@ -157,8 +158,8 @@ async def audit_match(
 
             # Include team names in stats dict for audit metadata
             audit_stats = dict(match_data.get("stats", {}))
-            audit_stats["homeTeam"] = match_data.get("homeTeam", "")
-            audit_stats["awayTeam"] = match_data.get("awayTeam", "")
+            audit_stats["homeTeam"] = team_name(match_data.get("homeTeam", ""))
+            audit_stats["awayTeam"] = team_name(match_data.get("awayTeam", ""))
             audit_result = auditor.audit_match_vs_result(
                 match_data=audit_stats,
                 predictions=predictions,
@@ -258,8 +259,8 @@ def _get_full_match_record(match_id: str, home_team: str = None, away_team: str 
                 if str(m.get("id")) == str(match_id):
                     return m
                 if home_team and away_team:
-                    h = str(m.get("homeTeam", ""))
-                    a = str(m.get("awayTeam", ""))
+                    h = team_name(m.get("homeTeam", ""))
+                    a = team_name(m.get("awayTeam", ""))
                     if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                        (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                         return m
@@ -381,8 +382,8 @@ def _match_to_ai_input(m: dict) -> dict:
     if footystats_analysis:
         context["footystats_analysis"] = footystats_analysis
 
-    home_name = m.get("homeTeam", "")
-    away_name = m.get("awayTeam", "")
+    home_name = team_name(m.get("homeTeam", ""))
+    away_name = team_name(m.get("awayTeam", ""))
     return {
         "id": m.get("id"),
         "footystatsId": footystats_match_id,
@@ -419,8 +420,8 @@ def _get_match_data(match_id: str, home_team: str = None, away_team: str = None)
             # 2. Try matching by team names (handles ID format mismatches)
             if home_team and away_team:
                 for m in result.get("matches", []):
-                    h = str(m.get("homeTeam", ""))
-                    a = str(m.get("awayTeam", ""))
+                    h = team_name(m.get("homeTeam", ""))
+                    a = team_name(m.get("awayTeam", ""))
                     if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                        (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                         logger.info(f"Found match by team names: {h} vs {a} (date={date_filter})")
@@ -433,8 +434,8 @@ def _get_match_data(match_id: str, home_team: str = None, away_team: str = None)
                 try:
                     result = fixtures_endpoint(leagues=alias, date="today")
                     for m in result.get("matches", []):
-                        h = str(m.get("homeTeam", ""))
-                        a = str(m.get("awayTeam", ""))
+                        h = team_name(m.get("homeTeam", ""))
+                        a = team_name(m.get("awayTeam", ""))
                         if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
                            (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
                             logger.info(f"Found match by team names in {alias}: {h} vs {a}")
@@ -686,8 +687,8 @@ async def batch_audit(
         brier_scores = []
 
         for m in finished_matches:
-            home = m.get("homeTeam", "")
-            away = m.get("awayTeam", "")
+            home = team_name(m.get("homeTeam", ""))
+            away = team_name(m.get("awayTeam", ""))
             league = m.get("leagueName", m.get("leagueId", ""))
             score = m.get("score") or {}
             stats = m.get("stats", {})

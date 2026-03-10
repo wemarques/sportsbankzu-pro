@@ -18,6 +18,7 @@ import {
   X,
   Link2,
   Layers,
+  ArrowLeft,
 } from "lucide-react";
 import { AVAILABLE_LEAGUES, type League } from "@/lib/leagues";
 
@@ -290,8 +291,27 @@ function MatchCard({ match }: { match: DisplayMatch }) {
     setMistralLoading(false);
   };
 
-  const activeStatus = mistralData ? confidenceToStatus(mistralData.confidence) : match.mistral.status;
-  const activeColor = mistralData ? confidenceToColor(mistralData.confidence) : match.mistral.color;
+  // Combine local audit status (odds divergence) with Mistral confidence.
+  // If the local audit says REJECTED (odds divergence > 15%), keep ADJUSTED at most
+  // even if Mistral confidence is high — prevents misleading CONFIRMADO status.
+  const activeStatus = mistralData
+    ? (() => {
+        const mistralStatus = confidenceToStatus(mistralData.confidence);
+        if (match.mistral.status === "REJECTED" && mistralStatus === "CONFIRMED") {
+          return "ADJUSTED";
+        }
+        return mistralStatus;
+      })()
+    : match.mistral.status;
+  const activeColor = mistralData
+    ? (() => {
+        const mistralColor = confidenceToColor(mistralData.confidence);
+        if (match.mistral.status === "REJECTED" && confidenceToStatus(mistralData.confidence) === "CONFIRMED") {
+          return "orange" as const;
+        }
+        return mistralColor;
+      })()
+    : match.mistral.color;
 
   const mistralCardClass =
     activeStatus === "CONFIRMED"
@@ -377,7 +397,7 @@ function MatchCard({ match }: { match: DisplayMatch }) {
                     ))}
                   </ul>
                 )}
-                {mistralData.recommendation && (
+                {mistralData.recommendation && !/indispon[ií]vel|aguarde|consulte as estat/i.test(mistralData.recommendation) && (
                   <p className="text-[11px] text-[#00df82] font-semibold mt-2">
                     ✦ {mistralData.recommendation}
                   </p>
@@ -860,7 +880,17 @@ export default function AIReviewDashboard() {
   return (
     <div className="bg-[#0a0a0a] min-h-screen text-gray-100 font-sans pb-24">
       {/* Header */}
-      <header className="p-4 flex items-center justify-between sticky top-0 glass-effect z-10">
+      <header className="sticky top-0 glass-effect z-10">
+        <div className="px-4 pt-3 pb-1">
+          <a
+            href="/dashboard"
+            className="inline-flex items-center gap-1 text-[0.72rem] text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            <ArrowLeft size={14} />
+            Dashboard
+          </a>
+        </div>
+        <div className="px-4 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="bg-[#00df82] p-1.5 rounded-lg">
             <TrendingUp size={20} className="text-black" />
@@ -885,6 +915,7 @@ export default function AIReviewDashboard() {
             <Bell size={20} />
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-black pulse-active" />
           </button>
+        </div>
         </div>
       </header>
 

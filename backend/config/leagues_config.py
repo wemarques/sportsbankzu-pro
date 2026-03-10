@@ -1,6 +1,6 @@
-# Mapeamento das 33 Ligas monitoradas (País - Liga)
+# Mapeamento das 34 Ligas monitoradas (País - Liga)
 # Este dicionário associa o nome amigável ao nome técnico da FootyStats para busca via API.
-# Expansão v3.5: 22 ligas originais + 11 novas ligas (Safe Bets Engine)
+# Expansão v3.5: 22 ligas originais + 11 novas ligas (Safe Bets Engine) + Liga MX
 
 # Aliases: IDs do frontend -> IDs do backend (para FootyStats API)
 # Permite que o frontend use IDs como "spain-la-liga" e o backend resolva para a config correta
@@ -28,6 +28,8 @@ LEAGUE_ID_ALIASES = {
     "switzerland-super-league": "super-league",
     "turkey-super-lig": "super-lig",
     "spain-segunda-division": "segunda-division",
+    "england-league-one": "league-one",
+    "england-league-two": "league-two",
     # --- 11 new leagues (Safe Bets Engine v3.5) ---
     "japan-j-league": "j-league",
     "south-korea-k-league": "k-league",
@@ -39,14 +41,17 @@ LEAGUE_ID_ALIASES = {
     "usa-mls": "mls",
     "czech-first-league": "czech-first-league",
     "colombia-primera-a": "colombian-primera-a",
+    "mexico-liga-mx": "liga-mx",
 }
 
 LEAGUES_CONFIG = [
     # INGLATERRA
     {"country": "England", "name": "Premier League", "id": "premier-league"},
     {"country": "England", "name": "Championship", "id": "championship"},
-    {"country": "England", "name": "League One", "id": "league-one"},
-    {"country": "England", "name": "League Two", "id": "league-two"},
+    {"country": "England", "name": "League One", "id": "league-one",
+     "alt_names": ["efl league one", "sky bet league one"]},
+    {"country": "England", "name": "League Two", "id": "league-two",
+     "alt_names": ["efl league two", "sky bet league two"]},
 
     # ESPANHA
     {"country": "Spain", "name": "La Liga", "id": "la-liga"},
@@ -66,7 +71,8 @@ LEAGUES_CONFIG = [
 
     # BRASIL
     {"country": "Brazil", "name": "Serie A", "id": "brasileirao-serie-a"},
-    {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b"},
+    {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b",
+     "alt_names": ["brasileirão série b", "campeonato brasileiro série b"]},
 
     # OUTROS EUROPA
     {"country": "Netherlands", "name": "Eredivisie", "id": "eredivisie"},
@@ -114,6 +120,10 @@ LEAGUES_CONFIG = [
      "alt_names": ["major league soccer"]},
     {"country": "Colombia", "name": "Campeonato Colombiano", "id": "colombian-primera-a",
      "alt_names": ["liga betplay", "primera a", "categoría primera a"]},
+
+    # MÉXICO
+    {"country": "Mexico", "name": "Liga MX", "id": "liga-mx",
+     "alt_names": ["liga bbva mx", "liga bbva bancomer", "primera division de mexico"]},
 ]
 
 

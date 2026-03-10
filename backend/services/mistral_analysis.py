@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
+from backend.services.util_service import team_name
 
 try:
     import httpx
@@ -106,8 +107,8 @@ class MistralAnalysisService:
 
     def analyze_match_sync(self, match_data: Dict) -> AIAnalysisResponse:
         """Synchronous version for non-async contexts."""
-        home = match_data.get("home_team") or match_data.get("homeTeam", "Home")
-        away = match_data.get("away_team") or match_data.get("awayTeam", "Away")
+        home = team_name(match_data.get("home_team") or match_data.get("homeTeam", "Home"))
+        away = team_name(match_data.get("away_team") or match_data.get("awayTeam", "Away"))
         league = match_data.get("league") or match_data.get("leagueName", "")
         stats = match_data.get("stats", {})
         odds = match_data.get("odds", {})
@@ -272,6 +273,7 @@ IMPORTANTE:
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica
+- OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "BTTS Sim @1.67" ou "Over 2.5 @1.80"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
 - Retorne APENAS o JSON, sem texto adicional
 """
         return prompt
@@ -292,7 +294,7 @@ IMPORTANTE:
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
-                    "max_tokens": 1000,
+                    "max_tokens": 2048,
                 },
                 timeout=30.0,
             )
@@ -324,10 +326,26 @@ IMPORTANTE:
 
             data = json.loads(cleaned)
 
+            recommendation = data.get("recommendation", "")
+
+            # Detect generic/unavailable recommendations that Mistral sometimes returns
+            # instead of a real data-driven recommendation
+            _GENERIC_PATTERNS = (
+                "indisponivel",
+                "indisponível",
+                "aguarde",
+                "tente novamente",
+                "consulte as estatisticas",
+                "consulte as estatísticas",
+            )
+            if recommendation and any(p in recommendation.lower() for p in _GENERIC_PATTERNS):
+                logger.warning(f"Mistral returned generic recommendation, discarding: {recommendation[:80]}")
+                recommendation = ""
+
             return AIAnalysisResponse(
                 summary=data.get("summary", ""),
                 key_points=data.get("key_points", [])[:5],
-                recommendation=data.get("recommendation", ""),
+                recommendation=recommendation,
                 confidence=min(max(int(data.get("confidence", 50)), 0), 100),
                 last_updated=datetime.now().strftime("%d/%m/%Y as %H:%M"),
             )

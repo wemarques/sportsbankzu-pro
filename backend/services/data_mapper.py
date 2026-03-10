@@ -83,11 +83,11 @@ class FootyStatsMatchInput(BaseModel):
     team_b_shotsOffTarget: Optional[int] = -1
     team_a_xg: Optional[float] = 0.0
     team_b_xg: Optional[float] = 0.0
-    btts_potential: Optional[float] = 0.0
-    o15_potential: Optional[float] = 0.0
-    o25_potential: Optional[float] = 0.0
-    o35_potential: Optional[float] = 0.0
-    o45_potential: Optional[float] = 0.0
+    btts_potential: Optional[float] = None
+    o15_potential: Optional[float] = None
+    o25_potential: Optional[float] = None
+    o35_potential: Optional[float] = None
+    o45_potential: Optional[float] = None
     corners_potential: Optional[float] = 0.0
     corners_o85_potential: Optional[float] = 0.0
     corners_o95_potential: Optional[float] = 0.0
@@ -204,11 +204,11 @@ class DataMapper:
             "away_team_shots_off_target": _s(api_match.get("team_b_shotsOffTarget", -1)),
             "home_team_xg": api_match.get("team_a_xg", 0.0),
             "away_team_xg": api_match.get("team_b_xg", 0.0),
-            "btts_percentage_pre_match": api_match.get("btts_potential", 0),
-            "over_15_percentage_pre_match": api_match.get("o15_potential", 0),
-            "over_25_percentage_pre_match": api_match.get("o25_potential", 0),
-            "over_35_percentage_pre_match": api_match.get("o35_potential", 0),
-            "over_45_percentage_pre_match": api_match.get("o45_potential", 0),
+            "btts_percentage_pre_match": api_match.get("btts_potential") or None,
+            "over_15_percentage_pre_match": api_match.get("o15_potential") or None,
+            "over_25_percentage_pre_match": api_match.get("o25_potential") or None,
+            "over_35_percentage_pre_match": api_match.get("o35_potential") or None,
+            "over_45_percentage_pre_match": api_match.get("o45_potential") or None,
             # Corner potentials (pre-match probabilities)
             "corners_potential": api_match.get("corners_potential", 0),
             "corners_o85_potential": api_match.get("corners_o85_potential", 0),

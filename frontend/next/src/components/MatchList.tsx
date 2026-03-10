@@ -19,19 +19,27 @@ export default function MatchesList({ matches, league, dateFilter, statusFilter,
   const [localStatus, setLocalStatus] = useState<StatusFilter>(statusFilter);
 
   const filtered = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    let end = new Date(start);
-    if (dateFilter === "today") end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-    else if (dateFilter === "tomorrow") {
-      const t = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-      start.setTime(t.getTime());
-      end = new Date(t.getTime() + 24 * 60 * 60 * 1000);
-    } else if (dateFilter === "week") end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // Use BRT (UTC-3) for date boundaries to match backend timezone logic.
+    // Browser's local timezone could differ from BRT, causing date mismatches.
+    const BRT_OFFSET_MS = -3 * 60 * 60 * 1000;
+    const nowUtc = Date.now();
+    const nowBrt = new Date(nowUtc + BRT_OFFSET_MS);
+    const startBrt = new Date(Date.UTC(nowBrt.getUTCFullYear(), nowBrt.getUTCMonth(), nowBrt.getUTCDate()));
+    // Convert BRT midnight back to UTC for comparison: BRT 00:00 = UTC 03:00
+    const startUtc = new Date(startBrt.getTime() - BRT_OFFSET_MS);
+    let endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+
+    if (dateFilter === "tomorrow") {
+      const t = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+      startUtc.setTime(t.getTime());
+      endUtc = new Date(t.getTime() + 24 * 60 * 60 * 1000);
+    } else if (dateFilter === "week") {
+      endUtc = new Date(startUtc.getTime() + 7 * 24 * 60 * 60 * 1000);
+    }
 
     return matches.filter((m) => {
       const dt = new Date(m.datetime);
-      const inRange = dt >= start && dt < end;
+      const inRange = dt >= startUtc && dt < endUtc;
       const statusValue = unifyStatus(m.status);
       const statusOk = localStatus === "all" ? true : statusValue === localStatus;
       return inRange && statusOk;
@@ -120,8 +128,8 @@ function normalizeMatches(raw: any, leagues: string[]): Match[] {
       id: item.id ?? `${leagueId}-${idx}-${home}-${away}-${dt}`,
       leagueId,
       leagueName,
-      homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
-      awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+      homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? item.ratings?.home ?? 0 },
+      awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? item.ratings?.away ?? 0 },
       datetime: dt,
       venue: item.venue ?? "",
       status: unifyStatus(statusRaw),
