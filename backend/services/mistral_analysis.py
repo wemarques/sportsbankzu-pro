@@ -5,6 +5,7 @@ Servico de analise de jogos usando MISTRAL AI
 import os
 import json
 import logging
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 from backend.services.util_service import team_name
@@ -82,26 +83,26 @@ class MistralAnalysisService:
 
         try:
             analysis = await self._call_mistral_api(prompt)
-            result = self._parse_analysis(analysis)
+            result = self._parse_analysis(analysis, odds)
             self.cache.set("analysis", home_team, away_team, result.model_dump())
             return result
         except Exception as e:
             logger.error(f"Mistral analysis error for {home_team} vs {away_team}: {e}")
             # Fallback: try sync client
             try:
-                return self._analyze_sync(prompt, home_team, away_team)
+                return self._analyze_sync(prompt, home_team, away_team, odds)
             except Exception:
                 return self._get_fallback_analysis()
 
     def _analyze_sync(
-        self, prompt: str, home_team: str, away_team: str
+        self, prompt: str, home_team: str, away_team: str, odds: Optional[Dict] = None
     ) -> AIAnalysisResponse:
         """Fallback synchronous analysis via MistralClient wrapper."""
         response_text = self.client.simple_prompt(
             prompt,
             system_prompt="Voce e um analista esportivo profissional. Responda apenas em JSON valido.",
         )
-        result = self._parse_analysis(response_text)
+        result = self._parse_analysis(response_text, odds)
         self.cache.set("analysis", home_team, away_team, result.model_dump())
         return result
 
@@ -122,7 +123,7 @@ class MistralAnalysisService:
 
         prompt = self._build_prompt(home, away, league, stats, odds, context)
         try:
-            return self._analyze_sync(prompt, home, away)
+            return self._analyze_sync(prompt, home, away, odds)
         except Exception as e:
             logger.error(f"Sync analysis error: {e}")
             return self._get_fallback_analysis()
@@ -217,12 +218,17 @@ CLASSIFICACAO E DESEMPENHO:
 - Posicao na liga: {home_team} {_stat('homeLeaguePosition')}o vs {away_team} {_stat('awayLeaguePosition')}o
 - % Vitoria na temporada: {home_team} {_stat('homeWinPercentage')}% vs {away_team} {_stat('awayWinPercentage')}%
 
-ODDS DO MERCADO:
+ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds que nao estejam listadas):
 - Casa (1): {odds.get('home', 'N/A')}
 - Empate (X): {odds.get('draw', 'N/A')}
 - Fora (2): {odds.get('away', 'N/A')}
+- Over 1.5: {odds.get('over15', 'N/A')}
 - Over 2.5: {odds.get('over_25') or odds.get('over25', 'N/A')}
+- Over 3.5: {odds.get('over35', 'N/A')}
+- Over 4.5: {odds.get('over45', 'N/A')}
+- Under 2.5: {odds.get('under25', 'N/A')}
 - BTTS Sim: {odds.get('btts_yes') or odds.get('bttsYes', 'N/A')}
+- BTTS Nao: {odds.get('btts_no') or odds.get('bttsNo', 'N/A')}
 """
 
         if context:
@@ -274,6 +280,7 @@ IMPORTANTE:
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica
 - OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "BTTS Sim @1.67" ou "Over 2.5 @1.80"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
+- CRITICO: A odd na recomendacao DEVE ser uma das odds listadas em "ODDS DO MERCADO" acima. NAO invente, estime ou arredonde odds. Se a odd de um mercado e "N/A", NAO recomende esse mercado. Escolha APENAS entre mercados com odd numerica disponivel.
 - Retorne APENAS o JSON, sem texto adicional
 """
         return prompt
@@ -302,7 +309,69 @@ IMPORTANTE:
             data = response.json()
             return data["choices"][0]["message"]["content"]
 
-    def _parse_analysis(self, raw_response: str) -> AIAnalysisResponse:
+    @staticmethod
+    def _validate_recommendation_odd(recommendation: str, odds: Dict) -> str:
+        """Validate that the odd in the recommendation matches an actual available odd.
+
+        If the recommended odd doesn't match any real odd, replace it with the
+        closest real odd for a matching market, or strip the odd entirely.
+        """
+        if not recommendation or not odds:
+            return recommendation
+
+        # Extract odd from recommendation (e.g. "@1.95" or "@ 1.95")
+        odd_match = re.search(r"@\s*([\d]+[.,][\d]+)", recommendation)
+        if not odd_match:
+            return recommendation
+
+        rec_odd = float(odd_match.group(1).replace(",", "."))
+
+        # Build map of available real odds
+        real_odds: Dict[str, float] = {}
+        _MARKET_NAMES = {
+            "home": "Casa", "draw": "Empate", "away": "Fora",
+            "over15": "Over 1.5", "over25": "Over 2.5", "over35": "Over 3.5",
+            "over45": "Over 4.5", "under25": "Under 2.5",
+            "bttsYes": "BTTS Sim", "bttsNo": "BTTS Nao",
+            "btts_yes": "BTTS Sim", "btts_no": "BTTS Nao",
+            "over_25": "Over 2.5",
+        }
+        for key, val in odds.items():
+            if val is not None:
+                try:
+                    real_odds[_MARKET_NAMES.get(key, key)] = float(val)
+                except (TypeError, ValueError):
+                    pass
+
+        # Check if recommended odd matches any real odd (within 0.01 tolerance)
+        for _market, real_odd in real_odds.items():
+            if abs(rec_odd - real_odd) < 0.02:
+                return recommendation  # Odd is valid
+
+        # Odd not found — try to find the correct odd for the recommended market
+        rec_lower = recommendation.lower()
+        best_market = None
+        best_odd = None
+        for market_name, real_odd in real_odds.items():
+            if market_name.lower() in rec_lower:
+                best_market = market_name
+                best_odd = real_odd
+                break
+
+        if best_odd is not None:
+            # Replace hallucinated odd with real one
+            corrected = re.sub(r"@\s*[\d]+[.,][\d]+", f"@{best_odd:.2f}", recommendation)
+            logger.warning(
+                f"Corrected hallucinated odd: {rec_odd} -> {best_odd} for market {best_market}"
+            )
+            return corrected
+
+        # Can't find a matching market — strip the odd to avoid confusion
+        corrected = re.sub(r"\s*@\s*[\d]+[.,][\d]+", "", recommendation)
+        logger.warning(f"Stripped hallucinated odd {rec_odd} from recommendation (no matching market)")
+        return corrected
+
+    def _parse_analysis(self, raw_response: str, odds: Optional[Dict] = None) -> AIAnalysisResponse:
         """Parse da resposta da MISTRAL para o modelo estruturado"""
         try:
             cleaned = raw_response.strip()
@@ -341,6 +410,10 @@ IMPORTANTE:
             if recommendation and any(p in recommendation.lower() for p in _GENERIC_PATTERNS):
                 logger.warning(f"Mistral returned generic recommendation, discarding: {recommendation[:80]}")
                 recommendation = ""
+
+            # Validate recommended odd against real available odds
+            if recommendation and odds:
+                recommendation = self._validate_recommendation_odd(recommendation, odds)
 
             return AIAnalysisResponse(
                 summary=data.get("summary", ""),
