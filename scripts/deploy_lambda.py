@@ -39,6 +39,15 @@ def prepare_build():
     for pycache in BUILD_DIR.rglob("__pycache__"):
         shutil.rmtree(pycache)
 
+    # Validate that the Lambda handler exists in the build
+    handler_path = BUILD_DIR / "backend" / "lambda_handler.py"
+    if not handler_path.exists():
+        raise FileNotFoundError(
+            f"CRITICAL: {handler_path} not found in build! "
+            f"Check if backend/lambda_handler.py exists in your working tree. "
+            f"Your git repo may be in a bad state (MERGING/conflict)."
+        )
+
 def create_zip():
     print(f"Criando arquivo ZIP: {ZIP_FILE}")
     if ZIP_FILE.exists():
