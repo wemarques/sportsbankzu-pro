@@ -10,6 +10,7 @@ import logging
 import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
+from backend.services.api_football_client import APIFootballClient
 from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
@@ -39,14 +40,39 @@ async def get_match_analysis(
         match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
         service = MistralAnalysisService()
 
+        h = match_data["home_team"]
+        a = match_data["away_team"]
+        context = match_data.get("context") if include_context else None
+        if context is None:
+            context = {}
+
+        # --- API-Football: fetch live data + injuries ---
+        api_football_data = {"live_data": None, "injuries": [], "absences": "", "live_status": ""}
+        try:
+            afc = APIFootballClient()
+            if afc.is_configured:
+                api_football_data = await afc.get_match_live_data(
+                    home_team=h,
+                    away_team=a,
+                )
+                # Inject into context for Mistral AI
+                context["absences"] = api_football_data.get("absences", "Nenhuma informacao disponivel")
+                context["live_status"] = api_football_data.get("live_status", "Sem dados ao vivo")
+                logger.info(f"API-Football data fetched for {h} vs {a}: status={api_football_data['live_data'].get('status')}")
+        except Exception as e:
+            logger.warning(f"API-Football call failed for {h} vs {a}: {e}")
+
         analysis = await service.analyze_match(
-            home_team=match_data["home_team"],
-            away_team=match_data["away_team"],
+            home_team=h,
+            away_team=a,
             league=match_data["league"],
             match_stats=match_data["stats"],
             odds=match_data["odds"],
-            context=match_data.get("context") if include_context else None,
+            context=context,
         )
+
+        # Attach live data to the response for frontend consumption
+        analysis.match_live_data = api_football_data.get("live_data")
 
         return analysis
     except ValueError as e:

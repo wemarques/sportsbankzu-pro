@@ -72,4 +72,66 @@ A defesa em profundidade deve cobrir **todos os campos de saída**, não só o `
 
 ---
 
+## 003 — Integração API-Football v3 como fonte de dados complementar
+
+**Data:** 2026-03-11
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/config/leagues_config.py`, `backend/routes/fixtures.py`, `backend/routes/live.py`, `backend/main.py`
+**Severidade:** Média (melhoria de cobertura de dados)
+**Status:** Implementado
+
+### Problema identificado
+
+O sistema dependia exclusivamente da FootyStats API como fonte de dados primária. Quando a FootyStats falhava (rate limit, manutenção, dados incompletos), os placares ao vivo ficavam indisponíveis e não havia fallback confiável. Além disso, dados como escalações, eventos de jogo (gols/cartões), estatísticas detalhadas de partida e lesões/suspensões não eram exibidos no dashboard principal — apenas na análise de IA.
+
+### Causa raiz
+
+O client da API-Football (`api_football_client.py`) existia mas era usado apenas na rota de análise de IA (`ai_analysis.py`) para consultas pontuais por jogo. Não havia:
+1. Cache para evitar chamadas repetitivas
+2. Suporte síncrono para uso no `ThreadPoolExecutor` do fixtures
+3. Endpoints para standings, statistics, odds, H2H, lineups, events
+4. Mapeamento de IDs das ligas internas para IDs numéricos da API-Football
+5. Lógica de enrichment para sobrepor dados ao vivo sobre registros da FootyStats
+6. Rotas dedicadas para dados ao vivo
+
+### Correções aplicadas (5 camadas)
+
+1. **Mapeamento de league IDs** (`leagues_config.py`) — Criado `API_FOOTBALL_LEAGUE_IDS` com 34 ligas mapeadas + helper `get_api_football_league_id()` para conversão automática de IDs internos para IDs numéricos da API-Football.
+
+2. **Client expandido** (`api_football_client.py`) — Reescrito com:
+   - Cache SQLite TTL (tabela `api_football_cache`, mesmo DB `api_cache.db`)
+   - Suporte síncrono via `requests` (`_get_sync()`) com retry automático para 502/503/504/429
+   - Novos endpoints: `get_fixtures_by_date()`, `get_live_fixtures()`, `get_standings()`, `get_team_statistics()`, `get_fixture_statistics()`, `get_fixture_events()`, `get_fixture_lineups()`, `get_odds()`, `get_predictions()`, `get_h2h()`, `get_injuries_sync()`
+   - `extract_best_odds()` — extrai melhores odds com prioridade por bookmaker (Bet365, Pinnacle, 1xBet)
+   - `fixtures_to_records()` — converte fixtures da API-Football para formato interno (usado como fallback)
+   - `enrich_fixture_record()` — sobrepõe dados ao vivo sobre registros existentes da FootyStats
+
+3. **Enrichment no fixtures route** (`fixtures.py`) — Nova função `_enrich_with_api_football()` que:
+   - **Caso 1 (registros existem)**: busca fixtures da API-Football para a mesma liga/data e sobrepõe status, placar e minuto ao vivo (match por nome de time, tolerante a variações)
+   - **Caso 2 (nenhum registro)**: usa API-Football como fallback completo, gerando registros com odds e probabilidades implícitas
+
+4. **Rota live dedicada** (`routes/live.py`) — Novos endpoints:
+   - `GET /live` — todos os jogos ao vivo (filtrável por liga)
+   - `GET /live/fixture/{id}` — dados detalhados de um jogo (estatísticas, eventos, escalações, lesões)
+   - `GET /live/standings` — classificação da liga via API-Football
+
+5. **Wiring** (`main.py`) — Registro do router `live` na aplicação FastAPI.
+
+### Configuração necessária
+
+- **Variável de ambiente**: `API_FOOTBALL_KEY` — chave da API-Football v3
+- **Onde configurar**: `.env` (local), Lambda (env vars), Vercel (env vars)
+- **Comportamento sem chave**: sistema funciona normalmente, ignora chamadas à API-Football (graceful degradation)
+
+### Regras de uso de API
+
+- **Cache TTL padrão**: 5min (fixtures ao vivo), 30min (odds), 60min (stats/injuries), 360min (standings/H2H)
+- **Retry**: 2 tentativas com 2s de backoff para status 502/503/504/429
+- **Fallback chain atualizada**: FootyStats API → API-Football v3 → FootyStats todays-matches → CSV → Mock (dev only)
+
+### Lição aprendida
+
+Fontes de dados redundantes são essenciais em sistemas de produção. A integração foi feita em camadas independentes (client, enrichment, fallback, rota dedicada) para que cada uma possa falhar isoladamente sem afetar as demais. O cache SQLite com TTL diferenciado por endpoint evita estourar o rate limit da API-Football (100 req/dia no plano free, 7500/dia no plano pro).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

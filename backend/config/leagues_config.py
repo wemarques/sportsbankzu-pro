@@ -127,6 +127,81 @@ LEAGUES_CONFIG = [
 ]
 
 
+# API-Football v3 league IDs (https://v3.football.api-sports.io/leagues)
+# Maps internal league ID -> API-Football league numeric ID
+API_FOOTBALL_LEAGUE_IDS = {
+    # ENGLAND
+    "premier-league": 39,
+    "championship": 40,
+    "league-one": 41,
+    "league-two": 42,
+    # SPAIN
+    "la-liga": 140,
+    "segunda-division": 141,
+    # ITALY
+    "serie-a": 135,
+    "serie-b": 136,
+    # GERMANY
+    "bundesliga": 78,
+    "2-bundesliga": 79,
+    # FRANCE
+    "ligue-1": 61,
+    "ligue-2": 62,
+    # BRAZIL
+    "brasileirao-serie-a": 71,
+    "brasileirao-serie-b": 72,
+    # NETHERLANDS
+    "eredivisie": 88,
+    "eerste-divisie": 89,
+    # PORTUGAL
+    "primeira-liga": 94,
+    # TURKEY
+    "super-lig": 203,
+    # BELGIUM
+    "pro-league": 144,
+    # SCOTLAND
+    "premiership": 179,
+    # AUSTRIA
+    "austrian-bundesliga": 218,
+    # DENMARK
+    "superliga": 120,
+    # SWITZERLAND
+    "super-league": 207,
+    # ARGENTINA
+    "primera-division": 128,
+    # AUSTRALIA
+    "a-league": 188,
+    # SAUDI ARABIA
+    "professional-league": 307,
+    # JAPAN
+    "j-league": 98,
+    # SOUTH KOREA
+    "k-league": 292,
+    # NORWAY
+    "eliteserien": 103,
+    # SWEDEN
+    "allsvenskan": 113,
+    # UAE
+    "uae-pro-league": 305,
+    # GREECE
+    "super-league-greece": 197,
+    # CZECH REPUBLIC
+    "czech-first-league": 345,
+    # USA
+    "mls": 253,
+    # COLOMBIA
+    "colombian-primera-a": 239,
+    # MEXICO
+    "liga-mx": 262,
+}
+
+
+def get_api_football_league_id(league_id: str) -> int | None:
+    """Returns the API-Football numeric league ID for a given internal league ID."""
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    return API_FOOTBALL_LEAGUE_IDS.get(resolved_id)
+
+
 def get_league_config(league_id: str):
     """Busca configuração de uma liga pelo ID interno.
     Aceita IDs do frontend (ex: spain-la-liga) e resolve para a config FootyStats."""

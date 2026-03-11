@@ -10,13 +10,15 @@ except Exception:
     pd = None
 from backend.services.fixtures_service import build_records_from_matches
 from backend.services.footstats_client import FootyStatsClient
+from backend.services.api_football_client import APIFootballClient
 from backend.services.data_mapper import DataMapper
 from backend.services.util_service import team_name
-from backend.config.leagues_config import get_league_config
+from backend.config.leagues_config import get_league_config, get_api_football_league_id
 
 logger = logging.getLogger("sportsbankzu.fixtures")
 router = APIRouter(tags=["fixtures"])
 footstats = FootyStatsClient()
+_afc = APIFootballClient()
 
 # Max threads for parallel league processing within a single request.
 # Keeps API call volume reasonable while dramatically reducing latency.
@@ -193,6 +195,9 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
         except Exception as e:
             logger.error(f"[fixtures] {lid}: {type(e).__name__}: {e}")
 
+    # API-Football enrichment: overlay live scores + fallback data source
+    records = _enrich_with_api_football(lid, records, found_via_api, date)
+
     # FALLBACK: CSV files (skip mock data in production to avoid poisoning batches)
     _is_production = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL"))
     if not found_via_api:
@@ -240,6 +245,106 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
             if not _is_production:
                 from backend.main import generate_mock_fixtures as gen_mock2
                 records = gen_mock2(lid, date)
+
+    return records
+
+
+def _current_season() -> int:
+    """Infer the current football season year."""
+    from datetime import timezone as _tz
+    now = datetime.now(_tz.utc)
+    return now.year if now.month >= 7 else now.year - 1
+
+
+def _enrich_with_api_football(
+    lid: str, records: list, found_via_api: bool, date_str: str
+) -> list:
+    """Enrich fixture records with API-Football live data, or use as fallback.
+
+    1. If records exist: overlay live scores/status from API-Football
+    2. If no records and API-Football is configured: fetch fixtures as fallback
+    """
+    if not _afc.is_configured:
+        return records
+
+    af_league_id = get_api_football_league_id(lid)
+    if af_league_id is None:
+        return records
+
+    season = _current_season()
+
+    # CASE 1: Records exist — enrich with live data overlay
+    if records:
+        try:
+            # Determine the actual date for API-Football query
+            from datetime import timezone as _tz
+            BRT = _tz(timedelta(hours=-3))
+            now_brt = datetime.now(BRT)
+            if date_str == "tomorrow":
+                af_date = (now_brt + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif date_str == "today":
+                af_date = now_brt.strftime("%Y-%m-%d")
+            else:
+                af_date = date_str
+
+            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=2)
+            if not af_fixtures:
+                return records
+
+            # Build a lookup by team name for matching
+            af_by_home: dict = {}
+            for fx in af_fixtures:
+                home = (fx.get("teams", {}).get("home", {}).get("name") or "").lower().strip()
+                if home:
+                    af_by_home[home] = fx
+
+            enriched = 0
+            for rec in records:
+                home = (rec.get("homeTeam") or "").lower().strip()
+                away = (rec.get("awayTeam") or "").lower().strip()
+
+                # Try exact match first, then substring match
+                matched_fx = af_by_home.get(home)
+                if not matched_fx:
+                    for af_home, fx in af_by_home.items():
+                        if (home in af_home or af_home in home):
+                            af_away = (fx.get("teams", {}).get("away", {}).get("name") or "").lower().strip()
+                            if away in af_away or af_away in away:
+                                matched_fx = fx
+                                break
+
+                if matched_fx:
+                    _afc.enrich_fixture_record(rec, matched_fx)
+                    enriched += 1
+
+            if enriched:
+                logger.info(f"[fixtures] {lid}: API-Football enriched {enriched}/{len(records)} records")
+
+        except Exception as e:
+            logger.warning(f"[fixtures] {lid}: API-Football enrichment failed: {e}")
+
+        return records
+
+    # CASE 2: No records and not found via any API — use API-Football as fallback
+    if not found_via_api:
+        try:
+            from datetime import timezone as _tz
+            BRT = _tz(timedelta(hours=-3))
+            now_brt = datetime.now(BRT)
+            if date_str == "tomorrow":
+                af_date = (now_brt + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif date_str == "today":
+                af_date = now_brt.strftime("%Y-%m-%d")
+            else:
+                af_date = date_str
+
+            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=5)
+            if af_fixtures:
+                records = _afc.fixtures_to_records(af_fixtures, lid)
+                logger.info(f"[fixtures] {lid}: API-Football fallback provided {len(records)} records")
+
+        except Exception as e:
+            logger.warning(f"[fixtures] {lid}: API-Football fallback failed: {e}")
 
     return records
 
