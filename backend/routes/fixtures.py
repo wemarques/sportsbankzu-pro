@@ -974,6 +974,82 @@ def live_scores() -> Dict[str, Any]:
             })
         if skipped_statuses:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
+
+        # ── API-Football enrichment for live matches ──────────────────────
+        # FootyStats often returns 0-0 for live matches even via the
+        # individual /match endpoint.  API-Football provides reliable
+        # real-time scores, so we overlay them on top.
+        _af_enriched = 0
+        if _afc.is_configured:
+            try:
+                af_live = _afc.get_live_fixtures()  # 1-min cache
+                if af_live:
+                    # Build lookup: normalised home team name → fixture
+                    _af_lookup: Dict[str, Dict] = {}
+                    for fx in af_live:
+                        _h = (fx.get("teams", {}).get("home", {}).get("name") or "").lower().strip()
+                        if _h:
+                            _af_lookup[_h] = fx
+
+                    for rec in result:
+                        if rec["status"] != "live":
+                            continue
+                        rh = rec["homeTeam"].lower().strip()
+                        ra = rec["awayTeam"].lower().strip()
+
+                        # Try exact, then substring match
+                        matched_fx = _af_lookup.get(rh)
+                        if not matched_fx:
+                            for af_h, fx in _af_lookup.items():
+                                if (rh in af_h or af_h in rh):
+                                    af_a = (fx.get("teams", {}).get("away", {}).get("name") or "").lower().strip()
+                                    if ra in af_a or af_a in ra:
+                                        matched_fx = fx
+                                        break
+
+                        if not matched_fx:
+                            continue
+
+                        ld = _afc.extract_live_data(matched_fx)
+                        if ld["goals_home"] is None:
+                            continue
+
+                        # Overlay score from API-Football
+                        af_home_g = ld["goals_home"]
+                        af_away_g = ld["goals_away"]
+
+                        # Guard: never overwrite a higher FootyStats score with
+                        # a lower API-Football score (API-Football may lag on
+                        # rare occasions).
+                        cur_score = rec.get("score")
+                        cur_total = 0
+                        if cur_score and isinstance(cur_score, dict):
+                            cur_total = (cur_score.get("home") or 0) + (cur_score.get("away") or 0)
+                        af_total = af_home_g + (af_away_g or 0)
+
+                        if af_total >= cur_total:
+                            new_score: Dict[str, Any] = {"home": af_home_g, "away": af_away_g}
+                            if ld["halftime_home"] is not None:
+                                new_score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
+                            elif cur_score and isinstance(cur_score, dict) and cur_score.get("halftime"):
+                                new_score["halftime"] = cur_score["halftime"]
+                            rec["score"] = new_score
+
+                        # Always update minute/period from API-Football (more accurate)
+                        if ld["minute"] is not None:
+                            rec["minute"] = ld["minute"]
+                        af_status = ld["status"]
+                        period_map = {"1H": "1T", "HT": "HT", "2H": "2T"}
+                        if af_status in period_map:
+                            rec["period"] = period_map[af_status]
+
+                        _af_enriched += 1
+
+                if _af_enriched:
+                    logger.info(f"[live-scores] API-Football enriched {_af_enriched} live matches")
+            except Exception as _af_err:
+                logger.warning(f"[live-scores] API-Football enrichment failed: {_af_err}")
+
         logger.info(
             f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
             f"| scores: {[(r['homeTeam'][:12], r['score']['home'] if r.get('score') else '?', r['score']['away'] if r.get('score') else '?') for r in result[:5]]}"
