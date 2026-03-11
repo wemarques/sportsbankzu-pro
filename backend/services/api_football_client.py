@@ -250,6 +250,74 @@ class APIFootballClient:
         data = self._get_sync("fixtures", params, ttl_minutes=1)
         return data.get("response", [])
 
+    @staticmethod
+    def _normalize_team_name(name: str) -> str:
+        """Normalize team name for cross-API matching.
+
+        Handles common variations between FootyStats and API-Football:
+        - "Atlético Madrid" vs "Atletico Madrid"
+        - "FC Barcelona" vs "Barcelona"
+        - "Man United" vs "Manchester United"
+        - "Wolverhampton Wanderers" vs "Wolves"
+        """
+        import re
+        import unicodedata
+
+        if not name:
+            return ""
+
+        # Remove accents (é -> e, ã -> a, ü -> u)
+        nfkd = unicodedata.normalize("NFKD", name)
+        ascii_name = "".join(c for c in nfkd if not unicodedata.combining(c))
+
+        # Lowercase
+        result = ascii_name.lower().strip()
+
+        # Remove common prefixes/suffixes that vary between APIs
+        result = re.sub(r"\b(fc|cf|sc|ac|as|us|rc|cd|ca|ss|afc|ssc)\b", "", result)
+        # Remove punctuation
+        result = re.sub(r"[.\-'\"()]", " ", result)
+        # Collapse whitespace
+        result = re.sub(r"\s+", " ", result).strip()
+
+        return result
+
+    @staticmethod
+    def _team_names_match(name_a: str, name_b: str) -> bool:
+        """Check if two team names refer to the same team.
+
+        Uses normalized substring matching + token overlap for robustness.
+        """
+        norm_a = APIFootballClient._normalize_team_name(name_a)
+        norm_b = APIFootballClient._normalize_team_name(name_b)
+
+        if not norm_a or not norm_b:
+            return False
+
+        # Exact match after normalization
+        if norm_a == norm_b:
+            return True
+
+        # Substring containment (handles "Barcelona" in "Barcelona" or vice-versa)
+        if norm_a in norm_b or norm_b in norm_a:
+            return True
+
+        # Token overlap: if one name's significant tokens are a subset of the other
+        tokens_a = set(norm_a.split())
+        tokens_b = set(norm_b.split())
+        # Remove very short tokens (1 char) that might be noise
+        tokens_a = {t for t in tokens_a if len(t) > 1}
+        tokens_b = {t for t in tokens_b if len(t) > 1}
+
+        if tokens_a and tokens_b:
+            overlap = tokens_a & tokens_b
+            smaller = min(len(tokens_a), len(tokens_b))
+            # If at least half of the smaller set's tokens overlap, consider it a match
+            if smaller > 0 and len(overlap) >= max(1, smaller * 0.5):
+                return True
+
+        return False
+
     async def find_fixture(
         self,
         home_team: str,
@@ -258,7 +326,11 @@ class APIFootballClient:
         league_id: Optional[int] = None,
         season: Optional[int] = None,
     ) -> Optional[Dict]:
-        """Search for a fixture by team names and date (async)."""
+        """Search for a fixture by team names and date (async).
+
+        Uses normalized team name matching to bridge FootyStats → API-Football
+        name differences (accents, prefixes like FC/SC, abbreviations).
+        """
         params: Dict = {}
         if match_date:
             params["date"] = match_date
@@ -281,30 +353,29 @@ class APIFootballClient:
             logger.info(f"No fixtures found for date={params.get('date')}")
             return None
 
-        home_lower = home_team.lower()
-        away_lower = away_team.lower()
-
+        # Pass 1: strict normalized matching (home=home, away=away)
         for fx in fixtures:
             teams = fx.get("teams", {})
-            fx_home = (teams.get("home", {}).get("name") or "").lower()
-            fx_away = (teams.get("away", {}).get("name") or "").lower()
+            fx_home = teams.get("home", {}).get("name", "")
+            fx_away = teams.get("away", {}).get("name", "")
 
-            if (home_lower in fx_home or fx_home in home_lower) and \
-               (away_lower in fx_away or fx_away in away_lower):
+            if self._team_names_match(home_team, fx_home) and \
+               self._team_names_match(away_team, fx_away):
+                logger.info(f"[find_fixture] Matched: '{home_team}'→'{fx_home}', '{away_team}'→'{fx_away}'")
                 return fx
 
-        # Fallback: looser matching (swapped order)
+        # Pass 2: swapped order (rare but possible with different conventions)
         for fx in fixtures:
             teams = fx.get("teams", {})
-            fx_home = (teams.get("home", {}).get("name") or "").lower()
-            fx_away = (teams.get("away", {}).get("name") or "").lower()
+            fx_home = teams.get("home", {}).get("name", "")
+            fx_away = teams.get("away", {}).get("name", "")
 
-            if (home_lower in fx_away or fx_away in home_lower) and \
-               (away_lower in fx_home or fx_home in away_lower):
-                logger.info("Found fixture with swapped team order")
+            if self._team_names_match(home_team, fx_away) and \
+               self._team_names_match(away_team, fx_home):
+                logger.info(f"[find_fixture] Matched (swapped): '{home_team}'→'{fx_away}', '{away_team}'→'{fx_home}'")
                 return fx
 
-        logger.info(f"No fixture matched for {home_team} vs {away_team}")
+        logger.info(f"[find_fixture] No match for '{home_team}' vs '{away_team}' among {len(fixtures)} fixtures")
         return None
 
     # ==================================================================
