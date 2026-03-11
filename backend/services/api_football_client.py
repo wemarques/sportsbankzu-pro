@@ -532,43 +532,102 @@ class APIFootballClient:
     # ==================================================================
     # INJURIES / SUSPENSIONS
     # ==================================================================
-    async def get_injuries(self, fixture_id: int) -> List[Dict]:
-        """Fetch injuries/suspensions for a fixture (async)."""
-        try:
-            data = await self._get("injuries", {"fixture": str(fixture_id)})
-        except Exception as e:
-            logger.error(f"API-Football /injuries error: {e}")
-            return []
+    @staticmethod
+    def _parse_injuries(raw_injuries: List[Dict]) -> List[Dict]:
+        """Parse raw injury objects into structured dicts with status classification.
 
-        raw_injuries = data.get("response", [])
+        API-Football injury types:
+        - "Missing Fixture" -> confirmed out (FORA)
+        - "Questionable"    -> doubtful (DUVIDA)
+        - Other (e.g. "Suspension") -> confirmed out (FORA)
+        """
         result = []
         for inj in raw_injuries:
             player_info = inj.get("player", {})
             team_info = inj.get("team", {})
+            raw_type = player_info.get("type", "Unknown")
+
+            # Classify: Questionable = doubt, everything else = confirmed out
+            if raw_type == "Questionable":
+                availability = "DUVIDA"
+            else:
+                availability = "FORA"
+
             result.append({
                 "player": player_info.get("name", "Unknown"),
                 "team": team_info.get("name", "Unknown"),
-                "type": player_info.get("type", "Unknown"),
+                "type": raw_type,
                 "reason": player_info.get("reason", "Unknown"),
+                "availability": availability,
             })
         return result
 
-    def get_injuries_sync(self, fixture_id: int, ttl_minutes: int = 30) -> List[Dict]:
-        """Fetch injuries/suspensions for a fixture (sync, cached)."""
+    async def get_injuries(self, fixture_id: int) -> List[Dict]:
+        """Fetch injuries/suspensions for a fixture (async, with sync cache fallback).
+
+        Uses the sync cache (TTL 240min / 4h) to respect API-Football's
+        recommendation of max 1 call per day per fixture for injury data.
+        """
+        # Check sync cache first (injuries update every ~4h per API docs)
+        params = {"fixture": str(fixture_id)}
+        cache_key = self._cache_key("injuries", params)
+        cached = self._get_from_cache(cache_key, max_age_minutes=240)
+        if cached is not None:
+            logger.info(f"[api-football/injuries] Cache hit for fixture {fixture_id}")
+            return self._parse_injuries(cached.get("response", []))
+
+        try:
+            data = await self._get("injuries", params)
+        except Exception as e:
+            logger.error(f"API-Football /injuries error: {e}")
+            return []
+
+        # Save to cache with 4h TTL (API updates injuries every ~4h)
+        self._save_to_cache(cache_key, "injuries", params, data, ttl_minutes=240)
+        return self._parse_injuries(data.get("response", []))
+
+    def get_injuries_sync(self, fixture_id: int, ttl_minutes: int = 240) -> List[Dict]:
+        """Fetch injuries/suspensions for a fixture (sync, cached 4h).
+
+        Default TTL raised to 240min (4h) per API-Football recommendation.
+        """
         params = {"fixture": str(fixture_id)}
         data = self._get_sync("injuries", params, ttl_minutes=ttl_minutes)
-        raw = data.get("response", [])
-        result = []
-        for inj in raw:
-            player_info = inj.get("player", {})
-            team_info = inj.get("team", {})
-            result.append({
-                "player": player_info.get("name", "Unknown"),
-                "team": team_info.get("name", "Unknown"),
-                "type": player_info.get("type", "Unknown"),
-                "reason": player_info.get("reason", "Unknown"),
-            })
-        return result
+        return self._parse_injuries(data.get("response", []))
+
+    # ==================================================================
+    # LEAGUE COVERAGE CHECK
+    # ==================================================================
+    def get_league_coverage(self, league_id: int, season: int, ttl_minutes: int = 1440) -> Dict:
+        """Fetch league info including coverage flags (sync, cached 24h).
+
+        Returns coverage dict, e.g.:
+            {"injuries": True, "predictions": True, "odds": True, ...}
+        """
+        params = {"id": str(league_id), "season": str(season)}
+        data = self._get_sync("leagues", params, ttl_minutes=ttl_minutes)
+        response = data.get("response", [])
+        if not response:
+            return {}
+        league_data = response[0]
+        seasons = league_data.get("seasons", [])
+        # Find matching season
+        for s in seasons:
+            if s.get("year") == season:
+                return s.get("coverage", {})
+        # Fallback: return last season's coverage
+        if seasons:
+            return seasons[-1].get("coverage", {})
+        return {}
+
+    def has_injury_coverage(self, league_id: int, season: int) -> bool:
+        """Check if a league supports injury data for the given season."""
+        coverage = self.get_league_coverage(league_id, season)
+        injuries_coverage = coverage.get("injuries", False)
+        if isinstance(injuries_coverage, dict):
+            # Some responses have injuries as a bool, others as a nested object
+            return bool(injuries_coverage)
+        return bool(injuries_coverage)
 
     # ==================================================================
     # HIGH-LEVEL: Enrich a fixture record with live data
@@ -640,6 +699,19 @@ class APIFootballClient:
     # ==================================================================
     # HIGH-LEVEL: fetch match + injuries in one call (async)
     # ==================================================================
+    @staticmethod
+    def extract_league_info(fixture: Dict) -> Dict:
+        """Extract league metadata from a fixture object."""
+        league = fixture.get("league", {})
+        return {
+            "league_name": league.get("name", ""),
+            "league_country": league.get("country", ""),
+            "league_season": league.get("season"),
+            "league_id": league.get("id"),
+            "league_logo": league.get("logo", ""),
+            "league_round": league.get("round", ""),
+        }
+
     async def get_match_live_data(
         self,
         home_team: str,
@@ -648,7 +720,10 @@ class APIFootballClient:
         league_id: Optional[int] = None,
         season: Optional[int] = None,
     ) -> Dict:
-        """Unified method: finds the fixture, extracts live data, and fetches injuries."""
+        """Unified method: finds the fixture, extracts live data, league info, and fetches injuries.
+
+        Includes coverage check: only calls /injuries if the league supports it.
+        """
         empty_result = {
             "live_data": {
                 "fixture_id": None,
@@ -663,6 +738,14 @@ class APIFootballClient:
                 "halftime_away": None,
                 "is_live": False,
                 "is_finished": False,
+            },
+            "league_info": {
+                "league_name": "",
+                "league_country": "",
+                "league_season": None,
+                "league_id": None,
+                "league_logo": "",
+                "league_round": "",
             },
             "injuries": [],
             "absences": "Nenhuma informacao disponivel",
@@ -681,17 +764,42 @@ class APIFootballClient:
             return empty_result
 
         live_data = self.extract_live_data(fixture)
+        league_info = self.extract_league_info(fixture)
 
+        # Fetch injuries only if the league has coverage for it
         injuries = []
         fixture_id = live_data.get("fixture_id")
+        fx_league_id = league_info.get("league_id")
+        fx_season = league_info.get("league_season") or season or date.today().year
+
         if fixture_id:
-            injuries = await self.get_injuries(fixture_id)
+            should_fetch_injuries = True
+
+            if fx_league_id:
+                try:
+                    has_coverage = self.has_injury_coverage(fx_league_id, fx_season)
+                    if not has_coverage:
+                        logger.info(
+                            f"[api-football] League {fx_league_id} ({league_info.get('league_name')}) "
+                            f"has no injury coverage for season {fx_season} — skipping /injuries"
+                        )
+                        should_fetch_injuries = False
+                except Exception as e:
+                    logger.warning(f"[api-football] Coverage check failed for league {fx_league_id}: {e}")
+                    # Proceed anyway — fail-open to not lose data
+
+            if should_fetch_injuries:
+                try:
+                    injuries = await self.get_injuries(fixture_id)
+                except Exception as e:
+                    logger.warning(f"[api-football] Injuries fetch failed for fixture {fixture_id}: {e}")
 
         absences = self._format_absences(injuries, home_team, away_team)
         live_status = self._format_live_status(live_data)
 
         return {
             "live_data": live_data,
+            "league_info": league_info,
             "injuries": injuries,
             "absences": absences,
             "live_status": live_status,
@@ -814,7 +922,11 @@ class APIFootballClient:
     # ==================================================================
     @staticmethod
     def _format_absences(injuries: List[Dict], home_team: str, away_team: str) -> str:
-        """Format injuries into a readable string for AI context."""
+        """Format injuries into a readable string for AI context.
+
+        Differentiates between confirmed absences [FORA] and doubtful [DUVIDA]
+        so the AI can weigh the impact accordingly.
+        """
         if not injuries:
             return "Nenhuma ausencia reportada pela API-Football."
 
@@ -828,11 +940,9 @@ class APIFootballClient:
             team = inj.get("team", "")
             player = inj.get("player", "Unknown")
             reason = inj.get("reason", "Unknown")
-            inj_type = inj.get("type", "")
+            availability = inj.get("availability", "FORA")
 
-            entry = f"{player} ({reason})"
-            if inj_type == "Questionable":
-                entry += " [DUVIDA]"
+            entry = f"{player} ({reason}) [{availability}]"
 
             team_lower = team.lower()
             if home_lower in team_lower or team_lower in home_lower:

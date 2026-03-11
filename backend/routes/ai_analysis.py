@@ -46,19 +46,49 @@ async def get_match_analysis(
         if context is None:
             context = {}
 
-        # --- API-Football: fetch live data + injuries ---
-        api_football_data = {"live_data": None, "injuries": [], "absences": "", "live_status": ""}
+        # --- API-Football: fetch live data + injuries (with coverage check) ---
+        api_football_data = {"live_data": None, "league_info": None, "injuries": [], "absences": "", "live_status": ""}
         try:
             afc = APIFootballClient()
             if afc.is_configured:
+                # Extract match_date and league_id from match_data for precise fixture lookup
+                match_date_str = match_data.get("match_date") or match_data.get("datetime", "")
+                if match_date_str and "T" in match_date_str:
+                    match_date_str = match_date_str.split("T")[0]
+
+                af_league_id = None
+                league_str = match_data.get("league", "")
+                if league_str:
+                    from backend.config.leagues_config import get_api_football_league_id
+                    af_league_id = get_api_football_league_id(league_str)
+
                 api_football_data = await afc.get_match_live_data(
                     home_team=h,
                     away_team=a,
+                    match_date=match_date_str or None,
+                    league_id=af_league_id,
+                    season=match_data.get("season"),
                 )
                 # Inject into context for Mistral AI
                 context["absences"] = api_football_data.get("absences", "Nenhuma informacao disponivel")
                 context["live_status"] = api_football_data.get("live_status", "Sem dados ao vivo")
-                logger.info(f"API-Football data fetched for {h} vs {a}: status={api_football_data['live_data'].get('status')}")
+
+                # Inject league info from API-Football fixture
+                league_info = api_football_data.get("league_info", {})
+                if league_info and league_info.get("league_name"):
+                    context["league_info"] = (
+                        f"{league_info.get('league_name', '')} "
+                        f"({league_info.get('league_country', '')}, "
+                        f"Temporada {league_info.get('league_season', 'N/A')}) "
+                        f"— {league_info.get('league_round', '')}"
+                    )
+
+                logger.info(
+                    f"API-Football data fetched for {h} vs {a}: "
+                    f"status={api_football_data['live_data'].get('status')}, "
+                    f"injuries={len(api_football_data.get('injuries', []))}, "
+                    f"league={league_info.get('league_name', 'N/A')}"
+                )
         except Exception as e:
             logger.warning(f"API-Football call failed for {h} vs {a}: {e}")
 

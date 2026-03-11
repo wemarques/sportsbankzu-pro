@@ -278,7 +278,9 @@ CONTEXTO ADICIONAL:
 - Forma Casa (ultimos 5): {context.get('home_form', 'N/A')}
 - Forma Fora (ultimos 5): {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
+- Liga/Competicao (API-Football): {context.get('league_info', 'N/A')}
 - Lesoes/Suspensoes (API-Football): {context.get('absences', 'Nenhuma informacao')}
+  NOTA: [FORA] = desfalque confirmado, [DUVIDA] = presenca incerta — pese o impacto de forma diferente.
 - Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 - Status ao Vivo: {context.get('live_status', 'Sem dados ao vivo')}
 """
