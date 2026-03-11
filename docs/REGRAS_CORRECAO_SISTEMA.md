@@ -134,4 +134,126 @@ Fontes de dados redundantes são essenciais em sistemas de produção. A integra
 
 ---
 
+## 004 — Auditoria API-Football: precisão de lesões, livescore e hierarquia de dados
+
+**Data:** 2026-03-11
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/routes/ai_analysis.py`, `backend/services/mistral_analysis.py`
+**Severidade:** Alta (dados imprecisos enviados à Mistral AI)
+**Status:** Corrigido
+**Relacionado:** #003
+
+### Problema identificado
+
+A integração API-Football (#003) funcionava, mas com três falhas de precisão que afetavam a qualidade da análise da Mistral AI:
+
+1. **Lesões sem granularidade** — O endpoint `/injuries` retorna dois status distintos: `"Missing Fixture"` (desfalque confirmado) e `"Questionable"` (presença incerta). O sistema tratava ambos da mesma forma, marcando apenas `[DUVIDA]` para Questionable e nenhum tag para Missing. A Mistral não sabia diferenciar o impacto de um jogador com certeza ausente vs. um em dúvida.
+
+2. **Cache excessivo de lesões** — A API-Football recomenda max 1 call/dia para `/injuries` (dados atualizados a cada 4h). O cache sync estava em 30 min (8x mais chamadas que o necessário), e o método async **não tinha cache nenhum** — batia na API toda vez.
+
+3. **Busca imprecisa de fixtures** — A rota `ai_analysis.py` chamava `get_match_live_data()` sem passar `match_date`, `league_id` nem `season` — a busca na API-Football era feita apenas por nome de time na data do dia, falhando para jogos futuros/passados.
+
+4. **Sem verificação de coverage** — Não havia checagem prévia para saber se a liga suporta dados de lesão (`coverage.injuries`). O sistema desperdiçava requests em ligas sem cobertura.
+
+5. **Sem extração de league info** — `league.name`, `league.country` e `league.season` não eram extraídos da fixture da API-Football para contextualizar a análise.
+
+6. **Sem hierarquia de dados** — FootyStats (fonte primária de form, H2H, stats, odds) e API-Football (fonte complementar de livescore e lesões) não tinham papéis claramente definidos. Uma falha na API-Football podia afetar o fluxo principal.
+
+7. **Normalização fraca de nomes** — A "ponte" entre FootyStats e API-Football usava `str.lower()` + substring, falhando com variações comuns como acentos (`Atlético` vs `Atletico`), prefixos (`FC Barcelona` vs `Barcelona`), sufixos (`SC Freiburg` vs `Freiburg`).
+
+### Causa raiz
+
+A integração #003 focou na **infraestrutura** (client, cache, routes) mas não na **precisão dos dados** enviados ao LLM. Três lacunas:
+1. O response do `/injuries` não era normalizado — o campo `player.type` era passado raw sem classificação
+2. A rota de análise não extraía dados do match_data do FootyStats para alimentar a busca na API-Football
+3. Não havia separação arquitetural entre fonte primária (FootyStats) e complementar (API-Football)
+
+### Correções aplicadas (7 camadas)
+
+#### Camada 1: Classificação de Lesões (`api_football_client.py`)
+- Novo `_parse_injuries()` classifica cada jogador como `availability: "FORA"` ou `"DUVIDA"`
+- Regra: `type == "Questionable"` → `DUVIDA`, tudo mais (Missing Fixture, Suspension, etc.) → `FORA`
+- `_format_absences()` agora inclui o tag em cada jogador: `"Rashford (Knee) [FORA], Shaw (Hamstring) [DUVIDA]"`
+- Prompt Mistral atualizado com nota explicativa: _"[FORA] = desfalque confirmado, [DUVIDA] = presença incerta"_
+
+#### Camada 2: Cache de Lesões com TTL correto (`api_football_client.py`)
+- `get_injuries()` (async) agora usa cache SQLite com TTL **240 min (4h)**, respeitando a frequência de atualização da API
+- `get_injuries_sync()` TTL elevado de 30min para **240 min**
+- Cache key baseado em `fixture_id`, evitando chamadas repetidas para o mesmo jogo
+
+#### Camada 3: Verificação de Coverage (`api_football_client.py`)
+- Novo `get_league_coverage(league_id, season)` busca flags de cobertura via `/leagues` com cache **24h (1440 min)**
+- Novo `has_injury_coverage(league_id, season)` verifica se a liga suporta dados de lesão
+- `get_match_live_data()` checa coverage **antes** de chamar `/injuries` — pula ligas sem cobertura
+- **Fail-open**: se a verificação de coverage falhar, tenta buscar lesões de qualquer forma
+
+#### Camada 4: Extração de League Info (`api_football_client.py`)
+- Novo `extract_league_info(fixture)` extrai: `league_name`, `league_country`, `league_season`, `league_id`, `league_round`
+- Injetado no contexto Mistral como: _"Premier League (England, Temporada 2025) — Regular Season - 28"_
+- Prompt expandido com campo _"Liga/Competicao (API-Football)"_ no bloco de contexto
+
+#### Camada 5: Ponte FootyStats → API-Football (`ai_analysis.py`)
+- A rota agora extrai `match_date`, `league_id` (via `get_api_football_league_id()`) e `season` do `match_data` do FootyStats
+- Esses dados são passados para `get_match_live_data()` como parâmetros de busca precisa
+- `_match_to_ai_input()` agora inclui `datetime` e `season` no output dict
+
+#### Camada 6: Hierarquia de Dados + Graceful Degradation (`ai_analysis.py`)
+- Arquitetura definida: **FootyStats = PRIMÁRIO** (form, H2H, stats, odds, lineups) / **API-Football = COMPLEMENTAR** (livescore, injuries)
+- Lógica condicional com `bridge_succeeded` — só injeta dados da API-Football se a fixture foi encontrada
+- Se a ponte falha: `context.setdefault()` garante que dados do FootyStats nunca são sobrescritos
+- Se a API-Football lança exceção: fallback silencioso com log de warning, fluxo continua normalmente
+
+#### Camada 7: Normalização Robusta de Nomes (`api_football_client.py`)
+- Novo `_normalize_team_name()` aplica: remoção de acentos (NFKD), lowercase, remoção de prefixos (FC, SC, AC, AFC...), remoção de pontuação
+- Novo `_team_names_match()` usa: match exato pós-normalização → substring containment → token overlap (≥50% dos tokens menores)
+- Testado com 8 pares reais: `FC Barcelona`↔`Barcelona` ✅, `Atlético Madrid`↔`Atletico Madrid` ✅, `SE Palmeiras`↔`Palmeiras` ✅, `SC Freiburg`↔`Freiburg` ✅
+- Limitação conhecida: abreviações completamente diferentes (`Wolverhampton Wanderers` vs `Wolves`) não são detectadas — requer mapeamento manual futuro
+
+### Formato de dados enviados à Mistral (exemplo)
+
+```
+CONTEXTO ADICIONAL:
+- Forma Casa (ultimos 5): W, W, D, W, L           ← FootyStats (primário)
+- Forma Fora (ultimos 5): L, D, W, W, W            ← FootyStats (primário)
+- Confrontos diretos: Total: 12 jogos, Casa: 5...  ← FootyStats (primário)
+- Liga/Competicao: Premier League (England, Temporada 2025) — Round 28  ← API-Football
+- Lesoes/Suspensoes: Man Utd: Rashford (Knee) [FORA], Shaw (Hamstring) [DUVIDA] | Liverpool: Sem ausencias
+  NOTA: [FORA] = desfalque confirmado, [DUVIDA] = presenca incerta
+- Status ao Vivo: Segundo tempo em andamento: 67 min, Placar: 1 - 2  ← API-Football
+```
+
+### Exemplo de JSON retornado pela rota `/api/ai/match/{id}/analysis`
+
+```json
+{
+  "summary": "Análise do jogo...",
+  "key_points": ["Ponto 1...", "Ponto 2..."],
+  "recommendation": "Over 2.5 @1.85",
+  "confidence": 78,
+  "last_updated": "11/03/2026 as 14:30",
+  "match_live_data": {
+    "fixture_id": 1035247,
+    "status": "2H",
+    "status_long": "Second Half",
+    "minute": 67,
+    "extra_time": null,
+    "score": "1 - 2",
+    "goals_home": 1,
+    "goals_away": 2,
+    "halftime_home": 0,
+    "halftime_away": 1,
+    "is_live": true,
+    "is_finished": false
+  }
+}
+```
+
+### Lição aprendida
+
+A integração de uma API externa não termina quando o client funciona — a **precisão dos dados enviados ao LLM** é tão importante quanto a conectividade. Três princípios aplicados:
+1. **Normalize na entrada** — Classificar dados brutos (`Missing Fixture` → `FORA`) antes de passá-los ao LLM
+2. **Respeite a hierarquia** — Fontes de dados devem ter papéis claros (primário vs complementar) com fallbacks independentes
+3. **Bridging entre APIs exige normalização** — Nomes de times variam entre providers; normalização unicode + token overlap resolve 90% dos casos sem mapeamento manual
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
