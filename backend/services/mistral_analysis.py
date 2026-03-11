@@ -31,6 +31,7 @@ class AIAnalysisResponse(BaseModel):
     recommendation: str = ""
     confidence: int = Field(default=0, ge=0, le=100)
     last_updated: str = ""
+    match_live_data: Optional[Dict] = Field(default=None, description="Live match data from API-Football (status, score, injuries)")
 
 
 class MistralAnalysisService:
@@ -277,8 +278,9 @@ CONTEXTO ADICIONAL:
 - Forma Casa (ultimos 5): {context.get('home_form', 'N/A')}
 - Forma Fora (ultimos 5): {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
-- Lesoes/Suspensoes: {context.get('absences', 'Nenhuma informacao')}
+- Lesoes/Suspensoes (API-Football): {context.get('absences', 'Nenhuma informacao')}
 - Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
+- Status ao Vivo: {context.get('live_status', 'Sem dados ao vivo')}
 """
             if context.get("footystats_analysis"):
                 prompt += f"""
@@ -306,6 +308,9 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 }
 
 IMPORTANTE:
+- Considere o status da partida (Status ao Vivo). Se o jogo estiver ao vivo, comente sobre o placar atual e como ele impacta a analise.
+- Utilize os dados de ausencias (Lesoes/Suspensoes) informados pela API-Football e NUNCA invente lesoes ou suspensoes que nao estejam listadas.
+- Se nao houver dados de ausencias, diga apenas que nao ha informacao disponivel — NAO fabrique nomes de jogadores lesionados.
 - Seja especifico e use os numeros fornecidos EXATAMENTE como mostrados (ex: 85.5% significa 85.5%, NAO multiplique por 100)
 - Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
 - Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
