@@ -47,7 +47,9 @@ def create_zip():
     with zipfile.ZipFile(ZIP_FILE, 'w', zipfile.ZIP_DEFLATED) as z:
         for file_path in BUILD_DIR.rglob('*'):
             if file_path.is_file():
-                z.write(file_path, file_path.relative_to(BUILD_DIR))
+                # Use forward slashes (POSIX) so Lambda/Linux can find modules
+                arcname = file_path.relative_to(BUILD_DIR).as_posix()
+                z.write(file_path, arcname)
 
 S3_BUCKET = "meu-bucket-sportsbank"
 S3_KEY = "deploy/sportsbank_lambda.zip"
