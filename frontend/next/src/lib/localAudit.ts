@@ -25,11 +25,23 @@ function evaluatePick(
   mercado: string,
   totalGoals: number,
   btts: boolean,
-  result1x2: "1" | "X" | "2"
+  result1x2: "1" | "X" | "2",
+  totalCorners?: number,
 ): boolean {
   const m = mercado.trim().toUpperCase();
 
-  // Over/Under markets
+  // Corner markets — evaluate against totalCorners
+  if (m.includes("ESCANTEIO") || m.includes("CORNER")) {
+    const tc = totalCorners ?? 0;
+    for (const threshold of [7.5, 8.5, 9.5, 10.5, 11.5, 12.5]) {
+      const ts = String(threshold);
+      if (m.includes("OVER") && m.includes(ts)) return tc > threshold;
+      if (m.includes("UNDER") && m.includes(ts)) return tc < threshold;
+    }
+    return false;
+  }
+
+  // Over/Under markets (goals)
   for (const threshold of [0.5, 1.5, 2.5, 3.5, 4.5]) {
     const ts = String(threshold);
     if ((m.includes("UNDER") || m.includes("MENOS") || m.includes("ABAIXO")) && m.includes(ts)) {
@@ -434,6 +446,7 @@ interface MatchActualResult {
   totalGoals: number;
   btts: boolean;
   result1x2: "1" | "X" | "2";
+  totalCorners: number;
 }
 
 /**
@@ -453,10 +466,13 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
     const hg = m.score.home;
     const ag = m.score.away;
     const tg = hg + ag;
+    const hc = m.stats.homeCornersCount ?? 0;
+    const ac = m.stats.awayCornersCount ?? 0;
     const actual: MatchActualResult = {
       totalGoals: tg,
       btts: hg > 0 && ag > 0,
       result1x2: hg > ag ? "1" : hg === ag ? "X" : "2",
+      totalCorners: hc + ac,
     };
     // Index by homeTeam|awayTeam (lowercase) for leg matching
     const key = `${m.homeTeam.name.trim().toLowerCase()}|${m.awayTeam.name.trim().toLowerCase()}`;
@@ -472,8 +488,8 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
     const a1 = _findActualForLeg(dupla.leg1);
     const a2 = dupla.tipo === "intra" ? a1 : _findActualForLeg(dupla.leg2);
     if (!a1 || !a2) return "PENDENTE";
-    const hit1 = evaluatePick(dupla.leg1.mercado, a1.totalGoals, a1.btts, a1.result1x2);
-    const hit2 = evaluatePick(dupla.leg2.mercado, a2.totalGoals, a2.btts, a2.result1x2);
+    const hit1 = evaluatePick(dupla.leg1.mercado, a1.totalGoals, a1.btts, a1.result1x2, a1.totalCorners);
+    const hit2 = evaluatePick(dupla.leg2.mercado, a2.totalGoals, a2.btts, a2.result1x2, a2.totalCorners);
     return hit1 && hit2 ? "ACERTOU" : "ERROU";
   }
 
@@ -597,6 +613,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     const btts = homeGoals > 0 && awayGoals > 0;
     const result1x2: "1" | "X" | "2" =
       homeGoals > awayGoals ? "1" : homeGoals === awayGoals ? "X" : "2";
+    const totalCorners = (match.stats.homeCornersCount ?? 0) + (match.stats.awayCornersCount ?? 0);
 
     const picks = match.predictions || [];
     let matchCorrect = 0;
@@ -604,7 +621,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     const picksEval: BatchAuditMatchResult["picks"] = [];
 
     for (const pick of picks) {
-      const isCorrect = evaluatePick(pick.mercado, totalGoals, btts, result1x2);
+      const isCorrect = evaluatePick(pick.mercado, totalGoals, btts, result1x2, totalCorners);
 
       picksEval.push({
         mercado: pick.mercado,

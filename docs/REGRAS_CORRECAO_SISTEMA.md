@@ -322,95 +322,97 @@ Três princípios violados simultaneamente:
 
 ---
 
-## 006 — Season errado para ligas de calendário civil (Brasileirão retornava 0 fixtures)
+## 006 — Auditoria marcava mercados de escanteios sempre como ERROU (dados reais não lidos)
 
 **Data:** 2026-03-12
-**Arquivos afetados:** `backend/config/leagues_config.py`, `backend/routes/fixtures.py`, `backend/services/api_football_client.py`
-**Severidade:** Crítica (enrichment inteiro falhava para 12 ligas)
+**Arquivos afetados:** `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/lib/leagues.ts`, `backend/routes/ai_analysis.py`, `backend/cron_handler.py`
+**Severidade:** Alta (100% dos picks de escanteios avaliados como erro)
 **Status:** Corrigido
-**Relacionado:** #005
 
 ### Problema identificado
 
-Mesmo após as correções de name matching (#005), o placar ao vivo continuava congelado em 0-0 para **todas as ligas brasileiras e sul-americanas**. O status (HT, 2T) era capturado pelo cálculo de elapsed time do FootyStats, mas o placar real da API-Football nunca chegava.
+O relatório de auditoria marcava **todos** os mercados de escanteios (Over 8.5, Over 9.5, Over 10.5) como ERROU, mesmo quando o jogo real confirmava o acerto. Exemplo: Bahia x Vitória teve 10 escanteios no total, mas:
+- "Escanteios Over 8.5" (10 > 8.5 ✅) → marcado ERROU
+- "Escanteios Over 9.5" (10 > 9.5 ✅) → marcado ERROU
+- "Escanteios Over 10.5" (10 > 10.5 ❌) → marcado ERROU (este correto)
 
-### Causa raiz (2 bugs independentes)
+Resultado: acurácia de escanteios artificialmente em 0%, com a Mistral sugerindo reduzir `corner_multiplier` baseada em dados falsos.
 
-**BUG 1 — Season hardcoded para calendário europeu:** `_current_season()` retornava `now.year if month >= 7 else now.year - 1`. Em março/2026, isso retorna `2025`. Mas o Brasileirão 2026 começou em janeiro — o season correto na API-Football é `2026`. A chamada `get_fixtures_by_date(league=71, season=2025, date="2026-03-12")` retornava **ZERO fixtures** porque a temporada 2025 do Brasileirão já acabou em dezembro/2025. Resultado: `if not af_fixtures: return records` → **sem enrichment** → 0-0 do FootyStats permanece.
+### Causa raiz (3 bugs independentes, mesma falha conceitual)
 
-Ligas afetadas (12): Brasileirão A, Brasileirão B, Argentina Primera, J-League, K-League, MLS, Eliteserien, Allsvenskan, Liga MX, Colombian Primera A, A-League, UAE Pro League.
+**BUG 1 — Frontend `evaluatePick()` não tratava escanteios (PRINCIPAL):**
+A função `evaluatePick()` em `localAudit.ts` (linhas 24-73) tratava Over/Under de **gols**, BTTS, Double Chance e 1X2, mas **não tinha nenhum branch para mercados de escanteios**. A string "Escanteios Over 8.5" contém "OVER" e "8.5", o que casava com o loop de Over/Under de gols (thresholds 0.5–4.5), mas "8.5" não está nesse range → nenhum `return` era atingido → o mercado caía no `return false` final (linha 72). **100% dos picks de escanteios eram avaliados como ERROU.**
 
-**BUG 2 — `enrich_fixture_record` crash em score None:** Quando o FootyStats não tinha dados de gols para um jogo ao vivo, `record["score"]` era `None`. O método `enrich_fixture_record()` usava `record.setdefault("score", {})`, mas `setdefault` não substitui uma key existente com valor `None` — retorna `None` mesmo. Então `None["home"] = 2` → `TypeError` → crash silencioso no `except Exception`.
+**BUG 2 — Backend `/batch-audit` sem `total_corners` no `actual_result`:**
+O endpoint `batch_audit()` em `ai_analysis.py` (linha 850) construía o dict `actual_result` com `total_goals`, `btts` e `result_1x2`, mas **não extraía nem incluía `total_corners`**. A função `_evaluate_pick_deterministic()` (linha 649) fazia `actual_result.get("total_corners", 0)` → sempre recebia 0 → `0 > 8.5` = False → ERROU. **Nota:** O `cron_handler.py` na função `_run_batch_audit()` (linha 151) já incluía `total_corners` corretamente — a inconsistência entre os dois caminhos mascarava o bug dependendo de como a auditoria era disparada.
 
-### Correções aplicadas (4 camadas)
+**BUG 3 — Cron handler dupla evaluation sem `total_corners`:**
+A avaliação de duplas (combinadas) no `cron_handler.py` (linha 267) construía `_actual_by_id` com `total_goals`, `btts` e `result_1x2`, mas **não incluía `total_corners`**. Qualquer dupla com perna de escanteios era avaliada com 0 escanteios.
 
-#### Camada 1: Mapeamento de ligas de calendário civil (`leagues_config.py`)
-- Nova constante `CALENDAR_YEAR_LEAGUES` — set com 12 IDs de ligas que usam temporada = ano civil (Jan-Dez)
-- Nova função `get_season_for_league(league_id)`:
-  - Ligas de calendário: retorna `now.year` (2026)
-  - Ligas europeias: retorna `now.year if month >= 7 else now.year - 1` (2025)
-- Regra clara: o season na API-Football = **ano em que a temporada começa**
+**BUG 4 — Frontend `MatchActualResult` sem `totalCorners`:**
+A interface `MatchActualResult` em `localAudit.ts` (linha 433) e o lookup `actualByKey` em `computeLocalCombinadas()` (linha 456) não incluíam dados de escanteios. Todas as duplas intra-jogo e inter-jogo com escanteios eram marcadas ERROU.
 
-#### Camada 2: `_enrich_with_api_football` usa season correto (`fixtures.py`)
-- Substituído `season = _current_season()` por `season = get_season_for_league(lid)`
-- Import de `get_season_for_league` adicionado no topo do arquivo
-- Agora `get_fixtures_by_date(league=71, season=2026, date="2026-03-12")` retorna fixtures reais
+**BUG 5 — Tipo TypeScript `Match.stats` sem campos de corner count:**
+A interface `Match` em `leagues.ts` não declarava `homeCornersCount` nem `awayCornersCount` no objeto `stats`, apesar do backend já enviar esses campos desde a correção #003 (via `fixtures_service.py` linha 918).
 
-#### Camada 3: Guard contra score None em `enrich_fixture_record` (`api_football_client.py`)
-- Antes de escrever em `record["score"]`, verifica com `isinstance(record.get("score"), dict)`
-- Se não é dict (incluindo `None`): cria `record["score"] = {}` explicitamente
-- Mesmo guard aplicado para `record["score"]["halftime"]`
-- Elimina o crash `TypeError: 'NoneType' object does not support item assignment`
+### Correções aplicadas (5 camadas)
 
-#### Camada 4: Logging diagnóstico no pipeline de enrichment (`fixtures.py`)
-- Log quando API-Football retorna 0 fixtures (com league_id, season, date)
-- Log quando um jogo específico falha no matching (com nomes dos times AF disponíveis)
-- Log com `exc_info=True` no catch final para stack trace completo
-- Permite diagnóstico remoto sem adivinhar o ponto de falha
+#### Camada 1: `evaluatePick()` com suporte a escanteios (`localAudit.ts`)
+- Adicionado parâmetro opcional `totalCorners?: number` à assinatura
+- Novo branch **antes** do loop de Over/Under de gols: detecta `"ESCANTEIO"` ou `"CORNER"` no nome do mercado
+- Avalia contra thresholds 7.5–12.5 usando `totalCorners > threshold` (Over) ou `totalCorners < threshold` (Under)
+- Early return impede que o mercado caia no loop de gols
 
-### Validação executada
+#### Camada 2: `actual_result` com `total_corners` no backend (`ai_analysis.py`)
+- Extraído `homeCornersCount` / `awayCornersCount` do dict `stats` do match (com fallback para `home_team_corner_count`)
+- Adicionado `"total_corners": total_corners` ao dict `actual_result` (linha 862)
+- Log de debug para matches com picks de escanteios para facilitar troubleshooting futuro
 
-```
-Season calculation (March 2026):
-  brasileirao-serie-a   -> season=2026 (expected 2026) [OK]
-  brasileirao-serie-b   -> season=2026 (expected 2026) [OK]
-  premier-league        -> season=2025 (expected 2025) [OK]
-  j-league              -> season=2026 (expected 2026) [OK]
-  mls                   -> season=2026 (expected 2026) [OK]
-  bundesliga            -> season=2025 (expected 2025) [OK]
+#### Camada 3: Dupla evaluation com `total_corners` no cron handler (`cron_handler.py`)
+- Extraído corners do `stats` de cada match na construção de `_actual_by_id`
+- Adicionado `"total_corners": _tc` ao dict de resultado por match
 
-Null score enrichment:
-  record["score"]=None → enrich → score={'home': 2, 'away': 1, 'halftime': {'home': 1, 'away': 0}} [OK]
-```
+#### Camada 4: `MatchActualResult` e `computeLocalCombinadas()` (`localAudit.ts`)
+- Interface expandida com `totalCorners: number`
+- Lookup `actualByKey` agora extrai `homeCornersCount + awayCornersCount` do `match.stats`
+- `_evaluateDupla()` passa `totalCorners` para `evaluatePick()`
 
-### Fluxo corrigido (ponta a ponta)
+#### Camada 5: Tipo TypeScript (`leagues.ts`)
+- Adicionados `homeCornersCount?: number` e `awayCornersCount?: number` à interface `Match.stats`
+- Campos opcionais (não quebra compatibilidade com matches antigos sem dados de corner)
 
-```
-1. Dashboard carrega → GET /api/matches/fetch → Backend /fixtures
-2. FootyStats retorna matches com score estático (0-0 para live)
-3. _enrich_with_api_football(lid="brasileirao-serie-a", ...)
-   ├── season = get_season_for_league("brasileirao-serie-a") = 2026  ← FIX #1
-   ├── get_fixtures_by_date(league=71, season=2026, date="2026-03-12")
-   ├── Retorna N fixtures da API-Football
-   ├── _team_names_match("Flamengo", "Flamengo") = True             ← FIX #005
-   ├── enrich_fixture_record(record, fixture)
-   │   ├── record["score"] was None → record["score"] = {}          ← FIX #2
-   │   ├── record["score"]["home"] = 2
-   │   └── record["period"] = "HT"                                  ← FIX #005
-   └── Score atualizado: {"home": 2, "away": 1}
-4. Frontend recebe score real → renderiza "2 - 1" em vez de "0 - 0"
-5. useLivePolling(30s) → GET /api/matches/live → /live-scores
-   ├── FootyStats match-detail (pode retornar 0-0)
-   ├── API-Football overlay via get_live_fixtures() (sem filtro de season)
-   ├── _team_names_match() → match correto                          ← FIX #005
-   └── Frontend merge: score atualizado em tempo real
-```
+### Todos os call sites de `evaluatePick` atualizados
+
+| Local | Contexto | Antes | Depois |
+|---|---|---|---|
+| `runLocalAudit()` linha 608 | Avaliação individual de picks | `evaluatePick(mercado, totalGoals, btts, result1x2)` | `evaluatePick(mercado, totalGoals, btts, result1x2, totalCorners)` |
+| `_evaluateDupla()` linha 478-479 | Avaliação de duplas (intra/inter) | `evaluatePick(mercado, a.totalGoals, a.btts, a.result1x2)` | `evaluatePick(mercado, a.totalGoals, a.btts, a.result1x2, a.totalCorners)` |
+
+### Impacto esperado (com dados do relatório citado)
+
+| Mercado | Antes | Depois |
+|---|---|---|
+| Escanteios Over 8.5 (Bahia x Vitória, 10 corners) | ERROU | ACERTOU |
+| Escanteios Over 9.5 (Bahia x Vitória, 10 corners) | ERROU | ACERTOU |
+| Escanteios Over 10.5 (outro jogo com 11+ corners) | já era ACERTOU | ACERTOU |
+| Todas as duplas com perna de escanteios | ERROU | Avaliação correta |
+| Acurácia geral reportada | ~76.2% (deprimida) | Mais alta (picks corretos contabilizados) |
+
+### Efeito cascata corrigido
+
+Com escanteios sempre marcados ERROU, a Mistral AI sugeria:
+- `corner_multiplier: 1 → 0.7` (redução de 30% na confiança de escanteios)
+- Diagnóstico "Baixa acurácia em escanteios" e "SYSTEMATIC ERROR"
+
+Essas sugestões eram **baseadas em dados falsos**. Se aplicadas, reduziriam a qualidade real das previsões de escanteios. A correção elimina esse viés: a Mistral agora recebe acurácia real para fundamentar suas sugestões.
 
 ### Lição aprendida
 
-1. **APIs de futebol usam "season" diferente por região** — Ligas europeias (Aug-May) usam o ano de início; ligas de calendário civil (Jan-Dec) usam o ano corrente. Uma função `_current_season()` única **nunca funciona** para sistemas multi-liga globais.
-2. **`dict.setdefault(key, default)` não substitui `None`** — Se a key existe com valor `None`, `setdefault` retorna `None` sem criar o default. Para valores nullable, sempre usar `if not isinstance(v, dict): v = {}`.
-3. **Logging é defesa obrigatória** — O `except Exception` genérico sem `exc_info=True` descarta o stack trace, tornando impossível diagnosticar remotamente. Sempre logar com `exc_info=True` ou pelo menos `logger.exception()`.
+1. **Cada mercado precisa de teste explícito na avaliação** — A função `evaluatePick` foi escrita para gols, BTTS e 1X2, e escanteios foram adicionados como mercado depois sem atualizar o avaliador. Ao adicionar um novo mercado ao sistema (via `market_service.py`), o avaliador correspondente (`evaluatePick` no frontend e `_evaluate_pick_deterministic` no backend) **deve ser atualizado simultaneamente**.
+
+2. **Dados falsos + AI = recomendações perigosas** — A Mistral sugeria reduzir multipliers de escanteios com 80% de confiança, baseada em 0% de acurácia que era artefato de um bug. Um loop de feedback AI-sobre-dados-errados pode degradar o modelo progressivamente. Sempre validar que os dados de entrada da avaliação são reais antes de confiar nas sugestões da AI.
+
+3. **Paridade entre camadas de avaliação** — O sistema tinha 4 locais que avaliam picks (backend batch-audit, backend cron, frontend audit individual, frontend duplas). O cron handler tinha `total_corners` mas os outros 3 não. Quando a lógica de avaliação é replicada em múltiplas camadas, **todas devem ser atualizadas juntas** — usar uma única função compartilhada ou pelo menos um checklist de paridade.
 
 ---
 

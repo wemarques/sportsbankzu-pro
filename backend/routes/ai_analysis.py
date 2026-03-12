@@ -847,12 +847,25 @@ async def batch_audit(
             else:
                 result_1x2 = "2"
 
+            # Extract total corners for corner market evaluation
+            home_corners = stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
+            away_corners = stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
+            try:
+                home_corners = int(home_corners) if home_corners and int(home_corners) >= 0 else 0
+                away_corners = int(away_corners) if away_corners and int(away_corners) >= 0 else 0
+                total_corners = home_corners + away_corners
+            except (ValueError, TypeError):
+                total_corners = 0
+            if any("ESCANTEIO" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
+                logger.info(f"[batch-audit] {home} vs {away}: corners home={home_corners} away={away_corners} total={total_corners}")
+
             actual_result = {
                 "home_goals": home_goals,
                 "away_goals": away_goals,
                 "total_goals": total_goals,
                 "btts": btts,
                 "result_1x2": result_1x2,
+                "total_corners": total_corners,
             }
 
             # Evaluate picks
