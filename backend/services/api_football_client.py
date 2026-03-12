@@ -274,7 +274,8 @@ class APIFootballClient:
         result = ascii_name.lower().strip()
 
         # Remove common prefixes/suffixes that vary between APIs
-        result = re.sub(r"\b(fc|cf|sc|ac|as|us|rc|cd|ca|ss|afc|ssc)\b", "", result)
+        # Includes Brazilian (cr, se, ec, aa, ce, gr) and South American (csd, cn, cu) clubs
+        result = re.sub(r"\b(fc|cf|sc|ac|as|us|rc|cd|ca|ss|afc|ssc|cr|se|ec|aa|ce|gr|csd|cn|cu|rcd|ud|sd)\b", "", result)
         # Remove punctuation
         result = re.sub(r"[.\-'\"()]", " ", result)
         # Collapse whitespace
@@ -755,9 +756,11 @@ class APIFootballClient:
                     record["score"]["halftime"]["away"] = live["halftime_away"]
 
         # Update minute/period for live matches
+        # Map API-Football period codes to internal format (1H→1T, 2H→2T)
+        _period_map = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
         if live["is_live"]:
             record["minute"] = live["minute"]
-            record["period"] = af_status  # 1H, HT, 2H, etc.
+            record["period"] = _period_map.get(af_status, af_status)
 
         # Store the API-Football fixture ID for further enrichment calls
         if live["fixture_id"]:

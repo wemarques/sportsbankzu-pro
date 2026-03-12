@@ -256,4 +256,70 @@ A integração de uma API externa não termina quando o client funciona — a **
 
 ---
 
+## 005 — Placar ao vivo congelado em 0-0 (ponte de nomes + crash silencioso)
+
+**Data:** 2026-03-12
+**Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/api_football_client.py`
+**Severidade:** Alta (placar ao vivo não atualizava)
+**Status:** Corrigido
+**Relacionado:** #003, #004
+
+### Problema identificado
+
+Placares ao vivo exibiam "0 - 0" para todos os jogos, mesmo quando o status "HT" era capturado corretamente. Exemplo: `VIVO HT | Flamengo 0 - 0 Cruzeiro`.
+
+### Causa raiz (3 bugs independentes)
+
+**BUG 1 — Crash silencioso no `/fixtures`:** A função `_enrich_with_api_football()` (fixtures.py:303) chamava `.lower()` em `rec.get("homeTeam")`, mas `homeTeam` é um DICT `{"name": "Flamengo", "logo": "", ...}` nos records do `build_records_from_matches`. `.lower()` num dict gera `AttributeError`, capturado pelo `except Exception` na linha 323 — o enrichment **inteiro falhava silenciosamente** para TODOS os jogos.
+
+**BUG 2 — Matching fraco no `/live-scores`:** O overlay de API-Football (fixtures.py:988-1008) usava `.lower().strip()` + substring simples. Para times brasileiros: `"atlético mineiro"` (FootyStats, com acento) vs `"atletico-mg"` (API-Football, sem acento, abreviado) — substring match retornava `False` porque nem um é substring do outro.
+
+**BUG 3 — Period code não mapeado:** O método `enrich_fixture_record()` (api_football_client.py:760) setava `record["period"] = af_status` com códigos da API-Football ("1H", "2H") em vez do formato interno ("1T", "2T"). O frontend não reconhecia "1H"/"2H" como períodos válidos.
+
+### Correções aplicadas (4 camadas)
+
+#### Camada 1: Extração segura de nome do time (`fixtures.py`)
+- `_enrich_with_api_football()` agora detecta se `homeTeam`/`awayTeam` é dict ou string
+- Se dict: extrai `.get("name", "")`; se string: usa `str()` direto
+- Elimina o crash silencioso que matava TODO o enrichment
+
+#### Camada 2: Matching robusto via `_team_names_match()` (`fixtures.py`)
+- **Ambas** as funções de enrichment (para `/fixtures` e `/live-scores`) agora usam `_afc._team_names_match()` em vez de `.lower()` + substring
+- Matching inclui: remoção de acentos (NFKD), remoção de prefixos (FC, SC, CR, SE, EC...), token overlap ≥50%
+- Testado com 12 pares reais: todos os times brasileiros matcham corretamente
+
+#### Camada 3: Prefixos brasileiros no `_normalize_team_name()` (`api_football_client.py`)
+- Adicionados prefixos comuns de clubes brasileiros/sul-americanos ao regex de remoção: `cr`, `se`, `ec`, `aa`, `ce`, `gr`, `csd`, `cn`, `cu`, `rcd`, `ud`, `sd`
+- Agora "CR Flamengo" → "flamengo", "SE Palmeiras" → "palmeiras", "Cruzeiro EC" → "cruzeiro"
+
+#### Camada 4: Mapeamento de period codes (`api_football_client.py`)
+- `enrich_fixture_record()` agora mapeia `1H→1T`, `2H→2T`, `BT→HT`, `P→PEN` ao setar `record["period"]`
+- Alinhado com o mesmo mapeamento já usado no endpoint `/live-scores` (que funcionava corretamente)
+
+### Pares de nomes validados
+
+| FootyStats | API-Football | Match? |
+|---|---|---|
+| Atlético Mineiro | Atletico-MG | ✅ |
+| CR Flamengo | Flamengo | ✅ |
+| SE Palmeiras | Palmeiras | ✅ |
+| SC Corinthians | Corinthians | ✅ |
+| Coritiba FC | Coritiba | ✅ |
+| Cruzeiro EC | Cruzeiro | ✅ |
+| São Paulo | Sao Paulo | ✅ |
+| Grêmio | Gremio | ✅ |
+| Botafogo FR | Botafogo | ✅ |
+| Internacional | SC Internacional | ✅ |
+| FC Barcelona | Barcelona | ✅ |
+| Atlético Madrid | Atletico Madrid | ✅ |
+
+### Lição aprendida
+
+Três princípios violados simultaneamente:
+1. **Nunca assuma o tipo de um campo** — `homeTeam` era dict em um endpoint e string em outro. Testar com `isinstance()` antes de operar.
+2. **Reutilize funções de matching** — Havia `_team_names_match()` pronta e testada, mas dois locais de enrichment usavam matching ad-hoc fraco. DRY não é só sobre código duplicado, é sobre **lógica duplicada com qualidade inferior**.
+3. **Exceções silenciosas escondem bugs críticos** — O `except Exception` genérico mascarou um crash que matava 100% do enrichment. Pelo menos logar a exceção permitiria diagnóstico imediato.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
