@@ -747,11 +747,15 @@ class APIFootballClient:
         # Update score if live or finished
         if live["is_live"] or live["is_finished"]:
             if live["goals_home"] is not None:
-                record.setdefault("score", {})
+                # Guard: if score key exists but is None (e.g. FootyStats had no goal data),
+                # replace it with a fresh dict instead of crashing on None["home"].
+                if not isinstance(record.get("score"), dict):
+                    record["score"] = {}
                 record["score"]["home"] = live["goals_home"]
                 record["score"]["away"] = live["goals_away"]
                 if live["halftime_home"] is not None:
-                    record["score"].setdefault("halftime", {})
+                    if not isinstance(record["score"].get("halftime"), dict):
+                        record["score"]["halftime"] = {}
                     record["score"]["halftime"]["home"] = live["halftime_home"]
                     record["score"]["halftime"]["away"] = live["halftime_away"]
 

@@ -202,6 +202,54 @@ def get_api_football_league_id(league_id: str) -> int | None:
     return API_FOOTBALL_LEAGUE_IDS.get(resolved_id)
 
 
+# Leagues that use calendar-year seasons (Jan-Dec) instead of mid-year (Aug-May).
+# For these leagues, the API-Football season parameter = calendar year.
+# Example: Brasileirão 2026 runs Jan-Dec 2026, season param = 2026.
+# European leagues (Premier League 2025/26) started Aug 2025, season param = 2025.
+CALENDAR_YEAR_LEAGUES = {
+    # BRAZIL
+    "brasileirao-serie-a", "brasileirao-serie-b",
+    # ARGENTINA (Apertura/Clausura within calendar year)
+    "primera-division",
+    # JAPAN
+    "j-league",
+    # SOUTH KOREA
+    "k-league",
+    # NORWAY (Mar-Nov)
+    "eliteserien",
+    # SWEDEN (Apr-Nov)
+    "allsvenskan",
+    # USA (Feb-Dec)
+    "mls",
+    # COLOMBIA (Feb-Dec)
+    "colombian-primera-a",
+    # AUSTRALIA (Oct-May, but API-Football uses start year = calendar year)
+    "a-league",
+    # MEXICO (Apertura/Clausura, but API-Football uses calendar year)
+    "liga-mx",
+    # SAUDI ARABIA (Aug-May, BUT API-Football uses the start year like European)
+    # NOT included — follows European convention
+    # UAE
+    "uae-pro-league",
+}
+
+
+def get_season_for_league(league_id: str) -> int:
+    """Return the correct API-Football season parameter for a league.
+
+    Calendar-year leagues (Brazil, Japan, MLS, etc.): always use current year.
+    European mid-year leagues: use current year if month >= 7, else previous year.
+    """
+    from datetime import datetime, timezone
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    now = datetime.now(timezone.utc)
+
+    if resolved_id in CALENDAR_YEAR_LEAGUES:
+        return now.year
+    # European convention: season starts mid-year
+    return now.year if now.month >= 7 else now.year - 1
+
+
 def get_league_config(league_id: str):
     """Busca configuração de uma liga pelo ID interno.
     Aceita IDs do frontend (ex: spain-la-liga) e resolve para a config FootyStats."""
