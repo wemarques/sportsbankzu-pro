@@ -114,6 +114,8 @@ export type Match = {
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
     cornerOver105Prob?: number;
+    homeCornersCount?: number;
+    awayCornersCount?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;
