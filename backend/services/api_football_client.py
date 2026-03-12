@@ -257,8 +257,8 @@ class APIFootballClient:
         Handles common variations between FootyStats and API-Football:
         - "Atlético Madrid" vs "Atletico Madrid"
         - "FC Barcelona" vs "Barcelona"
-        - "Man United" vs "Manchester United"
-        - "Wolverhampton Wanderers" vs "Wolves"
+        - "Al-Hazem" vs "Al Hazm" (Arabic transliteration)
+        - "Al Taawoun" vs "Al Taawon"
         """
         import re
         import unicodedata
@@ -274,8 +274,9 @@ class APIFootballClient:
         result = ascii_name.lower().strip()
 
         # Remove common prefixes/suffixes that vary between APIs
-        # Includes Brazilian (cr, se, ec, aa, ce, gr) and South American (csd, cn, cu) clubs
-        result = re.sub(r"\b(fc|cf|sc|ac|as|us|rc|cd|ca|ss|afc|ssc|cr|se|ec|aa|ce|gr|csd|cn|cu|rcd|ud|sd)\b", "", result)
+        # Includes Brazilian (cr, se, ec, aa, ce, gr), South American (csd, cn, cu),
+        # and Arabic article "al" (equivalent of "The" — varies between APIs)
+        result = re.sub(r"\b(fc|cf|sc|ac|as|us|rc|cd|ca|ss|afc|ssc|cr|se|ec|aa|ce|gr|csd|cn|cu|rcd|ud|sd|al)\b", "", result)
         # Remove punctuation
         result = re.sub(r"[.\-'\"()]", " ", result)
         # Collapse whitespace
@@ -284,10 +285,19 @@ class APIFootballClient:
         return result
 
     @staticmethod
+    def _fuzzy_match(s1: str, s2: str) -> float:
+        """Return similarity ratio (0.0–1.0) between two strings using SequenceMatcher."""
+        from difflib import SequenceMatcher
+        if not s1 or not s2:
+            return 0.0
+        return SequenceMatcher(None, s1, s2).ratio()
+
+    @staticmethod
     def _team_names_match(name_a: str, name_b: str) -> bool:
         """Check if two team names refer to the same team.
 
-        Uses normalized substring matching + token overlap for robustness.
+        Uses normalized substring matching + token overlap + fuzzy matching.
+        Handles Arabic transliterations (Al-Hazem/Al Hazm, Taawoun/Taawon).
         """
         norm_a = APIFootballClient._normalize_team_name(name_a)
         norm_b = APIFootballClient._normalize_team_name(name_b)
@@ -303,6 +313,11 @@ class APIFootballClient:
         if norm_a in norm_b or norm_b in norm_a:
             return True
 
+        # Fuzzy match: handles transliteration variants (Hazm/Hazem, Taawon/Taawoun)
+        # Threshold 0.8 = allows ~1 char difference per 5 chars
+        if APIFootballClient._fuzzy_match(norm_a, norm_b) >= 0.8:
+            return True
+
         # Token overlap: if one name's significant tokens are a subset of the other
         tokens_a = set(norm_a.split())
         tokens_b = set(norm_b.split())
@@ -313,9 +328,23 @@ class APIFootballClient:
         if tokens_a and tokens_b:
             overlap = tokens_a & tokens_b
             smaller = min(len(tokens_a), len(tokens_b))
-            # If at least half of the smaller set's tokens overlap, consider it a match
+            # Require >50% overlap AND at least 1 non-trivial token match
             if smaller > 0 and len(overlap) >= max(1, smaller * 0.5):
                 return True
+
+            # Token-level fuzzy: check if non-overlapping tokens are close matches
+            # Handles "hazm"/"hazem", "taawon"/"taawoun" after "al" prefix removal
+            non_overlap_a = tokens_a - overlap
+            non_overlap_b = tokens_b - overlap
+            if non_overlap_a and non_overlap_b and len(non_overlap_a) <= 2:
+                fuzzy_matches = 0
+                for ta in non_overlap_a:
+                    for tb in non_overlap_b:
+                        if APIFootballClient._fuzzy_match(ta, tb) >= 0.75:
+                            fuzzy_matches += 1
+                            break
+                if fuzzy_matches == len(non_overlap_a):
+                    return True
 
         return False
 

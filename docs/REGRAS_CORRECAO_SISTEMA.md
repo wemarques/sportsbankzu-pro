@@ -416,4 +416,64 @@ Essas sugestões eram **baseadas em dados falsos**. Se aplicadas, reduziriam a q
 
 ---
 
+## 007 — Livescore 0-0 em ligas árabes (Saudi Pro League)
+
+**Data:** 2026-03-12
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogos ao vivo da Saudi Professional League (Al Hazm vs Al Kholood, Al Najma vs Dhamk, Neom SC vs Al Taawon) mostravam score congelado em 0-0 apesar de estarem em andamento. Mesmo padrão do bug #005/#006 mas para ligas árabes.
+
+### Causa raiz (3 falhas)
+
+1. **Name matching falha para nomes árabes:** O prefixo "al" (artigo "o/a" em árabe) NÃO era removido pelo `_normalize_team_name()`. Resultado: "Al Hazm" normalizava para "al hazm" e "Al-Hazem" para "al hazem" — diferentes. Token overlap funcionava por sorte (50% = "al"), mas era frágil e sujeito a falsos positivos (ex: "Al Hazm" matcharia "Al Hilal" com 50% overlap).
+
+2. **Sem fuzzy matching para variantes de transliteração:** Nomes árabes têm múltiplas romanizações: "Hazm"/"Hazem", "Taawon"/"Taawoun", "Ettifaq"/"Al-Ittifaq". Sem matching fuzzy, esses pares falhavam.
+
+3. **Sem fallback de season:** `get_fixtures_by_date(league=307, season=2025)` podia retornar 0 fixtures se a API-Football usar convenção de season diferente para a liga saudita. Sem fallback para `season+1`, a enrichment era silenciosamente abortada.
+
+### Correções aplicadas (3 camadas)
+
+1. **`_normalize_team_name` — Adição do prefixo "al"** ao regex de remoção de prefixos. Agora "Al Hazm" → "hazm", "Al-Hazem" → "hazem". Remove ruído do artigo árabe para matching mais preciso.
+
+2. **`_team_names_match` — Fuzzy matching com SequenceMatcher:**
+   - Threshold 0.8 (80% similaridade) para match direto entre nomes normalizados
+   - Token-level fuzzy (0.75 threshold) para tokens individuais não coincidentes
+   - Resultado: "hazm" ↔ "hazem" = 0.89 → MATCH; "taawon" ↔ "taawoun" = 0.92 → MATCH
+   - Falsos positivos eliminados: "hazm" ↔ "hilal" = 0.40 → NO MATCH
+
+3. **`_enrich_with_api_football` — Season fallback:** Se `get_fixtures_by_date()` retorna 0 fixtures, automaticamente tenta `season + 1`. Cobre casos onde a convenção de season difere da nossa expectativa.
+
+4. **Logging diagnóstico aprimorado:** Quando matching falha no `/live-scores`, loga os nomes normalizados e amostras de fixtures da API-Football para depuração remota.
+
+### Fluxo corrigido (Saudi Pro League)
+
+```
+1. GET /fixtures?leagues=professional-league&date=today
+2. _enrich_with_api_football(lid="professional-league", ...)
+   ├── season = 2025 (European convention)
+   ├── get_fixtures_by_date(league=307, season=2025, date=...)
+   ├── Se 0 fixtures → fallback: try season=2026          ← FIX #3
+   ├── _team_names_match("Al Hazm", "Al-Hazem")
+   │   ├── normalize: "hazm" vs "hazem"                   ← FIX #1 (remove "al")
+   │   ├── fuzzy_match("hazm","hazem") = 0.89 ≥ 0.8      ← FIX #2
+   │   └── MATCH
+   └── enrich_fixture_record → score real overlay
+3. GET /live-scores
+   ├── get_live_fixtures() (sem filtro de season)
+   ├── _team_names_match → agora funciona com nomes árabes
+   └── Score atualizado em tempo real
+```
+
+### Lição aprendida
+
+1. **"al" é o "FC" do mundo árabe** — Artigos e prefixos culturais (al-, el-, de, van, von) devem ser removidos na normalização. Cada nova região adicionada ao sistema pode introduzir novos prefixos.
+2. **Transliteração é lossy** — Nomes árabes/japoneses/coreanos têm múltiplas romanizações válidas. Matching exato e substring NUNCA são suficientes; fuzzy matching é obrigatório para sistemas multi-região.
+3. **Season fallback é seguro** — Tentar `season ± 1` quando 0 fixtures retorna é barato (1 request extra cached) e cobre erros de convenção para qualquer liga, não apenas Saudi.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

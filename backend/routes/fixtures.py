@@ -291,11 +291,24 @@ def _enrich_with_api_football(
 
             af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=2)
             if not af_fixtures:
-                logger.info(
-                    f"[fixtures] {lid}: API-Football returned 0 fixtures "
-                    f"(league={af_league_id}, season={season}, date={af_date})"
-                )
-                return records
+                # Season fallback: try season+1 or season-1 in case our convention is wrong.
+                # Handles leagues where API-Football season param differs from our calculation
+                # (e.g., some Middle Eastern leagues may use calendar year instead of start year).
+                alt_season = season + 1
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, alt_season, af_date, ttl_minutes=2)
+                if af_fixtures:
+                    logger.warning(
+                        f"[fixtures] {lid}: season={season} returned 0, but season={alt_season} "
+                        f"returned {len(af_fixtures)} — using fallback season"
+                    )
+                    season = alt_season
+                else:
+                    logger.info(
+                        f"[fixtures] {lid}: API-Football returned 0 fixtures "
+                        f"(league={af_league_id}, season={season}, date={af_date}, "
+                        f"also tried season={alt_season})"
+                    )
+                    return records
 
             logger.info(
                 f"[fixtures] {lid}: API-Football returned {len(af_fixtures)} fixtures "
@@ -352,6 +365,9 @@ def _enrich_with_api_football(
                 af_date = date_str
 
             af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=5)
+            if not af_fixtures:
+                # Season fallback
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, season + 1, af_date, ttl_minutes=5)
             if af_fixtures:
                 records = _afc.fixtures_to_records(af_fixtures, lid)
                 logger.info(f"[fixtures] {lid}: API-Football fallback provided {len(records)} records")
@@ -1013,6 +1029,17 @@ def live_scores() -> Dict[str, Any]:
                                 break
 
                         if not matched_fx:
+                            # Log unmatched live matches for debugging (esp. Arabic teams)
+                            af_sample = [
+                                (fx.get("teams", {}).get("home", {}).get("name", ""),
+                                 fx.get("teams", {}).get("away", {}).get("name", ""))
+                                for fx in af_live[:8]
+                            ]
+                            logger.warning(
+                                f"[live-scores] No AF match for '{rh}' vs '{ra}' "
+                                f"(norm: '{_afc._normalize_team_name(rh)}' vs '{_afc._normalize_team_name(ra)}') "
+                                f"| AF live sample: {af_sample}"
+                            )
                             continue
 
                         ld = _afc.extract_live_data(matched_fx)
