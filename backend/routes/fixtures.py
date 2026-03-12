@@ -291,27 +291,22 @@ def _enrich_with_api_football(
             if not af_fixtures:
                 return records
 
-            # Build a lookup by team name for matching
-            af_by_home: dict = {}
-            for fx in af_fixtures:
-                home = (fx.get("teams", {}).get("home", {}).get("name") or "").lower().strip()
-                if home:
-                    af_by_home[home] = fx
-
             enriched = 0
             for rec in records:
-                home = (rec.get("homeTeam") or "").lower().strip()
-                away = (rec.get("awayTeam") or "").lower().strip()
+                # homeTeam can be a dict {"name": ...} or a plain string
+                _ht = rec.get("homeTeam")
+                _at = rec.get("awayTeam")
+                home = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
+                away = _at.get("name", "") if isinstance(_at, dict) else str(_at or "")
 
-                # Try exact match first, then substring match
-                matched_fx = af_by_home.get(home)
-                if not matched_fx:
-                    for af_home, fx in af_by_home.items():
-                        if (home in af_home or af_home in home):
-                            af_away = (fx.get("teams", {}).get("away", {}).get("name") or "").lower().strip()
-                            if away in af_away or af_away in away:
-                                matched_fx = fx
-                                break
+                # Use robust matching from APIFootballClient (unicode, prefixes, token overlap)
+                matched_fx = None
+                for fx in af_fixtures:
+                    fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
+                    fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
+                    if _afc._team_names_match(home, fx_home) and _afc._team_names_match(away, fx_away):
+                        matched_fx = fx
+                        break
 
                 if matched_fx:
                     _afc.enrich_fixture_record(rec, matched_fx)
@@ -984,28 +979,20 @@ def live_scores() -> Dict[str, Any]:
             try:
                 af_live = _afc.get_live_fixtures()  # 1-min cache
                 if af_live:
-                    # Build lookup: normalised home team name → fixture
-                    _af_lookup: Dict[str, Dict] = {}
-                    for fx in af_live:
-                        _h = (fx.get("teams", {}).get("home", {}).get("name") or "").lower().strip()
-                        if _h:
-                            _af_lookup[_h] = fx
-
                     for rec in result:
                         if rec["status"] != "live":
                             continue
-                        rh = rec["homeTeam"].lower().strip()
-                        ra = rec["awayTeam"].lower().strip()
+                        rh = str(rec.get("homeTeam") or "")
+                        ra = str(rec.get("awayTeam") or "")
 
-                        # Try exact, then substring match
-                        matched_fx = _af_lookup.get(rh)
-                        if not matched_fx:
-                            for af_h, fx in _af_lookup.items():
-                                if (rh in af_h or af_h in rh):
-                                    af_a = (fx.get("teams", {}).get("away", {}).get("name") or "").lower().strip()
-                                    if ra in af_a or af_a in ra:
-                                        matched_fx = fx
-                                        break
+                        # Use robust matching (unicode normalization, prefix removal, token overlap)
+                        matched_fx = None
+                        for fx in af_live:
+                            fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
+                            fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
+                            if _afc._team_names_match(rh, fx_home) and _afc._team_names_match(ra, fx_away):
+                                matched_fx = fx
+                                break
 
                         if not matched_fx:
                             continue
