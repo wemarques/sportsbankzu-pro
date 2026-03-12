@@ -322,4 +322,96 @@ Três princípios violados simultaneamente:
 
 ---
 
+## 006 — Season errado para ligas de calendário civil (Brasileirão retornava 0 fixtures)
+
+**Data:** 2026-03-12
+**Arquivos afetados:** `backend/config/leagues_config.py`, `backend/routes/fixtures.py`, `backend/services/api_football_client.py`
+**Severidade:** Crítica (enrichment inteiro falhava para 12 ligas)
+**Status:** Corrigido
+**Relacionado:** #005
+
+### Problema identificado
+
+Mesmo após as correções de name matching (#005), o placar ao vivo continuava congelado em 0-0 para **todas as ligas brasileiras e sul-americanas**. O status (HT, 2T) era capturado pelo cálculo de elapsed time do FootyStats, mas o placar real da API-Football nunca chegava.
+
+### Causa raiz (2 bugs independentes)
+
+**BUG 1 — Season hardcoded para calendário europeu:** `_current_season()` retornava `now.year if month >= 7 else now.year - 1`. Em março/2026, isso retorna `2025`. Mas o Brasileirão 2026 começou em janeiro — o season correto na API-Football é `2026`. A chamada `get_fixtures_by_date(league=71, season=2025, date="2026-03-12")` retornava **ZERO fixtures** porque a temporada 2025 do Brasileirão já acabou em dezembro/2025. Resultado: `if not af_fixtures: return records` → **sem enrichment** → 0-0 do FootyStats permanece.
+
+Ligas afetadas (12): Brasileirão A, Brasileirão B, Argentina Primera, J-League, K-League, MLS, Eliteserien, Allsvenskan, Liga MX, Colombian Primera A, A-League, UAE Pro League.
+
+**BUG 2 — `enrich_fixture_record` crash em score None:** Quando o FootyStats não tinha dados de gols para um jogo ao vivo, `record["score"]` era `None`. O método `enrich_fixture_record()` usava `record.setdefault("score", {})`, mas `setdefault` não substitui uma key existente com valor `None` — retorna `None` mesmo. Então `None["home"] = 2` → `TypeError` → crash silencioso no `except Exception`.
+
+### Correções aplicadas (4 camadas)
+
+#### Camada 1: Mapeamento de ligas de calendário civil (`leagues_config.py`)
+- Nova constante `CALENDAR_YEAR_LEAGUES` — set com 12 IDs de ligas que usam temporada = ano civil (Jan-Dez)
+- Nova função `get_season_for_league(league_id)`:
+  - Ligas de calendário: retorna `now.year` (2026)
+  - Ligas europeias: retorna `now.year if month >= 7 else now.year - 1` (2025)
+- Regra clara: o season na API-Football = **ano em que a temporada começa**
+
+#### Camada 2: `_enrich_with_api_football` usa season correto (`fixtures.py`)
+- Substituído `season = _current_season()` por `season = get_season_for_league(lid)`
+- Import de `get_season_for_league` adicionado no topo do arquivo
+- Agora `get_fixtures_by_date(league=71, season=2026, date="2026-03-12")` retorna fixtures reais
+
+#### Camada 3: Guard contra score None em `enrich_fixture_record` (`api_football_client.py`)
+- Antes de escrever em `record["score"]`, verifica com `isinstance(record.get("score"), dict)`
+- Se não é dict (incluindo `None`): cria `record["score"] = {}` explicitamente
+- Mesmo guard aplicado para `record["score"]["halftime"]`
+- Elimina o crash `TypeError: 'NoneType' object does not support item assignment`
+
+#### Camada 4: Logging diagnóstico no pipeline de enrichment (`fixtures.py`)
+- Log quando API-Football retorna 0 fixtures (com league_id, season, date)
+- Log quando um jogo específico falha no matching (com nomes dos times AF disponíveis)
+- Log com `exc_info=True` no catch final para stack trace completo
+- Permite diagnóstico remoto sem adivinhar o ponto de falha
+
+### Validação executada
+
+```
+Season calculation (March 2026):
+  brasileirao-serie-a   -> season=2026 (expected 2026) [OK]
+  brasileirao-serie-b   -> season=2026 (expected 2026) [OK]
+  premier-league        -> season=2025 (expected 2025) [OK]
+  j-league              -> season=2026 (expected 2026) [OK]
+  mls                   -> season=2026 (expected 2026) [OK]
+  bundesliga            -> season=2025 (expected 2025) [OK]
+
+Null score enrichment:
+  record["score"]=None → enrich → score={'home': 2, 'away': 1, 'halftime': {'home': 1, 'away': 0}} [OK]
+```
+
+### Fluxo corrigido (ponta a ponta)
+
+```
+1. Dashboard carrega → GET /api/matches/fetch → Backend /fixtures
+2. FootyStats retorna matches com score estático (0-0 para live)
+3. _enrich_with_api_football(lid="brasileirao-serie-a", ...)
+   ├── season = get_season_for_league("brasileirao-serie-a") = 2026  ← FIX #1
+   ├── get_fixtures_by_date(league=71, season=2026, date="2026-03-12")
+   ├── Retorna N fixtures da API-Football
+   ├── _team_names_match("Flamengo", "Flamengo") = True             ← FIX #005
+   ├── enrich_fixture_record(record, fixture)
+   │   ├── record["score"] was None → record["score"] = {}          ← FIX #2
+   │   ├── record["score"]["home"] = 2
+   │   └── record["period"] = "HT"                                  ← FIX #005
+   └── Score atualizado: {"home": 2, "away": 1}
+4. Frontend recebe score real → renderiza "2 - 1" em vez de "0 - 0"
+5. useLivePolling(30s) → GET /api/matches/live → /live-scores
+   ├── FootyStats match-detail (pode retornar 0-0)
+   ├── API-Football overlay via get_live_fixtures() (sem filtro de season)
+   ├── _team_names_match() → match correto                          ← FIX #005
+   └── Frontend merge: score atualizado em tempo real
+```
+
+### Lição aprendida
+
+1. **APIs de futebol usam "season" diferente por região** — Ligas europeias (Aug-May) usam o ano de início; ligas de calendário civil (Jan-Dec) usam o ano corrente. Uma função `_current_season()` única **nunca funciona** para sistemas multi-liga globais.
+2. **`dict.setdefault(key, default)` não substitui `None`** — Se a key existe com valor `None`, `setdefault` retorna `None` sem criar o default. Para valores nullable, sempre usar `if not isinstance(v, dict): v = {}`.
+3. **Logging é defesa obrigatória** — O `except Exception` genérico sem `exc_info=True` descarta o stack trace, tornando impossível diagnosticar remotamente. Sempre logar com `exc_info=True` ou pelo menos `logger.exception()`.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

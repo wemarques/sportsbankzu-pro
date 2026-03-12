@@ -13,7 +13,7 @@ from backend.services.footstats_client import FootyStatsClient
 from backend.services.api_football_client import APIFootballClient
 from backend.services.data_mapper import DataMapper
 from backend.services.util_service import team_name
-from backend.config.leagues_config import get_league_config, get_api_football_league_id
+from backend.config.leagues_config import get_league_config, get_api_football_league_id, get_season_for_league
 
 logger = logging.getLogger("sportsbankzu.fixtures")
 router = APIRouter(tags=["fixtures"])
@@ -271,7 +271,9 @@ def _enrich_with_api_football(
     if af_league_id is None:
         return records
 
-    season = _current_season()
+    # Use league-aware season: calendar-year leagues (Brazil, Japan, etc.)
+    # use current year; European mid-year leagues use previous year before July.
+    season = get_season_for_league(lid)
 
     # CASE 1: Records exist — enrich with live data overlay
     if records:
@@ -289,8 +291,16 @@ def _enrich_with_api_football(
 
             af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=2)
             if not af_fixtures:
+                logger.info(
+                    f"[fixtures] {lid}: API-Football returned 0 fixtures "
+                    f"(league={af_league_id}, season={season}, date={af_date})"
+                )
                 return records
 
+            logger.info(
+                f"[fixtures] {lid}: API-Football returned {len(af_fixtures)} fixtures "
+                f"(league={af_league_id}, season={season}, date={af_date})"
+            )
             enriched = 0
             for rec in records:
                 # homeTeam can be a dict {"name": ...} or a plain string
@@ -311,12 +321,20 @@ def _enrich_with_api_football(
                 if matched_fx:
                     _afc.enrich_fixture_record(rec, matched_fx)
                     enriched += 1
+                else:
+                    af_names = [(fx.get("teams", {}).get("home", {}).get("name", ""), fx.get("teams", {}).get("away", {}).get("name", "")) for fx in af_fixtures[:5]]
+                    logger.warning(
+                        f"[fixtures] {lid}: No API-Football match for '{home}' vs '{away}' "
+                        f"(AF has: {af_names})"
+                    )
 
             if enriched:
                 logger.info(f"[fixtures] {lid}: API-Football enriched {enriched}/{len(records)} records")
+            else:
+                logger.warning(f"[fixtures] {lid}: API-Football enriched 0/{len(records)} records — name matching failed for all")
 
         except Exception as e:
-            logger.warning(f"[fixtures] {lid}: API-Football enrichment failed: {e}")
+            logger.warning(f"[fixtures] {lid}: API-Football enrichment failed: {e}", exc_info=True)
 
         return records
 
