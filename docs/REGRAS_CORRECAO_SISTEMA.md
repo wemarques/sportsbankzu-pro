@@ -587,4 +587,61 @@ A rota `/fixtures` (carga inicial) faz o mesmo fetch de `get_match_live_details(
 
 ---
 
+## 009 — Jogo ao vivo excluído da lista de jogos quando FootyStats o remove
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogo da Liga Colombia DIMAYOR (Atlético Nacional 2-0 Llaneros, aos 79') desapareceu completamente da lista de jogos no dashboard. O endpoint `/fixtures?leagues=colombia-primera-a` retornava apenas 4 jogos futuros, omitindo o jogo em andamento.
+
+### Causa raiz
+
+O FootyStats pode remover jogos ao vivo da resposta de `league-matches` por vários motivos:
+- O jogo foi movido para fora da página 1 (paginação por data)
+- O status mudou para "complete" enquanto o jogo ainda estava em andamento
+- Edge case de timezone (kickoff 01:30 UTC = 22:30 BRT do dia anterior) fazendo o date guard filtrar o jogo
+
+Quando isso ocorre, a função `_enrich_with_api_football()` no CASE 1 (records existem) apenas enriquecia os records existentes via overlay. Jogos que a API-Football tinha mas o FootyStats não retornava eram **silenciosamente ignorados** — o loop de matching simplesmente não encontrava um record correspondente e seguia em frente.
+
+O CASE 2 (usar API-Football como fallback completo) só era ativado quando `records` estava vazio E `found_via_api = False`. Como o FootyStats retornava 4 jogos futuros, `records` não estava vazio, e o CASE 2 nunca era ativado.
+
+### Correção aplicada (1 camada)
+
+**CASE 1b — Injeção de jogos ao vivo/finalizados da API-Football que o FootyStats removeu:**
+
+Após o loop de enrichment do CASE 1, o código agora:
+1. Identifica quais fixtures da API-Football **não** foram matched a nenhum record existente (nem por ID nem por nome de time)
+2. Filtra apenas jogos com status live (`1H`, `HT`, `2H`, `ET`, `BT`, `P`, `LIVE`, `SUSP`, `INT`) ou finished (`FT`, `AET`, `PEN`)
+3. Converte esses fixtures para records via `fixtures_to_records()` e os adiciona à lista
+
+Isso garante que jogos ao vivo nunca desapareçam da lista, mesmo quando o FootyStats os remove.
+
+### Fluxo corrigido
+
+```
+FootyStats league-matches → 4 jogos futuros (falta o jogo ao vivo)
+                    ↓
+_enrich_with_api_football() CASE 1:
+  - Enriquece os 4 records existentes com dados da API-Football
+  - CASE 1b (NOVO): API-Football tem 5 fixtures, 4 matched → 1 unmatched
+    - O unmatched é Atlético Nacional vs Llaneros (status=2H, live)
+    - Converte para record e injeta na lista
+                    ↓
+Resultado: 5 jogos retornados (4 futuros + 1 ao vivo)
+```
+
+### Lição aprendida
+
+1. **Enrichment ≠ Fallback completo** — Enriquecer records existentes não é suficiente quando a fonte primária remove dados. O sistema precisa de lógica de "injeção" que adicione dados que a fonte secundária tem mas a primária perdeu.
+
+2. **Fontes de dados não são monotônicas** — Não se pode assumir que um jogo que apareceu na lista vai continuar aparecendo. APIs externas podem remover jogos por paginação, mudança de status, ou limites de rate. O sistema deve compensar essas remoções usando fontes alternativas.
+
+3. **O CASE 2 (fallback total) tem uma condição muito restritiva** — Só ativa quando `records` está completamente vazio. Isso significa que se o FootyStats retorna pelo menos 1 jogo (mesmo que irrelevante), o CASE 2 nunca roda. A solução correta é o CASE 1b, que opera dentro do CASE 1 para adicionar jogos faltantes.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

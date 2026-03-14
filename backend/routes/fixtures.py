@@ -346,6 +346,51 @@ def _enrich_with_api_football(
             else:
                 logger.warning(f"[fixtures] {lid}: API-Football enriched 0/{len(records)} records — name matching failed for all")
 
+            # CASE 1b: Inject live/finished matches from API-Football that
+            # FootyStats dropped (e.g. match moved off page-1, status changed
+            # to "complete" mid-game, or timezone edge case filtered it out).
+            matched_af_ids: set = set()
+            for rec in records:
+                af_id = rec.get("apiFootballFixtureId")
+                if af_id:
+                    matched_af_ids.add(af_id)
+
+            injected = 0
+            for fx in af_fixtures:
+                fx_id = fx.get("fixture", {}).get("id")
+                if fx_id in matched_af_ids:
+                    continue
+                # Only inject live or finished matches — don't duplicate scheduled ones
+                status_short = fx.get("fixture", {}).get("status", {}).get("short", "NS")
+                live_statuses = {"1H", "HT", "2H", "ET", "BT", "P", "LIVE", "SUSP", "INT"}
+                finished_statuses = {"FT", "AET", "PEN"}
+                if status_short not in live_statuses and status_short not in finished_statuses:
+                    continue
+                # Check this fixture wasn't already matched by team name
+                fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
+                fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
+                already_present = False
+                for rec in records:
+                    _ht = rec.get("homeTeam")
+                    _at = rec.get("awayTeam")
+                    rh = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
+                    ra = _at.get("name", "") if isinstance(_at, dict) else str(_at or "")
+                    if _afc._team_names_match(rh, fx_home) and _afc._team_names_match(ra, fx_away):
+                        already_present = True
+                        break
+                if already_present:
+                    continue
+                # Convert to record and inject
+                new_records = _afc.fixtures_to_records([fx], lid)
+                if new_records:
+                    records.extend(new_records)
+                    injected += 1
+            if injected:
+                logger.info(
+                    f"[fixtures] {lid}: injected {injected} live/finished matches "
+                    f"from API-Football that FootyStats dropped"
+                )
+
         except Exception as e:
             logger.warning(f"[fixtures] {lid}: API-Football enrichment failed: {e}", exc_info=True)
 
