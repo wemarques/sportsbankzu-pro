@@ -23,16 +23,20 @@ import {
   Check,
   X,
   Clock,
+  Shuffle,
+  ShieldAlert,
 } from "lucide-react";
 import {
   type BetInput,
   type BetAllocation,
   type BankrollSettings,
+  type SystemBetSuggestion,
   distributeBankroll,
   loadSettings,
   saveSettings,
   DEFAULT_SETTINGS,
   KELLY_MULTIPLIERS,
+  MAX_STAKE_PCT,
 } from "@/lib/kelly";
 
 /* ── Types from combinadas API ── */
@@ -735,11 +739,20 @@ function AllocationCard({
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-base font-black text-[var(--color-text-primary)]">
-              {formatCurrency(allocation.stake)}
+            <div className="flex items-center justify-end gap-1">
+              {allocation.capped && (
+                <ShieldAlert
+                  size={12}
+                  className="text-[#ffaa44]"
+                  title={`Stake limitada a ${(MAX_STAKE_PCT * 100).toFixed(0)}% da banca`}
+                />
+              )}
+              <div className="text-base font-black text-[var(--color-text-primary)]">
+                {formatCurrency(allocation.stake)}
+              </div>
             </div>
             <div className="text-[0.6rem] text-[var(--color-text-muted)] uppercase tracking-wider">
-              stake
+              {allocation.capped ? `stake (cap ${(MAX_STAKE_PCT * 100).toFixed(0)}%)` : "stake"}
             </div>
           </div>
         </div>
@@ -830,7 +843,7 @@ function AllocationCard({
                 <span style={{ color: sc.text }}>{allocation.bet.leg2Market}</span>
               </div>
             )}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <div className="text-[0.6rem] text-[var(--color-text-muted)]">Lucro Potencial</div>
                 <div className="text-sm font-bold text-[#00df82]">
@@ -841,6 +854,12 @@ function AllocationCard({
                 <div className="text-[0.6rem] text-[var(--color-text-muted)]">Edge</div>
                 <div className="text-sm font-bold" style={{ color: evColor(allocation.edge) }}>
                   {(allocation.edge * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div>
+                <div className="text-[0.6rem] text-[var(--color-text-muted)]">Prob. Implicita</div>
+                <div className="text-sm font-bold text-[var(--color-text-secondary)]">
+                  {allocation.impliedProb.toFixed(1)}%
                 </div>
               </div>
               <div>
@@ -908,6 +927,232 @@ function SectionHeader({
         )}
       </div>
     </button>
+  );
+}
+
+/* ── System Bet Suggestion Card ── */
+function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      className="rounded-2xl border overflow-hidden"
+      style={{
+        background: "linear-gradient(135deg, rgba(255,170,68,0.04), rgba(255,136,0,0.06))",
+        borderColor: "rgba(255,170,68,0.25)",
+      }}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-5 text-left"
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: "rgba(255,170,68,0.12)" }}
+            >
+              <Shuffle size={18} className="text-[#ffaa44]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-[var(--color-text-primary)]">
+                  Aposta em Sistema
+                </span>
+                <span
+                  className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(255,170,68,0.15)", color: "#ffaa44" }}
+                >
+                  {suggestion.label}
+                </span>
+              </div>
+              <p className="text-[0.65rem] text-[var(--color-text-muted)] mt-0.5">
+                {suggestion.description}
+              </p>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-base font-black text-[#ffaa44] tabular-nums">
+              {formatCurrency(suggestion.totalStake)}
+            </div>
+            <div className="text-[0.55rem] text-[var(--color-text-muted)] uppercase">stake total</div>
+          </div>
+        </div>
+
+        {/* Summary row */}
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/5">
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Selecoes
+            </div>
+            <div className="text-sm font-bold text-[var(--color-text-primary)]">
+              {suggestion.selections.length}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Combinacoes
+            </div>
+            <div className="text-sm font-bold text-[var(--color-text-primary)]">
+              {suggestion.totalCombinations}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Melhor Cenario
+            </div>
+            <div className="text-sm font-bold text-[#22c55e]">
+              {formatCurrency(suggestion.bestCaseReturn)}
+            </div>
+          </div>
+          <div className="shrink-0">
+            {expanded ? <ChevronUp size={14} className="text-[var(--color-text-muted)]" /> : <ChevronDown size={14} className="text-[var(--color-text-muted)]" />}
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Selections */}
+          <div>
+            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+              Selecoes
+            </div>
+            <div className="space-y-1.5">
+              {suggestion.selections.map((a, i) => (
+                <div
+                  key={a.bet.id}
+                  className="flex items-center justify-between px-2.5 py-2 rounded-lg"
+                  style={{
+                    background: "rgba(255,170,68,0.04)",
+                    border: "1px solid rgba(255,170,68,0.1)",
+                  }}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold shrink-0"
+                      style={{ background: "rgba(255,170,68,0.15)", color: "#ffaa44" }}
+                    >
+                      {i + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                        {a.bet.homeTeam} x {a.bet.awayTeam}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="text-[0.58rem] font-medium px-1.5 py-px rounded"
+                          style={{ background: "rgba(255,170,68,0.1)", color: "#ffaa44" }}
+                        >
+                          {a.bet.market}
+                        </span>
+                        <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                          odd {a.bet.odd.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[0.68rem] font-bold" style={{ color: evColor(a.ev) }}>
+                      EV {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
+                    </div>
+                    <div className="text-[0.55rem] text-[var(--color-text-muted)]">
+                      {a.bet.leagueName}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Combinations breakdown */}
+          <div>
+            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+              Detalhamento das Combinacoes
+            </div>
+            <div className="space-y-1">
+              {suggestion.combinations.map((c, i) => {
+                const legsLabel = c.legs.length === 1
+                  ? "Simples"
+                  : c.legs.length === 2
+                    ? "Dupla"
+                    : c.legs.length === 3
+                      ? "Tripla"
+                      : "Quadrupla";
+                const teamsLabel = c.legs
+                  .map((l) => l.bet.homeTeam.split(" ")[0])
+                  .join(" + ");
+
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[0.65rem]"
+                    style={{
+                      background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="text-[0.55rem] font-bold uppercase px-1.5 py-px rounded shrink-0"
+                        style={{
+                          background: c.legs.length === 1
+                            ? "rgba(34,197,94,0.1)"
+                            : c.legs.length === 2
+                              ? "rgba(157,80,255,0.1)"
+                              : c.legs.length === 3
+                                ? "rgba(0,187,255,0.1)"
+                                : "rgba(255,170,68,0.1)",
+                          color: c.legs.length === 1
+                            ? "#22c55e"
+                            : c.legs.length === 2
+                              ? "#c4a0ff"
+                              : c.legs.length === 3
+                                ? "#00bbff"
+                                : "#ffaa44",
+                        }}
+                      >
+                        {legsLabel}
+                      </span>
+                      <span className="text-[var(--color-text-secondary)] truncate">
+                        {teamsLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-[var(--color-text-muted)] tabular-nums">
+                        odd {c.combinedOdd.toFixed(2)}
+                      </span>
+                      <span className="text-[var(--color-text-muted)] tabular-nums">
+                        {formatCurrency(c.stake)}
+                      </span>
+                      <span className="font-bold text-[#22c55e] tabular-nums">
+                        {formatCurrency(c.potentialReturn)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Worst case info */}
+          <div
+            className="flex items-center gap-2 text-[0.65rem] px-3 py-2 rounded-lg"
+            style={{
+              background: "rgba(255,170,68,0.06)",
+              border: "1px solid rgba(255,170,68,0.12)",
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            <Info size={12} className="text-[#ffaa44] shrink-0" />
+            <span>
+              {suggestion.format === "lucky15"
+                ? `Com 1 acerto minimo: retorno de ${formatCurrency(suggestion.worstCaseReturn)}. Sistema protege contra erros isolados.`
+                : `Trixie nao inclui simples — precisa de pelo menos 2 acertos para retorno. Reduz variancia vs acumulada tripla.`}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1592,6 +1837,11 @@ export default function BankrollCalculator() {
                   As odds atuais nao oferecem valor suficiente para distribuicao.
                 </div>
               </div>
+            )}
+
+            {/* System Bet Suggestion */}
+            {distribution.systemBet && (
+              <SystemBetCard suggestion={distribution.systemBet} />
             )}
           </div>
         )}
