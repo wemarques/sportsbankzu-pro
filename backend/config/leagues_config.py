@@ -127,6 +127,129 @@ LEAGUES_CONFIG = [
 ]
 
 
+# API-Football v3 league IDs (https://v3.football.api-sports.io/leagues)
+# Maps internal league ID -> API-Football league numeric ID
+API_FOOTBALL_LEAGUE_IDS = {
+    # ENGLAND
+    "premier-league": 39,
+    "championship": 40,
+    "league-one": 41,
+    "league-two": 42,
+    # SPAIN
+    "la-liga": 140,
+    "segunda-division": 141,
+    # ITALY
+    "serie-a": 135,
+    "serie-b": 136,
+    # GERMANY
+    "bundesliga": 78,
+    "2-bundesliga": 79,
+    # FRANCE
+    "ligue-1": 61,
+    "ligue-2": 62,
+    # BRAZIL
+    "brasileirao-serie-a": 71,
+    "brasileirao-serie-b": 72,
+    # NETHERLANDS
+    "eredivisie": 88,
+    "eerste-divisie": 89,
+    # PORTUGAL
+    "primeira-liga": 94,
+    # TURKEY
+    "super-lig": 203,
+    # BELGIUM
+    "pro-league": 144,
+    # SCOTLAND
+    "premiership": 179,
+    # AUSTRIA
+    "austrian-bundesliga": 218,
+    # DENMARK
+    "superliga": 120,
+    # SWITZERLAND
+    "super-league": 207,
+    # ARGENTINA
+    "primera-division": 128,
+    # AUSTRALIA
+    "a-league": 188,
+    # SAUDI ARABIA
+    "professional-league": 307,
+    # JAPAN
+    "j-league": 98,
+    # SOUTH KOREA
+    "k-league": 292,
+    # NORWAY
+    "eliteserien": 103,
+    # SWEDEN
+    "allsvenskan": 113,
+    # UAE
+    "uae-pro-league": 305,
+    # GREECE
+    "super-league-greece": 197,
+    # CZECH REPUBLIC
+    "czech-first-league": 345,
+    # USA
+    "mls": 253,
+    # COLOMBIA
+    "colombian-primera-a": 239,
+    # MEXICO
+    "liga-mx": 262,
+}
+
+
+def get_api_football_league_id(league_id: str) -> int | None:
+    """Returns the API-Football numeric league ID for a given internal league ID."""
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    return API_FOOTBALL_LEAGUE_IDS.get(resolved_id)
+
+
+# Leagues that use calendar-year seasons (Jan-Dec) instead of mid-year (Aug-May).
+# For these leagues, the API-Football season parameter = calendar year.
+# Example: Brasileirão 2026 runs Jan-Dec 2026, season param = 2026.
+# European leagues (Premier League 2025/26) started Aug 2025, season param = 2025.
+CALENDAR_YEAR_LEAGUES = {
+    # BRAZIL
+    "brasileirao-serie-a", "brasileirao-serie-b",
+    # ARGENTINA (Apertura/Clausura within calendar year)
+    "primera-division",
+    # JAPAN
+    "j-league",
+    # SOUTH KOREA
+    "k-league",
+    # NORWAY (Mar-Nov)
+    "eliteserien",
+    # SWEDEN (Apr-Nov)
+    "allsvenskan",
+    # USA (Feb-Dec)
+    "mls",
+    # COLOMBIA (Feb-Dec)
+    "colombian-primera-a",
+    # AUSTRALIA (Oct-May, but API-Football uses start year = calendar year)
+    "a-league",
+    # MEXICO (Apertura/Clausura, but API-Football uses calendar year)
+    "liga-mx",
+    # SAUDI ARABIA (Aug-May, BUT API-Football uses the start year like European)
+    # NOT included — follows European convention
+    # UAE
+    "uae-pro-league",
+}
+
+
+def get_season_for_league(league_id: str) -> int:
+    """Return the correct API-Football season parameter for a league.
+
+    Calendar-year leagues (Brazil, Japan, MLS, etc.): always use current year.
+    European mid-year leagues: use current year if month >= 7, else previous year.
+    """
+    from datetime import datetime, timezone
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    now = datetime.now(timezone.utc)
+
+    if resolved_id in CALENDAR_YEAR_LEAGUES:
+        return now.year
+    # European convention: season starts mid-year
+    return now.year if now.month >= 7 else now.year - 1
+
+
 def get_league_config(league_id: str):
     """Busca configuração de uma liga pelo ID interno.
     Aceita IDs do frontend (ex: spain-la-liga) e resolve para a config FootyStats."""

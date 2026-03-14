@@ -564,9 +564,22 @@ export default function Dashboard() {
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
   // Shared function: fetch live scores from backend and merge into allMatches
+  // Ref to track live league IDs for fallback query without re-creating the callback
+  const liveLeagueIdsRef = useRef<string>("");
+  useEffect(() => {
+    const liveLeagues = new Set<string>();
+    for (const m of allMatches) {
+      if (m.status === "live") liveLeagues.add(m.leagueId);
+    }
+    liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
+  }, [allMatches]);
+
   const fetchLiveScores = useCallback(async () => {
     try {
-      const res = await fetch("/api/matches/live", { cache: "no-store" });
+      // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
+      const leagues = liveLeagueIdsRef.current;
+      const qs = leagues ? `?leagues=${encodeURIComponent(leagues)}` : "";
+      const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
       const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];

@@ -10,6 +10,7 @@ import logging
 import os
 
 from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
+from backend.services.api_football_client import APIFootballClient
 from backend.services.util_service import team_name
 
 logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
@@ -39,14 +40,99 @@ async def get_match_analysis(
         match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
         service = MistralAnalysisService()
 
+        h = match_data["home_team"]
+        a = match_data["away_team"]
+        context = match_data.get("context") if include_context else None
+        if context is None:
+            context = {}
+
+        # ==================================================================
+        # API-Football: COMPLEMENTARY data source (livescore + injuries)
+        # FootyStats is PRIMARY — form, H2H, stats, odds are already in context.
+        # API-Football only fills the gaps: live score and injury status.
+        #
+        # Flow:
+        # 1. Use FootyStats data (team names, date, league) as the BRIDGE
+        #    to find the corresponding fixture_id in API-Football.
+        # 2. If bridge succeeds → extract livescore → check coverage → fetch injuries.
+        # 3. If bridge fails → graceful degradation with safe defaults.
+        # ==================================================================
+        api_football_data = {
+            "live_data": None, "league_info": None,
+            "injuries": [], "absences": "", "live_status": "",
+        }
+        try:
+            afc = APIFootballClient()
+            if afc.is_configured:
+                # --- STEP 1: Build the bridge using FootyStats-sourced data ---
+                match_date_str = match_data.get("match_date") or match_data.get("datetime", "")
+                if match_date_str and "T" in match_date_str:
+                    match_date_str = match_date_str.split("T")[0]
+
+                af_league_id = None
+                league_str = match_data.get("league", "")
+                if league_str:
+                    from backend.config.leagues_config import get_api_football_league_id
+                    af_league_id = get_api_football_league_id(league_str)
+
+                # Cross-reference: FootyStats team names + date → API-Football fixture
+                api_football_data = await afc.get_match_live_data(
+                    home_team=h,
+                    away_team=a,
+                    match_date=match_date_str or None,
+                    league_id=af_league_id,
+                    season=match_data.get("season"),
+                )
+
+                # --- STEP 2: Inject ONLY complementary data into context ---
+                # (form, H2H, stats, footystats_analysis are already set by FootyStats)
+                bridge_succeeded = api_football_data.get("live_data", {}).get("fixture_id") is not None
+
+                if bridge_succeeded:
+                    context["absences"] = api_football_data.get("absences", "Dados de lesoes nao disponiveis")
+                    context["live_status"] = api_football_data.get("live_status", "Status nao disponivel")
+
+                    league_info = api_football_data.get("league_info", {})
+                    if league_info and league_info.get("league_name"):
+                        context["league_info"] = (
+                            f"{league_info.get('league_name', '')} "
+                            f"({league_info.get('league_country', '')}, "
+                            f"Temporada {league_info.get('league_season', 'N/A')}) "
+                            f"— {league_info.get('league_round', '')}"
+                        )
+
+                    logger.info(
+                        f"[api-football] Bridge OK for {h} vs {a}: "
+                        f"fixture_id={api_football_data['live_data'].get('fixture_id')}, "
+                        f"status={api_football_data['live_data'].get('status')}, "
+                        f"injuries={len(api_football_data.get('injuries', []))}"
+                    )
+                else:
+                    # --- STEP 3: Graceful degradation — bridge failed ---
+                    logger.info(
+                        f"[api-football] Bridge FAILED for {h} vs {a} — "
+                        f"fixture not found in API-Football. "
+                        f"Continuing with FootyStats data only."
+                    )
+                    context.setdefault("absences", "Dados de lesoes nao disponiveis (partida nao encontrada na API-Football)")
+                    context.setdefault("live_status", "Status nao disponivel (partida nao encontrada na API-Football)")
+        except Exception as e:
+            # --- Graceful degradation — any API-Football error ---
+            logger.warning(f"[api-football] Call failed for {h} vs {a}: {e}. Continuing with FootyStats data only.")
+            context.setdefault("absences", "Dados de lesoes nao disponiveis")
+            context.setdefault("live_status", "Status nao disponivel")
+
         analysis = await service.analyze_match(
-            home_team=match_data["home_team"],
-            away_team=match_data["away_team"],
+            home_team=h,
+            away_team=a,
             league=match_data["league"],
             match_stats=match_data["stats"],
             odds=match_data["odds"],
-            context=match_data.get("context") if include_context else None,
+            context=context,
         )
+
+        # Attach live data to the response for frontend consumption
+        analysis.match_live_data = api_football_data.get("live_data")
 
         return analysis
     except ValueError as e:
@@ -425,6 +511,8 @@ def _match_to_ai_input(m: dict) -> dict:
         "homeTeam": home_name,
         "awayTeam": away_name,
         "league": m.get("leagueName", ""),
+        "datetime": m.get("datetime", ""),  # needed by API-Football bridge
+        "season": m.get("season"),
         "stats": stats,
         "odds": m.get("odds", {}),
         "context": context,
@@ -759,12 +847,25 @@ async def batch_audit(
             else:
                 result_1x2 = "2"
 
+            # Extract total corners for corner market evaluation
+            home_corners = stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
+            away_corners = stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
+            try:
+                home_corners = int(home_corners) if home_corners and int(home_corners) >= 0 else 0
+                away_corners = int(away_corners) if away_corners and int(away_corners) >= 0 else 0
+                total_corners = home_corners + away_corners
+            except (ValueError, TypeError):
+                total_corners = 0
+            if any("ESCANTEIO" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
+                logger.info(f"[batch-audit] {home} vs {away}: corners home={home_corners} away={away_corners} total={total_corners}")
+
             actual_result = {
                 "home_goals": home_goals,
                 "away_goals": away_goals,
                 "total_goals": total_goals,
                 "btts": btts,
                 "result_1x2": result_1x2,
+                "total_corners": total_corners,
             }
 
             # Evaluate picks
