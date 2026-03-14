@@ -346,6 +346,51 @@ def _enrich_with_api_football(
             else:
                 logger.warning(f"[fixtures] {lid}: API-Football enriched 0/{len(records)} records — name matching failed for all")
 
+            # CASE 1b: Inject live/finished matches from API-Football that
+            # FootyStats dropped (e.g. match moved off page-1, status changed
+            # to "complete" mid-game, or timezone edge case filtered it out).
+            matched_af_ids: set = set()
+            for rec in records:
+                af_id = rec.get("apiFootballFixtureId")
+                if af_id:
+                    matched_af_ids.add(af_id)
+
+            injected = 0
+            for fx in af_fixtures:
+                fx_id = fx.get("fixture", {}).get("id")
+                if fx_id in matched_af_ids:
+                    continue
+                # Only inject live or finished matches — don't duplicate scheduled ones
+                status_short = fx.get("fixture", {}).get("status", {}).get("short", "NS")
+                live_statuses = {"1H", "HT", "2H", "ET", "BT", "P", "LIVE", "SUSP", "INT"}
+                finished_statuses = {"FT", "AET", "PEN"}
+                if status_short not in live_statuses and status_short not in finished_statuses:
+                    continue
+                # Check this fixture wasn't already matched by team name
+                fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
+                fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
+                already_present = False
+                for rec in records:
+                    _ht = rec.get("homeTeam")
+                    _at = rec.get("awayTeam")
+                    rh = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
+                    ra = _at.get("name", "") if isinstance(_at, dict) else str(_at or "")
+                    if _afc._team_names_match(rh, fx_home) and _afc._team_names_match(ra, fx_away):
+                        already_present = True
+                        break
+                if already_present:
+                    continue
+                # Convert to record and inject
+                new_records = _afc.fixtures_to_records([fx], lid)
+                if new_records:
+                    records.extend(new_records)
+                    injected += 1
+            if injected:
+                logger.info(
+                    f"[fixtures] {lid}: injected {injected} live/finished matches "
+                    f"from API-Football that FootyStats dropped"
+                )
+
         except Exception as e:
             logger.warning(f"[fixtures] {lid}: API-Football enrichment failed: {e}", exc_info=True)
 
@@ -775,6 +820,55 @@ def live_scores() -> Dict[str, Any]:
         if not data.get("success"):
             return {"matches": [], "error": "Falha ao buscar placares"}
         raw_list = data.get("data", [])
+
+        # ── API-Football as PRIMARY source when FootyStats is empty ─────
+        # FootyStats todays-matches often returns [] for certain leagues.
+        # API-Football get_live_fixtures() is the reliable source for live
+        # scores, so use it directly when FootyStats has no data.
+        if not raw_list and _afc.is_configured:
+            try:
+                af_live = _afc.get_live_fixtures()
+                if af_live:
+                    af_result = []
+                    period_map = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
+                    for fx in af_live:
+                        ld = _afc.extract_live_data(fx)
+                        teams = fx.get("teams", {})
+                        home_name = teams.get("home", {}).get("name", "")
+                        away_name = teams.get("away", {}).get("name", "")
+                        if not home_name or not away_name:
+                            continue
+                        fx_status = ld["status"]
+                        live_statuses = {"1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"}
+                        finished_statuses = {"FT", "AET", "PEN"}
+                        if fx_status not in live_statuses and fx_status not in finished_statuses:
+                            continue
+                        status = "live" if fx_status in live_statuses else "finished"
+                        score: Dict[str, Any] = {
+                            "home": ld["goals_home"] if ld["goals_home"] is not None else 0,
+                            "away": ld["goals_away"] if ld["goals_away"] is not None else 0,
+                        }
+                        if ld["halftime_home"] is not None:
+                            score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
+                        af_result.append({
+                            "id": ld["fixture_id"],
+                            "homeTeam": home_name,
+                            "awayTeam": away_name,
+                            "status": status,
+                            "score": score,
+                            "period": period_map.get(fx_status),
+                            "minute": ld["minute"],
+                            "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                        })
+                    if af_result:
+                        logger.info(
+                            f"[live-scores] FootyStats empty → API-Football primary: "
+                            f"{len(af_result)} matches"
+                        )
+                        return {"matches": af_result, "nextUpdate": 30}
+            except Exception as _af_err:
+                logger.warning(f"[live-scores] API-Football primary fallback failed: {_af_err}")
+
         if not raw_list:
             return {"matches": []}
         now_ts = int(_time.time())

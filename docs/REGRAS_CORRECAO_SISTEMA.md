@@ -476,4 +476,212 @@ Jogos ao vivo da Saudi Professional League (Al Hazm vs Al Kholood, Al Najma vs D
 
 ---
 
+## 008 — Placar "- : -" em jogos ao vivo + polling retorna vazio
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta (placar ao vivo nunca atualiza — mostra "- : -" ou 0-0 permanente)
+**Status:** Corrigido
+**Relacionado:** #005, #007
+
+### Problema identificado
+
+Jogo Atlético Nacional vs Llaneros (Colômbia, Liga DIMAYOR) mostrava placar `- : -` no dashboard apesar de estar ao vivo em 1-0 (gol de M. Uribe aos 2'). Mesmo após o intervalo (HT), o placar não atualizava. A análise AI (Mistral) corretamente mencionava "Placar atual (1-0)" no painel de análise, mas o card do jogo na lista permanecia com `- : -`.
+
+### Causa raiz (3 falhas independentes e acumulativas)
+
+**BUG 1 — FootyStats retorna `null` para goal counts de jogos recém-começados:**
+O endpoint `get_match_live_details(match_id)` do FootyStats retorna `homeGoalCount=null` e `homeGoals="[]"` (array vazio) nos primeiros minutos de um jogo ao vivo. O backend exigia `_fb_home is not None and _fb_away is not None` (linha 896 de `fixtures.py`) para aceitar o resultado — com ambos `None`, `_detail_ok` permanecia `False` e o backend emitia `score: None`. O frontend renderizava `None` como `"- : -"` (fallback em `MatchCard.tsx:212`).
+
+**Fluxo do bug:**
+```
+FootyStats /match/{id} → homeGoalCount=null, homeGoals="[]"
+→ _fb_h_vals = [] (lista vazia)
+→ _fb_home = None
+→ _detail_ok = False
+→ result.append({"score": None, ...})
+→ Frontend: data.score ? "X - Y" : "- : -"  → "- : -"
+```
+
+**BUG 2 — Endpoint `/live-scores` retorna `{"matches": []}` permanentemente:**
+O endpoint `/live-scores` do backend usa `footstats.get_live_scores()` que chama `todays-matches` **sem filtro de liga nem `season_id`**. Para certas ligas (incluindo Colômbia Primera A), o FootyStats retorna `{"success": true, "data": []}` (lista vazia) neste endpoint global, apesar de retornar dados corretamente via `league-matches` com `season_id`. Resultado: o polling a cada 30s via `/api/matches/live` nunca recebia dados para sobrepor ao placar.
+
+**Evidência direta (produção):**
+```
+GET /api/matches/live → {"matches":[],"nextUpdate":60}     ← VAZIO
+GET /api/matches/fetch?leagues=colombia-primera-a → Atlético Nacional vs Llaneros, score: {home:0, away:0}  ← TEM DADOS
+```
+
+**BUG 3 — Rota `/fixtures` também retorna score 0-0 (mesmo problema do BUG 1):**
+A rota `/fixtures` (carga inicial) faz o mesmo fetch de `get_match_live_details()` e sofria do mesmo bug: goal counts `null` → descartados → `_has_goals_fb = False` → `match_score` nunca era definido para jogos ao vivo sem dados de gol. Além disso, `match_score` não era inicializado antes da verificação condicional (linha 646), arriscando `NameError`.
+
+### Correções aplicadas (5 camadas)
+
+#### Camada 1: API-Football como fonte PRIMÁRIA de live scores (`fixtures.py`)
+- Quando FootyStats `todays-matches` retorna vazio (`raw_list = []`), o endpoint `/live-scores` agora chama diretamente `_afc.get_live_fixtures()` (cache 1min)
+- Itera sobre todos os fixtures ao vivo da API-Football, extrai score real via `extract_live_data()`, e retorna como resultado principal
+- Mapeia period codes (`1H→1T`, `2H→2T`, `BT→HT`, `P→PEN`) e status (`live`/`finished`)
+- Log explícito: `[live-scores] FootyStats empty → API-Football primary: N matches`
+- **Resultado**: placar 1-0 do Atlético Nacional vs Llaneros agora aparece diretamente da API-Football
+
+#### Camada 2: Default 0-0 para jogos ao vivo sem goal data — `/live-scores` (`fixtures.py`)
+- Quando `get_match_live_details()` retorna `success=true` mas goals são `null`, agora assume `_fb_home = 0` e `_fb_away = 0` (tratamento: "jogo existe mas ainda sem gols registrados")
+- Quando `_detail_ok = False` (endpoint falha ou retorna dados insuficientes), agora emite `score: {"home": 0, "away": 0}` em vez de `score: None`
+- O API-Football enrichment subsequente sobrescreve com o placar real quando disponível
+
+#### Camada 3: Default 0-0 para jogos ao vivo sem goal data — `/fixtures` (`fixtures.py`)
+- Mesmo tratamento de null → 0 para `_fb_h_final` e `_fb_a_final` no fetch de match detail
+- `match_score` agora é inicializado com `{"home": 0, "away": 0}` para jogos `live` antes da verificação condicional
+- Elimina risco de `NameError` e garante que jogos ao vivo sempre têm score renderizável
+
+#### Camada 4: Fallback do polling via `/fixtures` no frontend (`route.ts`)
+- Quando `/live-scores` retorna vazio (0 matches), a rota `/api/matches/live` agora faz **fallback** chamando `/fixtures?leagues=X&date=today` para as ligas com jogos ao vivo
+- Filtra apenas records com `status === "live" || status === "finished"` do resultado
+- Dupla defesa: mesmo que o Lambda não seja redeployado, o frontend tem fallback independente
+
+#### Camada 5: Dashboard envia ligas ao vivo como parâmetro (`page.tsx`)
+- Novo `useRef<string>` (`liveLeagueIdsRef`) rastreia IDs das ligas com jogos ao vivo
+- Atualizado via `useEffect` sem re-criar o callback `fetchLiveScores`
+- O polling passa `?leagues=colombia-primera-a,...` na URL do fetch para ativar o fallback
+
+#### Camada 6: Logging diagnóstico (`route.ts`)
+- Log quando `PY_BACKEND_URL` não está configurado (antes retornava silenciosamente vazio)
+- Log do count de matches e latência quando o endpoint retorna OK
+- Permite diagnóstico remoto via Vercel Runtime Logs
+
+### Fluxo corrigido
+
+```
+1. Carga inicial: GET /api/matches/fetch?leagues=colombia-primera-a
+   ├── Backend /fixtures → FootyStats league-matches + match-detail
+   ├── homeGoalCount=null → default 0                              ← FIX Camada 3
+   ├── match_score = {home: 0, away: 0}                            ← FIX Camada 3
+   └── Frontend renderiza "0 - 0" (não mais "- : -")
+
+2. Polling (cada 30s): GET /api/matches/live?leagues=colombia-primera-a
+   ├── Backend /live-scores:
+   │   ├── FootyStats todays-matches → {"data": []}               ← VAZIO
+   │   ├── API-Football get_live_fixtures() → fixtures ao vivo     ← FIX Camada 1
+   │   ├── extract_live_data() → score 1-0, period "1T", minute 4
+   │   └── Retorna [{homeTeam: "Atletico Nacional", score: {home:1, away:0}, ...}]
+   ├── Frontend overlay: match por nome normalizado
+   └── Atualiza "0 - 0" → "1 - 0"
+```
+
+### Diferença entre "- : -" e "0 - 0"
+
+| Situação | Antes | Depois |
+|---|---|---|
+| Jogo live, FootyStats retorna null goals | `- : -` (score=undefined) | `0 - 0` (score={home:0,away:0}) |
+| Jogo live, FootyStats retorna 0-0 real | `0 - 0` | `0 - 0` |
+| Polling, /live-scores vazio | Nunca atualiza | Fallback via /fixtures atualiza |
+| Polling, API-Football match ok | Score real (ex: 1-0) | Score real (ex: 1-0) |
+
+### Lição aprendida
+
+1. **Endpoints "globais" vs "filtrados" podem ter comportamentos diferentes** — O FootyStats `todays-matches` (sem filtro) retorna vazio para certas ligas, mas `league-matches` (com `season_id`) funciona. Nunca assuma que dois endpoints da mesma API retornam os mesmos dados. Quando um falha, o outro pode ser fallback.
+
+2. **`null` ≠ `0` ≠ "sem dados"** — O FootyStats retorna `homeGoalCount=null` para jogos ao vivo recém-começados, não `0`. O sistema tratava `null` como "dados indisponíveis" e descartava, quando na verdade significava "0 gols até agora". A semântica correta é: se a API confirma que o jogo existe (`success=true`), goals `null` deve ser tratado como `0`.
+
+3. **Defesa em profundidade inclui o polling** — Corrigir o score na carga inicial não basta se o mecanismo de polling (que deveria atualizar a cada 30s) está permanentemente vazio. Cada camada da cadeia de atualização (carga → polling → overlay → render) deve ter fallback independente.
+
+---
+
+## 009 — Jogo ao vivo excluído da lista de jogos quando FootyStats o remove
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogo da Liga Colombia DIMAYOR (Atlético Nacional 2-0 Llaneros, aos 79') desapareceu completamente da lista de jogos no dashboard. O endpoint `/fixtures?leagues=colombia-primera-a` retornava apenas 4 jogos futuros, omitindo o jogo em andamento.
+
+### Causa raiz
+
+O FootyStats pode remover jogos ao vivo da resposta de `league-matches` por vários motivos:
+- O jogo foi movido para fora da página 1 (paginação por data)
+- O status mudou para "complete" enquanto o jogo ainda estava em andamento
+- Edge case de timezone (kickoff 01:30 UTC = 22:30 BRT do dia anterior) fazendo o date guard filtrar o jogo
+
+Quando isso ocorre, a função `_enrich_with_api_football()` no CASE 1 (records existem) apenas enriquecia os records existentes via overlay. Jogos que a API-Football tinha mas o FootyStats não retornava eram **silenciosamente ignorados** — o loop de matching simplesmente não encontrava um record correspondente e seguia em frente.
+
+O CASE 2 (usar API-Football como fallback completo) só era ativado quando `records` estava vazio E `found_via_api = False`. Como o FootyStats retornava 4 jogos futuros, `records` não estava vazio, e o CASE 2 nunca era ativado.
+
+### Correção aplicada (1 camada)
+
+**CASE 1b — Injeção de jogos ao vivo/finalizados da API-Football que o FootyStats removeu:**
+
+Após o loop de enrichment do CASE 1, o código agora:
+1. Identifica quais fixtures da API-Football **não** foram matched a nenhum record existente (nem por ID nem por nome de time)
+2. Filtra apenas jogos com status live (`1H`, `HT`, `2H`, `ET`, `BT`, `P`, `LIVE`, `SUSP`, `INT`) ou finished (`FT`, `AET`, `PEN`)
+3. Converte esses fixtures para records via `fixtures_to_records()` e os adiciona à lista
+
+Isso garante que jogos ao vivo nunca desapareçam da lista, mesmo quando o FootyStats os remove.
+
+### Fluxo corrigido
+
+```
+FootyStats league-matches → 4 jogos futuros (falta o jogo ao vivo)
+                    ↓
+_enrich_with_api_football() CASE 1:
+  - Enriquece os 4 records existentes com dados da API-Football
+  - CASE 1b (NOVO): API-Football tem 5 fixtures, 4 matched → 1 unmatched
+    - O unmatched é Atlético Nacional vs Llaneros (status=2H, live)
+    - Converte para record e injeta na lista
+                    ↓
+Resultado: 5 jogos retornados (4 futuros + 1 ao vivo)
+```
+
+### Lição aprendida
+
+1. **Enrichment ≠ Fallback completo** — Enriquecer records existentes não é suficiente quando a fonte primária remove dados. O sistema precisa de lógica de "injeção" que adicione dados que a fonte secundária tem mas a primária perdeu.
+
+2. **Fontes de dados não são monotônicas** — Não se pode assumir que um jogo que apareceu na lista vai continuar aparecendo. APIs externas podem remover jogos por paginação, mudança de status, ou limites de rate. O sistema deve compensar essas remoções usando fontes alternativas.
+
+3. **O CASE 2 (fallback total) tem uma condição muito restritiva** — Só ativa quando `records` está completamente vazio. Isso significa que se o FootyStats retorna pelo menos 1 jogo (mesmo que irrelevante), o CASE 2 nunca roda. A solução correta é o CASE 1b, que opera dentro do CASE 1 para adicionar jogos faltantes.
+
+---
+
+## 010 — Status "started" do FootyStats não reconhecido como "live"
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/services/util_service.py`
+**Severidade:** Crítica
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogo Atlético Nacional 2-0 Llaneros (87') com status `"started"` no FootyStats era tratado como `"scheduled"` pelo sistema. Isso causava:
+1. Jogo ao vivo não aparecia como live no dashboard
+2. Score não era exibido (jogos scheduled não mostram placar)
+3. Jogo podia ser filtrado por guards de data/status
+
+### Causa raiz
+
+A função `status_map()` em `util_service.py` reconhecia `"live"`, `"inplay"`, `"playing"` e `"halftime"` como status live, mas **não incluía `"started"`**. O FootyStats usa `"started"` como status para jogos em andamento. Como `"started"` não estava no mapeamento, caía no `return "scheduled"` default.
+
+### Correção aplicada (1 camada)
+
+Adicionado `"started"` à lista de status reconhecidos como `"live"` em `status_map()`:
+
+```python
+# Antes:
+if sl in ("live", "inplay", "playing", "halftime"):
+    return "live"
+
+# Depois:
+if sl in ("live", "inplay", "playing", "halftime", "started"):
+    return "live"
+```
+
+### Lição aprendida
+
+1. **Sempre verificar os valores reais da API** — Em vez de assumir quais strings de status a API usa, verificar diretamente nos dados retornados. O FootyStats documenta "incomplete"/"complete" mas usa variações como "started" que não estão na documentação oficial.
+
+2. **Mapeamentos de status devem ser exaustivos** — Quando a API adiciona novos valores de status, o fallback `return "scheduled"` silenciosamente descarta jogos ao vivo. É mais seguro logar um warning quando um status desconhecido é encontrado.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
