@@ -822,4 +822,107 @@ def get_odds(self, fixture_id: int, ttl_minutes: int = 30) -> List[Dict]:
 
 ---
 
+## 012 — Apostas em Sistema (System Bets) na Gestao de Banca
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `frontend/next/src/lib/kelly.ts`, `frontend/next/src/components/BankrollCalculator.tsx`, `frontend/next/package.json`
+**Severidade:** Feature (nova funcionalidade)
+**Status:** Implementado
+**Versao:** 3.7.0
+
+### Contexto
+
+Quando o filtro de EV positivo aprovava multiplos jogos no dia, o sistema apenas listava jogos soltos sem sugerir agrupamentos inteligentes para mitigar riscos. Usuarios precisavam de orientacao sobre como distribuir a banca entre combinacoes de apostas.
+
+### Funcionalidades implementadas (5 regras de negocio)
+
+#### Regra 1 — Calculadora de Sistema Integrada
+
+- Botao "Montar Aposta em Sistema" aparece quando 3+ jogos possuem EV positivo
+- Mostra visualmente as linhas de aposta (combinacoes menores) geradas
+- Secao "Cenarios de Retorno" calcula ganhos parciais para cada quantidade de acertos
+- Exemplo: "Se acertar 2 de 3 jogos, retorno estimado R$ X; se acertar os 3, retorno Y"
+- Cada cenario indica com icone (check verde / X vermelho) se cobre o investimento total
+
+**Implementacao:** Funcao `buildScenarios()` em `kelly.ts` itera de 0 a N hits, simulando quais combinacoes pagam em cada cenario. Tipo `SystemBetScenario` com campos `hitsRequired`, `winningCombos`, `estimatedReturn`, `netProfit`, `coversInvestment`.
+
+#### Regra 2 — Distribuicao Automatica de Stake (Gestao de Risco)
+
+- Cruza o Criterio de Kelly Fracionado com a logica de distribuicao de linhas
+- O total ideal calculado por Kelly e dividido igualmente entre todas as linhas
+- Exemplo: Kelly indica R$ 30,00 para sistema "2 de 3" (3 linhas) → Stake por linha: R$ 10,00
+- Card explicativo na UI mostra a logica ao usuario
+- Impede que o usuario invista o valor total de Kelly em cada linha separadamente
+
+**Implementacao:** Campo `stakePerLine` em `SystemBetSuggestion`. Formula: `totalSystemStake / combos.length`. Cada combo recebe stake igual via loop.
+
+#### Regra 3 — Recomendacao Dinamica de Nivel
+
+- Algoritmo avalia quantidade de jogos +EV diarios e seleciona o formato automaticamente
+- 3 jogos → **Trixie** (3 duplas + 1 tripla = 4 linhas) — protecao de banca padrao
+- 5+ jogos → **Sistema 3/5** (10 combinacoes duplas) — para dias de alto volume
+- Formato "2de3" (3 linhas apenas duplas) disponivel como alternativa conservadora
+
+**Implementacao:** Funcao `pickSystemFormat()` em `kelly.ts` com array `SYSTEM_FORMATS` contendo definicoes de cada formato (`selectionCount`, `minK`, `maxK`).
+
+#### Regra 4 — Banker (Ancoragem Algoritmica — Premium)
+
+- Algoritmo identifica o jogo com maior score composto: `(probabilidade) × (1 + EV) × (1 + edge)`
+- Marcado com badge dourado "Crown" e etiqueta "Premium" na UI
+- Texto explicativo: "O Banker esta presente em todas as combinacoes e aumenta o retorno potencial, barateando o custo das multiplas linhas — mas a aposta inteira e perdida se o Banker falhar"
+
+**Implementacao:** Funcao `selectBanker()` em `kelly.ts`. Tipo `BankerSelection` com campos `allocation`, `score`, `reason`. Integrado ao `SystemBetCard` com destaque visual diferenciado (cor dourada #ffd700).
+
+#### Regra 5 — Filtro de Limite de Rentabilidade (Break-even)
+
+- Antes de recomendar um sistema, calcula se o acerto minimo cobre o investimento total
+- Para 3 selecoes: verifica se 2 de 3 acertos cobre o stake total das 4 linhas
+- Para 5 selecoes: verifica se 3 de 5 acertos cobre o stake total das 10 linhas
+- Se odds medias forem baixas (ex: 1.50) e nao garantirem autofinanciamento: sistema marcado como "Nao recomendado" com alerta vermelho, e recomenda apostas simples individuais
+- Badge "Recomendado" (verde) aparece apenas quando o filtro aprova
+
+**Implementacao:** Funcao `checkBreakEven()` em `kelly.ts`. Campos `passesBreakEven`, `breakEvenReason`, `recommended` em `SystemBetSuggestion`. UI adapta cores e mensagens conforme status.
+
+### Correcao adicional (build fix)
+
+- **Erro de build Vercel:** Prop `title` diretamente em icone `<ShieldAlert>` do lucide-react causava erro TS2322. Movido para wrapper `<span title="...">`.
+- **Versao:** 3.6.0 → 3.6.1 (patch) → 3.7.0 (feature)
+
+### Tipos novos adicionados
+
+| Tipo | Descricao |
+|---|---|
+| `SystemBetScenario` | Cenario de retorno para N acertos: `hitsRequired`, `winningCombos`, `estimatedReturn`, `netProfit`, `coversInvestment` |
+| `BankerSelection` | Selecao de ancora: `allocation`, `score`, `reason` |
+
+### Campos novos em `SystemBetSuggestion`
+
+| Campo | Tipo | Descricao |
+|---|---|---|
+| `headline` | `string` | Texto hero explicativo para o card principal |
+| `stakePerLine` | `number` | Valor por linha (total / N combinacoes) |
+| `scenarios` | `SystemBetScenario[]` | Breakdown de retornos para cada qtd de acertos |
+| `banker` | `BankerSelection \| null` | Jogo ancora selecionado algoritmicamente |
+| `passesBreakEven` | `boolean` | Se o sistema passa no filtro de rentabilidade |
+| `breakEvenReason` | `string` | Motivo da rejeicao pelo filtro (se aplicavel) |
+| `recommended` | `boolean` | Se o sistema e recomendado (passa todos os filtros) |
+
+### Formatos de sistema suportados
+
+| Formato | `SystemBetFormat` | Selecoes | Linhas | Descricao |
+|---|---|---|---|---|
+| Sistema 2/3 | `"2de3"` | 3 | 3 | Apenas duplas — lucra com 2 de 3 acertos |
+| Trixie | `"trixie"` | 3 | 4 | 3 duplas + 1 tripla |
+| Sistema 3/5 | `"3de5"` | 5 | 10 | 10 duplas — lucra com 3 de 5 acertos |
+
+### Licao aprendida
+
+1. **Dividir stake total por linhas e essencial** — Sem essa regra, o usuario tenderia a aplicar o valor integral de Kelly em cada combinacao, multiplicando o risco real por N linhas e destruindo a gestao de banca.
+
+2. **Break-even filter protege contra falsa sensacao de seguranca** — Apostas em sistema com odds baixas (< 1.60) parecem seguras mas frequentemente nao cobrem o custo das multiplas linhas quando o cenario minimo ocorre.
+
+3. **Banker e uma faca de dois gumes** — Aumenta retorno potencial e reduz custo, mas concentra risco. A UI deve sempre comunicar claramente que perder o Banker perde tudo.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
