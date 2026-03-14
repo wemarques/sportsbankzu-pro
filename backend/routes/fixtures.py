@@ -775,6 +775,55 @@ def live_scores() -> Dict[str, Any]:
         if not data.get("success"):
             return {"matches": [], "error": "Falha ao buscar placares"}
         raw_list = data.get("data", [])
+
+        # ── API-Football as PRIMARY source when FootyStats is empty ─────
+        # FootyStats todays-matches often returns [] for certain leagues.
+        # API-Football get_live_fixtures() is the reliable source for live
+        # scores, so use it directly when FootyStats has no data.
+        if not raw_list and _afc.is_configured:
+            try:
+                af_live = _afc.get_live_fixtures()
+                if af_live:
+                    af_result = []
+                    period_map = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
+                    for fx in af_live:
+                        ld = _afc.extract_live_data(fx)
+                        teams = fx.get("teams", {})
+                        home_name = teams.get("home", {}).get("name", "")
+                        away_name = teams.get("away", {}).get("name", "")
+                        if not home_name or not away_name:
+                            continue
+                        fx_status = ld["status"]
+                        live_statuses = {"1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"}
+                        finished_statuses = {"FT", "AET", "PEN"}
+                        if fx_status not in live_statuses and fx_status not in finished_statuses:
+                            continue
+                        status = "live" if fx_status in live_statuses else "finished"
+                        score: Dict[str, Any] = {
+                            "home": ld["goals_home"] if ld["goals_home"] is not None else 0,
+                            "away": ld["goals_away"] if ld["goals_away"] is not None else 0,
+                        }
+                        if ld["halftime_home"] is not None:
+                            score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
+                        af_result.append({
+                            "id": ld["fixture_id"],
+                            "homeTeam": home_name,
+                            "awayTeam": away_name,
+                            "status": status,
+                            "score": score,
+                            "period": period_map.get(fx_status),
+                            "minute": ld["minute"],
+                            "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                        })
+                    if af_result:
+                        logger.info(
+                            f"[live-scores] FootyStats empty → API-Football primary: "
+                            f"{len(af_result)} matches"
+                        )
+                        return {"matches": af_result, "nextUpdate": 30}
+            except Exception as _af_err:
+                logger.warning(f"[live-scores] API-Football primary fallback failed: {_af_err}")
+
         if not raw_list:
             return {"matches": []}
         now_ts = int(_time.time())

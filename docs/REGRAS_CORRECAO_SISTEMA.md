@@ -517,28 +517,34 @@ A rota `/fixtures` (carga inicial) faz o mesmo fetch de `get_match_live_details(
 
 ### Correções aplicadas (5 camadas)
 
-#### Camada 1: Default 0-0 para jogos ao vivo sem goal data — `/live-scores` (`fixtures.py`)
+#### Camada 1: API-Football como fonte PRIMÁRIA de live scores (`fixtures.py`)
+- Quando FootyStats `todays-matches` retorna vazio (`raw_list = []`), o endpoint `/live-scores` agora chama diretamente `_afc.get_live_fixtures()` (cache 1min)
+- Itera sobre todos os fixtures ao vivo da API-Football, extrai score real via `extract_live_data()`, e retorna como resultado principal
+- Mapeia period codes (`1H→1T`, `2H→2T`, `BT→HT`, `P→PEN`) e status (`live`/`finished`)
+- Log explícito: `[live-scores] FootyStats empty → API-Football primary: N matches`
+- **Resultado**: placar 1-0 do Atlético Nacional vs Llaneros agora aparece diretamente da API-Football
+
+#### Camada 2: Default 0-0 para jogos ao vivo sem goal data — `/live-scores` (`fixtures.py`)
 - Quando `get_match_live_details()` retorna `success=true` mas goals são `null`, agora assume `_fb_home = 0` e `_fb_away = 0` (tratamento: "jogo existe mas ainda sem gols registrados")
 - Quando `_detail_ok = False` (endpoint falha ou retorna dados insuficientes), agora emite `score: {"home": 0, "away": 0}` em vez de `score: None`
 - O API-Football enrichment subsequente sobrescreve com o placar real quando disponível
 
-#### Camada 2: Default 0-0 para jogos ao vivo sem goal data — `/fixtures` (`fixtures.py`)
+#### Camada 3: Default 0-0 para jogos ao vivo sem goal data — `/fixtures` (`fixtures.py`)
 - Mesmo tratamento de null → 0 para `_fb_h_final` e `_fb_a_final` no fetch de match detail
 - `match_score` agora é inicializado com `{"home": 0, "away": 0}` para jogos `live` antes da verificação condicional
 - Elimina risco de `NameError` e garante que jogos ao vivo sempre têm score renderizável
 
-#### Camada 3: Fallback do polling via `/fixtures` (`route.ts`)
+#### Camada 4: Fallback do polling via `/fixtures` no frontend (`route.ts`)
 - Quando `/live-scores` retorna vazio (0 matches), a rota `/api/matches/live` agora faz **fallback** chamando `/fixtures?leagues=X&date=today` para as ligas com jogos ao vivo
 - Filtra apenas records com `status === "live" || status === "finished"` do resultado
-- Mapeia para o formato esperado pelo overlay (id, homeTeam, awayTeam, status, score, period, minute)
-- Log explícito: `[live-scores] Fallback via /fixtures — N live/finished matches`
+- Dupla defesa: mesmo que o Lambda não seja redeployado, o frontend tem fallback independente
 
-#### Camada 4: Dashboard envia ligas ao vivo como parâmetro (`page.tsx`)
+#### Camada 5: Dashboard envia ligas ao vivo como parâmetro (`page.tsx`)
 - Novo `useRef<string>` (`liveLeagueIdsRef`) rastreia IDs das ligas com jogos ao vivo
 - Atualizado via `useEffect` sem re-criar o callback `fetchLiveScores`
-- O polling passa `?leagues=colombia-primera-a,...` na URL do fetch para ativar o fallback na API route
+- O polling passa `?leagues=colombia-primera-a,...` na URL do fetch para ativar o fallback
 
-#### Camada 5: Logging diagnóstico (`route.ts`)
+#### Camada 6: Logging diagnóstico (`route.ts`)
 - Log quando `PY_BACKEND_URL` não está configurado (antes retornava silenciosamente vazio)
 - Log do count de matches e latência quando o endpoint retorna OK
 - Permite diagnóstico remoto via Vercel Runtime Logs
@@ -548,17 +554,18 @@ A rota `/fixtures` (carga inicial) faz o mesmo fetch de `get_match_live_details(
 ```
 1. Carga inicial: GET /api/matches/fetch?leagues=colombia-primera-a
    ├── Backend /fixtures → FootyStats league-matches + match-detail
-   ├── homeGoalCount=null → default 0                              ← FIX Camada 2
-   ├── match_score = {home: 0, away: 0}                            ← FIX Camada 2
+   ├── homeGoalCount=null → default 0                              ← FIX Camada 3
+   ├── match_score = {home: 0, away: 0}                            ← FIX Camada 3
    └── Frontend renderiza "0 - 0" (não mais "- : -")
 
 2. Polling (cada 30s): GET /api/matches/live?leagues=colombia-primera-a
-   ├── Tenta /live-scores → {"matches": []}                        ← FootyStats vazio
-   ├── Fallback: /fixtures?leagues=colombia-primera-a&date=today   ← FIX Camada 3
-   │   ├── match-detail agora pode ter score real (ex: 1-0)
-   │   └── API-Football enrichment → score 1-0 overlay
-   ├── Retorna [{...score: {home:1, away:0}, period:"1T", minute:4...}]
-   └── Frontend overlay atualiza "0 - 0" → "1 - 0"                ← FIX Camada 4
+   ├── Backend /live-scores:
+   │   ├── FootyStats todays-matches → {"data": []}               ← VAZIO
+   │   ├── API-Football get_live_fixtures() → fixtures ao vivo     ← FIX Camada 1
+   │   ├── extract_live_data() → score 1-0, period "1T", minute 4
+   │   └── Retorna [{homeTeam: "Atletico Nacional", score: {home:1, away:0}, ...}]
+   ├── Frontend overlay: match por nome normalizado
+   └── Atualiza "0 - 0" → "1 - 0"
 ```
 
 ### Diferença entre "- : -" e "0 - 0"
