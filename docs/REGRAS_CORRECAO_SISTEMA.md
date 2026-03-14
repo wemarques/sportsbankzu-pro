@@ -684,4 +684,142 @@ if sl in ("live", "inplay", "playing", "halftime", "started"):
 
 ---
 
+## 011 — Conformidade com documentação oficial API-Football (rate limit, timezone, paginação)
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/services/api_football_client.py`
+**Severidade:** Média (prevenção de bugs futuros e otimização de quota)
+**Status:** Implementado
+**Relacionado:** #003, #004, #007
+
+### Problema identificado
+
+Auditoria do `api_football_client.py` contra a documentação oficial "How to Get Started with API-Football" (março 2026) revelou 3 lacunas que podiam causar bugs silenciosos e desperdício de quota:
+
+1. **Rate limit não monitorado** — O response header `x-ratelimit-requests-remaining` (quota diária restante) nunca era lido. No plano Pro (7.500 req/dia), o sistema podia esgotar a quota sem aviso, causando falhas silenciosas em todos os endpoints da API-Football.
+
+2. **Parâmetro `timezone` ausente** — `get_fixtures_by_date()` não passava timezone à API. O padrão da API é UTC, mas o sistema calcula datas em BRT (UTC-3). Resultado: jogos com kickoff entre 21:00-23:59 BRT (00:00-02:59 UTC do dia seguinte) podiam ser classificados na data errada. **Exemplo real:** O jogo Atlético Nacional vs Llaneros (kickoff 01:30 UTC = 22:30 BRT) podia cair no dia errado dependendo de como a API interpretava o `date` parameter.
+
+3. **Paginação silenciosamente ignorada** — A API pagina em 10 results/página para `/odds` e 20/página para `/players`. O client lê apenas a primeira página via `data.get("response", [])` sem checar `paging.total`. Para fixtures com muitos bookmakers (ex: Premier League com 15+ bookmakers), odds de bookmakers a partir da página 2 eram silenciosamente descartadas.
+
+### Causa raiz
+
+A integração #003 implementou a infraestrutura correta (cache, retry, endpoints), mas não seguiu 3 recomendações explícitas da documentação oficial:
+- _"Build the habit of checking these headers, especially on the free plan"_ (rate limit)
+- _"Users in different countries see match kickoff times in their local time"_ (timezone)
+- _"Always check paging on your first call before assuming you got the full dataset"_ (paginação)
+
+### Correções aplicadas (3 camadas)
+
+#### Camada 1: Monitoramento de rate limit (`_get_sync()`)
+
+Após cada resposta bem-sucedida, o client agora lê o header `x-ratelimit-requests-remaining`:
+
+```python
+rl_remaining_day = resp.headers.get("x-ratelimit-requests-remaining")
+if rl_remaining_day is not None:
+    remaining = int(rl_remaining_day)
+    if remaining <= 10:
+        logger.warning(f"[api-football] Daily quota almost exhausted: {remaining} requests remaining")
+    elif remaining <= 50:
+        logger.info(f"[api-football] Daily quota: {remaining} requests remaining")
+```
+
+**Thresholds:**
+- ≤ 10 requests restantes → `WARNING` (alerta crítico nos logs)
+- ≤ 50 requests restantes → `INFO` (visibilidade para monitoramento)
+- \> 50 → silencioso (sem poluição de logs)
+
+#### Camada 2: Parâmetro `timezone` em `get_fixtures_by_date()`
+
+```python
+params: Dict[str, str] = {
+    "league": str(league_id),
+    "season": str(season),
+    "date": match_date or date.today().isoformat(),
+    "timezone": "America/Sao_Paulo",  # ← NOVO
+}
+```
+
+**Impacto:** A API-Football agora retorna timestamps convertidos para BRT. Jogos com kickoff 22:30 BRT são corretamente classificados no dia BRT, eliminando o edge case de timezone que contribuiu para o desaparecimento do jogo Colombia (#009).
+
+**Referência da documentação:** _"When you include it, all timestamps in the response are automatically converted to that timezone"_ — Os 425 valores válidos de timezone estão no endpoint `/timezone`.
+
+#### Camada 3: Suporte a paginação
+
+**3a. Warning genérico em `_get_sync()` para respostas paginadas não tratadas:**
+
+```python
+paging = data.get("paging", {})
+total_pages = paging.get("total", 1)
+if total_pages > 1 and current_page == 1 and "page" not in params:
+    logger.warning(
+        f"[api-football/{endpoint}] Response has {total_pages} pages "
+        f"but only page 1 fetched ({data.get('results', 0)} results)"
+    )
+```
+
+Isso garante que qualquer endpoint futuro com paginação não tratada será detectado imediatamente nos logs.
+
+**3b. Paginação completa em `get_odds()`:**
+
+```python
+def get_odds(self, fixture_id: int, ttl_minutes: int = 30) -> List[Dict]:
+    params = {"fixture": str(fixture_id)}
+    data = self._get_sync("odds", params, ttl_minutes=ttl_minutes)
+    results = data.get("response", [])
+
+    # Handle pagination (odds paginate at 10/page)
+    paging = data.get("paging", {})
+    total_pages = paging.get("total", 1)
+    if total_pages > 1:
+        for page in range(2, min(total_pages + 1, 6)):  # Cap at 5 pages
+            params["page"] = str(page)
+            page_data = self._get_sync("odds", params, ttl_minutes=ttl_minutes)
+            results.extend(page_data.get("response", []))
+
+    return results
+```
+
+**Cap de 5 páginas** para evitar loops infinitos ou desperdício de quota em casos anômalos.
+
+### Referência: Recomendações da documentação oficial vs implementação atual
+
+| Recomendação oficial | Status antes | Status depois |
+|---|---|---|
+| Monitorar `x-ratelimit-requests-remaining` | ❌ Não implementado | ✅ Warning ≤10, Info ≤50 |
+| Passar `timezone` para `/fixtures` | ❌ Ausente (default UTC) | ✅ `America/Sao_Paulo` |
+| Checar `paging.total` em todas as chamadas | ❌ Ignorado silenciosamente | ✅ Warning genérico + paginação em `/odds` |
+| Auth via `x-apisports-key` header | ✅ Correto desde #003 | ✅ Mantido |
+| Base URL `v3.football.api-sports.io` | ✅ Correto desde #003 | ✅ Mantido |
+| `live=all` para fixtures ao vivo | ✅ Correto desde #003 | ✅ Mantido |
+| 16 status codes mapeados | ✅ Completo desde #003 | ✅ Mantido |
+| Cache de logos/imagens (CDN rate limit) | ⚠️ Não aplicável (sem CDN próprio) | ⚠️ Mantido |
+| Polling 15s live, 1h standings | ✅ 30s live (conservador), 6h standings | ✅ Mantido |
+
+### Intervalos de polling recomendados (referência futura)
+
+| Tipo de dado | Frequência de atualização da API | Polling recomendado | Nosso polling atual |
+|---|---|---|---|
+| Live fixtures (scores) | 15 segundos | 15-60s | 30s ✅ |
+| Match statistics | 1 minuto | 1 minuto | Não implementado (futuro) |
+| Match events (gols/cartões) | 15 segundos | 15-60s | Não implementado (futuro) |
+| Standings | 1 hora | 1 hora | 6h cache ✅ |
+| Injuries | 4 horas | 1x/dia | 4h cache ✅ |
+| Odds (pré-match) | 3 horas | 3 horas | 30min cache ✅ |
+| Lineups | Pré-jogo (30-60min antes) | 10-15min antes | Sob demanda ✅ |
+| Reference data (leagues, teams) | Diário | 1x/dia ou startup | 6h cache ✅ |
+
+### Lição aprendida
+
+1. **Ler a documentação oficial da API antes de ir para produção** — A integração #003 foi construída a partir de exemplos e testes empíricos. Uma leitura detalhada da documentação teria evitado os 3 gaps desde o início. Documentação oficial > tentativa e erro.
+
+2. **Headers de resposta contêm informação operacional crítica** — Rate limit, quota restante, e IDs de paginação são enviados em headers, não no body. Ignorá-los é como dirigir sem olhar o painel de combustível.
+
+3. **Paginação silenciosa é a forma mais insidiosa de perda de dados** — Uma resposta com `paging.total: 3` e `results: 10` parece completa se você não checar o paging. Nenhum erro é lançado, nenhum warning aparece — os dados simplesmente não existem no resultado. Sempre validar `paging.total == 1` ou implementar loop de páginas.
+
+4. **Timezone afeta mais que exibição** — Não é apenas sobre mostrar horários locais. O parâmetro `timezone` muda quais fixtures são retornados para uma dada `date`, porque o mesmo momento UTC pode ser dia 13 ou dia 14 dependendo do timezone. Isso foi parte do bug #009 (jogo Colombia com kickoff 01:30 UTC).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -192,10 +192,36 @@ class APIFootballClient:
                 resp.raise_for_status()
                 data = resp.json()
 
+                # --- Rate limit monitoring (API-Football docs) ---
+                rl_remaining_day = resp.headers.get("x-ratelimit-requests-remaining")
+                rl_remaining_min = resp.headers.get("X-Ratelimit-Remaining",
+                                                    resp.headers.get("x-ratelimit-remaining"))
+                if rl_remaining_day is not None:
+                    try:
+                        remaining = int(rl_remaining_day)
+                        if remaining <= 10:
+                            logger.warning(
+                                f"[api-football] Daily quota almost exhausted: {remaining} requests remaining"
+                            )
+                        elif remaining <= 50:
+                            logger.info(f"[api-football] Daily quota: {remaining} requests remaining")
+                    except (ValueError, TypeError):
+                        pass
+
                 errors = data.get("errors")
                 if errors and ((isinstance(errors, dict) and errors) or (isinstance(errors, list) and errors)):
                     logger.error(f"[api-football/{endpoint}] API error: {errors}")
                     return data
+
+                # Warn if response is paginated and caller isn't handling it
+                paging = data.get("paging", {})
+                total_pages = paging.get("total", 1)
+                current_page = paging.get("current", 1)
+                if total_pages > 1 and current_page == 1 and "page" not in params:
+                    logger.warning(
+                        f"[api-football/{endpoint}] Response has {total_pages} pages but only page 1 fetched "
+                        f"({data.get('results', 0)} results on this page)"
+                    )
 
                 self._save_to_cache(cache_key, endpoint, params, data, ttl_minutes)
                 logger.info(f"[api-football/{endpoint}] OK ({elapsed_ms}ms, attempt {attempt})")
@@ -235,6 +261,7 @@ class APIFootballClient:
             "league": str(league_id),
             "season": str(season),
             "date": match_date or date.today().isoformat(),
+            "timezone": "America/Sao_Paulo",
         }
         data = self._get_sync("fixtures", params, ttl_minutes=ttl_minutes)
         return data.get("response", [])
@@ -520,13 +547,25 @@ class APIFootballClient:
     # ODDS (pre-match)
     # ==================================================================
     def get_odds(self, fixture_id: int, ttl_minutes: int = 30) -> List[Dict]:
-        """Fetch pre-match odds for a fixture.
+        """Fetch pre-match odds for a fixture (handles pagination).
 
         Returns bookmaker odds for multiple markets (1X2, O/U, BTTS, etc.).
+        API-Football paginates odds at 10 results per page.
         """
-        params = {"fixture": str(fixture_id)}
+        params: Dict[str, str] = {"fixture": str(fixture_id)}
         data = self._get_sync("odds", params, ttl_minutes=ttl_minutes)
-        return data.get("response", [])
+        results = data.get("response", [])
+
+        # Handle pagination (odds endpoint paginates at 10/page)
+        paging = data.get("paging", {})
+        total_pages = paging.get("total", 1)
+        if total_pages > 1:
+            for page in range(2, min(total_pages + 1, 6)):  # Cap at 5 pages
+                params["page"] = str(page)
+                page_data = self._get_sync("odds", params, ttl_minutes=ttl_minutes)
+                results.extend(page_data.get("response", []))
+
+        return results
 
     def extract_best_odds(self, odds_response: List[Dict]) -> Dict[str, Any]:
         """Extract best odds from the odds response into a flat dict.
