@@ -644,4 +644,44 @@ Resultado: 5 jogos retornados (4 futuros + 1 ao vivo)
 
 ---
 
+## 010 — Status "started" do FootyStats não reconhecido como "live"
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/services/util_service.py`
+**Severidade:** Crítica
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogo Atlético Nacional 2-0 Llaneros (87') com status `"started"` no FootyStats era tratado como `"scheduled"` pelo sistema. Isso causava:
+1. Jogo ao vivo não aparecia como live no dashboard
+2. Score não era exibido (jogos scheduled não mostram placar)
+3. Jogo podia ser filtrado por guards de data/status
+
+### Causa raiz
+
+A função `status_map()` em `util_service.py` reconhecia `"live"`, `"inplay"`, `"playing"` e `"halftime"` como status live, mas **não incluía `"started"`**. O FootyStats usa `"started"` como status para jogos em andamento. Como `"started"` não estava no mapeamento, caía no `return "scheduled"` default.
+
+### Correção aplicada (1 camada)
+
+Adicionado `"started"` à lista de status reconhecidos como `"live"` em `status_map()`:
+
+```python
+# Antes:
+if sl in ("live", "inplay", "playing", "halftime"):
+    return "live"
+
+# Depois:
+if sl in ("live", "inplay", "playing", "halftime", "started"):
+    return "live"
+```
+
+### Lição aprendida
+
+1. **Sempre verificar os valores reais da API** — Em vez de assumir quais strings de status a API usa, verificar diretamente nos dados retornados. O FootyStats documenta "incomplete"/"complete" mas usa variações como "started" que não estão na documentação oficial.
+
+2. **Mapeamentos de status devem ser exaustivos** — Quando a API adiciona novos valores de status, o fallback `return "scheduled"` silenciosamente descarta jogos ao vivo. É mais seguro logar um warning quando um status desconhecido é encontrado.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
