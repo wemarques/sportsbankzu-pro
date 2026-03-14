@@ -25,12 +25,20 @@ import {
   Clock,
   Shuffle,
   ShieldAlert,
+  Crown,
+  Ban,
+  CircleDollarSign,
+  BarChart3,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   type BetInput,
   type BetAllocation,
   type BankrollSettings,
   type SystemBetSuggestion,
+  type SystemBetScenario,
+  type BankerSelection,
   distributeBankroll,
   loadSettings,
   saveSettings,
@@ -928,18 +936,55 @@ function SectionHeader({
   );
 }
 
-/* ── System Bet Suggestion Card ── */
+/* ── System Bet Suggestion Card (Enhanced — 5 Rules) ── */
 function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
   const [expanded, setExpanded] = useState(false);
+  const [showCombos, setShowCombos] = useState(false);
+
+  // Color scheme based on recommendation status
+  const accent = suggestion.recommended ? "#ffaa44" : "#ff5555";
+  const accentBg = suggestion.recommended ? "rgba(255,170,68," : "rgba(255,85,85,";
 
   return (
     <div
       className="rounded-2xl border overflow-hidden"
       style={{
-        background: "linear-gradient(135deg, rgba(255,170,68,0.04), rgba(255,136,0,0.06))",
-        borderColor: "rgba(255,170,68,0.25)",
+        background: suggestion.recommended
+          ? "linear-gradient(135deg, rgba(255,170,68,0.04), rgba(255,136,0,0.06))"
+          : "linear-gradient(135deg, rgba(255,85,85,0.03), rgba(255,85,85,0.05))",
+        borderColor: `${accentBg}0.25)`,
       }}
     >
+      {/* ── Hero headline ── */}
+      {suggestion.recommended && (
+        <div
+          className="px-5 pt-4 pb-3"
+          style={{ borderBottom: `1px solid ${accentBg}0.1)` }}
+        >
+          <p className="text-[0.72rem] leading-relaxed text-[var(--color-text-secondary)]">
+            {suggestion.headline}
+          </p>
+        </div>
+      )}
+
+      {/* ── Not recommended warning ── */}
+      {!suggestion.recommended && (
+        <div
+          className="flex items-start gap-2.5 px-5 pt-4 pb-3"
+          style={{ borderBottom: "1px solid rgba(255,85,85,0.1)" }}
+        >
+          <Ban size={16} className="text-[#ff5555] shrink-0 mt-0.5" />
+          <div>
+            <div className="text-[0.72rem] font-bold text-[#ff5555] mb-1">
+              Sistema nao recomendado
+            </div>
+            <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-relaxed">
+              {suggestion.breakEvenReason}
+            </p>
+          </div>
+        </div>
+      )}
+
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full p-5 text-left"
@@ -948,9 +993,9 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
           <div className="flex items-center gap-2.5">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: "rgba(255,170,68,0.12)" }}
+              style={{ background: `${accentBg}0.12)` }}
             >
-              <Shuffle size={18} className="text-[#ffaa44]" />
+              <Shuffle size={18} style={{ color: accent }} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -959,10 +1004,18 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
                 </span>
                 <span
                   className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                  style={{ background: "rgba(255,170,68,0.15)", color: "#ffaa44" }}
+                  style={{ background: `${accentBg}0.15)`, color: accent }}
                 >
                   {suggestion.label}
                 </span>
+                {suggestion.recommended && (
+                  <span
+                    className="text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}
+                  >
+                    Recomendado
+                  </span>
+                )}
               </div>
               <p className="text-[0.65rem] text-[var(--color-text-muted)] mt-0.5">
                 {suggestion.description}
@@ -970,7 +1023,7 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-base font-black text-[#ffaa44] tabular-nums">
+            <div className="text-base font-black tabular-nums" style={{ color: accent }}>
               {formatCurrency(suggestion.totalStake)}
             </div>
             <div className="text-[0.55rem] text-[var(--color-text-muted)] uppercase">stake total</div>
@@ -989,10 +1042,18 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
           </div>
           <div className="text-center flex-1">
             <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
-              Combinacoes
+              Linhas
             </div>
             <div className="text-sm font-bold text-[var(--color-text-primary)]">
               {suggestion.totalCombinations}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Stake/Linha
+            </div>
+            <div className="text-sm font-bold tabular-nums" style={{ color: accent }}>
+              {formatCurrency(suggestion.stakePerLine)}
             </div>
           </div>
           <div className="text-center flex-1">
@@ -1010,120 +1071,56 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
       </button>
 
       {expanded && (
-        <div className="px-5 pb-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Selections */}
-          <div>
-            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-              Selecoes
-            </div>
-            <div className="space-y-1.5">
-              {suggestion.selections.map((a, i) => (
-                <div
-                  key={a.bet.id}
-                  className="flex items-center justify-between px-2.5 py-2 rounded-lg"
-                  style={{
-                    background: "rgba(255,170,68,0.04)",
-                    border: "1px solid rgba(255,170,68,0.1)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold shrink-0"
-                      style={{ background: "rgba(255,170,68,0.15)", color: "#ffaa44" }}
-                    >
-                      {i + 1}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
-                        {a.bet.homeTeam} x {a.bet.awayTeam}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="text-[0.58rem] font-medium px-1.5 py-px rounded"
-                          style={{ background: "rgba(255,170,68,0.1)", color: "#ffaa44" }}
-                        >
-                          {a.bet.market}
-                        </span>
-                        <span className="text-[0.55rem] text-[var(--color-text-muted)]">
-                          odd {a.bet.odd.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-[0.68rem] font-bold" style={{ color: evColor(a.ev) }}>
-                      EV {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
-                    </div>
-                    <div className="text-[0.55rem] text-[var(--color-text-muted)]">
-                      {a.bet.leagueName}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="px-5 pb-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
 
-          {/* Combinations breakdown */}
+          {/* ── Rule 1: Scenario Breakdown ── */}
           <div>
-            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-              Detalhamento das Combinacoes
+            <div className="flex items-center gap-1.5 mb-2">
+              <BarChart3 size={12} style={{ color: accent }} />
+              <span className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                Cenarios de Retorno
+              </span>
             </div>
             <div className="space-y-1">
-              {suggestion.combinations.map((c, i) => {
-                const legsLabel = c.legs.length === 1
-                  ? "Simples"
-                  : c.legs.length === 2
-                    ? "Dupla"
-                    : c.legs.length === 3
-                      ? "Tripla"
-                      : "Quadrupla";
-                const teamsLabel = c.legs
-                  .map((l) => l.bet.homeTeam.split(" ")[0])
-                  .join(" + ");
-
+              {suggestion.scenarios.map((sc) => {
+                if (sc.hitsRequired === 0) return null; // Skip 0 hits (always loss)
+                const pct = suggestion.selections.length > 0
+                  ? (sc.hitsRequired / suggestion.selections.length) * 100
+                  : 0;
                 return (
                   <div
-                    key={i}
-                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[0.65rem]"
+                    key={sc.hitsRequired}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg"
                     style={{
-                      background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                      background: sc.coversInvestment ? "rgba(34,197,94,0.04)" : "rgba(255,85,85,0.03)",
+                      border: `1px solid ${sc.coversInvestment ? "rgba(34,197,94,0.12)" : "rgba(255,85,85,0.1)"}`,
                     }}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="text-[0.55rem] font-bold uppercase px-1.5 py-px rounded shrink-0"
-                        style={{
-                          background: c.legs.length === 1
-                            ? "rgba(34,197,94,0.1)"
-                            : c.legs.length === 2
-                              ? "rgba(157,80,255,0.1)"
-                              : c.legs.length === 3
-                                ? "rgba(0,187,255,0.1)"
-                                : "rgba(255,170,68,0.1)",
-                          color: c.legs.length === 1
-                            ? "#22c55e"
-                            : c.legs.length === 2
-                              ? "#c4a0ff"
-                              : c.legs.length === 3
-                                ? "#00bbff"
-                                : "#ffaa44",
-                        }}
-                      >
-                        {legsLabel}
+                    <div className="flex items-center gap-2">
+                      {sc.coversInvestment ? (
+                        <CheckCircle2 size={12} className="text-[#22c55e]" />
+                      ) : (
+                        <XCircle size={12} className="text-[#ff5555]" />
+                      )}
+                      <span className="text-[0.68rem] font-semibold text-[var(--color-text-primary)]">
+                        {sc.hitsRequired} de {suggestion.selections.length} acertos
                       </span>
-                      <span className="text-[var(--color-text-secondary)] truncate">
-                        {teamsLabel}
+                      <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                        ({sc.winningCombos} {sc.winningCombos === 1 ? "combo paga" : "combos pagam"})
                       </span>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-[var(--color-text-muted)] tabular-nums">
-                        odd {c.combinedOdd.toFixed(2)}
+                      <span className="text-[0.65rem] tabular-nums" style={{ color: sc.coversInvestment ? "#22c55e" : "#ff5555" }}>
+                        Retorno {formatCurrency(sc.estimatedReturn)}
                       </span>
-                      <span className="text-[var(--color-text-muted)] tabular-nums">
-                        {formatCurrency(c.stake)}
-                      </span>
-                      <span className="font-bold text-[#22c55e] tabular-nums">
-                        {formatCurrency(c.potentialReturn)}
+                      <span
+                        className="text-[0.6rem] font-bold tabular-nums px-1.5 py-0.5 rounded"
+                        style={{
+                          background: sc.netProfit >= 0 ? "rgba(34,197,94,0.1)" : "rgba(255,85,85,0.1)",
+                          color: sc.netProfit >= 0 ? "#22c55e" : "#ff5555",
+                        }}
+                      >
+                        {sc.netProfit >= 0 ? "+" : ""}{formatCurrency(sc.netProfit)}
                       </span>
                     </div>
                   </div>
@@ -1132,20 +1129,253 @@ function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
             </div>
           </div>
 
-          {/* Worst case info */}
+          {/* ── Rule 4: Banker (Anchor Bet) ── */}
+          {suggestion.banker && suggestion.recommended && (
+            <div
+              className="rounded-xl border overflow-hidden"
+              style={{
+                background: "linear-gradient(135deg, rgba(255,215,0,0.04), rgba(255,170,68,0.06))",
+                borderColor: "rgba(255,215,0,0.2)",
+              }}
+            >
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center"
+                    style={{ background: "rgba(255,215,0,0.15)" }}
+                  >
+                    <Crown size={14} className="text-[#ffd700]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[0.72rem] font-bold text-[#ffd700]">
+                        Banker (Aposta Fixa)
+                      </span>
+                      <span
+                        className="text-[0.5rem] font-bold uppercase tracking-wider px-1.5 py-px rounded-full"
+                        style={{ background: "rgba(255,215,0,0.12)", color: "#ffd700" }}
+                      >
+                        Premium
+                      </span>
+                    </div>
+                    <p className="text-[0.58rem] text-[var(--color-text-muted)]">
+                      {suggestion.banker.reason}
+                    </p>
+                  </div>
+                </div>
+                <div
+                  className="flex items-center justify-between px-3 py-2 rounded-lg"
+                  style={{ background: "rgba(255,215,0,0.05)", border: "1px solid rgba(255,215,0,0.12)" }}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Crown size={10} className="text-[#ffd700] shrink-0" />
+                    <span className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                      {suggestion.banker.allocation.bet.homeTeam} x {suggestion.banker.allocation.bet.awayTeam}
+                    </span>
+                    <span
+                      className="text-[0.58rem] font-medium px-1.5 py-px rounded shrink-0"
+                      style={{ background: "rgba(255,215,0,0.1)", color: "#ffd700" }}
+                    >
+                      {suggestion.banker.allocation.bet.market}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[0.6rem] text-[var(--color-text-muted)] tabular-nums">
+                      odd {suggestion.banker.allocation.bet.odd.toFixed(2)}
+                    </span>
+                    <span className="text-[0.6rem] font-bold tabular-nums" style={{ color: evColor(suggestion.banker.allocation.ev) }}>
+                      EV +{(suggestion.banker.allocation.ev * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[0.58rem] text-[var(--color-text-muted)] mt-2 leading-relaxed">
+                  O Banker esta presente em todas as combinacoes e aumenta o retorno potencial,
+                  barateando o custo das multiplas linhas — mas a aposta inteira e perdida se o Banker falhar.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Rule 2: Stake Distribution Info ── */}
+          <div
+            className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
+            style={{
+              background: `${accentBg}0.05)`,
+              border: `1px solid ${accentBg}0.12)`,
+            }}
+          >
+            <CircleDollarSign size={14} style={{ color: accent }} className="shrink-0 mt-0.5" />
+            <div className="text-[0.65rem] text-[var(--color-text-secondary)] leading-relaxed">
+              <strong style={{ color: accent }}>Distribuicao de Stake (Kelly):</strong>{" "}
+              O valor total de {formatCurrency(suggestion.totalStake)} (via criterio de Kelly fracionado)
+              e dividido igualmente entre as {suggestion.totalCombinations} linhas de aposta.
+              Cada linha recebe <strong style={{ color: "var(--color-text-primary)" }}>{formatCurrency(suggestion.stakePerLine)}</strong>.
+              Isso impede que o valor total seja investido em cada linha separadamente.
+            </div>
+          </div>
+
+          {/* ── Selections ── */}
+          <div>
+            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+              Selecoes ({suggestion.selections.length} jogos +EV)
+            </div>
+            <div className="space-y-1.5">
+              {suggestion.selections.map((a, i) => {
+                const isBanker = suggestion.banker?.allocation.bet.id === a.bet.id;
+                return (
+                  <div
+                    key={a.bet.id}
+                    className="flex items-center justify-between px-2.5 py-2 rounded-lg"
+                    style={{
+                      background: isBanker ? "rgba(255,215,0,0.05)" : `${accentBg}0.04)`,
+                      border: `1px solid ${isBanker ? "rgba(255,215,0,0.15)" : `${accentBg}0.1)`}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold shrink-0"
+                        style={{
+                          background: isBanker ? "rgba(255,215,0,0.15)" : `${accentBg}0.15)`,
+                          color: isBanker ? "#ffd700" : accent,
+                        }}
+                      >
+                        {isBanker ? <Crown size={10} /> : i + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                            {a.bet.homeTeam} x {a.bet.awayTeam}
+                          </span>
+                          {isBanker && (
+                            <span
+                              className="text-[0.48rem] font-bold uppercase px-1 py-px rounded"
+                              style={{ background: "rgba(255,215,0,0.12)", color: "#ffd700" }}
+                            >
+                              Banker
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-[0.58rem] font-medium px-1.5 py-px rounded"
+                            style={{ background: `${accentBg}0.1)`, color: accent }}
+                          >
+                            {a.bet.market}
+                          </span>
+                          <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                            odd {a.bet.odd.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[0.68rem] font-bold" style={{ color: evColor(a.ev) }}>
+                        EV {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-[0.55rem] text-[var(--color-text-muted)]">
+                        {a.bet.leagueName}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Combinations breakdown (collapsible) ── */}
+          <div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowCombos(!showCombos); }}
+              className="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider mb-2 transition-colors"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              {showCombos ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              Detalhamento das {suggestion.totalCombinations} Combinacoes
+            </button>
+            {showCombos && (
+              <div className="space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                {suggestion.combinations.map((c, i) => {
+                  const legsLabel = c.legs.length === 1
+                    ? "Simples"
+                    : c.legs.length === 2
+                      ? "Dupla"
+                      : c.legs.length === 3
+                        ? "Tripla"
+                        : "Quadrupla";
+                  const teamsLabel = c.legs
+                    .map((l) => l.bet.homeTeam.split(" ")[0])
+                    .join(" + ");
+
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[0.65rem]"
+                      style={{
+                        background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="text-[0.55rem] font-bold uppercase px-1.5 py-px rounded shrink-0"
+                          style={{
+                            background: c.legs.length === 1
+                              ? "rgba(34,197,94,0.1)"
+                              : c.legs.length === 2
+                                ? "rgba(157,80,255,0.1)"
+                                : c.legs.length === 3
+                                  ? "rgba(0,187,255,0.1)"
+                                  : "rgba(255,170,68,0.1)",
+                            color: c.legs.length === 1
+                              ? "#22c55e"
+                              : c.legs.length === 2
+                                ? "#c4a0ff"
+                                : c.legs.length === 3
+                                  ? "#00bbff"
+                                  : "#ffaa44",
+                          }}
+                        >
+                          {legsLabel}
+                        </span>
+                        <span className="text-[var(--color-text-secondary)] truncate">
+                          {teamsLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[var(--color-text-muted)] tabular-nums">
+                          odd {c.combinedOdd.toFixed(2)}
+                        </span>
+                        <span className="text-[var(--color-text-muted)] tabular-nums">
+                          {formatCurrency(c.stake)}
+                        </span>
+                        <span className="font-bold text-[#22c55e] tabular-nums">
+                          {formatCurrency(c.potentialReturn)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Rule 5: Break-even status ── */}
           <div
             className="flex items-center gap-2 text-[0.65rem] px-3 py-2 rounded-lg"
             style={{
-              background: "rgba(255,170,68,0.06)",
-              border: "1px solid rgba(255,170,68,0.12)",
+              background: suggestion.passesBreakEven ? "rgba(34,197,94,0.05)" : "rgba(255,85,85,0.05)",
+              border: `1px solid ${suggestion.passesBreakEven ? "rgba(34,197,94,0.12)" : "rgba(255,85,85,0.12)"}`,
               color: "var(--color-text-secondary)",
             }}
           >
-            <Info size={12} className="text-[#ffaa44] shrink-0" />
+            {suggestion.passesBreakEven ? (
+              <ShieldCheck size={12} className="text-[#22c55e] shrink-0" />
+            ) : (
+              <AlertTriangle size={12} className="text-[#ff5555] shrink-0" />
+            )}
             <span>
-              {suggestion.format === "lucky15"
-                ? `Com 1 acerto minimo: retorno de ${formatCurrency(suggestion.worstCaseReturn)}. Sistema protege contra erros isolados.`
-                : `Trixie nao inclui simples — precisa de pelo menos 2 acertos para retorno. Reduz variancia vs acumulada tripla.`}
+              {suggestion.passesBreakEven
+                ? `Filtro de rentabilidade aprovado — o acerto minimo cobre o investimento total de ${formatCurrency(suggestion.totalStake)}.`
+                : suggestion.breakEvenReason}
             </span>
           </div>
         </div>
@@ -1165,6 +1395,7 @@ export default function BankrollCalculator() {
   const [showKellyInfo, setShowKellyInfo] = useState(false);
   const [excludedBets, setExcludedBets] = useState<Set<string>>(new Set());
   const [stakeOverrides, setStakeOverrides] = useState<Record<string, number>>({});
+  const [showSystemBet, setShowSystemBet] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -1837,9 +2068,40 @@ export default function BankrollCalculator() {
               </div>
             )}
 
-            {/* System Bet Suggestion */}
+            {/* Rule 1: System Bet — button + card */}
             {distribution.systemBet && (
-              <SystemBetCard suggestion={distribution.systemBet} />
+              <div className="space-y-3">
+                {!showSystemBet ? (
+                  <button
+                    onClick={() => setShowSystemBet(true)}
+                    className="w-full py-3.5 rounded-2xl border-2 border-dashed font-bold text-sm transition-all duration-200 hover:scale-[1.01] flex items-center justify-center gap-2"
+                    style={{
+                      borderColor: distribution.systemBet.recommended
+                        ? "rgba(255,170,68,0.3)"
+                        : "rgba(255,85,85,0.2)",
+                      background: distribution.systemBet.recommended
+                        ? "rgba(255,170,68,0.04)"
+                        : "rgba(255,85,85,0.03)",
+                      color: distribution.systemBet.recommended ? "#ffaa44" : "#ff5555",
+                    }}
+                  >
+                    <Shuffle size={16} />
+                    Montar Aposta em Sistema
+                    <span
+                      className="text-[0.58rem] font-bold uppercase px-2 py-0.5 rounded-full ml-1"
+                      style={{
+                        background: distribution.systemBet.recommended
+                          ? "rgba(255,170,68,0.12)"
+                          : "rgba(255,85,85,0.1)",
+                      }}
+                    >
+                      {distribution.systemBet.label} &middot; {distribution.systemBet.totalCombinations} linhas
+                    </span>
+                  </button>
+                ) : (
+                  <SystemBetCard suggestion={distribution.systemBet} />
+                )}
+              </div>
             )}
           </div>
         )}

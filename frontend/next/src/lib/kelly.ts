@@ -3,8 +3,9 @@
  *
  * Implements fractional Kelly for optimal bet sizing across
  * simple bets, intra-game doubles, and inter-game doubles.
- * Includes stake cap safety, system bet suggestions (Trixie / Lucky 15),
- * and implied probability utilities.
+ * Includes stake cap safety, advanced system bet suggestions
+ * (2de3, Trixie, 3de5), banker selection, break-even filter,
+ * and scenario-based return calculations.
  */
 
 /** Maximum fraction of bankroll allowed on a single bet (safety cap) */
@@ -56,7 +57,7 @@ export interface BankrollDistribution {
 
 /* ── System Bet types ── */
 
-export type SystemBetFormat = "trixie" | "lucky15" | "none";
+export type SystemBetFormat = "2de3" | "trixie" | "3de5" | "none";
 
 export interface SystemBetCombination {
   legs: BetAllocation[];
@@ -65,16 +66,52 @@ export interface SystemBetCombination {
   potentialReturn: number;
 }
 
+/** Scenario: what happens when the user hits exactly N of M selections */
+export interface SystemBetScenario {
+  /** How many legs win */
+  hitsRequired: number;
+  /** Total number of combinations that would pay out */
+  winningCombos: number;
+  /** Estimated gross return */
+  estimatedReturn: number;
+  /** Net profit (return - totalStake) */
+  netProfit: number;
+  /** Whether the user breaks even or profits */
+  coversInvestment: boolean;
+}
+
+/** Banker: the algorithmically-selected anchor bet */
+export interface BankerSelection {
+  allocation: BetAllocation;
+  /** Composite score used to pick the banker (EV * prob * edge) */
+  score: number;
+  /** Why this bet was picked */
+  reason: string;
+}
+
 export interface SystemBetSuggestion {
   format: SystemBetFormat;
   label: string;
   description: string;
+  /** Explanatory headline for the UI hero card */
+  headline: string;
   selections: BetAllocation[];
   totalStake: number;
+  stakePerLine: number;
   combinations: SystemBetCombination[];
   totalCombinations: number;
   bestCaseReturn: number;
   worstCaseReturn: number;
+  /** Scenario breakdown: returns for each possible hit count */
+  scenarios: SystemBetScenario[];
+  /** Banker (anchor) bet — highest probability + EV selection */
+  banker: BankerSelection | null;
+  /** Whether the system passes the break-even profitability filter */
+  passesBreakEven: boolean;
+  /** Reason if break-even filter rejects the system */
+  breakEvenReason: string;
+  /** Whether this system is recommended (passes all filters) */
+  recommended: boolean;
 }
 
 /**
@@ -126,75 +163,271 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
+ * Round to 2 decimal places.
+ */
+function r2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/* ── System format definitions ── */
+
+interface SystemFormatDef {
+  format: SystemBetFormat;
+  label: string;
+  /** How many selections the system needs */
+  selectionCount: number;
+  /** Minimum combination size (k). 2de3 and 3de5 only use doubles. Trixie uses 2+3 */
+  minK: number;
+  /** Maximum combination size */
+  maxK: number;
+  /** Description template */
+  description: (totalCombos: number) => string;
+}
+
+const SYSTEM_FORMATS: SystemFormatDef[] = [
+  {
+    format: "2de3",
+    label: "Sistema 2/3",
+    selectionCount: 3,
+    minK: 2,
+    maxK: 2,
+    description: () => "3 combinacoes duplas — lucra com 2 de 3 acertos",
+  },
+  {
+    format: "trixie",
+    label: "Trixie",
+    selectionCount: 3,
+    minK: 2,
+    maxK: 3,
+    description: () => "3 duplas + 1 tripla = 4 linhas de aposta",
+  },
+  {
+    format: "3de5",
+    label: "Sistema 3/5",
+    selectionCount: 5,
+    minK: 2,
+    maxK: 2,
+    description: (n) => `${n} combinacoes duplas — lucra com 3 de 5 acertos`,
+  },
+];
+
+/**
+ * Determine the best system format based on the number of +EV games.
+ *
+ * Rule 3 — Dynamic Level Recommendation:
+ * - 3 games  → prefer "2de3" (3 lines) for bankroll protection, upgrade to Trixie (4 lines) for higher upside
+ * - 5+ games → suggest "3de5" (10 lines) for high-volume days
+ */
+function pickSystemFormat(candidateCount: number): SystemFormatDef | null {
+  if (candidateCount >= 5) return SYSTEM_FORMATS[2]; // 3de5
+  if (candidateCount >= 3) return SYSTEM_FORMATS[1]; // trixie (default for 3-4 games)
+  return null;
+}
+
+/**
+ * Rule 4 — Banker (Anchor) Selection
+ * Identifies the game with highest combined score of probability, EV, and edge.
+ * The banker is present in ALL combinations, reducing cost while boosting potential return.
+ */
+function selectBanker(selections: BetAllocation[]): BankerSelection | null {
+  if (selections.length < 3) return null;
+
+  let best: BankerSelection | null = null;
+
+  for (const alloc of selections) {
+    const midProb = (alloc.bet.probMin + alloc.bet.probMax) / 2;
+    // Composite: emphasizes high probability AND positive EV
+    const score = r2((midProb / 100) * (1 + alloc.ev) * (1 + alloc.edge));
+
+    if (!best || score > best.score) {
+      best = {
+        allocation: alloc,
+        score,
+        reason: `Maior probabilidade (${midProb.toFixed(0)}%) combinada com EV +${(alloc.ev * 100).toFixed(1)}%`,
+      };
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Build scenario breakdown: for each possible number of hits (0..N),
+ * calculate how many combos pay out and the estimated return.
+ */
+function buildScenarios(
+  selections: BetAllocation[],
+  combos: SystemBetCombination[],
+  totalStake: number,
+): SystemBetScenario[] {
+  const n = selections.length;
+  const scenarios: SystemBetScenario[] = [];
+
+  for (let hits = 0; hits <= n; hits++) {
+    // For each hit count, simulate: pick the top `hits` selections by odd as winners
+    // and count how many combos have ALL legs within those winners
+    const winners = new Set(
+      selections
+        .slice()
+        .sort((a, b) => b.bet.odd - a.bet.odd)
+        .slice(0, hits)
+        .map((a) => a.bet.id),
+    );
+
+    let estimatedReturn = 0;
+    let winningCombos = 0;
+
+    for (const combo of combos) {
+      const allWin = combo.legs.every((leg) => winners.has(leg.bet.id));
+      if (allWin) {
+        estimatedReturn += combo.potentialReturn;
+        winningCombos++;
+      }
+    }
+
+    estimatedReturn = r2(estimatedReturn);
+    const netProfit = r2(estimatedReturn - totalStake);
+
+    scenarios.push({
+      hitsRequired: hits,
+      winningCombos,
+      estimatedReturn,
+      netProfit,
+      coversInvestment: estimatedReturn >= totalStake,
+    });
+  }
+
+  return scenarios;
+}
+
+/**
+ * Rule 5 — Break-even Profitability Filter
+ * Checks if the minimum winning scenario (N-1 hits for an N-selection system)
+ * covers the total stake. If odds are too low, system bets are not recommended.
+ */
+function checkBreakEven(
+  scenarios: SystemBetScenario[],
+  selections: BetAllocation[],
+  totalStake: number,
+): { passes: boolean; reason: string } {
+  const n = selections.length;
+  // Minimum hits to break even: for Trixie/2de3 (3 selections) check 2 hits;
+  // for 3de5 (5 selections) check 3 hits
+  const minHits = n <= 3 ? 2 : 3;
+
+  const minScenario = scenarios.find((s) => s.hitsRequired === minHits);
+  if (!minScenario) {
+    return { passes: false, reason: "Cenario minimo nao encontrado" };
+  }
+
+  // Calculate average odds of selections
+  const avgOdd = r2(selections.reduce((s, a) => s + a.bet.odd, 0) / selections.length);
+
+  if (!minScenario.coversInvestment) {
+    return {
+      passes: false,
+      reason: `Odds medias baixas (${avgOdd.toFixed(2)}). Com ${minHits} de ${n} acertos, o retorno estimado (R$ ${minScenario.estimatedReturn.toFixed(2)}) nao cobre o investimento total (R$ ${totalStake.toFixed(2)}). Recomendamos apostas simples individuais.`,
+    };
+  }
+
+  return { passes: true, reason: "" };
+}
+
+/**
  * Build a system bet suggestion from +EV simple bets.
  *
- * - 3 selections → Trixie (3 doubles + 1 treble = 4 bets)
- * - 4 selections → Lucky 15 (4 singles + 6 doubles + 4 trebles + 1 fourfold = 15 bets)
- * - Other counts → none
+ * Implements all 5 business rules:
+ * 1. System Bet Calculator — combinations + scenario returns
+ * 2. Automatic Stake Distribution — Kelly total divided equally across lines
+ * 3. Dynamic Level Recommendation — format based on game count
+ * 4. Banker (Algorithmic Anchor) — highest-score selection
+ * 5. Break-even Filter — rejects low-odd systems
  */
 export function suggestSystemBet(
   posEVBets: BetAllocation[],
   bankroll: number,
   kellyMultiplier: number,
 ): SystemBetSuggestion | null {
-  // Only suggest for exactly 3 or 4 simple +EV selections
+  // Filter for simple +EV bets only
   const candidates = posEVBets
     .filter((a) => a.bet.category === "simples" && a.ev > 0)
     .sort((a, b) => b.ev - a.ev);
 
   if (candidates.length < 3) return null;
 
-  // Take the top 3 or 4 by EV
-  const isLucky15 = candidates.length >= 4;
-  const selections = candidates.slice(0, isLucky15 ? 4 : 3);
-  const n = selections.length;
+  // Rule 3: Pick the right system format
+  const formatDef = pickSystemFormat(candidates.length);
+  if (!formatDef) return null;
 
-  const format: SystemBetFormat = isLucky15 ? "lucky15" : "trixie";
+  // Select top N bets by EV for the chosen format
+  const selections = candidates.slice(0, formatDef.selectionCount);
 
   // Build all combination legs
   const combos: SystemBetCombination[] = [];
-
-  // For lucky15, include singles (k=1); for trixie, start at k=2
-  const minK = isLucky15 ? 1 : 2;
-
-  for (let k = minK; k <= n; k++) {
+  for (let k = formatDef.minK; k <= formatDef.maxK; k++) {
     for (const combo of combinations(selections, k)) {
       const combinedOdd = combo.reduce((acc, a) => acc * a.bet.odd, 1);
       combos.push({ legs: combo, combinedOdd, stake: 0, potentialReturn: 0 });
     }
   }
 
-  // Distribute a total system stake proportionally using avg Kelly of the selections
+  // Rule 2: Distribute Kelly total equally across all lines
   const avgKelly =
     selections.reduce((s, a) => s + a.kellyFraction, 0) / selections.length;
   const systemFraction = Math.min(avgKelly * kellyMultiplier, MAX_STAKE_PCT);
-  const totalSystemStake = Math.round(bankroll * systemFraction * 100) / 100;
-  const perCombStake = Math.round((totalSystemStake / combos.length) * 100) / 100;
+  const totalSystemStake = r2(bankroll * systemFraction);
+  const stakePerLine = r2(totalSystemStake / combos.length);
 
   for (const c of combos) {
-    c.stake = perCombStake;
-    c.potentialReturn = Math.round(perCombStake * c.combinedOdd * 100) / 100;
+    c.stake = stakePerLine;
+    c.potentialReturn = r2(stakePerLine * c.combinedOdd);
   }
 
+  const actualTotalStake = r2(stakePerLine * combos.length);
+
   // Best case: all legs win → sum of all combo returns
-  const bestCaseReturn = combos.reduce((s, c) => s + c.potentialReturn, 0);
-  // Worst case: 0 legs win (trixie) or 1 leg wins (lucky15 has singles)
-  const worstCaseReturn = isLucky15
-    ? Math.min(...selections.map((sel) => perCombStake * sel.bet.odd))
-    : 0;
+  const bestCaseReturn = r2(combos.reduce((s, c) => s + c.potentialReturn, 0));
+  // Worst case: 0 or 1 legs win
+  const worstCaseReturn = 0;
+
+  // Rule 1: Scenario breakdown
+  const scenarios = buildScenarios(selections, combos, actualTotalStake);
+
+  // Rule 4: Banker selection
+  const banker = selectBanker(selections);
+
+  // Rule 5: Break-even filter
+  const { passes: passesBreakEven, reason: breakEvenReason } = checkBreakEven(
+    scenarios,
+    selections,
+    actualTotalStake,
+  );
+
+  const n = selections.length;
+  const recommended = passesBreakEven;
+
+  // Build headline
+  const headline = recommended
+    ? `Encontramos ${n} jogos de grande valor hoje. Para proteger sua banca contra ${n <= 3 ? "1 erro" : "ate 2 erros"}, sugerimos um ${formatDef.label} (${combos.length} linhas). Invista R$ ${stakePerLine.toFixed(2)} em cada combinacao.`
+    : `${n} jogos +EV encontrados, mas as odds medias sao baixas para sistema. Recomendamos apostas simples individuais.`;
 
   return {
-    format,
-    label: isLucky15 ? "Lucky 15" : "Trixie",
-    description: isLucky15
-      ? `4 simples + 6 duplas + 4 triplas + 1 quadrupla = 15 apostas`
-      : `3 duplas + 1 tripla = 4 apostas`,
+    format: formatDef.format,
+    label: formatDef.label,
+    description: formatDef.description(combos.length),
+    headline,
     selections,
-    totalStake: Math.round(perCombStake * combos.length * 100) / 100,
+    totalStake: actualTotalStake,
+    stakePerLine,
     combinations: combos,
     totalCombinations: combos.length,
-    bestCaseReturn: Math.round(bestCaseReturn * 100) / 100,
-    worstCaseReturn: Math.round(worstCaseReturn * 100) / 100,
+    bestCaseReturn,
+    worstCaseReturn,
+    scenarios,
+    banker,
+    passesBreakEven,
+    breakEvenReason,
+    recommended,
   };
 }
 
@@ -256,7 +489,7 @@ export function distributeBankroll(
       // Apply hard cap: no single bet exceeds MAX_STAKE_PCT of bankroll
       const cappedStake = Math.min(rawStake, maxStakeAbs);
       const capped = rawStake > maxStakeAbs;
-      const stake = Math.round(cappedStake * 100) / 100;
+      const stake = r2(cappedStake);
       const potentialReturn = stake * calc.bet.odd;
       const potentialProfit = potentialReturn - stake;
 
@@ -265,8 +498,8 @@ export function distributeBankroll(
         kellyFraction: calc.kf * kellyMultiplier,
         ev: calc.ev,
         stake,
-        potentialReturn: Math.round(potentialReturn * 100) / 100,
-        potentialProfit: Math.round(potentialProfit * 100) / 100,
+        potentialReturn: r2(potentialReturn),
+        potentialProfit: r2(potentialProfit),
         edge: calc.edge,
         impliedProb: Math.round(calc.impliedProb * 10000) / 100,
         capped,
