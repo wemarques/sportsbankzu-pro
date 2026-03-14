@@ -741,11 +741,9 @@ function AllocationCard({
           <div className="text-right shrink-0">
             <div className="flex items-center justify-end gap-1">
               {allocation.capped && (
-                <ShieldAlert
-                  size={12}
-                  className="text-[#ffaa44]"
-                  title={`Stake limitada a ${(MAX_STAKE_PCT * 100).toFixed(0)}% da banca`}
-                />
+                <span title={`Stake limitada a ${(MAX_STAKE_PCT * 100).toFixed(0)}% da banca`}>
+                  <ShieldAlert size={12} className="text-[#ffaa44]" />
+                </span>
               )}
               <div className="text-base font-black text-[var(--color-text-primary)]">
                 {formatCurrency(allocation.stake)}
