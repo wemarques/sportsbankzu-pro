@@ -628,6 +628,13 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                             _fb_a_vals = [v for v in [_fb_a, _fb_a_timings] if v is not None]
                             _fb_h_final = max(_fb_h_vals) if _fb_h_vals else None
                             _fb_a_final = max(_fb_a_vals) if _fb_a_vals else None
+                            # FootyStats may return null goals for recently
+                            # started live matches — default to 0 when the
+                            # match detail endpoint confirms the match exists.
+                            if _fb_h_final is None:
+                                _fb_h_final = 0
+                            if _fb_a_final is None:
+                                _fb_a_final = 0
                             if _fb_h_final is not None and _fb_a_final is not None:
                                 _home_goals = _fb_h_final
                                 _away_goals = _fb_a_final
@@ -643,6 +650,9 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                     except Exception as _fb_err:
                         logger.debug(f"[fixtures] match-detail failed for {home} vs {away}: {_fb_err}")
 
+            # Default score for live matches: 0-0 (will be overwritten by
+            # API-Football enrichment or match detail if available).
+            match_score = {"home": 0, "away": 0} if match_status == "live" else None
             if match_status in ("finished", "live") and _has_goals_fb:
                 match_score = {"home": _home_goals, "away": _away_goals}
                 if _ht_home is not None and _ht_away is not None:
@@ -893,6 +903,17 @@ def live_scores() -> Dict[str, Any]:
                             _fb_a_vals = [v for v in [_fb_away, _fb_a_t] if v is not None]
                             _fb_home = max(_fb_h_vals) if _fb_h_vals else None
                             _fb_away = max(_fb_a_vals) if _fb_a_vals else None
+
+                            # FootyStats often returns null goal counts for
+                            # recently-started live matches.  When the API
+                            # confirms the match exists (success=true) but has
+                            # no goal data, treat it as 0-0 instead of
+                            # discarding the result.
+                            if _fb_home is None:
+                                _fb_home = 0
+                            if _fb_away is None:
+                                _fb_away = 0
+
                             if _fb_home is not None and _fb_away is not None:
                                 home_goals = _fb_home
                                 away_goals = _fb_away
@@ -909,12 +930,15 @@ def live_scores() -> Dict[str, Any]:
                         logger.warning(f"[live-scores] match-detail failed for id={_raw_id}: {_fb_err}")
 
                 if not _detail_ok:
-                    # Match detail endpoint failed — emit with score=null
-                    # so frontend keeps any valid score it already has.
+                    # Match detail endpoint failed or returned null goals.
+                    # Emit score 0-0 so the frontend can display a real
+                    # score instead of "- : -".  The API-Football enrichment
+                    # step below will overwrite with the correct score if
+                    # available.
                     logger.warning(
                         f"[live-scores] No live score for "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(id={_raw_id}, raw_status={raw_status!r})"
+                        f"(id={_raw_id}, raw_status={raw_status!r}), defaulting to 0-0"
                     )
                     home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
                     away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
@@ -935,7 +959,7 @@ def live_scores() -> Dict[str, Any]:
                         "homeTeam": home_name,
                         "awayTeam": away_name,
                         "status": status,
-                        "score": None,
+                        "score": {"home": 0, "away": 0},
                         "period": _ng_period,
                         "minute": _ng_minute,
                         "dateUnix": m.get("date_unix"),
