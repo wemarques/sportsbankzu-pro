@@ -476,4 +476,108 @@ Jogos ao vivo da Saudi Professional League (Al Hazm vs Al Kholood, Al Najma vs D
 
 ---
 
+## 008 — Placar "- : -" em jogos ao vivo + polling retorna vazio
+
+**Data:** 2026-03-14
+**Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta (placar ao vivo nunca atualiza — mostra "- : -" ou 0-0 permanente)
+**Status:** Corrigido
+**Relacionado:** #005, #007
+
+### Problema identificado
+
+Jogo Atlético Nacional vs Llaneros (Colômbia, Liga DIMAYOR) mostrava placar `- : -` no dashboard apesar de estar ao vivo em 1-0 (gol de M. Uribe aos 2'). Mesmo após o intervalo (HT), o placar não atualizava. A análise AI (Mistral) corretamente mencionava "Placar atual (1-0)" no painel de análise, mas o card do jogo na lista permanecia com `- : -`.
+
+### Causa raiz (3 falhas independentes e acumulativas)
+
+**BUG 1 — FootyStats retorna `null` para goal counts de jogos recém-começados:**
+O endpoint `get_match_live_details(match_id)` do FootyStats retorna `homeGoalCount=null` e `homeGoals="[]"` (array vazio) nos primeiros minutos de um jogo ao vivo. O backend exigia `_fb_home is not None and _fb_away is not None` (linha 896 de `fixtures.py`) para aceitar o resultado — com ambos `None`, `_detail_ok` permanecia `False` e o backend emitia `score: None`. O frontend renderizava `None` como `"- : -"` (fallback em `MatchCard.tsx:212`).
+
+**Fluxo do bug:**
+```
+FootyStats /match/{id} → homeGoalCount=null, homeGoals="[]"
+→ _fb_h_vals = [] (lista vazia)
+→ _fb_home = None
+→ _detail_ok = False
+→ result.append({"score": None, ...})
+→ Frontend: data.score ? "X - Y" : "- : -"  → "- : -"
+```
+
+**BUG 2 — Endpoint `/live-scores` retorna `{"matches": []}` permanentemente:**
+O endpoint `/live-scores` do backend usa `footstats.get_live_scores()` que chama `todays-matches` **sem filtro de liga nem `season_id`**. Para certas ligas (incluindo Colômbia Primera A), o FootyStats retorna `{"success": true, "data": []}` (lista vazia) neste endpoint global, apesar de retornar dados corretamente via `league-matches` com `season_id`. Resultado: o polling a cada 30s via `/api/matches/live` nunca recebia dados para sobrepor ao placar.
+
+**Evidência direta (produção):**
+```
+GET /api/matches/live → {"matches":[],"nextUpdate":60}     ← VAZIO
+GET /api/matches/fetch?leagues=colombia-primera-a → Atlético Nacional vs Llaneros, score: {home:0, away:0}  ← TEM DADOS
+```
+
+**BUG 3 — Rota `/fixtures` também retorna score 0-0 (mesmo problema do BUG 1):**
+A rota `/fixtures` (carga inicial) faz o mesmo fetch de `get_match_live_details()` e sofria do mesmo bug: goal counts `null` → descartados → `_has_goals_fb = False` → `match_score` nunca era definido para jogos ao vivo sem dados de gol. Além disso, `match_score` não era inicializado antes da verificação condicional (linha 646), arriscando `NameError`.
+
+### Correções aplicadas (5 camadas)
+
+#### Camada 1: Default 0-0 para jogos ao vivo sem goal data — `/live-scores` (`fixtures.py`)
+- Quando `get_match_live_details()` retorna `success=true` mas goals são `null`, agora assume `_fb_home = 0` e `_fb_away = 0` (tratamento: "jogo existe mas ainda sem gols registrados")
+- Quando `_detail_ok = False` (endpoint falha ou retorna dados insuficientes), agora emite `score: {"home": 0, "away": 0}` em vez de `score: None`
+- O API-Football enrichment subsequente sobrescreve com o placar real quando disponível
+
+#### Camada 2: Default 0-0 para jogos ao vivo sem goal data — `/fixtures` (`fixtures.py`)
+- Mesmo tratamento de null → 0 para `_fb_h_final` e `_fb_a_final` no fetch de match detail
+- `match_score` agora é inicializado com `{"home": 0, "away": 0}` para jogos `live` antes da verificação condicional
+- Elimina risco de `NameError` e garante que jogos ao vivo sempre têm score renderizável
+
+#### Camada 3: Fallback do polling via `/fixtures` (`route.ts`)
+- Quando `/live-scores` retorna vazio (0 matches), a rota `/api/matches/live` agora faz **fallback** chamando `/fixtures?leagues=X&date=today` para as ligas com jogos ao vivo
+- Filtra apenas records com `status === "live" || status === "finished"` do resultado
+- Mapeia para o formato esperado pelo overlay (id, homeTeam, awayTeam, status, score, period, minute)
+- Log explícito: `[live-scores] Fallback via /fixtures — N live/finished matches`
+
+#### Camada 4: Dashboard envia ligas ao vivo como parâmetro (`page.tsx`)
+- Novo `useRef<string>` (`liveLeagueIdsRef`) rastreia IDs das ligas com jogos ao vivo
+- Atualizado via `useEffect` sem re-criar o callback `fetchLiveScores`
+- O polling passa `?leagues=colombia-primera-a,...` na URL do fetch para ativar o fallback na API route
+
+#### Camada 5: Logging diagnóstico (`route.ts`)
+- Log quando `PY_BACKEND_URL` não está configurado (antes retornava silenciosamente vazio)
+- Log do count de matches e latência quando o endpoint retorna OK
+- Permite diagnóstico remoto via Vercel Runtime Logs
+
+### Fluxo corrigido
+
+```
+1. Carga inicial: GET /api/matches/fetch?leagues=colombia-primera-a
+   ├── Backend /fixtures → FootyStats league-matches + match-detail
+   ├── homeGoalCount=null → default 0                              ← FIX Camada 2
+   ├── match_score = {home: 0, away: 0}                            ← FIX Camada 2
+   └── Frontend renderiza "0 - 0" (não mais "- : -")
+
+2. Polling (cada 30s): GET /api/matches/live?leagues=colombia-primera-a
+   ├── Tenta /live-scores → {"matches": []}                        ← FootyStats vazio
+   ├── Fallback: /fixtures?leagues=colombia-primera-a&date=today   ← FIX Camada 3
+   │   ├── match-detail agora pode ter score real (ex: 1-0)
+   │   └── API-Football enrichment → score 1-0 overlay
+   ├── Retorna [{...score: {home:1, away:0}, period:"1T", minute:4...}]
+   └── Frontend overlay atualiza "0 - 0" → "1 - 0"                ← FIX Camada 4
+```
+
+### Diferença entre "- : -" e "0 - 0"
+
+| Situação | Antes | Depois |
+|---|---|---|
+| Jogo live, FootyStats retorna null goals | `- : -` (score=undefined) | `0 - 0` (score={home:0,away:0}) |
+| Jogo live, FootyStats retorna 0-0 real | `0 - 0` | `0 - 0` |
+| Polling, /live-scores vazio | Nunca atualiza | Fallback via /fixtures atualiza |
+| Polling, API-Football match ok | Score real (ex: 1-0) | Score real (ex: 1-0) |
+
+### Lição aprendida
+
+1. **Endpoints "globais" vs "filtrados" podem ter comportamentos diferentes** — O FootyStats `todays-matches` (sem filtro) retorna vazio para certas ligas, mas `league-matches` (com `season_id`) funciona. Nunca assuma que dois endpoints da mesma API retornam os mesmos dados. Quando um falha, o outro pode ser fallback.
+
+2. **`null` ≠ `0` ≠ "sem dados"** — O FootyStats retorna `homeGoalCount=null` para jogos ao vivo recém-começados, não `0`. O sistema tratava `null` como "dados indisponíveis" e descartava, quando na verdade significava "0 gols até agora". A semântica correta é: se a API confirma que o jogo existe (`success=true`), goals `null` deve ser tratado como `0`.
+
+3. **Defesa em profundidade inclui o polling** — Corrigir o score na carga inicial não basta se o mecanismo de polling (que deveria atualizar a cada 30s) está permanentemente vazio. Cada camada da cadeia de atualização (carga → polling → overlay → render) deve ter fallback independente.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
