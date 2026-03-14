@@ -291,11 +291,24 @@ def _enrich_with_api_football(
 
             af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=2)
             if not af_fixtures:
-                logger.info(
-                    f"[fixtures] {lid}: API-Football returned 0 fixtures "
-                    f"(league={af_league_id}, season={season}, date={af_date})"
-                )
-                return records
+                # Season fallback: try season+1 or season-1 in case our convention is wrong.
+                # Handles leagues where API-Football season param differs from our calculation
+                # (e.g., some Middle Eastern leagues may use calendar year instead of start year).
+                alt_season = season + 1
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, alt_season, af_date, ttl_minutes=2)
+                if af_fixtures:
+                    logger.warning(
+                        f"[fixtures] {lid}: season={season} returned 0, but season={alt_season} "
+                        f"returned {len(af_fixtures)} — using fallback season"
+                    )
+                    season = alt_season
+                else:
+                    logger.info(
+                        f"[fixtures] {lid}: API-Football returned 0 fixtures "
+                        f"(league={af_league_id}, season={season}, date={af_date}, "
+                        f"also tried season={alt_season})"
+                    )
+                    return records
 
             logger.info(
                 f"[fixtures] {lid}: API-Football returned {len(af_fixtures)} fixtures "
@@ -352,6 +365,9 @@ def _enrich_with_api_football(
                 af_date = date_str
 
             af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=5)
+            if not af_fixtures:
+                # Season fallback
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, season + 1, af_date, ttl_minutes=5)
             if af_fixtures:
                 records = _afc.fixtures_to_records(af_fixtures, lid)
                 logger.info(f"[fixtures] {lid}: API-Football fallback provided {len(records)} records")
@@ -612,6 +628,13 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                             _fb_a_vals = [v for v in [_fb_a, _fb_a_timings] if v is not None]
                             _fb_h_final = max(_fb_h_vals) if _fb_h_vals else None
                             _fb_a_final = max(_fb_a_vals) if _fb_a_vals else None
+                            # FootyStats may return null goals for recently
+                            # started live matches — default to 0 when the
+                            # match detail endpoint confirms the match exists.
+                            if _fb_h_final is None:
+                                _fb_h_final = 0
+                            if _fb_a_final is None:
+                                _fb_a_final = 0
                             if _fb_h_final is not None and _fb_a_final is not None:
                                 _home_goals = _fb_h_final
                                 _away_goals = _fb_a_final
@@ -627,6 +650,9 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                     except Exception as _fb_err:
                         logger.debug(f"[fixtures] match-detail failed for {home} vs {away}: {_fb_err}")
 
+            # Default score for live matches: 0-0 (will be overwritten by
+            # API-Football enrichment or match detail if available).
+            match_score = {"home": 0, "away": 0} if match_status == "live" else None
             if match_status in ("finished", "live") and _has_goals_fb:
                 match_score = {"home": _home_goals, "away": _away_goals}
                 if _ht_home is not None and _ht_away is not None:
@@ -877,6 +903,17 @@ def live_scores() -> Dict[str, Any]:
                             _fb_a_vals = [v for v in [_fb_away, _fb_a_t] if v is not None]
                             _fb_home = max(_fb_h_vals) if _fb_h_vals else None
                             _fb_away = max(_fb_a_vals) if _fb_a_vals else None
+
+                            # FootyStats often returns null goal counts for
+                            # recently-started live matches.  When the API
+                            # confirms the match exists (success=true) but has
+                            # no goal data, treat it as 0-0 instead of
+                            # discarding the result.
+                            if _fb_home is None:
+                                _fb_home = 0
+                            if _fb_away is None:
+                                _fb_away = 0
+
                             if _fb_home is not None and _fb_away is not None:
                                 home_goals = _fb_home
                                 away_goals = _fb_away
@@ -893,12 +930,15 @@ def live_scores() -> Dict[str, Any]:
                         logger.warning(f"[live-scores] match-detail failed for id={_raw_id}: {_fb_err}")
 
                 if not _detail_ok:
-                    # Match detail endpoint failed — emit with score=null
-                    # so frontend keeps any valid score it already has.
+                    # Match detail endpoint failed or returned null goals.
+                    # Emit score 0-0 so the frontend can display a real
+                    # score instead of "- : -".  The API-Football enrichment
+                    # step below will overwrite with the correct score if
+                    # available.
                     logger.warning(
                         f"[live-scores] No live score for "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(id={_raw_id}, raw_status={raw_status!r})"
+                        f"(id={_raw_id}, raw_status={raw_status!r}), defaulting to 0-0"
                     )
                     home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
                     away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
@@ -919,7 +959,7 @@ def live_scores() -> Dict[str, Any]:
                         "homeTeam": home_name,
                         "awayTeam": away_name,
                         "status": status,
-                        "score": None,
+                        "score": {"home": 0, "away": 0},
                         "period": _ng_period,
                         "minute": _ng_minute,
                         "dateUnix": m.get("date_unix"),
@@ -1013,6 +1053,17 @@ def live_scores() -> Dict[str, Any]:
                                 break
 
                         if not matched_fx:
+                            # Log unmatched live matches for debugging (esp. Arabic teams)
+                            af_sample = [
+                                (fx.get("teams", {}).get("home", {}).get("name", ""),
+                                 fx.get("teams", {}).get("away", {}).get("name", ""))
+                                for fx in af_live[:8]
+                            ]
+                            logger.warning(
+                                f"[live-scores] No AF match for '{rh}' vs '{ra}' "
+                                f"(norm: '{_afc._normalize_team_name(rh)}' vs '{_afc._normalize_team_name(ra)}') "
+                                f"| AF live sample: {af_sample}"
+                            )
                             continue
 
                         ld = _afc.extract_live_data(matched_fx)
