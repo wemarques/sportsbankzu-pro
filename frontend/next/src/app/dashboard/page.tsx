@@ -546,21 +546,21 @@ export default function Dashboard() {
         { cache: "no-store" },
       );
       const text = await res.text();
-      let data: Record<string, unknown>;
+      let data: CombinadasData & { _error?: Record<string, unknown> };
       try {
         data = JSON.parse(text);
       } catch {
         throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
       }
       if (!res.ok) {
-        const errObj = data?._error as Record<string, unknown> | undefined;
+        const errObj = data?._error;
         const errKind = errObj?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
         if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
         throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
       }
-      setCombinadas(data as CombinadasData);
+      setCombinadas(data);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
