@@ -144,15 +144,19 @@ function safeOdd(value?: number, fallback = 0) {
   return value;
 }
 
-/** Normalize team name for matching: remove accents, periods, extra spaces. */
+/** Normalize team name for matching: remove accents, periods, extra spaces, common prefixes. */
 function normalizeTeamName(name: string): string {
-  return name
+  let s = name
     .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")  // Remove diacritics (é→e, ñ→n)
     .replace(/\./g, "")               // Remove periods (Dep. → Dep)
-    .replace(/\s+/g, " ");            // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+  // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona)
+  s = s.replace(/^\b(sc|ec|fc|cr|se|aa|ce|gr)\s+/i, "");
+  return s;
 }
 
 function formatTime(dt: string) {
@@ -195,21 +199,34 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
-/** Compute live period from kickoff time when backend hasn't supplied it yet. */
+/** Compute live period from kickoff time when backend hasn't supplied it yet.
+ * When backend provides period/minute, use max(backend, estimated) so stale
+ * backend data (e.g. 68' when real time is 90') doesn't freeze the display. */
 function computeLiveInfo(match: Match): { period: string; minute: number | null } | null {
   if (match.status !== "live") return null;
-  // Use backend-provided period/minute if available
-  if (match.period) return { period: match.period, minute: match.minute ?? null };
-  // Fallback: estimate from kickoff
   try {
     const kickoff = new Date(match.datetime).getTime();
     const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
     if (elapsed < 0) return null;
-    if (elapsed <= 47) return { period: "1T", minute: Math.min(elapsed, 45) };
-    if (elapsed <= 62) return { period: "HT", minute: null };
-    return { period: "2T", minute: Math.min(elapsed - 15, 90) };
+    let period = match.period ?? "";
+    let minute: number | null = match.minute ?? null;
+    if (elapsed <= 47) {
+      const est = { period: "1T" as const, minute: Math.min(elapsed, 45) };
+      if (!period) period = est.period;
+      if (minute == null) minute = est.minute;
+      else minute = Math.max(minute, est.minute);
+    } else if (elapsed <= 62) {
+      if (!period) period = "HT";
+      minute = null;
+    } else {
+      const estMin = Math.min(elapsed - 15, 90);
+      if (!period) period = "2T";
+      if (minute == null) minute = estMin;
+      else minute = Math.max(minute, estMin);
+    }
+    return { period, minute };
   } catch {
-    return { period: "1T", minute: null };
+    return match.period ? { period: match.period, minute: match.minute ?? null } : null;
   }
 }
 
@@ -421,8 +438,14 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
-    period: match.period,
-    minute: match.minute,
+    period: (() => {
+      const li = computeLiveInfo(match);
+      return li?.period ?? match.period;
+    })(),
+    minute: (() => {
+      const li = computeLiveInfo(match);
+      return li?.minute ?? match.minute;
+    })(),
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -683,6 +706,9 @@ export default function Dashboard() {
           const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
           if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
+          if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
+            console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
+          }
           return {
             ...m,
             status: newStatus,
@@ -797,6 +823,16 @@ export default function Dashboard() {
     liveIntervalMs: 30_000,
     idleIntervalMs: 120_000,
   });
+
+  // Force re-render every 30s when live matches exist — computeLiveInfo uses Date.now()
+  // so the minute display updates even when backend polling returns cached data.
+  useEffect(() => {
+    if (!hasLiveMatches) return;
+    const tick = setInterval(() => {
+      setAllMatches((prev) => (prev.length ? [...prev] : prev));
+    }, 30_000);
+    return () => clearInterval(tick);
+  }, [hasLiveMatches]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 

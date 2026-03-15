@@ -1500,6 +1500,80 @@ Fallback para `item.home_team_corner_count` / `item.away_team_corner_count` caso
 
 ---
 
+## 021a — CornerProgressBar invisível em ligas sem estatísticas inline (ex: Brasileirão)
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+**Relacionado:** #014, #015
+
+### Problema identificado
+
+A `CornerProgressBar` não aparecia em jogos ao vivo de algumas ligas (ex: Internacional x Bahia — Brasileirão), mesmo com prognósticos de escanteios (Over 8.5, Over 9.5, etc.). O Path B (#015) já incluía `currentCorners` a partir de `extract_live_data()`, mas o endpoint `/fixtures?live=all` da API-Football **não retorna estatísticas inline** para todas as ligas — em algumas (como Brasileirão), o campo `statistics` vem vazio.
+
+### Causa raiz
+
+O `extract_live_data()` lê `home_corners` e `away_corners` do campo `fixture.statistics` da resposta de `/fixtures?live=all`. Para ligas onde a API não inclui estatísticas inline nessa resposta, esses campos ficam `None` e o `currentCorners` nunca é preenchido.
+
+### Correção aplicada
+
+Fallback em **ambos os paths** (Path A e Path B): quando `home_corners` e `away_corners` são `None` após `extract_live_data()`, fazer chamada explícita a `/fixtures/statistics` com o `fixture_id`:
+
+```python
+if _corners is None:
+    _fx_id = matched_fx.get("fixture", {}).get("id")
+    if _fx_id is not None:
+        _raw_stats = _afc.get_fixture_statistics(int(_fx_id), ttl_minutes=2)
+        if _raw_stats:
+            _parsed = _afc.parse_fixture_statistics(_raw_stats)
+            _hc = _parsed.get("home", {}).get("corner_kicks")
+            _ac = _parsed.get("away", {}).get("corner_kicks")
+            if _hc is not None and _ac is not None:
+                _corners = int(_hc) + int(_ac)
+```
+
+O endpoint `/fixtures/statistics` retorna dados completos por liga, incluindo Brasileirão.
+
+### Lição aprendida
+
+A API-Football não garante paridade entre ligas: `/fixtures?live=all` pode incluir `statistics` para algumas ligas e não para outras. Sempre ter fallback para endpoints dedicados (`/fixtures/statistics`) quando dados essenciais estiverem ausentes.
+
+---
+
+## 021b — Placar e minuto ao vivo não atualizam automaticamente
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/hooks/useLivePolling.ts`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+O placar e o tempo de jogo (ex: 68') não atualizavam automaticamente para jogos ao vivo. O jogo Internacional x Bahia já estava em 90' mas a tela continuava mostrando 68'.
+
+### Causa raiz (2 camadas)
+
+1. **computeLiveInfo confiava cegamente no backend** — Quando o backend fornecia `period` e `minute`, o frontend usava esses valores diretamente. O backend tem cache de 1 min (FootyStats/API-Football), então os dados podem ficar desatualizados por até 1 min. Com polling de 30s, em cenários de cache agressivo ou tab em segundo plano, o minuto exibido congelava.
+
+2. **Sem fetch inicial no polling** — O `useLivePolling` iniciava o intervalo mas não executava o fetch imediatamente. O primeiro update só ocorria após 30s.
+
+### Correções aplicadas
+
+1. **computeLiveInfo usa max(backend, estimado)** — Sempre calcula o minuto estimado a partir do kickoff (`Date.now() - kickoff`). Quando o backend fornece `period`/`minute`, usa `max(backend, estimado)` para nunca exibir um minuto menor que o tempo real decorrido.
+
+2. **toDetailData repassa period/minute de computeLiveInfo** — O `MatchDetailCard` recebe `period` e `minute` já computados, garantindo consistência na lista e no card de detalhe.
+
+3. **Fetch inicial no useLivePolling** — Quando `hasLiveMatches` é true, executa `wrappedFetch()` imediatamente ao montar o efeito, evitando espera de 30s para o primeiro update.
+
+4. **Tick de re-render a cada 30s** — `setInterval` que chama `setAllMatches(prev => [...prev])` quando há jogos ao vivo. Força re-render para que `computeLiveInfo` rode novamente com `Date.now()` atualizado, mesmo quando o backend retorna dados em cache.
+
+### Lição aprendida
+
+Dados ao vivo com cache no backend exigem defesa no frontend: usar estimativas locais (kickoff + tempo decorrido) como piso e nunca exibir valores inferiores ao tempo real. Re-renders periódicos garantem que a UI reflita o tempo atual mesmo sem novos dados da API.
+
+---
+
 ## 021 — Jogos dinamarqueses (Esbjerg, Hvidovre) ainda misturados entre jogos da EPL
 
 **Data:** 2026-03-15
@@ -1529,6 +1603,40 @@ Apesar da correção #019 (ordenação por `leagueOrder` no frontend e backend),
 ### Lição aprendida
 
 Quando a ordenação por liga não resolve mistura de jogos, investigar se o `leagueId` está correto na origem. Heurísticas baseadas em nomes de times são uma camada de defesa útil quando há inconsistência entre backend e frontend ou em fluxos de fallback.
+
+---
+
+## 021c — CornerProgressBar continua invisível (parser robusto + placeholder)
+
+**Data:** 2026-02-05
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/routes/fixtures.py`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta
+**Status:** Corrigido
+**Relacionado:** #021a
+
+### Problema identificado
+
+Apesar da correção #021a (fallback para `/fixtures/statistics`), a `CornerProgressBar` continuava invisível em jogos ao vivo com prognósticos de escanteios (Over 8.5, Over 9.5, etc.).
+
+### Causa raiz (hipóteses)
+
+1. **Parser sensível a variações** — O `parse_fixture_statistics` usava match exato em `stat_key_map`. A API-Football pode retornar "Corner kicks" (k minúsculo) ou estrutura alternativa.
+2. **Merge por nomes** — "SC Internacional" vs "Internacional" poderia falhar no match por nomes de times.
+3. **Ausência de feedback** — Quando `currentCorners` era null, nada era exibido; o usuário não sabia se a funcionalidade existia ou estava carregando.
+
+### Correções aplicadas
+
+1. **`_extract_corners_from_stats()`** — Nova função em `api_football_client.py` que aceita múltiplos formatos de resposta, faz match case-insensitive para "corner" no `type`, e retorna `(home_corners, away_corners)`.
+2. **Fallback no parse** — `parse_fixture_statistics` passou a aceitar "Corner kicks" (k minúsculo) e estrutura alternativa (team_block como lista de stats).
+3. **Uso prioritário** — Path A e Path B em `fixtures.py` usam `_extract_corners_from_stats` primeiro; `parse_fixture_statistics` como fallback.
+4. **Logging INFO** — Quando o fallback de corners falha, loga `fixture_id`, `raw_stats_len` e `first_block_keys` para diagnóstico.
+5. **Placeholder** — Quando `targetCorners != null`, `status === "live"` mas `currentCorners == null`, exibe "Escanteios: aguardando dados...".
+6. **normalizeTeamName** — Remoção de prefixos comuns (SC, EC, FC, etc.) para melhor match "SC Internacional" ↔ "Internacional".
+7. **Log em dev** — `console.log` quando `currentCorners` é aplicado no merge (apenas em desenvolvimento).
+
+### Lição aprendida
+
+APIs externas variam em formato e nomenclatura. Parsers defensivos com match case-insensitive e suporte a estruturas alternativas aumentam resiliência. Placeholders melhoram UX e ajudam a distinguir "carregando" de "não disponível".
 
 ---
 

@@ -12,7 +12,7 @@ import hashlib
 import logging
 import sqlite3
 import time
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, datetime, timedelta
 
 try:
@@ -619,6 +619,58 @@ class APIFootballClient:
     # PARSERS: extract structured stats from API-Football responses
     # ------------------------------------------------------------------
     @staticmethod
+    def _extract_corners_from_stats(raw_stats: List[Dict]) -> Tuple[Optional[int], Optional[int]]:
+        """Extract home/away corner counts from /fixtures/statistics response.
+
+        Handles multiple API response formats and case-insensitive stat type matching.
+        Returns (home_corners, away_corners) or (None, None) if not found.
+        """
+        if not raw_stats or not isinstance(raw_stats, list):
+            return (None, None)
+        home_corners: Optional[int] = None
+        away_corners: Optional[int] = None
+
+        def _parse_corner_val(val: Any) -> Optional[int]:
+            if val is None:
+                return None
+            try:
+                v = int(val)
+                return v if v >= 0 else None
+            except (ValueError, TypeError):
+                return None
+
+        def _is_corner_stat(stype: str) -> bool:
+            if not stype:
+                return False
+            return "corner" in str(stype).lower()
+
+        for idx in range(min(2, len(raw_stats))):
+            team_block = raw_stats[idx]
+            stats_list: List[Dict] = []
+
+            if isinstance(team_block, dict):
+                stats_list = team_block.get("statistics", [])
+                if not stats_list and isinstance(team_block.get("statistics"), list):
+                    stats_list = team_block["statistics"]
+            elif isinstance(team_block, list):
+                stats_list = team_block
+
+            for s in stats_list:
+                if not isinstance(s, dict):
+                    continue
+                stype = s.get("type", "")
+                if _is_corner_stat(stype):
+                    val = _parse_corner_val(s.get("value"))
+                    if val is not None:
+                        if idx == 0:
+                            home_corners = val
+                        else:
+                            away_corners = val
+                    break
+
+        return (home_corners, away_corners)
+
+    @staticmethod
     def parse_fixture_statistics(raw_stats: List[Dict]) -> Dict:
         """Parse /fixtures/statistics response into a structured dict.
 
@@ -638,6 +690,7 @@ class APIFootballClient:
             "Shots outsidebox": "shots_outside_box",
             "Goalkeeper Saves": "goalkeeper_saves",
             "Corner Kicks": "corner_kicks",
+            "Corner kicks": "corner_kicks",
             "Fouls": "fouls",
             "Yellow Cards": "yellow_cards",
             "Red Cards": "red_cards",
@@ -654,9 +707,10 @@ class APIFootballClient:
             if idx >= len(raw_stats):
                 break
             team_block = raw_stats[idx]
-            team_name = (team_block.get("team") or {}).get("name", label)
+            team_name = (team_block.get("team") or {}).get("name", label) if isinstance(team_block, dict) else label
             result[label]["team_name"] = team_name
-            for s in team_block.get("statistics", []):
+            stats_list = team_block.get("statistics", []) if isinstance(team_block, dict) else (team_block if isinstance(team_block, list) else [])
+            for s in stats_list:
                 stype = s.get("type", "")
                 mapped = stat_key_map.get(stype)
                 if mapped:

@@ -630,11 +630,19 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   )}
                                   {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
                                 </div>
-                                {targetCorners != null && match.currentCorners != null && match.status === "live" && (
-                                  <CornerProgressBar
-                                    currentCorners={match.currentCorners}
-                                    targetCorners={targetCorners}
-                                  />
+                                {targetCorners != null && match.status === "live" && (
+                                  match.currentCorners != null ? (
+                                    <CornerProgressBar
+                                      currentCorners={match.currentCorners}
+                                      targetCorners={targetCorners}
+                                    />
+                                  ) : (
+                                    <div className="cpb-root cpb-placeholder">
+                                      <span className="cpb-label">Escanteios</span>
+                                      <span className="cpb-target">Meta: {targetCorners}</span>
+                                      <span className="cpb-loading">Aguardando dados...</span>
+                                    </div>
+                                  )
                                 )}
                               </div>
                             );
