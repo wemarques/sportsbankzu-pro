@@ -262,7 +262,7 @@ export default function MatchDetailCard(props: Props) {
   );
 }
 
-function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.6", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.7", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);

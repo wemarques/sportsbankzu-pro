@@ -51,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.6";
+const VERSION_FALLBACK = "pro V3.7";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -363,6 +363,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayXgAgainstAvg: item.stats?.awayXgAgainstAvg ?? undefined,
       homeCornersAgainstPerMatch: item.stats?.homeCornersAgainstPerMatch ?? undefined,
       awayCornersAgainstPerMatch: item.stats?.awayCornersAgainstPerMatch ?? undefined,
+      homeCornersCount: item.stats?.homeCornersCount ?? item.home_team_corner_count ?? undefined,
+      awayCornersCount: item.stats?.awayCornersCount ?? item.away_team_corner_count ?? undefined,
       homeLeaguePosition: item.stats?.homeLeaguePosition ?? undefined,
       awayLeaguePosition: item.stats?.awayLeaguePosition ?? undefined,
       homeAvgTotalGoals: item.stats?.homeAvgTotalGoals ?? undefined,

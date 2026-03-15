@@ -1463,4 +1463,41 @@ Dependência do `useCallback` mudou de `[dateMode, combinadasLeagues]` para `[al
 
 ---
 
+## 020 — Auditoria marca duplas com escanteios como ERROU quando acertaram (homeCornersCount ausente no normalizeMatch)
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta (relatório de auditoria incorreto)
+**Status:** Corrigido
+**Relacionado:** #006, #014
+
+### Problema identificado
+
+Duplas intra-jogo contendo mercados de escanteios (ex: "Under 3.5 gols" + "Escanteios Over 8.5") eram marcadas como **ERROU** no relatório de auditoria mesmo quando ambos os prognósticos acertaram. Exemplo: St. Mirren x Rangers — Under 3.5 gols e Escanteios Over 8.5 acertaram, mas o sistema exibia ERROU.
+
+### Causa raiz
+
+A função `normalizeMatch()` em `dashboard/page.tsx` transforma os dados do backend para o formato `Match` usado no frontend. O backend (`fixtures_service.py`) já envia `homeCornersCount` e `awayCornersCount` em `stats` para jogos finalizados. Porém, `normalizeMatch()` **não copiava** esses campos para o objeto `stats` de saída — copiava dezenas de outros campos (homeCornersPerMatch, awayCornersPerMatch, etc.) mas omitia os contadores reais de escanteios do jogo.
+
+Resultado: ao construir `actualByKey` em `computeLocalCombinadas()` (`localAudit.ts`), o código usava `m.stats.homeCornersCount` e `m.stats.awayCornersCount`, que eram `undefined` → `totalCorners = 0`. Para "Escanteios Over 8.5", a avaliação `totalCorners > 8.5` retornava `false` (0 > 8.5) → ERROU, mesmo quando o jogo real teve 9+ escanteios.
+
+### Correção aplicada
+
+Adicionados `homeCornersCount` e `awayCornersCount` ao objeto `stats` em `normalizeMatch()`:
+
+```typescript
+homeCornersCount: item.stats?.homeCornersCount ?? item.home_team_corner_count ?? undefined,
+awayCornersCount: item.stats?.awayCornersCount ?? item.away_team_corner_count ?? undefined,
+```
+
+Fallback para `item.home_team_corner_count` / `item.away_team_corner_count` caso o backend envie no nível raiz do match.
+
+### Lição aprendida
+
+1. **Paridade entre backend e frontend na transformação** — Quando o backend adiciona novos campos (ex: #006, #003) para auditoria ou exibição, a função de normalização do frontend deve ser atualizada para repassá-los. Campos omitidos na transformação são descartados silenciosamente.
+
+2. **Auditoria depende de dados completos** — A avaliação de duplas com escanteios exige `totalCorners` real. Usar 0 como fallback para "dado ausente" gera falsos negativos (ERROU quando acertou). Considerar PENDENTE quando dados essenciais faltam seria mais seguro, mas a correção prioritária foi garantir que os dados cheguem.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
