@@ -418,6 +418,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
     predictions: match.predictions,
+    currentCorners: match.currentCorners ?? null,
   };
 }
 
@@ -589,7 +590,7 @@ export default function Dashboard() {
       const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
       if (liveList.length === 0) return;
       // Diagnostic: log live overlay data
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
@@ -638,9 +639,17 @@ export default function Dashboard() {
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
-          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
+          const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
+          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
-          return { ...m, status: newStatus, score: liveScore, period: live.period as Match["period"], minute: live.minute };
+          return {
+            ...m,
+            status: newStatus,
+            score: liveScore,
+            period: live.period as Match["period"],
+            minute: live.minute,
+            ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+          };
         });
         unmatched = liveList.length - matched;
         if (unmatched > 0) {

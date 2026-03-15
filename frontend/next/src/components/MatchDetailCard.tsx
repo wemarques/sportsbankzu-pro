@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ShieldCheck,
 } from "lucide-react";
+import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import "../styles/match-detail-card.css";
 
 /* ── ERROR BOUNDARY (reusable) ── */
@@ -203,6 +204,7 @@ export interface MatchDetailData {
   awayForm?: string[];
   round?: string;
   aiAnalysis?: AIAnalysis;
+  currentCorners?: number | null;
   predictions?: {
     mercado: string;
     status: string;
@@ -613,19 +615,30 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       <div className="mdc-prognostico">
                         <h4 className="mdc-ai-section-title">Prognostico</h4>
                         <div className="mdc-prognostico__list">
-                          {match.predictions.map((pred, idx) => (
-                            <div key={idx} className={`mdc-prognostico__item mdc-prognostico__item--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                              <span className={`mdc-prognostico__status mdc-prognostico__status--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                                {pred.status}
-                              </span>
-                              <span className="mdc-prognostico__market">{pred.mercado}</span>
-                              <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
-                              {pred.odd_minima != null && (
-                                <span className="mdc-prognostico__ev">EV+ &gt;= {pred.odd_minima.toFixed(2)}</span>
-                              )}
-                              {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
-                            </div>
-                          ))}
+                          {match.predictions.map((pred, idx) => {
+                            const targetCorners = extractTargetCorners(pred.mercado);
+                            return (
+                              <div key={idx}>
+                                <div className={`mdc-prognostico__item mdc-prognostico__item--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                    {pred.status}
+                                  </span>
+                                  <span className="mdc-prognostico__market">{pred.mercado}</span>
+                                  <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  {pred.odd_minima != null && (
+                                    <span className="mdc-prognostico__ev">EV+ &gt;= {pred.odd_minima.toFixed(2)}</span>
+                                  )}
+                                  {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                </div>
+                                {targetCorners != null && match.currentCorners != null && match.status === "live" && (
+                                  <CornerProgressBar
+                                    currentCorners={match.currentCorners}
+                                    targetCorners={targetCorners}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
