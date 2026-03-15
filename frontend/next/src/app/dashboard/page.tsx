@@ -553,11 +553,12 @@ export default function Dashboard() {
         throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
       }
       if (!res.ok) {
-        const errKind = data?._error?.kind;
+        const errObj = data?._error as Record<string, unknown> | undefined;
+        const errKind = errObj?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
         if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
-        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+        throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
       }
       setCombinadas(data as CombinadasData);
     } catch (err) {
