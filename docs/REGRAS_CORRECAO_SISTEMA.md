@@ -1500,4 +1500,36 @@ Fallback para `item.home_team_corner_count` / `item.away_team_corner_count` caso
 
 ---
 
+## 021 — Jogos dinamarqueses (Esbjerg, Hvidovre) ainda misturados entre jogos da EPL
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta
+**Status:** Corrigido
+**Relacionado:** #019
+
+### Problema identificado
+
+Apesar da correção #019 (ordenação por `leagueOrder` no frontend e backend), os jogos Esbjerg vs Hillerød e Hvidovre vs Kolding IF (Superliga dinamarquesa) continuavam aparecendo entre jogos da Premier League inglesa no dashboard.
+
+### Causa raiz
+
+1. **Fallback de leagueId incorreto** — Quando `item.leagueId` estava ausente ou indefinido, o código usava `AVAILABLE_LEAGUES[0]?.id` (Premier League) como fallback, atribuindo jogos de outras ligas ao grupo da EPL.
+
+2. **Possível inconsistência backend** — O backend pode retornar `leagueId: "superliga"` (id da config) em vez de `"denmark-superliga"` (id do frontend), ou jogos dinamarqueses com leagueId errado em cenários de fallback/merge.
+
+### Correções aplicadas
+
+1. **Heurística por nomes de times** — Função `inferLeagueFromTeams(home, away)` com lista de times conhecidos da Superliga dinamarquesa (Esbjerg, Hillerød, Hvidovre, Kolding IF, etc.). Se o jogo contém um desses times, força `leagueId: "denmark-superliga"`.
+
+2. **Normalização "superliga" → "denmark-superliga"** — Quando o backend retorna `leagueId: "superliga"`, o frontend converte para `"denmark-superliga"` para consistência com `AVAILABLE_LEAGUES`.
+
+3. **Fallback de leagueId alterado** — Em vez de `AVAILABLE_LEAGUES[0]?.id`, usa `"unknown"` quando `item.leagueId` está ausente. Evita atribuir incorretamente à Premier League; jogos com leagueId desconhecido vão para um grupo no final (posição 999).
+
+### Lição aprendida
+
+Quando a ordenação por liga não resolve mistura de jogos, investigar se o `leagueId` está correto na origem. Heurísticas baseadas em nomes de times são uma camada de defesa útil quando há inconsistência entre backend e frontend ou em fluxos de fallback.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -255,6 +255,19 @@ function buildScreenshotName() {
   return `sportsbank-picks-${stamp}.png`;
 }
 
+/** Known Danish Superliga teams — correct leagueId when backend returns wrong/missing leagueId */
+const KNOWN_DANISH_TEAMS = new Set([
+  "esbjerg", "hillerød", "hillerod", "hvidovre", "kolding if", "kolding", "fc midtjylland", "midtjylland",
+  "fc copenhagen", "copenhagen", "brøndby", "brondby", "aalborg", "aab", "nordsjælland",
+  "nordsjaelland", "silkeborg", "viborg", "ob", "odense", "randers", "lyngby", "vejle",
+]);
+function inferLeagueFromTeams(home: string, away: string): string | null {
+  const h = normalizeTeamName(home);
+  const a = normalizeTeamName(away);
+  if (KNOWN_DANISH_TEAMS.has(h) || KNOWN_DANISH_TEAMS.has(a)) return "denmark-superliga";
+  return null;
+}
+
 function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const home = item.home_team
     ?? (typeof item.homeTeam === "string" ? item.homeTeam : item.homeTeam?.name)
@@ -262,13 +275,18 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const away = item.away_team
     ?? (typeof item.awayTeam === "string" ? item.awayTeam : item.awayTeam?.name)
     ?? item.away ?? "Away";
+  // Heuristic: correct leagueId when backend returns wrong/missing (e.g. Danish teams in EPL group)
+  const inferred = inferLeagueFromTeams(home, away);
+  // Backend config uses "superliga", frontend uses "denmark-superliga"
+  const normalizedLid = leagueId === "superliga" ? "denmark-superliga" : leagueId;
+  const resolvedLeagueId = inferred ?? normalizedLid;
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
-  const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+  const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
   return {
-    id: item.id ?? `${leagueId}-${idx}-${home}-${away}`,
+    id: item.id ?? `${resolvedLeagueId}-${idx}-${home}-${away}`,
     footystatsId: item.footystatsId ?? undefined,
-    leagueId,
-    leagueName: league?.name ?? leagueId,
+    leagueId: resolvedLeagueId,
+    leagueName: league?.name ?? resolvedLeagueId,
     homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
     awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? item.awayForm ?? [], rating: item.awayTeam?.rating || item.ratings?.away || 0 },
     datetime: dt,
@@ -744,7 +762,8 @@ export default function Dashboard() {
         }
 
         const normalized = raw.map((item: any, idx: number) => {
-          const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+          // Use "unknown" instead of first league — avoids wrongly assigning to Premier League
+          const lid = item.leagueId ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
         setAllMatches(normalized);
