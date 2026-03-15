@@ -1082,4 +1082,56 @@ O componente `CornerProgressBar.tsx` e sua integração no `MatchDetailCard.tsx`
 
 ---
 
+## 016 — Dados de escanteios ao vivo ausentes no contexto da análise Mistral AI
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/services/mistral_analysis.py`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+A API-Football já extraía `home_corners` e `away_corners` via `extract_live_data()`, e esses dados já eram usados no frontend (CornerProgressBar, ver #014/#015). Porém, quando o sistema gerava a análise AI via Mistral, os dados de escanteios ao vivo **não eram incluídos no prompt**. Resultado: a Mistral recomendava mercados de Escanteios Over/Under sem saber quantos corners já haviam ocorrido durante o jogo, tornando a análise ao vivo desconectada da realidade.
+
+### Causa raiz (2 camadas)
+
+1. **`_format_live_status()` não incluía corners** — O método formatava apenas status, minuto e placar (ex: "Segundo tempo em andamento: 65 min, Placar: 2-1"), mas ignorava `home_corners` e `away_corners` presentes no `live_data`.
+
+2. **Prompt sem instrução sobre corners ao vivo** — Mesmo que os corners estivessem na string de status, o prompt da Mistral não continha nenhuma instrução para avaliar ritmo de corners vs tempo restante ao recomendar mercados de escanteios.
+
+### Correções aplicadas (2 camadas)
+
+1. **`api_football_client.py` — `_format_live_status()`** — Agora extrai `home_corners` e `away_corners` do `live_data` e, quando ambos estão disponíveis, adiciona `Escanteios: X+Y=Z` à string de status. Exemplo de saída: `"Segundo tempo em andamento: 65 min, Placar: 2-1, Escanteios: 5+3=8"`. Funciona tanto para jogos ao vivo quanto para encerrados.
+
+```python
+home_corners = live_data.get("home_corners")
+away_corners = live_data.get("away_corners")
+corner_str = ""
+if home_corners is not None and away_corners is not None:
+    total = home_corners + away_corners
+    corner_str = f", Escanteios: {home_corners}+{away_corners}={total}"
+```
+
+2. **`mistral_analysis.py` — `_build_prompt()`** — Duas adições ao prompt:
+   - Na seção CONTEXTO ADICIONAL: nota explicativa após o campo `Status ao Vivo` instruindo a Mistral a usar dados de corners para avaliar mercados de escanteios ao vivo.
+   - Na seção IMPORTANTE: instrução para analisar ritmo de corners vs tempo restante ao avaliar linhas de Escanteios Over/Under.
+
+### Fluxo completo após correção
+
+1. API-Football retorna fixture com `statistics` → `extract_live_data()` extrai `home_corners` e `away_corners`
+2. `_format_live_status()` inclui `Escanteios: 5+3=8` na string de status
+3. Rota `/ai/match/{id}/analysis` injeta `live_status` no contexto
+4. `_build_prompt()` inclui o status no prompt com instrução para a Mistral usar os dados
+5. Mistral analisa: "Já são 8 escanteios aos 65min, ritmo de ~7.4 corners/45min sugere Over 9.5 com boa probabilidade"
+
+### Lição aprendida
+
+1. **Dados disponíveis no sistema mas não conectados entre camadas** — O padrão de bug "dado extraído mas não propagado" se repetiu (#015 frontend, agora #016 AI). Sempre que um novo dado é adicionado ao pipeline, verificar **todos os consumidores**: frontend, prompt AI, cache, logs.
+
+2. **Análise AI sem dados ao vivo é análise pré-jogo disfarçada** — Sem saber que já ocorreram 8 corners aos 65min, a Mistral analisa como se o jogo não tivesse começado. A qualidade da recomendação para mercados live depende criticamente de dados live no prompt.
+
+3. **Instrução explícita no prompt é necessária** — Mesmo incluindo o dado no contexto, modelos de linguagem podem ignorá-lo se não houver instrução explícita para usá-lo. A nota "Compare o total atual com as linhas de escanteios e o tempo restante" garante que a Mistral processe ativamente a informação.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
