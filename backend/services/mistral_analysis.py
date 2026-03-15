@@ -283,6 +283,8 @@ CONTEXTO ADICIONAL:
   NOTA: [FORA] = desfalque confirmado, [DUVIDA] = presenca incerta — pese o impacto de forma diferente.
 - Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 - Status ao Vivo: {context.get('live_status', 'Sem dados ao vivo')}
+  NOTA: Se o status ao vivo incluir "Escanteios: X+Y=Z", use esses dados para avaliar mercados de corners ao vivo.
+  Compare o total atual com as linhas de escanteios (Over 8.5, 9.5, etc) e o tempo restante para ajustar a recomendacao.
 """
             if context.get("footystats_analysis"):
                 prompt += f"""
@@ -311,6 +313,7 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 
 IMPORTANTE:
 - Considere o status da partida (Status ao Vivo). Se o jogo estiver ao vivo, comente sobre o placar atual e como ele impacta a analise.
+- Se houver dados de escanteios ao vivo (Escanteios: X+Y=Z no Status ao Vivo), analise o ritmo de corners vs tempo restante para avaliar mercados de Escanteios Over/Under.
 - Utilize os dados de ausencias (Lesoes/Suspensoes) informados pela API-Football e NUNCA invente lesoes ou suspensoes que nao estejam listadas.
 - Se nao houver dados de ausencias, diga apenas que nao ha informacao disponivel — NAO fabrique nomes de jogadores lesionados.
 - Seja especifico e use os numeros fornecidos EXATAMENTE como mostrados (ex: 85.5% significa 85.5%, NAO multiplique por 100)

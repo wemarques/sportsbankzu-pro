@@ -1160,14 +1160,22 @@ class APIFootballClient:
 
         status_desc = status_map.get(status, f"Status: {status}")
 
+        # Corner info (available for live and finished matches)
+        home_corners = live_data.get("home_corners")
+        away_corners = live_data.get("away_corners")
+        corner_str = ""
+        if home_corners is not None and away_corners is not None:
+            total = home_corners + away_corners
+            corner_str = f", Escanteios: {home_corners}+{away_corners}={total}"
+
         if live_data.get("is_live") and minute is not None:
             extra = live_data.get("extra_time")
             minute_str = f"{minute}"
             if extra:
                 minute_str += f"+{extra}"
-            return f"{status_desc}: {minute_str} min, Placar: {score}"
+            return f"{status_desc}: {minute_str} min, Placar: {score}{corner_str}"
         elif live_data.get("is_finished"):
-            return f"{status_desc}. Placar final: {score}"
+            return f"{status_desc}. Placar final: {score}{corner_str}"
         else:
             return status_desc
 
