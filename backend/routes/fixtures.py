@@ -1205,6 +1205,17 @@ def live_scores() -> Dict[str, Any]:
                         if af_status in period_map:
                             rec["period"] = period_map[af_status]
 
+                        # Overlay corner kicks from API-Football
+                        _corners: int | None = None
+                        if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
+                            _corners = ld["home_corners"] + ld["away_corners"]
+                        elif ld.get("home_corners") is not None:
+                            _corners = ld["home_corners"]
+                        elif ld.get("away_corners") is not None:
+                            _corners = ld["away_corners"]
+                        if _corners is not None:
+                            rec["currentCorners"] = _corners
+
                         _af_enriched += 1
 
                 if _af_enriched:
