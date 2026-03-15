@@ -175,6 +175,124 @@ class MistralAnalysisService:
                 pass
         return "N/A"
 
+    @staticmethod
+    def _format_extended_live_context(
+        stats: Dict,
+        events: Dict,
+        live_data: Dict,
+        home_team: str,
+        away_team: str,
+    ) -> str:
+        """Build a dense tactical context string from live statistics and events.
+
+        This string gives Mistral a full X-ray of the match so it can make
+        data-driven recommendations instead of defaulting to BTTS.
+
+        Args:
+            stats: Output of APIFootballClient.parse_fixture_statistics()
+            events: Output of APIFootballClient.parse_fixture_events()
+            live_data: Live data dict (status, minute, score, corners, possession)
+            home_team: Home team display name
+            away_team: Away team display name
+
+        Returns:
+            Dense tactical context string.
+        """
+        parts = []
+
+        # -- Status line --
+        status = live_data.get("status", "NS")
+        minute = live_data.get("minute")
+        extra = live_data.get("extra_time")
+        period_map = {"1H": "1T", "HT": "INT", "2H": "2T", "ET": "PRO", "FT": "FIM", "AET": "FIM+PRO", "PEN": "PEN"}
+        period = period_map.get(status, status)
+        minute_str = ""
+        if minute is not None:
+            minute_str = str(minute)
+            if extra:
+                minute_str += f"+{extra}"
+
+        score = live_data.get("score", "N/A")
+        status_line = f"Status: {minute_str} min ({period}). Placar: {home_team} {score} {away_team}."
+        parts.append(status_line)
+
+        h = stats.get("home", {})
+        a = stats.get("away", {})
+
+        def _v(d: Dict, key: str, default: str = "?") -> str:
+            val = d.get(key)
+            return str(val) if val is not None else default
+
+        # -- DOMÍNIO --
+        if h.get("possession") is not None and a.get("possession") is not None:
+            parts.append(f"DOMINIO: Posse ({_v(h, 'possession')}% x {_v(a, 'possession')}%).")
+
+        # -- PRESSÃO OFENSIVA --
+        pressure_items = []
+        if h.get("shots_on_goal") is not None or a.get("shots_on_goal") is not None:
+            pressure_items.append(f"Chutes no Alvo ({_v(h, 'shots_on_goal', '0')} x {_v(a, 'shots_on_goal', '0')})")
+        if h.get("shots_inside_box") is not None or a.get("shots_inside_box") is not None:
+            pressure_items.append(f"Chutes na Area ({_v(h, 'shots_inside_box', '0')} x {_v(a, 'shots_inside_box', '0')})")
+        if h.get("total_shots") is not None or a.get("total_shots") is not None:
+            pressure_items.append(f"Finalizacoes Totais ({_v(h, 'total_shots', '0')} x {_v(a, 'total_shots', '0')})")
+        if h.get("shots_off_goal") is not None or a.get("shots_off_goal") is not None:
+            pressure_items.append(f"Chutes Fora ({_v(h, 'shots_off_goal', '0')} x {_v(a, 'shots_off_goal', '0')})")
+        if h.get("corner_kicks") is not None or a.get("corner_kicks") is not None:
+            hc = _v(h, 'corner_kicks', '0')
+            ac = _v(a, 'corner_kicks', '0')
+            try:
+                total_c = int(hc) + int(ac)
+            except (ValueError, TypeError):
+                total_c = "?"
+            pressure_items.append(f"Escanteios ({hc} x {ac} = {total_c})")
+        if pressure_items:
+            parts.append(f"PRESSAO: {', '.join(pressure_items)}.")
+
+        # -- DEFESA --
+        defense_items = []
+        if h.get("goalkeeper_saves") is not None or a.get("goalkeeper_saves") is not None:
+            defense_items.append(f"Defesas do Goleiro ({_v(h, 'goalkeeper_saves', '0')} x {_v(a, 'goalkeeper_saves', '0')})")
+        if h.get("shots_blocked") is not None or a.get("shots_blocked") is not None:
+            defense_items.append(f"Chutes Bloqueados ({_v(h, 'shots_blocked', '0')} x {_v(a, 'shots_blocked', '0')})")
+        if defense_items:
+            parts.append(f"DEFESA: {', '.join(defense_items)}.")
+
+        # -- DISCIPLINA --
+        discipline_items = []
+        if h.get("fouls") is not None or a.get("fouls") is not None:
+            discipline_items.append(f"Faltas ({_v(h, 'fouls', '0')} x {_v(a, 'fouls', '0')})")
+        if h.get("yellow_cards") is not None or a.get("yellow_cards") is not None:
+            discipline_items.append(f"Amarelos ({_v(h, 'yellow_cards', '0')} x {_v(a, 'yellow_cards', '0')})")
+        if h.get("red_cards") is not None or a.get("red_cards") is not None:
+            discipline_items.append(f"Vermelhos ({_v(h, 'red_cards', '0')} x {_v(a, 'red_cards', '0')})")
+        if discipline_items:
+            parts.append(f"DISCIPLINA: {', '.join(discipline_items)}.")
+
+        # -- PASSES --
+        if h.get("passes_accurate") is not None or a.get("passes_accurate") is not None:
+            parts.append(
+                f"PASSES: Precisos ({_v(h, 'passes_accurate', '?')} x {_v(a, 'passes_accurate', '?')}), "
+                f"Total ({_v(h, 'passes_total', '?')} x {_v(a, 'passes_total', '?')}), "
+                f"Acerto ({_v(h, 'passes_pct', '?')}% x {_v(a, 'passes_pct', '?')}%)."
+            )
+
+        # -- xG (if available) --
+        if h.get("expected_goals") is not None or a.get("expected_goals") is not None:
+            parts.append(f"xG AO VIVO: {_v(h, 'expected_goals', '?')} x {_v(a, 'expected_goals', '?')}.")
+
+        # -- EVENTOS CHAVE --
+        event_items = []
+        for rc in events.get("red_card_events", []):
+            event_items.append(f"Cartao Vermelho para {rc.get('team', '?')} ({rc.get('player', '?')}) aos {rc.get('time', '?')} min")
+        for g in events.get("goals", []):
+            detail = g.get("detail", "")
+            assist = f" (assist: {g['assist']})" if g.get("assist") else ""
+            event_items.append(f"Gol de {g.get('team', '?')} ({g.get('player', '?')}{assist}) aos {g.get('time', '?')} min{' [P]' if 'Penalty' in detail else ''}")
+        if event_items:
+            parts.append(f"EVENTOS: {'; '.join(event_items)}.")
+
+        return " ".join(parts)
+
     def _build_prompt(
         self,
         home_team: str,
@@ -283,8 +401,12 @@ CONTEXTO ADICIONAL:
   NOTA: [FORA] = desfalque confirmado, [DUVIDA] = presenca incerta — pese o impacto de forma diferente.
 - Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 - Status ao Vivo: {context.get('live_status', 'Sem dados ao vivo')}
-  NOTA: Se o status ao vivo incluir "Escanteios: X+Y=Z", use esses dados para avaliar mercados de corners ao vivo.
-  Compare o total atual com as linhas de escanteios (Over 8.5, 9.5, etc) e o tempo restante para ajustar a recomendacao.
+
+RAIO-X TATICO AO VIVO (dados detalhados da partida em andamento):
+{context.get('live_data_extended', 'Sem dados taticos ao vivo disponiveis.')}
+  NOTA: Use o RAIO-X TATICO para fundamentar CADA recomendacao. Se um time tem 0 ou 1 chute no alvo, ele NAO esta criando perigo real — desconsidere BTTS.
+  Compare escanteios totais com as linhas Over (8.5, 9.5, etc) e o tempo restante.
+  Chutes na Area e xG ao vivo indicam quem realmente ameaca o gol.
 """
             if context.get("footystats_analysis"):
                 prompt += f"""
@@ -313,7 +435,6 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 
 IMPORTANTE:
 - Considere o status da partida (Status ao Vivo). Se o jogo estiver ao vivo, comente sobre o placar atual e como ele impacta a analise.
-- Se houver dados de escanteios ao vivo (Escanteios: X+Y=Z no Status ao Vivo), analise o ritmo de corners vs tempo restante para avaliar mercados de Escanteios Over/Under.
 - Utilize os dados de ausencias (Lesoes/Suspensoes) informados pela API-Football e NUNCA invente lesoes ou suspensoes que nao estejam listadas.
 - Se nao houver dados de ausencias, diga apenas que nao ha informacao disponivel — NAO fabrique nomes de jogadores lesionados.
 - Seja especifico e use os numeros fornecidos EXATAMENTE como mostrados (ex: 85.5% significa 85.5%, NAO multiplique por 100)
@@ -322,15 +443,31 @@ IMPORTANTE:
 - Exemplo correto: "probabilidade de vitoria de 85.5%". Exemplo INCORRETO: "8547.4%" ou "Casa (1.177) vs Fora (0.996)"
 - Use os dados do COMPARATIVO TIMES e PERFIL DE GOLS para fundamentar sua analise:
   * xG alto + clean sheet baixo = time ofensivo mas vulneravel defensivamente
-  * BTTS% alto de ambos = forte indicador de ambas marcam
   * FTS% alto = time nao marca com frequencia, considerar BTTS Nao
   * Over 2.5% dos dois times alto = tendencia a jogos com muitos gols
   * Escanteios contra/jogo alto do adversario = time pressiona muito, gera mais corners
   * Posicao na liga indica forca relativa dos times
+
+REGRA ANTI-VIES BTTS (CRITICO — LEIA COM ATENCAO):
+- NAO sugira BTTS (Ambas Marcam) como recomendacao padrao. BTTS so deve ser recomendado quando AMBOS os times demonstram volume ofensivo real.
+- Se o RAIO-X TATICO ao vivo estiver disponivel, LEIA-O OBRIGATORIAMENTE antes de recomendar:
+  * Se um time tem 0 ou 1 chute no alvo E 0-1 chutes na area: BTTS tem EV+ NEGATIVO. NAO recomende BTTS.
+  * Se um time tem 0 finalizacoes totais: esse time NAO vai marcar. Recomende BTTS Nao ou ML do time dominante.
+  * Se a posse e > 65% para um lado com muitos chutes no alvo: foque no ML (Money Line) do time dominante ou Over gols.
+  * Se ha muitos escanteios (> 6 no total antes dos 60min): considere Escanteios Over como alternativa.
+  * Se ha Cartao Vermelho: time com menos jogadores perde volume ofensivo — reconsidere BTTS.
+- Foque a analise na ASSIMETRIA do jogo: quem domina posse, finaliza mais e gera mais escanteios e quem provavelmente marcara.
+- Priorize estas alternativas ao BTTS quando a assimetria for clara:
+  1. ML (Money Line) do time dominante — quando um time controla o jogo
+  2. Over gols (1.5, 2.5, 3.5) — quando ha pressao ofensiva de pelo menos um lado
+  3. Over Escanteios — quando o ritmo de corners indica tendencia
+  4. BTTS Nao — quando um time e claramente inofensivo (0-1 chutes no alvo)
+  5. BTTS Sim — SOMENTE quando ambos tem 3+ chutes no alvo e criam perigo real
+
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica
-- OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "BTTS Sim @1.67" ou "Over 2.5 @1.80"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
+- OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "Over 2.5 @1.80" ou "Casa @1.45"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
 - CRITICO: A odd na recomendacao DEVE ser uma das odds listadas em "ODDS DO MERCADO" acima. NAO invente, estime ou arredonde odds. Se a odd de um mercado e "N/A", NAO recomende esse mercado. Escolha APENAS entre mercados com odd numerica disponivel.
 - Retorne APENAS o JSON, sem texto adicional
 """
