@@ -24,7 +24,20 @@ def combinadas(
 
     tipos_list: List[str] = [t.strip().lower() for t in tipos.split(",") if t.strip()]
 
-    raw = get_fixtures(leagues=leagues, date=date)
+    try:
+        raw = get_fixtures(leagues=leagues, date=date)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {
+            "intra": [],
+            "inter": [],
+            "total_intra": 0,
+            "total_inter": 0,
+            "total_jogos": 0,
+            "_error": f"Erro ao buscar jogos: {exc}",
+        }
+
     jogos: List[Dict[str, Any]] = raw.get("matches", [])
 
     if not jogos:
@@ -37,11 +50,24 @@ def combinadas(
             "_info": "Nenhum jogo encontrado para os filtros selecionados.",
         }
 
-    result = gerar_combinadas(
-        jogos=jogos,
-        tipos=tipos_list,
-        min_status=min_status,
-        limite_intra=limite_intra,
-        limite_inter=limite_inter,
-    )
+    try:
+        result = gerar_combinadas(
+            jogos=jogos,
+            tipos=tipos_list,
+            min_status=min_status,
+            limite_intra=limite_intra,
+            limite_inter=limite_inter,
+        )
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {
+            "intra": [],
+            "inter": [],
+            "total_intra": 0,
+            "total_inter": 0,
+            "total_jogos": 0,
+            "_error": f"Erro ao gerar combinadas: {exc}",
+        }
+
     return result

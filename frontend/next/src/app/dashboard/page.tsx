@@ -545,7 +545,13 @@ export default function Dashboard() {
         `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
-      const data = await res.json();
+      const text = await res.text();
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
       if (!res.ok) {
         const errKind = data?._error?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
