@@ -170,6 +170,32 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
+    id: "england-league-one",
+    name: "League One",
+    country: "Inglaterra",
+    countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    logo: "/logos/league-one.png",
+    season: "2025/26",
+    totalMatches: 552,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/england/league-one",
+    },
+  },
+  {
+    id: "england-league-two",
+    name: "League Two",
+    country: "Inglaterra",
+    countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    logo: "/logos/league-two.png",
+    season: "2025/26",
+    totalMatches: 552,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/england/league-two",
+    },
+  },
+  {
     id: "primera-division",
     name: "Primera Division",
     country: "Argentina",
