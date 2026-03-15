@@ -5,6 +5,7 @@ Provides fixtures, live scores, standings, statistics, odds, H2H, and injuries.
 
 Supports both async (httpx) and sync (requests) modes with SQLite TTL caching.
 """
+import asyncio
 import os
 import json
 import hashlib
@@ -485,6 +486,26 @@ class APIFootballClient:
                             away_corners = val
                         break
 
+        # Possession from inline statistics (if present)
+        home_possession: int | None = None
+        away_possession: int | None = None
+        if raw_stats and isinstance(raw_stats, list):
+            for team_block in raw_stats:
+                stats_list = team_block.get("statistics", [])
+                for s in stats_list:
+                    if s.get("type") == "Ball Possession":
+                        val = s.get("value")
+                        if isinstance(val, str) and val.endswith("%"):
+                            try:
+                                val = int(val.replace("%", ""))
+                            except (ValueError, TypeError):
+                                val = None
+                        if home_possession is None:
+                            home_possession = val
+                        else:
+                            away_possession = val
+                        break
+
         return {
             "fixture_id": fx.get("id"),
             "status": status_short,
@@ -500,6 +521,8 @@ class APIFootballClient:
             "is_finished": status_short in finished_statuses,
             "home_corners": home_corners,
             "away_corners": away_corners,
+            "home_possession": home_possession,
+            "away_possession": away_possession,
         }
 
     # ==================================================================
@@ -556,6 +579,162 @@ class APIFootballClient:
         params = {"fixture": str(fixture_id)}
         data = self._get_sync("fixtures/events", params, ttl_minutes=ttl_minutes)
         return data.get("response", [])
+
+    # ------------------------------------------------------------------
+    # ASYNC versions of statistics & events (for asyncio.gather in live)
+    # ------------------------------------------------------------------
+    async def get_fixture_statistics_async(self, fixture_id: int) -> List[Dict]:
+        """Fetch in-match statistics asynchronously (with sync cache fallback, TTL 2min)."""
+        params = {"fixture": str(fixture_id)}
+        cache_key = self._cache_key("fixtures/statistics", params)
+        cached = self._get_from_cache(cache_key, max_age_minutes=2)
+        if cached is not None:
+            logger.info(f"[api-football/statistics] Cache hit for fixture {fixture_id}")
+            return cached.get("response", [])
+        try:
+            data = await self._get("fixtures/statistics", params)
+        except Exception as e:
+            logger.error(f"[api-football] /fixtures/statistics error for {fixture_id}: {e}")
+            return []
+        self._save_to_cache(cache_key, "fixtures/statistics", params, data, ttl_minutes=2)
+        return data.get("response", [])
+
+    async def get_fixture_events_async(self, fixture_id: int) -> List[Dict]:
+        """Fetch match events asynchronously (with sync cache fallback, TTL 2min)."""
+        params = {"fixture": str(fixture_id)}
+        cache_key = self._cache_key("fixtures/events", params)
+        cached = self._get_from_cache(cache_key, max_age_minutes=2)
+        if cached is not None:
+            logger.info(f"[api-football/events] Cache hit for fixture {fixture_id}")
+            return cached.get("response", [])
+        try:
+            data = await self._get("fixtures/events", params)
+        except Exception as e:
+            logger.error(f"[api-football] /fixtures/events error for {fixture_id}: {e}")
+            return []
+        self._save_to_cache(cache_key, "fixtures/events", params, data, ttl_minutes=2)
+        return data.get("response", [])
+
+    # ------------------------------------------------------------------
+    # PARSERS: extract structured stats from API-Football responses
+    # ------------------------------------------------------------------
+    @staticmethod
+    def parse_fixture_statistics(raw_stats: List[Dict]) -> Dict:
+        """Parse /fixtures/statistics response into a structured dict.
+
+        Returns dict with keys per team (home/away index 0/1):
+          possession, shots_on_goal, shots_off_goal, shots_inside_box,
+          goalkeeper_saves, corner_kicks, fouls, yellow_cards, red_cards,
+          total_shots, shots_blocked, offsides, passes_total, passes_accurate,
+          passes_pct, expected_goals.
+        """
+        result: Dict[str, Any] = {"home": {}, "away": {}}
+
+        stat_key_map = {
+            "Ball Possession": "possession",
+            "Shots on Goal": "shots_on_goal",
+            "Shots off Goal": "shots_off_goal",
+            "Shots insidebox": "shots_inside_box",
+            "Shots outsidebox": "shots_outside_box",
+            "Goalkeeper Saves": "goalkeeper_saves",
+            "Corner Kicks": "corner_kicks",
+            "Fouls": "fouls",
+            "Yellow Cards": "yellow_cards",
+            "Red Cards": "red_cards",
+            "Total Shots": "total_shots",
+            "Blocked Shots": "shots_blocked",
+            "Offsides": "offsides",
+            "Total passes": "passes_total",
+            "Passes accurate": "passes_accurate",
+            "Passes %": "passes_pct",
+            "expected_goals": "expected_goals",
+        }
+
+        for idx, label in enumerate(["home", "away"]):
+            if idx >= len(raw_stats):
+                break
+            team_block = raw_stats[idx]
+            team_name = (team_block.get("team") or {}).get("name", label)
+            result[label]["team_name"] = team_name
+            for s in team_block.get("statistics", []):
+                stype = s.get("type", "")
+                mapped = stat_key_map.get(stype)
+                if mapped:
+                    val = s.get("value")
+                    # Handle percentage strings like "65%"
+                    if isinstance(val, str) and val.endswith("%"):
+                        try:
+                            val = int(val.replace("%", ""))
+                        except ValueError:
+                            val = None
+                    elif val is not None:
+                        try:
+                            val = int(val) if isinstance(val, (int, float)) and float(val) == int(float(val)) else float(val)
+                        except (ValueError, TypeError):
+                            pass
+                    result[label][mapped] = val
+
+        return result
+
+    @staticmethod
+    def parse_fixture_events(raw_events: List[Dict]) -> Dict:
+        """Parse /fixtures/events response into structured event lists.
+
+        Returns dict with:
+          goals: [{time, team, player, assist, detail}]
+          cards: [{time, team, player, card_type, detail}]
+          substitutions: [{time, team, player_in, player_out}]
+          red_card_events: [{time, team, player}]  -- for easy access
+        """
+        goals = []
+        cards = []
+        substitutions = []
+        red_card_events = []
+
+        for ev in raw_events:
+            ev_time = (ev.get("time") or {}).get("elapsed")
+            ev_extra = (ev.get("time") or {}).get("extra")
+            team_name = (ev.get("team") or {}).get("name", "")
+            player_name = (ev.get("player") or {}).get("name", "")
+            assist_name = (ev.get("assist") or {}).get("name")
+            ev_type = ev.get("type", "")
+            ev_detail = ev.get("detail", "")
+
+            time_str = str(ev_time) if ev_time else "?"
+            if ev_extra:
+                time_str += f"+{ev_extra}"
+
+            if ev_type == "Goal":
+                goals.append({
+                    "time": time_str, "team": team_name,
+                    "player": player_name, "assist": assist_name,
+                    "detail": ev_detail,
+                })
+            elif ev_type == "Card":
+                card_type = "Amarelo" if "Yellow" in ev_detail else "Vermelho"
+                cards.append({
+                    "time": time_str, "team": team_name,
+                    "player": player_name, "card_type": card_type,
+                    "detail": ev_detail,
+                })
+                if "Red" in ev_detail:
+                    red_card_events.append({
+                        "time": time_str, "team": team_name,
+                        "player": player_name,
+                    })
+            elif ev_type == "subst":
+                substitutions.append({
+                    "time": time_str, "team": team_name,
+                    "player_in": assist_name or "",
+                    "player_out": player_name,
+                })
+
+        return {
+            "goals": goals,
+            "cards": cards,
+            "substitutions": substitutions,
+            "red_card_events": red_card_events,
+        }
 
     # ==================================================================
     # FIXTURE LINEUPS
@@ -889,9 +1068,11 @@ class APIFootballClient:
         league_id: Optional[int] = None,
         season: Optional[int] = None,
     ) -> Dict:
-        """Unified method: finds the fixture, extracts live data, league info, and fetches injuries.
+        """Unified method: finds the fixture, extracts live data, league info,
+        and fetches injuries + statistics + events via asyncio.gather.
 
         Includes coverage check: only calls /injuries if the league supports it.
+        Statistics and events are fetched in parallel (timeout 8s) for live/finished matches.
         """
         empty_result = {
             "live_data": {
@@ -907,6 +1088,10 @@ class APIFootballClient:
                 "halftime_away": None,
                 "is_live": False,
                 "is_finished": False,
+                "home_corners": None,
+                "away_corners": None,
+                "home_possession": None,
+                "away_possession": None,
             },
             "league_info": {
                 "league_name": "",
@@ -919,6 +1104,8 @@ class APIFootballClient:
             "injuries": [],
             "absences": "Nenhuma informacao disponivel",
             "live_status": "Sem dados ao vivo disponiveis",
+            "match_statistics": {},
+            "match_events": {},
         }
 
         if not self.is_configured:
@@ -935,15 +1122,19 @@ class APIFootballClient:
         live_data = self.extract_live_data(fixture)
         league_info = self.extract_league_info(fixture)
 
-        # Fetch injuries only if the league has coverage for it
-        injuries = []
+        injuries: List[Dict] = []
+        match_statistics: Dict = {}
+        match_events: Dict = {}
         fixture_id = live_data.get("fixture_id")
         fx_league_id = league_info.get("league_id")
         fx_season = league_info.get("league_season") or season or date.today().year
 
-        if fixture_id:
+        if fixture_id and (live_data.get("is_live") or live_data.get("is_finished")):
+            # ----------------------------------------------------------
+            # Parallel fetch: statistics + events + injuries via asyncio.gather
+            # Graceful degradation: each task is wrapped in try/except
+            # ----------------------------------------------------------
             should_fetch_injuries = True
-
             if fx_league_id:
                 try:
                     has_coverage = self.has_injury_coverage(fx_league_id, fx_season)
@@ -955,8 +1146,74 @@ class APIFootballClient:
                         should_fetch_injuries = False
                 except Exception as e:
                     logger.warning(f"[api-football] Coverage check failed for league {fx_league_id}: {e}")
-                    # Proceed anyway — fail-open to not lose data
 
+            async def _fetch_statistics() -> List[Dict]:
+                try:
+                    return await asyncio.wait_for(
+                        self.get_fixture_statistics_async(fixture_id),
+                        timeout=8.0,
+                    )
+                except Exception as e:
+                    logger.error(f"[api-football] Statistics fetch failed for fixture {fixture_id}: {e}")
+                    return []
+
+            async def _fetch_events() -> List[Dict]:
+                try:
+                    return await asyncio.wait_for(
+                        self.get_fixture_events_async(fixture_id),
+                        timeout=8.0,
+                    )
+                except Exception as e:
+                    logger.error(f"[api-football] Events fetch failed for fixture {fixture_id}: {e}")
+                    return []
+
+            async def _fetch_injuries() -> List[Dict]:
+                if not should_fetch_injuries:
+                    return []
+                try:
+                    return await asyncio.wait_for(
+                        self.get_injuries(fixture_id),
+                        timeout=8.0,
+                    )
+                except Exception as e:
+                    logger.warning(f"[api-football] Injuries fetch failed for fixture {fixture_id}: {e}")
+                    return []
+
+            raw_stats, raw_events, injuries = await asyncio.gather(
+                _fetch_statistics(),
+                _fetch_events(),
+                _fetch_injuries(),
+            )
+
+            # Parse the raw responses
+            if raw_stats:
+                match_statistics = self.parse_fixture_statistics(raw_stats)
+            if raw_events:
+                match_events = self.parse_fixture_events(raw_events)
+
+            # Enrich live_data with possession from detailed statistics
+            home_stats = match_statistics.get("home", {})
+            away_stats = match_statistics.get("away", {})
+            if home_stats.get("possession") is not None:
+                live_data["home_possession"] = home_stats["possession"]
+            if away_stats.get("possession") is not None:
+                live_data["away_possession"] = away_stats["possession"]
+            # Update corners from detailed stats if inline stats were missing
+            if live_data.get("home_corners") is None and home_stats.get("corner_kicks") is not None:
+                live_data["home_corners"] = home_stats["corner_kicks"]
+            if live_data.get("away_corners") is None and away_stats.get("corner_kicks") is not None:
+                live_data["away_corners"] = away_stats["corner_kicks"]
+
+        elif fixture_id:
+            # Pre-match: only fetch injuries (no stats/events yet)
+            should_fetch_injuries = True
+            if fx_league_id:
+                try:
+                    has_coverage = self.has_injury_coverage(fx_league_id, fx_season)
+                    if not has_coverage:
+                        should_fetch_injuries = False
+                except Exception:
+                    pass
             if should_fetch_injuries:
                 try:
                     injuries = await self.get_injuries(fixture_id)
@@ -972,6 +1229,8 @@ class APIFootballClient:
             "injuries": injuries,
             "absences": absences,
             "live_status": live_status,
+            "match_statistics": match_statistics,
+            "match_events": match_events,
         }
 
     # ==================================================================
@@ -1168,14 +1427,21 @@ class APIFootballClient:
             total = home_corners + away_corners
             corner_str = f", Escanteios: {home_corners}+{away_corners}={total}"
 
+        # Possession info
+        home_poss = live_data.get("home_possession")
+        away_poss = live_data.get("away_possession")
+        poss_str = ""
+        if home_poss is not None and away_poss is not None:
+            poss_str = f", Posse: {home_poss}%x{away_poss}%"
+
         if live_data.get("is_live") and minute is not None:
             extra = live_data.get("extra_time")
             minute_str = f"{minute}"
             if extra:
                 minute_str += f"+{extra}"
-            return f"{status_desc}: {minute_str} min, Placar: {score}{corner_str}"
+            return f"{status_desc}: {minute_str} min, Placar: {score}{poss_str}{corner_str}"
         elif live_data.get("is_finished"):
-            return f"{status_desc}. Placar final: {score}{corner_str}"
+            return f"{status_desc}. Placar final: {score}{poss_str}{corner_str}"
         else:
             return status_desc
 

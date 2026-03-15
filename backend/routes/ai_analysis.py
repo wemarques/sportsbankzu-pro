@@ -92,6 +92,22 @@ async def get_match_analysis(
                     context["absences"] = api_football_data.get("absences", "Dados de lesoes nao disponiveis")
                     context["live_status"] = api_football_data.get("live_status", "Status nao disponivel")
 
+                    # Build extended tactical context from statistics + events
+                    match_stats_parsed = api_football_data.get("match_statistics", {})
+                    match_events_parsed = api_football_data.get("match_events", {})
+                    live_data_obj = api_football_data.get("live_data", {})
+                    if match_stats_parsed and (live_data_obj.get("is_live") or live_data_obj.get("is_finished")):
+                        try:
+                            context["live_data_extended"] = MistralAnalysisService._format_extended_live_context(
+                                stats=match_stats_parsed,
+                                events=match_events_parsed,
+                                live_data=live_data_obj,
+                                home_team=h,
+                                away_team=a,
+                            )
+                        except Exception as ext_err:
+                            logger.warning(f"[api-football] Extended context formatting failed: {ext_err}")
+
                     league_info = api_football_data.get("league_info", {})
                     if league_info and league_info.get("league_name"):
                         context["league_info"] = (
@@ -105,7 +121,9 @@ async def get_match_analysis(
                         f"[api-football] Bridge OK for {h} vs {a}: "
                         f"fixture_id={api_football_data['live_data'].get('fixture_id')}, "
                         f"status={api_football_data['live_data'].get('status')}, "
-                        f"injuries={len(api_football_data.get('injuries', []))}"
+                        f"injuries={len(api_football_data.get('injuries', []))}, "
+                        f"has_stats={'home' in match_stats_parsed}, "
+                        f"has_events={bool(match_events_parsed.get('goals') or match_events_parsed.get('cards'))}"
                     )
                 else:
                     # --- STEP 3: Graceful degradation — bridge failed ---
