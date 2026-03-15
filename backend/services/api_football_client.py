@@ -464,6 +464,27 @@ class APIFootballClient:
         ht_home = ht.get("home")
         ht_away = ht.get("away")
 
+        # Corner kicks from inline statistics (present in /fixtures?live=all)
+        home_corners: int | None = None
+        away_corners: int | None = None
+        raw_stats = fixture.get("statistics")
+        if raw_stats and isinstance(raw_stats, list):
+            for team_block in raw_stats:
+                stats_list = team_block.get("statistics", [])
+                for s in stats_list:
+                    if s.get("type") == "Corner Kicks":
+                        val = s.get("value")
+                        if val is not None:
+                            try:
+                                val = int(val)
+                            except (ValueError, TypeError):
+                                val = None
+                        if home_corners is None:
+                            home_corners = val
+                        else:
+                            away_corners = val
+                        break
+
         return {
             "fixture_id": fx.get("id"),
             "status": status_short,
@@ -477,6 +498,8 @@ class APIFootballClient:
             "halftime_away": ht_away,
             "is_live": status_short in live_statuses,
             "is_finished": status_short in finished_statuses,
+            "home_corners": home_corners,
+            "away_corners": away_corners,
         }
 
     # ==================================================================

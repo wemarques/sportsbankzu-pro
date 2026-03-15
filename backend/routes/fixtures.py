@@ -850,7 +850,16 @@ def live_scores() -> Dict[str, Any]:
                         }
                         if ld["halftime_home"] is not None:
                             score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
-                        af_result.append({
+                        # Corner kicks total (home + away)
+                        current_corners: int | None = None
+                        if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
+                            current_corners = ld["home_corners"] + ld["away_corners"]
+                        elif ld.get("home_corners") is not None:
+                            current_corners = ld["home_corners"]
+                        elif ld.get("away_corners") is not None:
+                            current_corners = ld["away_corners"]
+
+                        entry: Dict[str, Any] = {
                             "id": ld["fixture_id"],
                             "homeTeam": home_name,
                             "awayTeam": away_name,
@@ -859,7 +868,10 @@ def live_scores() -> Dict[str, Any]:
                             "period": period_map.get(fx_status),
                             "minute": ld["minute"],
                             "dateUnix": fx.get("fixture", {}).get("timestamp"),
-                        })
+                        }
+                        if current_corners is not None:
+                            entry["currentCorners"] = current_corners
+                        af_result.append(entry)
                     if af_result:
                         logger.info(
                             f"[live-scores] FootyStats empty → API-Football primary: "
