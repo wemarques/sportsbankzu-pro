@@ -925,4 +925,39 @@ Quando o filtro de EV positivo aprovava multiplos jogos no dia, o sistema apenas
 
 ---
 
+## 013 — Aba "Duplas" não carrega jogos (resposta não-JSON do backend)
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/routes/combinadas.py`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+A aba "Duplas" no dashboard exibia o erro: `Unexpected token 'A', "An error o"... is not valid JSON`. Nenhuma dupla era carregada — tanto intra-jogo quanto inter-jogo ficavam vazias.
+
+### Causa raiz (2 camadas)
+
+1. **Backend sem tratamento de exceção** — O endpoint `/combinadas` chamava `get_fixtures()` e `gerar_combinadas()` sem try-catch. Quando uma exceção ocorria (ex: timeout da API externa, erro de parsing), o FastAPI propagava a exceção e retornava uma resposta HTML/texto de erro 500 em vez de JSON válido.
+
+2. **Frontend sem validação de formato** — O dashboard chamava `res.json()` diretamente na resposta da API. Quando o Vercel recebia o erro do backend e retornava sua página padrão ("An error occurred..."), o `JSON.parse` falhava com `SyntaxError`, exibindo a mensagem técnica crua ao usuário.
+
+### Correções aplicadas (3 camadas)
+
+1. **Try-catch no backend (`combinadas.py`)** — Envolveu `get_fixtures()` e `gerar_combinadas()` em blocos try-except. Em caso de exceção, retorna JSON válido com arrays vazios e campo `_error` descrevendo o problema, em vez de crashar o endpoint.
+
+2. **Parse seguro no frontend (`page.tsx`)** — Substituiu `res.json()` por `res.text()` + `JSON.parse()` dentro de try-catch. Se a resposta não for JSON válido, exibe mensagem amigável: "Servidor retornou resposta inválida (HTTP XXX). Tente novamente em instantes."
+
+3. **Correção de tipo TypeScript** — Cast de `data._error` para `Record<string, unknown>` antes de acessar `.kind` e `.message`, corrigindo erro de build no Vercel: `Property 'kind' does not exist on type 'unknown'`.
+
+### Lição aprendida
+
+1. **Endpoints que chamam outros endpoints internos precisam de try-catch** — O `/combinadas` delegava para `get_fixtures()` (que é uma rota inteira com múltiplas fontes de dados). Qualquer falha nessa cadeia propagava como exceção não tratada, quebrando o contrato JSON da API.
+
+2. **Nunca confiar que `res.json()` vai funcionar** — Respostas de infraestrutura (Vercel, AWS Lambda, nginx) podem retornar HTML/texto em situações de erro. Sempre parsear como texto primeiro e tentar JSON depois, com fallback amigável.
+
+3. **TypeScript strict mode exige casts em objetos de erro** — Quando um campo é `unknown` (como `Record<string, unknown>`), acessar sub-propriedades sem cast causa erro de compilação. Usar `as Record<string, unknown>` antes de acessar propriedades aninhadas.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
