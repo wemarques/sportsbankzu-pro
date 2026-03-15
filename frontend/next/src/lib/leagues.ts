@@ -39,6 +39,7 @@ export type Match = {
   };
   period?: "1T" | "HT" | "2T" | null;
   minute?: number | null;
+  currentCorners?: number | null;
   odds: {
     home: number;
     draw: number;
@@ -114,6 +115,8 @@ export type Match = {
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
     cornerOver105Prob?: number;
+    homeCornersCount?: number;
+    awayCornersCount?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;

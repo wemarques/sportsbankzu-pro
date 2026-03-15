@@ -418,6 +418,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
     predictions: match.predictions,
+    currentCorners: match.currentCorners ?? null,
   };
 }
 
@@ -545,15 +546,22 @@ export default function Dashboard() {
         `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
-      const data = await res.json();
+      const text = await res.text();
+      let data: CombinadasData & { _error?: Record<string, unknown> };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
       if (!res.ok) {
-        const errKind = data?._error?.kind;
+        const errObj = data?._error;
+        const errKind = errObj?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
         if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
-        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+        throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
       }
-      setCombinadas(data as CombinadasData);
+      setCombinadas(data);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
@@ -564,12 +572,25 @@ export default function Dashboard() {
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
   // Shared function: fetch live scores from backend and merge into allMatches
+  // Ref to track live league IDs for fallback query without re-creating the callback
+  const liveLeagueIdsRef = useRef<string>("");
+  useEffect(() => {
+    const liveLeagues = new Set<string>();
+    for (const m of allMatches) {
+      if (m.status === "live") liveLeagues.add(m.leagueId);
+    }
+    liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
+  }, [allMatches]);
+
   const fetchLiveScores = useCallback(async () => {
     try {
-      const res = await fetch("/api/matches/live", { cache: "no-store" });
+      // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
+      const leagues = liveLeagueIdsRef.current;
+      const qs = leagues ? `?leagues=${encodeURIComponent(leagues)}` : "";
+      const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
       if (liveList.length === 0) return;
       // Diagnostic: log live overlay data
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
@@ -618,9 +639,17 @@ export default function Dashboard() {
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
-          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
+          const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
+          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
-          return { ...m, status: newStatus, score: liveScore, period: live.period as Match["period"], minute: live.minute };
+          return {
+            ...m,
+            status: newStatus,
+            score: liveScore,
+            period: live.period as Match["period"],
+            minute: live.minute,
+            ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+          };
         });
         unmatched = liveList.length - matched;
         if (unmatched > 0) {

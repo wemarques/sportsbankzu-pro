@@ -8,13 +8,19 @@ class PromptTemplates:
         Você é um analista de dados esportivos especializado em futebol. Sua função é analisar estatísticas detalhadas de duas equipes e prever o resultado mais provável para o mercado de 'Total de Gols (Acima/Abaixo)'. Suas previsões devem ser lógicas, baseadas exclusivamente nos dados fornecidos e expressas em valores positivos, pois representam contagens de gols.
 
         JOGO: {home_team} vs {away_team}
-        
+
         CONTEXTO COLETADO:
         {news_summary}
-        
+
         ESTATÍSTICAS DO SISTEMA:
         {stats}
-        
+
+        REGRAS CRITICAS SOBRE AUSENCIAS E STATUS AO VIVO:
+        - Utilize SOMENTE os dados de ausencias (lesoes/suspensoes) que foram fornecidos no contexto acima.
+        - NUNCA invente, suponha ou fabrique nomes de jogadores lesionados ou suspensos.
+        - Se nao houver dados de ausencias, informe apenas que nao ha informacao disponivel.
+        - Considere o status da partida (live_status). Se o jogo estiver ao vivo, comente sobre o placar atual e ajuste sua analise.
+
         TAREFA:
         Analise o contexto do jogo e responda EXCLUSIVAMENTE em JSON com a seguinte estrutura:
         {{

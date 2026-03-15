@@ -57,12 +57,17 @@ ESTATÍSTICAS DO JOGO:
 - Probabilidade Over 2.5: {stats.get('over25Prob', stats.get('prob_over_25', 'N/A'))}%
 - Probabilidade BTTS: {stats.get('bttsProb', stats.get('prob_btts', 'N/A'))}%
 
-ODDS DO MERCADO:
+ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds):
 - Casa (1): {odds.get('home', 'N/A')}
 - Empate (X): {odds.get('draw', 'N/A')}
 - Fora (2): {odds.get('away', 'N/A')}
+- Over 1.5: {odds.get('over15', 'N/A')}
 - Over 2.5: {odds.get('over25', 'N/A')}
+- Over 3.5: {odds.get('over35', 'N/A')}
+- Over 4.5: {odds.get('over45', 'N/A')}
+- Under 2.5: {odds.get('under25', 'N/A')}
 - BTTS Sim: {odds.get('bttsYes', 'N/A')}
+- BTTS Nao: {odds.get('bttsNo', 'N/A')}
 """
 
     if context:
@@ -71,6 +76,7 @@ CONTEXTO ADICIONAL:
 - Forma Casa: {context.get('home_form', 'N/A')}
 - Forma Fora: {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
+- Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 """
 
     prompt += """
@@ -85,7 +91,7 @@ Com base nesses dados, forneça uma análise OBJETIVA no seguinte formato JSON:
     "Ponto-chave 4",
     "Ponto-chave 5"
   ],
-  "recommendation": "Recomendação de aposta com mercado e odd. Ex: Apostar em Over 2.5 @ 2.07",
+  "recommendation": "Recomendacao de aposta com mercado e odd REAL das ODDS DO MERCADO acima. NUNCA invente odds. Ex: Over 2.5 @2.07",
   "confidence": 75
 }
 

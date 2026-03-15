@@ -210,10 +210,10 @@ class DataMapper:
             "over_35_percentage_pre_match": api_match.get("o35_potential") or None,
             "over_45_percentage_pre_match": api_match.get("o45_potential") or None,
             # Corner potentials (pre-match probabilities)
-            "corners_potential": api_match.get("corners_potential", 0),
-            "corners_o85_potential": api_match.get("corners_o85_potential", 0),
-            "corners_o95_potential": api_match.get("corners_o95_potential", 0),
-            "corners_o105_potential": api_match.get("corners_o105_potential", 0),
+            "corners_potential": api_match.get("corners_potential"),
+            "corners_o85_potential": api_match.get("corners_o85_potential"),
+            "corners_o95_potential": api_match.get("corners_o95_potential"),
+            "corners_o105_potential": api_match.get("corners_o105_potential"),
             # Corner odds
             "odds_corners_over_85": api_match.get("odds_corners_over_85", 0.0),
             "odds_corners_over_95": api_match.get("odds_corners_over_95", 0.0),

@@ -5,6 +5,7 @@ Servico de analise de jogos usando MISTRAL AI
 import os
 import json
 import logging
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 from backend.services.util_service import team_name
@@ -30,6 +31,7 @@ class AIAnalysisResponse(BaseModel):
     recommendation: str = ""
     confidence: int = Field(default=0, ge=0, le=100)
     last_updated: str = ""
+    match_live_data: Optional[Dict] = Field(default=None, description="Live match data from API-Football (status, score, injuries)")
 
 
 class MistralAnalysisService:
@@ -82,26 +84,26 @@ class MistralAnalysisService:
 
         try:
             analysis = await self._call_mistral_api(prompt)
-            result = self._parse_analysis(analysis)
+            result = self._parse_analysis(analysis, odds)
             self.cache.set("analysis", home_team, away_team, result.model_dump())
             return result
         except Exception as e:
             logger.error(f"Mistral analysis error for {home_team} vs {away_team}: {e}")
             # Fallback: try sync client
             try:
-                return self._analyze_sync(prompt, home_team, away_team)
+                return self._analyze_sync(prompt, home_team, away_team, odds)
             except Exception:
                 return self._get_fallback_analysis()
 
     def _analyze_sync(
-        self, prompt: str, home_team: str, away_team: str
+        self, prompt: str, home_team: str, away_team: str, odds: Optional[Dict] = None
     ) -> AIAnalysisResponse:
         """Fallback synchronous analysis via MistralClient wrapper."""
         response_text = self.client.simple_prompt(
             prompt,
             system_prompt="Voce e um analista esportivo profissional. Responda apenas em JSON valido.",
         )
-        result = self._parse_analysis(response_text)
+        result = self._parse_analysis(response_text, odds)
         self.cache.set("analysis", home_team, away_team, result.model_dump())
         return result
 
@@ -122,7 +124,7 @@ class MistralAnalysisService:
 
         prompt = self._build_prompt(home, away, league, stats, odds, context)
         try:
-            return self._analyze_sync(prompt, home, away)
+            return self._analyze_sync(prompt, home, away, odds)
         except Exception as e:
             logger.error(f"Sync analysis error: {e}")
             return self._get_fallback_analysis()
@@ -142,6 +144,154 @@ class MistralAnalysisService:
         elif v > 100:
             v /= 100
         return f"{v:.1f}"
+
+    @staticmethod
+    def _derive_under_odd(odds: Dict, over_key: str, under_key: str) -> str:
+        """Derive Under odd from Over odd if not directly available.
+
+        Uses the complementary market formula: under = 1 / (1 - 1/over)
+        with a 5% margin adjustment similar to market_service.calcular_odd_under.
+        """
+        # Check if explicitly provided first
+        val = odds.get(under_key)
+        if val is not None:
+            try:
+                return str(round(float(val), 2))
+            except (TypeError, ValueError):
+                pass
+        # Derive from over
+        over_val = odds.get(over_key)
+        if over_val is not None:
+            try:
+                over_f = float(over_val)
+                if over_f > 1.0:
+                    implied_under = 1.0 - (1.0 / over_f)
+                    if implied_under > 0:
+                        raw = 1.0 / implied_under
+                        # Apply ~5% margin like real bookmakers
+                        adjusted = round(raw * 0.95, 2)
+                        return str(adjusted)
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+        return "N/A"
+
+    @staticmethod
+    def _format_extended_live_context(
+        stats: Dict,
+        events: Dict,
+        live_data: Dict,
+        home_team: str,
+        away_team: str,
+    ) -> str:
+        """Build a dense tactical context string from live statistics and events.
+
+        This string gives Mistral a full X-ray of the match so it can make
+        data-driven recommendations instead of defaulting to BTTS.
+
+        Args:
+            stats: Output of APIFootballClient.parse_fixture_statistics()
+            events: Output of APIFootballClient.parse_fixture_events()
+            live_data: Live data dict (status, minute, score, corners, possession)
+            home_team: Home team display name
+            away_team: Away team display name
+
+        Returns:
+            Dense tactical context string.
+        """
+        parts = []
+
+        # -- Status line --
+        status = live_data.get("status", "NS")
+        minute = live_data.get("minute")
+        extra = live_data.get("extra_time")
+        period_map = {"1H": "1T", "HT": "INT", "2H": "2T", "ET": "PRO", "FT": "FIM", "AET": "FIM+PRO", "PEN": "PEN"}
+        period = period_map.get(status, status)
+        minute_str = ""
+        if minute is not None:
+            minute_str = str(minute)
+            if extra:
+                minute_str += f"+{extra}"
+
+        score = live_data.get("score", "N/A")
+        status_line = f"Status: {minute_str} min ({period}). Placar: {home_team} {score} {away_team}."
+        parts.append(status_line)
+
+        h = stats.get("home", {})
+        a = stats.get("away", {})
+
+        def _v(d: Dict, key: str, default: str = "?") -> str:
+            val = d.get(key)
+            return str(val) if val is not None else default
+
+        # -- DOMÍNIO --
+        if h.get("possession") is not None and a.get("possession") is not None:
+            parts.append(f"DOMINIO: Posse ({_v(h, 'possession')}% x {_v(a, 'possession')}%).")
+
+        # -- PRESSÃO OFENSIVA --
+        pressure_items = []
+        if h.get("shots_on_goal") is not None or a.get("shots_on_goal") is not None:
+            pressure_items.append(f"Chutes no Alvo ({_v(h, 'shots_on_goal', '0')} x {_v(a, 'shots_on_goal', '0')})")
+        if h.get("shots_inside_box") is not None or a.get("shots_inside_box") is not None:
+            pressure_items.append(f"Chutes na Area ({_v(h, 'shots_inside_box', '0')} x {_v(a, 'shots_inside_box', '0')})")
+        if h.get("total_shots") is not None or a.get("total_shots") is not None:
+            pressure_items.append(f"Finalizacoes Totais ({_v(h, 'total_shots', '0')} x {_v(a, 'total_shots', '0')})")
+        if h.get("shots_off_goal") is not None or a.get("shots_off_goal") is not None:
+            pressure_items.append(f"Chutes Fora ({_v(h, 'shots_off_goal', '0')} x {_v(a, 'shots_off_goal', '0')})")
+        if h.get("corner_kicks") is not None or a.get("corner_kicks") is not None:
+            hc = _v(h, 'corner_kicks', '0')
+            ac = _v(a, 'corner_kicks', '0')
+            try:
+                total_c = int(hc) + int(ac)
+            except (ValueError, TypeError):
+                total_c = "?"
+            pressure_items.append(f"Escanteios ({hc} x {ac} = {total_c})")
+        if pressure_items:
+            parts.append(f"PRESSAO: {', '.join(pressure_items)}.")
+
+        # -- DEFESA --
+        defense_items = []
+        if h.get("goalkeeper_saves") is not None or a.get("goalkeeper_saves") is not None:
+            defense_items.append(f"Defesas do Goleiro ({_v(h, 'goalkeeper_saves', '0')} x {_v(a, 'goalkeeper_saves', '0')})")
+        if h.get("shots_blocked") is not None or a.get("shots_blocked") is not None:
+            defense_items.append(f"Chutes Bloqueados ({_v(h, 'shots_blocked', '0')} x {_v(a, 'shots_blocked', '0')})")
+        if defense_items:
+            parts.append(f"DEFESA: {', '.join(defense_items)}.")
+
+        # -- DISCIPLINA --
+        discipline_items = []
+        if h.get("fouls") is not None or a.get("fouls") is not None:
+            discipline_items.append(f"Faltas ({_v(h, 'fouls', '0')} x {_v(a, 'fouls', '0')})")
+        if h.get("yellow_cards") is not None or a.get("yellow_cards") is not None:
+            discipline_items.append(f"Amarelos ({_v(h, 'yellow_cards', '0')} x {_v(a, 'yellow_cards', '0')})")
+        if h.get("red_cards") is not None or a.get("red_cards") is not None:
+            discipline_items.append(f"Vermelhos ({_v(h, 'red_cards', '0')} x {_v(a, 'red_cards', '0')})")
+        if discipline_items:
+            parts.append(f"DISCIPLINA: {', '.join(discipline_items)}.")
+
+        # -- PASSES --
+        if h.get("passes_accurate") is not None or a.get("passes_accurate") is not None:
+            parts.append(
+                f"PASSES: Precisos ({_v(h, 'passes_accurate', '?')} x {_v(a, 'passes_accurate', '?')}), "
+                f"Total ({_v(h, 'passes_total', '?')} x {_v(a, 'passes_total', '?')}), "
+                f"Acerto ({_v(h, 'passes_pct', '?')}% x {_v(a, 'passes_pct', '?')}%)."
+            )
+
+        # -- xG (if available) --
+        if h.get("expected_goals") is not None or a.get("expected_goals") is not None:
+            parts.append(f"xG AO VIVO: {_v(h, 'expected_goals', '?')} x {_v(a, 'expected_goals', '?')}.")
+
+        # -- EVENTOS CHAVE --
+        event_items = []
+        for rc in events.get("red_card_events", []):
+            event_items.append(f"Cartao Vermelho para {rc.get('team', '?')} ({rc.get('player', '?')}) aos {rc.get('time', '?')} min")
+        for g in events.get("goals", []):
+            detail = g.get("detail", "")
+            assist = f" (assist: {g['assist']})" if g.get("assist") else ""
+            event_items.append(f"Gol de {g.get('team', '?')} ({g.get('player', '?')}{assist}) aos {g.get('time', '?')} min{' [P]' if 'Penalty' in detail else ''}")
+        if event_items:
+            parts.append(f"EVENTOS: {'; '.join(event_items)}.")
+
+        return " ".join(parts)
 
     def _build_prompt(
         self,
@@ -217,12 +367,27 @@ CLASSIFICACAO E DESEMPENHO:
 - Posicao na liga: {home_team} {_stat('homeLeaguePosition')}o vs {away_team} {_stat('awayLeaguePosition')}o
 - % Vitoria na temporada: {home_team} {_stat('homeWinPercentage')}% vs {away_team} {_stat('awayWinPercentage')}%
 
-ODDS DO MERCADO:
+ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds que nao estejam listadas):
 - Casa (1): {odds.get('home', 'N/A')}
 - Empate (X): {odds.get('draw', 'N/A')}
 - Fora (2): {odds.get('away', 'N/A')}
+- Over 1.5: {odds.get('over15', 'N/A')}
 - Over 2.5: {odds.get('over_25') or odds.get('over25', 'N/A')}
+- Over 3.5: {odds.get('over35', 'N/A')}
+- Over 4.5: {odds.get('over45', 'N/A')}
+- Under 2.5: {odds.get('under25', 'N/A')}
+- Under 3.5: {self._derive_under_odd(odds, 'over35', 'under35')}
+- Under 4.5: {self._derive_under_odd(odds, 'over45', 'under45')}
 - BTTS Sim: {odds.get('btts_yes') or odds.get('bttsYes', 'N/A')}
+- BTTS Nao: {odds.get('btts_no') or odds.get('bttsNo', 'N/A')}
+- Escanteios Over 8.5: {odds.get('cornersOver85', 'N/A')}
+- Escanteios Over 9.5: {odds.get('cornersOver95', 'N/A')}
+- Escanteios Over 10.5: {odds.get('cornersOver105', 'N/A')}
+- Escanteios Over 11.5: {odds.get('cornersOver115', 'N/A')}
+
+ATENCAO: Se um mercado acima mostra "N/A", ele NAO esta disponivel. NAO recomende mercados com odd N/A.
+Nos key_points, NAO cite odds de mercados que nao estejam listados acima. Cite apenas porcentagens e dados estatisticos.
+NAO existem mercados de Double Chance, Cartoes ou Draw No Bet neste sistema — NAO os recomende.
 """
 
         if context:
@@ -231,7 +396,17 @@ CONTEXTO ADICIONAL:
 - Forma Casa (ultimos 5): {context.get('home_form', 'N/A')}
 - Forma Fora (ultimos 5): {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
-- Lesoes/Suspensoes: {context.get('absences', 'Nenhuma informacao')}
+- Liga/Competicao (API-Football): {context.get('league_info', 'N/A')}
+- Lesoes/Suspensoes (API-Football): {context.get('absences', 'Nenhuma informacao')}
+  NOTA: [FORA] = desfalque confirmado, [DUVIDA] = presenca incerta — pese o impacto de forma diferente.
+- Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
+- Status ao Vivo: {context.get('live_status', 'Sem dados ao vivo')}
+
+RAIO-X TATICO AO VIVO (dados detalhados da partida em andamento):
+{context.get('live_data_extended', 'Sem dados taticos ao vivo disponiveis.')}
+  NOTA: Use o RAIO-X TATICO para fundamentar CADA recomendacao. Se um time tem 0 ou 1 chute no alvo, ele NAO esta criando perigo real — desconsidere BTTS.
+  Compare escanteios totais com as linhas Over (8.5, 9.5, etc) e o tempo restante.
+  Chutes na Area e xG ao vivo indicam quem realmente ameaca o gol.
 """
             if context.get("footystats_analysis"):
                 prompt += f"""
@@ -259,20 +434,41 @@ Com base nesses dados, forneca uma analise OBJETIVA e ESTRUTURADA no seguinte fo
 }
 
 IMPORTANTE:
+- Considere o status da partida (Status ao Vivo). Se o jogo estiver ao vivo, comente sobre o placar atual e como ele impacta a analise.
+- Utilize os dados de ausencias (Lesoes/Suspensoes) informados pela API-Football e NUNCA invente lesoes ou suspensoes que nao estejam listadas.
+- Se nao houver dados de ausencias, diga apenas que nao ha informacao disponivel — NAO fabrique nomes de jogadores lesionados.
 - Seja especifico e use os numeros fornecidos EXATAMENTE como mostrados (ex: 85.5% significa 85.5%, NAO multiplique por 100)
 - Use SEMPRE probabilidades em porcentagem (%) nos prognosticos, NAO use valores lambda como prognostico
 - Lambdas sao taxas de gols esperados (ex: 1.5 gols), NAO probabilidades de resultado
 - Exemplo correto: "probabilidade de vitoria de 85.5%". Exemplo INCORRETO: "8547.4%" ou "Casa (1.177) vs Fora (0.996)"
 - Use os dados do COMPARATIVO TIMES e PERFIL DE GOLS para fundamentar sua analise:
   * xG alto + clean sheet baixo = time ofensivo mas vulneravel defensivamente
-  * BTTS% alto de ambos = forte indicador de ambas marcam
   * FTS% alto = time nao marca com frequencia, considerar BTTS Nao
   * Over 2.5% dos dois times alto = tendencia a jogos com muitos gols
   * Escanteios contra/jogo alto do adversario = time pressiona muito, gera mais corners
   * Posicao na liga indica forca relativa dos times
+
+REGRA ANTI-VIES BTTS (CRITICO — LEIA COM ATENCAO):
+- NAO sugira BTTS (Ambas Marcam) como recomendacao padrao. BTTS so deve ser recomendado quando AMBOS os times demonstram volume ofensivo real.
+- Se o RAIO-X TATICO ao vivo estiver disponivel, LEIA-O OBRIGATORIAMENTE antes de recomendar:
+  * Se um time tem 0 ou 1 chute no alvo E 0-1 chutes na area: BTTS tem EV+ NEGATIVO. NAO recomende BTTS.
+  * Se um time tem 0 finalizacoes totais: esse time NAO vai marcar. Recomende BTTS Nao ou ML do time dominante.
+  * Se a posse e > 65% para um lado com muitos chutes no alvo: foque no ML (Money Line) do time dominante ou Over gols.
+  * Se ha muitos escanteios (> 6 no total antes dos 60min): considere Escanteios Over como alternativa.
+  * Se ha Cartao Vermelho: time com menos jogadores perde volume ofensivo — reconsidere BTTS.
+- Foque a analise na ASSIMETRIA do jogo: quem domina posse, finaliza mais e gera mais escanteios e quem provavelmente marcara.
+- Priorize estas alternativas ao BTTS quando a assimetria for clara:
+  1. ML (Money Line) do time dominante — quando um time controla o jogo
+  2. Over gols (1.5, 2.5, 3.5) — quando ha pressao ofensiva de pelo menos um lado
+  3. Over Escanteios — quando o ritmo de corners indica tendencia
+  4. BTTS Nao — quando um time e claramente inofensivo (0-1 chutes no alvo)
+  5. BTTS Sim — SOMENTE quando ambos tem 3+ chutes no alvo e criam perigo real
+
 - A confianca (confidence) deve ser um numero de 0-100
 - Forneca 5 pontos-chave
 - A recomendacao deve incluir o mercado e a odd especifica
+- OBRIGATORIO: o campo "recommendation" DEVE conter uma aposta concreta (ex: "Over 2.5 @1.80" ou "Casa @1.45"). NUNCA diga "indisponivel", "consulte as estatisticas" ou "aguarde". Sempre recomende algo com base nos dados.
+- CRITICO: A odd na recomendacao DEVE ser uma das odds listadas em "ODDS DO MERCADO" acima. NAO invente, estime ou arredonde odds. Se a odd de um mercado e "N/A", NAO recomende esse mercado. Escolha APENAS entre mercados com odd numerica disponivel.
 - Retorne APENAS o JSON, sem texto adicional
 """
         return prompt
@@ -301,7 +497,140 @@ IMPORTANTE:
             data = response.json()
             return data["choices"][0]["message"]["content"]
 
-    def _parse_analysis(self, raw_response: str) -> AIAnalysisResponse:
+    @staticmethod
+    def _sanitize_key_points(key_points: List[str], odds: Dict) -> List[str]:
+        """Remove hallucinated odds from key_points.
+
+        Strips patterns like 'odd de 1.95' or 'com odd 1.95' when the value
+        doesn't match any real available odd.
+        """
+        if not key_points or not odds:
+            return key_points
+
+        # Collect all real odd values (including derived under odds)
+        real_values: set = set()
+        for key, val in odds.items():
+            if val is not None:
+                try:
+                    real_values.add(round(float(val), 2))
+                except (TypeError, ValueError):
+                    pass
+        # Derive under odds
+        for over_k in ("over35", "over45"):
+            ov = odds.get(over_k)
+            if ov is not None:
+                try:
+                    ov_f = float(ov)
+                    if ov_f > 1.0:
+                        impl = 1.0 - (1.0 / ov_f)
+                        if impl > 0:
+                            real_values.add(round((1.0 / impl) * 0.95, 2))
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+
+        sanitized = []
+        for point in key_points:
+            # Find all odds mentioned in the key point (e.g. "odd de 1.95", "com odd 1.95", "@1.95")
+            for m in re.finditer(r"(?:odd\s+(?:de\s+)?|@\s*)([\d]+[.,][\d]+)", point, re.IGNORECASE):
+                mentioned_odd = round(float(m.group(1).replace(",", ".")), 2)
+                # Check if this odd is real (within tolerance)
+                if not any(abs(mentioned_odd - rv) < 0.02 for rv in real_values):
+                    # Strip the hallucinated odd reference
+                    point = re.sub(
+                        r",?\s*com\s+odd\s+(?:de\s+)?[\d]+[.,][\d]+", "", point, flags=re.IGNORECASE
+                    )
+                    point = re.sub(
+                        r",?\s*odd\s+(?:de\s+)?[\d]+[.,][\d]+", "", point, flags=re.IGNORECASE
+                    )
+                    point = re.sub(r"\s*@\s*[\d]+[.,][\d]+", "", point)
+                    logger.warning(f"Stripped hallucinated odd {mentioned_odd} from key_point")
+                    break
+            sanitized.append(point.strip())
+        return sanitized
+
+    @staticmethod
+    def _validate_recommendation_odd(recommendation: str, odds: Dict) -> str:
+        """Validate that the odd in the recommendation matches an actual available odd.
+
+        If the recommended odd doesn't match any real odd, replace it with the
+        closest real odd for a matching market, or strip the odd entirely.
+        """
+        if not recommendation or not odds:
+            return recommendation
+
+        # Extract odd from recommendation (e.g. "@1.95" or "@ 1.95")
+        odd_match = re.search(r"@\s*([\d]+[.,][\d]+)", recommendation)
+        if not odd_match:
+            return recommendation
+
+        rec_odd = float(odd_match.group(1).replace(",", "."))
+
+        # Build map of available real odds (including derived under odds)
+        enriched = dict(odds)
+        # Derive under35/under45 from over odds if missing
+        for over_k, under_k in [("over35", "under35"), ("over45", "under45")]:
+            if under_k not in enriched or enriched[under_k] is None:
+                over_v = enriched.get(over_k)
+                if over_v is not None:
+                    try:
+                        ov = float(over_v)
+                        if ov > 1.0:
+                            impl = 1.0 - (1.0 / ov)
+                            if impl > 0:
+                                enriched[under_k] = round((1.0 / impl) * 0.95, 2)
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        pass
+
+        real_odds: Dict[str, float] = {}
+        _MARKET_NAMES = {
+            "home": "Casa", "draw": "Empate", "away": "Fora",
+            "over15": "Over 1.5", "over25": "Over 2.5", "over35": "Over 3.5",
+            "over45": "Over 4.5", "under25": "Under 2.5",
+            "under35": "Under 3.5", "under45": "Under 4.5",
+            "bttsYes": "BTTS Sim", "bttsNo": "BTTS Nao",
+            "btts_yes": "BTTS Sim", "btts_no": "BTTS Nao",
+            "over_25": "Over 2.5",
+            "cornersOver85": "Escanteios Over 8.5",
+            "cornersOver95": "Escanteios Over 9.5",
+            "cornersOver105": "Escanteios Over 10.5",
+            "cornersOver115": "Escanteios Over 11.5",
+        }
+        for key, val in enriched.items():
+            if val is not None:
+                try:
+                    real_odds[_MARKET_NAMES.get(key, key)] = float(val)
+                except (TypeError, ValueError):
+                    pass
+
+        # Check if recommended odd matches any real odd (within 0.01 tolerance)
+        for _market, real_odd in real_odds.items():
+            if abs(rec_odd - real_odd) < 0.02:
+                return recommendation  # Odd is valid
+
+        # Odd not found — try to find the correct odd for the recommended market
+        rec_lower = recommendation.lower()
+        best_market = None
+        best_odd = None
+        for market_name, real_odd in real_odds.items():
+            if market_name.lower() in rec_lower:
+                best_market = market_name
+                best_odd = real_odd
+                break
+
+        if best_odd is not None:
+            # Replace hallucinated odd with real one
+            corrected = re.sub(r"@\s*[\d]+[.,][\d]+", f"@{best_odd:.2f}", recommendation)
+            logger.warning(
+                f"Corrected hallucinated odd: {rec_odd} -> {best_odd} for market {best_market}"
+            )
+            return corrected
+
+        # Can't find a matching market — strip the odd to avoid confusion
+        corrected = re.sub(r"\s*@\s*[\d]+[.,][\d]+", "", recommendation)
+        logger.warning(f"Stripped hallucinated odd {rec_odd} from recommendation (no matching market)")
+        return corrected
+
+    def _parse_analysis(self, raw_response: str, odds: Optional[Dict] = None) -> AIAnalysisResponse:
         """Parse da resposta da MISTRAL para o modelo estruturado"""
         try:
             cleaned = raw_response.strip()
@@ -325,13 +654,34 @@ IMPORTANTE:
 
             data = json.loads(cleaned)
 
-            recommendation = (data.get("recommendation") or "").strip()
-            if not recommendation:
-                recommendation = "Recomendacao indisponivel. Consulte as estatisticas e odds apresentadas para tomar sua decisao."
+            recommendation = data.get("recommendation", "")
+
+            # Detect generic/unavailable recommendations that Mistral sometimes returns
+            # instead of a real data-driven recommendation
+            _GENERIC_PATTERNS = (
+                "indisponivel",
+                "indisponível",
+                "aguarde",
+                "tente novamente",
+                "consulte as estatisticas",
+                "consulte as estatísticas",
+            )
+            if recommendation and any(p in recommendation.lower() for p in _GENERIC_PATTERNS):
+                logger.warning(f"Mistral returned generic recommendation, discarding: {recommendation[:80]}")
+                recommendation = ""
+
+            # Validate recommended odd against real available odds
+            if recommendation and odds:
+                recommendation = self._validate_recommendation_odd(recommendation, odds)
+
+            # Sanitize key_points to remove hallucinated odds
+            key_points = data.get("key_points", [])[:5]
+            if odds:
+                key_points = self._sanitize_key_points(key_points, odds)
 
             return AIAnalysisResponse(
                 summary=data.get("summary", ""),
-                key_points=data.get("key_points", [])[:5],
+                key_points=key_points,
                 recommendation=recommendation,
                 confidence=min(max(int(data.get("confidence", 50)), 0), 100),
                 last_updated=datetime.now().strftime("%d/%m/%Y as %H:%M"),

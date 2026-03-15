@@ -753,43 +753,6 @@ const MOCK_DATA: Match[] = [
   },
 
   // ═══════════════════════════════════════════════
-  // Greece Super League — 3 matches
-  // ═══════════════════════════════════════════════
-  {
-    id: "mock-gr-01", leagueId: "greece-super-league", leagueName: "Super League Greece",
-    homeTeam: { name: "Olympiacos", logo: "", form: ["W", "W", "W", "D", "W"], rating: 7.8 },
-    awayTeam: { name: "Panathinaikos", logo: "", form: ["W", "D", "L", "W", "D"], rating: 7.2 },
-    datetime: today(4), venue: "Karaiskakis Stadium", status: "scheduled",
-    odds: { home: 1.70, draw: 3.6, away: 5.0, over25: 1.82, under25: 1.98, bttsYes: 1.78, bttsNo: 2.02 },
-    stats: { homeWinProb: 0.50, drawProb: 0.26, awayWinProb: 0.24, avgGoals: 2.3, bttsProb: 0.44, over25Prob: 0.52, regime: "NORMAL" },
-    h2h: { totalMatches: 20, homeWins: 10, draws: 5, awayWins: 5, avgGoals: 2.2 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 70, prob_max: 73, odd_minima: 1.40 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-gr-02", leagueId: "greece-super-league", leagueName: "Super League Greece",
-    homeTeam: { name: "PAOK", logo: "", form: ["W", "D", "W", "W", "L"], rating: 7.5 },
-    awayTeam: { name: "AEK Athens", logo: "", form: ["D", "W", "W", "L", "W"], rating: 7.3 },
-    datetime: today(7), venue: "Toumba Stadium", status: "scheduled",
-    odds: { home: 2.10, draw: 3.3, away: 3.4, over25: 1.75, under25: 2.05, bttsYes: 1.72, bttsNo: 2.08 },
-    stats: { homeWinProb: 0.40, drawProb: 0.29, awayWinProb: 0.31, avgGoals: 2.4, bttsProb: 0.48, over25Prob: 0.55, regime: "NORMAL" },
-    h2h: { totalMatches: 15, homeWins: 6, draws: 5, awayWins: 4, avgGoals: 2.3 },
-    predictions: [{ mercado: "BTTS Não", status: "SAFE", prob_min: 56, prob_max: 58, odd_minima: 2.08 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-gr-03", leagueId: "greece-super-league", leagueName: "Super League Greece",
-    homeTeam: { name: "Aris Thessaloniki", logo: "", form: ["L", "D", "W", "D", "W"], rating: 6.8 },
-    awayTeam: { name: "Asteras Tripolis", logo: "", form: ["D", "L", "L", "W", "D"], rating: 6.2 },
-    datetime: today(10), venue: "Kleanthis Vikelidis Stadium", status: "scheduled",
-    odds: { home: 1.90, draw: 3.4, away: 4.2, over25: 1.90, under25: 1.90, bttsYes: 1.85, bttsNo: 1.95 },
-    stats: { homeWinProb: 0.45, drawProb: 0.28, awayWinProb: 0.27, avgGoals: 2.1, bttsProb: 0.42, over25Prob: 0.48, regime: "NORMAL" },
-    h2h: { totalMatches: 8, homeWins: 3, draws: 3, awayWins: 2, avgGoals: 2.0 },
-    predictions: [{ mercado: "Under 2.5 gols", status: "SAFE", prob_min: 52, prob_max: 55, odd_minima: 1.90 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-
-  // ═══════════════════════════════════════════════
   // Turkey Super Lig — 2 matches
   // ═══════════════════════════════════════════════
   {

@@ -135,6 +135,11 @@ try:
     app.include_router(_r_ml.router)
 except Exception:
     pass
+try:
+    from backend.routes import live as _r_live
+    app.include_router(_r_live.router)
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"
@@ -382,7 +387,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "austrian-bundesliga": "Bundesliga (Austria)", "austria-bundesliga": "Bundesliga (Austria)",
         "superliga": "Superliga", "denmark-superliga": "Superliga",
         "super-league": "Super League", "switzerland-super-league": "Super League",
-        "super-league-greece": "Super League Greece", "greece-super-league": "Super League Greece",
         "primera-division": "Primera División", "a-league": "A-League",
         "professional-league": "Professional League",
         "saudi-professional-league": "Professional League",

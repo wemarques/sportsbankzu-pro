@@ -264,7 +264,17 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         tg = hg + ag
         _btts = hg > 0 and ag > 0
         _1x2 = "1" if hg > ag else ("X" if hg == ag else "2")
-        _actual_by_id[mid] = {"total_goals": tg, "btts": _btts, "result_1x2": _1x2}
+        # Extract corners for dupla leg evaluation
+        _stats = m.get("stats", {})
+        _hc = _stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
+        _ac = _stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
+        try:
+            _hc = int(_hc) if _hc and int(_hc) >= 0 else 0
+            _ac = int(_ac) if _ac and int(_ac) >= 0 else 0
+            _tc = _hc + _ac
+        except (ValueError, TypeError):
+            _tc = 0
+        _actual_by_id[mid] = {"total_goals": tg, "btts": _btts, "result_1x2": _1x2, "total_corners": _tc}
         # Also index by homeTeam+awayTeam for leg matching
         hname = team_name(m.get("homeTeam")).strip().lower()
         aname = team_name(m.get("awayTeam")).strip().lower()

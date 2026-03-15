@@ -19,7 +19,7 @@ from typing_extensions import deprecated
 
 SYSTEM_CPU_LOGICAL_NUMBER: Final = "system.cpu.logical_number"
 """
-Deprecated, use `cpu.logical_number` instead.
+Deprecated: Replaced by `cpu.logical_number`.
 """
 
 SYSTEM_CPU_STATE: Final = "system.cpu.state"
@@ -52,6 +52,11 @@ SYSTEM_FILESYSTEM_TYPE: Final = "system.filesystem.type"
 The filesystem type.
 """
 
+SYSTEM_MEMORY_LINUX_SLAB_STATE: Final = "system.memory.linux.slab.state"
+"""
+The Linux Slab memory state.
+"""
+
 SYSTEM_MEMORY_STATE: Final = "system.memory.state"
 """
 The memory state.
@@ -67,6 +72,11 @@ SYSTEM_PAGING_DIRECTION: Final = "system.paging.direction"
 The paging access direction.
 """
 
+SYSTEM_PAGING_FAULT_TYPE: Final = "system.paging.fault.type"
+"""
+The paging fault type.
+"""
+
 SYSTEM_PAGING_STATE: Final = "system.paging.state"
 """
 The memory paging state.
@@ -74,17 +84,17 @@ The memory paging state.
 
 SYSTEM_PAGING_TYPE: Final = "system.paging.type"
 """
-The memory paging type.
+Deprecated: Replaced by `system.paging.fault.type`.
 """
 
 SYSTEM_PROCESS_STATUS: Final = "system.process.status"
 """
-The process state, e.g., [Linux Process State Codes](https://man7.org/linux/man-pages/man1/ps.1.html#PROCESS_STATE_CODES).
+Deprecated: Replaced by `process.state`.
 """
 
 SYSTEM_PROCESSES_STATUS: Final = "system.processes.status"
 """
-Deprecated: Replaced by `system.process.status`.
+Deprecated: Replaced by `process.state`.
 """
 
 
@@ -132,13 +142,20 @@ class SystemFilesystemTypeValues(Enum):
     """ext4."""
 
 
+class SystemMemoryLinuxSlabStateValues(Enum):
+    RECLAIMABLE = "reclaimable"
+    """reclaimable."""
+    UNRECLAIMABLE = "unreclaimable"
+    """unreclaimable."""
+
+
 class SystemMemoryStateValues(Enum):
     USED = "used"
     """Actual used virtual memory in bytes."""
     FREE = "free"
     """free."""
     SHARED = "shared"
-    """Deprecated: Removed, report shared memory usage with `metric.system.memory.shared` metric."""
+    """Deprecated: Removed, report shared memory usage with `metric.system.memory.linux.shared` metric."""
     BUFFERS = "buffers"
     """buffers."""
     CACHED = "cached"
@@ -182,6 +199,13 @@ class SystemPagingDirectionValues(Enum):
     """out."""
 
 
+class SystemPagingFaultTypeValues(Enum):
+    MAJOR = "major"
+    """major."""
+    MINOR = "minor"
+    """minor."""
+
+
 class SystemPagingStateValues(Enum):
     USED = "used"
     """used."""
@@ -189,6 +213,9 @@ class SystemPagingStateValues(Enum):
     """free."""
 
 
+@deprecated(
+    "The attribute system.paging.type is deprecated - Replaced by `system.paging.fault.type`"
+)
 class SystemPagingTypeValues(Enum):
     MAJOR = "major"
     """major."""
@@ -196,6 +223,9 @@ class SystemPagingTypeValues(Enum):
     """minor."""
 
 
+@deprecated(
+    "The attribute system.process.status is deprecated - Replaced by `process.state`"
+)
 class SystemProcessStatusValues(Enum):
     RUNNING = "running"
     """running."""
@@ -208,7 +238,7 @@ class SystemProcessStatusValues(Enum):
 
 
 @deprecated(
-    "The attribute system.processes.status is deprecated - Replaced by `system.process.status`"
+    "The attribute system.processes.status is deprecated - Replaced by `process.state`"
 )
 class SystemProcessesStatusValues(Enum):
     RUNNING = "running"

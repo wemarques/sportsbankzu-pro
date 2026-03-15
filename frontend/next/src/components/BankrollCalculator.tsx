@@ -18,16 +18,33 @@ import {
   PieChart,
   ArrowLeft,
   Info,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  Clock,
+  Shuffle,
+  ShieldAlert,
+  Crown,
+  Ban,
+  CircleDollarSign,
+  BarChart3,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   type BetInput,
   type BetAllocation,
   type BankrollSettings,
+  type SystemBetSuggestion,
+  type SystemBetScenario,
+  type BankerSelection,
   distributeBankroll,
   loadSettings,
   saveSettings,
   DEFAULT_SETTINGS,
   KELLY_MULTIPLIERS,
+  MAX_STAKE_PCT,
 } from "@/lib/kelly";
 
 /* ── Types from combinadas API ── */
@@ -103,7 +120,8 @@ function combinadasToBets(data: CombinadasData): BetInput[] {
   for (const c of [...data.intra, ...data.inter]) {
     for (const leg of [c.leg1, c.leg2]) {
       const key = `${leg.homeTeam}-${leg.awayTeam}-${leg.mercado}`;
-      if (!seenLegs.has(key) && leg.status.toUpperCase().startsWith("SAFE")) {
+      const st = leg.status.toUpperCase();
+      if (!seenLegs.has(key) && (st.startsWith("SAFE") || st.startsWith("NEUTRO"))) {
         seenLegs.add(key);
         bets.push({
           id: `simple-${key}`,
@@ -180,6 +198,318 @@ function AnimatedValue({ value, prefix = "" }: { value: number; prefix?: string 
   );
 }
 
+/* ── Inline Stake Editor ── */
+function InlineStakeEditor({
+  value,
+  onConfirm,
+  onCancel,
+  color,
+}: {
+  value: number;
+  onConfirm: (v: number) => void;
+  onCancel: () => void;
+  color: string;
+}) {
+  const [input, setInput] = useState(value.toFixed(2));
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <span className="text-[0.6rem] font-bold" style={{ color }}>R$</span>
+      <input
+        type="text"
+        autoFocus
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            const num = parseFloat(input.replace(",", "."));
+            if (!isNaN(num) && num >= 0) onConfirm(num);
+          }
+          if (e.key === "Escape") onCancel();
+        }}
+        className="w-16 text-[0.72rem] font-bold tabular-nums text-right rounded px-1 py-0.5 outline-none"
+        style={{
+          background: "rgba(255,255,255,0.08)",
+          border: `1px solid ${color}40`,
+          color: "var(--color-text-primary)",
+        }}
+      />
+      <button
+        onClick={() => {
+          const num = parseFloat(input.replace(",", "."));
+          if (!isNaN(num) && num >= 0) onConfirm(num);
+        }}
+        className="w-5 h-5 rounded flex items-center justify-center"
+        style={{ background: "rgba(34,197,94,0.15)" }}
+      >
+        <Check size={10} className="text-[#22c55e]" />
+      </button>
+      <button
+        onClick={onCancel}
+        className="w-5 h-5 rounded flex items-center justify-center"
+        style={{ background: "rgba(255,85,85,0.15)" }}
+      >
+        <X size={10} className="text-[#ff5555]" />
+      </button>
+    </div>
+  );
+}
+
+/* ── Game Card for Simples ── */
+function SimpleGameCard({
+  a,
+  color,
+  onRemove,
+  onStakeChange,
+}: {
+  a: BetAllocation;
+  color: string;
+  onRemove: (id: string) => void;
+  onStakeChange: (id: string, stake: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div
+      className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border transition-all"
+      style={{
+        background: `${color}06`,
+        borderColor: `${color}15`,
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+            {a.bet.homeTeam}{" "}
+            <span className="text-[var(--color-text-muted)]">x</span>{" "}
+            {a.bet.awayTeam}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <span
+            className="text-[0.6rem] font-medium px-1.5 py-px rounded"
+            style={{ background: `${color}15`, color }}
+          >
+            {a.bet.market}
+          </span>
+          <span className="text-[0.58rem] text-[var(--color-text-muted)]">
+            {a.bet.leagueName}
+          </span>
+          <span className="text-[0.55rem] text-[var(--color-text-muted)] flex items-center gap-0.5">
+            <Clock size={8} />
+            {formatTime(a.bet.datetime)}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="text-right">
+          {editing ? (
+            <InlineStakeEditor
+              value={a.stake}
+              color={color}
+              onConfirm={(v) => { onStakeChange(a.bet.id, v); setEditing(false); }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <>
+              <div className="text-[0.78rem] font-black tabular-nums" style={{ color }}>
+                {formatCurrency(a.stake)}
+              </div>
+              <div className="text-[0.55rem] text-[var(--color-text-muted)]">
+                odd {a.bet.odd.toFixed(2)} &middot; EV{" "}
+                <span style={{ color: evColor(a.ev) }}>
+                  {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+        {!editing && (
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+              className="w-5 h-5 rounded flex items-center justify-center transition-colors hover:scale-110"
+              style={{ background: `${color}15` }}
+              title="Editar stake"
+            >
+              <Pencil size={9} style={{ color }} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(a.bet.id); }}
+              className="w-5 h-5 rounded flex items-center justify-center transition-colors hover:scale-110"
+              style={{ background: "rgba(255,85,85,0.1)" }}
+              title="Remover"
+            >
+              <Trash2 size={9} className="text-[#ff5555]" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Game Card for Duplas (linked legs) ── */
+function DuplaGameCard({
+  a,
+  color,
+  onRemove,
+  onStakeChange,
+}: {
+  a: BetAllocation;
+  color: string;
+  onRemove: (id: string) => void;
+  onStakeChange: (id: string, stake: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div
+      className="rounded-lg border transition-all overflow-hidden"
+      style={{
+        background: `${color}06`,
+        borderColor: `${color}15`,
+      }}
+    >
+      {/* Combined header with odd and actions */}
+      <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="text-[0.58rem] font-bold uppercase tracking-wider px-1.5 py-px rounded"
+            style={{ background: `${color}18`, color }}
+          >
+            {a.bet.category === "dupla_intra" ? "Intra" : "Inter"}
+          </span>
+          <span className="text-[0.58rem] text-[var(--color-text-muted)] flex items-center gap-0.5">
+            <Clock size={8} />
+            {formatTime(a.bet.datetime)}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {editing ? (
+            <InlineStakeEditor
+              value={a.stake}
+              color={color}
+              onConfirm={(v) => { onStakeChange(a.bet.id, v); setEditing(false); }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <>
+              <div className="text-right">
+                <div className="text-[0.78rem] font-black tabular-nums" style={{ color }}>
+                  {formatCurrency(a.stake)}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+                  className="w-5 h-5 rounded flex items-center justify-center hover:scale-110"
+                  style={{ background: `${color}15` }}
+                  title="Editar stake"
+                >
+                  <Pencil size={9} style={{ color }} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRemove(a.bet.id); }}
+                  className="w-5 h-5 rounded flex items-center justify-center hover:scale-110"
+                  style={{ background: "rgba(255,85,85,0.1)" }}
+                  title="Remover"
+                >
+                  <Trash2 size={9} className="text-[#ff5555]" />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Linked legs */}
+      <div className="flex items-stretch px-2.5 pb-2 gap-0">
+        {/* Vertical connector line */}
+        <div className="flex flex-col items-center w-4 shrink-0 py-1">
+          <div
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: color }}
+          />
+          <div
+            className="w-px flex-1 my-0.5"
+            style={{ background: `${color}40` }}
+          />
+          <div
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: color }}
+          />
+        </div>
+
+        <div className="flex-1 space-y-1.5 min-w-0">
+          {/* Leg 1 */}
+          <div>
+            <div className="text-[0.68rem] font-semibold text-[var(--color-text-primary)] truncate">
+              {a.bet.homeTeam}{" "}
+              <span className="text-[var(--color-text-muted)]">x</span>{" "}
+              {a.bet.awayTeam}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-[0.58rem] font-medium px-1.5 py-px rounded"
+                style={{ background: `${color}15`, color }}
+              >
+                {a.bet.market}
+              </span>
+              <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                {a.bet.leagueName}
+              </span>
+            </div>
+          </div>
+
+          {/* Leg 2 */}
+          {a.bet.leg2Label && (
+            <div>
+              <div className="text-[0.68rem] font-semibold text-[var(--color-text-primary)] truncate">
+                {a.bet.leg2Label}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="text-[0.58rem] font-medium px-1.5 py-px rounded"
+                  style={{ background: `${color}15`, color }}
+                >
+                  {a.bet.leg2Market}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer: combined odd + EV */}
+      <div
+        className="flex items-center justify-between px-2.5 py-1.5 border-t"
+        style={{ borderColor: `${color}12` }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="text-[0.58rem] text-[var(--color-text-muted)]">
+            Odd combinada{" "}
+            <span className="font-bold text-[var(--color-text-primary)]">
+              {a.bet.odd.toFixed(2)}
+            </span>
+          </div>
+          <div className="text-[0.58rem] text-[var(--color-text-muted)]">
+            EV{" "}
+            <span className="font-bold" style={{ color: evColor(a.ev) }}>
+              {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+        <div className="text-[0.58rem] text-[var(--color-text-muted)]">
+          Retorno{" "}
+          <span className="font-bold text-[#00df82]">
+            {formatCurrency(a.potentialReturn)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Slider Component ── */
 function BankSlider({
   label,
@@ -190,6 +520,8 @@ function BankSlider({
   description,
   allocations,
   bankroll,
+  onRemoveBet,
+  onStakeChange,
 }: {
   label: string;
   value: number;
@@ -199,11 +531,25 @@ function BankSlider({
   description: string;
   allocations?: BetAllocation[];
   bankroll?: number;
+  onRemoveBet?: (id: string) => void;
+  onStakeChange?: (id: string, stake: number) => void;
 }) {
   const hasAllocations = allocations && allocations.length > 0;
   const [showGames, setShowGames] = useState(true);
   const catBudget = bankroll ? bankroll * (value / 100) : 0;
   const totalStaked = allocations?.reduce((s, a) => s + a.stake, 0) ?? 0;
+  const isOverBudget = totalStaked > catBudget + 0.01;
+  const budgetPct = catBudget > 0 ? Math.min((totalStaked / catBudget) * 100, 100) : 0;
+
+  // Sort by highest stake first
+  const sortedAllocations = useMemo(() => {
+    if (!allocations) return [];
+    return [...allocations].sort((a, b) => b.stake - a.stake);
+  }, [allocations]);
+
+  const isDuplaCategory = sortedAllocations.some(
+    (a) => a.bet.category === "dupla_intra" || a.bet.category === "dupla_inter",
+  );
 
   return (
     <div className="group relative">
@@ -254,86 +600,85 @@ function BankSlider({
       {/* Game allocations inline */}
       {hasAllocations && (
         <div className="mt-3">
+          {/* Toggle button with summary */}
           <button
             onClick={() => setShowGames(!showGames)}
-            className="flex items-center gap-1.5 text-[0.65rem] font-semibold transition-colors"
-            style={{ color: `${color}cc` }}
+            className="w-full text-left"
           >
-            {showGames ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            {allocations.length} {allocations.length === 1 ? "jogo" : "jogos"} &middot;{" "}
-            {formatCurrency(totalStaked)} de {formatCurrency(catBudget)}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[0.65rem] font-semibold transition-colors"
+                style={{ color: isOverBudget ? "#ff5555" : `${color}cc` }}
+              >
+                {showGames ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {sortedAllocations.length}{" "}
+                {sortedAllocations.length === 1 ? "jogo" : "jogos"}
+              </div>
+              <span
+                className="text-[0.62rem] font-bold tabular-nums"
+                style={{ color: isOverBudget ? "#ff5555" : "var(--color-text-muted)" }}
+              >
+                {formatCurrency(totalStaked)} / {formatCurrency(catBudget)}
+              </span>
+            </div>
+
+            {/* Budget progress bar */}
+            <div className="relative h-1 rounded-full bg-[#1a1a2e] overflow-hidden mt-1.5">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                style={{
+                  width: `${budgetPct}%`,
+                  background: isOverBudget
+                    ? "linear-gradient(90deg, #ff555588, #ff5555)"
+                    : `linear-gradient(90deg, ${color}55, ${color})`,
+                  boxShadow: isOverBudget ? "0 0 8px rgba(255,85,85,0.4)" : `0 0 6px ${color}30`,
+                }}
+              />
+            </div>
           </button>
 
+          {/* Over-budget alert */}
+          {isOverBudget && (
+            <div
+              className="flex items-center gap-1.5 text-[0.62rem] mt-2 px-2 py-1.5 rounded-lg"
+              style={{
+                background: "rgba(255,85,85,0.08)",
+                border: "1px solid rgba(255,85,85,0.2)",
+                color: "#ff5555",
+              }}
+            >
+              <AlertTriangle size={10} />
+              Alocacao excede o limite em{" "}
+              <strong>{formatCurrency(totalStaked - catBudget)}</strong>. Ajuste as stakes ou aumente o %.
+            </div>
+          )}
+
+          {/* Expanded game list */}
           {showGames && (
             <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-              {allocations.map((a) => {
+              {sortedAllocations.map((a) => {
                 const isDupla =
                   a.bet.category === "dupla_intra" || a.bet.category === "dupla_inter";
+
+                if (isDupla) {
+                  return (
+                    <DuplaGameCard
+                      key={a.bet.id}
+                      a={a}
+                      color={color}
+                      onRemove={onRemoveBet ?? (() => {})}
+                      onStakeChange={onStakeChange ?? (() => {})}
+                    />
+                  );
+                }
+
                 return (
-                  <div
+                  <SimpleGameCard
                     key={a.bet.id}
-                    className="flex items-center justify-between gap-2 px-2.5 py-2.5 rounded-lg border"
-                    style={{
-                      background: `${color}06`,
-                      borderColor: `${color}15`,
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <div className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
-                          {a.bet.homeTeam}{" "}
-                          <span className="text-[var(--color-text-muted)]">x</span>{" "}
-                          {a.bet.awayTeam}
-                        </div>
-                        <span className="text-[0.58rem] text-[var(--color-text-muted)] shrink-0">
-                          {formatTime(a.bet.datetime)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span
-                          className="text-[0.6rem] font-medium px-1.5 py-px rounded"
-                          style={{ background: `${color}15`, color }}
-                        >
-                          {a.bet.market}
-                        </span>
-                        {isDupla && a.bet.leg2Market && (
-                          <>
-                            <span className="text-[0.5rem] text-[var(--color-text-muted)]">+</span>
-                            <span
-                              className="text-[0.6rem] font-medium px-1.5 py-px rounded"
-                              style={{ background: `${color}15`, color }}
-                            >
-                              {a.bet.leg2Market}
-                            </span>
-                          </>
-                        )}
-                        <span className="text-[0.58rem] text-[var(--color-text-muted)]">
-                          {a.bet.leagueName}
-                        </span>
-                        <span
-                          className="text-[0.55rem] font-bold px-1 py-px rounded"
-                          style={{ background: `${color}12`, color }}
-                        >
-                          {a.bet.status}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div
-                        className="text-[0.82rem] font-black tabular-nums"
-                        style={{ color }}
-                      >
-                        {formatCurrency(a.stake)}
-                      </div>
-                      <div className="text-[0.55rem] text-[var(--color-text-muted)]">
-                        odd {a.bet.odd.toFixed(2)} &middot; EV{" "}
-                        <span style={{ color: evColor(a.ev) }}>
-                          {a.ev > 0 ? "+" : ""}
-                          {(a.ev * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                    a={a}
+                    color={color}
+                    onRemove={onRemoveBet ?? (() => {})}
+                    onStakeChange={onStakeChange ?? (() => {})}
+                  />
                 );
               })}
             </div>
@@ -402,11 +747,18 @@ function AllocationCard({
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-base font-black text-[var(--color-text-primary)]">
-              {formatCurrency(allocation.stake)}
+            <div className="flex items-center justify-end gap-1">
+              {allocation.capped && (
+                <span title={`Stake limitada a ${(MAX_STAKE_PCT * 100).toFixed(0)}% da banca`}>
+                  <ShieldAlert size={12} className="text-[#ffaa44]" />
+                </span>
+              )}
+              <div className="text-base font-black text-[var(--color-text-primary)]">
+                {formatCurrency(allocation.stake)}
+              </div>
             </div>
             <div className="text-[0.6rem] text-[var(--color-text-muted)] uppercase tracking-wider">
-              stake
+              {allocation.capped ? `stake (cap ${(MAX_STAKE_PCT * 100).toFixed(0)}%)` : "stake"}
             </div>
           </div>
         </div>
@@ -497,7 +849,7 @@ function AllocationCard({
                 <span style={{ color: sc.text }}>{allocation.bet.leg2Market}</span>
               </div>
             )}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <div className="text-[0.6rem] text-[var(--color-text-muted)]">Lucro Potencial</div>
                 <div className="text-sm font-bold text-[#00df82]">
@@ -508,6 +860,12 @@ function AllocationCard({
                 <div className="text-[0.6rem] text-[var(--color-text-muted)]">Edge</div>
                 <div className="text-sm font-bold" style={{ color: evColor(allocation.edge) }}>
                   {(allocation.edge * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div>
+                <div className="text-[0.6rem] text-[var(--color-text-muted)]">Prob. Implicita</div>
+                <div className="text-sm font-bold text-[var(--color-text-secondary)]">
+                  {allocation.impliedProb.toFixed(1)}%
                 </div>
               </div>
               <div>
@@ -578,6 +936,454 @@ function SectionHeader({
   );
 }
 
+/* ── System Bet Suggestion Card (Enhanced — 5 Rules) ── */
+function SystemBetCard({ suggestion }: { suggestion: SystemBetSuggestion }) {
+  const [expanded, setExpanded] = useState(false);
+  const [showCombos, setShowCombos] = useState(false);
+
+  // Color scheme based on recommendation status
+  const accent = suggestion.recommended ? "#ffaa44" : "#ff5555";
+  const accentBg = suggestion.recommended ? "rgba(255,170,68," : "rgba(255,85,85,";
+
+  return (
+    <div
+      className="rounded-2xl border overflow-hidden"
+      style={{
+        background: suggestion.recommended
+          ? "linear-gradient(135deg, rgba(255,170,68,0.04), rgba(255,136,0,0.06))"
+          : "linear-gradient(135deg, rgba(255,85,85,0.03), rgba(255,85,85,0.05))",
+        borderColor: `${accentBg}0.25)`,
+      }}
+    >
+      {/* ── Hero headline ── */}
+      {suggestion.recommended && (
+        <div
+          className="px-5 pt-4 pb-3"
+          style={{ borderBottom: `1px solid ${accentBg}0.1)` }}
+        >
+          <p className="text-[0.72rem] leading-relaxed text-[var(--color-text-secondary)]">
+            {suggestion.headline}
+          </p>
+        </div>
+      )}
+
+      {/* ── Not recommended warning ── */}
+      {!suggestion.recommended && (
+        <div
+          className="flex items-start gap-2.5 px-5 pt-4 pb-3"
+          style={{ borderBottom: "1px solid rgba(255,85,85,0.1)" }}
+        >
+          <Ban size={16} className="text-[#ff5555] shrink-0 mt-0.5" />
+          <div>
+            <div className="text-[0.72rem] font-bold text-[#ff5555] mb-1">
+              Sistema nao recomendado
+            </div>
+            <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-relaxed">
+              {suggestion.breakEvenReason}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-5 text-left"
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: `${accentBg}0.12)` }}
+            >
+              <Shuffle size={18} style={{ color: accent }} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-[var(--color-text-primary)]">
+                  Aposta em Sistema
+                </span>
+                <span
+                  className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{ background: `${accentBg}0.15)`, color: accent }}
+                >
+                  {suggestion.label}
+                </span>
+                {suggestion.recommended && (
+                  <span
+                    className="text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}
+                  >
+                    Recomendado
+                  </span>
+                )}
+              </div>
+              <p className="text-[0.65rem] text-[var(--color-text-muted)] mt-0.5">
+                {suggestion.description}
+              </p>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-base font-black tabular-nums" style={{ color: accent }}>
+              {formatCurrency(suggestion.totalStake)}
+            </div>
+            <div className="text-[0.55rem] text-[var(--color-text-muted)] uppercase">stake total</div>
+          </div>
+        </div>
+
+        {/* Summary row */}
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/5">
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Selecoes
+            </div>
+            <div className="text-sm font-bold text-[var(--color-text-primary)]">
+              {suggestion.selections.length}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Linhas
+            </div>
+            <div className="text-sm font-bold text-[var(--color-text-primary)]">
+              {suggestion.totalCombinations}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Stake/Linha
+            </div>
+            <div className="text-sm font-bold tabular-nums" style={{ color: accent }}>
+              {formatCurrency(suggestion.stakePerLine)}
+            </div>
+          </div>
+          <div className="text-center flex-1">
+            <div className="text-[0.58rem] text-[var(--color-text-muted)] uppercase tracking-wider">
+              Melhor Cenario
+            </div>
+            <div className="text-sm font-bold text-[#22c55e]">
+              {formatCurrency(suggestion.bestCaseReturn)}
+            </div>
+          </div>
+          <div className="shrink-0">
+            {expanded ? <ChevronUp size={14} className="text-[var(--color-text-muted)]" /> : <ChevronDown size={14} className="text-[var(--color-text-muted)]" />}
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+
+          {/* ── Rule 1: Scenario Breakdown ── */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <BarChart3 size={12} style={{ color: accent }} />
+              <span className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                Cenarios de Retorno
+              </span>
+            </div>
+            <div className="space-y-1">
+              {suggestion.scenarios.map((sc) => {
+                if (sc.hitsRequired === 0) return null; // Skip 0 hits (always loss)
+                const pct = suggestion.selections.length > 0
+                  ? (sc.hitsRequired / suggestion.selections.length) * 100
+                  : 0;
+                return (
+                  <div
+                    key={sc.hitsRequired}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg"
+                    style={{
+                      background: sc.coversInvestment ? "rgba(34,197,94,0.04)" : "rgba(255,85,85,0.03)",
+                      border: `1px solid ${sc.coversInvestment ? "rgba(34,197,94,0.12)" : "rgba(255,85,85,0.1)"}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {sc.coversInvestment ? (
+                        <CheckCircle2 size={12} className="text-[#22c55e]" />
+                      ) : (
+                        <XCircle size={12} className="text-[#ff5555]" />
+                      )}
+                      <span className="text-[0.68rem] font-semibold text-[var(--color-text-primary)]">
+                        {sc.hitsRequired} de {suggestion.selections.length} acertos
+                      </span>
+                      <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                        ({sc.winningCombos} {sc.winningCombos === 1 ? "combo paga" : "combos pagam"})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-[0.65rem] tabular-nums" style={{ color: sc.coversInvestment ? "#22c55e" : "#ff5555" }}>
+                        Retorno {formatCurrency(sc.estimatedReturn)}
+                      </span>
+                      <span
+                        className="text-[0.6rem] font-bold tabular-nums px-1.5 py-0.5 rounded"
+                        style={{
+                          background: sc.netProfit >= 0 ? "rgba(34,197,94,0.1)" : "rgba(255,85,85,0.1)",
+                          color: sc.netProfit >= 0 ? "#22c55e" : "#ff5555",
+                        }}
+                      >
+                        {sc.netProfit >= 0 ? "+" : ""}{formatCurrency(sc.netProfit)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Rule 4: Banker (Anchor Bet) ── */}
+          {suggestion.banker && suggestion.recommended && (
+            <div
+              className="rounded-xl border overflow-hidden"
+              style={{
+                background: "linear-gradient(135deg, rgba(255,215,0,0.04), rgba(255,170,68,0.06))",
+                borderColor: "rgba(255,215,0,0.2)",
+              }}
+            >
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center"
+                    style={{ background: "rgba(255,215,0,0.15)" }}
+                  >
+                    <Crown size={14} className="text-[#ffd700]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[0.72rem] font-bold text-[#ffd700]">
+                        Banker (Aposta Fixa)
+                      </span>
+                      <span
+                        className="text-[0.5rem] font-bold uppercase tracking-wider px-1.5 py-px rounded-full"
+                        style={{ background: "rgba(255,215,0,0.12)", color: "#ffd700" }}
+                      >
+                        Premium
+                      </span>
+                    </div>
+                    <p className="text-[0.58rem] text-[var(--color-text-muted)]">
+                      {suggestion.banker.reason}
+                    </p>
+                  </div>
+                </div>
+                <div
+                  className="flex items-center justify-between px-3 py-2 rounded-lg"
+                  style={{ background: "rgba(255,215,0,0.05)", border: "1px solid rgba(255,215,0,0.12)" }}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Crown size={10} className="text-[#ffd700] shrink-0" />
+                    <span className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                      {suggestion.banker.allocation.bet.homeTeam} x {suggestion.banker.allocation.bet.awayTeam}
+                    </span>
+                    <span
+                      className="text-[0.58rem] font-medium px-1.5 py-px rounded shrink-0"
+                      style={{ background: "rgba(255,215,0,0.1)", color: "#ffd700" }}
+                    >
+                      {suggestion.banker.allocation.bet.market}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[0.6rem] text-[var(--color-text-muted)] tabular-nums">
+                      odd {suggestion.banker.allocation.bet.odd.toFixed(2)}
+                    </span>
+                    <span className="text-[0.6rem] font-bold tabular-nums" style={{ color: evColor(suggestion.banker.allocation.ev) }}>
+                      EV +{(suggestion.banker.allocation.ev * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[0.58rem] text-[var(--color-text-muted)] mt-2 leading-relaxed">
+                  O Banker esta presente em todas as combinacoes e aumenta o retorno potencial,
+                  barateando o custo das multiplas linhas — mas a aposta inteira e perdida se o Banker falhar.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Rule 2: Stake Distribution Info ── */}
+          <div
+            className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
+            style={{
+              background: `${accentBg}0.05)`,
+              border: `1px solid ${accentBg}0.12)`,
+            }}
+          >
+            <CircleDollarSign size={14} style={{ color: accent }} className="shrink-0 mt-0.5" />
+            <div className="text-[0.65rem] text-[var(--color-text-secondary)] leading-relaxed">
+              <strong style={{ color: accent }}>Distribuicao de Stake (Kelly):</strong>{" "}
+              O valor total de {formatCurrency(suggestion.totalStake)} (via criterio de Kelly fracionado)
+              e dividido igualmente entre as {suggestion.totalCombinations} linhas de aposta.
+              Cada linha recebe <strong style={{ color: "var(--color-text-primary)" }}>{formatCurrency(suggestion.stakePerLine)}</strong>.
+              Isso impede que o valor total seja investido em cada linha separadamente.
+            </div>
+          </div>
+
+          {/* ── Selections ── */}
+          <div>
+            <div className="text-[0.65rem] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+              Selecoes ({suggestion.selections.length} jogos +EV)
+            </div>
+            <div className="space-y-1.5">
+              {suggestion.selections.map((a, i) => {
+                const isBanker = suggestion.banker?.allocation.bet.id === a.bet.id;
+                return (
+                  <div
+                    key={a.bet.id}
+                    className="flex items-center justify-between px-2.5 py-2 rounded-lg"
+                    style={{
+                      background: isBanker ? "rgba(255,215,0,0.05)" : `${accentBg}0.04)`,
+                      border: `1px solid ${isBanker ? "rgba(255,215,0,0.15)" : `${accentBg}0.1)`}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold shrink-0"
+                        style={{
+                          background: isBanker ? "rgba(255,215,0,0.15)" : `${accentBg}0.15)`,
+                          color: isBanker ? "#ffd700" : accent,
+                        }}
+                      >
+                        {isBanker ? <Crown size={10} /> : i + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[0.7rem] font-semibold text-[var(--color-text-primary)] truncate">
+                            {a.bet.homeTeam} x {a.bet.awayTeam}
+                          </span>
+                          {isBanker && (
+                            <span
+                              className="text-[0.48rem] font-bold uppercase px-1 py-px rounded"
+                              style={{ background: "rgba(255,215,0,0.12)", color: "#ffd700" }}
+                            >
+                              Banker
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-[0.58rem] font-medium px-1.5 py-px rounded"
+                            style={{ background: `${accentBg}0.1)`, color: accent }}
+                          >
+                            {a.bet.market}
+                          </span>
+                          <span className="text-[0.55rem] text-[var(--color-text-muted)]">
+                            odd {a.bet.odd.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[0.68rem] font-bold" style={{ color: evColor(a.ev) }}>
+                        EV {a.ev > 0 ? "+" : ""}{(a.ev * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-[0.55rem] text-[var(--color-text-muted)]">
+                        {a.bet.leagueName}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Combinations breakdown (collapsible) ── */}
+          <div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowCombos(!showCombos); }}
+              className="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider mb-2 transition-colors"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              {showCombos ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              Detalhamento das {suggestion.totalCombinations} Combinacoes
+            </button>
+            {showCombos && (
+              <div className="space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                {suggestion.combinations.map((c, i) => {
+                  const legsLabel = c.legs.length === 1
+                    ? "Simples"
+                    : c.legs.length === 2
+                      ? "Dupla"
+                      : c.legs.length === 3
+                        ? "Tripla"
+                        : "Quadrupla";
+                  const teamsLabel = c.legs
+                    .map((l) => l.bet.homeTeam.split(" ")[0])
+                    .join(" + ");
+
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[0.65rem]"
+                      style={{
+                        background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="text-[0.55rem] font-bold uppercase px-1.5 py-px rounded shrink-0"
+                          style={{
+                            background: c.legs.length === 1
+                              ? "rgba(34,197,94,0.1)"
+                              : c.legs.length === 2
+                                ? "rgba(157,80,255,0.1)"
+                                : c.legs.length === 3
+                                  ? "rgba(0,187,255,0.1)"
+                                  : "rgba(255,170,68,0.1)",
+                            color: c.legs.length === 1
+                              ? "#22c55e"
+                              : c.legs.length === 2
+                                ? "#c4a0ff"
+                                : c.legs.length === 3
+                                  ? "#00bbff"
+                                  : "#ffaa44",
+                          }}
+                        >
+                          {legsLabel}
+                        </span>
+                        <span className="text-[var(--color-text-secondary)] truncate">
+                          {teamsLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[var(--color-text-muted)] tabular-nums">
+                          odd {c.combinedOdd.toFixed(2)}
+                        </span>
+                        <span className="text-[var(--color-text-muted)] tabular-nums">
+                          {formatCurrency(c.stake)}
+                        </span>
+                        <span className="font-bold text-[#22c55e] tabular-nums">
+                          {formatCurrency(c.potentialReturn)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Rule 5: Break-even status ── */}
+          <div
+            className="flex items-center gap-2 text-[0.65rem] px-3 py-2 rounded-lg"
+            style={{
+              background: suggestion.passesBreakEven ? "rgba(34,197,94,0.05)" : "rgba(255,85,85,0.05)",
+              border: `1px solid ${suggestion.passesBreakEven ? "rgba(34,197,94,0.12)" : "rgba(255,85,85,0.12)"}`,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            {suggestion.passesBreakEven ? (
+              <ShieldCheck size={12} className="text-[#22c55e] shrink-0" />
+            ) : (
+              <AlertTriangle size={12} className="text-[#ff5555] shrink-0" />
+            )}
+            <span>
+              {suggestion.passesBreakEven
+                ? `Filtro de rentabilidade aprovado — o acerto minimo cobre o investimento total de ${formatCurrency(suggestion.totalStake)}.`
+                : suggestion.breakEvenReason}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main Component ── */
 export default function BankrollCalculator() {
   const [settings, setSettings] = useState<BankrollSettings>(DEFAULT_SETTINGS);
@@ -587,6 +1393,9 @@ export default function BankrollCalculator() {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [bankrollInput, setBankrollInput] = useState("");
   const [showKellyInfo, setShowKellyInfo] = useState(false);
+  const [excludedBets, setExcludedBets] = useState<Set<string>>(new Set());
+  const [stakeOverrides, setStakeOverrides] = useState<Record<string, number>>({});
+  const [showSystemBet, setShowSystemBet] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -621,16 +1430,16 @@ export default function BankrollCalculator() {
     fetchData();
   }, [fetchData]);
 
-  // Convert combinadas to bet inputs
+  // Convert combinadas to bet inputs (excluding removed bets)
   const bets = useMemo(() => {
     if (!combinadas) return [];
-    return combinadasToBets(combinadas);
-  }, [combinadas]);
+    return combinadasToBets(combinadas).filter((b) => !excludedBets.has(b.id));
+  }, [combinadas, excludedBets]);
 
   // Calculate distribution
   const distribution = useMemo(() => {
     if (bets.length === 0) return null;
-    return distributeBankroll(
+    const dist = distributeBankroll(
       bets,
       settings.bankroll,
       {
@@ -640,7 +1449,37 @@ export default function BankrollCalculator() {
       },
       KELLY_MULTIPLIERS[settings.kellyMode],
     );
-  }, [bets, settings]);
+    // Apply stake overrides
+    for (const cat of ["simples", "dupla_intra", "dupla_inter"] as const) {
+      for (const alloc of dist[cat]) {
+        if (stakeOverrides[alloc.bet.id] !== undefined) {
+          alloc.stake = stakeOverrides[alloc.bet.id];
+          alloc.potentialReturn = Math.round(alloc.stake * alloc.bet.odd * 100) / 100;
+          alloc.potentialProfit = Math.round((alloc.potentialReturn - alloc.stake) * 100) / 100;
+        }
+      }
+    }
+    // Recalculate totals after overrides
+    const allAllocs = [...dist.simples, ...dist.dupla_intra, ...dist.dupla_inter];
+    dist.totalStaked = allAllocs.reduce((s, a) => s + a.stake, 0);
+    dist.expectedReturn = allAllocs.reduce((s, a) => s + a.stake * (1 + a.ev), 0);
+    dist.expectedProfit = dist.expectedReturn - dist.totalStaked;
+    dist.unutilized = settings.bankroll - dist.totalStaked;
+    return dist;
+  }, [bets, settings, stakeOverrides]);
+
+  const handleRemoveBet = useCallback((betId: string) => {
+    setExcludedBets((prev) => { const next = new Set(Array.from(prev)); next.add(betId); return next; });
+    setStakeOverrides((prev) => {
+      const next = { ...prev };
+      delete next[betId];
+      return next;
+    });
+  }, []);
+
+  const handleStakeChange = useCallback((betId: string, newStake: number) => {
+    setStakeOverrides((prev) => ({ ...prev, [betId]: newStake }));
+  }, []);
 
   const totalPct = settings.pctSimples + settings.pctIntra + settings.pctInter;
 
@@ -824,6 +1663,8 @@ export default function BankrollCalculator() {
               description="Apostas unitarias com alto EV"
               allocations={distribution?.simples}
               bankroll={settings.bankroll}
+              onRemoveBet={handleRemoveBet}
+              onStakeChange={handleStakeChange}
             />
 
             <BankSlider
@@ -835,6 +1676,8 @@ export default function BankrollCalculator() {
               description="Dois mercados no mesmo jogo"
               allocations={distribution?.dupla_intra}
               bankroll={settings.bankroll}
+              onRemoveBet={handleRemoveBet}
+              onStakeChange={handleStakeChange}
             />
 
             <BankSlider
@@ -846,6 +1689,8 @@ export default function BankrollCalculator() {
               description="Mercados em jogos diferentes"
               allocations={distribution?.dupla_inter}
               bankroll={settings.bankroll}
+              onRemoveBet={handleRemoveBet}
+              onStakeChange={handleStakeChange}
             />
 
             {totalPct !== 100 && (
@@ -1075,6 +1920,40 @@ export default function BankrollCalculator() {
           </div>
         )}
 
+        {/* ── Empty state when no bets available ── */}
+        {!distribution && !loading && !error && (
+          <div
+            className="rounded-2xl border p-8 text-center"
+            style={{
+              background: "var(--color-bg-card)",
+              borderColor: "var(--color-border)",
+            }}
+          >
+            <ShieldCheck
+              size={32}
+              className="mx-auto mb-3 text-[var(--color-text-muted)]"
+            />
+            <div className="text-sm text-[var(--color-text-muted)]">
+              Nenhuma aposta disponivel no momento.
+            </div>
+            <div className="text-[0.7rem] text-[var(--color-text-muted)] mt-1">
+              Aguarde os jogos do dia serem carregados ou verifique se o backend esta ativo.
+            </div>
+            <button
+              onClick={fetchData}
+              className="inline-flex items-center gap-1.5 px-4 py-2 mt-3 rounded-lg text-[0.72rem] font-semibold transition-colors"
+              style={{
+                background: "rgba(157,80,255,0.1)",
+                color: "#c4a0ff",
+                border: "1px solid rgba(157,80,255,0.2)",
+              }}
+            >
+              <RefreshCw size={12} />
+              Recarregar
+            </button>
+          </div>
+        )}
+
         {/* ── Bet Allocations ── */}
         {distribution && !loading && (
           <div className="space-y-2">
@@ -1186,6 +2065,42 @@ export default function BankrollCalculator() {
                 <div className="text-[0.7rem] text-[var(--color-text-muted)] mt-1">
                   As odds atuais nao oferecem valor suficiente para distribuicao.
                 </div>
+              </div>
+            )}
+
+            {/* Rule 1: System Bet — button + card */}
+            {distribution.systemBet && (
+              <div className="space-y-3">
+                {!showSystemBet ? (
+                  <button
+                    onClick={() => setShowSystemBet(true)}
+                    className="w-full py-3.5 rounded-2xl border-2 border-dashed font-bold text-sm transition-all duration-200 hover:scale-[1.01] flex items-center justify-center gap-2"
+                    style={{
+                      borderColor: distribution.systemBet.recommended
+                        ? "rgba(255,170,68,0.3)"
+                        : "rgba(255,85,85,0.2)",
+                      background: distribution.systemBet.recommended
+                        ? "rgba(255,170,68,0.04)"
+                        : "rgba(255,85,85,0.03)",
+                      color: distribution.systemBet.recommended ? "#ffaa44" : "#ff5555",
+                    }}
+                  >
+                    <Shuffle size={16} />
+                    Montar Aposta em Sistema
+                    <span
+                      className="text-[0.58rem] font-bold uppercase px-2 py-0.5 rounded-full ml-1"
+                      style={{
+                        background: distribution.systemBet.recommended
+                          ? "rgba(255,170,68,0.12)"
+                          : "rgba(255,85,85,0.1)",
+                      }}
+                    >
+                      {distribution.systemBet.label} &middot; {distribution.systemBet.totalCombinations} linhas
+                    </span>
+                  </button>
+                ) : (
+                  <SystemBetCard suggestion={distribution.systemBet} />
+                )}
               </div>
             )}
           </div>

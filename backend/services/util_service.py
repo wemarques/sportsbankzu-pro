@@ -16,7 +16,7 @@ def status_map(s: str) -> str:
     sl = (s or "").lower()
     if sl in ("complete", "finished", "ft"):
         return "finished"
-    if sl in ("live", "inplay", "playing", "halftime"):
+    if sl in ("live", "inplay", "playing", "halftime", "started"):
         return "live"
     if sl in ("postponed", "ppd"):
         return "postponed"
@@ -25,6 +25,9 @@ def status_map(s: str) -> str:
     # "incomplete" means match data is not yet complete (not played yet) —
     # treat as scheduled and let kickoff-time heuristics promote to "live"
     # when appropriate (e.g. in /live-scores endpoint).
+    if sl and sl not in ("incomplete", "scheduled", "notstarted", "ns", "tbd", ""):
+        import logging
+        logging.getLogger("sportsbankzu").warning(f"[status_map] Unknown status '{s}' — defaulting to 'scheduled'")
     return "scheduled"
 
 def parse_date(value: Any) -> Optional[datetime]:
