@@ -960,4 +960,68 @@ A aba "Duplas" no dashboard exibia o erro: `Unexpected token 'A', "An error o"..
 
 ---
 
+## 014 — Linha de Escanteios (Corner Progress Bar) nos cards de partida ao vivo
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/routes/fixtures.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/components/CornerProgressBar.tsx` (novo), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Feature (nova funcionalidade)
+**Status:** Implementado
+
+### Contexto
+
+Quando o sistema gerava um prognostico de escanteios (ex: "Escanteios Over 8.5"), nao havia indicacao visual do progresso ao vivo em direcao a meta. O usuario precisava acompanhar manualmente o numero de escanteios durante o jogo.
+
+### Funcionalidades implementadas (4 camadas)
+
+#### Camada 1 — Engenharia de Dados (Backend)
+
+- **`api_football_client.py`**: `extract_live_data()` agora extrai `home_corners` e `away_corners` do campo `statistics` inline do fixture retornado pelo endpoint `/fixtures?live=all` da API-Football v3. Percorre o array de estatisticas de cada time buscando `type === "Corner Kicks"`.
+- **`fixtures.py`**: Rota `/live-scores` calcula `currentCorners` (soma de home + away corners) e inclui no objeto de cada partida retornada ao frontend.
+
+#### Camada 2 — Tipagem e Fluxo de Dados (Frontend)
+
+- **`leagues.ts`**: Campo `currentCorners?: number | null` adicionado ao tipo `Match`.
+- **`live/route.ts`**: API route do Next.js repassa `currentCorners` no fallback via `/fixtures`.
+- **`page.tsx`**: Live overlay (`fetchLiveScores`) faz merge de `currentCorners` no estado de cada match. Funcao `toDetailData()` repassa o valor para `MatchDetailData`.
+- **`MatchDetailCard.tsx`**: Campo `currentCorners?: number | null` adicionado a interface `MatchDetailData`.
+
+#### Camada 3 — Logica de Metas (Utilitario)
+
+- **`CornerProgressBar.tsx`**: Funcao `extractTargetCorners(mercado)` extrai o alvo numerico do texto do prognostico usando regex.
+  - `"Escanteios Over 8.5"` → `Math.ceil(8.5)` → **9**
+  - `"Escanteios Over 9.5"` → `Math.ceil(9.5)` → **10**
+  - Retorna `null` se o mercado nao for de escanteios.
+
+#### Camada 4 — Componente Visual Premium
+
+- **`CornerProgressBar.tsx`**: Componente React com design dark theme:
+  - **Track**: Fundo escuro com `box-shadow inset` para profundidade
+  - **Fill**: Gradiente teal (`#0d9488` → `#14b8a6`) com `transition-all 500ms ease-in-out`
+  - **Badge dinamico**: Circulo na ponta da barra exibindo o numero atual de escanteios, cor teal com texto preto em alto contraste
+  - **Estado "hit"**: Quando `currentCorners >= targetCorners`, cor muda para emerald (`#059669` → `#10b981`) com glow mais intenso
+  - **Condicao de exibicao**: So renderiza quando `match.status === "live"` E existe um prognostico de escanteios E `currentCorners != null`
+- **`match-detail-card.css`**: Classes `.cpb-root`, `.cpb-track`, `.cpb-fill`, `.cpb-badge` com variaveis CSS do tema existente
+
+### Integracao no Card
+
+O `CornerProgressBar` e renderizado dentro do loop de `match.predictions` no `MatchDetailCard.tsx`, logo abaixo de cada item de prognostico que contenha um mercado de escanteios. Cada prediction e envolvido em um `<div>` wrapper que contem o item original + a barra condicional.
+
+### Fluxo de atualizacao em tempo real
+
+1. `useLivePolling` dispara a cada 30s para jogos ao vivo
+2. `/api/matches/live` chama backend `/live-scores`
+3. Backend extrai corners via `extract_live_data()` do API-Football
+4. Frontend faz merge de `currentCorners` no estado do match
+5. React re-renderiza o `CornerProgressBar` com animacao suave de transicao
+
+### Licao aprendida
+
+1. **API-Football inline statistics**: O endpoint `/fixtures?live=all` retorna estatisticas inline no campo `statistics` de cada fixture — nao e necessario fazer chamadas extras a `/fixtures/statistics` para dados ao vivo como corners, posse de bola e chutes.
+
+2. **Exibicao condicional em multiplas camadas**: A barra depende de 3 condicoes simultaneas (jogo ao vivo + prognostico de escanteios + dados de corners disponiveis). Todas as 3 devem ser verificadas no ponto de renderizacao para evitar erros visuais.
+
+3. **Regex para parsing de mercados**: Usar `Math.ceil()` sobre o valor decimal do mercado (8.5 → 9) e a forma correta de definir a meta inteira, ja que "Over 8.5" significa "9 ou mais escanteios".
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
