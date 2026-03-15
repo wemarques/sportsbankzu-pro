@@ -55,6 +55,13 @@ export default function MatchesList({
     return acc;
   }, {} as Record<string, { leagueName: string; matches: Match[] }>);
 
+  // Sort league groups by AVAILABLE_LEAGUES order (prevents non-deterministic
+  // thread-completion ordering from mixing leagues in the UI)
+  const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+  const sortedLeagueEntries = Object.entries(matchesByLeague).sort(
+    ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
+  );
+
   return (
     <Card className="bg-[#12121a] border-[#1e1e2e] p-4">
       <div className="flex items-center justify-between mb-4">
@@ -105,7 +112,7 @@ export default function MatchesList({
       ) : (
         <ScrollArea className="h-[500px]">
           <div className="space-y-6">
-            {Object.entries(matchesByLeague).map(([leagueId, { leagueName, matches }]) => (
+            {sortedLeagueEntries.map(([leagueId, { leagueName, matches }]) => (
               <div key={leagueId}>
                 <h4 className="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2">
                   {(() => { const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId); return league?.country ? `${league.country} - ` : ""; })()}{leagueName}

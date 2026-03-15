@@ -534,18 +534,39 @@ export default function Dashboard() {
   }, [allMatches]);
 
   const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
-    if (!combinadasLeagues) {
+    if (!allMatches.length) {
       setCombindasError("Aguarde o carregamento dos jogos antes de calcular duplas.");
       return;
     }
     setCombindasLoading(true);
     setCombindasError(null);
     try {
-      const today = dateMode;
-      const res = await fetch(
-        `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
-        { cache: "no-store" },
-      );
+      // POST with pre-loaded matches to avoid backend re-fetching all leagues
+      // (which caused 504 timeouts when many leagues were selected)
+      const payload = {
+        matches: allMatches.map((m) => ({
+          id: m.id,
+          leagueId: m.leagueId,
+          leagueName: m.leagueName,
+          homeTeam: m.homeTeam.name,
+          awayTeam: m.awayTeam.name,
+          datetime: m.datetime,
+          status: m.status,
+          odds: m.odds,
+          stats: m.stats,
+          mercados: m.predictions,
+        })),
+        tipos: "intra,inter",
+        min_status: minStatus,
+        limite_intra: 10,
+        limite_inter: 10,
+      };
+      const res = await fetch("/api/combinadas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
       const text = await res.text();
       let data: CombinadasData & { _error?: Record<string, unknown> };
       try {
@@ -567,7 +588,7 @@ export default function Dashboard() {
     } finally {
       setCombindasLoading(false);
     }
-  }, [dateMode, combinadasLeagues]);
+  }, [allMatches]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
