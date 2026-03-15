@@ -1024,4 +1024,62 @@ O `CornerProgressBar` e renderizado dentro do loop de `match.predictions` no `Ma
 
 ---
 
+## 015 — CornerProgressBar invisível em jogos ao vivo (Path B sem overlay de corners)
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+A barra de progresso de escanteios (`CornerProgressBar`) não aparecia em nenhum jogo ao vivo, mesmo quando havia prognósticos de escanteios (ex: "Escanteios Over 8.5", "Escanteios Over 10.5"). Jogos MLS como Real Salt Lake vs Austin exibiam os prognósticos normalmente, mas sem a barra visual de acompanhamento.
+
+### Causa raiz (1 camada — backend)
+
+A rota `/live-scores` possuía **dois caminhos** para montar a resposta de jogos ao vivo:
+
+| Path | Condição | `currentCorners` |
+|------|----------|-------------------|
+| **Path A** (linhas 824-880) | FootyStats vazio → API-Football como fonte primária | Incluía `currentCorners` corretamente |
+| **Path B** (linhas 1137-1213) | FootyStats retorna dados → API-Football enriquece score/minuto/período | **Não incluía `currentCorners`** |
+
+No Path B, `extract_live_data(matched_fx)` era chamado e retornava `home_corners` e `away_corners`, mas esses valores eram **descartados**. Apenas `goals_home`, `goals_away`, `minute` e `status` eram utilizados para enriquecer o registro.
+
+Como a maioria dos jogos ao vivo (incluindo MLS) passava pelo Path B (FootyStats retorna dados e API-Football apenas enriquece), o campo `currentCorners` nunca era incluído na resposta JSON — e o frontend, corretamente, não renderizava o `CornerProgressBar` (a condição `match.currentCorners != null` falhava).
+
+### Correção aplicada
+
+Adicionada lógica de agregação de corners no Path B (`fixtures.py`, bloco de enriquecimento), idêntica à do Path A:
+
+```python
+# Overlay corner kicks from API-Football
+_corners: int | None = None
+if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
+    _corners = ld["home_corners"] + ld["away_corners"]
+elif ld.get("home_corners") is not None:
+    _corners = ld["home_corners"]
+elif ld.get("away_corners") is not None:
+    _corners = ld["away_corners"]
+if _corners is not None:
+    rec["currentCorners"] = _corners
+```
+
+### Frontend — sem alterações necessárias
+
+O componente `CornerProgressBar.tsx` e sua integração no `MatchDetailCard.tsx` já estavam corretos:
+- `extractTargetCorners(pred.mercado)` extrai a meta do texto do prognóstico via regex
+- Condição de renderização verifica 3 requisitos: `targetCorners != null && match.currentCorners != null && match.status === "live"`
+- O problema era exclusivamente a ausência de `currentCorners` na resposta do backend
+
+### Lição aprendida
+
+1. **Caminhos duplicados exigem paridade de funcionalidade**: Quando uma rota possui múltiplos paths que constroem o mesmo tipo de resposta (Path A = fonte primária, Path B = enriquecimento), toda nova funcionalidade adicionada a um path deve ser replicada no outro. A feature de corners foi implementada apenas no Path A, mas a maioria dos jogos ao vivo usa o Path B.
+
+2. **Investigação completa antes de assumir a causa**: O frontend estava correto — o bug era 100% no backend. Seguir o fluxo completo (backend → API route → frontend merge → condição de render) evitou correções desnecessárias no frontend.
+
+3. **Dados descartados silenciosamente**: `extract_live_data()` já retornava `home_corners` e `away_corners` no Path B, mas o código chamador ignorava esses campos sem nenhum log. Dados extraídos mas não utilizados são um smell code que indica funcionalidade incompleta.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
