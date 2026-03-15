@@ -1132,7 +1132,11 @@ export default function Dashboard() {
       list.push(m);
       byLeague.set(m.leagueId, list);
     }
-    return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
+    const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+    const sortedEntries = Array.from(byLeague.entries()).sort(
+      ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
+    );
+    return sortedEntries.map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
       const dir = sortOrder === "asc" ? 1 : -1;
       const sorted = [...matches].sort((a, b) => {

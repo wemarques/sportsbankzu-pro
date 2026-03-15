@@ -807,6 +807,11 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
             except Exception as e:
                 logger.error(f"[fixtures] {lid}: thread crashed: {type(e).__name__}: {e}")
 
+    # Sort by league order (request order) to avoid non-deterministic thread completion
+    # mixing leagues (e.g. Danish Superliga between Premier League games)
+    league_order = {lid: i for i, lid in enumerate(league_ids)}
+    out.sort(key=lambda r: (league_order.get(r.get("leagueId", ""), 999), r.get("datetime", "")))
+
     return {"matches": out}
 
 
