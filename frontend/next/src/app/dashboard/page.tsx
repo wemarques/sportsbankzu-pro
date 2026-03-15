@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useLivePolling } from "@/hooks/useLivePolling";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -50,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.5";
+const VERSION_FALLBACK = "pro V3.6";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -268,8 +269,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     footystatsId: item.footystatsId ?? undefined,
     leagueId,
     leagueName: league?.name ?? leagueId,
-    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
-    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
+    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? item.awayForm ?? [], rating: item.awayTeam?.rating || item.ratings?.away || 0 },
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
@@ -282,8 +283,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       if (raw && raw.home != null && raw.away != null) {
         return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
       }
-      // Default 0-0 for live/finished matches without valid score
-      if (["live", "finished"].includes(item.status ?? "")) {
+      // Default 0-0 only for finished matches — for live matches, leave undefined
+      // so the UI shows a loading indicator instead of a fake 0-0 score.
+      // The /live-scores overlay will update with the real score when available.
+      if (item.status === "finished") {
         return { home: 0, away: 0 };
       }
       // Discard invalid score objects (e.g. {home: null, away: null})
@@ -398,6 +401,8 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
+    period: match.period,
+    minute: match.minute,
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -412,6 +417,8 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
+    predictions: match.predictions,
+    currentCorners: match.currentCorners ?? null,
   };
 }
 
@@ -539,15 +546,22 @@ export default function Dashboard() {
         `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
         { cache: "no-store" },
       );
-      const data = await res.json();
+      const text = await res.text();
+      let data: CombinadasData & { _error?: Record<string, unknown> };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
       if (!res.ok) {
-        const errKind = data?._error?.kind;
+        const errObj = data?._error;
+        const errKind = errObj?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
         if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
-        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+        throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
       }
-      setCombinadas(data as CombinadasData);
+      setCombinadas(data);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
@@ -558,12 +572,25 @@ export default function Dashboard() {
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
   // Shared function: fetch live scores from backend and merge into allMatches
+  // Ref to track live league IDs for fallback query without re-creating the callback
+  const liveLeagueIdsRef = useRef<string>("");
+  useEffect(() => {
+    const liveLeagues = new Set<string>();
+    for (const m of allMatches) {
+      if (m.status === "live") liveLeagues.add(m.leagueId);
+    }
+    liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
+  }, [allMatches]);
+
   const fetchLiveScores = useCallback(async () => {
     try {
-      const res = await fetch("/api/matches/live", { cache: "no-store" });
+      // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
+      const leagues = liveLeagueIdsRef.current;
+      const qs = leagues ? `?leagues=${encodeURIComponent(leagues)}` : "";
+      const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
       if (liveList.length === 0) return;
       // Diagnostic: log live overlay data
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
@@ -593,23 +620,36 @@ export default function Dashboard() {
           if (!live) return m;
           matched++;
           const newStatus = live.status as Match["status"];
-          const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
-          const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
-          // Guard: never overwrite a non-zero score with 0-0 from live overlay
-          // (protects against API returning missing/stale goal data)
-          const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
-          const liveTotal = liveScoreHome + liveScoreAway;
-          const useExistingScore = existingTotal > 0 && liveTotal === 0;
-          const liveScore = useExistingScore
-            ? m.score!
-            : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
-          const scoreChanged = m.score?.home !== liveScore.home || m.score?.away !== liveScore.away;
+          // When score is null/undefined from overlay (missing goal data),
+          // keep existing score but still update status/period/minute.
+          const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
+          let liveScore = m.score;
+          if (hasLiveScore) {
+            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
+            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
+            // Guard: never overwrite a non-zero score with 0-0 from live overlay
+            const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
+            const liveTotal = liveScoreHome + liveScoreAway;
+            const useExistingScore = existingTotal > 0 && liveTotal === 0;
+            liveScore = useExistingScore
+              ? m.score!
+              : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+          }
+          const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
-          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
+          const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
+          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
-          return { ...m, status: newStatus, score: liveScore, period: live.period as Match["period"], minute: live.minute };
+          return {
+            ...m,
+            status: newStatus,
+            score: liveScore,
+            period: live.period as Match["period"],
+            minute: live.minute,
+            ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+          };
         });
         unmatched = liveList.length - matched;
         if (unmatched > 0) {
@@ -631,6 +671,9 @@ export default function Dashboard() {
       setErrorMessage(null);
       setErrorCode(null);
       setDataSource(null);
+      // Clear stale matches when date mode changes to prevent cross-date leakage
+      // (e.g. "week" data persisting when switching back to "today")
+      setAllMatches([]);
 
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
@@ -681,17 +724,7 @@ export default function Dashboard() {
           const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
-        // Merge: preserve existing matches from leagues not present in new results
-        // (prevents batch failures from removing previously loaded matches)
-        setAllMatches((prev) => {
-          if (prev.length === 0) return normalized;
-          if (normalized.length === 0) return prev;
-          const newLeagues = new Set(normalized.map((m) => m.leagueId));
-          // Keep previous matches whose league wasn't in ANY successful batch
-          const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-          const merged = [...normalized, ...preserved];
-          return merged;
-        });
+        setAllMatches(normalized);
         if (normalized.length > 0) setSelectedMatchId((prev) => prev ?? normalized[0].id);
 
         // Immediately fetch live scores to overlay real-time data
@@ -712,15 +745,16 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMode]);
 
-  // Live score polling — every 60s when live matches exist, 120s otherwise
+  // Live score polling — 30s when live matches exist, 120s otherwise.
+  // Pauses when browser tab is hidden to save bandwidth.
   const hasMatches = allMatches.length > 0;
   const hasLiveMatches = useMemo(() => allMatches.some((m) => m.status === "live"), [allMatches]);
-  useEffect(() => {
-    if (!hasMatches) return;
-    const pollMs = hasLiveMatches ? 60_000 : 120_000;
-    const interval = setInterval(fetchLiveScores, pollMs);
-    return () => clearInterval(interval);
-  }, [hasMatches, hasLiveMatches, fetchLiveScores]);
+  const { lastUpdated: liveLastUpdated } = useLivePolling(fetchLiveScores, {
+    hasMatches,
+    hasLiveMatches,
+    liveIntervalMs: 30_000,
+    idleIntervalMs: 120_000,
+  });
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -994,6 +1028,7 @@ export default function Dashboard() {
     setErrorMessage(null);
     setErrorCode(null);
     setDataSource(null);
+    setAllMatches([]);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
     try {
@@ -1037,14 +1072,7 @@ export default function Dashboard() {
         const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
-      // Merge: preserve existing matches from leagues not in new results
-      setAllMatches((prev) => {
-        if (prev.length === 0) return normalized;
-        if (normalized.length === 0) return prev;
-        const newLeagues = new Set(normalized.map((m) => m.leagueId));
-        const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-        return [...normalized, ...preserved];
-      });
+      setAllMatches(normalized);
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
     } catch {
       // Don't clear matches on error — preserve what we have
@@ -1402,6 +1430,14 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
+                  <a href="/bankroll" className="st-tool-card">
+                    <div className="st-tool-card__icon" style={{ background: "rgba(34,197,94,0.1)" }}><Calculator size={20} style={{ color: "#22c55e" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Gestao de Banca</span>
+                      <span className="st-tool-card__desc">Distribua sua banca com criterio de Kelly entre simples e duplas</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </a>
                 </div>
               </div>
             )}
@@ -1601,7 +1637,12 @@ export default function Dashboard() {
                     <span className="st-date-label">{dateLabel}</span>
                     <button type="button" className="st-date-nav__btn" onClick={() => setDateMode((prev) => prev === "today" ? "tomorrow" : prev === "tomorrow" ? "week" : "week")}><ChevronRight size={14} /></button>
                   </div>
-                  <div className="st-live-dot" />
+                  {hasLiveMatches && (
+                    <span className="st-live-indicator" title={liveLastUpdated ? `Atualizado: ${liveLastUpdated.toLocaleTimeString("pt-BR")}` : "Polling ativo"}>
+                      <span className="st-live-dot" />
+                      <span className="st-live-text">LIVE</span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     className={`st-filter-btn ${shareBusy === "copy" ? "st-filter-btn--active" : ""}`}
@@ -1833,11 +1874,14 @@ export default function Dashboard() {
                           </div>
                           {(match.score && typeof match.score.home === "number" && typeof match.score.away === "number") ? (
                             <div className={`st-match-row__score ${displayStatus === "live" ? "st-match-row__score--live" : ""}`}>
-                              {match.score.home} - {match.score.away}
+                              <span className="st-match-row__score-main">{match.score.home} - {match.score.away}</span>
+                              {match.score.halftime && typeof match.score.halftime.home === "number" && (
+                                <span className="st-match-row__score-ht">HT {match.score.halftime.home}-{match.score.halftime.away}</span>
+                              )}
                             </div>
                           ) : displayStatus === "live" ? (
-                            <div className="st-match-row__score st-match-row__score--live">
-                              0 - 0
+                            <div className="st-match-row__score st-match-row__score--live st-match-row__score--loading">
+                              <span className="st-match-row__score-main">- : -</span>
                             </div>
                           ) : null}
                           {oddsTab === "1x2" && (

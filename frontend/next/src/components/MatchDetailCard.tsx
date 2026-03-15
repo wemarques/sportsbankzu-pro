@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ShieldCheck,
 } from "lucide-react";
+import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import "../styles/match-detail-card.css";
 
 /* ── ERROR BOUNDARY (reusable) ── */
@@ -105,6 +106,8 @@ export interface MatchDetailData {
   startTime?: string;
   status?: "scheduled" | "live" | "finished";
   score?: { home: number; away: number; halftime?: { home: number; away: number } };
+  period?: "1T" | "HT" | "2T" | null;
+  minute?: number | null;
   venue?: {
     name: string;
     capacity?: number;
@@ -201,6 +204,15 @@ export interface MatchDetailData {
   awayForm?: string[];
   round?: string;
   aiAnalysis?: AIAnalysis;
+  currentCorners?: number | null;
+  predictions?: {
+    mercado: string;
+    status: string;
+    prob_min: number;
+    prob_max: number;
+    odd_minima: number | null;
+    alerta?: string;
+  }[];
 }
 
 /** Normaliza probabilidade para exibição (0-1 ou 0-100 -> X.X%) */
@@ -250,7 +262,7 @@ export default function MatchDetailCard(props: Props) {
   );
 }
 
-function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.5", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.6", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -351,8 +363,18 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
           {match.status === "live" ? (
             <div className="mdc-live-score">
+              <div className="mdc-live-score__indicator">
+                <span className="mdc-live-score__dot" />
+                <span className="mdc-live-score__label">AO VIVO</span>
+                {match.period && (
+                  <span className="mdc-live-score__period">{match.period}</span>
+                )}
+                {match.minute != null && match.period !== "HT" && (
+                  <span className="mdc-live-score__minute">{match.minute}&apos;</span>
+                )}
+              </div>
               <div className="mdc-live-score__value">
-                {typeof match.score?.home === "number" ? match.score.home : 0} - {typeof match.score?.away === "number" ? match.score.away : 0}
+                {typeof match.score?.home === "number" ? match.score.home : "-"} - {typeof match.score?.away === "number" ? match.score.away : "-"}
               </div>
               {match.score?.halftime && typeof match.score.halftime.home === "number" && (
                 <div className="mdc-live-score__ht">
@@ -588,6 +610,39 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       </div>
                     )}
 
+                    {/* Prognóstico — always visible when predictions exist */}
+                    {match.predictions && match.predictions.length > 0 && (
+                      <div className="mdc-prognostico">
+                        <h4 className="mdc-ai-section-title">Prognostico</h4>
+                        <div className="mdc-prognostico__list">
+                          {match.predictions.map((pred, idx) => {
+                            const targetCorners = extractTargetCorners(pred.mercado);
+                            return (
+                              <div key={idx}>
+                                <div className={`mdc-prognostico__item mdc-prognostico__item--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${pred.status.toLowerCase().replace("*", "-star")}`}>
+                                    {pred.status}
+                                  </span>
+                                  <span className="mdc-prognostico__market">{pred.mercado}</span>
+                                  <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  {pred.odd_minima != null && (
+                                    <span className="mdc-prognostico__ev">EV+ &gt;= {pred.odd_minima.toFixed(2)}</span>
+                                  )}
+                                  {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                </div>
+                                {targetCorners != null && match.currentCorners != null && match.status === "live" && (
+                                  <CornerProgressBar
+                                    currentCorners={match.currentCorners}
+                                    targetCorners={targetCorners}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {!aiLoading && match.aiAnalysis && (
                       <>
                         {/* Confidence Bar */}
@@ -623,15 +678,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         )}
 
                         {/* Recommendation */}
-                        {match.aiAnalysis.recommendation && (
-                          <div className="mdc-ai-recommendation">
-                            <h4 className="mdc-ai-section-title">Recomendacao</h4>
-                            <div className="mdc-ai-recommendation-box">
-                              <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation ?? "")}</p>
-                            </div>
+                        <div className="mdc-ai-recommendation">
+                          <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                          <div className="mdc-ai-recommendation-box">
+                            <Sparkles size={16} className="mdc-ai-recommendation-icon" />
+                            <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
                           </div>
-                        )}
+                        </div>
 
                         {/* Timestamp + Regenerate + Audit */}
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

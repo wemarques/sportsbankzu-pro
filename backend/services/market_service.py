@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional
 import logging
+from backend.services.util_service import team_name
 from backend.modeling.market_validator import (
     validar_prognostico,
     filtrar_mercados_permitidos,
@@ -75,8 +76,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     prob_btts = normalize_prob(stats.get("bttsProb"))
     prob_under35 = normalize_prob(stats.get("under35Prob"))
     prob_under45 = normalize_prob(stats.get("under45Prob"))
-    home = jogo.get("homeTeam", "?")
-    away = jogo.get("awayTeam", "?")
+    home = team_name(jogo.get("homeTeam", "?"))
+    away = team_name(jogo.get("awayTeam", "?"))
     logger.info(f"[DEBUG] {home} vs {away}:")
     logger.info(f"  under35Prob raw={stats.get('under35Prob')}, normalized={prob_under35}")
     logger.info(f"  under45Prob raw={stats.get('under45Prob')}, normalized={prob_under45}")
@@ -143,7 +144,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         status = "SAFE" if prob_btts >= _th_btts["SAFE"] else "NEUTRO"
         add_mercado("BTTS — SIM", status, prob_btts, odd_btts_yes)
     if prob_dc is not None and prob_dc >= _th_dc["NEUTRO"]:
-        home = str(jogo.get("homeTeam", ""))[:3].upper()
+        home = team_name(jogo.get("homeTeam", ""))[:3].upper()
         status_dc = "SAFE" if prob_dc >= _th_dc["SAFE"] else "NEUTRO"
         add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
     # Corner market predictions (from FootyStats pre-match potentials)
@@ -179,7 +180,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         if prob_btts and prob_btts >= 0.63:
             candidatos.append(("BTTS — SIM", "NEUTRO", prob_btts, odd_btts_yes))
         if prob_dc and prob_dc >= 0.72:
-            home = str(jogo.get("homeTeam", ""))[:3].upper()
+            home = team_name(jogo.get("homeTeam", ""))[:3].upper()
             candidatos.append((f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc, None))
         candidatos.sort(key=lambda x: x[2], reverse=True)
         if candidatos:

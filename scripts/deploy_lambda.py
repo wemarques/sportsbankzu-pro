@@ -39,6 +39,15 @@ def prepare_build():
     for pycache in BUILD_DIR.rglob("__pycache__"):
         shutil.rmtree(pycache)
 
+    # Validate that the Lambda handler exists in the build
+    handler_path = BUILD_DIR / "backend" / "lambda_handler.py"
+    if not handler_path.exists():
+        raise FileNotFoundError(
+            f"CRITICAL: {handler_path} not found in build! "
+            f"Check if backend/lambda_handler.py exists in your working tree. "
+            f"Your git repo may be in a bad state (MERGING/conflict)."
+        )
+
 def create_zip():
     print(f"Criando arquivo ZIP: {ZIP_FILE}")
     if ZIP_FILE.exists():
@@ -47,7 +56,9 @@ def create_zip():
     with zipfile.ZipFile(ZIP_FILE, 'w', zipfile.ZIP_DEFLATED) as z:
         for file_path in BUILD_DIR.rglob('*'):
             if file_path.is_file():
-                z.write(file_path, file_path.relative_to(BUILD_DIR))
+                # Use forward slashes (POSIX) so Lambda/Linux can find modules
+                arcname = file_path.relative_to(BUILD_DIR).as_posix()
+                z.write(file_path, arcname)
 
 S3_BUCKET = "meu-bucket-sportsbank"
 S3_KEY = "deploy/sportsbank_lambda.zip"

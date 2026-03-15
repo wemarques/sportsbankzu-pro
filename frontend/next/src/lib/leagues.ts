@@ -39,6 +39,7 @@ export type Match = {
   };
   period?: "1T" | "HT" | "2T" | null;
   minute?: number | null;
+  currentCorners?: number | null;
   odds: {
     home: number;
     draw: number;
@@ -114,6 +115,8 @@ export type Match = {
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
     cornerOver105Prob?: number;
+    homeCornersCount?: number;
+    awayCornersCount?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;
@@ -571,6 +574,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/colombia/colombian-primera-a",
+    },
+  },
+  {
+    id: "mexico-liga-mx",
+    name: "Liga MX",
+    country: "México",
+    countryFlag: "🇲🇽",
+    logo: "/logos/liga-mx.png",
+    season: "2025/26",
+    totalMatches: 306,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/mexico/liga-mx",
     },
   },
 ];
