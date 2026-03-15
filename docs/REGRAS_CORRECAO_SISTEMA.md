@@ -1134,4 +1134,223 @@ if home_corners is not None and away_corners is not None:
 
 ---
 
+## 017 — Extração completa de estatísticas ao vivo e correção de viés BTTS na Mistral AI
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/services/mistral_analysis.py`, `backend/routes/ai_analysis.py`
+**Severidade:** Alta
+**Status:** Corrigido
+**Commit:** `87061c3`
+
+### Problema identificado
+
+1. **Dados táticos insuficientes para a Mistral** — O prompt da Mistral recebia apenas status, minuto, placar e escanteios ao vivo (#016), mas não incluía estatísticas detalhadas como chutes no alvo, posse de bola, faltas, cartões, passes e xG. Sem esses dados, a IA não conseguia avaliar a assimetria real de um jogo.
+
+2. **Viés sistemático para BTTS** — A Mistral recomendava BTTS (Ambas Marcam) como opção padrão mesmo quando um dos times tinha 0 finalizações ou 0 chutes no alvo. Sem dados de pressão ofensiva no prompt, não havia base para refutar a recomendação.
+
+3. **Busca sequencial de dados auxiliares** — O `get_match_live_data()` buscava injuries de forma isolada. Statistics e events não eram buscados, desperdiçando dados disponíveis na API-Football.
+
+### Causa raiz (3 camadas)
+
+1. **`api_football_client.py` sem versões async de statistics/events** — Os métodos `get_fixture_statistics()` e `get_fixture_events()` existiam apenas na versão síncrona, impedindo uso com `asyncio.gather`.
+
+2. **Ausência de parsers estruturados** — As respostas brutas da API-Football para `/fixtures/statistics` e `/fixtures/events` não tinham funções de parsing que extraíssem campos em formato consumível pelo prompt.
+
+3. **Prompt da Mistral sem regras anti-viés** — Não havia instrução explícita para a Mistral avaliar volume ofensivo antes de recomendar BTTS, nem alternativas priorizadas quando a assimetria fosse clara.
+
+### Correções aplicadas (7 camadas)
+
+#### Camada 1 — Versões async de statistics e events (`api_football_client.py`)
+
+Dois novos métodos assíncronos com cache de 2 minutos (TTL curto para dados live):
+
+```python
+async def get_fixture_statistics_async(self, fixture_id: int) -> List[Dict]:
+    """Fetch in-match statistics asynchronously (with sync cache fallback, TTL 2min)."""
+
+async def get_fixture_events_async(self, fixture_id: int) -> List[Dict]:
+    """Fetch match events asynchronously (with sync cache fallback, TTL 2min)."""
+```
+
+Ambos verificam cache antes de chamar a API e fazem graceful degradation (retornam `[]` em caso de erro).
+
+#### Camada 2 — `parse_fixture_statistics()` (`api_football_client.py`)
+
+Método estático que extrai todos os campos da resposta `/fixtures/statistics` em um dict estruturado `{home: {...}, away: {...}}`:
+
+| Campo extraído | Chave no dict | Tipo |
+|---|---|---|
+| Ball Possession | `possession` | `int` (%) |
+| Shots on Goal | `shots_on_goal` | `int` |
+| Shots off Goal | `shots_off_goal` | `int` |
+| Shots insidebox | `shots_inside_box` | `int` |
+| Shots outsidebox | `shots_outside_box` | `int` |
+| Goalkeeper Saves | `goalkeeper_saves` | `int` |
+| Corner Kicks | `corner_kicks` | `int` |
+| Fouls | `fouls` | `int` |
+| Yellow Cards | `yellow_cards` | `int` |
+| Red Cards | `red_cards` | `int` |
+| Total Shots | `total_shots` | `int` |
+| Blocked Shots | `shots_blocked` | `int` |
+| Offsides | `offsides` | `int` |
+| Total passes | `passes_total` | `int` |
+| Passes accurate | `passes_accurate` | `int` |
+| Passes % | `passes_pct` | `int` (%) |
+| expected_goals | `expected_goals` | `float` |
+
+Trata strings percentuais (`"65%"` → `65`) e conversões numéricas automaticamente.
+
+#### Camada 3 — `parse_fixture_events()` (`api_football_client.py`)
+
+Método estático que extrai eventos estruturados da resposta `/fixtures/events`:
+
+| Lista | Campos |
+|---|---|
+| `goals` | `time`, `team`, `player`, `assist`, `detail` |
+| `cards` | `time`, `team`, `player`, `card_type` (Amarelo/Vermelho), `detail` |
+| `substitutions` | `time`, `team`, `player_in`, `player_out` |
+| `red_card_events` | `time`, `team`, `player` (acesso rápido para regra anti-BTTS) |
+
+Trata `time.extra` para acréscimos (ex: `"45+2"`).
+
+#### Camada 4 — `get_match_live_data()` com `asyncio.gather` (`api_football_client.py`)
+
+Modificação do método unificado para buscar statistics + events + injuries **em paralelo** com timeout de 8s por task:
+
+```python
+async def _fetch_statistics() -> List[Dict]:
+    return await asyncio.wait_for(
+        self.get_fixture_statistics_async(fixture_id), timeout=8.0
+    )
+
+async def _fetch_events() -> List[Dict]:
+    return await asyncio.wait_for(
+        self.get_fixture_events_async(fixture_id), timeout=8.0
+    )
+
+async def _fetch_injuries() -> List[Dict]:
+    return await asyncio.wait_for(
+        self.get_injuries(fixture_id), timeout=8.0
+    )
+
+raw_stats, raw_events, injuries = await asyncio.gather(
+    _fetch_statistics(), _fetch_events(), _fetch_injuries()
+)
+```
+
+**Graceful degradation:** cada task é envolvida em try/except — se uma falhar (timeout, erro de rede), as outras continuam normalmente. O resultado final inclui `match_statistics` e `match_events` parseados.
+
+**Enriquecimento cruzado:** após o gather, possession e corners dos statistics detalhados são mesclados no `live_data` quando os dados inline estavam ausentes.
+
+**Separação pré-jogo/ao vivo:** o `asyncio.gather` só executa para jogos live ou finalizados. Jogos pré-jogo buscam apenas injuries (sem statistics/events disponíveis).
+
+#### Camada 5 — Posse de bola em `extract_live_data()` e `_format_live_status()` (`api_football_client.py`)
+
+- `extract_live_data()` agora extrai `home_possession` e `away_possession` do campo `statistics` inline do fixture (tipo `"Ball Possession"`, valor `"65%"` → `65`).
+- `_format_live_status()` inclui `Posse: 65%x35%` na string de status, junto com escanteios.
+- Exemplo de saída: `"Segundo tempo em andamento: 65 min, Placar: 2-1, Posse: 65%x35%, Escanteios: 5+3=8"`.
+
+#### Camada 6 — RAIO-X TÁTICO e contexto estendido (`mistral_analysis.py`)
+
+Novo método `_format_extended_live_context()` que gera uma string densa de contexto tático:
+
+```
+Status: 65 min (2T). Placar: Team A 2-1 Team B.
+DOMINIO: Posse (65% x 35%).
+PRESSAO: Chutes no Alvo (5 x 1), Chutes na Area (8 x 2), Finalizacoes Totais (12 x 4), Escanteios (5 x 3 = 8).
+DEFESA: Defesas do Goleiro (1 x 4), Chutes Bloqueados (2 x 1).
+DISCIPLINA: Faltas (10 x 12), Amarelos (2 x 3), Vermelhos (0 x 1).
+PASSES: Precisos (320 x 180), Total (400 x 250), Acerto (80% x 72%).
+xG AO VIVO: 1.85 x 0.42.
+EVENTOS: Gol de Team A (Player X) aos 23 min; Cartao Vermelho para Team B (Player Y) aos 55 min.
+```
+
+Injetado no prompt da Mistral como seção `RAIO-X TATICO AO VIVO` com instrução obrigatória de leitura.
+
+#### Camada 7 — REGRA ANTI-VIÉS BTTS no prompt (`mistral_analysis.py`)
+
+Reescrita da seção `IMPORTANTE` com regras explícitas:
+
+- **BTTS só com evidência:** ambos os times devem ter 3+ chutes no alvo
+- **0-1 chutes no alvo = EV+ negativo para BTTS:** não recomendar
+- **0 finalizações totais = time não vai marcar:** recomendar BTTS Não ou ML
+- **Posse > 65% com muitos chutes:** focar em ML do dominante ou Over gols
+- **> 6 escanteios antes dos 60min:** considerar Escanteios Over
+- **Cartão vermelho:** time com menos jogadores perde volume ofensivo
+- **Hierarquia de alternativas:** ML > Over gols > Over escanteios > BTTS Não > BTTS Sim
+
+### Integração no fluxo (`ai_analysis.py`)
+
+A rota `/ai/match/{id}/analysis` agora:
+1. Recebe `match_statistics` e `match_events` do `get_match_live_data()`
+2. Chama `_format_extended_live_context()` para gerar o RAIO-X TÁTICO
+3. Injeta como `context["live_data_extended"]` no prompt da Mistral
+4. Log aprimorado: `has_stats=True/False`, `has_events=True/False`
+
+### Campos novos no retorno de `get_match_live_data()`
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `match_statistics` | `Dict` | Statistics parseados `{home: {...}, away: {...}}` |
+| `match_events` | `Dict` | Events parseados `{goals, cards, substitutions, red_card_events}` |
+| `live_data.home_possession` | `int \| None` | Posse de bola do mandante (%) |
+| `live_data.away_possession` | `int \| None` | Posse de bola do visitante (%) |
+
+### Lição aprendida
+
+1. **Dados disponíveis na API mas não consumidos = oportunidade perdida** — A API-Football sempre retornou statistics e events para jogos ao vivo, mas o sistema nunca os buscava. 17 campos estatísticos ficavam inacessíveis enquanto a Mistral tomava decisões com informação incompleta.
+
+2. **`asyncio.gather` com timeout individual é o padrão correto para dados live** — Buscar 3 endpoints em série adiciona 3x a latência. Com gather + timeout de 8s por task, o tempo total é o do mais lento (não a soma), e falhas individuais não bloqueiam as demais.
+
+3. **Viés de modelo requer contra-regras explícitas** — LLMs tendem a recomendar BTTS como "opção segura" porque é um mercado binário simples. Sem instrução explícita para avaliar volume ofensivo, o modelo ignora a assimetria do jogo. A regra "BTTS só com 3+ chutes no alvo de ambos" é uma heurística simples mas eficaz contra esse viés.
+
+4. **Contexto denso > contexto verboso para LLMs** — O formato "DOMINIO: ... PRESSAO: ... DEFESA: ..." é mais eficiente que parágrafos descritivos. O modelo processa dados tabulares/estruturados melhor que prosa narrativa, e o prompt fica menor (menos tokens = mais espaço para reasoning).
+
+---
+
+## 018 — Remoção de submodule refs `.claude/worktrees` que quebravam CI
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `.claude/worktrees/kind-vaughan`, `.claude/worktrees/sweet-elion`, `.gitignore`
+**Severidade:** Alta
+**Status:** Corrigido
+**Commit:** `92392b5`
+
+### Problema identificado
+
+O CI (GitHub Actions) falhava na etapa de post-job cleanup com o erro:
+
+```
+fatal: No url found for submodule path '.claude/worktrees/kind-vaughan' in .gitmodules
+```
+
+O workflow não conseguia completar a etapa `git submodule foreach --recursive`, causando exit code 128.
+
+### Causa raiz
+
+Dois diretórios `.claude/worktrees/kind-vaughan` e `.claude/worktrees/sweet-elion` foram acidentalmente commitados como objetos git do tipo `160000 commit` (referências de submodule). Porém, não existia um arquivo `.gitmodules` definindo a URL desses submodules. O git interpretava as entradas como submodules sem configuração, quebrando qualquer operação de `git submodule`.
+
+```
+160000 commit 7d89acd1dee74be231c917fdb2c297c63e26d607  .claude/worktrees/kind-vaughan
+160000 commit 281150987ba90bf1e26441d4863a54811d8234a5  .claude/worktrees/sweet-elion
+```
+
+Esses objetos eram resquícios de worktrees do Claude Code que foram tratados como submodules pelo git ao serem adicionados ao index.
+
+### Correções aplicadas (2 camadas)
+
+1. **Remoção dos objetos do index** — `git rm --cached` para remover ambas as entradas `160000 commit` do tree do repositório.
+
+2. **`.gitignore` atualizado** — Adicionada a linha `.claude/worktrees/` ao `.gitignore` para impedir que worktrees futuros sejam commitados acidentalmente.
+
+### Lição aprendida
+
+1. **Worktrees do git criam referências `160000` quando adicionados ao index** — Um diretório que contém um repositório git independente (worktree) é tratado como gitlink (submodule ref) pelo `git add`. Sem um `.gitmodules` correspondente, a referência fica órfã e quebra `git submodule` commands.
+
+2. **CI cleanup é sensível a submodules malformados** — O GitHub Actions executa `git submodule foreach --recursive` no post-job, e qualquer submodule sem URL no `.gitmodules` causa falha fatal. Isso pode bloquear **todos** os workflows do repositório.
+
+3. **Diretórios de ferramentas devem estar no `.gitignore` desde o início** — `.claude/worktrees/`, assim como `node_modules/` e `.next/`, são artefatos locais que nunca devem ser versionados.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
