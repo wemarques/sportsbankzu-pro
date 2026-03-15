@@ -26,6 +26,7 @@ export default function MatchesList({
 }: MatchesListProps) {
   const [dateFilter, setDateFilter] = useState<"today" | "tomorrow" | "week">("today");
   const [statusFilter, setStatusFilter] = useState<"all" | "scheduled" | "live">("all");
+  const [activeLeagueFilter, setActiveLeagueFilter] = useState<string | null>(null);
   const [picks, setPicks] = useState<Array<{ market: string; prob: number; odds?: number; ev?: number; risk?: string; reasons?: string[] }>>([]);
 
   function getRange() {
@@ -47,7 +48,11 @@ export default function MatchesList({
       return d >= start && d <= end;
     });
 
-  const matchesByLeague = filteredMatches.reduce((acc, match) => {
+  const leagueFiltered = activeLeagueFilter
+    ? filteredMatches.filter((m) => m.leagueId === activeLeagueFilter)
+    : filteredMatches;
+
+  const matchesByLeague = leagueFiltered.reduce((acc, match) => {
     if (!acc[match.leagueId]) {
       acc[match.leagueId] = { leagueName: match.leagueName, matches: [] as Match[] };
     }
@@ -112,14 +117,40 @@ export default function MatchesList({
       ) : (
         <ScrollArea className="h-[500px]">
           <div className="space-y-6">
-            {sortedLeagueEntries.map(([leagueId, { leagueName, matches }]) => (
+            {activeLeagueFilter && (
+              <button
+                onClick={() => setActiveLeagueFilter(null)}
+                className="mb-4 text-sm text-zinc-400 hover:text-zinc-200 flex items-center gap-1 transition-colors"
+              >
+                ← Mostrar todas as ligas
+              </button>
+            )}
+            {Object.entries(matchesByLeague).map(([leagueId, { leagueName, matches }]) => {
+              const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+              const isActive = activeLeagueFilter === leagueId;
+              return (
               <div key={leagueId}>
-                <h4 className="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2">
-                  {(() => { const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId); return league?.country ? `${league.country} - ` : ""; })()}{leagueName}
-                  <Badge variant="outline" className="text-xs">
+                <div
+                  onClick={() => setActiveLeagueFilter(isActive ? null : leagueId)}
+                  className={`bg-zinc-800/80 rounded-md p-2 mb-4 flex items-center gap-3 cursor-pointer transition-all hover:bg-zinc-700/80 ${
+                    isActive ? "ring-1 ring-emerald-500/50" : ""
+                  }`}
+                >
+                  {league?.logo && (
+                    <img
+                      src={league.logo}
+                      alt={leagueName}
+                      className="h-6 w-6 object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <span className="text-emerald-400 font-bold text-sm">
+                    {league?.countryFlag} {league?.country ? `${league.country} — ` : ""}{leagueName}
+                  </span>
+                  <Badge variant="outline" className="text-xs ml-auto">
                     {matches.length} jogos
                   </Badge>
-                </h4>
+                </div>
                 <div className="space-y-2">
                   {matches.map((match) => (
                     <InlineMatchCard
@@ -131,7 +162,8 @@ export default function MatchesList({
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </ScrollArea>
       )}
