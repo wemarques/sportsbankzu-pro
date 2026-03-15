@@ -60,6 +60,13 @@ export default function MatchesList({
     return acc;
   }, {} as Record<string, { leagueName: string; matches: Match[] }>);
 
+  // Sort league groups by AVAILABLE_LEAGUES order (prevents non-deterministic
+  // thread-completion ordering from mixing leagues in the UI)
+  const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+  const sortedLeagueEntries = Object.entries(matchesByLeague).sort(
+    ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
+  );
+
   return (
     <Card className="bg-[#12121a] border-[#1e1e2e] p-4">
       <div className="flex items-center justify-between mb-4">

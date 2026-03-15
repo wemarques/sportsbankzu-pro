@@ -1353,4 +1353,114 @@ Esses objetos eram resquícios de worktrees do Claude Code que foram tratados co
 
 ---
 
+## 019 — Liga dinamarquesa misturada entre jogos da Premier League + Duplas HTTP 504
+
+**Data:** 2026-03-15
+**Arquivos afetados:** `frontend/next/src/components/MatchesList.tsx`, `backend/routes/combinadas.py`, `frontend/next/src/app/api/combinadas/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado (2 bugs)
+
+1. **Liga dinamarquesa entre jogos da EPL** — O jogo Esbjerg vs Hillerød (Superliga dinamarquesa) aparecia visualmente entre jogos da English Premier League no dashboard. As ligas não eram separadas corretamente na lista.
+
+2. **Duplas HTTP 504 (Gateway Timeout)** — Ao clicar em "Duplas", o sistema retornava erro 504. O servidor não conseguia responder dentro do limite de tempo.
+
+### Causa raiz
+
+#### Bug 1 — Ordem de ligas não-determinística
+
+1. **Backend ThreadPoolExecutor sem ordenação** — `fixtures.py` processa ligas em paralelo com `ThreadPoolExecutor`. Os resultados são mergeados com `out.extend(records)` na ordem de conclusão das threads (`as_completed`), que é não-determinística.
+
+2. **Frontend sem sort de grupos** — `MatchesList.tsx` agrupa matches por `leagueId` usando `reduce()` e renderiza com `Object.entries()`, que preserva a ordem de inserção. Se a thread da Superliga terminar antes da Premier League, os jogos dinamarqueses aparecem primeiro.
+
+#### Bug 2 — Duplas re-fetch + timeout math quebrado
+
+1. **Re-fetch completo de fixtures** — O endpoint `/combinadas` (GET) chamava internamente `get_fixtures()`, que refazia TODAS as chamadas de API externas (FootyStats: resolve_season_id + get_league_matches + get_league_season_stats + get_league_teams = 4+ calls HTTP por liga). Com 10-20 ligas selecionadas, isso gerava 40-80+ chamadas HTTP.
+
+2. **Timeout math incompatível** — `COMBINADAS_TIMEOUT_MS = 55_000` por tentativa + auto-retry = 110s potencial. Mas `maxDuration = 60` (limite do Vercel) → a função era morta aos 60s → HTTP 504.
+
+3. **Trabalho duplicado** — O frontend já tinha todos os matches carregados em `allMatches` (com `predictions`/`mercados`), mas enviava apenas IDs de ligas ao backend, forçando re-fetch.
+
+### Correções aplicadas (4 camadas)
+
+#### Camada 1 — Ordenação de ligas no frontend (`MatchesList.tsx`)
+
+Após o `reduce()` que agrupa matches por `leagueId`, os grupos são ordenados pela posição da liga em `AVAILABLE_LEAGUES`:
+
+```typescript
+const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+const sortedLeagueEntries = Object.entries(matchesByLeague).sort(
+  ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
+);
+```
+
+Ligas não mapeadas recebem posição 999 (ficam no final). A renderização agora usa `sortedLeagueEntries.map()` em vez de `Object.entries(matchesByLeague).map()`.
+
+#### Camada 2 — Novo endpoint POST `/combinadas` (`backend/routes/combinadas.py`)
+
+Endpoint que recebe os matches já carregados no corpo da requisição, eliminando o re-fetch:
+
+```python
+@router.post("/combinadas")
+def combinadas_post(payload: Dict[str, Any] = Body(...)):
+    jogos = payload.get("matches") or []
+    # Map frontend "predictions" → backend "mercados"
+    for jogo in jogos:
+        if "mercados" not in jogo and "predictions" in jogo:
+            jogo["mercados"] = jogo["predictions"]
+    return _run_combinadas(jogos, tipos_list, min_status, limite_intra, limite_inter)
+```
+
+O endpoint GET legado é mantido para compatibilidade.
+
+#### Camada 3 — Timeout corrigido (`frontend/next/src/app/api/combinadas/route.ts`)
+
+- `COMBINADAS_TIMEOUT_MS` reduzido de 55s → 25s
+- Retry condicionado a `result.durationMs < 30_000` (só retenta se sobra tempo)
+- Nova rota POST que encaminha o body ao backend
+- Rota GET legada mantida com mesma lógica de timeout
+
+#### Camada 4 — `fetchCombinadas` usa POST com dados locais (`dashboard/page.tsx`)
+
+```typescript
+const payload = {
+  matches: allMatches.map((m) => ({
+    id: m.id, leagueId: m.leagueId, leagueName: m.leagueName,
+    homeTeam: m.homeTeam.name, awayTeam: m.awayTeam.name,
+    datetime: m.datetime, status: m.status, odds: m.odds,
+    stats: m.stats, mercados: m.predictions,
+  })),
+  tipos: "intra,inter",
+  min_status: minStatus,
+  limite_intra: 10, limite_inter: 10,
+};
+const res = await fetch("/api/combinadas", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(payload),
+});
+```
+
+Dependência do `useCallback` mudou de `[dateMode, combinadasLeagues]` para `[allMatches]`.
+
+### Impacto na performance
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| Chamadas HTTP externas (duplas) | 40-80+ (re-fetch todas as ligas) | 0 (dados já carregados) |
+| Latência esperada (duplas) | 30-90s (timeout frequente) | < 2s (CPU-only, sem I/O) |
+| Timeout por tentativa | 55s | 25s |
+| Tempo máximo total | 110s (> maxDuration 60s → 504) | 50s (< maxDuration 60s) |
+
+### Lição aprendida
+
+1. **Nunca re-buscar dados que o cliente já possui** — O padrão GET com league IDs forçava o backend a refazer todo o pipeline de coleta. Quando o frontend já tem os dados (matches com mercados), enviar via POST elimina 100% da latência de I/O externo.
+
+2. **Timeout math deve considerar retries dentro do maxDuration** — `timeout_por_tentativa * max_tentativas < maxDuration` é uma invariante que deve ser respeitada. Caso contrário, o retry causa o próprio 504 que tenta evitar.
+
+3. **Ordem de renderização no frontend não deve depender de ordem de I/O** — Quando dados vêm de processamento paralelo (threads, Promise.all, etc.), a ordem de chegada é não-determinística. Sempre aplicar sort explícito antes de renderizar.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
