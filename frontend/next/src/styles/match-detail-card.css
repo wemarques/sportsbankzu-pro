@@ -2202,6 +2202,10 @@
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--mdc-border);
   border-radius: var(--mdc-radius-md, 8px);
+  display: block !important;
+  opacity: 1 !important;
+  min-height: 20px;
+  width: 100%;
 }
 
 .cpb-root.cpb-placeholder {
