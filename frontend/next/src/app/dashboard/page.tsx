@@ -400,7 +400,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
   const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
   return {
-    id: item.id ?? `${resolvedLeagueId}-${idx}-${home}-${away}`,
+    id: item.id ?? `${resolvedLeagueId}-${resolveTeamAlias(home)}-${resolveTeamAlias(away)}`,
     footystatsId: item.footystatsId ?? undefined,
     leagueId: resolvedLeagueId,
     leagueName: league?.name ?? resolvedLeagueId,
