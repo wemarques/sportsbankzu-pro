@@ -102,3 +102,21 @@ API-Football /fixtures?live=all
 2. **Manter frontend alinhado com backend** — se o backend `_normalize_team_name()` ganhar novos prefixos, atualizar `normalizeTeamName()` no frontend também
 3. **Validar com 0 escanteios** — 0 é um valor válido (jogo recém iniciado), não confundir com `None` (dado indisponível)
 4. **Testar ligas problemáticas** — Brasileirão Serie A e ligas árabes frequentemente não incluem stats inline no `/fixtures?live=all`, dependendo do fallback explícito via `/fixtures/statistics`
+
+---
+
+## Filtros de Status, Ordenação Prioritária e Separador Visual
+
+**Data:** 2026-03-16
+**Arquivo:** `frontend/next/src/app/dashboard/page.tsx`
+
+### O que foi feito
+
+1. **Filtro de Status** — Botão "Filtros em breve" substituído por dropdown funcional (Todos, Ao Vivo, Finalizados, Não Iniciados)
+2. **Ordenação Prioritária** — Brasil Serie A e B sempre no topo, demais ligas em ordem alfabética, jogos por horário dentro de cada liga
+3. **Separador Visual** — Linha divisória com label "Ligas Internacionais" entre ligas brasileiras e demais
+
+### Regras
+1. **Usar IDs estáveis** — Prioridade usa `brazil-serie-a` / `brazil-serie-b` (não string matching)
+2. **Filtro integrado ao displayMatches** — Estado `statusFilter` filtra antes do agrupamento por liga
+3. **Separador condicional** — Só aparece quando há ligas brasileiras E internacionais na mesma visualização

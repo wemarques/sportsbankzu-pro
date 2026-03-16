@@ -493,6 +493,7 @@ export default function Dashboard() {
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [statusFilter, setStatusFilter] = useState<"all" | "live" | "finished" | "scheduled">("all");
   const [shareLoading, setShareLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -877,8 +878,9 @@ export default function Dashboard() {
     let list = allMatches;
     if (selectedLeague) list = list.filter((m) => m.leagueId === selectedLeague);
     if (showFavoritesOnly) list = list.filter((m) => favoriteIds.has(m.id));
+    if (statusFilter !== "all") list = list.filter((m) => m.status === statusFilter);
     return list;
-  }, [allMatches, selectedLeague, showFavoritesOnly, favoriteIds]);
+  }, [allMatches, selectedLeague, showFavoritesOnly, favoriteIds, statusFilter]);
 
   const toggleFavorite = useCallback((matchId: string) => {
     setFavoriteIds((prev) => {
@@ -1189,10 +1191,20 @@ export default function Dashboard() {
       list.push(m);
       byLeague.set(m.leagueId, list);
     }
+    const getBrazilPriority = (leagueId: string) => {
+      if (leagueId === "brazil-serie-a") return 0;
+      if (leagueId === "brazil-serie-b") return 1;
+      return 2;
+    };
     const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
-    const sortedEntries = Array.from(byLeague.entries()).sort(
-      ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
-    );
+    const sortedEntries = Array.from(byLeague.entries()).sort(([a], [b]) => {
+      const pA = getBrazilPriority(a);
+      const pB = getBrazilPriority(b);
+      if (pA !== pB) return pA - pB;
+      const nameA = AVAILABLE_LEAGUES.find((l) => l.id === a)?.name ?? a;
+      const nameB = AVAILABLE_LEAGUES.find((l) => l.id === b)?.name ?? b;
+      return nameA.localeCompare(nameB);
+    });
     return sortedEntries.map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
       const dir = sortOrder === "asc" ? 1 : -1;
@@ -1772,7 +1784,17 @@ export default function Dashboard() {
                   >
                     <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
                   </button>
-                  <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as "all" | "live" | "finished" | "scheduled")}
+                    className={`st-filter-btn st-filter-btn--mobile-hidden ${statusFilter !== "all" ? "st-filter-btn--active" : ""}`}
+                    style={{ appearance: "none", WebkitAppearance: "none", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: 8, padding: "0 28px 0 12px", cursor: "pointer", color: "var(--text-primary)", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" }}
+                  >
+                    <option value="all">Todos os Jogos</option>
+                    <option value="live">Ao Vivo</option>
+                    <option value="finished">Finalizados</option>
+                    <option value="scheduled">Não Iniciados</option>
+                  </select>
                 </div>
                 {shareFeedback && (
                   <div
@@ -1840,11 +1862,22 @@ export default function Dashboard() {
                 />
               )}
 
-              {!loading && leagueGroups.map((group) => {
+              {!loading && leagueGroups.map((group, groupIdx) => {
                 const isCaptureTarget = group.leagueId === leagueIdForCapture;
+                const isBrazilian = group.leagueId === "brazil-serie-a" || group.leagueId === "brazil-serie-b";
+                const prevGroup = groupIdx > 0 ? leagueGroups[groupIdx - 1] : null;
+                const prevIsBrazilian = prevGroup ? (prevGroup.leagueId === "brazil-serie-a" || prevGroup.leagueId === "brazil-serie-b") : false;
+                const showSeparator = !isBrazilian && prevIsBrazilian;
                 return (
+                  <div key={group.leagueId}>
+                    {showSeparator && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px 6px", opacity: 0.5 }}>
+                        <div style={{ flex: 1, height: 1, background: "linear-gradient(to right, rgba(255,165,0,0.4), transparent)" }} />
+                        <span style={{ fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888", whiteSpace: "nowrap" }}>Ligas Internacionais</span>
+                        <div style={{ flex: 1, height: 1, background: "linear-gradient(to left, rgba(255,165,0,0.4), transparent)" }} />
+                      </div>
+                    )}
                   <div
-                    key={group.leagueId}
                     className="st-league-group"
                     data-capture-target={isCaptureTarget ? "true" : "false"}
                   >
@@ -2096,6 +2129,7 @@ export default function Dashboard() {
                         </div>
                       );
                     })}
+                  </div>
                   </div>
                 );
               })}
