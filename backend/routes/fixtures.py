@@ -807,6 +807,11 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
             except Exception as e:
                 logger.error(f"[fixtures] {lid}: thread crashed: {type(e).__name__}: {e}")
 
+    # Sort by league order (request order) to avoid non-deterministic thread completion
+    # mixing leagues (e.g. Danish Superliga between Premier League games)
+    league_order = {lid: i for i, lid in enumerate(league_ids)}
+    out.sort(key=lambda r: (league_order.get(r.get("leagueId", ""), 999), r.get("datetime", "")))
+
     return {"matches": out}
 
 
@@ -858,6 +863,28 @@ def live_scores() -> Dict[str, Any]:
                             current_corners = ld["home_corners"]
                         elif ld.get("away_corners") is not None:
                             current_corners = ld["away_corners"]
+                        # Fallback: inline stats may be missing for some leagues (e.g. Brazilian Serie A)
+                        if current_corners is None and ld.get("fixture_id") is not None:
+                            try:
+                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=2)
+                                if _raw_stats:
+                                    _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                    if _hc is not None and _ac is not None:
+                                        current_corners = int(_hc) + int(_ac)
+                                    else:
+                                        _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                        _hc = _parsed.get("home", {}).get("corner_kicks")
+                                        _ac = _parsed.get("away", {}).get("corner_kicks")
+                                        if _hc is not None and _ac is not None:
+                                            current_corners = int(_hc) + int(_ac)
+                                    if current_corners is None:
+                                        _sample = list(_raw_stats[0].keys()) if _raw_stats and isinstance(_raw_stats[0], dict) else "non-dict"
+                                        logger.info(
+                                            f"[live-scores] corners fallback: fixture_id={ld['fixture_id']}, "
+                                            f"raw_stats_len={len(_raw_stats)}, first_block_keys={_sample}"
+                                        )
+                            except Exception as _stat_err:
+                                logger.info(f"[live-scores] corners fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
 
                         entry: Dict[str, Any] = {
                             "id": ld["fixture_id"],
@@ -1213,6 +1240,31 @@ def live_scores() -> Dict[str, Any]:
                             _corners = ld["home_corners"]
                         elif ld.get("away_corners") is not None:
                             _corners = ld["away_corners"]
+                        # Fallback: /fixtures?live=all may not include inline statistics for some
+                        # leagues (e.g. Brazilian Serie A). Fetch /fixtures/statistics explicitly.
+                        if _corners is None:
+                            _fx_id = matched_fx.get("fixture", {}).get("id")
+                            if _fx_id is not None:
+                                try:
+                                    _raw_stats = _afc.get_fixture_statistics(int(_fx_id), ttl_minutes=2)
+                                    if _raw_stats:
+                                        _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                        if _hc is not None and _ac is not None:
+                                            _corners = int(_hc) + int(_ac)
+                                        else:
+                                            _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                            _hc = _parsed.get("home", {}).get("corner_kicks")
+                                            _ac = _parsed.get("away", {}).get("corner_kicks")
+                                            if _hc is not None and _ac is not None:
+                                                _corners = int(_hc) + int(_ac)
+                                        if _corners is None:
+                                            _sample = list(_raw_stats[0].keys()) if _raw_stats and isinstance(_raw_stats[0], dict) else "non-dict"
+                                            logger.info(
+                                                f"[live-scores] corners fallback: fixture_id={_fx_id}, "
+                                                f"raw_stats_len={len(_raw_stats)}, first_block_keys={_sample}"
+                                            )
+                                except Exception as _stat_err:
+                                    logger.info(f"[live-scores] corners fallback failed fixture_id={_fx_id}: {_stat_err}")
                         if _corners is not None:
                             rec["currentCorners"] = _corners
 

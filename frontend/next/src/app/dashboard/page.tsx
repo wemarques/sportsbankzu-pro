@@ -51,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.6";
+const VERSION_FALLBACK = "pro V3.7";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -144,15 +144,19 @@ function safeOdd(value?: number, fallback = 0) {
   return value;
 }
 
-/** Normalize team name for matching: remove accents, periods, extra spaces. */
+/** Normalize team name for matching: remove accents, periods, extra spaces, common prefixes. */
 function normalizeTeamName(name: string): string {
-  return name
+  let s = name
     .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")  // Remove diacritics (é→e, ñ→n)
     .replace(/\./g, "")               // Remove periods (Dep. → Dep)
-    .replace(/\s+/g, " ");            // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+  // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona)
+  s = s.replace(/^\b(sc|ec|fc|cr|se|aa|ce|gr)\s+/i, "");
+  return s;
 }
 
 function formatTime(dt: string) {
@@ -195,21 +199,34 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
-/** Compute live period from kickoff time when backend hasn't supplied it yet. */
+/** Compute live period from kickoff time when backend hasn't supplied it yet.
+ * When backend provides period/minute, use max(backend, estimated) so stale
+ * backend data (e.g. 68' when real time is 90') doesn't freeze the display. */
 function computeLiveInfo(match: Match): { period: string; minute: number | null } | null {
   if (match.status !== "live") return null;
-  // Use backend-provided period/minute if available
-  if (match.period) return { period: match.period, minute: match.minute ?? null };
-  // Fallback: estimate from kickoff
   try {
     const kickoff = new Date(match.datetime).getTime();
     const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
     if (elapsed < 0) return null;
-    if (elapsed <= 47) return { period: "1T", minute: Math.min(elapsed, 45) };
-    if (elapsed <= 62) return { period: "HT", minute: null };
-    return { period: "2T", minute: Math.min(elapsed - 15, 90) };
+    let period = match.period ?? "";
+    let minute: number | null = match.minute ?? null;
+    if (elapsed <= 47) {
+      const est = { period: "1T" as const, minute: Math.min(elapsed, 45) };
+      if (!period) period = est.period;
+      if (minute == null) minute = est.minute;
+      else minute = Math.max(minute, est.minute);
+    } else if (elapsed <= 62) {
+      if (!period) period = "HT";
+      minute = null;
+    } else {
+      const estMin = Math.min(elapsed - 15, 90);
+      if (!period) period = "2T";
+      if (minute == null) minute = estMin;
+      else minute = Math.max(minute, estMin);
+    }
+    return { period, minute };
   } catch {
-    return { period: "1T", minute: null };
+    return match.period ? { period: match.period, minute: match.minute ?? null } : null;
   }
 }
 
@@ -255,6 +272,19 @@ function buildScreenshotName() {
   return `sportsbank-picks-${stamp}.png`;
 }
 
+/** Known Danish Superliga teams — correct leagueId when backend returns wrong/missing leagueId */
+const KNOWN_DANISH_TEAMS = new Set([
+  "esbjerg", "hillerød", "hillerod", "hvidovre", "kolding if", "kolding", "fc midtjylland", "midtjylland",
+  "fc copenhagen", "copenhagen", "brøndby", "brondby", "aalborg", "aab", "nordsjælland",
+  "nordsjaelland", "silkeborg", "viborg", "ob", "odense", "randers", "lyngby", "vejle",
+]);
+function inferLeagueFromTeams(home: string, away: string): string | null {
+  const h = normalizeTeamName(home);
+  const a = normalizeTeamName(away);
+  if (KNOWN_DANISH_TEAMS.has(h) || KNOWN_DANISH_TEAMS.has(a)) return "denmark-superliga";
+  return null;
+}
+
 function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const home = item.home_team
     ?? (typeof item.homeTeam === "string" ? item.homeTeam : item.homeTeam?.name)
@@ -262,13 +292,18 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const away = item.away_team
     ?? (typeof item.awayTeam === "string" ? item.awayTeam : item.awayTeam?.name)
     ?? item.away ?? "Away";
+  // Heuristic: correct leagueId when backend returns wrong/missing (e.g. Danish teams in EPL group)
+  const inferred = inferLeagueFromTeams(home, away);
+  // Backend config uses "superliga", frontend uses "denmark-superliga"
+  const normalizedLid = leagueId === "superliga" ? "denmark-superliga" : leagueId;
+  const resolvedLeagueId = inferred ?? normalizedLid;
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
-  const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+  const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
   return {
-    id: item.id ?? `${leagueId}-${idx}-${home}-${away}`,
+    id: item.id ?? `${resolvedLeagueId}-${idx}-${home}-${away}`,
     footystatsId: item.footystatsId ?? undefined,
-    leagueId,
-    leagueName: league?.name ?? leagueId,
+    leagueId: resolvedLeagueId,
+    leagueName: league?.name ?? resolvedLeagueId,
     homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
     awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? item.awayForm ?? [], rating: item.awayTeam?.rating || item.ratings?.away || 0 },
     datetime: dt,
@@ -363,6 +398,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayXgAgainstAvg: item.stats?.awayXgAgainstAvg ?? undefined,
       homeCornersAgainstPerMatch: item.stats?.homeCornersAgainstPerMatch ?? undefined,
       awayCornersAgainstPerMatch: item.stats?.awayCornersAgainstPerMatch ?? undefined,
+      homeCornersCount: item.stats?.homeCornersCount ?? item.home_team_corner_count ?? undefined,
+      awayCornersCount: item.stats?.awayCornersCount ?? item.away_team_corner_count ?? undefined,
       homeLeaguePosition: item.stats?.homeLeaguePosition ?? undefined,
       awayLeaguePosition: item.stats?.awayLeaguePosition ?? undefined,
       homeAvgTotalGoals: item.stats?.homeAvgTotalGoals ?? undefined,
@@ -401,8 +438,14 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
-    period: match.period,
-    minute: match.minute,
+    period: (() => {
+      const li = computeLiveInfo(match);
+      return li?.period ?? match.period;
+    })(),
+    minute: (() => {
+      const li = computeLiveInfo(match);
+      return li?.minute ?? match.minute;
+    })(),
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -663,6 +706,9 @@ export default function Dashboard() {
           const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
           if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
+          if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
+            console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
+          }
           return {
             ...m,
             status: newStatus,
@@ -742,7 +788,8 @@ export default function Dashboard() {
         }
 
         const normalized = raw.map((item: any, idx: number) => {
-          const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+          // Use "unknown" instead of first league — avoids wrongly assigning to Premier League
+          const lid = item.leagueId ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
         setAllMatches(normalized);
@@ -776,6 +823,16 @@ export default function Dashboard() {
     liveIntervalMs: 30_000,
     idleIntervalMs: 120_000,
   });
+
+  // Force re-render every 30s when live matches exist — computeLiveInfo uses Date.now()
+  // so the minute display updates even when backend polling returns cached data.
+  useEffect(() => {
+    if (!hasLiveMatches) return;
+    const tick = setInterval(() => {
+      setAllMatches((prev) => (prev.length ? [...prev] : prev));
+    }, 30_000);
+    return () => clearInterval(tick);
+  }, [hasLiveMatches]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -1130,7 +1187,11 @@ export default function Dashboard() {
       list.push(m);
       byLeague.set(m.leagueId, list);
     }
-    return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
+    const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+    const sortedEntries = Array.from(byLeague.entries()).sort(
+      ([a], [b]) => (leagueOrder[a] ?? 999) - (leagueOrder[b] ?? 999),
+    );
+    return sortedEntries.map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
       const dir = sortOrder === "asc" ? 1 : -1;
       const sorted = [...matches].sort((a, b) => {

@@ -1,4 +1,4 @@
-# SportsBankZU Pro V3.6
+# SportsBankZU Pro V3.7
 
 > Sistema profissional de cálculo de prognósticos esportivos com backend FastAPI, frontend Streamlit, dashboard Next.js, placares ao vivo, auditoria contínua por IA e calibração de modelos
 

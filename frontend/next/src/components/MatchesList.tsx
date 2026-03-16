@@ -125,7 +125,7 @@ export default function MatchesList({
                 ← Mostrar todas as ligas
               </button>
             )}
-            {Object.entries(matchesByLeague).map(([leagueId, { leagueName, matches }]) => {
+            {sortedLeagueEntries.map(([leagueId, { leagueName, matches }]) => {
               const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
               const isActive = activeLeagueFilter === leagueId;
               return (
