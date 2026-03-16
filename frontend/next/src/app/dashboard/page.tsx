@@ -144,6 +144,26 @@ function safeOdd(value?: number, fallback = 0) {
   return value;
 }
 
+/** Alias map: common nicknames/abbreviations → canonical name (lowercase). */
+const TEAM_ALIASES: Record<string, string> = {
+  wolves: "wolverhampton wanderers",
+  "man united": "manchester united", "man utd": "manchester united",
+  "man city": "manchester city",
+  spurs: "tottenham hotspur",
+  brighton: "brighton and hove albion",
+  "west ham": "west ham united",
+  newcastle: "newcastle united",
+  leicester: "leicester city",
+  "nottm forest": "nottingham forest", "nott'm forest": "nottingham forest",
+  "sheffield utd": "sheffield united",
+  luton: "luton town",
+  inter: "inter milan", internazionale: "inter milan",
+  psg: "paris saint germain", "paris sg": "paris saint germain",
+  bayern: "bayern munich", "bayern munchen": "bayern munich",
+  dortmund: "borussia dortmund",
+  leverkusen: "bayer leverkusen",
+};
+
 /** Normalize team name for matching: remove accents, periods, extra spaces, common prefixes. */
 function normalizeTeamName(name: string): string {
   let s = name
@@ -157,6 +177,84 @@ function normalizeTeamName(name: string): string {
   // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona, Atlético Mineiro → Mineiro)
   s = s.replace(/\b(sc|ec|fc|cr|se|aa|ce|gr|ac|cf|as|rc|cd|ca|ss|afc|atletico)\b\s*/gi, "").trim();
   return s;
+}
+
+/** Resolve team name to canonical form via alias map. */
+function resolveTeamAlias(name: string): string {
+  const norm = normalizeTeamName(name);
+  return TEAM_ALIASES[norm] ?? norm;
+}
+
+/** Deduplicate matches by canonical team names. Keeps the richer record (more odds/stats/predictions). */
+function deduplicateMatches(matches: Match[]): Match[] {
+  if (matches.length <= 1) return matches;
+  const seen = new Map<string, { idx: number; richness: number }>();
+  const result: Match[] = [];
+
+  for (const m of matches) {
+    const key = `${resolveTeamAlias(m.homeTeam.name)}||${resolveTeamAlias(m.awayTeam.name)}`;
+    const rich = matchRichness(m);
+    const prev = seen.get(key);
+
+    if (prev != null) {
+      const prevMatch = result[prev.idx];
+      if (rich > prev.richness) {
+        // Current match is richer — replace, but merge live data from previous
+        const merged = mergeMatchData(m, prevMatch);
+        result[prev.idx] = merged;
+        seen.set(key, { idx: prev.idx, richness: rich });
+      } else {
+        // Previous is richer — merge live data from current into it
+        result[prev.idx] = mergeMatchData(prevMatch, m);
+      }
+      console.warn(`[dedup] Removed duplicate: ${m.homeTeam.name} vs ${m.awayTeam.name}`);
+    } else {
+      seen.set(key, { idx: result.length, richness: rich });
+      result.push(m);
+    }
+  }
+  return result;
+}
+
+function matchRichness(m: Match): number {
+  let score = 0;
+  if (m.predictions && m.predictions.length > 0) score += 100;
+  if ((m as any).recommendations?.length > 0) score += 100;
+  const odds = m.odds;
+  if (odds) {
+    for (const v of Object.values(odds)) {
+      if (typeof v === "number" && v > 0) score++;
+    }
+  }
+  const stats = m.stats;
+  if (stats) {
+    for (const v of Object.values(stats)) {
+      if (typeof v === "number" && v > 0) score++;
+    }
+  }
+  if (m.score && ((m.score.home ?? 0) + (m.score.away ?? 0)) > 0) score += 50;
+  if (m.status === "live") score += 20;
+  return score;
+}
+
+function mergeMatchData(primary: Match, secondary: Match): Match {
+  const merged = { ...primary };
+  // Merge live score if primary lacks it
+  const pTotal = (primary.score?.home ?? 0) + (primary.score?.away ?? 0);
+  const sTotal = (secondary.score?.home ?? 0) + (secondary.score?.away ?? 0);
+  if (sTotal > 0 && pTotal === 0) {
+    merged.score = secondary.score;
+  }
+  if (secondary.score?.halftime && !primary.score?.halftime) {
+    merged.score = { ...(merged.score ?? { home: 0, away: 0 }), halftime: secondary.score.halftime };
+  }
+  // Merge live status
+  if (secondary.status === "live" && primary.status !== "live") {
+    merged.status = secondary.status;
+    merged.period = secondary.period ?? merged.period;
+    merged.minute = secondary.minute ?? merged.minute;
+  }
+  return merged;
 }
 
 function formatTime(dt: string) {
@@ -302,7 +400,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
   const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
   return {
-    id: item.id ?? `${resolvedLeagueId}-${idx}-${home}-${away}`,
+    id: item.id ?? `${resolvedLeagueId}-${resolveTeamAlias(home)}-${resolveTeamAlias(away)}`,
     footystatsId: item.footystatsId ?? undefined,
     leagueId: resolvedLeagueId,
     leagueName: league?.name ?? resolvedLeagueId,
@@ -673,11 +771,11 @@ export default function Dashboard() {
             if (m.footystatsId != null && lm.id != null) {
               if (Number(m.footystatsId) === Number(lm.id)) return true;
             }
-            // Fallback: normalized team name comparison (accents, periods, case)
-            const mHome = normalizeTeamName(m.homeTeam.name);
-            const mAway = normalizeTeamName(m.awayTeam.name);
-            const lHome = normalizeTeamName(lm.homeTeam);
-            const lAway = normalizeTeamName(lm.awayTeam);
+            // Fallback: alias-resolved + normalized team name comparison
+            const mHome = resolveTeamAlias(m.homeTeam.name);
+            const mAway = resolveTeamAlias(m.awayTeam.name);
+            const lHome = resolveTeamAlias(lm.homeTeam);
+            const lAway = resolveTeamAlias(lm.awayTeam);
             if (mHome === lHome && mAway === lAway) return true;
             // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
             if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
@@ -795,7 +893,9 @@ export default function Dashboard() {
           const lid = item.leagueId ?? item.league ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
-        setAllMatches(normalized);
+        // Deduplicate: same match from different sources (e.g. "Wolves" vs "Wolverhampton Wanderers")
+        const deduped = deduplicateMatches(normalized);
+        setAllMatches(deduped);
         if (normalized.length > 0) setSelectedMatchId((prev) => prev ?? normalized[0].id);
 
         // Immediately fetch live scores to overlay real-time data
@@ -1154,7 +1254,8 @@ export default function Dashboard() {
         const lid = item.leagueId ?? item.league ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
-      setAllMatches(normalized);
+      // Deduplicate: same match from different sources (e.g. "Wolves" vs "Wolverhampton Wanderers")
+      setAllMatches(deduplicateMatches(normalized));
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
     } catch {
       // Don't clear matches on error — preserve what we have

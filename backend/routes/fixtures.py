@@ -25,6 +25,119 @@ _afc = APIFootballClient()
 _MAX_LEAGUE_WORKERS = 4
 
 
+def _deduplicate_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate fixture records that refer to the same match.
+
+    Uses alias-aware team name matching from APIFootballClient.
+    When duplicates are found, keeps the record with richer data
+    (more non-zero odds, predictions, or live score).
+    """
+    if len(records) <= 1:
+        return records
+
+    def _canon(name: str) -> str:
+        """Canonical form for dedup key: resolve alias + normalize."""
+        return _afc._resolve_alias(name)
+
+    def _team_key(rec: dict) -> str:
+        ht = rec.get("homeTeam")
+        at = rec.get("awayTeam")
+        home = ht.get("name", "") if isinstance(ht, dict) else str(ht or "")
+        away = at.get("name", "") if isinstance(at, dict) else str(at or "")
+        return f"{_canon(home)}||{_canon(away)}"
+
+    def _richness(rec: dict) -> int:
+        """Score how much useful data a record has (higher = keep)."""
+        score = 0
+        # Prefer records with predictions/recommendations
+        if rec.get("predictions"):
+            score += 100
+        if rec.get("recommendations"):
+            score += 100
+        # Prefer records with non-zero odds
+        odds = rec.get("odds", {})
+        if isinstance(odds, dict):
+            score += sum(1 for v in odds.values() if isinstance(v, (int, float)) and v > 0)
+        # Prefer records with stats
+        stats = rec.get("stats", {})
+        if isinstance(stats, dict):
+            score += sum(1 for v in stats.values() if isinstance(v, (int, float)) and v > 0)
+        # Prefer records with live score
+        s = rec.get("score", {})
+        if isinstance(s, dict) and ((s.get("home") or 0) + (s.get("away") or 0)) > 0:
+            score += 50
+        # Prefer records with apiFootballFixtureId (enriched)
+        if rec.get("apiFootballFixtureId"):
+            score += 10
+        return score
+
+    seen: dict = {}  # team_key → (index, richness)
+    result: List[Dict[str, Any]] = []
+    dropped = 0
+
+    for rec in records:
+        key = _team_key(rec)
+        rich = _richness(rec)
+
+        if key in seen:
+            prev_idx, prev_rich = seen[key]
+            if rich > prev_rich:
+                # Current record is richer — replace previous
+                ht_prev = result[prev_idx].get("homeTeam")
+                home_prev = ht_prev.get("name", "") if isinstance(ht_prev, dict) else str(ht_prev or "")
+                ht_cur = rec.get("homeTeam")
+                home_cur = ht_cur.get("name", "") if isinstance(ht_cur, dict) else str(ht_cur or "")
+                logger.info(
+                    f"[fixtures] dedup: replacing '{home_prev}' (richness={prev_rich}) "
+                    f"with '{home_cur}' (richness={rich})"
+                )
+                # Merge live score from the dropped record if the kept one lacks it
+                prev_score = result[prev_idx].get("score", {})
+                cur_score = rec.get("score", {})
+                if isinstance(prev_score, dict) and isinstance(cur_score, dict):
+                    prev_total = (prev_score.get("home") or 0) + (prev_score.get("away") or 0)
+                    cur_total = (cur_score.get("home") or 0) + (cur_score.get("away") or 0)
+                    if prev_total > 0 and cur_total == 0:
+                        rec["score"] = prev_score
+                    # Also merge halftime score
+                    if prev_score.get("halftime") and not cur_score.get("halftime"):
+                        rec.setdefault("score", {})["halftime"] = prev_score["halftime"]
+                # Merge live status/period/minute from the dropped record
+                if result[prev_idx].get("status") == "live" and rec.get("status") != "live":
+                    rec["status"] = result[prev_idx]["status"]
+                    for field in ("period", "minute", "apiFootballFixtureId"):
+                        if result[prev_idx].get(field) and not rec.get(field):
+                            rec[field] = result[prev_idx][field]
+                result[prev_idx] = rec
+                seen[key] = (prev_idx, rich)
+            else:
+                # Previous record is richer — keep it but merge live data from current
+                cur_score = rec.get("score", {})
+                prev_score = result[prev_idx].get("score", {})
+                if isinstance(cur_score, dict) and isinstance(prev_score, dict):
+                    cur_total = (cur_score.get("home") or 0) + (cur_score.get("away") or 0)
+                    prev_total = (prev_score.get("home") or 0) + (prev_score.get("away") or 0)
+                    if cur_total > 0 and prev_total == 0:
+                        result[prev_idx]["score"] = cur_score
+                if rec.get("status") == "live" and result[prev_idx].get("status") != "live":
+                    result[prev_idx]["status"] = rec["status"]
+                    for field in ("period", "minute", "apiFootballFixtureId"):
+                        if rec.get(field) and not result[prev_idx].get(field):
+                            result[prev_idx][field] = rec[field]
+                logger.info(
+                    f"[fixtures] dedup: dropped duplicate (richness={rich} vs {prev_rich})"
+                )
+            dropped += 1
+        else:
+            seen[key] = (len(result), rich)
+            result.append(rec)
+
+    if dropped:
+        logger.info(f"[fixtures] dedup: removed {dropped} duplicate(s), {len(result)} unique records remain")
+
+    return result
+
+
 def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any]]:
     """Process a single league: API fetch → build records. Thread-safe."""
     from backend.main import resolve_league_dir, generate_mock_fixtures
@@ -197,6 +310,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
 
     # API-Football enrichment: overlay live scores + fallback data source
     records = _enrich_with_api_football(lid, records, found_via_api, date)
+
+    # Final deduplication: remove duplicate matches that slipped through
+    # team-name matching (e.g. "Wolves" vs "Wolverhampton Wanderers")
+    records = _deduplicate_records(records)
 
     # FALLBACK: CSV files (skip mock data in production to avoid poisoning batches)
     _is_production = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL"))

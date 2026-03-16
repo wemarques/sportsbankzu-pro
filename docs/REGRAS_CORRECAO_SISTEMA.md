@@ -1694,7 +1694,7 @@ Funções que retornam valores de um conjunto fixo devem usar tipos de união li
 
 ---
 
-## — Filtros de Status, Ordenação Prioritária e Separador Visual
+## 024 — Filtros de Status, Ordenação Prioritária e Separador Visual
 
 **Data:** 2026-03-16
 **Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
@@ -1729,7 +1729,7 @@ Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas
 
 ---
 
-## — Dropdown ilegível no tema escuro + Premier League como "unknown"
+## 025 — Dropdown ilegível no tema escuro + Premier League como "unknown"
 
 **Data:** 2026-03-16
 **Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`, `backend/services/api_football_client.py`
@@ -1759,6 +1759,88 @@ Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas
 ### Lição aprendida
 
 Ao criar records que trafegam entre backend e frontend, sempre validar que os nomes dos campos correspondem exatamente ao tipo TypeScript esperado. Um campo `"league"` vs `"leagueId"` pode causar fallback silencioso para "unknown" sem erro visível.
+
+---
+
+## 026 — Jogos duplicados por apelido vs nome completo (Wolves / Wolverhampton Wanderers)
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `backend/services/api_football_client.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+O mesmo jogo (ex: Brentford vs Wolves) aparecia duplicado no dashboard:
+1. Primeira entrada: "Brentford vs Wolves" (dados do API-Football com nome abreviado) — VIVO HT, placar 2-1
+2. Segunda entrada: "Brentford vs Wolverhampton Wanderers" (dados do FootyStats com nome completo) — VIVO 2T, placar 0-0
+
+O segundo registro era injetado como "jogo novo" porque o sistema não reconhecia "Wolves" como "Wolverhampton Wanderers".
+
+### Causa raiz
+
+A função `_team_names_match()` em `api_football_client.py` usava 4 estratégias de matching:
+1. Exact match após normalização
+2. Substring containment
+3. Fuzzy match (SequenceMatcher ≥ 0.8)
+4. Token overlap (≥ 50%)
+
+Nenhuma dessas estratégias consegue resolver "Wolves" → "Wolverhampton Wanderers":
+- **Substring:** "wolves" NÃO está contido em "wolverhampton wanderers"
+- **Fuzzy:** ratio("wolves", "wolverhampton wanderers") ≈ 0.34 (muito abaixo de 0.8)
+- **Token overlap:** {"wolves"} ∩ {"wolverhampton", "wanderers"} = ∅ (zero overlap)
+
+Resultado: na etapa de injeção (CASE 1b em `fixtures.py:349-392`), o jogo do API-Football não era reconhecido como duplicata e era adicionado como novo registro.
+
+### Correções aplicadas (defesa em profundidade — 4 camadas)
+
+1. **Mapa de aliases (backend)** — Novo dicionário `_TEAM_ALIASES` em `api_football_client.py` com ~40 mapeamentos de apelidos/abreviações para nomes canônicos. Exemplos:
+   - `"wolves"` → `"wolverhampton wanderers"`
+   - `"man united"` / `"man utd"` → `"manchester united"`
+   - `"spurs"` → `"tottenham hotspur"`
+   - `"psg"` → `"paris saint germain"`
+   - Times brasileiros: `"corinthians"`, `"palmeiras"`, `"flamengo"`, etc.
+
+2. **Método `_resolve_alias()` (backend)** — Novo método estático que consulta o alias map antes de comparar. Integrado como primeira etapa do `_team_names_match()`:
+   - Resolve ambos os nomes para forma canônica via alias map
+   - Se canônicos são iguais → match imediato (antes de fuzzy/token)
+   - Também verifica substring nos nomes canônicos
+
+3. **Deduplicação pós-enrichment (backend)** — Nova função `_deduplicate_records()` em `fixtures.py` que é executada APÓS `_enrich_with_api_football()`:
+   - Gera chave canônica por jogo via `_resolve_alias()` para cada time
+   - Quando duplicatas são detectadas, mantém o record com maior "richness" (mais odds, predictions, stats)
+   - Faz merge de dados live (score, status, period, minute) do record descartado para o mantido
+   - Log detalhado de cada deduplicação para diagnóstico
+
+4. **Deduplicação no frontend (page.tsx)** — Nova função `deduplicateMatches()` + mapa `TEAM_ALIASES`:
+   - Aplica `resolveTeamAlias()` antes de comparar nomes de times
+   - Executada após `normalizeMatch()` em AMBOS os code paths (fetch inicial + refetch)
+   - Live score overlay (`fetchLiveScores`) também usa `resolveTeamAlias()` para matching
+   - Merge inteligente: preserva odds/predictions do record mais rico + score/status do live
+
+### Fluxo corrigido
+
+```
+Backend (_enrich_with_api_football):
+  _team_names_match("Wolverhampton Wanderers", "Wolves")
+    → _resolve_alias → "wolverhampton wanderers" == "wolverhampton wanderers" → ✓ match
+    → FootyStats record é enriched com score ao vivo
+
+Backend (_deduplicate_records — safety net):
+  Se por qualquer razão o enrichment falhar e dois records chegarem:
+    → chave canônica idêntica → mantém o mais rico, merge dados live
+
+Frontend (deduplicateMatches — safety net final):
+  Se backend enviar duplicatas (cache, timing, etc.):
+    → resolveTeamAlias("Wolves") === resolveTeamAlias("Wolverhampton Wanderers")
+    → Remove duplicata, mantém match com mais dados
+```
+
+### Lição aprendida
+
+1. Fuzzy matching e token overlap são insuficientes para resolver apelidos populares de times. Um dicionário estático de aliases é necessário como primeira camada.
+2. Prevenir a criação de duplicatas (alias no matching) NÃO é suficiente sozinho — dados em cache, race conditions e fontes múltiplas podem reintroduzir duplicatas. É necessário um passo final de deduplicação (defesa em profundidade).
+3. Deduplicação deve existir em AMBAS as camadas (backend e frontend) porque o frontend pode receber dados de cache do browser ou de versões não-atualizadas do backend (Vercel, Lambda).
 
 ---
 
