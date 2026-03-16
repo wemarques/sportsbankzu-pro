@@ -473,7 +473,7 @@ class APIFootballClient:
             for team_block in raw_stats:
                 stats_list = team_block.get("statistics", [])
                 for s in stats_list:
-                    if s.get("type") == "Corner Kicks":
+                    if "corner" in str(s.get("type", "")).lower():
                         val = s.get("value")
                         if val is not None:
                             try:

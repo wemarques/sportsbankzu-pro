@@ -154,8 +154,8 @@ function normalizeTeamName(name: string): string {
     .replace(/\./g, "")               // Remove periods (Dep. → Dep)
     .replace(/\s+/g, " ")
     .trim();
-  // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona)
-  s = s.replace(/^\b(sc|ec|fc|cr|se|aa|ce|gr)\s+/i, "");
+  // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona, Atlético Mineiro → Mineiro)
+  s = s.replace(/\b(sc|ec|fc|cr|se|aa|ce|gr|ac|cf|as|rc|cd|ca|ss|afc|atletico)\b\s*/gi, "").trim();
   return s;
 }
 
