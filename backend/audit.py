@@ -329,7 +329,7 @@ def get_active_corrections(league: str | None = None) -> list:
         ph = "%s" if _use_postgres() else "?"
         cursor.execute(
             f"SELECT parameter_name, new_value, correction_type, reason FROM corrections "
-            f"WHERE league = {ph} AND status = 'applied' ORDER BY created_at DESC",
+            f"WHERE (league = {ph} OR league = 'ALL') AND status = 'applied' ORDER BY created_at DESC",
             (league,),
         )
     else:
