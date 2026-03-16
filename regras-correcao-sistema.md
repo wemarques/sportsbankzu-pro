@@ -120,3 +120,19 @@ API-Football /fixtures?live=all
 1. **Usar IDs estáveis** — Prioridade usa `brazil-serie-a` / `brazil-serie-b` (não string matching)
 2. **Filtro integrado ao displayMatches** — Estado `statusFilter` filtra antes do agrupamento por liga
 3. **Separador condicional** — Só aparece quando há ligas brasileiras E internacionais na mesma visualização
+
+---
+
+## Dropdown Ilegível + Premier League como "unknown"
+
+**Data:** 2026-03-16
+**Arquivos:** `page.tsx`, `api_football_client.py`
+
+### Correções
+1. **Backend** — `api_football_client.py`: campo `"league"` renomeado para `"leagueId"` em `fixtures_to_records()`
+2. **Frontend (defesa)** — Normalização usa `item.leagueId ?? item.league ?? "unknown"` para compatibilidade
+3. **Frontend (dropdown)** — Cores fixas do tema escuro (`#1a1a2e` bg, `#e0e0e0` text) em `<select>` e `<option>`
+
+### Regras
+1. **Campos backend→frontend devem bater com o tipo TS** — `"leagueId"` não `"league"`
+2. **Dropdowns nativos** — Sempre usar cores inline fixas nas `<option>`, browser ignora CSS variables
