@@ -1729,4 +1729,37 @@ Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas
 
 ---
 
+## — Dropdown ilegível no tema escuro + Premier League como "unknown"
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`, `backend/services/api_football_client.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+1. **Dropdown ilegível** — O `<select>` de filtros usava `var(--bg-secondary)` como background, mas o dropdown nativo do browser renderiza as `<option>` com fundo branco, tornando o texto invisível no tema escuro.
+
+2. **Premier League como "unknown"** — Jogos vindos do API-Football (fallback quando FootyStats não retorna dados) apareciam com liga "unknown". Ex: Brentford vs Wolves exibido sem identificação de liga.
+
+### Causa raiz
+
+1. **Dropdown:** Elementos `<option>` do HTML nativo ignoram muitos estilos CSS, mas respeitam `background` e `color` inline. O `<select>` não tinha esses estilos nas options.
+
+2. **EPL "unknown":** Em `api_football_client.py` linha 1345, o campo do record era `"league": league_id` em vez de `"leagueId": league_id`. O frontend espera `leagueId` (tipo `Match`). Sem esse campo, o fallback `item.leagueId ?? "unknown"` era acionado.
+
+### Correções aplicadas (defesa em profundidade)
+
+1. **Backend** — `api_football_client.py`: campo renomeado de `"league"` para `"leagueId"` no `fixtures_to_records()`.
+
+2. **Frontend (defesa)** — `page.tsx`: normalização agora usa `item.leagueId ?? item.league ?? "unknown"` em ambos os pontos de normalização, garantindo que mesmo dados com campo antigo sejam tratados.
+
+3. **Frontend (dropdown)** — Estilo inline com cores fixas do tema escuro (`#1a1a2e` background, `#e0e0e0` text) aplicado tanto no `<select>` quanto em cada `<option>`, evitando o problema de herança do browser.
+
+### Lição aprendida
+
+Ao criar records que trafegam entre backend e frontend, sempre validar que os nomes dos campos correspondem exatamente ao tipo TypeScript esperado. Um campo `"league"` vs `"leagueId"` pode causar fallback silencioso para "unknown" sem erro visível.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

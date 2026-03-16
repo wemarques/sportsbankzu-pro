@@ -792,7 +792,7 @@ export default function Dashboard() {
 
         const normalized = raw.map((item: any, idx: number) => {
           // Use "unknown" instead of first league — avoids wrongly assigning to Premier League
-          const lid = item.leagueId ?? "unknown";
+          const lid = item.leagueId ?? item.league ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
         setAllMatches(normalized);
@@ -1151,7 +1151,7 @@ export default function Dashboard() {
       }
 
       const normalized = raw.map((item: any, idx: number) => {
-        const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+        const lid = item.leagueId ?? item.league ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
       setAllMatches(normalized);
@@ -1788,12 +1788,12 @@ export default function Dashboard() {
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "live" | "finished" | "scheduled")}
                     className={`st-filter-btn st-filter-btn--mobile-hidden ${statusFilter !== "all" ? "st-filter-btn--active" : ""}`}
-                    style={{ appearance: "none", WebkitAppearance: "none", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: 8, padding: "0 28px 0 12px", cursor: "pointer", color: "var(--text-primary)", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" }}
+                    style={{ appearance: "none", WebkitAppearance: "none", background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "0 28px 0 12px", cursor: "pointer", color: "#e0e0e0", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" }}
                   >
-                    <option value="all">Todos os Jogos</option>
-                    <option value="live">Ao Vivo</option>
-                    <option value="finished">Finalizados</option>
-                    <option value="scheduled">Não Iniciados</option>
+                    <option value="all" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Todos os Jogos</option>
+                    <option value="live" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Ao Vivo</option>
+                    <option value="finished" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Finalizados</option>
+                    <option value="scheduled" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Não Iniciados</option>
                   </select>
                 </div>
                 {shareFeedback && (

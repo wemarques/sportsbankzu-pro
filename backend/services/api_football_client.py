@@ -1342,7 +1342,7 @@ class APIFootballClient:
                 "awayTeam": away_name,
                 "homeTeamId": home_id,
                 "awayTeamId": away_id,
-                "league": league_id,
+                "leagueId": league_id,
                 "leagueName": league_data.get("name", ""),
                 "country": league_data.get("country", ""),
                 "status": status,
