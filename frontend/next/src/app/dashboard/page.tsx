@@ -442,7 +442,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     score: match.score,
     period: (() => {
       const li = computeLiveInfo(match);
-      return li?.period ?? match.period;
+      return (li?.period ?? match.period) as "1T" | "HT" | "2T" | undefined;
     })(),
     minute: (() => {
       const li = computeLiveInfo(match);
