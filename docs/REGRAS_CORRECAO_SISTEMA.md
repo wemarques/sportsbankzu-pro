@@ -1792,34 +1792,55 @@ Nenhuma dessas estratégias consegue resolver "Wolves" → "Wolverhampton Wander
 
 Resultado: na etapa de injeção (CASE 1b em `fixtures.py:349-392`), o jogo do API-Football não era reconhecido como duplicata e era adicionado como novo registro.
 
-### Correções aplicadas (2 camadas)
+### Correções aplicadas (defesa em profundidade — 4 camadas)
 
-1. **Mapa de aliases** — Novo dicionário `_TEAM_ALIASES` em `api_football_client.py` com ~40 mapeamentos de apelidos/abreviações para nomes canônicos. Exemplos:
+1. **Mapa de aliases (backend)** — Novo dicionário `_TEAM_ALIASES` em `api_football_client.py` com ~40 mapeamentos de apelidos/abreviações para nomes canônicos. Exemplos:
    - `"wolves"` → `"wolverhampton wanderers"`
    - `"man united"` / `"man utd"` → `"manchester united"`
    - `"spurs"` → `"tottenham hotspur"`
    - `"psg"` → `"paris saint germain"`
    - Times brasileiros: `"corinthians"`, `"palmeiras"`, `"flamengo"`, etc.
 
-2. **Método `_resolve_alias()`** — Novo método estático que consulta o alias map antes de comparar. Integrado como primeira etapa do `_team_names_match()`:
+2. **Método `_resolve_alias()` (backend)** — Novo método estático que consulta o alias map antes de comparar. Integrado como primeira etapa do `_team_names_match()`:
    - Resolve ambos os nomes para forma canônica via alias map
    - Se canônicos são iguais → match imediato (antes de fuzzy/token)
    - Também verifica substring nos nomes canônicos
 
+3. **Deduplicação pós-enrichment (backend)** — Nova função `_deduplicate_records()` em `fixtures.py` que é executada APÓS `_enrich_with_api_football()`:
+   - Gera chave canônica por jogo via `_resolve_alias()` para cada time
+   - Quando duplicatas são detectadas, mantém o record com maior "richness" (mais odds, predictions, stats)
+   - Faz merge de dados live (score, status, period, minute) do record descartado para o mantido
+   - Log detalhado de cada deduplicação para diagnóstico
+
+4. **Deduplicação no frontend (page.tsx)** — Nova função `deduplicateMatches()` + mapa `TEAM_ALIASES`:
+   - Aplica `resolveTeamAlias()` antes de comparar nomes de times
+   - Executada após `normalizeMatch()` em AMBOS os code paths (fetch inicial + refetch)
+   - Live score overlay (`fetchLiveScores`) também usa `resolveTeamAlias()` para matching
+   - Merge inteligente: preserva odds/predictions do record mais rico + score/status do live
+
 ### Fluxo corrigido
 
 ```
-_team_names_match("Wolves", "Wolverhampton Wanderers")
-  → _resolve_alias("Wolves") = "wolverhampton wanderers"
-  → _resolve_alias("Wolverhampton Wanderers") = "wolverhampton wanderers"
-  → canon_a == canon_b → True ✓
-```
+Backend (_enrich_with_api_football):
+  _team_names_match("Wolverhampton Wanderers", "Wolves")
+    → _resolve_alias → "wolverhampton wanderers" == "wolverhampton wanderers" → ✓ match
+    → FootyStats record é enriched com score ao vivo
 
-O jogo duplicado agora é reconhecido na etapa de injeção e não é adicionado novamente.
+Backend (_deduplicate_records — safety net):
+  Se por qualquer razão o enrichment falhar e dois records chegarem:
+    → chave canônica idêntica → mantém o mais rico, merge dados live
+
+Frontend (deduplicateMatches — safety net final):
+  Se backend enviar duplicatas (cache, timing, etc.):
+    → resolveTeamAlias("Wolves") === resolveTeamAlias("Wolverhampton Wanderers")
+    → Remove duplicata, mantém match com mais dados
+```
 
 ### Lição aprendida
 
-Fuzzy matching e token overlap são insuficientes para resolver apelidos populares de times (Wolves, Spurs, Man Utd). Um dicionário estático de aliases é necessário como primeira camada de resolução, pois esses apelidos são convenções culturais que não seguem padrões linguísticos previsíveis.
+1. Fuzzy matching e token overlap são insuficientes para resolver apelidos populares de times. Um dicionário estático de aliases é necessário como primeira camada.
+2. Prevenir a criação de duplicatas (alias no matching) NÃO é suficiente sozinho — dados em cache, race conditions e fontes múltiplas podem reintroduzir duplicatas. É necessário um passo final de deduplicação (defesa em profundidade).
+3. Deduplicação deve existir em AMBAS as camadas (backend e frontend) porque o frontend pode receber dados de cache do browser ou de versões não-atualizadas do backend (Vercel, Lambda).
 
 ---
 
