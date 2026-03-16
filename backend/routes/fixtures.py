@@ -530,7 +530,9 @@ def live_scores() -> Dict[str, Any]:
                 status = "scheduled"
 
             # Detect live matches by checking if kickoff time has passed.
-            if status == "scheduled" and elapsed_min is not None and 0 <= elapsed_min < 150:
+            # Cap at 120 min (90' + 15' HT + 15' extra) to avoid promoting
+            # finished matches that the API reports as "incomplete".
+            if status == "scheduled" and elapsed_min is not None and 0 <= elapsed_min < 120:
                 status = "live"
                 logger.info(
                     f"[live-scores] Inferred live from kickoff: "

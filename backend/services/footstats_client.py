@@ -186,9 +186,9 @@ class FootyStatsClient:
         return self._request("todays-matches", params, ttl_minutes=30) # Cache de 30min para jogos do dia
 
     def get_live_scores(self, timezone: str = "America/Sao_Paulo") -> Dict[str, Any]:
-        """Retorna jogos do dia com cache curto (1 min) para placares ao vivo."""
+        """Retorna jogos do dia com cache curto (30s) para placares ao vivo."""
         params = {"timezone": timezone}
-        return self._request("todays-matches", params, ttl_minutes=1)  # Cache de 1 min para live scores
+        return self._request("todays-matches", params, ttl_minutes=0.5)  # Cache de 30s para live scores
 
     def get_match_details(self, match_id: int) -> Dict[str, Any]:
         """Retorna detalhes profundos de uma partida (Lineups, Trends, H2H)."""
@@ -196,9 +196,9 @@ class FootyStatsClient:
         return self._request("match", params, ttl_minutes=60)
 
     def get_match_live_details(self, match_id: int) -> Dict[str, Any]:
-        """Retorna detalhes de uma partida com cache curto (1 min) para scores ao vivo."""
+        """Retorna detalhes de uma partida com cache curto (30s) para scores ao vivo."""
         params = {"match_id": match_id}
-        return self._request("match", params, ttl_minutes=1)
+        return self._request("match", params, ttl_minutes=0.5)  # Cache de 30s
 
     def get_league_season_stats(self, season_id: int) -> Dict[str, Any]:
         """Retorna estatísticas agregadas da temporada e times."""

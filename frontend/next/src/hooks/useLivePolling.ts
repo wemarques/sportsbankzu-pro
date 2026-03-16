@@ -8,7 +8,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
  *
  * Based on FootyStats API analysis:
  * - API has ~1min cache on todays-matches (live-scores uses 1min TTL)
- * - 30s polling catches updates as soon as the cache refreshes
+ * - match-detail fallback also uses 1min TTL
+ * - 15s polling catches updates promptly after cache refresh
  * - 120s when no live matches avoids unnecessary requests
  */
 export function useLivePolling(
@@ -23,7 +24,7 @@ export function useLivePolling(
   const {
     hasMatches,
     hasLiveMatches,
-    liveIntervalMs = 30_000,
+    liveIntervalMs = 15_000,
     idleIntervalMs = 120_000,
   } = opts;
 
