@@ -1640,4 +1640,58 @@ APIs externas variam em formato e nomenclatura. Parsers defensivos com match cas
 
 ---
 
+## 022 — League mismatch: correções gravadas com `league="ALL"` invisíveis para queries por liga específica
+
+**Data:** 2026-02-05
+**Arquivos afetados:** `backend/audit.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Correções aplicadas via batch audit e resultados de auditoria em lote eram gravadas com `league="ALL"`. Ao consultar correções ativas por liga específica (ex: `get_active_corrections("premier-league")`), a query usava `WHERE league = ?`, excluindo registros com `league="ALL"`. Essas correções globais ficavam invisíveis para o fluxo de análise por liga.
+
+### Causa raiz
+
+Em `ai_analysis.py`, `log_audit_result` e `log_correction` usam `league="ALL"` para batch audit (não há liga única). Em `audit.py`, `get_active_corrections(league)` filtra com `WHERE league = ?`, sem considerar que `"ALL"` deve ser retornado para qualquer liga.
+
+### Correção aplicada
+
+Em `get_active_corrections(league)`: quando `league` é informado, incluir também registros com `league="ALL"`:
+
+```python
+WHERE (league = ? OR league = 'ALL') AND status = 'applied'
+```
+
+### Lição aprendida
+
+Quando correções/auditorias podem ser globais (`league="ALL"`), as queries por liga devem incluir esses registros para que ajustes aplicados em lote tenham efeito em todas as ligas.
+
+---
+
+## 023 — Erro de tipo TypeScript no campo `period` de `computeLiveInfo`
+
+**Data:** 2026-02-05
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+A função `computeLiveInfo` retornava `{ period: string; minute: number | null }`, mas o tipo `Match` e os consumidores esperam `period` como `"1T" | "HT" | "2T"`. O tipo `string` genérico causava incompatibilidade de tipo ao passar para componentes que esperam a união literal.
+
+### Causa raiz
+
+O retorno de `computeLiveInfo` usava `period: string` em vez do tipo literal `"1T" | "HT" | "2T"`, pois as atribuições (`period = "1T"`, `period = "HT"`, etc.) inferiam `string` por padrão.
+
+### Correção aplicada
+
+Tipar explicitamente o retorno como `{ period: "1T" | "HT" | "2T"; minute: number | null } | null` e garantir que todas as atribuições usem `as const` ou cast adequado para preservar o tipo literal.
+
+### Lição aprendida
+
+Funções que retornam valores de um conjunto fixo devem usar tipos de união literal em vez de `string` para garantir type-safety nos consumidores.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

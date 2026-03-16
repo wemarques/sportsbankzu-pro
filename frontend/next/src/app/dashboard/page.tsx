@@ -199,10 +199,12 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
+type LivePeriod = "1T" | "HT" | "2T";
+
 /** Compute live period from kickoff time when backend hasn't supplied it yet.
  * When backend provides period/minute, use max(backend, estimated) so stale
  * backend data (e.g. 68' when real time is 90') doesn't freeze the display. */
-function computeLiveInfo(match: Match): { period: string; minute: number | null } | null {
+function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | null } | null {
   if (match.status !== "live") return null;
   try {
     const kickoff = new Date(match.datetime).getTime();
@@ -224,9 +226,9 @@ function computeLiveInfo(match: Match): { period: string; minute: number | null 
       if (minute == null) minute = estMin;
       else minute = Math.max(minute, estMin);
     }
-    return { period, minute };
+    return { period: period as LivePeriod, minute };
   } catch {
-    return match.period ? { period: match.period, minute: match.minute ?? null } : null;
+    return match.period ? { period: match.period as LivePeriod, minute: match.minute ?? null } : null;
   }
 }
 
