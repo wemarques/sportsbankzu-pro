@@ -27,6 +27,54 @@ except ImportError:
 
 logger = logging.getLogger("sportsbankzu.services.api_football")
 
+# Canonical alias map: nickname/abbreviation → full canonical name (lowercase).
+# Used by _team_names_match to resolve common short names that fuzzy/token
+# matching cannot handle (e.g. "Wolves" vs "Wolverhampton Wanderers").
+_TEAM_ALIASES: Dict[str, str] = {
+    "wolves": "wolverhampton wanderers",
+    "man united": "manchester united",
+    "man utd": "manchester united",
+    "man city": "manchester city",
+    "spurs": "tottenham hotspur",
+    "brighton": "brighton and hove albion",
+    "west ham": "west ham united",
+    "newcastle": "newcastle united",
+    "leicester": "leicester city",
+    "nottm forest": "nottingham forest",
+    "nott'm forest": "nottingham forest",
+    "sheffield utd": "sheffield united",
+    "luton": "luton town",
+    "atletico madrid": "atletico de madrid",
+    "atletico": "atletico de madrid",
+    "real sociedad": "real sociedad de futbol",
+    "betis": "real betis balompie",
+    "real betis": "real betis balompie",
+    "inter": "inter milan",
+    "internazionale": "inter milan",
+    "ac milan": "milan",
+    "napoli": "ssc napoli",
+    "psg": "paris saint germain",
+    "paris sg": "paris saint germain",
+    "st etienne": "saint etienne",
+    "lyon": "olympique lyonnais",
+    "marseille": "olympique de marseille",
+    "bayern": "bayern munich",
+    "bayern munchen": "bayern munich",
+    "dortmund": "borussia dortmund",
+    "monchengladbach": "borussia monchengladbach",
+    "gladbach": "borussia monchengladbach",
+    "leverkusen": "bayer leverkusen",
+    "rb leipzig": "rasenballsport leipzig",
+    "corinthians": "sport club corinthians paulista",
+    "palmeiras": "sociedade esportiva palmeiras",
+    "flamengo": "clube de regatas do flamengo",
+    "santos": "santos futebol clube",
+    "sao paulo": "sao paulo futebol clube",
+    "gremio": "gremio foot-ball porto alegrense",
+    "internacional": "sport club internacional",
+    "botafogo": "botafogo de futebol e regatas",
+}
+
 BASE_URL = "https://v3.football.api-sports.io"
 
 # HTTP status codes that warrant a retry
@@ -321,11 +369,24 @@ class APIFootballClient:
         return SequenceMatcher(None, s1, s2).ratio()
 
     @staticmethod
+    def _resolve_alias(name: str) -> str:
+        """Resolve a team name to its canonical form using the alias map."""
+        low = name.lower().strip()
+        if low in _TEAM_ALIASES:
+            return _TEAM_ALIASES[low]
+        # Also try the already-normalized form
+        norm = APIFootballClient._normalize_team_name(name)
+        if norm in _TEAM_ALIASES:
+            return _TEAM_ALIASES[norm]
+        return norm
+
+    @staticmethod
     def _team_names_match(name_a: str, name_b: str) -> bool:
         """Check if two team names refer to the same team.
 
-        Uses normalized substring matching + token overlap + fuzzy matching.
-        Handles Arabic transliterations (Al-Hazem/Al Hazm, Taawoun/Taawon).
+        Uses alias resolution + normalized substring matching + token overlap + fuzzy matching.
+        Handles Arabic transliterations (Al-Hazem/Al Hazm, Taawoun/Taawon)
+        and common nicknames (Wolves/Wolverhampton Wanderers).
         """
         norm_a = APIFootballClient._normalize_team_name(name_a)
         norm_b = APIFootballClient._normalize_team_name(name_b)
@@ -333,12 +394,21 @@ class APIFootballClient:
         if not norm_a or not norm_b:
             return False
 
+        # Resolve aliases before comparing (Wolves → wolverhampton wanderers)
+        canon_a = APIFootballClient._resolve_alias(name_a)
+        canon_b = APIFootballClient._resolve_alias(name_b)
+        if canon_a == canon_b:
+            return True
+
         # Exact match after normalization
         if norm_a == norm_b:
             return True
 
         # Substring containment (handles "Barcelona" in "Barcelona" or vice-versa)
         if norm_a in norm_b or norm_b in norm_a:
+            return True
+        # Also check canonical forms for substring
+        if canon_a in canon_b or canon_b in canon_a:
             return True
 
         # Fuzzy match: handles transliteration variants (Hazm/Hazem, Taawon/Taawoun)

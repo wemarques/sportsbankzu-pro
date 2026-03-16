@@ -1694,7 +1694,7 @@ Funções que retornam valores de um conjunto fixo devem usar tipos de união li
 
 ---
 
-## — Filtros de Status, Ordenação Prioritária e Separador Visual
+## 024 — Filtros de Status, Ordenação Prioritária e Separador Visual
 
 **Data:** 2026-03-16
 **Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
@@ -1729,7 +1729,7 @@ Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas
 
 ---
 
-## — Dropdown ilegível no tema escuro + Premier League como "unknown"
+## 025 — Dropdown ilegível no tema escuro + Premier League como "unknown"
 
 **Data:** 2026-03-16
 **Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`, `backend/services/api_football_client.py`
@@ -1759,6 +1759,67 @@ Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas
 ### Lição aprendida
 
 Ao criar records que trafegam entre backend e frontend, sempre validar que os nomes dos campos correspondem exatamente ao tipo TypeScript esperado. Um campo `"league"` vs `"leagueId"` pode causar fallback silencioso para "unknown" sem erro visível.
+
+---
+
+## 026 — Jogos duplicados por apelido vs nome completo (Wolves / Wolverhampton Wanderers)
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `backend/services/api_football_client.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+O mesmo jogo (ex: Brentford vs Wolves) aparecia duplicado no dashboard:
+1. Primeira entrada: "Brentford vs Wolves" (dados do API-Football com nome abreviado) — VIVO HT, placar 2-1
+2. Segunda entrada: "Brentford vs Wolverhampton Wanderers" (dados do FootyStats com nome completo) — VIVO 2T, placar 0-0
+
+O segundo registro era injetado como "jogo novo" porque o sistema não reconhecia "Wolves" como "Wolverhampton Wanderers".
+
+### Causa raiz
+
+A função `_team_names_match()` em `api_football_client.py` usava 4 estratégias de matching:
+1. Exact match após normalização
+2. Substring containment
+3. Fuzzy match (SequenceMatcher ≥ 0.8)
+4. Token overlap (≥ 50%)
+
+Nenhuma dessas estratégias consegue resolver "Wolves" → "Wolverhampton Wanderers":
+- **Substring:** "wolves" NÃO está contido em "wolverhampton wanderers"
+- **Fuzzy:** ratio("wolves", "wolverhampton wanderers") ≈ 0.34 (muito abaixo de 0.8)
+- **Token overlap:** {"wolves"} ∩ {"wolverhampton", "wanderers"} = ∅ (zero overlap)
+
+Resultado: na etapa de injeção (CASE 1b em `fixtures.py:349-392`), o jogo do API-Football não era reconhecido como duplicata e era adicionado como novo registro.
+
+### Correções aplicadas (2 camadas)
+
+1. **Mapa de aliases** — Novo dicionário `_TEAM_ALIASES` em `api_football_client.py` com ~40 mapeamentos de apelidos/abreviações para nomes canônicos. Exemplos:
+   - `"wolves"` → `"wolverhampton wanderers"`
+   - `"man united"` / `"man utd"` → `"manchester united"`
+   - `"spurs"` → `"tottenham hotspur"`
+   - `"psg"` → `"paris saint germain"`
+   - Times brasileiros: `"corinthians"`, `"palmeiras"`, `"flamengo"`, etc.
+
+2. **Método `_resolve_alias()`** — Novo método estático que consulta o alias map antes de comparar. Integrado como primeira etapa do `_team_names_match()`:
+   - Resolve ambos os nomes para forma canônica via alias map
+   - Se canônicos são iguais → match imediato (antes de fuzzy/token)
+   - Também verifica substring nos nomes canônicos
+
+### Fluxo corrigido
+
+```
+_team_names_match("Wolves", "Wolverhampton Wanderers")
+  → _resolve_alias("Wolves") = "wolverhampton wanderers"
+  → _resolve_alias("Wolverhampton Wanderers") = "wolverhampton wanderers"
+  → canon_a == canon_b → True ✓
+```
+
+O jogo duplicado agora é reconhecido na etapa de injeção e não é adicionado novamente.
+
+### Lição aprendida
+
+Fuzzy matching e token overlap são insuficientes para resolver apelidos populares de times (Wolves, Spurs, Man Utd). Um dicionário estático de aliases é necessário como primeira camada de resolução, pois esses apelidos são convenções culturais que não seguem padrões linguísticos previsíveis.
 
 ---
 
