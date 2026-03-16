@@ -55,7 +55,7 @@ Três falhas em cadeia:
 
 ---
 
-## Correção: Barra de Escanteios Não Aparecia
+## #25 — Correção: Barra de Escanteios Não Aparecia
 
 ### Problema
 A barra de progresso de escanteios (CornerProgressBar) não era exibida em jogos ao vivo, mesmo quando a API-Football retornava os dados corretamente.
