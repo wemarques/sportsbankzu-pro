@@ -1694,4 +1694,39 @@ Funções que retornam valores de um conjunto fixo devem usar tipos de união li
 
 ---
 
+## — Filtros de Status, Ordenação Prioritária e Separador Visual
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Melhoria (UX)
+**Status:** Implementado
+
+### Problema identificado
+
+O botão "Filtros em breve" era estático e não funcional. Além disso, as ligas brasileiras (Serie A e B) não tinham prioridade na exibição, dificultando a análise em dias com muitos jogos simultâneos. Não havia separação visual entre ligas nacionais e internacionais.
+
+### Correções aplicadas (3 funcionalidades)
+
+1. **Filtro de Status Funcional** — O botão "Filtros em breve" foi substituído por um `<select>` dropdown estilizado com 4 opções:
+   - "Todos os Jogos" (padrão)
+   - "Ao Vivo" (filtra `m.status === "live"`)
+   - "Finalizados" (filtra `m.status === "finished"`)
+   - "Não Iniciados" (filtra `m.status === "scheduled"`)
+   - Estado React `statusFilter` adicionado ao componente Dashboard
+   - Filtro integrado ao `displayMatches` useMemo
+
+2. **Ordenação Prioritária** — A lógica de ordenação das ligas no `leagueGroups` useMemo foi refatorada:
+   - **Prioridade 0:** Brazil Serie A (ID `brazil-serie-a`)
+   - **Prioridade 1:** Brazil Serie B (ID `brazil-serie-b`)
+   - **Prioridade 2:** Demais ligas em ordem alfabética por nome
+   - Dentro de cada liga, jogos ordenados por horário (mantido)
+
+3. **Separador Visual** — Linha divisória com gradiente e label "Ligas Internacionais" inserida automaticamente entre a última liga brasileira e a primeira liga internacional na renderização do `leagueGroups.map()`.
+
+### Lição aprendida
+
+Funcionalidades de filtragem e ordenação devem usar os IDs estáveis das ligas (`brazil-serie-a`, `brazil-serie-b`) em vez de string matching no nome, garantindo robustez contra mudanças de nomenclatura na API externa.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
