@@ -523,6 +523,37 @@ def train_and_save(
         "timestamp": datetime.utcnow().isoformat(),
     }
 
+    # Chronological sanity check: verify timestamps are sorted
+    if match_timestamps is not None and len(match_timestamps) == n_total:
+        ts_valid = match_timestamps[match_timestamps > 0]
+        if len(ts_valid) > 1:
+            is_sorted = bool(np.all(ts_valid[1:] >= ts_valid[:-1]))
+            first_ts = datetime.utcfromtimestamp(ts_valid[0]).strftime("%Y-%m-%d")
+            last_ts = datetime.utcfromtimestamp(ts_valid[-1]).strftime("%Y-%m-%d")
+            summary["chronological_check"] = {
+                "sorted": is_sorted,
+                "first_date": first_ts,
+                "last_date": last_ts,
+                "n_with_timestamps": int(len(ts_valid)),
+            }
+            logger.info(
+                f"[{league_id}] Chronological check: sorted={is_sorted}, "
+                f"range={first_ts} → {last_ts}, n_ts={len(ts_valid)}/{n_total}"
+            )
+            if not is_sorted:
+                logger.warning(
+                    f"[{league_id}] Timestamps NOT sorted — sorting X, y, weights, timestamps"
+                )
+                sort_idx = np.argsort(match_timestamps)
+                X = X[sort_idx]
+                y = y[sort_idx]
+                sample_weights = sample_weights[sort_idx]
+                match_timestamps = match_timestamps[sort_idx]
+        else:
+            logger.warning(f"[{league_id}] Too few valid timestamps ({len(ts_valid)}) — skipping sort check")
+    else:
+        logger.info(f"[{league_id}] No timestamps available — relying on feature_engineering sort order")
+
     if n_total < 100:
         summary["status"] = "insufficient_data"
         logger.warning(f"Only {n_total} samples for {league_id} — skipping training")

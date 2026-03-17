@@ -10,6 +10,7 @@ targets instead of 3-class.
 
 import json
 import logging
+import math
 import os
 import pickle
 from pathlib import Path
@@ -21,6 +22,30 @@ except ImportError:
     np = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+def _poisson_pmf(k: int, lam: float) -> float:
+    """Poisson probability mass function."""
+    if lam <= 0:
+        return 1.0 if k == 0 else 0.0
+    try:
+        return math.exp(-lam) * (lam ** k) / math.factorial(k)
+    except Exception:
+        return 0.0
+
+
+def _poisson_over_prob(threshold: float, expected_total: float) -> float:
+    """P(goals > threshold) using Poisson CDF on total goals."""
+    k = int(threshold)  # e.g. 2 for threshold 2.5
+    cdf = sum(_poisson_pmf(i, expected_total) for i in range(k + 1))
+    return 1.0 - cdf
+
+
+def _poisson_btts_prob(lambda_home: float, lambda_away: float) -> float:
+    """P(both teams score) = P(home>=1) * P(away>=1) assuming independence."""
+    p_home_scores = 1.0 - math.exp(-lambda_home)
+    p_away_scores = 1.0 - math.exp(-lambda_away)
+    return p_home_scores * p_away_scores
 
 _MODELS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".ml_models"
 
@@ -84,11 +109,53 @@ def build_market_targets(
     return np.array(targets, dtype=np.int32)
 
 
+def _compute_poisson_brier(
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    feature_names: List[str],
+    market: str,
+) -> Optional[float]:
+    """Compute Poisson-based Brier score on the validation set.
+
+    Uses the same goal-average features that the Poisson fallback uses
+    in production, so the comparison is fair: ML vs the actual fallback.
+    """
+    home_avg_idx = None
+    away_avg_idx = None
+    for i, f in enumerate(feature_names):
+        if f == "home_goals_scored_avg_r5":
+            home_avg_idx = i
+        elif f == "away_goals_scored_avg_r5":
+            away_avg_idx = i
+
+    if home_avg_idx is None or away_avg_idx is None:
+        return None
+
+    poisson_probs = np.zeros(len(y_val), dtype=np.float64)
+
+    config = MARKET_CONFIGS.get(market)
+    if config is None:
+        return None
+
+    for i in range(len(y_val)):
+        lam_h = max(X_val[i, home_avg_idx], 0.1)
+        lam_a = max(X_val[i, away_avg_idx], 0.1)
+
+        if market == "btts":
+            poisson_probs[i] = _poisson_btts_prob(lam_h, lam_a)
+        elif config["threshold"] is not None:
+            expected_total = lam_h + lam_a
+            poisson_probs[i] = _poisson_over_prob(config["threshold"], expected_total)
+
+    return float(np.mean((poisson_probs - y_val) ** 2))
+
+
 def train_market_model(
     X: np.ndarray,
     y: np.ndarray,
     sample_weights: Optional[np.ndarray] = None,
     market: str = "over25",
+    feature_names: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Train RF + XGBoost ensemble for a binary market.
 
@@ -97,6 +164,7 @@ def train_market_model(
         y: Binary target vector (0/1, entries with -1 are filtered)
         sample_weights: Temporal decay weights
         market: Market name
+        feature_names: Feature column names (needed for Poisson benchmark)
 
     Returns:
         Dict with trained models and metadata
@@ -160,22 +228,29 @@ def train_market_model(
     xgb_probs = xgb.predict_proba(X_val)[:, 1]
     ensemble_probs = rf_probs * 0.40 + xgb_probs * 0.60
 
-    # Brier score (binary)
-    brier = float(np.mean((ensemble_probs - y_val) ** 2))
+    # Brier scores
+    brier_ml = float(np.mean((ensemble_probs - y_val) ** 2))
     accuracy = float(np.mean((ensemble_probs >= 0.5).astype(int) == y_val))
 
     # Class distribution
     positive_rate = float(np.mean(y_valid))
-    positive_rate_val = float(np.mean(y_val))
 
-    # Quality gate: compute baseline Brier (constant predictor = base rate)
-    # A model that always predicts the base rate gets Brier = p * (1 - p)
-    brier_baseline = float(positive_rate_val * (1 - positive_rate_val))
-    beats_baseline = brier < brier_baseline
+    # Quality gate: compute Poisson Brier on the same validation split
+    brier_poisson = None
+    beats_poisson = False
+    if feature_names:
+        brier_poisson = _compute_poisson_brier(X_val, y_val, feature_names, market)
+
+    if brier_poisson is not None:
+        beats_poisson = brier_ml < brier_poisson
+        gate_label = "BEATS_POISSON" if beats_poisson else "WORSE_THAN_POISSON"
+    else:
+        gate_label = "NO_POISSON_BENCHMARK"
 
     logger.info(
-        f"Market {market}: Brier={brier:.4f} (baseline={brier_baseline:.4f}, "
-        f"{'BEATS' if beats_baseline else 'WORSE'}), Acc={accuracy:.4f}, "
+        f"Market {market}: Brier_ML={brier_ml:.4f}, "
+        f"Brier_Poisson={brier_poisson:.4f if brier_poisson is not None else '?'}, "
+        f"gate={gate_label}, Acc={accuracy:.4f}, "
         f"positive_rate={positive_rate:.3f}, n={len(y_valid)}"
     )
 
@@ -184,9 +259,9 @@ def train_market_model(
         "market": market,
         "rf": rf,
         "xgb": xgb,
-        "brier": round(brier, 4),
-        "brier_baseline": round(brier_baseline, 4),
-        "beats_baseline": beats_baseline,
+        "brier_ml": round(brier_ml, 4),
+        "brier_poisson": round(brier_poisson, 4) if brier_poisson is not None else None,
+        "beats_poisson": beats_poisson,
         "accuracy": round(accuracy, 4),
         "positive_rate": round(positive_rate, 3),
         "n_samples": len(y_valid),
@@ -230,6 +305,7 @@ def train_all_markets(
                 X, y_market,
                 sample_weights=sample_weights,
                 market=market,
+                feature_names=feature_names,
             )
             results[market] = result
 
@@ -241,18 +317,19 @@ def train_all_markets(
                         "rf": result["rf"],
                         "xgb": result["xgb"],
                         "feature_names": feature_names,
-                        "brier": result["brier"],
-                        "brier_baseline": result["brier_baseline"],
-                        "beats_baseline": result["beats_baseline"],
+                        "brier_ml": result["brier_ml"],
+                        "brier_poisson": result["brier_poisson"],
+                        "beats_poisson": result["beats_poisson"],
                         "accuracy": result["accuracy"],
                         "market": market,
                     }, f)
-                if result["beats_baseline"]:
-                    logger.info(f"Saved {market} model to {model_path} (ACTIVE — beats baseline)")
+                if result["beats_poisson"]:
+                    logger.info(f"Saved {market} model to {model_path} (ACTIVE — beats Poisson)")
                 else:
+                    brier_p = result["brier_poisson"]
                     logger.warning(
                         f"Saved {market} model to {model_path} (INACTIVE — "
-                        f"Brier {result['brier']:.4f} >= baseline {result['brier_baseline']:.4f})"
+                        f"ML={result['brier_ml']:.4f} vs Poisson={brier_p:.4f if brier_p is not None else '?'})"
                     )
 
         except Exception as e:
@@ -263,9 +340,9 @@ def train_all_markets(
     summary = {
         market: {
             "status": r.get("status"),
-            "brier": r.get("brier"),
-            "brier_baseline": r.get("brier_baseline"),
-            "beats_baseline": r.get("beats_baseline"),
+            "brier_ml": r.get("brier_ml"),
+            "brier_poisson": r.get("brier_poisson"),
+            "beats_poisson": r.get("beats_poisson"),
             "accuracy": r.get("accuracy"),
             "positive_rate": r.get("positive_rate"),
             "n_samples": r.get("n_samples"),
@@ -286,10 +363,11 @@ def predict_market(
     """Predict probability for a binary market.
 
     Returns probability (0-100 scale) or None if model unavailable or
-    failed quality gate (doesn't beat baseline Brier).
+    failed quality gate (doesn't beat Poisson fallback).
     Falls back to None (caller uses Poisson) when:
     - No .pkl exists
-    - Model failed validation (beats_baseline=False)
+    - Model failed validation (beats_poisson=False)
+    - No Poisson benchmark was computed (brier_poisson=None)
     - No validation metadata present (legacy models without gate)
     """
     if np is None:
@@ -307,11 +385,11 @@ def predict_market(
         with open(model_path, "rb") as f:
             bundle = pickle.load(f)
 
-        # Quality gate: only use model if it beat the baseline in validation
-        if not bundle.get("beats_baseline", False):
+        # Quality gate: only use model if it beat Poisson on the validation set
+        if not bundle.get("beats_poisson", False):
             logger.debug(
                 f"Market {market}/{league_id}: model exists but failed quality gate "
-                f"(Brier={bundle.get('brier')}, baseline={bundle.get('brier_baseline')}). "
+                f"(ML={bundle.get('brier_ml')}, Poisson={bundle.get('brier_poisson')}). "
                 f"Falling back to Poisson."
             )
             return None
