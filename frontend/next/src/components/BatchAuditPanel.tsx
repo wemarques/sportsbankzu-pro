@@ -473,6 +473,38 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                 </div>
               </div>
 
+              {/* Market Reference Signal stats */}
+              {result.market_reference_stats && result.market_reference_stats.capped_by_market_reference_count > 0 && (
+                <div className="mdc-batch-audit__metrics-row" style={{ marginTop: 8 }}>
+                  <div className="mdc-batch-audit__metric">
+                    <span className="mdc-batch-audit__metric-label">Picks limitados por sinal estrutural</span>
+                    <span className="mdc-batch-audit__metric-value">
+                      {result.market_reference_stats.capped_by_market_reference_count}
+                    </span>
+                  </div>
+                  {result.market_reference_stats.safe_to_neutro_by_signal_count > 0 && (
+                    <div className="mdc-batch-audit__metric">
+                      <span className="mdc-batch-audit__metric-label" style={{ color: "#ffaa44" }}>
+                        SAFE → NEUTRO (sinal)
+                      </span>
+                      <span className="mdc-batch-audit__metric-value">
+                        {result.market_reference_stats.safe_to_neutro_by_signal_count}
+                      </span>
+                    </div>
+                  )}
+                  {result.market_reference_stats.safe_blocked_by_restrito_count > 0 && (
+                    <div className="mdc-batch-audit__metric">
+                      <span className="mdc-batch-audit__metric-label" style={{ color: "#ff5555" }}>
+                        SAFE bloqueado (RESTRITO)
+                      </span>
+                      <span className="mdc-batch-audit__metric-value">
+                        {result.market_reference_stats.safe_blocked_by_restrito_count}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Model Update Recommendation — local vs Mistral comparison */}
               {result.model_update_recommendation && (
                 <ModelUpdateSection rec={result.model_update_recommendation} mistralRec={result.mistral_recommendation} />

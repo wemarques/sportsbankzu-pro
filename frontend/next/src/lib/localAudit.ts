@@ -606,6 +606,11 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
   const brierScores: number[] = [];
   const matchResults: BatchAuditMatchResult[] = [];
 
+  // Market reference signal capping counters
+  let cappedByMarketReferenceCount = 0;
+  let safeToNeutroBySignalCount = 0;
+  let safeBlockedByRestritoCount = 0;
+
   for (const match of finished) {
     const homeGoals = match.score!.home;
     const awayGoals = match.score!.away;
@@ -623,19 +628,36 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     for (const pick of picks) {
       const isCorrect = evaluatePick(pick.mercado, totalGoals, btts, result1x2, totalCorners);
 
+      // Use finalClassification (post-capping) for accuracy, fallback to status
+      const effectiveStatus = (pick as any).finalClassification || pick.status;
+      const wasCapped = (pick as any).wasCappedByMarketSignal === true;
+      const mktRefSignal = (pick as any).marketReferenceSignal as string | undefined;
+
       picksEval.push({
         mercado: pick.mercado,
-        status_pick: pick.status,
+        status_pick: effectiveStatus,
         resultado: isCorrect ? "ACERTOU" : "ERROU",
+        marketReferenceSignal: mktRefSignal as any,
+        wasCappedByMarketSignal: wasCapped,
       });
+
+      // Track capping stats
+      if (wasCapped) {
+        cappedByMarketReferenceCount++;
+        if (mktRefSignal === "RESTRITO") {
+          safeBlockedByRestritoCount++;
+        } else {
+          safeToNeutroBySignalCount++;
+        }
+      }
 
       matchTotal++;
       if (isCorrect) matchCorrect++;
 
-      if (pick.status === "SAFE") {
+      if (effectiveStatus === "SAFE" || effectiveStatus === "SAFE*") {
         safeTotal++;
         if (isCorrect) safeCorrect++;
-      } else if (pick.status === "NEUTRO") {
+      } else if (effectiveStatus === "NEUTRO" || effectiveStatus === "NEUTRO_QUALIFICADO") {
         neutroTotal++;
         if (isCorrect) neutroCorrect++;
       }
@@ -772,6 +794,11 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     model_evaluation: localEvaluation,
     model_update_recommendation: modelUpdateRec,
     combinadas,
+    market_reference_stats: {
+      capped_by_market_reference_count: cappedByMarketReferenceCount,
+      safe_to_neutro_by_signal_count: safeToNeutroBySignalCount,
+      safe_blocked_by_restrito_count: safeBlockedByRestritoCount,
+    },
   };
 }
 
@@ -811,6 +838,8 @@ export async function fetchMistralEvaluation(
     avg_lambda_error: result.avg_lambda_error,
     market_accuracy_text: marketLines.join("\n") || "Sem dados de mercado",
     matches_summary_text: matchLines.join("\n") || "Sem detalhes",
+    // Market reference signal context for Mistral
+    market_reference_stats: result.market_reference_stats || null,
   };
 
   try {

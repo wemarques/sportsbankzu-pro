@@ -1019,7 +1019,7 @@ def build_records_from_matches(
                 except Exception as _ml_err:
                     logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
 
-            mercados = selecionar_mercados_jogo(record, _regime, _volatilidade)
+            mercados = selecionar_mercados_jogo(record, _regime, _volatilidade, league_id=league_id)
             record["mercados"] = mercados
         except Exception as e:
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
