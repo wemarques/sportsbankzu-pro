@@ -39,6 +39,7 @@ export type Match = {
   };
   period?: "1T" | "HT" | "2T" | null;
   minute?: number | null;
+  currentCorners?: number | null;
   odds: {
     home: number;
     draw: number;
@@ -114,6 +115,8 @@ export type Match = {
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
     cornerOver105Prob?: number;
+    homeCornersCount?: number;
+    awayCornersCount?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;
@@ -130,16 +133,68 @@ export type Match = {
     awayWins: number;
     avgGoals: number;
   };
-  predictions?: {
-    mercado: string;
-    status: string;
-    prob_min: number;
-    prob_max: number;
-    odd_minima: number | null;
-    alerta?: string;
-  }[];
+  predictions?: MatchPrediction[];
   source: "footystats";
   lastUpdated: string;
+};
+
+export type MarketClassification = "SAFE" | "NEUTRO_QUALIFICADO" | "NEUTRO" | "NO_BET";
+
+export type ReasonCode =
+  | "LOW_DATA_QUALITY"
+  | "NO_ODDS_AVAILABLE"
+  | "NEGATIVE_EV"
+  | "INSUFFICIENT_EDGE"
+  | "EARLY_SEASON_FALLBACK"
+  | "HIGH_MARKET_CORRELATION"
+  | "LINEUP_UNCERTAINTY"
+  | "HIGH_PREDICTION_RISK"
+  | "REGIME_BLOCKED"
+  | "POSITIVE_EV"
+  | "STRONG_EDGE"
+  | "HIGH_CALIBRATED_PROB"
+  | "ODDS_TOO_LOW"
+  | "STABLE_MARKET"
+  | "VOLATILE_MARKET"
+  | "COVERAGE_INSUFFICIENT";
+
+export type MatchPrediction = {
+  mercado: string;
+  status: string;
+  prob_min: number;
+  prob_max: number;
+  odd_minima: number | null;
+  alerta?: string;
+  // New unified contract fields
+  classification?: MarketClassification;
+  reason_codes?: ReasonCode[];
+  data_quality_score?: number;
+  odds_available?: boolean;
+  ev?: number | null;
+  edge?: number | null;
+  fair_odd?: number | null;
+  book_odd?: number | null;
+  calibrated_probability?: number | null;
+  raw_probability?: number | null;
+  stake?: number | null;
+  // Corner governance (populated for marketFamily=corners)
+  corner_governance?: {
+    marketFamily: string;
+    cornerModelStatus: string;
+    championModel: string;
+    fallbackModel: string;
+    modelUsed: string;
+    beatsPoisson: boolean;
+    beatsNegativeBinomial: boolean;
+    beatsMLRegression: boolean;
+    cornerCalibrationStatus: string;
+    cornerSampleAdequacy: string;
+    cornerValidationVersion: string;
+  };
+  // Market reference signal fields
+  finalClassification?: string;
+  wasCappedByMarketSignal?: boolean;
+  marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
 };
 
 export const AVAILABLE_LEAGUES: League[] = [
@@ -167,6 +222,32 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/england/championship",
+    },
+  },
+  {
+    id: "england-league-one",
+    name: "League One",
+    country: "Inglaterra",
+    countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    logo: "/logos/league-one.png",
+    season: "2025/26",
+    totalMatches: 552,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/england/league-one",
+    },
+  },
+  {
+    id: "england-league-two",
+    name: "League Two",
+    country: "Inglaterra",
+    countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    logo: "/logos/league-two.png",
+    season: "2025/26",
+    totalMatches: 552,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/england/league-two",
     },
   },
   {
@@ -571,6 +652,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/colombia/colombian-primera-a",
+    },
+  },
+  {
+    id: "mexico-liga-mx",
+    name: "Liga MX",
+    country: "México",
+    countryFlag: "🇲🇽",
+    logo: "/logos/liga-mx.png",
+    season: "2025/26",
+    totalMatches: 306,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/mexico/liga-mx",
     },
   },
 ];

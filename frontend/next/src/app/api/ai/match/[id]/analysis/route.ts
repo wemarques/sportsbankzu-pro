@@ -7,7 +7,7 @@ function fallbackResponse(message: string) {
   return Response.json({
     summary: message,
     key_points: [],
-    recommendation: "",
+    recommendation: "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.",
     confidence: 0,
     last_updated: "",
   });

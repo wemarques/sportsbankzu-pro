@@ -1,0 +1,213 @@
+name: "[DEPRECATED] ML Model Retrain — Use ml-retrain-validate + ml-retrain-promote"
+
+# DEPRECATED: This workflow is superseded by:
+#   - ml-retrain-validate.yml (train + validate + artifacts)
+#   - ml-retrain-promote.yml (publish to S3 after human review)
+# Kept for reference. Schedule disabled.
+
+on:
+  # schedule disabled — moved to ml-retrain-validate.yml
+  # schedule:
+  #   - cron: "0 6 * * 2"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Modo de execução"
+        required: true
+        default: "ml_train"
+        type: choice
+        options:
+          - ml_train
+          - retrain_calibrators
+          - adjust_thresholds
+          - batch_audit
+      leagues:
+        description: "Comma-separated league IDs (empty = all, only for ml_train)"
+        required: false
+        default: ""
+      n_seasons:
+        description: "Number of historical seasons (only for ml_train)"
+        required: false
+        default: "3"
+
+env:
+  FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
+  DATA_ROOT: /tmp/ml_data
+
+jobs:
+  # Job 1: ML Model Training (RF + XGBoost ensemble)
+  ml-train:
+    if: ${{ github.event.inputs.mode == 'ml_train' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install -r backend/requirements-ml.txt
+
+      - name: Download previous models (if any)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ml_data/.ml_models
+          key: ml-models-${{ github.ref_name }}-${{ github.run_number }}
+          restore-keys: |
+            ml-models-${{ github.ref_name }}-
+            ml-models-main-
+
+      - name: Run ML training pipeline
+        run: |
+          python -c "
+          import json, logging, os, sys
+          logging.basicConfig(level=logging.INFO)
+
+          # Ensure DATA_ROOT is set before importing train_model (module-level _MODELS_DIR)
+          os.makedirs(os.environ.get('DATA_ROOT', '/tmp/ml_data'), exist_ok=True)
+
+          from backend.services.footstats_client import FootyStatsClient
+          from backend.ml.historical_data import collect_all_leagues_history, collect_league_history, save_training_data
+          from backend.ml.train_model import train_all_leagues, _MODELS_DIR
+          from backend.config.leagues_config import LEAGUES_CONFIG
+
+          print(f'DATA_ROOT={os.environ.get(\"DATA_ROOT\", \"NOT SET\")}')
+          print(f'_MODELS_DIR={_MODELS_DIR}')
+
+          leagues_input = '${{ github.event.inputs.leagues || '' }}'
+          n_seasons = int('${{ github.event.inputs.n_seasons || '3' }}')
+          client = FootyStatsClient()
+
+          if leagues_input:
+              league_ids = [lid.strip() for lid in leagues_input.split(',')]
+              all_data = {}
+              for lid in league_ids:
+                  cfg = next((c for c in LEAGUES_CONFIG if c['id'] == lid), None)
+                  if cfg:
+                      matches = collect_league_history(
+                          client, cfg['country'], cfg['name'],
+                          alt_names=cfg.get('alt_names'), n_seasons=n_seasons,
+                      )
+                      if matches:
+                          all_data[lid] = matches
+          else:
+              all_data = collect_all_leagues_history(client, n_seasons=n_seasons)
+
+          if not all_data:
+              print('No training data collected')
+              sys.exit(1)
+
+          save_training_data(all_data)
+          results = train_all_leagues(all_data, validate=True)
+
+          # Summary
+          success = [r for r in results if r.get('status') == 'success']
+          failed = [r for r in results if r.get('status') != 'success']
+          print(f'\n=== Training Summary ===')
+          print(f'Success: {len(success)} leagues')
+          print(f'Failed/Skipped: {len(failed)} leagues')
+          for r in success:
+              brier = r.get('validation', {}).get('avg_brier', '?')
+              print(f'  {r[\"league_id\"]}: Brier={brier}, samples={r.get(\"n_samples\", 0)}')
+          for r in failed:
+              print(f'  {r.get(\"league_id\", \"?\")}: {r.get(\"status\", \"unknown\")} - {r.get(\"error\", \"\")}')
+
+          # Show where models were saved
+          print(f'\\n=== Model Files ===')
+          print(f'_MODELS_DIR: {_MODELS_DIR}')
+          if _MODELS_DIR.exists():
+              for p in sorted(_MODELS_DIR.rglob('*')):
+                  print(f'  {p} ({p.stat().st_size} bytes)' if p.is_file() else f'  {p}/')
+          else:
+              print(f'  WARNING: {_MODELS_DIR} does not exist!')
+
+          with open('/tmp/ml_data/training_summary.json', 'w') as f:
+              json.dump(results, f, indent=2, default=str)
+          "
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload models to S3
+        run: |
+          if [ -d "/tmp/ml_data/.ml_models" ]; then
+            echo "Syncing trained models to S3..."
+            aws s3 sync /tmp/ml_data/.ml_models/ s3://meu-bucket-sportsbank/.ml_models/ \
+              --delete --exclude "*.pyc" --exclude "__pycache__/*"
+            echo ""
+            echo "=== Models in S3 ==="
+            aws s3 ls s3://meu-bucket-sportsbank/.ml_models/ --recursive --human-readable
+          else
+            echo "::warning::No .ml_models directory found at /tmp/ml_data/.ml_models"
+          fi
+
+      - name: List model files (debug)
+        if: always()
+        run: |
+          echo "=== /tmp/ml_data contents ==="
+          ls -laR /tmp/ml_data/ 2>/dev/null | head -100 || echo "Directory not found"
+
+      - name: Upload trained models
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-models-${{ github.run_number }}
+          path: /tmp/ml_data/.ml_models/
+          include-hidden-files: true
+          retention-days: 90
+
+      - name: Upload training summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-summary-${{ github.run_number }}
+          path: /tmp/ml_data/training_summary.json
+          retention-days: 30
+
+  # Job 2: Lambda-based operations (calibrators, thresholds, audit)
+  lambda-action:
+    if: ${{ github.event.inputs.mode == 'retrain_calibrators' || github.event.inputs.mode == 'adjust_thresholds' || github.event.inputs.mode == 'batch_audit' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Invoke Lambda — ${{ inputs.mode }}
+        run: |
+          echo "Invoking sportsbank-pro-backend with action: ${{ inputs.mode }}"
+          aws lambda invoke \
+            --function-name sportsbank-pro-backend \
+            --payload "$(echo '{"source":"github_actions","action":"${{ inputs.mode }}"}' | base64)" \
+            --cli-binary-format raw-in-base64-out \
+            response.json \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text | base64 --decode || true
+
+      - name: Show response
+        run: |
+          echo "=== Lambda Response ==="
+          cat response.json | python3 -m json.tool 2>/dev/null || cat response.json
+
+      - name: Verify success
+        run: |
+          STATUS=$(python3 -c "import json; r=json.load(open('response.json')); print(r.get('status','unknown'))" 2>/dev/null || echo "unknown")
+          echo "Status: $STATUS"
+          if [ "$STATUS" != "success" ]; then
+            echo "::error::Lambda returned status: $STATUS"
+            cat response.json
+            exit 1
+          fi
+          echo "Action completed successfully!"

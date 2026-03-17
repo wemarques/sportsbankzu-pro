@@ -34,6 +34,7 @@ MERCADOS_VALIDOS: List[str] = [
     '1X2 Home', '1X2 Draw', '1X2 Away',
     'Double Chance 1X', 'Double Chance 12', 'Double Chance X2',
     'Escanteios Over 8.5', 'Escanteios Over 9.5', 'Escanteios Over 10.5',
+    'Escanteios Over 11.5',
 ]
 
 

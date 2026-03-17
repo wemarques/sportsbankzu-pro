@@ -52,3 +52,87 @@ Três falhas em cadeia:
 3. **Validar com dados reais** — sempre confirmar o score real antes de declarar bug resolvido (ex: consultar foxsports.com, sofascore.com)
 4. **Testar com nomes variantes** — times como Vasco (Club de Regatas Vasco da Gama vs Vasco) devem casar corretamente no normalizeTeamName
 5. **Cuidado com status "incomplete"** — FootyStats usa "incomplete" para jogos não finalizados, tratar como "scheduled" e deixar o heurístico de kickoff decidir
+
+---
+
+## #25 — Correção: Barra de Escanteios Não Aparecia
+
+### Problema
+A barra de progresso de escanteios (CornerProgressBar) não era exibida em jogos ao vivo, mesmo quando a API-Football retornava os dados corretamente.
+
+### Causa Raiz
+Três falhas em camadas diferentes:
+1. **Backend `extract_live_data()`** usava match exato `== "Corner Kicks"` para extrair escanteios inline — se a API retornasse outro casing (ex: `"corner kicks"`, `"Corner kicks"`), o dado era perdido e `currentCorners` ficava `None`
+2. **Frontend `normalizeTeamName()`** removia apenas 8 prefixos (`sc|ec|fc|cr|se|aa|ce|gr`) e somente no início da string — times como "Atlético Mineiro" vs "Atletico-MG" ou "AC Milan" vs "Milan" não casavam no merge do live-scores
+3. **CSS `.cpb-root`** podia ser escondido por estilos pai que sobrescrevessem `display` ou `opacity`
+
+### Correções Aplicadas
+
+#### 1. Backend — Extração case-insensitive de escanteios inline
+**Arquivo:** `backend/services/api_football_client.py` (linha 476)
+- **Antes:** `if s.get("type") == "Corner Kicks":`
+- **Depois:** `if "corner" in str(s.get("type", "")).lower():`
+- Consistente com `_extract_corners_from_stats()` que já usava `.lower()`
+
+#### 2. Frontend — Normalização de nomes mais abrangente
+**Arquivo:** `frontend/next/src/app/dashboard/page.tsx` (linha 158)
+- **Antes:** `s.replace(/^\b(sc|ec|fc|cr|se|aa|ce|gr)\s+/i, "")`
+- **Depois:** `s.replace(/\b(sc|ec|fc|cr|se|aa|ce|gr|ac|cf|as|rc|cd|ca|ss|afc|atletico)\b\s*/gi, "").trim()`
+- Match global (não só início), inclui "atletico", "ac", "cf", "afc" etc., alinhado com o backend `_normalize_team_name()`
+
+#### 3. Frontend — CSS defensivo
+**Arquivo:** `frontend/next/src/styles/match-detail-card.css`
+- Adicionado `display: block !important`, `opacity: 1 !important`, `min-height: 20px`, `width: 100%` ao `.cpb-root`
+
+### Fluxo de Dados dos Escanteios
+```
+API-Football /fixtures?live=all
+  → extract_live_data() extrai home_corners/away_corners (inline stats)
+  → Se inline vazio: fallback para /fixtures/statistics via _extract_corners_from_stats()
+  → Se ainda vazio: fallback para parse_fixture_statistics() → corner_kicks
+  → Soma home + away → currentCorners
+  → /live-scores retorna { currentCorners: N }
+  → Frontend fetchLiveScores() casa por ID ou normalizeTeamName()
+  → MatchDetailCard verifica: mercado contém "Escanteios Over X.X"?
+  → CornerProgressBar renderiza barra com progresso atual vs meta
+```
+
+### Regras para Futuras Correções de Escanteios
+1. **Sempre case-insensitive** — qualquer extração de stat type da API-Football deve usar `.lower()` ou `in`, nunca `==` com string literal
+2. **Manter frontend alinhado com backend** — se o backend `_normalize_team_name()` ganhar novos prefixos, atualizar `normalizeTeamName()` no frontend também
+3. **Validar com 0 escanteios** — 0 é um valor válido (jogo recém iniciado), não confundir com `None` (dado indisponível)
+4. **Testar ligas problemáticas** — Brasileirão Serie A e ligas árabes frequentemente não incluem stats inline no `/fixtures?live=all`, dependendo do fallback explícito via `/fixtures/statistics`
+
+---
+
+## Filtros de Status, Ordenação Prioritária e Separador Visual
+
+**Data:** 2026-03-16
+**Arquivo:** `frontend/next/src/app/dashboard/page.tsx`
+
+### O que foi feito
+
+1. **Filtro de Status** — Botão "Filtros em breve" substituído por dropdown funcional (Todos, Ao Vivo, Finalizados, Não Iniciados)
+2. **Ordenação Prioritária** — Brasil Serie A e B sempre no topo, demais ligas em ordem alfabética, jogos por horário dentro de cada liga
+3. **Separador Visual** — Linha divisória com label "Ligas Internacionais" entre ligas brasileiras e demais
+
+### Regras
+1. **Usar IDs estáveis** — Prioridade usa `brazil-serie-a` / `brazil-serie-b` (não string matching)
+2. **Filtro integrado ao displayMatches** — Estado `statusFilter` filtra antes do agrupamento por liga
+3. **Separador condicional** — Só aparece quando há ligas brasileiras E internacionais na mesma visualização
+
+---
+
+## Dropdown Ilegível + Premier League como "unknown"
+
+**Data:** 2026-03-16
+**Arquivos:** `page.tsx`, `api_football_client.py`
+
+### Correções
+1. **Backend** — `api_football_client.py`: campo `"league"` renomeado para `"leagueId"` em `fixtures_to_records()`
+2. **Frontend (defesa)** — Normalização usa `item.leagueId ?? item.league ?? "unknown"` para compatibilidade
+3. **Frontend (dropdown)** — Cores fixas do tema escuro (`#1a1a2e` bg, `#e0e0e0` text) em `<select>` e `<option>`
+
+### Regras
+1. **Campos backend→frontend devem bater com o tipo TS** — `"leagueId"` não `"league"`
+2. **Dropdowns nativos** — Sempre usar cores inline fixas nas `<option>`, browser ignora CSS variables

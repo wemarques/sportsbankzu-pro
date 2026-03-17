@@ -8,13 +8,19 @@ class PromptTemplates:
         Você é um analista de dados esportivos especializado em futebol. Sua função é analisar estatísticas detalhadas de duas equipes e prever o resultado mais provável para o mercado de 'Total de Gols (Acima/Abaixo)'. Suas previsões devem ser lógicas, baseadas exclusivamente nos dados fornecidos e expressas em valores positivos, pois representam contagens de gols.
 
         JOGO: {home_team} vs {away_team}
-        
+
         CONTEXTO COLETADO:
         {news_summary}
-        
+
         ESTATÍSTICAS DO SISTEMA:
         {stats}
-        
+
+        REGRAS CRITICAS SOBRE AUSENCIAS E STATUS AO VIVO:
+        - Utilize SOMENTE os dados de ausencias (lesoes/suspensoes) que foram fornecidos no contexto acima.
+        - NUNCA invente, suponha ou fabrique nomes de jogadores lesionados ou suspensos.
+        - Se nao houver dados de ausencias, informe apenas que nao ha informacao disponivel.
+        - Considere o status da partida (live_status). Se o jogo estiver ao vivo, comente sobre o placar atual e ajuste sua analise.
+
         TAREFA:
         Analise o contexto do jogo e responda EXCLUSIVAMENTE em JSON com a seguinte estrutura:
         {{
@@ -148,6 +154,13 @@ class PromptTemplates:
         DETALHES DOS JOGOS (resumo):
         {batch_data.get("matches_summary_text", "Sem dados")}
 
+        SINAL ESTRUTURAL DE MERCADO (market_reference_signal):
+        {_format_market_reference_stats(batch_data.get("market_reference_stats"))}
+        NOTA: market_reference_signal e uma camada estrutural de governanca por liga+mercado (SAFE/NEUTRO/RESTRITO).
+        Use como contexto adicional, mas NAO o trate como verdade matematica nem como substituto da validacao probabilistica.
+        Warnings sobre lambdas, probabilidades e thresholds devem continuar normalmente independente do sinal estrutural.
+        NAO sugira correcoes do tipo MARKET_REFERENCE_SIGNAL — este parametro nao e ajustavel por correcao automatica.
+
         TAREFA:
         Avalie se os modelos estatisticos (Poisson, lambdas, thresholds) e a propria analise AI precisam de ajustes.
         Considere:
@@ -230,3 +243,19 @@ class PromptTemplates:
         2. Justificativa Técnica
         3. Conclusão e Recomendação
         """
+
+
+def _format_market_reference_stats(stats: dict | None) -> str:
+    """Format market_reference_stats for inclusion in Mistral prompt."""
+    if not stats:
+        return "Nenhum dado de sinal estrutural disponivel nesta rodada."
+    capped = stats.get("capped_by_market_reference_count", 0)
+    s2n = stats.get("safe_to_neutro_by_signal_count", 0)
+    blocked = stats.get("safe_blocked_by_restrito_count", 0)
+    if capped == 0:
+        return "Nenhum pick foi limitado pelo sinal estrutural nesta rodada."
+    return (
+        f"- Picks limitados pelo sinal estrutural: {capped}\n"
+        f"        - SAFE rebaixado para NEUTRO (sinal NEUTRO): {s2n}\n"
+        f"        - SAFE bloqueado por RESTRITO: {blocked}"
+    )

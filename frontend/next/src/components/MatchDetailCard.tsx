@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ShieldCheck,
 } from "lucide-react";
+import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import "../styles/match-detail-card.css";
 
 /* ── ERROR BOUNDARY (reusable) ── */
@@ -203,6 +204,32 @@ export interface MatchDetailData {
   awayForm?: string[];
   round?: string;
   aiAnalysis?: AIAnalysis;
+  currentCorners?: number | null;
+  predictions?: {
+    mercado: string;
+    status: string;
+    prob_min: number;
+    prob_max: number;
+    odd_minima: number | null;
+    alerta?: string;
+    // New unified contract fields
+    classification?: string;
+    reason_codes?: string[];
+    data_quality_score?: number;
+    odds_available?: boolean;
+    ev?: number | null;
+    edge?: number | null;
+    fair_odd?: number | null;
+    book_odd?: number | null;
+    calibrated_probability?: number | null;
+    stake?: number | null;
+    // Market reference signal fields
+    marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
+    marketReferenceReason?: string;
+    rawClassification?: string;
+    finalClassification?: string;
+    wasCappedByMarketSignal?: boolean;
+  }[];
 }
 
 /** Normaliza probabilidade para exibição (0-1 ou 0-100 -> X.X%) */
@@ -252,7 +279,7 @@ export default function MatchDetailCard(props: Props) {
   );
 }
 
-function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.6", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.7", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -600,6 +627,130 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       </div>
                     )}
 
+                    {/* Prognóstico — always visible when predictions exist */}
+                    {match.predictions && match.predictions.length > 0 && (
+                      <div className="mdc-prognostico">
+                        <h4 className="mdc-ai-section-title">Prognostico</h4>
+                        <div className="mdc-prognostico__list">
+                          {match.predictions.map((pred, idx) => {
+                            const targetCorners = extractTargetCorners(pred.mercado);
+                            const displayStatus = pred.classification || pred.status;
+                            const statusClass = displayStatus.toLowerCase().replace("*", "-star").replace("_", "-");
+                            return (
+                              <div key={idx}>
+                                <div className={`mdc-prognostico__item mdc-prognostico__item--${statusClass}`}>
+                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${statusClass}`}>
+                                    {displayStatus === "NEUTRO_QUALIFICADO" ? "NEUTRO-Q" : displayStatus}
+                                  </span>
+                                  <span className="mdc-prognostico__market">{pred.mercado}</span>
+                                  <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  {/* Show fair odd and book odd */}
+                                  {pred.book_odd != null && (
+                                    <span className="mdc-prognostico__ev" title="Odd da casa">
+                                      Odd: {pred.book_odd.toFixed(2)}
+                                    </span>
+                                  )}
+                                  {pred.fair_odd != null && !pred.book_odd && (
+                                    <span className="mdc-prognostico__ev" style={{ opacity: 0.7 }} title="Fair odd (sem odd real)">
+                                      Fair: {pred.fair_odd.toFixed(2)}
+                                    </span>
+                                  )}
+                                  {/* Show EV when available */}
+                                  {pred.ev != null && (
+                                    <span className="mdc-prognostico__ev" style={{
+                                      color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555"
+                                    }} title="Expected Value">
+                                      EV: {(pred.ev * 100).toFixed(1)}%
+                                    </span>
+                                  )}
+                                  {/* Show stake when available */}
+                                  {pred.stake != null && pred.stake > 0 && (
+                                    <span className="mdc-prognostico__ev" style={{ color: "#c4a0ff" }} title="Stake sugerida">
+                                      R$ {pred.stake.toFixed(2)}
+                                    </span>
+                                  )}
+                                  {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                  {/* Market reference signal badge */}
+                                  {pred.marketReferenceSignal && (
+                                    <span
+                                      className="mdc-prognostico__ev"
+                                      style={{
+                                        fontSize: "0.65em",
+                                        padding: "1px 6px",
+                                        borderRadius: 4,
+                                        background:
+                                          pred.marketReferenceSignal === "SAFE"
+                                            ? "rgba(0,223,130,0.12)"
+                                            : pred.marketReferenceSignal === "NEUTRO"
+                                              ? "rgba(255,170,68,0.12)"
+                                              : "rgba(255,85,85,0.12)",
+                                        color:
+                                          pred.marketReferenceSignal === "SAFE"
+                                            ? "#00df82"
+                                            : pred.marketReferenceSignal === "NEUTRO"
+                                              ? "#ffaa44"
+                                              : "#ff5555",
+                                      }}
+                                      title={pred.marketReferenceReason || "Sinal estrutural do mercado"}
+                                    >
+                                      Ref: {pred.marketReferenceSignal}
+                                      {pred.wasCappedByMarketSignal && " (cap)"}
+                                    </span>
+                                  )}
+                                  {/* Show data quality score */}
+                                  {pred.data_quality_score != null && (
+                                    <span className="mdc-prognostico__ev" style={{
+                                      opacity: 0.6,
+                                      fontSize: "0.7em",
+                                    }} title={`Quality: ${(pred.data_quality_score * 100).toFixed(0)}%`}>
+                                      Q: {(pred.data_quality_score * 100).toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Reason codes */}
+                                {pred.reason_codes && pred.reason_codes.length > 0 && (
+                                  <div style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 4,
+                                    marginTop: 2,
+                                    marginBottom: 4,
+                                    paddingLeft: 8,
+                                  }}>
+                                    {pred.reason_codes.map((rc, rcIdx) => (
+                                      <span key={rcIdx} style={{
+                                        fontSize: "0.65em",
+                                        padding: "1px 6px",
+                                        borderRadius: 4,
+                                        background: "rgba(255,255,255,0.06)",
+                                        color: "rgba(255,255,255,0.5)",
+                                      }}>
+                                        {rc.replace(/_/g, " ")}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {targetCorners != null && match.status === "live" && (
+                                  match.currentCorners != null ? (
+                                    <CornerProgressBar
+                                      currentCorners={match.currentCorners}
+                                      targetCorners={targetCorners}
+                                    />
+                                  ) : (
+                                    <div className="cpb-root cpb-placeholder">
+                                      <span className="cpb-label">Escanteios</span>
+                                      <span className="cpb-target">Meta: {targetCorners}</span>
+                                      <span className="cpb-loading">Aguardando dados...</span>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {!aiLoading && match.aiAnalysis && (
                       <>
                         {/* Confidence Bar */}
@@ -635,15 +786,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         )}
 
                         {/* Recommendation */}
-                        {match.aiAnalysis.recommendation && (
-                          <div className="mdc-ai-recommendation">
-                            <h4 className="mdc-ai-section-title">Recomendacao</h4>
-                            <div className="mdc-ai-recommendation-box">
-                              <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                              <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation ?? "")}</p>
-                            </div>
+                        <div className="mdc-ai-recommendation">
+                          <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                          <div className="mdc-ai-recommendation-box">
+                            <Sparkles size={16} className="mdc-ai-recommendation-icon" />
+                            <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
                           </div>
-                        )}
+                        </div>
 
                         {/* Timestamp + Regenerate + Audit */}
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

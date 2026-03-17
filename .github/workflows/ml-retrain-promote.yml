@@ -1,0 +1,299 @@
+name: "ML Retrain — Promote"
+
+# Workflow de PROMOCAO: publica modelos validados para producao (S3).
+# SOMENTE manual (workflow_dispatch). Depende de um run anterior
+# do ml-retrain-validate.yml com artifacts aprovados.
+#
+# Regras de promocao:
+#   - ML_ACTIVE: modelos .pkl publicados e ativos na inference
+#   - POISSON: modelos .pkl publicados (metadata.json preserva Brier >= 0.60),
+#     inference usa fallback Poisson automaticamente via is_ml_available()
+#   - DEACTIVATED: modelos .pkl publicados com ml_deactivated=true no metadata,
+#     inference retorna False em is_ml_available() -> Poisson obrigatorio
+#   - Market models com beats_poisson=false: .pkl publicado com flag,
+#     predict_market() retorna None -> Poisson fallback automatico
+#
+# IMPORTANTE: "publicar no S3" NAO significa "ativar na inference".
+# Todos os modelos sao publicados (incluindo DEACTIVATED e POISSON) para que
+# o predictor possa ler o metadata.json e tomar a decisao correta de fallback.
+# A elegibilidade de ML e decidida em RUNTIME via:
+#   - predictor.py:is_ml_available() → checa ml_deactivated, Brier, market_efficiency
+#   - market_models.py:predict_market() → checa beats_poisson flag no .pkl
+# O deploy nao filtra modelos; o codigo de inference e o unico gate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      validation_run_number:
+        description: "Run number do workflow de validacao (ml-retrain-validate)"
+        required: true
+        type: string
+      upload_s3:
+        description: "Upload modelos para S3"
+        required: true
+        default: true
+        type: boolean
+      s3_bucket:
+        description: "S3 bucket name (override da variable S3_BUCKET)"
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "Dry run — valida artifacts mas nao faz upload"
+        required: false
+        default: false
+        type: boolean
+
+# Prevent concurrent promotes
+concurrency:
+  group: ml-promote
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  DATA_ROOT: /tmp/ml_pipeline
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Environment with manual approval required.
+    # Configure in: Settings > Environments > production > Required reviewers
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify validation run provenance
+        id: verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN="${{ github.event.inputs.validation_run_number }}"
+          echo "Verifying validation run #${RUN}..."
+
+          # The input is a run_number (sequential #1, #2, ...), not a run_id.
+          # We need to find the actual run_id by listing runs of the validate workflow
+          # filtered by the run_number, so we can verify provenance.
+          RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/workflows/ml-retrain-validate.yml/runs?per_page=5" \
+            --jq ".workflow_runs[] | select(.run_number == (\"${RUN}\" | tonumber))" 2>/dev/null || echo '{}')
+
+          WORKFLOW_NAME=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('name',''))" 2>/dev/null)
+          CONCLUSION=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null)
+          STATUS=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+          HEAD_SHA=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('head_sha',''))" 2>/dev/null)
+
+          echo "  Workflow: $WORKFLOW_NAME"
+          echo "  Status:   $STATUS"
+          echo "  Conclusion: $CONCLUSION"
+          echo "  SHA: $HEAD_SHA"
+
+          if [ -z "$WORKFLOW_NAME" ]; then
+            echo "::error::Run #${RUN} not found. Verify the run number."
+            exit 1
+          fi
+
+          if [[ "$WORKFLOW_NAME" != *"Validate"* ]]; then
+            echo "::error::Run #${RUN} is from workflow '${WORKFLOW_NAME}', not ML Retrain — Validate."
+            exit 1
+          fi
+
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Run #${RUN} did not succeed (conclusion=${CONCLUSION}). Cannot promote failed runs."
+            exit 1
+          fi
+
+          # Extract the run_id for artifact download (download-artifact needs run_id, not run_number)
+          VALIDATION_RUN_ID=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)
+          echo "  Run ID: $VALIDATION_RUN_ID"
+
+          if [ -z "$VALIDATION_RUN_ID" ]; then
+            echo "::error::Could not extract run_id from validation run #${RUN}."
+            exit 1
+          fi
+
+          echo "validation_run_id=$VALIDATION_RUN_ID" >> $GITHUB_OUTPUT
+          echo "Validation run #${RUN} verified: ${WORKFLOW_NAME}, conclusion=${CONCLUSION}"
+
+      - name: Download validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ml-validation-artifacts-run${{ github.event.inputs.validation_run_number }}-*
+          path: /tmp/ml_pipeline/artifacts
+          run-id: ${{ steps.verify.outputs.validation_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-multiple: true
+
+      - name: Download trained models
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ml-models-run${{ github.event.inputs.validation_run_number }}-*
+          path: /tmp/ml_pipeline/.ml_models
+          run-id: ${{ steps.verify.outputs.validation_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-multiple: true
+
+      - name: Validate artifacts and classify
+        id: check
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys
+
+          ARTIFACTS = "/tmp/ml_pipeline/artifacts"
+          MODELS = "/tmp/ml_pipeline/.ml_models"
+
+          # 1. Check required files
+          required = ["training_summary.json", "league_classifications.json",
+                      "market_models_summary.json"]
+          missing = [f for f in required if not os.path.exists(f"{ARTIFACTS}/{f}")]
+          if missing:
+              print(f"::error::Missing artifacts: {missing}")
+              sys.exit(1)
+
+          # 2. Load classifications
+          with open(f"{ARTIFACTS}/league_classifications.json") as f:
+              classifications = json.load(f)
+
+          active = [l for l in classifications if l["classification"] == "ML_ACTIVE"]
+          poisson = [l for l in classifications if l["classification"] == "POISSON"]
+          deact = [l for l in classifications if l["classification"] == "DEACTIVATED"]
+          failed = [l for l in classifications if l["classification"] == "FAILED"]
+
+          print(f"ML_ACTIVE:   {len(active)} leagues")
+          for l in active:
+              print(f"  + {l['league_id']}: Brier={l.get('brier', '?')}")
+          print(f"POISSON:     {len(poisson)} leagues")
+          for l in poisson:
+              print(f"  ~ {l['league_id']}: Brier={l.get('brier', '?')} (fallback)")
+          print(f"DEACTIVATED: {len(deact)} leagues")
+          for l in deact:
+              print(f"  - {l['league_id']}: Brier={l.get('brier', '?')} (hard-disable)")
+          if failed:
+              print(f"FAILED:      {len(failed)} leagues (models NOT available)")
+              for l in failed:
+                  print(f"  ! {l['league_id']}")
+
+          # 3. Count model files
+          n_models = 0
+          for root, dirs, files in os.walk(MODELS):
+              for f in files:
+                  if f.endswith((".pkl", ".json")):
+                      n_models += 1
+
+          print(f"\nTotal model files: {n_models}")
+          if n_models == 0:
+              print("::error::No model files found")
+              sys.exit(1)
+
+          # 4. Verify DEACTIVATED leagues have ml_deactivated=true in metadata
+          for l in deact:
+              lid = l["league_id"]
+              meta_path = f"{MODELS}/{lid}/metadata.json"
+              if os.path.exists(meta_path):
+                  with open(meta_path) as f:
+                      meta = json.load(f)
+                  if not meta.get("ml_deactivated"):
+                      print(f"::warning::{lid} classified as DEACTIVATED but metadata lacks ml_deactivated flag")
+
+          # 5. Load market summary
+          with open(f"{ARTIFACTS}/market_models_summary.json") as f:
+              mkt = json.load(f)
+          totals = mkt.get("totals", {})
+          print(f"\nMarket models: active={totals.get('active',0)}, "
+                f"inactive={totals.get('inactive',0)} (Poisson fallback)")
+
+          # Write outputs
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+              f.write(f"n_models={n_models}\n")
+              f.write(f"n_active={len(active)}\n")
+              f.write(f"n_poisson={len(poisson)}\n")
+              f.write(f"n_deactivated={len(deact)}\n")
+
+          PYEOF
+
+      - name: Configure AWS credentials
+        if: ${{ github.event.inputs.upload_s3 == 'true' && github.event.inputs.dry_run != 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Upload models to S3
+        if: ${{ github.event.inputs.upload_s3 == 'true' && github.event.inputs.dry_run != 'true' }}
+        run: |
+          BUCKET="${{ github.event.inputs.s3_bucket || vars.S3_BUCKET || 'meu-bucket-sportsbank' }}"
+          RUN="${{ github.event.inputs.validation_run_number }}"
+          echo "Uploading to s3://$BUCKET/.ml_models/"
+
+          # Sync all models (including DEACTIVATED — inference handles the gate)
+          aws s3 sync /tmp/ml_pipeline/.ml_models/ "s3://$BUCKET/.ml_models/" \
+            --delete \
+            --exclude "*.pyc" \
+            --exclude "__pycache__/*"
+
+          echo ""
+          echo "=== Models in S3 ==="
+          aws s3 ls "s3://$BUCKET/.ml_models/" --recursive --human-readable | head -80
+
+          # Upload validation artifacts for traceability
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          aws s3 cp /tmp/ml_pipeline/artifacts/training_summary.json \
+            "s3://$BUCKET/.ml_audit/training_summary_run${RUN}_${TIMESTAMP}.json"
+          aws s3 cp /tmp/ml_pipeline/artifacts/league_classifications.json \
+            "s3://$BUCKET/.ml_audit/league_classifications_run${RUN}_${TIMESTAMP}.json"
+          aws s3 cp /tmp/ml_pipeline/artifacts/market_models_summary.json \
+            "s3://$BUCKET/.ml_audit/market_models_summary_run${RUN}_${TIMESTAMP}.json"
+
+          echo ""
+          echo "Audit trail uploaded to s3://$BUCKET/.ml_audit/"
+
+      - name: Dry run summary
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "::notice::DRY RUN — no models uploaded. Artifacts validated successfully."
+
+      - name: Generate promotion summary
+        if: always()
+        run: |
+          echo "## ML Model Promotion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source validation run**: #${{ github.event.inputs.validation_run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Upload to S3**: ${{ github.event.inputs.upload_s3 }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry run**: ${{ github.event.inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Model files**: ${{ steps.check.outputs.n_models }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ML_ACTIVE**: ${{ steps.check.outputs.n_active }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **POISSON**: ${{ steps.check.outputs.n_poisson }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **DEACTIVATED**: ${{ steps.check.outputs.n_deactivated }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f /tmp/ml_pipeline/artifacts/league_classifications.json ]; then
+            python3 -c "
+          import json
+          with open('/tmp/ml_pipeline/artifacts/league_classifications.json') as f:
+              data = json.load(f)
+          print('### League Classification')
+          print('| League | Classification | Brier | ECE | Inference |')
+          print('|--------|----------------|-------|-----|-----------|')
+          for l in sorted(data, key=lambda x: x.get('brier') or 99):
+              lid = l['league_id']
+              cls = l['classification']
+              b = f\"{l['brier']:.4f}\" if l.get('brier') is not None else '—'
+              e = f\"{l['ece']:.4f}\" if l.get('ece') is not None else '—'
+              if cls == 'ML_ACTIVE':
+                  inf = 'RF+XGB ensemble'
+              elif cls == 'DEACTIVATED':
+                  inf = 'Poisson (hard-disable)'
+              elif cls == 'POISSON':
+                  inf = 'Poisson (Brier >= 0.60)'
+              else:
+                  inf = 'N/A (failed)'
+              print(f'| {lid} | {cls} | {b} | {e} | {inf} |')
+          " >> $GITHUB_STEP_SUMMARY
+          fi

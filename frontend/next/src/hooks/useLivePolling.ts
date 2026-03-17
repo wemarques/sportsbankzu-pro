@@ -46,6 +46,11 @@ export function useLivePolling(
       intervalRef.current = setInterval(wrappedFetch, pollMs);
     }
 
+    // Fetch immediately when effect runs (avoids 30s wait for first live update)
+    if (hasLiveMatches) {
+      wrappedFetch();
+    }
+
     function stopPolling() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);

@@ -394,6 +394,106 @@
   padding-top: 0;
 }
 
+/* Prognóstico Section */
+.mdc-prognostico {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mdc-border, #2a2a2a);
+}
+
+.mdc-prognostico__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mdc-prognostico__item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 255, 136, 0.04);
+  border: 1px solid rgba(0, 255, 136, 0.1);
+  font-size: 0.75rem;
+}
+
+.mdc-prognostico__item--neutro {
+  background: rgba(255, 187, 51, 0.04);
+  border-color: rgba(255, 187, 51, 0.1);
+}
+
+.mdc-prognostico__item--neutro-qualificado {
+  background: rgba(157, 80, 255, 0.06);
+  border-color: rgba(157, 80, 255, 0.2);
+}
+
+.mdc-prognostico__item--no-bet {
+  background: rgba(255, 68, 68, 0.03);
+  border-color: rgba(255, 68, 68, 0.08);
+  opacity: 0.7;
+}
+
+.mdc-prognostico__item--alerta {
+  background: rgba(255, 68, 68, 0.04);
+  border-color: rgba(255, 68, 68, 0.1);
+}
+
+.mdc-prognostico__status {
+  font-size: 0.6rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 255, 136, 0.15);
+  color: #00ff88;
+}
+
+.mdc-prognostico__status--neutro {
+  background: rgba(255, 187, 51, 0.15);
+  color: #ffbb33;
+}
+
+.mdc-prognostico__status--neutro-qualificado {
+  background: rgba(157, 80, 255, 0.15);
+  color: #c4a0ff;
+}
+
+.mdc-prognostico__status--no-bet {
+  background: rgba(255, 68, 68, 0.1);
+  color: #ff5555;
+}
+
+.mdc-prognostico__status--safe-star {
+  background: rgba(0, 255, 136, 0.1);
+  color: #00cc66;
+}
+
+.mdc-prognostico__market {
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.mdc-prognostico__prob {
+  color: #00ff88;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdc-prognostico__ev {
+  color: #888;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdc-prognostico__alert {
+  color: #ffbb33;
+  font-size: 0.65rem;
+  font-style: italic;
+}
+
 /* Confidence Bar */
 .mdc-confidence {
   margin-bottom: 16px;
@@ -2113,4 +2213,104 @@
     margin: 0 -14px;
     padding: 0 14px;
   }
+}
+
+/* === CORNER PROGRESS BAR === */
+
+.cpb-root {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--mdc-border);
+  border-radius: var(--mdc-radius-md, 8px);
+  display: block !important;
+  opacity: 1 !important;
+  min-height: 20px;
+  width: 100%;
+}
+
+.cpb-root.cpb-placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cpb-placeholder .cpb-loading {
+  color: var(--mdc-text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.cpb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.cpb-label {
+  color: var(--mdc-text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.cpb-target {
+  color: var(--mdc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cpb-track {
+  position: relative;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 9999px;
+  overflow: visible;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.cpb-fill {
+  position: relative;
+  height: 100%;
+  min-width: 28px;
+  background: linear-gradient(90deg, #0d9488, #14b8a6);
+  border-radius: 9999px;
+  transition: width 500ms ease-in-out;
+  box-shadow: 0 0 8px rgba(20, 184, 166, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.cpb-fill--hit {
+  background: linear-gradient(90deg, #059669, #10b981);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+}
+
+.cpb-badge {
+  position: absolute;
+  right: -1px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #14b8a6;
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 9999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  padding: 0 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpb-badge--hit {
+  background: #10b981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
 }

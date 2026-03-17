@@ -281,6 +281,8 @@ export interface BatchAuditPickEval {
   mercado: string;
   status_pick: string;
   resultado: "ACERTOU" | "ERROU";
+  marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
+  wasCappedByMarketSignal?: boolean;
 }
 
 export interface BatchAuditMatchResult {
@@ -361,6 +363,12 @@ export interface LeagueAuditStats {
   accuracy_pct: number;
 }
 
+export interface MarketReferenceStats {
+  capped_by_market_reference_count: number;
+  safe_to_neutro_by_signal_count: number;
+  safe_blocked_by_restrito_count: number;
+}
+
 export interface BatchAuditResult {
   status: string;
   total_matches: number;
@@ -382,6 +390,7 @@ export interface BatchAuditResult {
   model_update_recommendation?: ModelUpdateRecommendation;
   mistral_recommendation?: ModelUpdateRecommendation;
   combinadas?: AuditCombinadas;
+  market_reference_stats?: MarketReferenceStats;
   message?: string;
 }
 

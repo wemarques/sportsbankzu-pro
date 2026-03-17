@@ -10,6 +10,7 @@ import logging
 import re
 from io import BytesIO
 from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
+from backend.services.util_service import team_name
 from backend.modeling.lambda_calculator import (
     calcular_lambda_dinamico,
     calcular_lambda_jogo,
@@ -43,7 +44,7 @@ except Exception:
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbankzu")
 
-app = FastAPI(title="SportsBankZU Pro Backend", version="3.6.0")
+app = FastAPI(title="SportsBankZU Pro Backend", version="3.7.0")
 
 # --- CONFIGURAÇÃO DE CORS (CORREÇÃO) ---
 origins = [
@@ -127,6 +128,21 @@ except Exception:
 try:
     from backend.routes import safe_bets as _r_safe_bets
     app.include_router(_r_safe_bets.router)
+except Exception:
+    pass
+try:
+    from backend.routes import ml as _r_ml
+    app.include_router(_r_ml.router)
+except Exception:
+    pass
+try:
+    from backend.routes import live as _r_live
+    app.include_router(_r_live.router)
+except Exception:
+    pass
+try:
+    from backend.routes import market_analysis as _r_market_analysis
+    app.include_router(_r_market_analysis.router)
 except Exception:
     pass
 
@@ -376,7 +392,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "austrian-bundesliga": "Bundesliga (Austria)", "austria-bundesliga": "Bundesliga (Austria)",
         "superliga": "Superliga", "denmark-superliga": "Superliga",
         "super-league": "Super League", "switzerland-super-league": "Super League",
-        "super-league-greece": "Super League Greece", "greece-super-league": "Super League Greece",
         "primera-division": "Primera División", "a-league": "A-League",
         "professional-league": "Professional League",
         "saudi-professional-league": "Professional League",
@@ -836,8 +851,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     prob_under45 = _normalize_prob(stats.get("under45Prob"))
     
     # DEBUG: Log valores para diagnóstico
-    home = jogo.get("homeTeam", "?")
-    away = jogo.get("awayTeam", "?")
+    home = team_name(jogo.get("homeTeam", "?"))
+    away = team_name(jogo.get("awayTeam", "?"))
     logger.info(f"[DEBUG] {home} vs {away}:")
     logger.info(f"  under35Prob raw={stats.get('under35Prob')}, normalized={prob_under35}")
     logger.info(f"  under45Prob raw={stats.get('under45Prob')}, normalized={prob_under45}")
@@ -919,7 +934,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
 
     # Double Chance
     if prob_dc is not None and prob_dc >= 0.75:
-        home = str(jogo.get("homeTeam", ""))[:3].upper()
+        home = team_name(jogo.get("homeTeam", ""))[:3].upper()
         status_dc = "SAFE" if prob_dc >= 0.82 else "NEUTRO"
         add_mercado(f"DC 1X ({home}/EMP)", status_dc, prob_dc)
     
@@ -935,7 +950,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         if prob_btts and prob_btts >= 0.63:
             candidatos.append(("BTTS — SIM", "NEUTRO", prob_btts, odd_btts_yes))
         if prob_dc and prob_dc >= 0.72:
-            home = str(jogo.get("homeTeam", ""))[:3].upper()
+            home = team_name(jogo.get("homeTeam", ""))[:3].upper()
             candidatos.append((f"DC 1X ({home}/EMP)", "NEUTRO", prob_dc, None))
         candidatos.sort(key=lambda x: x[2], reverse=True)
         if candidatos:
@@ -1161,8 +1176,8 @@ def gerar_quadro_resumo(
 
     if incluir_simples:
         for jogo in jogos:
-            home = jogo.get("homeTeam")
-            away = jogo.get("awayTeam")
+            home = team_name(jogo.get("homeTeam"))
+            away = team_name(jogo.get("awayTeam"))
             dt = datetime.fromisoformat(jogo.get("datetime"))
             data_hora = dt.strftime("%d/%m — %H:%M")
             linhas.append(f"{home} vs {away} ({data_hora})")
@@ -1289,8 +1304,8 @@ def gerar_quadro_resumo_whatsapp(
 
     if incluir_simples:
         for jogo in jogos:
-            home = jogo.get("homeTeam")
-            away = jogo.get("awayTeam")
+            home = team_name(jogo.get("homeTeam"))
+            away = team_name(jogo.get("awayTeam"))
             linhas.append(f"{home} x {away}")
             mercados = selecionar_mercados_jogo(jogo, regime, volatilidade)
             if mercados:

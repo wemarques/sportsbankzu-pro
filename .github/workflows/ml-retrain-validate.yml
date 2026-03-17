@@ -1,0 +1,249 @@
+name: "ML Retrain — Validate"
+
+# Workflow OFICIAL de retrain semanal.
+# Treina modelos com dados reais, gera artifacts auditaveis,
+# mas NAO publica para producao. A promocao e feita manualmente
+# pelo workflow ml-retrain-promote.yml apos analise humana.
+
+on:
+  schedule:
+    # Toda terca-feira as 06:00 BRT (09:00 UTC)
+    # Referencia: America/Sao_Paulo (UTC-3)
+    - cron: "0 9 * * 2"
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: "Comma-separated league IDs (empty = all 36)"
+        required: false
+        default: ""
+        type: string
+      n_seasons:
+        description: "Number of historical seasons to fetch"
+        required: false
+        default: "3"
+        type: string
+      include_markets:
+        description: "Train Over/Under + BTTS market models"
+        required: false
+        default: true
+        type: boolean
+      run_batch_audit:
+        description: "Run Mistral AI batch audit after training"
+        required: false
+        default: false
+        type: boolean
+
+# Prevent concurrent retrain runs from conflicting
+concurrency:
+  group: ml-retrain
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
+  MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+  DATA_ROOT: /tmp/ml_pipeline
+
+jobs:
+  retrain-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r backend/requirements.txt
+          python -m pip install -r backend/requirements-ml.txt
+
+      - name: Restore previous models (cache)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ml_pipeline/.ml_models
+          key: ml-models-${{ github.ref_name }}-${{ github.run_number }}
+          restore-keys: |
+            ml-models-${{ github.ref_name }}-
+            ml-models-main-
+
+      - name: Create output directories
+        run: |
+          mkdir -p /tmp/ml_pipeline/.ml_models
+          mkdir -p /tmp/ml_pipeline/.ml_data
+          mkdir -p /tmp/ml_pipeline/artifacts
+
+      - name: Run full retrain pipeline
+        id: retrain
+        run: |
+          python scripts/retrain_validate.py \
+            --leagues "${{ github.event.inputs.leagues || '' }}" \
+            --n-seasons "${{ github.event.inputs.n_seasons || '3' }}" \
+            ${{ github.event.inputs.include_markets != 'false' && '--include-markets' || '' }} \
+            --output-dir /tmp/ml_pipeline/artifacts
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Validate artifacts integrity
+        id: check_artifacts
+        run: |
+          python3 -c "
+          import json, sys
+
+          required = [
+              'training_summary.json',
+              'league_classifications.json',
+              'market_models_summary.json',
+              'retrain.log',
+          ]
+          missing = []
+          for f in required:
+              import os
+              if not os.path.exists(f'/tmp/ml_pipeline/artifacts/{f}'):
+                  missing.append(f)
+
+          if missing:
+              print(f'::error::Missing required artifacts: {missing}')
+              sys.exit(1)
+
+          # Validate training_summary has real content
+          with open('/tmp/ml_pipeline/artifacts/training_summary.json') as f:
+              summary = json.load(f)
+
+          n_leagues = summary.get('total_leagues_trained', 0)
+          n_matches = summary.get('total_matches', 0)
+
+          if n_leagues == 0:
+              print('::error::No leagues trained — pipeline produced empty results')
+              sys.exit(1)
+
+          if n_matches < 100:
+              print(f'::error::Suspiciously low match count ({n_matches}) — API may have failed')
+              sys.exit(1)
+
+          counts = summary.get('classification_counts', {})
+          n_failed = counts.get('FAILED', 0)
+          if n_failed > n_leagues * 0.5:
+              print(f'::error::More than 50% of leagues failed ({n_failed}/{n_leagues})')
+              sys.exit(1)
+
+          # Validate per_league_metadata has files
+          meta_dir = '/tmp/ml_pipeline/artifacts/per_league_metadata'
+          if not os.path.isdir(meta_dir) or len(os.listdir(meta_dir)) == 0:
+              print('::error::per_league_metadata directory is empty')
+              sys.exit(1)
+
+          print(f'Artifacts validated: {n_leagues} leagues, {n_matches} matches')
+          print(f'  ML_ACTIVE={counts.get(\"ML_ACTIVE\",0)}, POISSON={counts.get(\"POISSON\",0)}, '
+                f'DEACTIVATED={counts.get(\"DEACTIVATED\",0)}, FAILED={n_failed}')
+          "
+
+      - name: Run batch audit (optional)
+        if: ${{ github.event.inputs.run_batch_audit == 'true' }}
+        run: |
+          python -c "
+          import json, logging, os, sys
+          logging.basicConfig(level=logging.INFO)
+          os.environ.setdefault('DATA_ROOT', '/tmp/ml_pipeline')
+
+          try:
+              from backend.ai.auditor import batch_audit_leagues
+              results = batch_audit_leagues()
+              with open('/tmp/ml_pipeline/artifacts/batch_audit.json', 'w') as f:
+                  json.dump(results, f, indent=2, default=str)
+              print(f'Batch audit complete: {len(results)} leagues audited')
+          except Exception as e:
+              print(f'::warning::Batch audit failed: {e}')
+          "
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Generate workflow summary
+        if: always()
+        run: |
+          echo "## ML Retrain Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run**: #${{ github.run_number }} (${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f /tmp/ml_pipeline/artifacts/training_summary.json ]; then
+            python -c "
+          import json
+
+          with open('/tmp/ml_pipeline/artifacts/training_summary.json') as f:
+              data = json.load(f)
+
+          counts = data.get('classification_counts', {})
+          print('### Classification Counts')
+          print(f'- **ML_ACTIVE**: {counts.get(\"ML_ACTIVE\", 0)}')
+          print(f'- **POISSON**: {counts.get(\"POISSON\", 0)}')
+          print(f'- **DEACTIVATED**: {counts.get(\"DEACTIVATED\", 0)}')
+          print(f'- **FAILED**: {counts.get(\"FAILED\", 0)}')
+          print()
+
+          chrono = data.get('chronological_all_sorted', '?')
+          print(f'### Chronological Sort: {\"ALL OK\" if chrono else \"SOME FAILED\"} ')
+          print()
+
+          mkt = data.get('market_totals', {})
+          if mkt:
+              print(f'### Market Models: {mkt.get(\"active\",0)} active, {mkt.get(\"inactive\",0)} inactive')
+              print()
+
+          print('### Per-League 1X2 Metrics')
+          print('| Liga | Brier | ECE | Acc | OddsVal | MktEff | Status |')
+          print('|------|-------|-----|-----|---------|--------|--------|')
+          for league in data.get('leagues', []):
+              lid = league.get('league_id', '?')
+              v = league.get('validation', {})
+              brier = v.get('avg_brier', '—')
+              ece = v.get('avg_ece', '—')
+              acc = v.get('avg_accuracy', '—')
+              ov = league.get('odds_value_added', '—')
+              me = league.get('market_efficiency_r2', '—')
+              cl = league.get('classification', '?')
+              b_s = f'{brier:.4f}' if isinstance(brier, float) else str(brier)
+              e_s = f'{ece:.4f}' if isinstance(ece, float) else str(ece)
+              a_s = f'{acc:.4f}' if isinstance(acc, float) else str(acc)
+              o_s = f'{ov:.4f}' if isinstance(ov, float) else str(ov)
+              m_s = f'{me:.4f}' if isinstance(me, float) else str(me)
+              print(f'| {lid} | {b_s} | {e_s} | {a_s} | {o_s} | {m_s} | {cl} |')
+          " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::warning::training_summary.json not found"
+            echo "**No training summary available.**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: List all generated files (debug)
+        if: always()
+        run: |
+          echo "=== Artifacts ==="
+          ls -laR /tmp/ml_pipeline/artifacts/ 2>/dev/null || echo "No artifacts dir"
+          echo ""
+          echo "=== Models ==="
+          find /tmp/ml_pipeline/.ml_models/ -type f | head -100 || echo "No models"
+
+      - name: Upload training artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-validation-artifacts-run${{ github.run_number }}-${{ github.sha }}
+          path: /tmp/ml_pipeline/artifacts/
+          retention-days: 90
+
+      - name: Upload trained models
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-models-run${{ github.run_number }}-${{ github.sha }}
+          path: /tmp/ml_pipeline/.ml_models/
+          include-hidden-files: true
+          retention-days: 90

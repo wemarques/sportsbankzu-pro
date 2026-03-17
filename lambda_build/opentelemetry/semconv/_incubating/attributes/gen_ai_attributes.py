@@ -32,6 +32,11 @@ GEN_AI_AGENT_NAME: Final = "gen_ai.agent.name"
 Human-readable name of the GenAI agent provided by the application.
 """
 
+GEN_AI_AGENT_VERSION: Final = "gen_ai.agent.version"
+"""
+The version of the GenAI agent.
+"""
+
 GEN_AI_COMPLETION: Final = "gen_ai.completion"
 """
 Deprecated: Removed, no replacement at this time.
@@ -46,6 +51,32 @@ GEN_AI_DATA_SOURCE_ID: Final = "gen_ai.data_source.id"
 """
 The data source identifier.
 Note: Data sources are used by AI agents and RAG applications to store grounding data. A data source may be an external database, object store, document collection, website, or any other storage system used by the GenAI agent or application. The `gen_ai.data_source.id` SHOULD match the identifier used by the GenAI system rather than a name specific to the external storage, such as a database or object store. Semantic conventions referencing `gen_ai.data_source.id` MAY also leverage additional attributes, such as `db.*`, to further identify and describe the data source.
+"""
+
+GEN_AI_EMBEDDINGS_DIMENSION_COUNT: Final = "gen_ai.embeddings.dimension.count"
+"""
+The number of dimensions the resulting output embeddings should have.
+"""
+
+GEN_AI_EVALUATION_EXPLANATION: Final = "gen_ai.evaluation.explanation"
+"""
+A free-form explanation for the assigned score provided by the evaluator.
+"""
+
+GEN_AI_EVALUATION_NAME: Final = "gen_ai.evaluation.name"
+"""
+The name of the evaluation metric used for the GenAI response.
+"""
+
+GEN_AI_EVALUATION_SCORE_LABEL: Final = "gen_ai.evaluation.score.label"
+"""
+Human readable label for evaluation.
+Note: This attribute provides a human-readable interpretation of the evaluation score produced by an evaluator. For example, a score value of 1 could mean "relevant" in one evaluation system and "not relevant" in another, depending on the scoring range and evaluator. The label SHOULD have low cardinality. Possible values depend on the evaluation metric and evaluator used; implementations SHOULD document the possible values.
+"""
+
+GEN_AI_EVALUATION_SCORE_VALUE: Final = "gen_ai.evaluation.score.value"
+"""
+The evaluation score returned by the evaluator.
 """
 
 GEN_AI_INPUT_MESSAGES: Final = "gen_ai.input.messages"
@@ -143,6 +174,11 @@ GEN_AI_PROMPT: Final = "gen_ai.prompt"
 Deprecated: Removed, no replacement at this time.
 """
 
+GEN_AI_PROMPT_NAME: Final = "gen_ai.prompt.name"
+"""
+The name of the prompt that uniquely identifies it.
+"""
+
 GEN_AI_PROVIDER_NAME: Final = "gen_ai.provider.name"
 """
 The Generative AI provider as identified by the client or server instrumentation.
@@ -237,6 +273,25 @@ GEN_AI_RESPONSE_MODEL: Final = "gen_ai.response.model"
 The name of the model that generated the response.
 """
 
+GEN_AI_RETRIEVAL_DOCUMENTS: Final = "gen_ai.retrieval.documents"
+"""
+The documents retrieved.
+Note: Instrumentations MUST follow [Retrieval documents JSON schema](/docs/gen-ai/gen-ai-retrieval-documents.json).
+When the attribute is recorded on events, it MUST be recorded in structured
+form. When recorded on spans, it MAY be recorded as a JSON string if structured
+format is not supported and SHOULD be recorded in structured form otherwise.
+
+Each document object SHOULD contain at least the following properties:
+`id` (string): A unique identifier for the document, `score` (double): The relevance score of the document.
+"""
+
+GEN_AI_RETRIEVAL_QUERY_TEXT: Final = "gen_ai.retrieval.query.text"
+"""
+The query text used for retrieval.
+Note: > [!Warning]
+> This attribute may contain sensitive information.
+"""
+
 GEN_AI_SYSTEM: Final = "gen_ai.system"
 """
 Deprecated: Replaced by `gen_ai.provider.name`.
@@ -272,9 +327,45 @@ GEN_AI_TOKEN_TYPE: Final = "gen_ai.token.type"
 The type of token being counted.
 """
 
+GEN_AI_TOOL_CALL_ARGUMENTS: Final = "gen_ai.tool.call.arguments"
+"""
+Parameters passed to the tool call.
+Note: > [!WARNING]
+> This attribute may contain sensitive information.
+
+It's expected to be an object - in case a serialized string is available
+to the instrumentation, the instrumentation SHOULD do the best effort to
+deserialize it to an object. When recorded on spans, it MAY be recorded as a JSON string if structured format is not supported and SHOULD be recorded in structured form otherwise.
+"""
+
 GEN_AI_TOOL_CALL_ID: Final = "gen_ai.tool.call.id"
 """
 The tool call identifier.
+"""
+
+GEN_AI_TOOL_CALL_RESULT: Final = "gen_ai.tool.call.result"
+"""
+The result returned by the tool call (if any and if execution was successful).
+Note: > [!WARNING]
+> This attribute may contain sensitive information.
+
+It's expected to be an object - in case a serialized string is available
+to the instrumentation, the instrumentation SHOULD do the best effort to
+deserialize it to an object. When recorded on spans, it MAY be recorded as a JSON string if structured format is not supported and SHOULD be recorded in structured form otherwise.
+"""
+
+GEN_AI_TOOL_DEFINITIONS: Final = "gen_ai.tool.definitions"
+"""
+The list of source system tool definitions available to the GenAI agent or model.
+Note: The value of this attribute matches source system tool definition format.
+
+It's expected to be an array of objects where each object represents a tool definition. In case a serialized string is available
+to the instrumentation, the instrumentation SHOULD do the best effort to
+deserialize it to an array. When recorded on spans, it MAY be recorded as a JSON string if structured format is not supported and SHOULD be recorded in structured form otherwise.
+
+Since this attribute could be large, it's NOT RECOMMENDED to populate
+it by default. Instrumentations MAY provide a way to enable
+populating this attribute.
 """
 
 GEN_AI_TOOL_DESCRIPTION: Final = "gen_ai.tool.description"
@@ -297,6 +388,22 @@ Function: A tool executed on the client-side, where the agent generates paramete
 Datastore: A tool used by the agent to access and query structured or unstructured external data for retrieval-augmented tasks or knowledge updates.
 """
 
+GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS: Final = (
+    "gen_ai.usage.cache_creation.input_tokens"
+)
+"""
+The number of input tokens written to a provider-managed cache.
+Note: The value SHOULD be included in `gen_ai.usage.input_tokens`.
+"""
+
+GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: Final = (
+    "gen_ai.usage.cache_read.input_tokens"
+)
+"""
+The number of input tokens served from a provider-managed cache.
+Note: The value SHOULD be included in `gen_ai.usage.input_tokens`.
+"""
+
 GEN_AI_USAGE_COMPLETION_TOKENS: Final = "gen_ai.usage.completion_tokens"
 """
 Deprecated: Replaced by `gen_ai.usage.output_tokens`.
@@ -305,6 +412,10 @@ Deprecated: Replaced by `gen_ai.usage.output_tokens`.
 GEN_AI_USAGE_INPUT_TOKENS: Final = "gen_ai.usage.input_tokens"
 """
 The number of tokens used in the GenAI input (prompt).
+Note: This value SHOULD include all types of input tokens, including cached tokens.
+Instrumentations SHOULD make a best effort to populate this value, using a total
+provided by the provider when available or, depending on the provider API,
+by summing different token types parsed from the provider output.
 """
 
 GEN_AI_USAGE_OUTPUT_TOKENS: Final = "gen_ai.usage.output_tokens"
@@ -349,6 +460,8 @@ class GenAiOperationNameValues(Enum):
     """Text completions operation such as [OpenAI Completions API (Legacy)](https://platform.openai.com/docs/api-reference/completions)."""
     EMBEDDINGS = "embeddings"
     """Embeddings operation such as [OpenAI Create embeddings API](https://platform.openai.com/docs/api-reference/embeddings/create)."""
+    RETRIEVAL = "retrieval"
+    """Retrieval operation such as [OpenAI Search Vector Store API](https://platform.openai.com/docs/api-reference/vector-stores/search)."""
     CREATE_AGENT = "create_agent"
     """Create GenAI agent."""
     INVOKE_AGENT = "invoke_agent"
@@ -422,9 +535,9 @@ class GenAiSystemValues(Enum):
     COHERE = "cohere"
     """Cohere."""
     AZ_AI_INFERENCE = "az.ai.inference"
-    """Azure AI Inference."""
+    """Deprecated: Replaced by `azure.ai.inference`."""
     AZ_AI_OPENAI = "az.ai.openai"
-    """Azure OpenAI."""
+    """Deprecated: Replaced by `azure.ai.openai`."""
     AZURE_AI_INFERENCE = "azure.ai.inference"
     """Azure AI Inference."""
     AZURE_AI_OPENAI = "azure.ai.openai"
@@ -436,7 +549,7 @@ class GenAiSystemValues(Enum):
     PERPLEXITY = "perplexity"
     """Perplexity."""
     XAI = "xai"
-    """Deprecated: Replaced by `x_ai`."""
+    """xAI."""
     DEEPSEEK = "deepseek"
     """DeepSeek."""
     GROQ = "groq"

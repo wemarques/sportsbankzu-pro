@@ -6,7 +6,7 @@ import sqlite3
 import hashlib
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 logger = logging.getLogger("sportsbankzu.footstats")
 
@@ -15,6 +15,8 @@ class FootyStatsClient:
     
     def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.football-data-api.com"):
         self.api_key = api_key or os.getenv("FOOTYSTATS_API_KEY", "example")
+        if self.api_key == "example":
+            logger.warning("FootyStatsClient initialized with 'example' API key. Live data will likely fail.")
         self.base_url = base_url
         
         # Configuração de Cache
@@ -105,6 +107,8 @@ class FootyStatsClient:
         """Realiza a requisição para a API com suporte a cache e retry automático."""
         params["key"] = self.api_key
         cache_key = self._generate_cache_key(endpoint, params)
+        # Strip internal cache namespace param before sending to API
+        params.pop("_cache_ns", None)
 
         # Tenta cache primeiro (respeitando o TTL solicitado pelo chamador)
         cached_data = self._get_from_cache(cache_key, max_age_minutes=ttl_minutes)
@@ -183,7 +187,7 @@ class FootyStatsClient:
         params = {"timezone": timezone}
         if date:
             params["date"] = date
-        return self._request("todays-matches", params, ttl_minutes=30) # Cache de 30min para jogos do dia
+        return self._request("todays-matches", params, ttl_minutes=5) # Cache de 5min (reduzido de 30min para placares ao vivo)
 
     def get_live_scores(self, timezone: str = "America/Sao_Paulo") -> Dict[str, Any]:
         """Retorna jogos do dia com cache curto (30s) para placares ao vivo."""
@@ -196,8 +200,14 @@ class FootyStatsClient:
         return self._request("match", params, ttl_minutes=60)
 
     def get_match_live_details(self, match_id: int) -> Dict[str, Any]:
-        """Retorna detalhes de uma partida com cache curto (30s) para scores ao vivo."""
-        params = {"match_id": match_id}
+        """Retorna detalhes de uma partida com cache curto (30s) para scores ao vivo.
+
+        Uses a separate cache key suffix ('_live') to avoid collision with
+        get_match_details() which caches the same endpoint for 60 minutes.
+        Without this separation, a pre-match detail fetch would serve stale
+        0-0 scores for up to 60 minutes during a live match.
+        """
+        params = {"match_id": match_id, "_cache_ns": "live"}
         return self._request("match", params, ttl_minutes=0.5)  # Cache de 30s
 
     def get_league_season_stats(self, season_id: int) -> Dict[str, Any]:
@@ -229,17 +239,41 @@ class FootyStatsClient:
 
         Deprioritizes cup/reserve/youth competitions to avoid false matches
         (e.g. "J-League Cup" when looking for "J1 League")."""
+        result = self.resolve_season_ids(country, league_name, alt_names=alt_names, n_seasons=1)
+        if result:
+            return result[0][0]
+        return None
+
+    def resolve_season_ids(
+        self,
+        country: str,
+        league_name: str,
+        alt_names: Optional[List[str]] = None,
+        n_seasons: int = 3,
+    ) -> List[Tuple[int, str]]:
+        """Resolve up to n_seasons season IDs for a league, most recent first.
+
+        Returns a list of (season_id, api_league_name) tuples ordered from
+        newest to oldest.  If the league has fewer seasons than requested,
+        returns whatever is available.
+
+        Args:
+            country: Country name (e.g. "England")
+            league_name: Primary league name
+            alt_names: Alternative league names to try
+            n_seasons: Number of historical seasons to return (default 3)
+        """
         leagues_data = self.get_league_list(chosen_only=False)
         if not leagues_data.get("success"):
-            logger.warning(f"resolve_season_id: league-list API failed for {country}/{league_name}")
-            return None
+            logger.warning(f"resolve_season_ids: league-list API failed for {country}/{league_name}")
+            return []
 
         names_to_try = [league_name.lower()]
         if alt_names:
             names_to_try.extend(n.lower() for n in alt_names)
 
         country_lower = country.lower()
-        best_match = None  # (season_id, api_league_name, is_cup)
+        best_match = None  # (seasons_list, api_league_name, is_cup)
 
         for league in leagues_data.get("data", []):
             api_league_name = league.get("name", "").lower()
@@ -250,28 +284,31 @@ class FootyStatsClient:
                     seasons = league.get("season", [])
                     if not seasons:
                         continue
-                    sid = seasons[-1].get("id")
+                    # Get last n_seasons season IDs (most recent last in API → reverse)
+                    recent = seasons[-n_seasons:] if len(seasons) >= n_seasons else seasons
+                    season_ids = [s.get("id") for s in recent if s.get("id")]
+                    season_ids.reverse()  # most recent first
+
                     is_cup = any(s in api_league_name for s in self._CUP_SUFFIXES)
 
-                    # Prefer non-cup matches; if we already have a non-cup match, skip cups
                     if best_match is not None:
                         if best_match[2] and not is_cup:
-                            # Current best is a cup, this is not — upgrade
-                            best_match = (sid, api_league_name, is_cup)
-                        # Otherwise keep the first non-cup match
+                            best_match = (season_ids, api_league_name, is_cup)
                     else:
-                        best_match = (sid, api_league_name, is_cup)
+                        best_match = (season_ids, api_league_name, is_cup)
 
-                    # If we found a non-cup match, no need to keep searching
                     if not is_cup:
                         break
-            # If we already have a non-cup match, stop iterating leagues
             if best_match and not best_match[2]:
                 break
 
         if best_match:
-            logger.info(f"resolve_season_id: {country}/{league_name} -> '{best_match[1]}' season_id={best_match[0]}")
-            return best_match[0]
+            result = [(sid, best_match[1]) for sid in best_match[0]]
+            logger.info(
+                f"resolve_season_ids: {country}/{league_name} -> '{best_match[1]}' "
+                f"seasons={[r[0] for r in result]}"
+            )
+            return result
 
-        logger.warning(f"resolve_season_id: no match for {country} with names {names_to_try}")
-        return None
+        logger.warning(f"resolve_season_ids: no match for {country} with names {names_to_try}")
+        return []

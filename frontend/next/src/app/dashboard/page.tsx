@@ -51,7 +51,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.6";
+const VERSION_FALLBACK = "pro V3.7";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -144,15 +144,117 @@ function safeOdd(value?: number, fallback = 0) {
   return value;
 }
 
-/** Normalize team name for matching: remove accents, periods, extra spaces. */
+/** Alias map: common nicknames/abbreviations → canonical name (lowercase). */
+const TEAM_ALIASES: Record<string, string> = {
+  wolves: "wolverhampton wanderers",
+  "man united": "manchester united", "man utd": "manchester united",
+  "man city": "manchester city",
+  spurs: "tottenham hotspur",
+  brighton: "brighton and hove albion",
+  "west ham": "west ham united",
+  newcastle: "newcastle united",
+  leicester: "leicester city",
+  "nottm forest": "nottingham forest", "nott'm forest": "nottingham forest",
+  "sheffield utd": "sheffield united",
+  luton: "luton town",
+  inter: "inter milan", internazionale: "inter milan",
+  psg: "paris saint germain", "paris sg": "paris saint germain",
+  bayern: "bayern munich", "bayern munchen": "bayern munich",
+  dortmund: "borussia dortmund",
+  leverkusen: "bayer leverkusen",
+};
+
+/** Normalize team name for matching: remove accents, periods, extra spaces, common prefixes. */
 function normalizeTeamName(name: string): string {
-  return name
+  let s = name
     .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")  // Remove diacritics (é→e, ñ→n)
     .replace(/\./g, "")               // Remove periods (Dep. → Dep)
-    .replace(/\s+/g, " ");            // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+  // Remove common prefixes (SC Internacional → Internacional, FC Barcelona → Barcelona, Atlético Mineiro → Mineiro)
+  s = s.replace(/\b(sc|ec|fc|cr|se|aa|ce|gr|ac|cf|as|rc|cd|ca|ss|afc|atletico)\b\s*/gi, "").trim();
+  return s;
+}
+
+/** Resolve team name to canonical form via alias map. */
+function resolveTeamAlias(name: string): string {
+  const norm = normalizeTeamName(name);
+  return TEAM_ALIASES[norm] ?? norm;
+}
+
+/** Deduplicate matches by canonical team names. Keeps the richer record (more odds/stats/predictions). */
+function deduplicateMatches(matches: Match[]): Match[] {
+  if (matches.length <= 1) return matches;
+  const seen = new Map<string, { idx: number; richness: number }>();
+  const result: Match[] = [];
+
+  for (const m of matches) {
+    const key = `${resolveTeamAlias(m.homeTeam.name)}||${resolveTeamAlias(m.awayTeam.name)}`;
+    const rich = matchRichness(m);
+    const prev = seen.get(key);
+
+    if (prev != null) {
+      const prevMatch = result[prev.idx];
+      if (rich > prev.richness) {
+        // Current match is richer — replace, but merge live data from previous
+        const merged = mergeMatchData(m, prevMatch);
+        result[prev.idx] = merged;
+        seen.set(key, { idx: prev.idx, richness: rich });
+      } else {
+        // Previous is richer — merge live data from current into it
+        result[prev.idx] = mergeMatchData(prevMatch, m);
+      }
+      console.warn(`[dedup] Removed duplicate: ${m.homeTeam.name} vs ${m.awayTeam.name}`);
+    } else {
+      seen.set(key, { idx: result.length, richness: rich });
+      result.push(m);
+    }
+  }
+  return result;
+}
+
+function matchRichness(m: Match): number {
+  let score = 0;
+  if (m.predictions && m.predictions.length > 0) score += 100;
+  if ((m as any).recommendations?.length > 0) score += 100;
+  const odds = m.odds;
+  if (odds) {
+    for (const v of Object.values(odds)) {
+      if (typeof v === "number" && v > 0) score++;
+    }
+  }
+  const stats = m.stats;
+  if (stats) {
+    for (const v of Object.values(stats)) {
+      if (typeof v === "number" && v > 0) score++;
+    }
+  }
+  if (m.score && ((m.score.home ?? 0) + (m.score.away ?? 0)) > 0) score += 50;
+  if (m.status === "live") score += 20;
+  return score;
+}
+
+function mergeMatchData(primary: Match, secondary: Match): Match {
+  const merged = { ...primary };
+  // Merge live score if primary lacks it
+  const pTotal = (primary.score?.home ?? 0) + (primary.score?.away ?? 0);
+  const sTotal = (secondary.score?.home ?? 0) + (secondary.score?.away ?? 0);
+  if (sTotal > 0 && pTotal === 0) {
+    merged.score = secondary.score;
+  }
+  if (secondary.score?.halftime && !primary.score?.halftime) {
+    merged.score = { ...(merged.score ?? { home: 0, away: 0 }), halftime: secondary.score.halftime };
+  }
+  // Merge live status
+  if (secondary.status === "live" && primary.status !== "live") {
+    merged.status = secondary.status;
+    merged.period = secondary.period ?? merged.period;
+    merged.minute = secondary.minute ?? merged.minute;
+  }
+  return merged;
 }
 
 function formatTime(dt: string) {
@@ -195,21 +297,36 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
-/** Compute live period from kickoff time when backend hasn't supplied it yet. */
-function computeLiveInfo(match: Match): { period: string; minute: number | null } | null {
+type LivePeriod = "1T" | "HT" | "2T";
+
+/** Compute live period from kickoff time when backend hasn't supplied it yet.
+ * When backend provides period/minute, use max(backend, estimated) so stale
+ * backend data (e.g. 68' when real time is 90') doesn't freeze the display. */
+function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | null } | null {
   if (match.status !== "live") return null;
-  // Use backend-provided period/minute if available
-  if (match.period) return { period: match.period, minute: match.minute ?? null };
-  // Fallback: estimate from kickoff
   try {
     const kickoff = new Date(match.datetime).getTime();
     const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
     if (elapsed < 0) return null;
-    if (elapsed <= 47) return { period: "1T", minute: Math.min(elapsed, 45) };
-    if (elapsed <= 62) return { period: "HT", minute: null };
-    return { period: "2T", minute: Math.min(elapsed - 15, 90) };
+    let period = match.period ?? "";
+    let minute: number | null = match.minute ?? null;
+    if (elapsed <= 47) {
+      const est = { period: "1T" as const, minute: Math.min(elapsed, 45) };
+      if (!period) period = est.period;
+      if (minute == null) minute = est.minute;
+      else minute = Math.max(minute, est.minute);
+    } else if (elapsed <= 62) {
+      if (!period) period = "HT";
+      minute = null;
+    } else {
+      const estMin = Math.min(elapsed - 15, 90);
+      if (!period) period = "2T";
+      if (minute == null) minute = estMin;
+      else minute = Math.max(minute, estMin);
+    }
+    return { period: period as LivePeriod, minute };
   } catch {
-    return { period: "1T", minute: null };
+    return match.period ? { period: match.period as LivePeriod, minute: match.minute ?? null } : null;
   }
 }
 
@@ -255,6 +372,19 @@ function buildScreenshotName() {
   return `sportsbank-picks-${stamp}.png`;
 }
 
+/** Known Danish Superliga teams — correct leagueId when backend returns wrong/missing leagueId */
+const KNOWN_DANISH_TEAMS = new Set([
+  "esbjerg", "hillerød", "hillerod", "hvidovre", "kolding if", "kolding", "fc midtjylland", "midtjylland",
+  "fc copenhagen", "copenhagen", "brøndby", "brondby", "aalborg", "aab", "nordsjælland",
+  "nordsjaelland", "silkeborg", "viborg", "ob", "odense", "randers", "lyngby", "vejle",
+]);
+function inferLeagueFromTeams(home: string, away: string): string | null {
+  const h = normalizeTeamName(home);
+  const a = normalizeTeamName(away);
+  if (KNOWN_DANISH_TEAMS.has(h) || KNOWN_DANISH_TEAMS.has(a)) return "denmark-superliga";
+  return null;
+}
+
 function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const home = item.home_team
     ?? (typeof item.homeTeam === "string" ? item.homeTeam : item.homeTeam?.name)
@@ -262,15 +392,20 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   const away = item.away_team
     ?? (typeof item.awayTeam === "string" ? item.awayTeam : item.awayTeam?.name)
     ?? item.away ?? "Away";
+  // Heuristic: correct leagueId when backend returns wrong/missing (e.g. Danish teams in EPL group)
+  const inferred = inferLeagueFromTeams(home, away);
+  // Backend config uses "superliga", frontend uses "denmark-superliga"
+  const normalizedLid = leagueId === "superliga" ? "denmark-superliga" : leagueId;
+  const resolvedLeagueId = inferred ?? normalizedLid;
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
-  const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
+  const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
   return {
-    id: item.id ?? `${leagueId}-${idx}-${home}-${away}`,
+    id: item.id ?? `${resolvedLeagueId}-${resolveTeamAlias(home)}-${resolveTeamAlias(away)}`,
     footystatsId: item.footystatsId ?? undefined,
-    leagueId,
-    leagueName: league?.name ?? leagueId,
-    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? [], rating: item.homeTeam?.rating ?? 0 },
-    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? [], rating: item.awayTeam?.rating ?? 0 },
+    leagueId: resolvedLeagueId,
+    leagueName: league?.name ?? resolvedLeagueId,
+    homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
+    awayTeam: { name: away, logo: item.awayTeam?.logo ?? "", form: item.awayTeam?.form ?? item.awayForm ?? [], rating: item.awayTeam?.rating || item.ratings?.away || 0 },
     datetime: dt,
     venue: item.venue ?? item.stadium ?? "",
     status: item.status ?? "scheduled",
@@ -365,6 +500,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayXgAgainstAvg: item.stats?.awayXgAgainstAvg ?? undefined,
       homeCornersAgainstPerMatch: item.stats?.homeCornersAgainstPerMatch ?? undefined,
       awayCornersAgainstPerMatch: item.stats?.awayCornersAgainstPerMatch ?? undefined,
+      homeCornersCount: item.stats?.homeCornersCount ?? item.home_team_corner_count ?? undefined,
+      awayCornersCount: item.stats?.awayCornersCount ?? item.away_team_corner_count ?? undefined,
       homeLeaguePosition: item.stats?.homeLeaguePosition ?? undefined,
       awayLeaguePosition: item.stats?.awayLeaguePosition ?? undefined,
       homeAvgTotalGoals: item.stats?.homeAvgTotalGoals ?? undefined,
@@ -403,8 +540,14 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
-    period: match.period,
-    minute: match.minute,
+    period: (() => {
+      const li = computeLiveInfo(match);
+      return (li?.period ?? match.period) as "1T" | "HT" | "2T" | undefined;
+    })(),
+    minute: (() => {
+      const li = computeLiveInfo(match);
+      return li?.minute ?? match.minute;
+    })(),
     venue: { name: match.venue || "Estadio nao informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -419,6 +562,8 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
+    predictions: match.predictions,
+    currentCorners: match.currentCorners ?? null,
   };
 }
 
@@ -448,6 +593,7 @@ export default function Dashboard() {
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [statusFilter, setStatusFilter] = useState<"all" | "live" | "finished" | "scheduled">("all");
   const [shareLoading, setShareLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -534,43 +680,84 @@ export default function Dashboard() {
   }, [allMatches]);
 
   const fetchCombinadas = useCallback(async (minStatus: "SAFE" | "NEUTRO" = "NEUTRO") => {
-    if (!combinadasLeagues) {
+    if (!allMatches.length) {
       setCombindasError("Aguarde o carregamento dos jogos antes de calcular duplas.");
       return;
     }
     setCombindasLoading(true);
     setCombindasError(null);
     try {
-      const today = dateMode;
-      const res = await fetch(
-        `/api/combinadas?leagues=${encodeURIComponent(combinadasLeagues)}&date=${today}&min_status=${minStatus}&limite_intra=10&limite_inter=10`,
-        { cache: "no-store" },
-      );
-      const data = await res.json();
+      // POST with pre-loaded matches to avoid backend re-fetching all leagues
+      // (which caused 504 timeouts when many leagues were selected)
+      const payload = {
+        matches: allMatches.map((m) => ({
+          id: m.id,
+          leagueId: m.leagueId,
+          leagueName: m.leagueName,
+          homeTeam: m.homeTeam.name,
+          awayTeam: m.awayTeam.name,
+          datetime: m.datetime,
+          status: m.status,
+          odds: m.odds,
+          stats: m.stats,
+          mercados: m.predictions,
+        })),
+        tipos: "intra,inter",
+        min_status: minStatus,
+        limite_intra: 10,
+        limite_inter: 10,
+      };
+      const res = await fetch("/api/combinadas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+      const text = await res.text();
+      let data: CombinadasData & { _error?: Record<string, unknown> };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Servidor retornou resposta invalida (HTTP ${res.status}). Tente novamente em instantes.`);
+      }
       if (!res.ok) {
-        const errKind = data?._error?.kind;
+        const errObj = data?._error;
+        const errKind = errObj?.kind;
         if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
         if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
-        throw new Error(data?._error?.message || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+        throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
       }
-      setCombinadas(data as CombinadasData);
+      setCombinadas(data);
     } catch (err) {
       setCombindasError(err instanceof Error ? err.message : "Erro ao carregar combinadas.");
     } finally {
       setCombindasLoading(false);
     }
-  }, [dateMode, combinadasLeagues]);
+  }, [allMatches]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
   // Shared function: fetch live scores from backend and merge into allMatches
+  // Ref to track live league IDs for fallback query without re-creating the callback
+  const liveLeagueIdsRef = useRef<string>("");
+  useEffect(() => {
+    const liveLeagues = new Set<string>();
+    for (const m of allMatches) {
+      if (m.status === "live") liveLeagues.add(m.leagueId);
+    }
+    liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
+  }, [allMatches]);
+
   const fetchLiveScores = useCallback(async () => {
     try {
-      const res = await fetch("/api/matches/live", { cache: "no-store" });
+      // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
+      const leagues = liveLeagueIdsRef.current;
+      const qs = leagues ? `?leagues=${encodeURIComponent(leagues)}` : "";
+      const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number }> = data.matches ?? [];
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
       if (liveList.length === 0) return;
       // Diagnostic: log live overlay data
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
@@ -586,11 +773,11 @@ export default function Dashboard() {
             if (m.footystatsId != null && lm.id != null) {
               if (Number(m.footystatsId) === Number(lm.id)) return true;
             }
-            // Fallback: normalized team name comparison (accents, periods, case)
-            const mHome = normalizeTeamName(m.homeTeam.name);
-            const mAway = normalizeTeamName(m.awayTeam.name);
-            const lHome = normalizeTeamName(lm.homeTeam);
-            const lAway = normalizeTeamName(lm.awayTeam);
+            // Fallback: alias-resolved + normalized team name comparison
+            const mHome = resolveTeamAlias(m.homeTeam.name);
+            const mAway = resolveTeamAlias(m.awayTeam.name);
+            const lHome = resolveTeamAlias(lm.homeTeam);
+            const lAway = resolveTeamAlias(lm.awayTeam);
             if (mHome === lHome && mAway === lAway) return true;
             // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
             if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
@@ -625,9 +812,20 @@ export default function Dashboard() {
           const statusChanged = m.status !== newStatus;
           const periodChanged = m.period !== (live.period as Match["period"]);
           const minuteChanged = m.minute !== live.minute;
-          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged) return m;
+          const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
+          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
           changed = true;
-          return { ...m, status: newStatus, score: liveScore, period: live.period as Match["period"], minute: live.minute };
+          if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
+            console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
+          }
+          return {
+            ...m,
+            status: newStatus,
+            score: liveScore,
+            period: live.period as Match["period"],
+            minute: live.minute,
+            ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+          };
         });
         unmatched = liveList.length - matched;
         if (unmatched > 0) {
@@ -649,6 +847,9 @@ export default function Dashboard() {
       setErrorMessage(null);
       setErrorCode(null);
       setDataSource(null);
+      // Clear stale matches when date mode changes to prevent cross-date leakage
+      // (e.g. "week" data persisting when switching back to "today")
+      setAllMatches([]);
 
       const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
@@ -696,20 +897,13 @@ export default function Dashboard() {
         }
 
         const normalized = raw.map((item: any, idx: number) => {
-          const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+          // Use "unknown" instead of first league — avoids wrongly assigning to Premier League
+          const lid = item.leagueId ?? item.league ?? "unknown";
           return normalizeMatch(item, lid, idx);
         });
-        // Merge: preserve existing matches from leagues not present in new results
-        // (prevents batch failures from removing previously loaded matches)
-        setAllMatches((prev) => {
-          if (prev.length === 0) return normalized;
-          if (normalized.length === 0) return prev;
-          const newLeagues = new Set(normalized.map((m) => m.leagueId));
-          // Keep previous matches whose league wasn't in ANY successful batch
-          const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-          const merged = [...normalized, ...preserved];
-          return merged;
-        });
+        // Deduplicate: same match from different sources (e.g. "Wolves" vs "Wolverhampton Wanderers")
+        const deduped = deduplicateMatches(normalized);
+        setAllMatches(deduped);
         if (normalized.length > 0) setSelectedMatchId((prev) => prev ?? normalized[0].id);
 
         // Immediately fetch live scores to overlay real-time data
@@ -740,6 +934,16 @@ export default function Dashboard() {
     liveIntervalMs: 30_000,
     idleIntervalMs: 120_000,
   });
+
+  // Force re-render every 30s when live matches exist — computeLiveInfo uses Date.now()
+  // so the minute display updates even when backend polling returns cached data.
+  useEffect(() => {
+    if (!hasLiveMatches) return;
+    const tick = setInterval(() => {
+      setAllMatches((prev) => (prev.length ? [...prev] : prev));
+    }, 30_000);
+    return () => clearInterval(tick);
+  }, [hasLiveMatches]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
 
@@ -782,8 +986,9 @@ export default function Dashboard() {
     let list = allMatches;
     if (selectedLeague) list = list.filter((m) => m.leagueId === selectedLeague);
     if (showFavoritesOnly) list = list.filter((m) => favoriteIds.has(m.id));
+    if (statusFilter !== "all") list = list.filter((m) => m.status === statusFilter);
     return list;
-  }, [allMatches, selectedLeague, showFavoritesOnly, favoriteIds]);
+  }, [allMatches, selectedLeague, showFavoritesOnly, favoriteIds, statusFilter]);
 
   const toggleFavorite = useCallback((matchId: string) => {
     setFavoriteIds((prev) => {
@@ -1013,6 +1218,7 @@ export default function Dashboard() {
     setErrorMessage(null);
     setErrorCode(null);
     setDataSource(null);
+    setAllMatches([]);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
     try {
@@ -1053,17 +1259,11 @@ export default function Dashboard() {
       }
 
       const normalized = raw.map((item: any, idx: number) => {
-        const lid = item.leagueId ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
+        const lid = item.leagueId ?? item.league ?? AVAILABLE_LEAGUES[0]?.id ?? "unknown";
         return normalizeMatch(item, lid, idx);
       });
-      // Merge: preserve existing matches from leagues not in new results
-      setAllMatches((prev) => {
-        if (prev.length === 0) return normalized;
-        if (normalized.length === 0) return prev;
-        const newLeagues = new Set(normalized.map((m) => m.leagueId));
-        const preserved = prev.filter((m) => !newLeagues.has(m.leagueId));
-        return [...normalized, ...preserved];
-      });
+      // Deduplicate: same match from different sources (e.g. "Wolves" vs "Wolverhampton Wanderers")
+      setAllMatches(deduplicateMatches(normalized));
       if (normalized.length > 0) setSelectedMatchId(normalized[0].id);
     } catch {
       // Don't clear matches on error — preserve what we have
@@ -1100,7 +1300,21 @@ export default function Dashboard() {
       list.push(m);
       byLeague.set(m.leagueId, list);
     }
-    return Array.from(byLeague.entries()).map(([leagueId, matches]) => {
+    const getBrazilPriority = (leagueId: string) => {
+      if (leagueId === "brazil-serie-a") return 0;
+      if (leagueId === "brazil-serie-b") return 1;
+      return 2;
+    };
+    const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
+    const sortedEntries = Array.from(byLeague.entries()).sort(([a], [b]) => {
+      const pA = getBrazilPriority(a);
+      const pB = getBrazilPriority(b);
+      if (pA !== pB) return pA - pB;
+      const nameA = AVAILABLE_LEAGUES.find((l) => l.id === a)?.name ?? a;
+      const nameB = AVAILABLE_LEAGUES.find((l) => l.id === b)?.name ?? b;
+      return nameA.localeCompare(nameB);
+    });
+    return sortedEntries.map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
       const dir = sortOrder === "asc" ? 1 : -1;
       const sorted = [...matches].sort((a, b) => {
@@ -1679,7 +1893,17 @@ export default function Dashboard() {
                   >
                     <Heart size={12} fill={showFavoritesOnly ? "currentColor" : "none"} /> Favoritos
                   </button>
-                  <button type="button" className="st-filter-btn st-filter-btn--mobile-hidden" title="Filtros em breve"><Filter size={12} /> Filtros</button>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as "all" | "live" | "finished" | "scheduled")}
+                    className={`st-filter-btn st-filter-btn--mobile-hidden ${statusFilter !== "all" ? "st-filter-btn--active" : ""}`}
+                    style={{ appearance: "none", WebkitAppearance: "none", background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "0 28px 0 12px", cursor: "pointer", color: "#e0e0e0", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" }}
+                  >
+                    <option value="all" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Todos os Jogos</option>
+                    <option value="live" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Ao Vivo</option>
+                    <option value="finished" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Finalizados</option>
+                    <option value="scheduled" style={{ background: "#1a1a2e", color: "#e0e0e0" }}>Não Iniciados</option>
+                  </select>
                 </div>
                 {shareFeedback && (
                   <div
@@ -1747,11 +1971,22 @@ export default function Dashboard() {
                 />
               )}
 
-              {!loading && leagueGroups.map((group) => {
+              {!loading && leagueGroups.map((group, groupIdx) => {
                 const isCaptureTarget = group.leagueId === leagueIdForCapture;
+                const isBrazilian = group.leagueId === "brazil-serie-a" || group.leagueId === "brazil-serie-b";
+                const prevGroup = groupIdx > 0 ? leagueGroups[groupIdx - 1] : null;
+                const prevIsBrazilian = prevGroup ? (prevGroup.leagueId === "brazil-serie-a" || prevGroup.leagueId === "brazil-serie-b") : false;
+                const showSeparator = !isBrazilian && prevIsBrazilian;
                 return (
+                  <div key={group.leagueId}>
+                    {showSeparator && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px 6px", opacity: 0.5 }}>
+                        <div style={{ flex: 1, height: 1, background: "linear-gradient(to right, rgba(255,165,0,0.4), transparent)" }} />
+                        <span style={{ fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888", whiteSpace: "nowrap" }}>Ligas Internacionais</span>
+                        <div style={{ flex: 1, height: 1, background: "linear-gradient(to left, rgba(255,165,0,0.4), transparent)" }} />
+                      </div>
+                    )}
                   <div
-                    key={group.leagueId}
                     className="st-league-group"
                     data-capture-target={isCaptureTarget ? "true" : "false"}
                   >
@@ -2003,6 +2238,7 @@ export default function Dashboard() {
                         </div>
                       );
                     })}
+                  </div>
                   </div>
                 );
               })}
