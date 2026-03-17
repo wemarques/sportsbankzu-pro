@@ -1,9 +1,14 @@
-name: ML Model Retrain
+name: "[DEPRECATED] ML Model Retrain — Use ml-retrain-validate + ml-retrain-promote"
+
+# DEPRECATED: This workflow is superseded by:
+#   - ml-retrain-validate.yml (train + validate + artifacts)
+#   - ml-retrain-promote.yml (publish to S3 after human review)
+# Kept for reference. Schedule disabled.
 
 on:
-  schedule:
-    # Every Tuesday at 06:00 UTC (03:00 BRT)
-    - cron: "0 6 * * 2"
+  # schedule disabled — moved to ml-retrain-validate.yml
+  # schedule:
+  #   - cron: "0 6 * * 2"
   workflow_dispatch:
     inputs:
       mode:

@@ -81,7 +81,7 @@ def train(leagues, n_seasons, no_validate, include_markets):
         import numpy as np
 
         for league_id, matches in all_data.items():
-            X, y, feature_names = build_features_from_matches(matches, league_id)
+            X, y, feature_names, _ts = build_features_from_matches(matches, league_id)
             if len(y) > 0:
                 weights = np.ones(len(y), dtype=np.float64)
                 train_all_markets(X, matches, weights, feature_names, league_id)
