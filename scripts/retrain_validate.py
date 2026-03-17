@@ -324,6 +324,51 @@ def main():
     logger.info(f"Log saved to: {log_path}")
     logger.info("Next step: review artifacts, then run ml-retrain-promote workflow.")
 
+    # ──────────────────────────────────────────────────────────
+    # 7. Exit code: fail if pipeline produced unusable results
+    # ──────────────────────────────────────────────────────────
+    # Conditions that cause exit 1 (workflow fails):
+    #   - Zero leagues trained
+    #   - More than 50% of leagues FAILED
+    #   - Missing required artifact files
+    #   - Less than 100 total matches collected (API likely broken)
+    n_total_leagues = len(results_1x2)
+    if n_total_leagues == 0:
+        logger.error("FATAL: Zero leagues trained — exiting with error")
+        sys.exit(1)
+    if counts["FAILED"] > n_total_leagues * 0.5:
+        logger.error(
+            f"FATAL: {counts['FAILED']}/{n_total_leagues} leagues failed (>50%) — exiting with error"
+        )
+        sys.exit(1)
+    if total_matches < 100:
+        logger.error(
+            f"FATAL: Only {total_matches} matches collected — API likely broken"
+        )
+        sys.exit(1)
+
+    required_artifacts = [
+        "training_summary.json",
+        "league_classifications.json",
+        "market_models_summary.json",
+        "retrain.log",
+    ]
+    for artifact in required_artifacts:
+        if not (output_dir / artifact).exists():
+            logger.error(f"FATAL: Required artifact missing: {artifact}")
+            sys.exit(1)
+
+    if not (output_dir / "per_league_metadata").is_dir():
+        logger.error("FATAL: per_league_metadata directory missing")
+        sys.exit(1)
+
+    meta_files = list((output_dir / "per_league_metadata").iterdir())
+    if len(meta_files) == 0:
+        logger.error("FATAL: per_league_metadata directory is empty")
+        sys.exit(1)
+
+    logger.info("All exit checks passed — pipeline completed successfully.")
+
 
 if __name__ == "__main__":
     main()

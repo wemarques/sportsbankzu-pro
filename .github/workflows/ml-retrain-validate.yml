@@ -1,13 +1,15 @@
 name: "ML Retrain — Validate"
 
-# Workflow de VALIDACAO: treina modelos com dados reais, gera artifacts
-# auditaveis, mas NAO publica para producao. A promocao e feita pelo
-# workflow ml-retrain-promote.yml apos analise humana dos artifacts.
+# Workflow OFICIAL de retrain semanal.
+# Treina modelos com dados reais, gera artifacts auditaveis,
+# mas NAO publica para producao. A promocao e feita manualmente
+# pelo workflow ml-retrain-promote.yml apos analise humana.
 
 on:
   schedule:
-    # Every Tuesday at 06:00 UTC (03:00 BRT)
-    - cron: "0 6 * * 2"
+    # Toda terca-feira as 06:00 BRT (09:00 UTC)
+    # Referencia: America/Sao_Paulo (UTC-3)
+    - cron: "0 9 * * 2"
   workflow_dispatch:
     inputs:
       leagues:
@@ -30,6 +32,15 @@ on:
         required: false
         default: false
         type: boolean
+
+# Prevent concurrent retrain runs from conflicting
+concurrency:
+  group: ml-retrain
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 env:
   FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
@@ -81,6 +92,60 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
 
+      - name: Validate artifacts integrity
+        id: check_artifacts
+        run: |
+          python3 -c "
+          import json, sys
+
+          required = [
+              'training_summary.json',
+              'league_classifications.json',
+              'market_models_summary.json',
+              'retrain.log',
+          ]
+          missing = []
+          for f in required:
+              import os
+              if not os.path.exists(f'/tmp/ml_pipeline/artifacts/{f}'):
+                  missing.append(f)
+
+          if missing:
+              print(f'::error::Missing required artifacts: {missing}')
+              sys.exit(1)
+
+          # Validate training_summary has real content
+          with open('/tmp/ml_pipeline/artifacts/training_summary.json') as f:
+              summary = json.load(f)
+
+          n_leagues = summary.get('total_leagues_trained', 0)
+          n_matches = summary.get('total_matches', 0)
+
+          if n_leagues == 0:
+              print('::error::No leagues trained — pipeline produced empty results')
+              sys.exit(1)
+
+          if n_matches < 100:
+              print(f'::error::Suspiciously low match count ({n_matches}) — API may have failed')
+              sys.exit(1)
+
+          counts = summary.get('classification_counts', {})
+          n_failed = counts.get('FAILED', 0)
+          if n_failed > n_leagues * 0.5:
+              print(f'::error::More than 50% of leagues failed ({n_failed}/{n_leagues})')
+              sys.exit(1)
+
+          # Validate per_league_metadata has files
+          meta_dir = '/tmp/ml_pipeline/artifacts/per_league_metadata'
+          if not os.path.isdir(meta_dir) or len(os.listdir(meta_dir)) == 0:
+              print('::error::per_league_metadata directory is empty')
+              sys.exit(1)
+
+          print(f'Artifacts validated: {n_leagues} leagues, {n_matches} matches')
+          print(f'  ML_ACTIVE={counts.get(\"ML_ACTIVE\",0)}, POISSON={counts.get(\"POISSON\",0)}, '
+                f'DEACTIVATED={counts.get(\"DEACTIVATED\",0)}, FAILED={n_failed}')
+          "
+
       - name: Run batch audit (optional)
         if: ${{ github.event.inputs.run_batch_audit == 'true' }}
         run: |
@@ -106,6 +171,9 @@ jobs:
         run: |
           echo "## ML Retrain Validation Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run**: #${{ github.run_number }} (${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ -f /tmp/ml_pipeline/artifacts/training_summary.json ]; then
             python -c "
@@ -125,6 +193,11 @@ jobs:
           chrono = data.get('chronological_all_sorted', '?')
           print(f'### Chronological Sort: {\"ALL OK\" if chrono else \"SOME FAILED\"} ')
           print()
+
+          mkt = data.get('market_totals', {})
+          if mkt:
+              print(f'### Market Models: {mkt.get(\"active\",0)} active, {mkt.get(\"inactive\",0)} inactive')
+              print()
 
           print('### Per-League 1X2 Metrics')
           print('| Liga | Brier | ECE | Acc | OddsVal | MktEff | Status |')
@@ -163,14 +236,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ml-validation-artifacts-${{ github.run_number }}
+          name: ml-validation-artifacts-run${{ github.run_number }}-${{ github.sha }}
           path: /tmp/ml_pipeline/artifacts/
           retention-days: 90
 
       - name: Upload trained models
         uses: actions/upload-artifact@v4
         with:
-          name: ml-models-${{ github.run_number }}
+          name: ml-models-run${{ github.run_number }}-${{ github.sha }}
           path: /tmp/ml_pipeline/.ml_models/
           include-hidden-files: true
           retention-days: 90
