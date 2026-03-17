@@ -13,9 +13,13 @@ name: "ML Retrain — Promote"
 #   - Market models com beats_poisson=false: .pkl publicado com flag,
 #     predict_market() retorna None -> Poisson fallback automatico
 #
-# Todos os modelos sao publicados para que o predictor possa ler o metadata
-# e tomar a decisao correta de fallback. A logica de gate esta no codigo
-# de inference, nao no processo de deploy.
+# IMPORTANTE: "publicar no S3" NAO significa "ativar na inference".
+# Todos os modelos sao publicados (incluindo DEACTIVATED e POISSON) para que
+# o predictor possa ler o metadata.json e tomar a decisao correta de fallback.
+# A elegibilidade de ML e decidida em RUNTIME via:
+#   - predictor.py:is_ml_available() → checa ml_deactivated, Brier, market_efficiency
+#   - market_models.py:predict_market() → checa beats_poisson flag no .pkl
+# O deploy nao filtra modelos; o codigo de inference e o unico gate.
 
 on:
   workflow_dispatch:
@@ -30,7 +34,7 @@ on:
         default: true
         type: boolean
       s3_bucket:
-        description: "S3 bucket name (override do secret S3_BUCKET)"
+        description: "S3 bucket name (override da variable S3_BUCKET)"
         required: false
         default: ""
         type: string
@@ -56,12 +60,55 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Environment with manual approval required.
+    # Configure in: Settings > Environments > production > Required reviewers
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify validation run provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN="${{ github.event.inputs.validation_run_number }}"
+          echo "Verifying validation run #${RUN}..."
+
+          # Fetch the run via GH API to confirm it:
+          # 1. Exists
+          # 2. Belongs to the ml-retrain-validate workflow
+          # 3. Completed successfully
+          RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN}" 2>/dev/null || echo '{}')
+
+          WORKFLOW_NAME=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('name',''))" 2>/dev/null)
+          CONCLUSION=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null)
+          STATUS=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+          HEAD_SHA=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('head_sha',''))" 2>/dev/null)
+
+          echo "  Workflow: $WORKFLOW_NAME"
+          echo "  Status:   $STATUS"
+          echo "  Conclusion: $CONCLUSION"
+          echo "  SHA: $HEAD_SHA"
+
+          if [ -z "$WORKFLOW_NAME" ]; then
+            echo "::error::Run #${RUN} not found. Verify the run number."
+            exit 1
+          fi
+
+          if [[ "$WORKFLOW_NAME" != *"Validate"* ]]; then
+            echo "::error::Run #${RUN} is from workflow '${WORKFLOW_NAME}', not ML Retrain — Validate."
+            exit 1
+          fi
+
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Run #${RUN} did not succeed (conclusion=${CONCLUSION}). Cannot promote failed runs."
+            exit 1
+          fi
+
+          echo "Validation run #${RUN} verified: ${WORKFLOW_NAME}, conclusion=${CONCLUSION}"
 
       - name: Download validation artifacts
         uses: actions/download-artifact@v4
@@ -168,7 +215,7 @@ jobs:
       - name: Upload models to S3
         if: ${{ github.event.inputs.upload_s3 == 'true' && github.event.inputs.dry_run != 'true' }}
         run: |
-          BUCKET="${{ github.event.inputs.s3_bucket || vars.S3_BUCKET || secrets.S3_BUCKET || 'meu-bucket-sportsbank' }}"
+          BUCKET="${{ github.event.inputs.s3_bucket || vars.S3_BUCKET || 'meu-bucket-sportsbank' }}"
           RUN="${{ github.event.inputs.validation_run_number }}"
           echo "Uploading to s3://$BUCKET/.ml_models/"
 
