@@ -247,9 +247,10 @@ def train_market_model(
     else:
         gate_label = "NO_POISSON_BENCHMARK"
 
+    bp_str = f"{brier_poisson:.4f}" if brier_poisson is not None else "?"
     logger.info(
         f"Market {market}: Brier_ML={brier_ml:.4f}, "
-        f"Brier_Poisson={brier_poisson:.4f if brier_poisson is not None else '?'}, "
+        f"Brier_Poisson={bp_str}, "
         f"gate={gate_label}, Acc={accuracy:.4f}, "
         f"positive_rate={positive_rate:.3f}, n={len(y_valid)}"
     )
