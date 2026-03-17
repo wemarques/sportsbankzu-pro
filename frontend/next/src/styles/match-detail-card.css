@@ -424,6 +424,17 @@
   border-color: rgba(255, 187, 51, 0.1);
 }
 
+.mdc-prognostico__item--neutro-qualificado {
+  background: rgba(157, 80, 255, 0.06);
+  border-color: rgba(157, 80, 255, 0.2);
+}
+
+.mdc-prognostico__item--no-bet {
+  background: rgba(255, 68, 68, 0.03);
+  border-color: rgba(255, 68, 68, 0.08);
+  opacity: 0.7;
+}
+
 .mdc-prognostico__item--alerta {
   background: rgba(255, 68, 68, 0.04);
   border-color: rgba(255, 68, 68, 0.1);
@@ -443,6 +454,16 @@
 .mdc-prognostico__status--neutro {
   background: rgba(255, 187, 51, 0.15);
   color: #ffbb33;
+}
+
+.mdc-prognostico__status--neutro-qualificado {
+  background: rgba(157, 80, 255, 0.15);
+  color: #c4a0ff;
+}
+
+.mdc-prognostico__status--no-bet {
+  background: rgba(255, 68, 68, 0.1);
+  color: #ff5555;
 }
 
 .mdc-prognostico__status--safe-star {
