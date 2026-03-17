@@ -190,7 +190,13 @@ def _load_models(league_id: str) -> Optional[Dict[str, Any]]:
 
 
 def is_ml_available(league_id: str) -> bool:
-    """Check if ML models are available and validated for a league."""
+    """Check if ML models are available and validated for a league.
+
+    Checks:
+    - Brier < 0.60 (absolute threshold for 3-class)
+    - Not explicitly deactivated (Brier >= 0.63, improvement #3)
+    - Market efficiency gating (improvement #4): ML only if market is inefficient
+    """
     if np is None:
         return False
     bundle = _load_models(league_id)
@@ -198,12 +204,32 @@ def is_ml_available(league_id: str) -> bool:
         return False
 
     meta = bundle.get("metadata", {})
+
+    # Improvement #3: explicit deactivation flag
+    if meta.get("ml_deactivated"):
+        return False
+
     val_brier = meta.get("validation_brier")
     if val_brier is None:
         return True  # No validation data = trust the model
 
     # ML Brier must be < 0.60 (absolute threshold for 3-class)
-    return val_brier < 0.60
+    if val_brier >= 0.60:
+        return False
+
+    # Improvement #4: if market is very efficient AND odds add minimal value,
+    # prefer Poisson to avoid just copying the market
+    market_eff = meta.get("market_efficiency_r2")
+    odds_value = meta.get("odds_value_added")
+    if market_eff is not None and market_eff > 0.15:
+        if odds_value is not None and abs(odds_value) < 0.01:
+            logger.info(
+                f"[{league_id}] ML suppressed: market efficient (R²={market_eff}) "
+                f"and odds add minimal value (diff={odds_value})"
+            )
+            return False
+
+    return True
 
 
 def predict_1x2(
@@ -271,8 +297,8 @@ def predict_markets(
 ) -> Dict[str, float]:
     """Generate predictions for all markets using ML + derived probabilities.
 
-    Uses 1X2 ML prediction as base, then derives Over/Under and BTTS
-    from the ensemble's internal probability structure.
+    Improvement #8: uses dedicated market models (O/U, BTTS) when available,
+    falling back to Poisson-derived estimates otherwise.
 
     Returns dict with all market probabilities (0-100 scale).
     """
@@ -289,7 +315,42 @@ def predict_markets(
         result["_ml_source"] = "fallback_poisson"
         return result
 
-    # Derive Over/Under from goal expectation features
+    # Improvement #8: try dedicated market models first
+    try:
+        from backend.ml.market_models import predict_market as predict_market_model
+
+        market_mapping = {
+            "over15": "over15Prob",
+            "over25": "over25Prob",
+            "over35": "over35Prob",
+            "over45": "over45Prob",
+            "btts": "bttsProb",
+        }
+        ml_markets_used = []
+        for market_key, prob_key in market_mapping.items():
+            ml_prob = predict_market_model(features, market_key, league_id)
+            if ml_prob is not None:
+                result[prob_key] = ml_prob
+                ml_markets_used.append(market_key)
+
+        # Derive under from over
+        for over_key, under_key in [("over15Prob", "under15Prob"),
+                                     ("over35Prob", "under35Prob"),
+                                     ("over45Prob", "under45Prob")]:
+            if over_key in result and under_key not in result:
+                result[under_key] = round(100.0 - result[over_key], 1)
+
+        if ml_markets_used:
+            result["_market_source"] = "ml_dedicated"
+            logger.debug(f"Used dedicated ML models for markets: {ml_markets_used}")
+            # If all key markets covered, return early
+            if "over25Prob" in result and "bttsProb" in result:
+                return result
+
+    except ImportError:
+        pass
+
+    # Fallback: derive Over/Under from goal expectation features via Poisson
     home_goals_avg = features.get("home_goals_scored_avg_r5", 1.3)
     away_goals_avg = features.get("away_goals_scored_avg_r5", 1.0)
     expected_total = home_goals_avg + away_goals_avg
@@ -298,21 +359,26 @@ def predict_markets(
         from backend.services.math_service import poisson_cdf
 
         for threshold, key in [(1.5, "over15"), (2.5, "over25"), (3.5, "over35"), (4.5, "over45")]:
-            over_prob = 1.0 - poisson_cdf(int(threshold), expected_total)
-            result[f"{key}Prob"] = round(over_prob * 100, 1)
+            prob_key = f"{key}Prob"
+            if prob_key not in result:  # don't overwrite ML model predictions
+                over_prob = 1.0 - poisson_cdf(int(threshold), expected_total)
+                result[prob_key] = round(over_prob * 100, 1)
 
         for threshold, key in [(1.5, "under15"), (3.5, "under35"), (4.5, "under45")]:
-            under_prob = poisson_cdf(int(threshold), expected_total)
-            result[f"{key}Prob"] = round(under_prob * 100, 1)
+            prob_key = f"{key}Prob"
+            if prob_key not in result:
+                under_prob = poisson_cdf(int(threshold), expected_total)
+                result[prob_key] = round(under_prob * 100, 1)
 
     except ImportError:
         pass
 
-    # BTTS estimation from team-level goal averages
-    home_score_prob = 1.0 - (2.718 ** (-home_goals_avg))
-    away_score_prob = 1.0 - (2.718 ** (-away_goals_avg))
-    btts_prob = home_score_prob * away_score_prob
-    result["bttsProb"] = round(btts_prob * 100, 1)
+    # BTTS fallback from team-level goal averages
+    if "bttsProb" not in result:
+        home_score_prob = 1.0 - (2.718 ** (-home_goals_avg))
+        away_score_prob = 1.0 - (2.718 ** (-away_goals_avg))
+        btts_prob = home_score_prob * away_score_prob
+        result["bttsProb"] = round(btts_prob * 100, 1)
 
     return result
 
@@ -324,18 +390,27 @@ def get_model_info(league_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     meta = bundle["metadata"]
-    return {
+    info = {
         "league_id": league_id,
         "n_samples": meta.get("n_samples"),
         "n_features": meta.get("n_features"),
         "trained_at": meta.get("trained_at"),
         "validation_brier": meta.get("validation_brier"),
         "validation_accuracy": meta.get("validation_accuracy"),
+        "validation_ece": meta.get("validation_ece"),
         "ensemble_weights": meta.get("ensemble_weights"),
         "inference_mode": bundle.get("mode", "unknown"),
         "top_features": list(meta.get("rf_importance_top20", {}).keys())[:10],
         "class_distribution": meta.get("class_distribution"),
+        "adaptive_params": meta.get("adaptive_params"),
+        "ml_deactivated": meta.get("ml_deactivated", False),
+        "market_efficiency_r2": meta.get("market_efficiency_r2"),
+        "odds_value_added": meta.get("odds_value_added"),
+        "no_odds_variant": meta.get("no_odds_variant"),
+        "reliability_diagram": meta.get("reliability_diagram"),
     }
+    # Remove None values for cleaner output
+    return {k: v for k, v in info.items() if v is not None}
 
 
 def clear_model_cache():
