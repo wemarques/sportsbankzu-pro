@@ -1167,6 +1167,8 @@ def live_scores() -> Dict[str, Any]:
                             )
                     except Exception as _fb_err:
                         logger.warning(f"[live-scores] match-detail failed for id={_raw_id}: {_fb_err}")
+                else:
+                    logger.warning(f"[live-scores] match has no id — cannot fetch detail for {_match_label}")
             elif status != "finished":
                 continue
 
@@ -1181,6 +1183,18 @@ def live_scores() -> Dict[str, Any]:
             away_goals = merge_result.away
             _score_source = merge_result.source
             _score_conflict = merge_result.conflict_detected
+
+            # Diagnostic logging: trace every score source per live match
+            if status == "live":
+                logger.info(
+                    f"[live-scores][diag] {_match_label} | "
+                    f"todays={todays_candidate.home}-{todays_candidate.away} "
+                    f"detail={detail_candidate.home}-{detail_candidate.away if detail_candidate else 'N/A'} "
+                    f"merge={merge_result.home}-{merge_result.away} "
+                    f"source={merge_result.source} "
+                    f"conflict={merge_result.conflict_detected} "
+                    f"candidates={merge_result.candidates_seen}"
+                )
 
             # _valid_goal already returns int, but ensure type safety
             home_goals = int(home_goals)
@@ -1323,6 +1337,16 @@ def live_scores() -> Dict[str, Any]:
                         rec["scoreSourceFinal"] = af_merge.source
                         rec["scoreConflictDetected"] = af_merge.conflict_detected or rec.get("scoreConflictDetected", False)
                         rec["apiFootballOverlayApplied"] = af_merge.source == SOURCE_API_FOOTBALL
+
+                        # Diagnostic: trace API-Football overlay decision
+                        logger.info(
+                            f"[live-scores][diag-af] {rec.get('homeTeam', '?')} vs {rec.get('awayTeam', '?')} | "
+                            f"before={cur_home}-{cur_away}({rec.get('scoreSourceFinal','?')}) "
+                            f"af={af_home_g}-{af_away_g} "
+                            f"after={af_merge.home}-{af_merge.away}({af_merge.source}) "
+                            f"overlay={af_merge.source == SOURCE_API_FOOTBALL} "
+                            f"conflict={af_merge.conflict_detected}"
+                        )
 
                         # Always update minute/period from API-Football (more accurate)
                         if ld["minute"] is not None:
