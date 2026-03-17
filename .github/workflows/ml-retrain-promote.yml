@@ -71,17 +71,18 @@ jobs:
           python-version: "3.11"
 
       - name: Verify validation run provenance
+        id: verify
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RUN="${{ github.event.inputs.validation_run_number }}"
           echo "Verifying validation run #${RUN}..."
 
-          # Fetch the run via GH API to confirm it:
-          # 1. Exists
-          # 2. Belongs to the ml-retrain-validate workflow
-          # 3. Completed successfully
-          RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN}" 2>/dev/null || echo '{}')
+          # The input is a run_number (sequential #1, #2, ...), not a run_id.
+          # We need to find the actual run_id by listing runs of the validate workflow
+          # filtered by the run_number, so we can verify provenance.
+          RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/workflows/ml-retrain-validate.yml/runs?per_page=5" \
+            --jq ".workflow_runs[] | select(.run_number == (\"${RUN}\" | tonumber))" 2>/dev/null || echo '{}')
 
           WORKFLOW_NAME=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('name',''))" 2>/dev/null)
           CONCLUSION=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null)
@@ -108,21 +109,33 @@ jobs:
             exit 1
           fi
 
+          # Extract the run_id for artifact download (download-artifact needs run_id, not run_number)
+          VALIDATION_RUN_ID=$(echo "$RUN_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)
+          echo "  Run ID: $VALIDATION_RUN_ID"
+
+          if [ -z "$VALIDATION_RUN_ID" ]; then
+            echo "::error::Could not extract run_id from validation run #${RUN}."
+            exit 1
+          fi
+
+          echo "validation_run_id=$VALIDATION_RUN_ID" >> $GITHUB_OUTPUT
           echo "Validation run #${RUN} verified: ${WORKFLOW_NAME}, conclusion=${CONCLUSION}"
 
       - name: Download validation artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ml-validation-artifacts-run${{ github.event.inputs.validation_run_number }}-*
+          pattern: ml-validation-artifacts-run${{ github.event.inputs.validation_run_number }}-*
           path: /tmp/ml_pipeline/artifacts
+          run-id: ${{ steps.verify.outputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: true
 
       - name: Download trained models
         uses: actions/download-artifact@v4
         with:
-          name: ml-models-run${{ github.event.inputs.validation_run_number }}-*
+          pattern: ml-models-run${{ github.event.inputs.validation_run_number }}-*
           path: /tmp/ml_pipeline/.ml_models
+          run-id: ${{ steps.verify.outputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: true
 
