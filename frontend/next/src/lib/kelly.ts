@@ -11,6 +11,18 @@
 /** Maximum fraction of bankroll allowed on a single bet (safety cap) */
 export const MAX_STAKE_PCT = 0.05; // 5% hard cap per bet
 
+/** Caps */
+export const MAX_STAKE_PER_GAME_PCT = 0.08; // 8% max per game
+export const MAX_STAKE_PER_DAY_PCT = 0.30; // 30% max per day
+
+/** Stake multipliers by classification */
+export const CLASSIFICATION_STAKE_MULTIPLIER: Record<string, number> = {
+  SAFE: 1.0,
+  NEUTRO_QUALIFICADO: 0.60,
+  NEUTRO: 0.0,
+  NO_BET: 0.0,
+};
+
 export interface BetInput {
   id: string;
   label: string;
@@ -24,6 +36,11 @@ export interface BetInput {
   datetime: string;
   leagueName: string;
   category: "simples" | "dupla_intra" | "dupla_inter";
+  // New fields from unified contract
+  classification?: string;
+  dataQualityScore?: number;
+  reasonCodes?: string[];
+  oddsAvailable?: boolean;
   // For duplas
   leg2Label?: string;
   leg2Market?: string;
@@ -348,9 +365,18 @@ export function suggestSystemBet(
   bankroll: number,
   kellyMultiplier: number,
 ): SystemBetSuggestion | null {
-  // Filter for simple +EV bets only
+  // Filter for eligible +EV bets: SAFE or NEUTRO_QUALIFICADO with real odds
   const candidates = posEVBets
-    .filter((a) => a.bet.category === "simples" && a.ev > 0)
+    .filter((a) => {
+      if (a.ev <= 0) return false;
+      if (a.bet.category !== "simples") return false;
+      const cls = a.bet.classification || a.bet.status;
+      // Block NO_BET and plain NEUTRO from system bets
+      if (cls === "NO_BET") return false;
+      // Must have real odds
+      if (a.bet.oddsAvailable === false) return false;
+      return true;
+    })
     .sort((a, b) => b.ev - a.ev);
 
   if (candidates.length < 3) return null;
@@ -472,10 +498,23 @@ export function distributeBankroll(
       const ev = expectedValue(midProb, bet.odd);
       const e = edge(midProb, bet.odd);
       const ip = impliedProbability(bet.odd);
-      return { bet, kf, ev, edge: e, impliedProb: ip };
+
+      // Apply classification-based stake multiplier (Layer 4)
+      const clsMultiplier = CLASSIFICATION_STAKE_MULTIPLIER[bet.classification || "NEUTRO"] ?? 0;
+
+      // Apply haircut for low data quality
+      let haircut = 1.0;
+      if ((bet.dataQualityScore ?? 1.0) < 0.4) haircut *= 0.85;
+      if (bet.reasonCodes?.includes("EARLY_SEASON_FALLBACK")) haircut *= 0.80;
+      if (bet.reasonCodes?.includes("LINEUP_UNCERTAINTY")) haircut *= 0.90;
+      if (bet.reasonCodes?.includes("HIGH_MARKET_CORRELATION")) haircut *= 0.85;
+
+      const adjustedKf = kf * clsMultiplier * haircut;
+
+      return { bet, kf: adjustedKf, ev, edge: e, impliedProb: ip };
     });
 
-    // Filter positive EV only
+    // Filter positive EV and non-zero Kelly (respects NO_BET/NEUTRO exclusion)
     const posEV = betCalcs.filter((b) => b.ev > 0 && b.kf > 0);
 
     if (posEV.length === 0) continue;

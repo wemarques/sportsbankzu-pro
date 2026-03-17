@@ -133,16 +133,50 @@ export type Match = {
     awayWins: number;
     avgGoals: number;
   };
-  predictions?: {
-    mercado: string;
-    status: string;
-    prob_min: number;
-    prob_max: number;
-    odd_minima: number | null;
-    alerta?: string;
-  }[];
+  predictions?: MatchPrediction[];
   source: "footystats";
   lastUpdated: string;
+};
+
+export type MarketClassification = "SAFE" | "NEUTRO_QUALIFICADO" | "NEUTRO" | "NO_BET";
+
+export type ReasonCode =
+  | "LOW_DATA_QUALITY"
+  | "NO_ODDS_AVAILABLE"
+  | "NEGATIVE_EV"
+  | "INSUFFICIENT_EDGE"
+  | "EARLY_SEASON_FALLBACK"
+  | "HIGH_MARKET_CORRELATION"
+  | "LINEUP_UNCERTAINTY"
+  | "HIGH_PREDICTION_RISK"
+  | "REGIME_BLOCKED"
+  | "POSITIVE_EV"
+  | "STRONG_EDGE"
+  | "HIGH_CALIBRATED_PROB"
+  | "ODDS_TOO_LOW"
+  | "STABLE_MARKET"
+  | "VOLATILE_MARKET"
+  | "COVERAGE_INSUFFICIENT";
+
+export type MatchPrediction = {
+  mercado: string;
+  status: string;
+  prob_min: number;
+  prob_max: number;
+  odd_minima: number | null;
+  alerta?: string;
+  // New unified contract fields
+  classification?: MarketClassification;
+  reason_codes?: ReasonCode[];
+  data_quality_score?: number;
+  odds_available?: boolean;
+  ev?: number | null;
+  edge?: number | null;
+  fair_odd?: number | null;
+  book_odd?: number | null;
+  calibrated_probability?: number | null;
+  raw_probability?: number | null;
+  stake?: number | null;
 };
 
 export const AVAILABLE_LEAGUES: League[] = [

@@ -212,6 +212,17 @@ export interface MatchDetailData {
     prob_max: number;
     odd_minima: number | null;
     alerta?: string;
+    // New unified contract fields
+    classification?: string;
+    reason_codes?: string[];
+    data_quality_score?: number;
+    odds_available?: boolean;
+    ev?: number | null;
+    edge?: number | null;
+    fair_odd?: number | null;
+    book_odd?: number | null;
+    calibrated_probability?: number | null;
+    stake?: number | null;
   }[];
 }
 
@@ -617,19 +628,75 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         <div className="mdc-prognostico__list">
                           {match.predictions.map((pred, idx) => {
                             const targetCorners = extractTargetCorners(pred.mercado);
+                            const displayStatus = pred.classification || pred.status;
+                            const statusClass = displayStatus.toLowerCase().replace("*", "-star").replace("_", "-");
                             return (
                               <div key={idx}>
-                                <div className={`mdc-prognostico__item mdc-prognostico__item--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                                    {pred.status}
+                                <div className={`mdc-prognostico__item mdc-prognostico__item--${statusClass}`}>
+                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${statusClass}`}>
+                                    {displayStatus === "NEUTRO_QUALIFICADO" ? "NEUTRO-Q" : displayStatus}
                                   </span>
                                   <span className="mdc-prognostico__market">{pred.mercado}</span>
                                   <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
-                                  {pred.odd_minima != null && (
-                                    <span className="mdc-prognostico__ev">EV+ &gt;= {pred.odd_minima.toFixed(2)}</span>
+                                  {/* Show fair odd and book odd */}
+                                  {pred.book_odd != null && (
+                                    <span className="mdc-prognostico__ev" title="Odd da casa">
+                                      Odd: {pred.book_odd.toFixed(2)}
+                                    </span>
+                                  )}
+                                  {pred.fair_odd != null && !pred.book_odd && (
+                                    <span className="mdc-prognostico__ev" style={{ opacity: 0.7 }} title="Fair odd (sem odd real)">
+                                      Fair: {pred.fair_odd.toFixed(2)}
+                                    </span>
+                                  )}
+                                  {/* Show EV when available */}
+                                  {pred.ev != null && (
+                                    <span className="mdc-prognostico__ev" style={{
+                                      color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555"
+                                    }} title="Expected Value">
+                                      EV: {(pred.ev * 100).toFixed(1)}%
+                                    </span>
+                                  )}
+                                  {/* Show stake when available */}
+                                  {pred.stake != null && pred.stake > 0 && (
+                                    <span className="mdc-prognostico__ev" style={{ color: "#c4a0ff" }} title="Stake sugerida">
+                                      R$ {pred.stake.toFixed(2)}
+                                    </span>
                                   )}
                                   {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                  {/* Show data quality score */}
+                                  {pred.data_quality_score != null && (
+                                    <span className="mdc-prognostico__ev" style={{
+                                      opacity: 0.6,
+                                      fontSize: "0.7em",
+                                    }} title={`Quality: ${(pred.data_quality_score * 100).toFixed(0)}%`}>
+                                      Q: {(pred.data_quality_score * 100).toFixed(0)}%
+                                    </span>
+                                  )}
                                 </div>
+                                {/* Reason codes */}
+                                {pred.reason_codes && pred.reason_codes.length > 0 && (
+                                  <div style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 4,
+                                    marginTop: 2,
+                                    marginBottom: 4,
+                                    paddingLeft: 8,
+                                  }}>
+                                    {pred.reason_codes.map((rc, rcIdx) => (
+                                      <span key={rcIdx} style={{
+                                        fontSize: "0.65em",
+                                        padding: "1px 6px",
+                                        borderRadius: 4,
+                                        background: "rgba(255,255,255,0.06)",
+                                        color: "rgba(255,255,255,0.5)",
+                                      }}>
+                                        {rc.replace(/_/g, " ")}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                                 {targetCorners != null && match.status === "live" && (
                                   match.currentCorners != null ? (
                                     <CornerProgressBar

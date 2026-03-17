@@ -9,6 +9,75 @@ from backend.modeling.market_validator import (
 logger = logging.getLogger("sportsbankzu")
 
 
+def selecionar_mercados_v2(
+    jogo: Dict[str, Any],
+    regime: str,
+    volatilidade: str,
+    league_id: str = "",
+) -> List[Dict[str, Any]]:
+    """Enhanced market selection using the new 5-layer pipeline.
+
+    Integrates:
+    - Layer 1: Data governance (quality score)
+    - Layer 2: Poisson matrix + corners engine
+    - Layer 3: EV + classification (SAFE/NEUTRO_QUALIFICADO/NO_BET)
+    - Layer 4: Bankroll info (stake hints)
+    - Layer 5: Correlation info for multiples
+
+    Returns legacy-compatible mercados list enriched with new fields.
+    """
+    try:
+        from backend.services.ev_classification import evaluate_match_markets
+
+        bundle = evaluate_match_markets(jogo, league_id=league_id, regime=regime)
+
+        # Convert to legacy format with enrichments
+        mercados = []
+        for market in bundle.markets:
+            legacy = market.to_legacy_mercado()
+            mercados.append(legacy)
+
+        # Apply regime validation (existing logic)
+        if mercados:
+            def normalizar_mercado(nome: str) -> str:
+                base = nome.replace(" gols", "").strip()
+                if base.startswith("DC 1X"):
+                    return "Double Chance 1X"
+                if base.startswith("DC X2"):
+                    return "Double Chance X2"
+                if base.startswith("DC 12"):
+                    return "Double Chance 12"
+                if base.startswith("BTTS"):
+                    return "BTTS"
+                if base.startswith("Escanteios Over"):
+                    return base
+                return base
+
+            mercados_normalizados = [normalizar_mercado(m.get("mercado", "")) for m in mercados]
+            is_valid, invalidos = validar_prognostico({"markets": mercados_normalizados}, regime)
+            if not is_valid:
+                permitidos = filtrar_mercados_permitidos(mercados_normalizados, regime)
+                mercados = [
+                    m for m, nome_norm in zip(mercados, mercados_normalizados)
+                    if nome_norm in permitidos
+                ]
+
+        # Set principal market in stats
+        stats = jogo.get("stats", {})
+        if mercados:
+            principal = mercados[0]
+            stats["status"] = principal.get("status", "NEUTRO")
+            stats["mercado_principal"] = principal.get("mercado")
+            stats["odd_minima"] = principal.get("odd_minima")
+            stats["data_quality_score"] = bundle.data_quality_score
+
+        return mercados
+
+    except Exception as e:
+        logger.warning(f"[V2] Fallback to legacy market selection: {e}")
+        return selecionar_mercados_jogo(jogo, regime, volatilidade)
+
+
 def _get_dynamic_thresholds(market: str) -> dict:
     """Return SAFE/NEUTRO thresholds for a market, preferring values from the audit DB.
 
