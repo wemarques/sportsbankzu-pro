@@ -414,14 +414,16 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       if (raw && typeof raw.home === "number" && typeof raw.away === "number") {
         return raw;
       }
-      // Coerce any non-null fields to numbers
+      // Coerce any non-null fields to numbers — use nullish coalescing
+      // to avoid treating 0 as falsy (Number(0) || 0 works by coincidence
+      // but Number(val) ?? 0 is semantically correct).
       if (raw && raw.home != null && raw.away != null) {
-        return { home: Number(raw.home) || 0, away: Number(raw.away) || 0, halftime: raw.halftime };
+        return { home: Number(raw.home) ?? 0, away: Number(raw.away) ?? 0, halftime: raw.halftime };
       }
-      // Default 0-0 only for finished matches — for live matches, leave undefined
-      // so the UI shows a loading indicator instead of a fake 0-0 score.
-      // The /live-scores overlay will update with the real score when available.
-      if (item.status === "finished") {
+      // For finished or live matches without score, default to 0-0.
+      // A live match that just kicked off is at 0-0 until proven otherwise;
+      // the /live-scores overlay will update with the real score when available.
+      if (item.status === "finished" || item.status === "live") {
         return { home: 0, away: 0 };
       }
       // Discard invalid score objects (e.g. {home: null, away: null})
@@ -787,11 +789,12 @@ export default function Dashboard() {
           const newStatus = live.status as Match["status"];
           // When score is null/undefined from overlay (missing goal data),
           // keep existing score but still update status/period/minute.
+          // If existing score is also missing for a live match, default to 0-0.
           const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
           let liveScore = m.score;
           if (hasLiveScore) {
-            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) || 0;
-            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) || 0;
+            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) ?? 0;
+            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) ?? 0;
             // Guard: never overwrite a non-zero score with 0-0 from live overlay
             const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
             const liveTotal = liveScoreHome + liveScoreAway;
@@ -799,6 +802,11 @@ export default function Dashboard() {
             liveScore = useExistingScore
               ? m.score!
               : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+          } else if (!liveScore && newStatus === "live") {
+            // Overlay has no score AND existing has no score — safe 0-0 fallback
+            // so the card never shows "- : -" for a confirmed live match.
+            console.warn(`[live-scores] No score data for live match ${live.homeTeam} vs ${live.awayTeam}, using 0-0 fallback`);
+            liveScore = { home: 0, away: 0 };
           }
           const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
           const statusChanged = m.status !== newStatus;
