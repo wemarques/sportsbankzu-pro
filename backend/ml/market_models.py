@@ -166,9 +166,16 @@ def train_market_model(
 
     # Class distribution
     positive_rate = float(np.mean(y_valid))
+    positive_rate_val = float(np.mean(y_val))
+
+    # Quality gate: compute baseline Brier (constant predictor = base rate)
+    # A model that always predicts the base rate gets Brier = p * (1 - p)
+    brier_baseline = float(positive_rate_val * (1 - positive_rate_val))
+    beats_baseline = brier < brier_baseline
 
     logger.info(
-        f"Market {market}: Brier={brier:.4f}, Acc={accuracy:.4f}, "
+        f"Market {market}: Brier={brier:.4f} (baseline={brier_baseline:.4f}, "
+        f"{'BEATS' if beats_baseline else 'WORSE'}), Acc={accuracy:.4f}, "
         f"positive_rate={positive_rate:.3f}, n={len(y_valid)}"
     )
 
@@ -178,6 +185,8 @@ def train_market_model(
         "rf": rf,
         "xgb": xgb,
         "brier": round(brier, 4),
+        "brier_baseline": round(brier_baseline, 4),
+        "beats_baseline": beats_baseline,
         "accuracy": round(accuracy, 4),
         "positive_rate": round(positive_rate, 3),
         "n_samples": len(y_valid),
@@ -225,7 +234,7 @@ def train_all_markets(
             results[market] = result
 
             if result["status"] == "success":
-                # Save models
+                # Save models with validation metadata for quality gate
                 model_path = league_dir / f"{market}_models.pkl"
                 with open(model_path, "wb") as f:
                     pickle.dump({
@@ -233,10 +242,18 @@ def train_all_markets(
                         "xgb": result["xgb"],
                         "feature_names": feature_names,
                         "brier": result["brier"],
+                        "brier_baseline": result["brier_baseline"],
+                        "beats_baseline": result["beats_baseline"],
                         "accuracy": result["accuracy"],
                         "market": market,
                     }, f)
-                logger.info(f"Saved {market} model to {model_path}")
+                if result["beats_baseline"]:
+                    logger.info(f"Saved {market} model to {model_path} (ACTIVE — beats baseline)")
+                else:
+                    logger.warning(
+                        f"Saved {market} model to {model_path} (INACTIVE — "
+                        f"Brier {result['brier']:.4f} >= baseline {result['brier_baseline']:.4f})"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to train {market} for {league_id}: {e}")
@@ -247,6 +264,8 @@ def train_all_markets(
         market: {
             "status": r.get("status"),
             "brier": r.get("brier"),
+            "brier_baseline": r.get("brier_baseline"),
+            "beats_baseline": r.get("beats_baseline"),
             "accuracy": r.get("accuracy"),
             "positive_rate": r.get("positive_rate"),
             "n_samples": r.get("n_samples"),
@@ -266,7 +285,12 @@ def predict_market(
 ) -> Optional[float]:
     """Predict probability for a binary market.
 
-    Returns probability (0-100 scale) or None if model unavailable.
+    Returns probability (0-100 scale) or None if model unavailable or
+    failed quality gate (doesn't beat baseline Brier).
+    Falls back to None (caller uses Poisson) when:
+    - No .pkl exists
+    - Model failed validation (beats_baseline=False)
+    - No validation metadata present (legacy models without gate)
     """
     if np is None:
         return None
@@ -282,6 +306,15 @@ def predict_market(
     try:
         with open(model_path, "rb") as f:
             bundle = pickle.load(f)
+
+        # Quality gate: only use model if it beat the baseline in validation
+        if not bundle.get("beats_baseline", False):
+            logger.debug(
+                f"Market {market}/{league_id}: model exists but failed quality gate "
+                f"(Brier={bundle.get('brier')}, baseline={bundle.get('brier_baseline')}). "
+                f"Falling back to Poisson."
+            )
+            return None
 
         feature_names = bundle["feature_names"]
         X = np.array([[features.get(f, 0.0) for f in feature_names]], dtype=np.float64)

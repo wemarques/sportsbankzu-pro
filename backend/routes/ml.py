@@ -99,7 +99,7 @@ def ml_retrain(
                     market_count = 0
                     for league_id, matches in all_data.items():
                         try:
-                            X, y, feature_names = build_features_from_matches(matches, league_id)
+                            X, y, feature_names, _ts = build_features_from_matches(matches, league_id)
                             if len(y) > 0:
                                 weights = _np.ones(len(y), dtype=_np.float64)
                                 train_all_markets(X, matches, weights, feature_names, league_id)

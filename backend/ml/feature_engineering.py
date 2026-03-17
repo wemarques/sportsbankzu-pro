@@ -240,7 +240,7 @@ def _get_rest_days(match: Dict[str, Any], team: str, last_match_dates: Dict[str,
 def build_features_from_matches(
     matches: List[Dict[str, Any]],
     league_id: str = "",
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+) -> Tuple[np.ndarray, np.ndarray, List[str], np.ndarray]:
     """Transform raw match dicts into feature matrix and target vector.
 
     Args:
@@ -248,10 +248,11 @@ def build_features_from_matches(
         league_id: League identifier for DNA features
 
     Returns:
-        (X, y, feature_names) where:
+        (X, y, feature_names, timestamps) where:
             X: numpy array of shape (n_samples, n_features)
             y: numpy array of shape (n_samples,) with labels 0=home, 1=draw, 2=away
             feature_names: list of feature column names
+            timestamps: numpy array of unix timestamps per sample (for temporal decay)
     """
     # Sort matches chronologically for proper rolling computation
     matches = sorted(
@@ -269,6 +270,7 @@ def build_features_from_matches(
     feature_rows = []
     targets = []
     sample_weights = []
+    match_timestamps = []
 
     for match in matches:
         home_team = match.get("homeTeam", match.get("home_name", ""))
@@ -354,6 +356,10 @@ def build_features_from_matches(
 
         feature_rows.append(features)
 
+        # Collect match timestamp for temporal decay
+        _match_dt = _parse_date(match.get("date_unix", match.get("date")))
+        match_timestamps.append(_match_dt.timestamp() if _match_dt else 0.0)
+
         # Target: 0 = home win, 1 = draw, 2 = away win
         if home_goals > away_goals:
             targets.append(0)
@@ -379,7 +385,7 @@ def build_features_from_matches(
 
     if not feature_rows:
         logger.warning("No feature rows generated from matches")
-        return np.array([]), np.array([]), []
+        return np.array([]), np.array([]), [], np.array([])
 
     # Convert to numpy arrays
     feature_names = sorted(feature_rows[0].keys())
@@ -389,8 +395,10 @@ def build_features_from_matches(
     # Replace NaN/inf with 0
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
+    timestamps = np.array(match_timestamps, dtype=np.float64)
+
     logger.info(f"Built feature matrix: {X.shape[0]} samples, {X.shape[1]} features")
-    return X, y, feature_names
+    return X, y, feature_names, timestamps
 
 
 def _get_league_dna_features(league_id: str) -> Dict[str, float]:

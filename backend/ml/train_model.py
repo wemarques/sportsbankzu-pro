@@ -36,8 +36,9 @@ BRIER_DEACTIVATION_THRESHOLD = 0.63
 # Adaptive hyperparameters based on sample size (improvement #5)
 SMALL_LEAGUE_THRESHOLD = 600  # samples
 
-# Temporal decay factor per week (improvement #6)
-TEMPORAL_DECAY_FACTOR = 0.95
+# Temporal decay: half-life in weeks (improvement #6 v2)
+TEMPORAL_DECAY_HALF_LIFE_WEEKS = 26  # ~6 months
+MIN_TEMPORAL_WEIGHT = 0.05  # floor to prevent effective sample collapse
 
 
 def _brier_score_multiclass(y_true: np.ndarray, y_prob: np.ndarray) -> float:
@@ -111,16 +112,46 @@ def _expected_calibration_error(
     return {"ece": round(ece, 4), "bins": bins_data}
 
 
-def _compute_temporal_weights(n_samples: int, decay_factor: float = TEMPORAL_DECAY_FACTOR) -> np.ndarray:
-    """Compute temporal decay weights where recent samples have higher weight.
+def _compute_temporal_weights(
+    n_samples: int,
+    match_timestamps: Optional[np.ndarray] = None,
+    half_life_weeks: float = TEMPORAL_DECAY_HALF_LIFE_WEEKS,
+    min_weight: float = MIN_TEMPORAL_WEIGHT,
+) -> np.ndarray:
+    """Compute temporal decay weights with configurable half-life.
 
-    Improvement #6: more aggressive decay to reduce drift between seasons.
-    Weight = decay_factor ^ (weeks_ago), applied uniformly across the sorted dataset.
+    Improvement #6 v2: uses real match timestamps when available, with
+    exponential decay (half-life based) and a minimum weight floor to
+    prevent effective sample collapse.
+
+    Args:
+        n_samples: Number of samples
+        match_timestamps: Unix timestamps per sample (from feature engineering).
+            If provided and valid, weeks_ago is computed from real dates.
+        half_life_weeks: Half-life for exponential decay (default 26 = ~6 months).
+            After half_life_weeks, a sample retains 50% of its weight.
+        min_weight: Minimum weight floor before normalization (default 0.05).
     """
-    # Approximate: assume ~2 matches per team per week across the dataset
-    # Older samples (index 0) get lower weight, newer (index -1) get weight ~1.0
-    weeks = np.linspace(n_samples / 4, 0, n_samples)  # rough weeks-ago estimate
-    weights = decay_factor ** weeks
+    if (
+        match_timestamps is not None
+        and len(match_timestamps) == n_samples
+        and match_timestamps[-1] > 0
+    ):
+        # Real timestamps: compute actual weeks_ago from most recent match
+        most_recent = match_timestamps[-1]
+        seconds_ago = most_recent - match_timestamps
+        weeks_ago = np.maximum(seconds_ago, 0.0) / (7 * 24 * 3600)
+    else:
+        # Fallback: ~1 match per team per week across the dataset
+        weeks_ago = np.linspace(n_samples / 15, 0, n_samples)
+
+    # Exponential decay: weight = 2^(-weeks_ago / half_life)
+    decay_rate = np.log(2) / half_life_weeks
+    weights = np.exp(-decay_rate * weeks_ago)
+
+    # Apply minimum weight floor to prevent sample collapse
+    weights = np.maximum(weights, min_weight)
+
     # Normalize so mean weight = 1.0
     weights = weights / weights.mean()
     return weights
@@ -304,6 +335,7 @@ def walk_forward_validate(
     n_folds: int = 3,
     test_ratio: float = 0.15,
     n_total_samples: int = 0,
+    match_timestamps: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Walk-forward time-series cross-validation.
 
@@ -319,8 +351,8 @@ def walk_forward_validate(
     if fold_size < 50:
         logger.warning(f"Very small fold size ({fold_size}). Results may be unreliable.")
 
-    # Improvement #6: apply temporal decay to sample weights
-    temporal_weights = _compute_temporal_weights(n_samples)
+    # Improvement #6 v2: apply temporal decay using real timestamps when available
+    temporal_weights = _compute_temporal_weights(n_samples, match_timestamps=match_timestamps)
 
     results = []
     all_probs = []
@@ -430,6 +462,7 @@ def _train_no_odds_variant(
     sample_weights: np.ndarray,
     feature_names: List[str],
     n_total_samples: int = 0,
+    match_timestamps: Optional[np.ndarray] = None,
 ) -> Optional[Dict[str, Any]]:
     """Train a variant without implied odds features (improvement #1).
 
@@ -447,6 +480,7 @@ def _train_no_odds_variant(
     try:
         val_results = walk_forward_validate(
             X_no_odds, y, sample_weights, n_total_samples=n_total_samples,
+            match_timestamps=match_timestamps,
         )
         if val_results["status"] == "completed":
             return {
@@ -469,6 +503,7 @@ def train_and_save(
     feature_names: List[str],
     league_id: str = "global",
     validate: bool = True,
+    match_timestamps: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Full training pipeline: validate, train final models, save to disk.
 
@@ -495,7 +530,10 @@ def train_and_save(
 
     # Walk-forward validation
     if validate:
-        val_results = walk_forward_validate(X, y, sample_weights, n_total_samples=n_total)
+        val_results = walk_forward_validate(
+            X, y, sample_weights, n_total_samples=n_total,
+            match_timestamps=match_timestamps,
+        )
         summary["validation"] = val_results
 
         if val_results["status"] != "completed":
@@ -514,7 +552,10 @@ def train_and_save(
             )
 
         # Improvement #1: train no-odds variant and compare
-        no_odds = _train_no_odds_variant(X, y, sample_weights, feature_names, n_total)
+        no_odds = _train_no_odds_variant(
+            X, y, sample_weights, feature_names, n_total,
+            match_timestamps=match_timestamps,
+        )
         if no_odds:
             summary["no_odds_variant"] = no_odds
             brier_diff = avg_brier - no_odds["avg_brier"]
@@ -547,7 +588,7 @@ def train_and_save(
                     )
 
     # Train final models on full dataset with temporal decay
-    temporal_weights = _compute_temporal_weights(n_total)
+    temporal_weights = _compute_temporal_weights(n_total, match_timestamps=match_timestamps)
     combined_weights = sample_weights * temporal_weights
 
     val_split = int(len(X) * 0.85)
@@ -660,7 +701,7 @@ def train_all_leagues(
     for league_id, matches in training_data.items():
         logger.info(f"Training {league_id}: {len(matches)} matches")
         try:
-            X, y, feature_names = build_features_from_matches(matches, league_id=league_id)
+            X, y, feature_names, timestamps = build_features_from_matches(matches, league_id=league_id)
             if len(y) == 0:
                 results.append({"league_id": league_id, "status": "no_features"})
                 continue
@@ -677,6 +718,7 @@ def train_all_leagues(
             result = train_and_save(
                 X, y, sample_weights, feature_names,
                 league_id=league_id, validate=validate,
+                match_timestamps=timestamps,
             )
             results.append(result)
 
