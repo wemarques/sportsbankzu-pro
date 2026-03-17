@@ -23,6 +23,8 @@ from backend.models.market_output import (
 from backend.modeling.poisson_matrix import derive_all_markets
 from backend.modeling.corners_engine import derive_corner_probabilities
 from backend.modeling.calibrator import calibrate_prob
+from backend.modeling.corners.predictor import predict_corners, get_corner_governance_info
+from backend.modeling.corners.operational_states import CornerOperationalState
 from backend.services.data_governance import (
     calculate_data_quality_score,
     detect_early_season,
@@ -236,7 +238,16 @@ def evaluate_match_markets(
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
         derived = derive_all_markets(float(lambda_home), float(lambda_away))
 
-    # ─── Derive corner probabilities ───
+    # ─── Derive corner probabilities (governed framework) ───
+    governed_corners = predict_corners(
+        home_stats=stats,
+        away_stats=stats,
+        league_id=league_id,
+        league_stats=league_stats if isinstance(league_stats, dict) else None,
+        footystats_probs=stats,
+    )
+
+    # Legacy fallback for backward compat
     corner_probs = derive_corner_probabilities(
         home_stats=stats,
         away_stats=stats,
@@ -390,14 +401,21 @@ def evaluate_match_markets(
         )
         markets.append(classify_market(mo))
 
-    # Corner markets
+    # Corner markets (governed framework)
+    corner_governance = get_corner_governance_info(league_id)
     for threshold_key, stat_key, odd_key in [
         ("over_8.5", "cornerOver85Prob", "cornersOver85"),
         ("over_9.5", "cornerOver95Prob", "cornersOver95"),
         ("over_10.5", "cornerOver105Prob", "cornersOver105"),
+        ("over_11.5", "cornerOver115Prob", "cornersOver115"),
     ]:
-        # Use corners engine probability, blended with FootyStats
-        raw = corner_probs.get(threshold_key)
+        # Use governed corner prediction (champion model)
+        gov_line = governed_corners.get("lines", {}).get(threshold_key, {})
+        raw = gov_line.get("probability")
+
+        # Fallback to legacy engine / footystats
+        if raw is None:
+            raw = corner_probs.get(threshold_key)
         if raw is None:
             raw = _prob(stat_key)
         if raw is None:
@@ -408,6 +426,13 @@ def evaluate_match_markets(
         corner_odd = odds.get(odd_key)
         corner_odd = float(corner_odd) if corner_odd and float(corner_odd) > 1.0 else None
 
+        # Governance metadata
+        gov_line_info = corner_governance.get("lines", {}).get(threshold_key, {})
+        operational_state = gov_line_info.get("operationalState", "RESTRICTED")
+        champion_model = gov_line_info.get("championModel", gov_line.get("champion_model"))
+        fallback_model = gov_line_info.get("fallbackModel", gov_line.get("fallback_model"))
+        model_used = gov_line.get("model_used", "legacy_blend")
+
         mo = MarketOutput(
             market_type="Corners",
             selection=f"Corners {threshold_label}",
@@ -416,10 +441,28 @@ def evaluate_match_markets(
             book_odd=corner_odd,
             odds_available=corner_odd is not None,
             data_quality_score=quality,
-            source_flags=source_flags,
+            source_flags=[*source_flags, f"corner_model:{model_used}"],
             display_label=f"Escanteios {threshold_label}",
         )
-        markets.append(classify_market(mo))
+
+        classified = classify_market(mo)
+
+        # Attach corner governance metadata
+        classified._corner_governance = {
+            "marketFamily": "corners",
+            "cornerModelStatus": operational_state,
+            "championModel": champion_model,
+            "fallbackModel": fallback_model,
+            "modelUsed": model_used,
+            "beatsPoisson": gov_line.get("beats_poisson", False) if isinstance(gov_line, dict) else False,
+            "beatsNegativeBinomial": gov_line.get("beats_negative_binomial", False) if isinstance(gov_line, dict) else False,
+            "beatsMLRegression": gov_line.get("beats_ml_regression", False) if isinstance(gov_line, dict) else False,
+            "cornerCalibrationStatus": gov_line_info.get("cornerCalibrationStatus", "uncalibrated"),
+            "cornerSampleAdequacy": gov_line_info.get("cornerSampleAdequacy", "unknown"),
+            "cornerValidationVersion": corner_governance.get("cornerValidationVersion", "unknown"),
+        }
+
+        markets.append(classified)
 
     # ─── Apply early season penalty ───
     if early_season:

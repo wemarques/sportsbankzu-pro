@@ -67,6 +67,9 @@ class MarketOutput(BaseModel):
     prob_min_pct: int = 0
     prob_max_pct: int = 0
 
+    # Corner governance (populated for marketFamily=corners)
+    _corner_governance: Optional[dict] = Field(None, exclude=True)
+
     def compute_display(self) -> None:
         """Compute display helpers from probabilities."""
         prob = self.calibrated_probability or self.raw_probability
@@ -107,6 +110,9 @@ class MarketOutput(BaseModel):
             "calibrated_probability": round(self.calibrated_probability, 4) if self.calibrated_probability else None,
             "raw_probability": round(self.raw_probability, 4) if self.raw_probability else None,
         }
+        # Add corner governance metadata if available
+        if self._corner_governance:
+            result["corner_governance"] = self._corner_governance
         return result
 
     def _legacy_status(self) -> str:

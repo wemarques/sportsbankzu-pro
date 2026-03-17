@@ -46,6 +46,8 @@ def cron_handler(event, context):
             return _run_retrain_calibrators()
         elif action == "adjust_thresholds":
             return _run_threshold_adjustment()
+        elif action == "retrain_corners":
+            return _run_retrain_corners()
         else:
             return {"status": "error", "message": f"Unknown action: {action}"}
     except Exception as e:
@@ -499,6 +501,67 @@ def _run_retrain_calibrators() -> dict:
         return {"status": "success", "calibrators": results}
     except Exception as e:
         logger.error(f"Calibrator retraining failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def _run_retrain_corners() -> dict:
+    """Retrain corner models for all leagues (weekly).
+
+    Scheduled: cron(0 5 ? * MON *) → 05:00 UTC Monday.
+    Runs end-to-end corner pipeline: train 3 models, compare, select champion,
+    generate artifacts, determine operational states.
+
+    Initial deployment: force_shadow=True (cap at NEUTRAL).
+    """
+    logger.info("[Corners] Starting weekly corner retrain")
+    try:
+        from backend.modeling.corners.retrain import retrain_all_leagues
+
+        # TODO: collect real training data from fixtures/historical API
+        # For now, this is a placeholder that will work once data is available
+        training_data: dict = {}
+
+        try:
+            from backend.services.footstats_client import get_league_matches
+            from backend.config.leagues_config import SUPPORTED_LEAGUES
+
+            for league in SUPPORTED_LEAGUES:
+                league_id = league.get("id", league.get("slug", ""))
+                if not league_id:
+                    continue
+                try:
+                    matches = get_league_matches(league_id, seasons=2)
+                    if matches:
+                        training_data[league_id] = matches
+                except Exception as e:
+                    logger.warning(f"[Corners] Failed to fetch data for {league_id}: {e}")
+        except ImportError:
+            logger.warning("[Corners] footstats_client not available — skipping data collection")
+
+        if not training_data:
+            return {
+                "status": "skipped",
+                "message": "No training data available for corner retrain",
+            }
+
+        results = retrain_all_leagues(training_data, force_shadow=True)
+        completed = [r for r in results if r.get("status") == "completed"]
+
+        logger.info(
+            f"[Corners] Retrain completed: {len(completed)}/{len(results)} leagues successful"
+        )
+        return {
+            "status": "success",
+            "leagues_processed": len(results),
+            "leagues_completed": len(completed),
+            "results": [{
+                "league_id": r.get("league_id"),
+                "status": r.get("status"),
+                "champion": r.get("champion_selection", {}).get("dominant_champion"),
+            } for r in results],
+        }
+    except Exception as e:
+        logger.error(f"[Corners] Weekly retrain failed: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
