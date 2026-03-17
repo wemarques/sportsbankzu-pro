@@ -177,6 +177,24 @@ export type MatchPrediction = {
   calibrated_probability?: number | null;
   raw_probability?: number | null;
   stake?: number | null;
+  // Corner governance (populated for marketFamily=corners)
+  corner_governance?: {
+    marketFamily: string;
+    cornerModelStatus: string;
+    championModel: string;
+    fallbackModel: string;
+    modelUsed: string;
+    beatsPoisson: boolean;
+    beatsNegativeBinomial: boolean;
+    beatsMLRegression: boolean;
+    cornerCalibrationStatus: string;
+    cornerSampleAdequacy: string;
+    cornerValidationVersion: string;
+  };
+  // Market reference signal fields
+  finalClassification?: string;
+  wasCappedByMarketSignal?: boolean;
+  marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
 };
 
 export const AVAILABLE_LEAGUES: League[] = [
