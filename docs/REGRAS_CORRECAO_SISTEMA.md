@@ -2018,4 +2018,227 @@ A política **não** restringe o sistema a "só SAFE":
 
 ---
 
+## 029 — Pipeline ML: 8 melhorias de qualidade + temporal decay + quality gate Poisson
+
+**Data:** 2026-03-17
+**Arquivos afetados:** `backend/ml/train_model.py`, `backend/ml/predictor.py`, `backend/ml/feature_engineering.py`, `backend/ml/market_models.py`, `backend/routes/ml.py`, `backend/cron_handler.py`, `cli/commands/ml.py`
+**Severidade:** Alta (evolução arquitetural ML)
+**Status:** Implementado
+**Commits:** `64fd2e6`, `23797a1`, `dd40f7d`, `614e603`
+
+### Problema identificado
+
+O pipeline ML tinha múltiplas fraquezas que comprometiam a qualidade das previsões:
+1. **Sem comparação no-odds** — impossível saber se o ML adicionava valor além das odds de mercado
+2. **Calibradores desatualizados** — não eram retreinados automaticamente após auditorias
+3. **Ligas fracas ativas** — ligas com Brier >= 0.63 continuavam usando ML em vez de fallback Poisson
+4. **Sem gating de eficiência** — ML ativado mesmo quando o mercado já era eficiente (odds próximas do outcome real)
+5. **Hiperparâmetros fixos** — mesma profundidade de árvore para 200 e 2000 amostras
+6. **Sem decaimento temporal** — jogos de 2 anos atrás tinham o mesmo peso que jogos recentes
+7. **Sem ECE** — calibração avaliada apenas por Brier, sem Expected Calibration Error
+8. **Market models sem quality gate** — modelos O/U e BTTS publicados mesmo quando piores que Poisson
+
+### Correções aplicadas (3 iterações)
+
+#### Iteração 1 — 8 melhorias (`64fd2e6`)
+
+1. **No-odds variant**: treina modelo sem features `implied_odds` para medir valor incremental do ML
+2. **Auto-retrain calibrators**: `cron_handler.py` retreina calibradores após batch audit
+3. **Auto-deactivate**: ligas com Brier >= 0.63 desativadas automaticamente
+4. **Market efficiency gating**: calcula R² de odds vs outcome; ML só ativa quando mercado é ineficiente
+5. **Adaptive hyperparameters**: árvores mais rasas para amostras < 600
+6. **Temporal decay**: peso `0.95^weeks_ago` para reduzir drift
+7. **ECE + reliability diagram**: adicionados à validação walk-forward
+8. **Market models dedicados**: modelos O/U e BTTS integrados ao pipeline de retrain e inferência
+
+#### Iteração 2 — Temporal decay v2 + quality gate baseline (`23797a1`)
+
+- **Temporal decay corrigido**: usa timestamps reais dos jogos (não índice sequencial); half-life configurável (default 26 semanas); piso mínimo de 0.05 para evitar colapso de amostras efetivas
+- **Quality gate baseline**: calcula Brier de preditor constante (base rate) durante treinamento; salva `beats_baseline` e `brier_baseline` no `.pkl`; `predict_market()` retorna `None` (fallback Poisson) se modelo falhou no gate
+
+#### Iteração 3 — Poisson benchmark + sanity check cronológico (`dd40f7d`)
+
+- **Gate Poisson real**: substitui gate baseline (p*(1-p)) por comparação com Brier do Poisson calculado no mesmo split de validação, usando mesmas lambdas da produção (`home_goals_scored_avg_r5` / `away_goals_scored_avg_r5`); salva `brier_ml`, `brier_poisson`, `beats_poisson` no `.pkl`
+- **Sanity check cronológico**: verifica se timestamps estão em ordem ascendente antes do walk-forward; ordena automaticamente se necessário; loga `first_date`, `last_date`, `sorted` por liga
+
+#### Hotfix — f-string format (`614e603`)
+
+- Corrigido erro de formato condicional em `logger.info` (`brier_poisson:.4f if...`) que impedia treinamento de market models
+- Adicionado `scripts/retrain_synthetic.py` para validação offline quando API FootyStats indisponível
+
+### Lição aprendida
+
+1. **Quality gate deve comparar com o fallback real** — Brier baseline (preditor constante) é um limiar muito baixo. O benchmark correto é o Poisson que o sistema já usa como fallback. Se ML não bate Poisson, publicar o modelo desperdiça recursos e piora previsões.
+
+2. **Temporal decay precisa de timestamps reais** — Usar índice sequencial (`n_samples/4`) como proxy temporal introduz viés quando dados não são uniformemente espaçados. Timestamps reais com half-life configurável são mais robustos.
+
+3. **Iterar incrementalmente é mais seguro** — As 3 iterações (implementação → correção decay/gate → upgrade para Poisson benchmark) permitiram validar cada mudança isoladamente em vez de um big-bang arriscado.
+
+---
+
+## 030 — ML Ops: workflows de validação e promoção com auditoria completa
+
+**Data:** 2026-03-17
+**Arquivos afetados:** `.github/workflows/ml-retrain-validate.yml` (novo), `.github/workflows/ml-retrain-promote.yml` (novo), `scripts/retrain_validate.py` (novo), `.gitignore`
+**Severidade:** Evolução operacional
+**Status:** Implementado
+**Commits:** `91e998c`, `e469a7b`, `f617064`, `aaf46d6`, `697e515`
+
+### Problema identificado
+
+O pipeline ML usava um workflow monolítico (`ml-retrain.yml`) que treinava e publicava modelos em S3 no mesmo job. Não havia:
+1. Separação entre validação e deploy
+2. Aprovação humana antes de publicar modelos em produção
+3. Auditoria de artefatos (summaries, classificações por liga, metadados)
+4. Verificação de proveniência do run de validação
+5. Proteção contra publicação de pipelines incompletos
+
+### Solução implementada — 2 workflows separados
+
+#### Workflow 1: `ml-retrain-validate.yml`
+- **Schedule**: terça 09:00 UTC (06:00 BRT)
+- Executa pipeline completo: treina 1X2 + market models com dados reais da API
+- Gera artefatos de auditoria: `training_summary.json`, `league_classifications.json`, `market_models_summary.json`, metadados por liga, `retrain.log`
+- **Integrity check**: step dedicado verifica que todos os artefatos obrigatórios existem e não estão vazios (exit 1 em caso de falha)
+- Artefatos nomeados com `run_number + sha` para rastreabilidade, retenção de 90 dias
+- **NÃO publica em S3** — apenas valida
+
+#### Workflow 2: `ml-retrain-promote.yml`
+- **Manual only** (`workflow_dispatch`) — sem schedule automático
+- Requer `environment: production` (aprovação via GitHub Environments)
+- Recebe `validation_run_number` como input
+- **Provenance check**: verifica via GH API que o run pertence a um validate bem-sucedido
+- Opção de **dry run** para validação sem upload
+- Publica TODOS os modelos (incluindo DEACTIVATED — gates de inferência decidem ativação)
+- Copia summaries para `s3://.ml_audit/` com timestamp para trilha de auditoria
+
+#### Script: `retrain_validate.py`
+- Orquestra o pipeline completo incluindo todas as 8 melhorias do #029
+- Exit code 1 em: zero ligas, >50% falharam, <100 partidas, artefatos ausentes
+- Garante que pipelines incompletos não são tratados como sucesso
+
+#### Hotfixes de workflow (`697e515`)
+- Corrigido step de verificação que usava `run_number` como `run_id` na API do GitHub
+- `download-artifact` usando `pattern` (glob) em vez de `name` (exact match)
+- `download-artifact` com `run-id` explícito (buscava no run corrente em vez do de validação)
+
+### Lição aprendida
+
+1. **"Publicar em S3" ≠ "ativar em inferência"** — A elegibilidade é decidida em runtime pelos gates do `predictor.py` (Brier, beats_poisson, etc.), não pelo deploy. Isso permite publicar todos os modelos e deixar a decisão para o código de inferência.
+
+2. **Provenance check é essencial** — Sem verificar que o `validation_run_number` pertence a um run de validate bem-sucedido, um promote poderia apontar para um run qualquer (ou inexistente).
+
+3. **Workflows do GitHub Actions com cross-run artifacts são complexos** — `download-artifact` exige `run-id` (não `run-number`), e busca por nome exige `pattern` para glob. Testado em 3 iterações até funcionar corretamente.
+
+---
+
+## 031 — Camada de governança Market Reference Signal
+
+**Data:** 2026-03-17
+**Arquivos afetados:** `backend/services/market_reference_signal.py` (novo), `backend/services/market_service.py`, `backend/audit.py`, `backend/ai/prompt_templates.py`, `frontend/next/src/lib/api.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/components/BatchAuditPanel.tsx`, `tests/unit/test_market_reference_signal.py` (novo)
+**Severidade:** Alta (nova camada de governança)
+**Status:** Implementado
+**Commit:** `21ed430`
+
+### Problema identificado
+
+Picks individuais eram classificados (SAFE/NEUTRO/etc.) apenas com base em probabilidade e EV do jogo específico, sem considerar a **qualidade estrutural** do pipeline para aquele mercado naquela liga. Exemplo: um mercado O/U 2.5 poderia ser classificado como SAFE mesmo quando o modelo de mercado O/U estava desativado (fallback Poisson puro) ou quando a liga não tinha ML ativo para 1X2.
+
+### Solução implementada — Market Reference Signal
+
+#### Backend: `market_reference_signal.py`
+
+Novo serviço que computa um **sinal de qualidade estrutural** por liga+mercado com 3 níveis:
+
+| Sinal | Significado | Quando aplicado |
+|-------|-------------|-----------------|
+| **SAFE** | Pipeline completo e confiável | ML 1X2 ativo + market model ativo para o mercado |
+| **NEUTRO** | Pipeline parcial ou fallback | ML 1X2 ativo mas sem market model, ou Corners (default) |
+| **RESTRITO** | Pipeline indisponível | Liga sem ML ativo, ou market model falhou quality gate |
+
+**`apply_signal_capping()`**: enriquece cada mercado com:
+- `rawClassification`: classificação original do pick
+- `finalClassification`: classificação após capping pelo sinal (nunca sobe, pode descer)
+- `wasCappedByMarketSignal`: flag booleano
+- Metadados do sinal (`signal_level`, `source`)
+
+#### Integração
+
+- **`market_service.py`**: integrado em ambos os paths V2 e legacy
+- **`audit.py`**: correções automáticas de MARKET_REFERENCE_SIGNAL bloqueadas (v1 — requer avaliação manual)
+- **`prompt_templates.py`**: estatísticas do signal incluídas no contexto da auditoria Mistral
+
+#### Frontend
+
+- **`MatchDetailCard.tsx`**: badge "Ref: SAFE/NEUTRO/RESTRITO" em cada mercado
+- **`localAudit.ts`**: contadores de capping; usa `finalClassification` para accuracy
+- **`BatchAuditPanel.tsx`**: exibe stats de capping quando picks foram limitados pelo signal
+
+#### Testes
+
+24 testes unitários cobrindo: computação do signal, capping, compatibilidade com auditoria, bloqueio de correções automáticas, e detecção de categoria de mercado.
+
+### Lição aprendida
+
+1. **Classificação individual não basta** — Um pick pode parecer SAFE pela probabilidade/EV, mas se o pipeline que gerou esses números é fraco (sem ML, sem market model), a confiança real é menor. O signal atua como **teto**, não como piso.
+
+2. **Capping é mais seguro que substituição** — O signal nunca promove uma classificação, apenas rebaixa. Isso garante que a lógica existente de EV/probabilidade não é anulada, apenas limitada.
+
+3. **Bloqueio de correção automática para features novas** — Ao introduzir uma nova camada de governança, é prudente bloquear correções automáticas na auditoria até que o comportamento seja validado em produção.
+
+---
+
+## 032 — Placar ao vivo travado em 0-0 para jogos em andamento (A-League, etc.)
+
+**Data:** 2026-03-17
+**Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/footstats_client.py`, `backend/services/live_score_merge.py` (novo), `tests/unit/test_live_score_merge.py` (novo)
+**Severidade:** Alta
+**Status:** Corrigido
+**Commits:** `1d812c4`, `ff620b1`, `00b9c48`
+
+### Problema identificado
+
+Jogos ao vivo (ex: A-League, MLS) exibiam placar 0-0 no dashboard mesmo quando já havia gols. O placar não atualizava em tempo real, mostrando dados pré-jogo durante toda a partida.
+
+### Causa raiz (3 camadas)
+
+1. **Colisão de cache** — `get_match_details()` (TTL 60min) e `get_match_live_details()` (TTL 30s) compartilhavam a mesma chave de cache, pois ambas chamam o mesmo endpoint FootyStats com parâmetros idênticos. Um fetch de detalhes pré-jogo servia dados estáticos 0-0 por até 60 minutos.
+
+2. **Overwrite incondicional de placar** — Quando o endpoint de detalhe retornava 0-0 (dados stale), o código sobrescrevia incondicionalmente placares válidos vindos do `todays-matches`. Não havia guard para manter o placar mais alto.
+
+3. **Early exit em falha de detalhe** — Quando o endpoint de detalhe falhava, o código emitia 0-0 hardcoded e pulava (`continue`) o enriquecimento via API-Football, eliminando a última chance de obter o placar correto.
+
+### Correções aplicadas (3 iterações)
+
+#### Iteração 1 — Fix das 3 causas raiz (`1d812c4`)
+
+1. **Cache namespace**: adicionado parâmetro `_cache_ns` para diferenciar entries de detalhe (TTL longo) vs live (TTL curto), removido antes de enviar à API
+2. **Guard de placar**: comparação de total de gols antes de sobrescrever — mantém o placar mais alto
+3. **Fall-through em falha**: removido `continue` para permitir enriquecimento via API-Football mesmo quando detalhe falha
+
+#### Iteração 2 — Merge centralizado com prioridade (`ff620b1`)
+
+Extraída toda a lógica de merge de placar para `live_score_merge.py` com:
+- **Prioridade de fontes**: API-Football > match detail > todays-matches > fallback 0-0
+- **Guarda monotônica**: placar nunca decresce (previne regressão de 2-1 para 0-0)
+- **Resolução de conflitos laterais**: quando fontes divergem no mesmo total, escolhe pela prioridade
+- **Campos de observabilidade**: `scoreSourceFinal`, `scoreConflictDetected`, `apiFootballOverlayApplied`
+- **17 testes de regressão** cobrindo 7 cenários especificados
+
+#### Iteração 3 — Logging diagnóstico (`00b9c48`)
+
+- Tags `[live-scores][diag]` e `[live-scores][diag-af]` em cada match ao vivo
+- Loga cada fonte de placar (todays-matches, match-detail, API-Football), decisão de merge, detecção de conflito e fonte final escolhida
+- Permite debugging end-to-end de propagação de placar em produção
+
+### Lição aprendida
+
+1. **Cache keys devem incluir contexto de uso** — Mesmo endpoint com mesmos parâmetros pode ter semânticas diferentes (detalhe pré-jogo vs atualização live). Namespace de cache evita colisões silenciosas.
+
+2. **Merge de múltiplas fontes exige prioridade explícita e monotonia** — Com 3-4 fontes de placar, regras ad-hoc em diferentes pontos do código geram comportamento imprevisível. Uma função centralizada com prioridade declarada e guarda monotônica é mais robusta e testável.
+
+3. **Observabilidade retroativa é cara** — Sem logs de diagnóstico, o bug de "placar travado" exigiu análise manual do código para identificar qual fonte estava prevalecendo. Campos de observabilidade (`scoreSourceFinal`, `scoreConflictDetected`) permitem diagnosticar problemas semelhantes em produção sem code review.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
