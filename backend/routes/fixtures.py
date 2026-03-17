@@ -1167,8 +1167,21 @@ def live_scores() -> Dict[str, Any]:
                                 _fb_away = 0
 
                             if _fb_home is not None and _fb_away is not None:
-                                home_goals = _fb_home
-                                away_goals = _fb_away
+                                # Guard: never overwrite a higher score from
+                                # todays-matches with a stale 0-0 from the
+                                # detail endpoint (which may lag behind).
+                                _existing_total = (home_goals or 0) + (away_goals or 0)
+                                _detail_total = _fb_home + _fb_away
+                                if _detail_total >= _existing_total:
+                                    home_goals = _fb_home
+                                    away_goals = _fb_away
+                                else:
+                                    logger.info(
+                                        f"[live-scores] Keeping todays-matches score "
+                                        f"{home_goals}-{away_goals} over detail "
+                                        f"{_fb_home}-{_fb_away} for "
+                                        f"{m.get('home_name')} vs {m.get('away_name')}"
+                                    )
                                 _has_goal_data = True
                                 _detail_ok = True
                                 _fb_ht_h = _valid_goal(dd.get("ht_goals_team_a")) or _valid_goal(dd.get("home_team_goal_count_half_time"))
@@ -1183,40 +1196,20 @@ def live_scores() -> Dict[str, Any]:
 
                 if not _detail_ok:
                     # Match detail endpoint failed or returned null goals.
-                    # Emit score 0-0 so the frontend can display a real
-                    # score instead of "- : -".  The API-Football enrichment
-                    # step below will overwrite with the correct score if
-                    # available.
+                    # Use whatever goal data we already have from todays-matches
+                    # (may be non-zero if homeGoalCount or homeGoals timings
+                    # were populated). Only fall back to 0-0 as last resort.
+                    if home_goals is None:
+                        home_goals = 0
+                    if away_goals is None:
+                        away_goals = 0
+                    _has_goal_data = True
                     logger.warning(
-                        f"[live-scores] No live score for "
+                        f"[live-scores] Detail endpoint unavailable for "
                         f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(id={_raw_id}, raw_status={raw_status!r}), defaulting to 0-0"
+                        f"(id={_raw_id}, raw_status={raw_status!r}), "
+                        f"using todays-matches score: {home_goals}-{away_goals}"
                     )
-                    home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
-                    away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
-                    _ng_period = None
-                    _ng_minute = None
-                    if elapsed_min is not None and elapsed_min >= 0:
-                        if elapsed_min <= 47:
-                            _ng_period = "1T"
-                            _ng_minute = min(elapsed_min, 45)
-                        elif elapsed_min <= 62:
-                            _ng_period = "HT"
-                            _ng_minute = None
-                        else:
-                            _ng_period = "2T"
-                            _ng_minute = min(elapsed_min - 15, 90)
-                    result.append({
-                        "id": int(_raw_id) if _raw_id is not None else None,
-                        "homeTeam": home_name,
-                        "awayTeam": away_name,
-                        "status": status,
-                        "score": {"home": 0, "away": 0},
-                        "period": _ng_period,
-                        "minute": _ng_minute,
-                        "dateUnix": m.get("date_unix"),
-                    })
-                    continue
             elif status != "finished":
                 continue
 
