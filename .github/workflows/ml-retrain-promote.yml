@@ -1,0 +1,154 @@
+name: "ML Retrain — Promote"
+
+# Workflow de PROMOCAO: publica modelos validados para producao (S3).
+# Depende de um run anterior do ml-retrain-validate.yml.
+# Requer aprovacao humana (via workflow_dispatch manual).
+
+on:
+  workflow_dispatch:
+    inputs:
+      validation_run_number:
+        description: "Run number do workflow de validacao (ml-retrain-validate)"
+        required: true
+        type: string
+      upload_s3:
+        description: "Upload modelos para S3"
+        required: true
+        default: true
+        type: boolean
+      s3_bucket:
+        description: "S3 bucket name (override)"
+        required: false
+        default: ""
+        type: string
+
+env:
+  DATA_ROOT: /tmp/ml_pipeline
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-validation-artifacts-${{ github.event.inputs.validation_run_number }}
+          path: /tmp/ml_pipeline/artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ""  # will be resolved from the name pattern
+
+      - name: Download trained models
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-models-${{ github.event.inputs.validation_run_number }}
+          path: /tmp/ml_pipeline/.ml_models
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ""
+
+      - name: Validate artifacts exist
+        id: check
+        run: |
+          echo "=== Checking artifacts ==="
+          SUMMARY="/tmp/ml_pipeline/artifacts/training_summary.json"
+          CLASSIFICATION="/tmp/ml_pipeline/artifacts/league_classifications.json"
+
+          if [ ! -f "$SUMMARY" ]; then
+            echo "::error::training_summary.json not found. Run validation first."
+            exit 1
+          fi
+
+          if [ ! -f "$CLASSIFICATION" ]; then
+            echo "::error::league_classifications.json not found."
+            exit 1
+          fi
+
+          # Count models
+          N_MODELS=$(find /tmp/ml_pipeline/.ml_models -name "*.pkl" -o -name "*.json" | wc -l)
+          echo "Found $N_MODELS model files"
+          echo "n_models=$N_MODELS" >> $GITHUB_OUTPUT
+
+          if [ "$N_MODELS" -eq 0 ]; then
+            echo "::error::No model files found in artifacts."
+            exit 1
+          fi
+
+          # Show classification summary
+          python3 -c "
+          import json
+          with open('$CLASSIFICATION') as f:
+              data = json.load(f)
+          active = [l for l in data if l['classification'] == 'ML_ACTIVE']
+          poisson = [l for l in data if l['classification'] == 'POISSON']
+          deact = [l for l in data if l['classification'] == 'DEACTIVATED']
+          print(f'ML_ACTIVE: {len(active)} leagues')
+          print(f'POISSON: {len(poisson)} leagues')
+          print(f'DEACTIVATED: {len(deact)} leagues')
+          for l in active:
+              print(f'  + {l[\"league_id\"]}: Brier={l.get(\"brier\", \"?\")}')
+          "
+
+      - name: Configure AWS credentials
+        if: ${{ github.event.inputs.upload_s3 == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload models to S3
+        if: ${{ github.event.inputs.upload_s3 == 'true' }}
+        run: |
+          BUCKET="${{ github.event.inputs.s3_bucket || secrets.S3_BUCKET || 'meu-bucket-sportsbank' }}"
+          echo "Uploading to s3://$BUCKET/.ml_models/"
+
+          aws s3 sync /tmp/ml_pipeline/.ml_models/ "s3://$BUCKET/.ml_models/" \
+            --delete \
+            --exclude "*.pyc" \
+            --exclude "__pycache__/*"
+
+          echo ""
+          echo "=== Models in S3 ==="
+          aws s3 ls "s3://$BUCKET/.ml_models/" --recursive --human-readable | head -80
+
+          # Also upload the validation artifacts for traceability
+          aws s3 cp /tmp/ml_pipeline/artifacts/training_summary.json \
+            "s3://$BUCKET/.ml_audit/training_summary_run${{ github.event.inputs.validation_run_number }}.json"
+          aws s3 cp /tmp/ml_pipeline/artifacts/league_classifications.json \
+            "s3://$BUCKET/.ml_audit/league_classifications_run${{ github.event.inputs.validation_run_number }}.json"
+
+      - name: Generate promotion summary
+        if: always()
+        run: |
+          echo "## ML Model Promotion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source validation run**: #${{ github.event.inputs.validation_run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Upload to S3**: ${{ github.event.inputs.upload_s3 }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Model files**: ${{ steps.check.outputs.n_models }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f /tmp/ml_pipeline/artifacts/league_classifications.json ]; then
+            python3 -c "
+          import json
+          with open('/tmp/ml_pipeline/artifacts/league_classifications.json') as f:
+              data = json.load(f)
+          active = [l for l in data if l['classification'] == 'ML_ACTIVE']
+          poisson = [l for l in data if l['classification'] == 'POISSON']
+          deact = [l for l in data if l['classification'] == 'DEACTIVATED']
+          print(f'### Promoted Models')
+          print(f'- ML_ACTIVE: **{len(active)}** leagues')
+          print(f'- POISSON fallback: **{len(poisson)}** leagues')
+          print(f'- DEACTIVATED: **{len(deact)}** leagues')
+          print()
+          print('| League | Classification | Brier |')
+          print('|--------|----------------|-------|')
+          for l in sorted(data, key=lambda x: x.get('brier', 99)):
+              print(f'| {l[\"league_id\"]} | {l[\"classification\"]} | {l.get(\"brier\", \"—\")} |')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
