@@ -13,6 +13,10 @@ from backend.services.footstats_client import FootyStatsClient
 from backend.services.api_football_client import APIFootballClient
 from backend.services.data_mapper import DataMapper
 from backend.services.util_service import team_name
+from backend.services.live_score_merge import (
+    merge_live_scores, ScoreCandidate,
+    SOURCE_TODAYS_MATCHES, SOURCE_MATCH_DETAIL, SOURCE_API_FOOTBALL,
+)
 from backend.config.leagues_config import get_league_config, get_api_football_league_id, get_season_for_league
 
 logger = logging.getLogger("sportsbankzu.fixtures")
@@ -1102,44 +1106,38 @@ def live_scores() -> Dict[str, Any]:
                     return len(val)
                 return None
 
-            # Primary: homeGoalCount/awayGoalCount
-            home_goals = _valid_goal(m.get("homeGoalCount"))
-            away_goals = _valid_goal(m.get("awayGoalCount"))
-            # Secondary: count goal timings from homeGoals/awayGoals arrays
-            _home_timings = _count_goal_timings_ls(m.get("homeGoals"))
-            _away_timings = _count_goal_timings_ls(m.get("awayGoals"))
-            # Take MAX between count and timings (one may lag behind the other)
-            _h_all = [v for v in [home_goals, _home_timings] if v is not None]
-            _a_all = [v for v in [away_goals, _away_timings] if v is not None]
-            home_goals = max(_h_all) if _h_all else None
-            away_goals = max(_a_all) if _a_all else None
+            # ── Build ScoreCandidate from todays-matches data ──
+            _tm_home = _valid_goal(m.get("homeGoalCount"))
+            _tm_away = _valid_goal(m.get("awayGoalCount"))
+            _tm_h_t = _count_goal_timings_ls(m.get("homeGoals"))
+            _tm_a_t = _count_goal_timings_ls(m.get("awayGoals"))
+            _h_all = [v for v in [_tm_home, _tm_h_t] if v is not None]
+            _a_all = [v for v in [_tm_away, _tm_a_t] if v is not None]
+            _tm_home = max(_h_all) if _h_all else None
+            _tm_away = max(_a_all) if _a_all else None
 
+            # If individual goal fields are missing, try HT data as fallback
             _total = _valid_goal(m.get("totalGoalCount"))
+            if (_tm_home is None or _tm_away is None) and _total is not None and _total > 0:
+                _ht_h = _valid_goal(m.get("ht_goals_team_a")) or _valid_goal(m.get("home_team_goal_count_half_time"))
+                _ht_a = _valid_goal(m.get("ht_goals_team_b")) or _valid_goal(m.get("away_team_goal_count_half_time"))
+                if _ht_h is not None and _ht_a is not None:
+                    _tm_home = _tm_home if _tm_home is not None else _ht_h
+                    _tm_away = _tm_away if _tm_away is not None else _ht_a
 
-            # If individual goal fields are missing, try totalGoalCount as evidence
-            _has_goal_data = home_goals is not None and away_goals is not None
-            if not _has_goal_data:
-                if _total is not None and _total > 0:
-                    # Try HT data as fallback
-                    _ht_h = _valid_goal(m.get("ht_goals_team_a")) or _valid_goal(m.get("home_team_goal_count_half_time"))
-                    _ht_a = _valid_goal(m.get("ht_goals_team_b")) or _valid_goal(m.get("away_team_goal_count_half_time"))
-                    if _ht_h is not None and _ht_a is not None:
-                        home_goals = home_goals if home_goals is not None else _ht_h
-                        away_goals = away_goals if away_goals is not None else _ht_a
-                        _has_goal_data = True
-                        logger.info(
-                            f"[live-scores] Using HT data as fallback for "
-                            f"{m.get('home_name')} vs {m.get('away_name')} "
-                            f"(totalGoalCount={_total}, ht={_ht_h}-{_ht_a})"
-                        )
+            todays_candidate = ScoreCandidate(
+                home=_tm_home, away=_tm_away,
+                source=SOURCE_TODAYS_MATCHES,
+                has_data=_tm_home is not None and _tm_away is not None,
+            )
+
+            _match_label = f"{m.get('home_name', '?')} vs {m.get('away_name', '?')}"
+            detail_candidate = None
 
             # ALWAYS fetch individual match details for live matches.
-            # The todays-matches endpoint returns homeGoalCount=0, awayGoalCount=0,
-            # homeGoals="[]" for ALL incomplete/live matches — it NEVER updates
-            # during the match. Only the individual /match endpoint has live scores.
+            # The todays-matches endpoint often returns stale 0-0 for live games.
             if status == "live":
                 _raw_id = m.get("id")
-                _detail_ok = False
                 if _raw_id is not None:
                     try:
                         detail = footstats.get_match_live_details(int(_raw_id))
@@ -1156,69 +1154,47 @@ def live_scores() -> Dict[str, Any]:
                             _fb_home = max(_fb_h_vals) if _fb_h_vals else None
                             _fb_away = max(_fb_a_vals) if _fb_a_vals else None
 
-                            # FootyStats often returns null goal counts for
-                            # recently-started live matches.  When the API
-                            # confirms the match exists (success=true) but has
-                            # no goal data, treat it as 0-0 instead of
-                            # discarding the result.
+                            # Null goals from a successful response → treat as 0-0
                             if _fb_home is None:
                                 _fb_home = 0
                             if _fb_away is None:
                                 _fb_away = 0
 
-                            if _fb_home is not None and _fb_away is not None:
-                                home_goals = _fb_home
-                                away_goals = _fb_away
-                                _has_goal_data = True
-                                _detail_ok = True
-                                _fb_ht_h = _valid_goal(dd.get("ht_goals_team_a")) or _valid_goal(dd.get("home_team_goal_count_half_time"))
-                                _fb_ht_a = _valid_goal(dd.get("ht_goals_team_b")) or _valid_goal(dd.get("away_team_goal_count_half_time"))
-                                logger.info(
-                                    f"[live-scores] match-detail OK for "
-                                    f"{m.get('home_name')} vs {m.get('away_name')} "
-                                    f"(id={_raw_id}, score={_fb_home}-{_fb_away})"
-                                )
+                            detail_candidate = ScoreCandidate(
+                                home=_fb_home, away=_fb_away,
+                                source=SOURCE_MATCH_DETAIL,
+                                has_data=True,
+                            )
                     except Exception as _fb_err:
                         logger.warning(f"[live-scores] match-detail failed for id={_raw_id}: {_fb_err}")
-
-                if not _detail_ok:
-                    # Match detail endpoint failed or returned null goals.
-                    # Emit score 0-0 so the frontend can display a real
-                    # score instead of "- : -".  The API-Football enrichment
-                    # step below will overwrite with the correct score if
-                    # available.
-                    logger.warning(
-                        f"[live-scores] No live score for "
-                        f"{m.get('home_name')} vs {m.get('away_name')} "
-                        f"(id={_raw_id}, raw_status={raw_status!r}), defaulting to 0-0"
-                    )
-                    home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
-                    away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
-                    _ng_period = None
-                    _ng_minute = None
-                    if elapsed_min is not None and elapsed_min >= 0:
-                        if elapsed_min <= 47:
-                            _ng_period = "1T"
-                            _ng_minute = min(elapsed_min, 45)
-                        elif elapsed_min <= 62:
-                            _ng_period = "HT"
-                            _ng_minute = None
-                        else:
-                            _ng_period = "2T"
-                            _ng_minute = min(elapsed_min - 15, 90)
-                    result.append({
-                        "id": int(_raw_id) if _raw_id is not None else None,
-                        "homeTeam": home_name,
-                        "awayTeam": away_name,
-                        "status": status,
-                        "score": {"home": 0, "away": 0},
-                        "period": _ng_period,
-                        "minute": _ng_minute,
-                        "dateUnix": m.get("date_unix"),
-                    })
-                    continue
+                else:
+                    logger.warning(f"[live-scores] match has no id — cannot fetch detail for {_match_label}")
             elif status != "finished":
                 continue
+
+            # Merge scores (API-Football will be applied later in the enrichment pass)
+            merge_result = merge_live_scores(
+                todays=todays_candidate,
+                detail=detail_candidate,
+                api_football=None,  # applied in enrichment pass below
+                match_label=_match_label,
+            )
+            home_goals = merge_result.home
+            away_goals = merge_result.away
+            _score_source = merge_result.source
+            _score_conflict = merge_result.conflict_detected
+
+            # Diagnostic logging: trace every score source per live match
+            if status == "live":
+                logger.info(
+                    f"[live-scores][diag] {_match_label} | "
+                    f"todays={todays_candidate.home}-{todays_candidate.away} "
+                    f"detail={detail_candidate.home}-{detail_candidate.away if detail_candidate else 'N/A'} "
+                    f"merge={merge_result.home}-{merge_result.away} "
+                    f"source={merge_result.source} "
+                    f"conflict={merge_result.conflict_detected} "
+                    f"candidates={merge_result.candidates_seen}"
+                )
 
             # _valid_goal already returns int, but ensure type safety
             home_goals = int(home_goals)
@@ -1276,6 +1252,9 @@ def live_scores() -> Dict[str, Any]:
                 "period": period,
                 "minute": minute,
                 "dateUnix": m.get("date_unix"),
+                # Observability fields
+                "scoreSourceFinal": _score_source,
+                "scoreConflictDetected": _score_conflict,
             })
         if skipped_statuses:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
@@ -1322,26 +1301,52 @@ def live_scores() -> Dict[str, Any]:
                         if ld["goals_home"] is None:
                             continue
 
-                        # Overlay score from API-Football
+                        # Overlay score from API-Football via merge function
                         af_home_g = ld["goals_home"]
                         af_away_g = ld["goals_away"]
 
-                        # Guard: never overwrite a higher FootyStats score with
-                        # a lower API-Football score (API-Football may lag on
-                        # rare occasions).
-                        cur_score = rec.get("score")
-                        cur_total = 0
-                        if cur_score and isinstance(cur_score, dict):
-                            cur_total = (cur_score.get("home") or 0) + (cur_score.get("away") or 0)
-                        af_total = af_home_g + (af_away_g or 0)
+                        cur_score = rec.get("score") or {}
+                        cur_home = cur_score.get("home", 0) if isinstance(cur_score, dict) else 0
+                        cur_away = cur_score.get("away", 0) if isinstance(cur_score, dict) else 0
 
-                        if af_total >= cur_total:
-                            new_score: Dict[str, Any] = {"home": af_home_g, "away": af_away_g}
+                        # Use merge function with existing score as "current" and AF as overlay
+                        _current_candidate = ScoreCandidate(
+                            home=cur_home, away=cur_away,
+                            source=rec.get("scoreSourceFinal", SOURCE_TODAYS_MATCHES),
+                            has_data=True,
+                        )
+                        _af_candidate = ScoreCandidate(
+                            home=af_home_g, away=af_away_g,
+                            source=SOURCE_API_FOOTBALL,
+                            has_data=True,
+                        )
+                        af_merge = merge_live_scores(
+                            todays=_current_candidate,
+                            api_football=_af_candidate,
+                            match_label=f"{rec.get('homeTeam', '?')} vs {rec.get('awayTeam', '?')}",
+                        )
+
+                        if af_merge.source == SOURCE_API_FOOTBALL:
+                            new_score: Dict[str, Any] = {"home": af_merge.home, "away": af_merge.away}
                             if ld["halftime_home"] is not None:
                                 new_score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
-                            elif cur_score and isinstance(cur_score, dict) and cur_score.get("halftime"):
+                            elif isinstance(cur_score, dict) and cur_score.get("halftime"):
                                 new_score["halftime"] = cur_score["halftime"]
                             rec["score"] = new_score
+
+                        rec["scoreSourceFinal"] = af_merge.source
+                        rec["scoreConflictDetected"] = af_merge.conflict_detected or rec.get("scoreConflictDetected", False)
+                        rec["apiFootballOverlayApplied"] = af_merge.source == SOURCE_API_FOOTBALL
+
+                        # Diagnostic: trace API-Football overlay decision
+                        logger.info(
+                            f"[live-scores][diag-af] {rec.get('homeTeam', '?')} vs {rec.get('awayTeam', '?')} | "
+                            f"before={cur_home}-{cur_away}({rec.get('scoreSourceFinal','?')}) "
+                            f"af={af_home_g}-{af_away_g} "
+                            f"after={af_merge.home}-{af_merge.away}({af_merge.source}) "
+                            f"overlay={af_merge.source == SOURCE_API_FOOTBALL} "
+                            f"conflict={af_merge.conflict_detected}"
+                        )
 
                         # Always update minute/period from API-Football (more accurate)
                         if ld["minute"] is not None:

@@ -107,6 +107,8 @@ class FootyStatsClient:
         """Realiza a requisição para a API com suporte a cache e retry automático."""
         params["key"] = self.api_key
         cache_key = self._generate_cache_key(endpoint, params)
+        # Strip internal cache namespace param before sending to API
+        params.pop("_cache_ns", None)
 
         # Tenta cache primeiro (respeitando o TTL solicitado pelo chamador)
         cached_data = self._get_from_cache(cache_key, max_age_minutes=ttl_minutes)
@@ -198,8 +200,14 @@ class FootyStatsClient:
         return self._request("match", params, ttl_minutes=60)
 
     def get_match_live_details(self, match_id: int) -> Dict[str, Any]:
-        """Retorna detalhes de uma partida com cache curto (30s) para scores ao vivo."""
-        params = {"match_id": match_id}
+        """Retorna detalhes de uma partida com cache curto (30s) para scores ao vivo.
+
+        Uses a separate cache key suffix ('_live') to avoid collision with
+        get_match_details() which caches the same endpoint for 60 minutes.
+        Without this separation, a pre-match detail fetch would serve stale
+        0-0 scores for up to 60 minutes during a live match.
+        """
+        params = {"match_id": match_id, "_cache_ns": "live"}
         return self._request("match", params, ttl_minutes=0.5)  # Cache de 30s
 
     def get_league_season_stats(self, season_id: int) -> Dict[str, Any]:
