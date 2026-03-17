@@ -460,7 +460,7 @@ class TestAuditDisplay:
             data_quality_score=0.7,
             display_label="Escanteios Over 9.5",
         )
-        mo._corner_governance = {
+        mo.corner_governance = {
             "marketFamily": "corners",
             "cornerModelStatus": "NEUTRAL",
             "championModel": "negative_binomial",
@@ -482,6 +482,54 @@ class TestAuditDisplay:
 
 
 # ─── Integration: Model Comparison ───
+
+class TestPydanticCompat:
+    """Regression tests for Pydantic v2 compatibility."""
+
+    def test_corner_governance_field_serialization(self):
+        """corner_governance field must work without leading underscore error."""
+        pydantic = pytest.importorskip("pydantic")
+        from backend.models.market_output import MarketOutput
+
+        mo = MarketOutput(
+            market_type="Corners",
+            selection="Corners Over 9.5",
+            corner_governance={"marketFamily": "corners", "cornerModelStatus": "NEUTRAL"},
+        )
+        assert mo.corner_governance is not None
+        assert mo.corner_governance["marketFamily"] == "corners"
+
+        # Verify to_legacy_mercado includes corner_governance
+        legacy = mo.to_legacy_mercado()
+        assert "corner_governance" in legacy
+        assert legacy["corner_governance"]["marketFamily"] == "corners"
+
+    def test_corner_governance_excluded_from_json(self):
+        """corner_governance should be excluded from default serialization."""
+        pydantic = pytest.importorskip("pydantic")
+        from backend.models.market_output import MarketOutput
+
+        mo = MarketOutput(
+            market_type="Corners",
+            selection="Corners Over 9.5",
+            corner_governance={"test": True},
+        )
+        dumped = mo.model_dump()
+        assert "corner_governance" not in dumped
+
+    def test_corner_governance_alias_compat(self):
+        """Should accept both 'corner_governance' and '_corner_governance' via alias."""
+        pydantic = pytest.importorskip("pydantic")
+        from backend.models.market_output import MarketOutput
+
+        mo = MarketOutput(
+            market_type="Corners",
+            selection="Corners Over 9.5",
+            **{"_corner_governance": {"via_alias": True}},
+        )
+        assert mo.corner_governance is not None
+        assert mo.corner_governance["via_alias"] is True
+
 
 class TestModelComparison:
     def test_three_models_compared(self):

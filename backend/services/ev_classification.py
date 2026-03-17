@@ -448,7 +448,7 @@ def evaluate_match_markets(
         classified = classify_market(mo)
 
         # Attach corner governance metadata
-        classified._corner_governance = {
+        classified.corner_governance = {
             "marketFamily": "corners",
             "cornerModelStatus": operational_state,
             "championModel": champion_model,

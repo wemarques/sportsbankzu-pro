@@ -7,7 +7,7 @@ This ensures consistent fields regardless of the source market type.
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class MarketClassification(str, Enum):
@@ -68,7 +68,11 @@ class MarketOutput(BaseModel):
     prob_max_pct: int = 0
 
     # Corner governance (populated for marketFamily=corners)
-    _corner_governance: Optional[dict] = Field(None, exclude=True)
+    corner_governance: Optional[dict] = Field(
+        None,
+        exclude=True,
+        validation_alias=AliasChoices("corner_governance", "_corner_governance"),
+    )
 
     def compute_display(self) -> None:
         """Compute display helpers from probabilities."""
@@ -111,8 +115,8 @@ class MarketOutput(BaseModel):
             "raw_probability": round(self.raw_probability, 4) if self.raw_probability else None,
         }
         # Add corner governance metadata if available
-        if self._corner_governance:
-            result["corner_governance"] = self._corner_governance
+        if self.corner_governance:
+            result["corner_governance"] = self.corner_governance
         return result
 
     def _legacy_status(self) -> str:

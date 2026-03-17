@@ -194,7 +194,7 @@ export type MatchPrediction = {
   // Market reference signal fields
   finalClassification?: string;
   wasCappedByMarketSignal?: boolean;
-  marketReferenceSignal?: string;
+  marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
 };
 
 export const AVAILABLE_LEAGUES: League[] = [
