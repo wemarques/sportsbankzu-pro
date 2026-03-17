@@ -86,17 +86,28 @@ def train(leagues, n_seasons, no_validate, include_markets):
                 weights = np.ones(len(y), dtype=np.float64)
                 train_all_markets(X, matches, weights, feature_names, league_id)
 
-    # Summary
+    # Summary with new metrics
     success = [r for r in results if r.get("status") == "success"]
     failed = [r for r in results if r.get("status") != "success"]
 
-    click.echo(f"\n{'='*50}")
+    click.echo(f"\n{'='*70}")
     click.echo(f"Training complete: {len(success)} OK, {len(failed)} failed/skipped")
+    click.echo(f"{'League':<22} {'Brier':>7} {'ECE':>7} {'Acc%':>6} {'NoOdds':>8} {'Eff':>6} {'Status':>10}")
+    click.echo("-" * 70)
     for r in success:
-        brier = r.get("validation", {}).get("avg_brier", "?")
-        click.echo(f"  ✓ {r['league_id']}: Brier={brier}, n={r.get('n_samples', 0)}")
+        val = r.get("validation", {})
+        brier = val.get("avg_brier", "?")
+        ece = val.get("avg_ece", "?")
+        acc = val.get("avg_accuracy", "?")
+        no_odds = r.get("no_odds_variant", {}).get("avg_brier", "-")
+        mkt_eff = r.get("market_efficiency_r2", "-")
+        deact = "DEACT" if r.get("ml_deactivated") else "ACTIVE" if brier != "?" and brier < 0.60 else "POISSON"
+        click.echo(
+            f"  {r['league_id']:<20} {str(brier):>7} {str(ece):>7} "
+            f"{str(acc):>6} {str(no_odds):>8} {str(mkt_eff):>6} {deact:>10}"
+        )
     for r in failed:
-        click.echo(f"  ✗ {r.get('league_id', '?')}: {r.get('status', '?')}")
+        click.echo(f"  {r.get('league_id', '?'):<20} {'—':>7} {'—':>7} {'—':>6} {'—':>8} {'—':>6} {r.get('status', '?'):>10}")
 
 
 @ml.command()
@@ -121,12 +132,12 @@ def status(league):
 
 @ml.command("status-all")
 def status_all():
-    """Check ML model status for all leagues."""
+    """Check ML model status for all leagues (with ECE, market efficiency)."""
     from backend.config.leagues_config import LEAGUES_CONFIG
     from backend.ml.predictor import get_model_info, is_ml_available
 
-    click.echo(f"{'League':<25} {'Available':>9} {'Brier':>7} {'Samples':>8} {'Trained':>12}")
-    click.echo("-" * 65)
+    click.echo(f"{'League':<22} {'ML':>4} {'Brier':>7} {'ECE':>6} {'MktEff':>7} {'OddsVal':>8} {'Samples':>8}")
+    click.echo("-" * 70)
 
     for cfg in LEAGUES_CONFIG:
         lid = cfg["id"]
@@ -134,11 +145,18 @@ def status_all():
         avail = is_ml_available(lid)
         if info:
             brier = info.get("validation_brier", "?")
+            ece = info.get("validation_ece", "-")
+            mkt_eff = info.get("market_efficiency_r2", "-")
+            odds_val = info.get("odds_value_added", "-")
             n = info.get("n_samples", "?")
-            trained = (info.get("trained_at", "?") or "?")[:10]
-            click.echo(f"{lid:<25} {'✓' if avail else '✗':>9} {str(brier):>7} {str(n):>8} {trained:>12}")
+            deact = info.get("ml_deactivated", False)
+            status = "D" if deact else ("✓" if avail else "✗")
+            click.echo(
+                f"{lid:<22} {status:>4} {str(brier):>7} {str(ece):>6} "
+                f"{str(mkt_eff):>7} {str(odds_val):>8} {str(n):>8}"
+            )
         else:
-            click.echo(f"{lid:<25} {'✗':>9} {'—':>7} {'—':>8} {'—':>12}")
+            click.echo(f"{lid:<22} {'✗':>4} {'—':>7} {'—':>6} {'—':>7} {'—':>8} {'—':>8}")
 
 
 @ml.command("refresh-dna")

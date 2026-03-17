@@ -446,6 +446,21 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         except Exception as e:
             logger.warning(f"Failed to increment version: {e}")
 
+    # Improvement #2: auto-trigger calibrator retraining after batch audit
+    # when enough new data has been accumulated
+    calibrator_results = []
+    try:
+        from backend.modeling.calibrator import retrain_all_calibrators
+        cal_results = retrain_all_calibrators()
+        calibrator_results = [r for r in cal_results if r and r.get("accepted")]
+        if calibrator_results:
+            logger.info(
+                f"[CRON] Auto-retrained {len(calibrator_results)} calibrators "
+                f"after batch audit"
+            )
+    except Exception as e:
+        logger.warning(f"[CRON] Calibrator retraining after audit failed: {e}")
+
     result = {
         "status": "success",
         "triggered_by": "eventbridge_cron",
@@ -464,6 +479,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "auto_corrections_applied": len(auto_applied),
         "auto_corrections": auto_applied,
         "rejected_corrections": len(rejected),
+        "calibrators_retrained": len(calibrator_results),
     }
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")

@@ -1844,4 +1844,178 @@ Frontend (deduplicateMatches — safety net final):
 
 ---
 
+## 027 — Fallback de ID de match usava índice numérico em vez de nomes canônicos
+
+**Data:** 2026-03-16
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+Quando o match não possuía um `id` válido da API, o sistema gerava um ID de fallback usando o índice numérico do loop (`idx`). Isso causava:
+1. IDs instáveis entre requests (o mesmo jogo podia receber `idx=3` ou `idx=7` dependendo da ordem)
+2. Falha no deduplicador ao comparar IDs de fontes diferentes
+3. Match detail cards não abriam corretamente quando o ID mudava entre refetches
+
+### Causa raiz
+
+O fallback de ID era construído como `f"{league_id}_{idx}"` em vez de usar os nomes dos times como parte da chave.
+
+### Correção aplicada
+
+Substituído o fallback por um ID baseado em nomes canônicos dos times:
+- `f"{league_id}_{canon_home}_{canon_away}"` usando `_resolve_alias()` para garantir consistência
+- Remove o uso de `idx` completamente do gerador de IDs
+- Garante que o mesmo jogo sempre recebe o mesmo ID, independente da ordem de processamento
+
+### Lição aprendida
+
+IDs de fallback devem ser determinísticos e baseados em propriedades imutáveis do dado (nomes de times), nunca em posição ordinal do processamento.
+
+---
+
+## 028 — Pipeline preditivo de 5 camadas com contrato unificado de saída
+
+**Data:** 2026-03-17
+**Arquivos afetados:**
+- Novos: `backend/models/market_output.py`, `backend/services/data_governance.py`, `backend/modeling/poisson_matrix.py`, `backend/modeling/corners_engine.py`, `backend/services/ev_classification.py`, `backend/services/bankroll_engine.py`, `backend/services/correlation_matrix.py`, `backend/routes/market_analysis.py`
+- Modificados: `backend/services/market_service.py`, `backend/services/combinadas_service.py`, `backend/main.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/lib/kelly.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Evolução arquitetural (não é correção de bug)
+**Status:** Implementado
+
+### Problema identificado
+
+O pipeline de prognósticos tinha diversas limitações:
+1. **Mercados derivados independentemente** — Over/Under, BTTS e 1X2 eram calculados por lógicas separadas, sem garantia de consistência probabilística
+2. **Sem contrato unificado** — cada mercado retornava campos diferentes, dificultando o frontend e o bankroll
+3. **Classificação binária** — apenas SAFE ou NEUTRO, sem graduação intermediária para multiples
+4. **EV calculado sem odd real** — o sistema gerava sugestões de stake mesmo sem confirmar odd de bookmaker
+5. **Escanteios sem motor próprio** — usava apenas dados crus do FootyStats, sem modelagem Poisson
+6. **Sem controle de correlação** — multiples podiam combinar mercados redundantes (ex: 1X2 Home + DC 1X)
+7. **Sem caps de exposição** — sem limite por jogo, dia ou mercado no bankroll
+
+### Solução implementada — 5 camadas
+
+#### Camada 1: Governança de Dados (`data_governance.py` + `market_output.py`)
+
+**Contrato único `MarketOutput`** com campos obrigatórios:
+- `market_type`, `selection`, `raw_probability`, `calibrated_probability`
+- `fair_odd`, `book_odd`, `ev`, `edge`
+- `classification`, `reason_codes`, `data_quality_score`, `odds_available`, `source_flags`
+
+**`data_quality_score`** (0-1) calculado com base em:
+- Disponibilidade de probabilidades core (25%)
+- Disponibilidade de lambdas/xG (15%)
+- Disponibilidade de odds reais (25%)
+- Probabilidades auxiliares Under/BTTS/Corners (15%)
+- Odds de escanteios (10%)
+- Maturidade da temporada (10%)
+
+**Early season detection**: se `matches_played < 5`, todas as classificações SAFE são rebaixadas para NEUTRO_QUALIFICADO.
+
+#### Camada 2: Motor Preditivo (`poisson_matrix.py` + `corners_engine.py`)
+
+**Matriz de scoreline Poisson**: a partir de `lambda_home` e `lambda_away`, gera uma matriz completa de probabilidades `P(home=h, away=a)` para `h,a ∈ [0,8]`. Todos os mercados de gols são derivados dessa matriz:
+- **1X2**: soma das probabilidades onde `h>a`, `h==a`, `h<a`
+- **Over/Under**: soma onde `h+a > threshold` para 0.5, 1.5, 2.5, 3.5, 4.5
+- **BTTS**: soma onde `h>=1 AND a>=1`
+- **Double Chance**: derivado aritmeticamente do 1X2 (`dc_1x = home + draw`)
+
+Isso garante consistência matemática: `P(home) + P(draw) + P(away) = 1.0000`.
+
+**Motor de escanteios dedicado**: estima `λ_corners` combinando:
+- Corners pró/contra dos times (60% direto + 30% cruzado + 10% liga)
+- Aplica Poisson para derivar `P(Over 8.5)`, `P(Over 9.5)`, `P(Over 10.5)`, `P(Over 11.5)`
+- Blend com pré-match potentials do FootyStats quando disponíveis (60% FS + 40% Poisson)
+
+#### Camada 3: EV + Classificação (`ev_classification.py`)
+
+**4 níveis de classificação**:
+
+| Classificação | Stake | Múltiplas | System Bets |
+|---------------|-------|-----------|-------------|
+| **SAFE** | 100% Kelly | Elegível | Elegível |
+| **NEUTRO_QUALIFICADO** | 60% Kelly | Elegível | Elegível |
+| **NEUTRO** | 0 (exibe prob/fair odd) | Não elegível | Não elegível |
+| **NO_BET** | 0 | Bloqueado | Bloqueado |
+
+**Regra de NEUTRO qualificado**: um NEUTRO é promovido se:
+- EV >= 2%
+- Data quality >= 0.40
+- Probabilidade calibrada >= 50%
+- Odds reais disponíveis
+
+**EV real** só é calculado quando `book_odd` está confirmada. Sem odd real, o mercado mostra apenas probabilidade e fair odd, sem stake.
+
+**Thresholds dinâmicos por mercado** (com fallback hardcoded):
+- 1X2: SAFE >= 55%, NEUTRO >= 42%
+- Over/Under: SAFE >= 68%, NEUTRO >= 58%
+- BTTS: SAFE >= 70%, NEUTRO >= 60%
+- Double Chance: SAFE >= 75%, NEUTRO >= 65%
+- Corners: SAFE >= 65%, NEUTRO >= 55%
+
+**Reason codes**: `LOW_DATA_QUALITY`, `NO_ODDS_AVAILABLE`, `NEGATIVE_EV`, `INSUFFICIENT_EDGE`, `EARLY_SEASON_FALLBACK`, `HIGH_MARKET_CORRELATION`, `LINEUP_UNCERTAINTY`, `POSITIVE_EV`, `STRONG_EDGE`, `HIGH_CALIBRATED_PROB`, etc.
+
+#### Camada 4: Bankroll (`bankroll_engine.py`)
+
+- **Quarter Kelly** como padrão (multiplicador 0.25)
+- **Multiplicador por classificação**: SAFE=1.0, NEUTRO_Q=0.60, NEUTRO/NO_BET=0.0
+- **Caps**: 5% por aposta, 8% por jogo, 30% por dia, 15% por tipo de mercado
+- **Haircuts multiplicativos**:
+  - -15% se `data_quality < 0.4`
+  - -20% se early season
+  - -10% se lineup não confirmada
+  - -10% se injuries relevantes
+  - -15% se alta correlação entre picks
+  - -10% se mercado volátil
+- **Sem stake quando sem odd real**: exibe probabilidade e fair odd, não gera R$
+
+#### Camada 5: System Bets + Correlação (`correlation_matrix.py`)
+
+**Matriz de correlação entre mercados do mesmo jogo**:
+- **Bloqueado** (corr > 0.60 ou redundante): 1X2 Home + DC 1X, Under 3.5 + Under 4.5, Over 2.5 + Over 3.5
+- **Permitido com cuidado** (0.3-0.6): Over 2.5 + BTTS (0.50), 1X2 Home + Over 2.5 (0.35)
+- **Permitido livremente** (<0.3): 1X2 + Corners, Under + Corners
+
+**Regras de elegibilidade para múltiplas**:
+- Permitidos: SAFE + NEUTRO_QUALIFICADO
+- Bloqueados: NO_BET, mercados sem odd real, quality < 0.30
+- Até 2 seleções por jogo (desde que não redundantes e correlação < 0.60)
+- Haircut de exposição quando 2 picks do mesmo jogo: `max(0.5, 1.0 - corr * 0.5)`
+
+**System bets**: viabilidade via break-even filter (retorno mínimo com N-1 acertos deve cobrir investimento).
+
+### Integração com código existente
+
+- `market_service.py`: nova função `selecionar_mercados_v2()` com fallback automático para lógica legacy
+- `combinadas_service.py`: integrada com `correlation_matrix.py` via `_check_correlation()`; aceita `NEUTRO_QUALIFICADO`
+- `main.py`: registra rota `/analysis/match` e `/analysis/batch`
+- Calibrator existente (`calibrator.py`) reutilizado integralmente na camada 3
+- Market validator (`market_validator.py`) continua sendo aplicado após classificação
+
+### Frontend
+
+- `leagues.ts`: novos tipos `MarketClassification`, `ReasonCode`, `MatchPrediction` com campos estendidos
+- `kelly.ts`: `CLASSIFICATION_STAKE_MULTIPLIER` aplicado no cálculo de Kelly; haircuts por reason codes
+- `MatchDetailCard.tsx`: exibe EV%, odd da casa, fair odd, stake sugerida, quality score e reason codes
+- `match-detail-card.css`: estilos para NEUTRO_QUALIFICADO (roxo) e NO_BET
+
+### Decisão de design — sem restrição excessiva
+
+A política **não** restringe o sistema a "só SAFE":
+- NEUTRO_QUALIFICADO mantém volume útil (elegível para stakes e múltiplas com 60% Kelly)
+- 2 seleções por jogo são permitidas (não restrito a 1)
+- Correlação bloqueia apenas pares verdadeiramente redundantes
+- Thresholds de NEUTRO são acessíveis (42% para 1X2, 58% para O/U)
+
+### Lição aprendida
+
+1. Derivar todos os mercados de gols da mesma matriz Poisson elimina inconsistências probabilísticas
+2. NEUTRO qualificado é essencial para manter volume útil sem comprometer qualidade
+3. Correlação entre mercados deve ser tratada com matriz explícita, não regras ad-hoc
+4. Stake zero quando odd não está confirmada previne EV fantasma
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -30,6 +30,9 @@ ELO_HOME_ADVANTAGE = 65
 # Rolling window sizes
 ROLLING_WINDOWS = [3, 5, 10]
 
+# Features to exclude in "no-odds" variant (tests if model adds value beyond market)
+ODDS_FEATURES = {"implied_odds_ft_1", "implied_odds_ft_x", "implied_odds_ft_2"}
+
 # Features that get Winsorized at 1st/99th percentile
 WINSORIZE_FEATURES = [
     "home_goals_scored_avg", "away_goals_scored_avg",
