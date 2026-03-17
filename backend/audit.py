@@ -613,6 +613,10 @@ def validate_adjustment(
 
     Returns (is_valid: bool, reason: str).
     """
+    # Block market_reference_signal from automatic corrections (v1 governance)
+    if correction_type == "MARKET_REFERENCE_SIGNAL" or "market_reference" in parameter.lower():
+        return False, "market_reference_signal nao e ajustavel por correcao automatica (v1)"
+
     limits = ADJUSTMENT_LIMITS.get(correction_type, ADJUSTMENT_LIMITS.get("THRESHOLD"))
     if limits is None:
         return False, f"Unknown correction type: {correction_type}"

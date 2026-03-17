@@ -223,6 +223,12 @@ export interface MatchDetailData {
     book_odd?: number | null;
     calibrated_probability?: number | null;
     stake?: number | null;
+    // Market reference signal fields
+    marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
+    marketReferenceReason?: string;
+    rawClassification?: string;
+    finalClassification?: string;
+    wasCappedByMarketSignal?: boolean;
   }[];
 }
 
@@ -664,6 +670,33 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                     </span>
                                   )}
                                   {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                  {/* Market reference signal badge */}
+                                  {pred.marketReferenceSignal && (
+                                    <span
+                                      className="mdc-prognostico__ev"
+                                      style={{
+                                        fontSize: "0.65em",
+                                        padding: "1px 6px",
+                                        borderRadius: 4,
+                                        background:
+                                          pred.marketReferenceSignal === "SAFE"
+                                            ? "rgba(0,223,130,0.12)"
+                                            : pred.marketReferenceSignal === "NEUTRO"
+                                              ? "rgba(255,170,68,0.12)"
+                                              : "rgba(255,85,85,0.12)",
+                                        color:
+                                          pred.marketReferenceSignal === "SAFE"
+                                            ? "#00df82"
+                                            : pred.marketReferenceSignal === "NEUTRO"
+                                              ? "#ffaa44"
+                                              : "#ff5555",
+                                      }}
+                                      title={pred.marketReferenceReason || "Sinal estrutural do mercado"}
+                                    >
+                                      Ref: {pred.marketReferenceSignal}
+                                      {pred.wasCappedByMarketSignal && " (cap)"}
+                                    </span>
+                                  )}
                                   {/* Show data quality score */}
                                   {pred.data_quality_score != null && (
                                     <span className="mdc-prognostico__ev" style={{

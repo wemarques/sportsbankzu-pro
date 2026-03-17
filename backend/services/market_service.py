@@ -5,6 +5,7 @@ from backend.modeling.market_validator import (
     validar_prognostico,
     filtrar_mercados_permitidos,
 )
+from backend.services.market_reference_signal import apply_signal_capping
 
 logger = logging.getLogger("sportsbankzu")
 
@@ -62,11 +63,15 @@ def selecionar_mercados_v2(
                     if nome_norm in permitidos
                 ]
 
+        # Apply market_reference_signal capping
+        if mercados and league_id:
+            mercados = apply_signal_capping(mercados, league_id)
+
         # Set principal market in stats
         stats = jogo.get("stats", {})
         if mercados:
             principal = mercados[0]
-            stats["status"] = principal.get("status", "NEUTRO")
+            stats["status"] = principal.get("finalClassification", principal.get("status", "NEUTRO"))
             stats["mercado_principal"] = principal.get("mercado")
             stats["odd_minima"] = principal.get("odd_minima")
             stats["data_quality_score"] = bundle.data_quality_score
@@ -75,7 +80,7 @@ def selecionar_mercados_v2(
 
     except Exception as e:
         logger.warning(f"[V2] Fallback to legacy market selection: {e}")
-        return selecionar_mercados_jogo(jogo, regime, volatilidade)
+        return selecionar_mercados_jogo(jogo, regime, volatilidade, league_id=league_id)
 
 
 def _get_dynamic_thresholds(market: str) -> dict:
@@ -132,7 +137,7 @@ def calcular_odd_under(odd_over: float) -> Optional[float]:
         return None
     return round(1.0 / prob_under, 2)
 
-def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str) -> List[Dict[str, Any]]:
+def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str, league_id: str = "") -> List[Dict[str, Any]]:
     mercados: List[Dict[str, Any]] = []
     stats = jogo.get("stats", {})
     odds = jogo.get("odds", {})
@@ -283,9 +288,14 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         logger.info(
             f"Validação de mercados | Total: {len(mercados_normalizados)} | Válidos: {len(mercados)} | Removidos: {len(mercados_normalizados) - len(mercados)}"
         )
+    # Apply market_reference_signal capping
+    _lid = league_id or jogo.get("leagueId", "")
+    if mercados and _lid:
+        mercados = apply_signal_capping(mercados, _lid)
+
     if mercados:
         principal = mercados[0]
-        stats["status"] = "SAFE" if principal.get("status") == "SAFE" else principal.get("status", "NEUTRO")
+        stats["status"] = principal.get("finalClassification", principal.get("status", "NEUTRO"))
         stats["mercado_principal"] = principal.get("mercado")
         stats["odd_minima"] = principal.get("odd_minima")
     return mercados
