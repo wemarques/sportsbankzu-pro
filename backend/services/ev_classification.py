@@ -238,13 +238,14 @@ def evaluate_match_markets(
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
         derived = derive_all_markets(float(lambda_home), float(lambda_away))
 
-    # ─── Derive corner probabilities (governed framework) ───
+    # ─── Derive corner probabilities (governed framework v2) ───
     governed_corners = predict_corners(
         home_stats=stats,
         away_stats=stats,
         league_id=league_id,
         league_stats=league_stats if isinstance(league_stats, dict) else None,
         footystats_probs=stats,
+        odds=odds,
     )
 
     # Legacy fallback for backward compat
@@ -401,19 +402,21 @@ def evaluate_match_markets(
         )
         markets.append(classify_market(mo))
 
-    # Corner markets (governed framework)
+    # Corner markets (governed framework v2 — bidirectional Over + Under)
     corner_governance = get_corner_governance_info(league_id)
+    v2_projection = governed_corners.get("projection", {})
+    v2_engine_version = governed_corners.get("engineVersion", "1.0.0")
+
+    # Over lines — legacy 8.5-11.5 + any available from v2
     for threshold_key, stat_key, odd_key in [
         ("over_8.5", "cornerOver85Prob", "cornersOver85"),
         ("over_9.5", "cornerOver95Prob", "cornersOver95"),
         ("over_10.5", "cornerOver105Prob", "cornersOver105"),
         ("over_11.5", "cornerOver115Prob", "cornersOver115"),
     ]:
-        # Use governed corner prediction (champion model)
         gov_line = governed_corners.get("lines", {}).get(threshold_key, {})
         raw = gov_line.get("probability")
 
-        # Fallback to legacy engine / footystats
         if raw is None:
             raw = corner_probs.get(threshold_key)
         if raw is None:
@@ -426,12 +429,11 @@ def evaluate_match_markets(
         corner_odd = odds.get(odd_key)
         corner_odd = float(corner_odd) if corner_odd and float(corner_odd) > 1.0 else None
 
-        # Governance metadata
         gov_line_info = corner_governance.get("lines", {}).get(threshold_key, {})
         operational_state = gov_line_info.get("operationalState", "RESTRICTED")
         champion_model = gov_line_info.get("championModel", gov_line.get("champion_model"))
         fallback_model = gov_line_info.get("fallbackModel", gov_line.get("fallback_model"))
-        model_used = gov_line.get("model_used", "legacy_blend")
+        model_used = gov_line.get("model_used", "corners_engine_v2")
 
         mo = MarketOutput(
             market_type="Corners",
@@ -446,22 +448,78 @@ def evaluate_match_markets(
         )
 
         classified = classify_market(mo)
-
-        # Attach corner governance metadata
         classified.corner_governance = {
             "marketFamily": "corners",
+            "engineVersion": v2_engine_version,
             "cornerModelStatus": operational_state,
             "championModel": champion_model,
             "fallbackModel": fallback_model,
             "modelUsed": model_used,
+            "projectedTotalCornersFT": v2_projection.get("expected_total_corners_ft"),
+            "projectedTotalCorners1H": v2_projection.get("expected_total_corners_1h"),
+            "projectedTotalCorners2H": v2_projection.get("expected_total_corners_2h"),
             "beatsPoisson": gov_line.get("beats_poisson", False) if isinstance(gov_line, dict) else False,
             "beatsNegativeBinomial": gov_line.get("beats_negative_binomial", False) if isinstance(gov_line, dict) else False,
             "beatsMLRegression": gov_line.get("beats_ml_regression", False) if isinstance(gov_line, dict) else False,
             "cornerCalibrationStatus": gov_line_info.get("cornerCalibrationStatus", "uncalibrated"),
             "cornerSampleAdequacy": gov_line_info.get("cornerSampleAdequacy", "unknown"),
-            "cornerValidationVersion": corner_governance.get("cornerValidationVersion", "unknown"),
+            "cornerValidationVersion": corner_governance.get("cornerValidationVersion", v2_engine_version),
         }
+        markets.append(classified)
 
+    # Under lines (v2 — bidirectional)
+    for line_val in [8.5, 9.5, 10.5, 11.5]:
+        line_key = f"over_{line_val}"
+        gov_line = governed_corners.get("lines", {}).get(line_key, {})
+        p_under = gov_line.get("probability_under")
+
+        if p_under is None:
+            # Derive from Over probability
+            p_over = gov_line.get("probability")
+            if p_over is not None:
+                p_under = 1.0 - p_over
+            else:
+                continue
+
+        threshold_label = f"Under {line_val}"
+        calibrated = calibrate_prob(p_under, f"Escanteios {threshold_label}", league_id, regime)
+
+        # Under odds: try explicit key, else derive from Over
+        line_tag = str(line_val).replace(".", "")
+        under_odd = odds.get(f"cornersUnder{line_tag}")
+        if under_odd:
+            under_odd = float(under_odd) if float(under_odd) > 1.0 else None
+        else:
+            over_odd_key = f"cornersOver{line_tag}"
+            over_odd = odds.get(over_odd_key)
+            if over_odd and float(over_odd) > 1.0:
+                implied_over = 1.0 / float(over_odd)
+                implied_under = max(0.01, 1.0 - implied_over)
+                under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
+            else:
+                under_odd = None
+
+        mo = MarketOutput(
+            market_type="Corners",
+            selection=f"Corners {threshold_label}",
+            raw_probability=p_under,
+            calibrated_probability=calibrated,
+            book_odd=under_odd,
+            odds_available=under_odd is not None,
+            data_quality_score=quality,
+            source_flags=[*source_flags, "corner_model:corners_engine_v2", "under"],
+            display_label=f"Escanteios {threshold_label}",
+        )
+
+        classified = classify_market(mo)
+        classified.corner_governance = {
+            "marketFamily": "corners",
+            "engineVersion": v2_engine_version,
+            "cornerModelStatus": "NEUTRAL",
+            "side": "UNDER",
+            "projectedTotalCornersFT": v2_projection.get("expected_total_corners_ft"),
+            "cornerValidationVersion": corner_governance.get("cornerValidationVersion", v2_engine_version),
+        }
         markets.append(classified)
 
     # ─── Apply early season penalty ───

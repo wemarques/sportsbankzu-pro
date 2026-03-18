@@ -9,7 +9,7 @@ cannot produce a SAFE pick).
 Sources:
 - 1X2 / Double Chance: league classification from ML pipeline (ML_ACTIVE / POISSON / DEACTIVATED)
 - Over/Under / BTTS: market model metadata (beats_poisson flag)
-- Corners: NEUTRO by default (no dedicated validation pipeline yet)
+- Corners: governance from Corners Engine v2 (data_quality_tier → signal mapping)
 """
 
 import logging
@@ -152,6 +152,59 @@ def _get_market_model_signal(league_id: str, market_key: str) -> Dict[str, str]:
         }
 
 
+def _get_corners_signal(league_id: str) -> Dict[str, str]:
+    """Compute market_reference_signal for Corners using v2 governance.
+
+    Maps corners governance state to signal:
+      ACTIVE / ACTIVE_GUARDED → SAFE
+      NEUTRAL → NEUTRO
+      RESTRICTED → RESTRITO
+
+    Falls back to NEUTRO if governance info is unavailable.
+    """
+    try:
+        from backend.modeling.corners.predictor import get_corner_governance_info
+
+        gov = get_corner_governance_info(league_id)
+        if gov is None:
+            return {
+                "signal": NEUTRO,
+                "reason": "Corners v2 governance unavailable — fallback NEUTRO",
+                "source": "fallback_default",
+            }
+
+        state = gov.get("governance_state", "NEUTRAL")
+        tier = gov.get("data_quality_tier", "UNKNOWN")
+
+        if state in ("ACTIVE", "ACTIVE_GUARDED"):
+            return {
+                "signal": SAFE,
+                "reason": f"Corners v2 governance={state} (tier={tier})",
+                "source": "corners_v2_governance",
+            }
+        elif state == "RESTRICTED":
+            return {
+                "signal": RESTRITO,
+                "reason": f"Corners v2 governance=RESTRICTED (tier={tier})",
+                "source": "corners_v2_governance",
+            }
+        else:
+            # NEUTRAL or unknown
+            return {
+                "signal": NEUTRO,
+                "reason": f"Corners v2 governance={state} (tier={tier})",
+                "source": "corners_v2_governance",
+            }
+
+    except Exception as e:
+        logger.debug(f"[MRS] Corners v2 governance check failed for {league_id}: {e}")
+        return {
+            "signal": NEUTRO,
+            "reason": "Corners v2 governance unavailable — fallback NEUTRO",
+            "source": "fallback_default",
+        }
+
+
 def get_market_reference_signal(
     league_id: str,
     market_type: str,
@@ -184,12 +237,7 @@ def get_market_reference_signal(
         return _get_market_model_signal(league_id, "btts")
 
     if category == "Corners":
-        # Corners: NEUTRO by default, no dedicated validation pipeline
-        return {
-            "signal": NEUTRO,
-            "reason": "Corners sem pipeline de validacao dedicado (v1)",
-            "source": "fallback_default",
-        }
+        return _get_corners_signal(league_id)
 
     # Unknown market type
     return {

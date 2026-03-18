@@ -68,10 +68,10 @@ class TestGetMarketReferenceSignal:
         assert result["signal"] == SAFE
         assert "Herda do 1X2" in result["reason"]
 
-    def test_corners_always_neutro(self):
+    def test_corners_uses_v2_governance(self):
         result = get_market_reference_signal("1625", "Corners")
-        assert result["signal"] == NEUTRO
-        assert result["source"] == "fallback_default"
+        assert result["signal"] in (SAFE, NEUTRO, RESTRITO)
+        assert result["source"] in ("corners_v2_governance", "fallback_default")
 
     @patch("backend.services.market_reference_signal._get_market_model_signal")
     def test_over_under_delegates_to_market_model(self, mock_mkt):

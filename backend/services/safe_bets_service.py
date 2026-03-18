@@ -8,7 +8,7 @@ Layer 3: Strategy Algorithms — cross-validate league + team stats
 Strategies:
   A. Under Defensivo Conservador (Under 3.5)
   B. BTTS NO (Ambos Marcam: Não)
-  C. Safe Corners (Over 9.5 Escanteios)
+  C. Safe Corners (best line via v2 engine, bidirectional Over/Under)
   D. Timing Markets (Gols 2º Tempo)
 """
 
@@ -380,19 +380,134 @@ def _strategy_safe_corners(
     home_stats: Optional[TeamSafeBetsStats],
     away_stats: Optional[TeamSafeBetsStats],
 ) -> List[StrategyResult]:
-    """Strategy C: Safe Corners — Over 9.5 Escanteios Totais + HT variant.
+    """Strategy C: Safe Corners — best line from v2 engine (bidirectional).
+
+    Uses the Corners Engine v2 price ladder to select the best Over or Under
+    line instead of hardcoding Over 9.5. Falls back to combined-average
+    heuristic when the v2 engine is not available.
 
     Validation:
-      - Liga cornersAVG_overall > 10.2
-      - Combinação: (homeCorners + awayCorners) > 10.5
+      - v2 path: engine selects best line/side with edge > 0
+      - fallback: Liga cornersAVG_overall > 10.2, combined > 10.5
       - HT: (corners_fh_avg_home + corners_fh_avg_away) > 4.5
     """
     results = []
 
-    # League corners check
+    # --- Try v2 engine for best line selection ---
+    v2_result = _try_corners_v2(league_stats, home_stats, away_stats)
+    if v2_result is not None:
+        results.append(v2_result)
+    else:
+        # --- Fallback: combined-average heuristic (v1-style) ---
+        results.append(_corners_fallback_heuristic(league_stats, home_stats, away_stats))
+
+    # HT Corners check (independent of v2)
+    home_fh = _safe_float(home_stats.corners_fh_avg if home_stats else None)
+    away_fh = _safe_float(away_stats.corners_fh_avg if away_stats else None)
+
+    fh_combined = home_fh + away_fh
+    if fh_combined > CORNERS_HT_THRESHOLD:
+        results.append(StrategyResult(
+            strategy="SAFE_CORNERS_HT",
+            tag=SafeBetTag.SAFE_CORNERS_HT,
+            passed=True,
+            confidence=min(90.0, max(60.0, fh_combined / CORNERS_HT_THRESHOLD * 70)),
+            reason=f"1st half corners combined={fh_combined:.1f} > {CORNERS_HT_THRESHOLD}",
+            market_label="Over 4.5 Escanteios HT",
+            details={
+                "home_fh_corners": home_fh,
+                "away_fh_corners": away_fh,
+                "combined": fh_combined,
+                "threshold": CORNERS_HT_THRESHOLD,
+            },
+        ))
+
+    return results
+
+
+def _try_corners_v2(
+    league_stats: Optional[LeagueSeasonStats],
+    home_stats: Optional[TeamSafeBetsStats],
+    away_stats: Optional[TeamSafeBetsStats],
+) -> Optional[StrategyResult]:
+    """Attempt to use Corners Engine v2 to find the best corner line.
+
+    Returns a StrategyResult if the v2 engine produces a viable market,
+    or None if the engine is unavailable / data insufficient.
+    """
+    try:
+        from backend.modeling.corners.predictor import predict_corners
+
+        home_dict = home_stats.model_dump() if home_stats and hasattr(home_stats, "model_dump") else (
+            home_stats.dict() if home_stats and hasattr(home_stats, "dict") else {}
+        )
+        away_dict = away_stats.model_dump() if away_stats and hasattr(away_stats, "model_dump") else (
+            away_stats.dict() if away_stats and hasattr(away_stats, "dict") else {}
+        )
+        league_dict = league_stats.model_dump() if league_stats and hasattr(league_stats, "model_dump") else (
+            league_stats.dict() if league_stats and hasattr(league_stats, "dict") else {}
+        )
+
+        v2 = predict_corners(
+            home_stats=home_dict,
+            away_stats=away_dict,
+            league_stats=league_dict,
+        )
+
+        if not v2 or v2.get("governance_state") == "RESTRICTED":
+            return None
+
+        best = v2.get("best_market")
+        if not best or best.get("recommendation") == "NO_BET":
+            return None
+
+        side = best.get("side", "over")
+        line = best.get("line", 9.5)
+        edge = best.get("quality_adjusted_edge", best.get("edge", 0.0))
+        prob = best.get("probability", 0.5)
+
+        if edge <= 0:
+            return None
+
+        side_label = "Over" if side == "over" else "Under"
+        market_label = f"{side_label} {line} Escanteios"
+        confidence = min(95.0, max(60.0, 50.0 + edge * 500))
+
+        return StrategyResult(
+            strategy="SAFE_CORNERS",
+            tag=SafeBetTag.SAFE_CORNERS,
+            passed=True,
+            confidence=confidence,
+            reason=f"v2 engine: {side_label} {line} (edge={edge:.3f}, prob={prob:.3f})",
+            market_label=market_label,
+            details={
+                "engine_version": v2.get("engine_version", "2.0.0"),
+                "side": side,
+                "line": line,
+                "edge": round(edge, 4),
+                "probability": round(prob, 4),
+                "projected_corners_ft": v2.get("expected_total_corners_ft"),
+                "governance_state": v2.get("governance_state"),
+                "data_quality_tier": v2.get("data_quality_tier"),
+            },
+        )
+
+    except Exception as e:
+        logger.debug(f"[SafeBets] Corners v2 engine unavailable: {e}")
+        return None
+
+
+def _corners_fallback_heuristic(
+    league_stats: Optional[LeagueSeasonStats],
+    home_stats: Optional[TeamSafeBetsStats],
+    away_stats: Optional[TeamSafeBetsStats],
+) -> StrategyResult:
+    """Fallback heuristic when v2 engine is not available.
+
+    Selects the best Over or Under line based on combined corner averages.
+    """
     league_corners = _safe_float(league_stats.cornersAVG_overall if league_stats else None)
 
-    # Team corners
     home_corners = _safe_float(home_stats.cornersAVG_home if home_stats else None)
     if home_corners <= 0:
         home_corners = _safe_float(home_stats.cornersAVG_overall if home_stats else None)
@@ -418,19 +533,41 @@ def _strategy_safe_corners(
         passed = False
         reasons.append(f"Combined corners={combined:.1f} <= {CORNERS_TEAM_COMBINED_THRESHOLD}")
 
+    # Determine best side/line from combined average
+    if combined > 0:
+        # Pick the line closest to but below the combined average for Over,
+        # or closest to but above for Under, whichever has more margin
+        candidate_lines = [8.5, 9.5, 10.5, 11.5]
+        best_side = "Over"
+        best_line = 9.5
+
+        for line in candidate_lines:
+            if combined > line + 1.0:
+                best_line = line
+                best_side = "Over"
+            elif combined < line - 1.0:
+                best_line = line
+                best_side = "Under"
+                break
+
+        market_label = f"{best_side} {best_line} Escanteios"
+    else:
+        market_label = "Over 9.5 Escanteios"
+
     confidence = None
     if passed:
         ratio = (combined - CORNERS_TEAM_COMBINED_THRESHOLD) / CORNERS_TEAM_COMBINED_THRESHOLD
         confidence = min(95.0, max(60.0, 70.0 + ratio * 100))
 
-    results.append(StrategyResult(
+    return StrategyResult(
         strategy="SAFE_CORNERS",
         tag=SafeBetTag.SAFE_CORNERS,
         passed=passed,
         confidence=confidence,
         reason=" | ".join(reasons) if reasons else "All criteria met",
-        market_label="Over 9.5 Escanteios",
+        market_label=market_label,
         details={
+            "engine_version": "1.0-fallback",
             "league_corners_avg": league_corners,
             "home_corners_avg": home_corners,
             "away_corners_avg": away_corners,
@@ -440,32 +577,7 @@ def _strategy_safe_corners(
                 "combined": CORNERS_TEAM_COMBINED_THRESHOLD,
             },
         },
-    ))
-
-    # HT Corners check
-    home_fh = _safe_float(home_stats.corners_fh_avg if home_stats else None)
-    away_fh = _safe_float(away_stats.corners_fh_avg if away_stats else None)
-    # Also check league first-half avg
-    league_fh = _safe_float(league_stats.corners_fh_avg if league_stats else None)
-
-    fh_combined = home_fh + away_fh
-    if fh_combined > CORNERS_HT_THRESHOLD:
-        results.append(StrategyResult(
-            strategy="SAFE_CORNERS_HT",
-            tag=SafeBetTag.SAFE_CORNERS_HT,
-            passed=True,
-            confidence=min(90.0, max(60.0, fh_combined / CORNERS_HT_THRESHOLD * 70)),
-            reason=f"1st half corners combined={fh_combined:.1f} > {CORNERS_HT_THRESHOLD}",
-            market_label="Over 4.5 Escanteios HT",
-            details={
-                "home_fh_corners": home_fh,
-                "away_fh_corners": away_fh,
-                "combined": fh_combined,
-                "threshold": CORNERS_HT_THRESHOLD,
-            },
-        ))
-
-    return results
+    )
 
 
 def _strategy_timing_2h(

@@ -48,6 +48,10 @@ CALIBRATED_MARKETS = [
     "Escanteios Over 9.5",
     "Escanteios Over 10.5",
     "Escanteios Over 11.5",
+    "Escanteios Under 8.5",
+    "Escanteios Under 9.5",
+    "Escanteios Under 10.5",
+    "Escanteios Under 11.5",
 ]
 
 # Approximate season-start months per league (Aug for most European, Feb for SA)
