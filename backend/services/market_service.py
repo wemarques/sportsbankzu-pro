@@ -138,6 +138,11 @@ def calcular_odd_under(odd_over: float) -> Optional[float]:
     return round(1.0 / prob_under, 2)
 
 def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str, league_id: str = "") -> List[Dict[str, Any]]:
+    """DEPRECATED — Use selecionar_mercados_v2() instead.
+
+    Mantida apenas para compatibilidade reversa. O pipeline v2
+    com ev_classification é o seletor principal desde V3.7.
+    """
     mercados: List[Dict[str, Any]] = []
     stats = jogo.get("stats", {})
     odds = jogo.get("odds", {})
@@ -152,12 +157,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     prob_under45 = normalize_prob(stats.get("under45Prob"))
     home = team_name(jogo.get("homeTeam", "?"))
     away = team_name(jogo.get("awayTeam", "?"))
-    logger.info(f"[DEBUG] {home} vs {away}:")
-    logger.info(f"  under35Prob raw={stats.get('under35Prob')}, normalized={prob_under35}")
-    logger.info(f"  under45Prob raw={stats.get('under45Prob')}, normalized={prob_under45}")
-    logger.info(f"  regime={regime}, volatilidade={volatilidade}")
-    logger.info(f"  leagueAvgGoals={stats.get('leagueAvgGoals')}")
-    logger.info(f"  odds: over35={odds.get('over35')}, over45={odds.get('over45')}")
+    logger.debug(f"{home} vs {away}: under35={prob_under35}, under45={prob_under45}, regime={regime}")
     prob_dc = None
     if stats.get("homeWinProb") is not None and stats.get("drawProb") is not None:
         prob_dc = normalize_prob(float(stats.get("homeWinProb", 0)) + float(stats.get("drawProb", 0)))
@@ -191,11 +191,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     else:
         threshold_u35 = 0.75
         threshold_u45 = 0.85
-    logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
-    _u35_check = (prob_under35 >= threshold_u35) if prob_under35 is not None else False
-    _u45_check = (prob_under45 >= threshold_u45) if prob_under45 is not None else False
-    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={_u35_check}")
-    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={_u45_check}")
+    logger.debug(f"thresholds: u35={threshold_u35}, u45={threshold_u45}")
     if regime in ["NORMAL", "DEFENSIVA"]:
         if prob_under35 is not None and prob_under35 >= threshold_u35:
             if odd_under35 and odd_under35 >= 1.25:

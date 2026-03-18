@@ -56,6 +56,18 @@ CORNERS_HT_THRESHOLD = 4.5            # 1st half corners combined
 # Strategy D: Timing Markets (2nd Half Goals)
 TIMING_2H_COMBINED_THRESHOLD = 88.0   # % combined 2nd half goal probability
 
+# Strategy E: Under 2.5 Conservador
+UNDER25_LEAGUE_AVG_THRESHOLD = 2.20
+UNDER25_SCORED_AVG_THRESHOLD = 1.10
+
+# Strategy F: BTTS YES Ofensivo
+BTTS_YES_LEAGUE_BTTS_THRESHOLD = 55.0
+BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD = 70.0
+
+# Strategy G: Over 2.5 Agressivo
+OVER25_LEAGUE_AVG_THRESHOLD = 3.00
+OVER25_SCORED_AVG_THRESHOLD = 1.50
+
 
 # =============================================================================
 # Layer 1: League DNA
@@ -640,6 +652,196 @@ def _strategy_timing_2h(
     )
 
 
+def _strategy_under_25(
+    league_stats: Optional[LeagueSeasonStats],
+    home_stats: Optional[TeamSafeBetsStats],
+    away_stats: Optional[TeamSafeBetsStats],
+    prediction_risk: Optional[float] = None,
+) -> StrategyResult:
+    """Strategy E: Under 2.5 Conservador.
+
+    Validation:
+      - Liga avg_goals < 2.20
+      - Both teams goals_scored_avg < 1.10
+      - Liga prediction_risk < 50
+    """
+    reasons = []
+    passed = True
+
+    league_avg = _safe_float(league_stats.seasonAVG_overall if league_stats else None)
+    if league_avg <= 0:
+        passed = False
+        reasons.append("No league avg_goals data")
+    elif league_avg >= UNDER25_LEAGUE_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Liga avg_goals={league_avg:.2f} >= {UNDER25_LEAGUE_AVG_THRESHOLD}")
+
+    home_scored = _safe_float(home_stats.seasonScoredAVG_overall if home_stats else None)
+    away_scored = _safe_float(away_stats.seasonScoredAVG_overall if away_stats else None)
+
+    if home_scored > 0 and home_scored >= UNDER25_SCORED_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Home scored_avg={home_scored:.2f} >= {UNDER25_SCORED_AVG_THRESHOLD}")
+    if away_scored > 0 and away_scored >= UNDER25_SCORED_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Away scored_avg={away_scored:.2f} >= {UNDER25_SCORED_AVG_THRESHOLD}")
+
+    risk = prediction_risk if prediction_risk is not None else 0.0
+    if risk >= 0.50:
+        passed = False
+        reasons.append(f"prediction_risk={risk:.2f} >= 0.50")
+
+    confidence = None
+    if passed and league_avg > 0:
+        margin = UNDER25_LEAGUE_AVG_THRESHOLD - league_avg
+        confidence = min(95.0, max(60.0, 70.0 + margin * 50))
+
+    return StrategyResult(
+        strategy="UNDER_25",
+        tag=SafeBetTag.UNDER_25,
+        passed=passed,
+        confidence=confidence,
+        reason=" | ".join(reasons) if reasons else "All criteria met",
+        market_label="Under 2.5 Gols",
+        details={
+            "league_avg_goals": league_avg,
+            "home_scored_avg": home_scored,
+            "away_scored_avg": away_scored,
+            "prediction_risk": risk,
+            "thresholds": {
+                "league_avg": UNDER25_LEAGUE_AVG_THRESHOLD,
+                "scored_avg": UNDER25_SCORED_AVG_THRESHOLD,
+            },
+        },
+    )
+
+
+def _strategy_btts_yes(
+    league_stats: Optional[LeagueSeasonStats],
+    home_stats: Optional[TeamSafeBetsStats],
+    away_stats: Optional[TeamSafeBetsStats],
+) -> StrategyResult:
+    """Strategy F: BTTS YES Ofensivo.
+
+    Validation:
+      - Liga BTTS% > 55%
+      - Home scored_in_pct (btts%) > 70%
+      - Away scored_in_pct (btts%) > 70%
+    """
+    reasons = []
+    passed = True
+
+    league_btts = _safe_float(league_stats.seasonBTTSPercentage if league_stats else None)
+    if league_btts <= 0:
+        passed = False
+        reasons.append("No league BTTS data")
+    elif league_btts <= BTTS_YES_LEAGUE_BTTS_THRESHOLD:
+        passed = False
+        reasons.append(f"Liga BTTS={league_btts:.1f}% <= {BTTS_YES_LEAGUE_BTTS_THRESHOLD}%")
+
+    home_btts = _safe_float(home_stats.seasonBTTSPercentage if home_stats else None)
+    away_btts = _safe_float(away_stats.seasonBTTSPercentage if away_stats else None)
+
+    if home_btts > 0 and home_btts <= BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD:
+        passed = False
+        reasons.append(f"Home BTTS={home_btts:.1f}% <= {BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD}%")
+    elif home_btts <= 0:
+        passed = False
+        reasons.append("No home BTTS data")
+
+    if away_btts > 0 and away_btts <= BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD:
+        passed = False
+        reasons.append(f"Away BTTS={away_btts:.1f}% <= {BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD}%")
+    elif away_btts <= 0:
+        passed = False
+        reasons.append("No away BTTS data")
+
+    confidence = None
+    if passed and home_btts > 0 and away_btts > 0:
+        confidence = min(95.0, (home_btts + away_btts) / 2.0)
+
+    return StrategyResult(
+        strategy="BTTS_YES",
+        tag=SafeBetTag.BTTS_YES,
+        passed=passed,
+        confidence=confidence,
+        reason=" | ".join(reasons) if reasons else "All criteria met",
+        market_label="BTTS — SIM (Ofensivo)",
+        details={
+            "league_btts": league_btts,
+            "home_btts_pct": home_btts,
+            "away_btts_pct": away_btts,
+            "thresholds": {
+                "league_btts": BTTS_YES_LEAGUE_BTTS_THRESHOLD,
+                "scored_every_match": BTTS_YES_SCORED_EVERY_MATCH_THRESHOLD,
+            },
+        },
+    )
+
+
+def _strategy_over_25(
+    league_stats: Optional[LeagueSeasonStats],
+    home_stats: Optional[TeamSafeBetsStats],
+    away_stats: Optional[TeamSafeBetsStats],
+) -> StrategyResult:
+    """Strategy G: Over 2.5 Agressivo.
+
+    Validation:
+      - Liga avg_goals > 3.00
+      - Both teams goals_scored_avg > 1.50
+    """
+    reasons = []
+    passed = True
+
+    league_avg = _safe_float(league_stats.seasonAVG_overall if league_stats else None)
+    if league_avg <= 0:
+        passed = False
+        reasons.append("No league avg_goals data")
+    elif league_avg <= OVER25_LEAGUE_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Liga avg_goals={league_avg:.2f} <= {OVER25_LEAGUE_AVG_THRESHOLD}")
+
+    home_scored = _safe_float(home_stats.seasonScoredAVG_overall if home_stats else None)
+    away_scored = _safe_float(away_stats.seasonScoredAVG_overall if away_stats else None)
+
+    if home_scored > 0 and home_scored <= OVER25_SCORED_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Home scored_avg={home_scored:.2f} <= {OVER25_SCORED_AVG_THRESHOLD}")
+    elif home_scored <= 0:
+        passed = False
+        reasons.append("No home scored data")
+
+    if away_scored > 0 and away_scored <= OVER25_SCORED_AVG_THRESHOLD:
+        passed = False
+        reasons.append(f"Away scored_avg={away_scored:.2f} <= {OVER25_SCORED_AVG_THRESHOLD}")
+    elif away_scored <= 0:
+        passed = False
+        reasons.append("No away scored data")
+
+    confidence = None
+    if passed and home_scored > 0 and away_scored > 0:
+        avg_scored = (home_scored + away_scored) / 2.0
+        confidence = min(95.0, max(60.0, 60.0 + (avg_scored - OVER25_SCORED_AVG_THRESHOLD) * 40))
+
+    return StrategyResult(
+        strategy="OVER_25",
+        tag=SafeBetTag.OVER_25,
+        passed=passed,
+        confidence=confidence,
+        reason=" | ".join(reasons) if reasons else "All criteria met",
+        market_label="Over 2.5 Gols",
+        details={
+            "league_avg_goals": league_avg,
+            "home_scored_avg": home_scored,
+            "away_scored_avg": away_scored,
+            "thresholds": {
+                "league_avg": OVER25_LEAGUE_AVG_THRESHOLD,
+                "scored_avg": OVER25_SCORED_AVG_THRESHOLD,
+            },
+        },
+    )
+
+
 # =============================================================================
 # Main Engine
 # =============================================================================
@@ -732,6 +934,40 @@ def evaluate_safe_bets(match_input: SafeBetsMatchInput) -> SafeBetsResult:
             strategies.append(res_d)
             if res_d.passed:
                 passed_tags.append(SafeBetTag.TIMING_2H)
+
+    # Strategy E: Under 2.5 Conservador
+    if "UNDER_25" in enabled_markets:
+        res_e = _strategy_under_25(
+            match_input.league_stats,
+            match_input.home_stats,
+            match_input.away_stats,
+            prediction_risk=match_input.prediction_risk,
+        )
+        strategies.append(res_e)
+        if res_e.passed:
+            passed_tags.append(SafeBetTag.UNDER_25)
+
+    # Strategy F: BTTS YES Ofensivo
+    if "BTTS_YES" in enabled_markets:
+        res_f = _strategy_btts_yes(
+            match_input.league_stats,
+            match_input.home_stats,
+            match_input.away_stats,
+        )
+        strategies.append(res_f)
+        if res_f.passed:
+            passed_tags.append(SafeBetTag.BTTS_YES)
+
+    # Strategy G: Over 2.5 Agressivo
+    if "OVER_25" in enabled_markets:
+        res_g = _strategy_over_25(
+            match_input.league_stats,
+            match_input.home_stats,
+            match_input.away_stats,
+        )
+        strategies.append(res_g)
+        if res_g.passed:
+            passed_tags.append(SafeBetTag.OVER_25)
 
     result.layer3_strategies = strategies
     result.tags = passed_tags if passed_tags else [SafeBetTag.NO_BET]

@@ -245,6 +245,136 @@ class PromptTemplates:
         """
 
 
+    @staticmethod
+    def build_1x2_prompt(home_team: str, away_team: str, stats: dict, odds: dict) -> str:
+        """Prompt focado em 1X2: forma recente, H2H, qualidade do elenco, mando, odds value."""
+        return f"""Voce e um analista profissional de apostas esportivas. Analise EXCLUSIVAMENTE o mercado 1X2.
+
+JOGO: {home_team} vs {away_team}
+
+DADOS RELEVANTES:
+- Probabilidade Vitoria Casa: {stats.get('homeWinProb', 'N/A')}%
+- Probabilidade Empate: {stats.get('drawProb', 'N/A')}%
+- Probabilidade Vitoria Fora: {stats.get('awayWinProb', 'N/A')}%
+- Posicao na liga: {home_team} {stats.get('homeLeaguePosition', '?')}o vs {away_team} {stats.get('awayLeaguePosition', '?')}o
+- % Vitoria temporada: {home_team} {stats.get('homeWinPercentage', 'N/A')}% vs {away_team} {stats.get('awayWinPercentage', 'N/A')}%
+- Chaos Score: {stats.get('chaosScore', 'N/A')}
+
+ODDS:
+- Casa: {odds.get('homeWin', 'N/A')} | Empate: {odds.get('draw', 'N/A')} | Fora: {odds.get('awayWin', 'N/A')}
+
+FOCO DA ANALISE:
+1. Forma recente e momentum de ambos os times
+2. Historico de confrontos diretos (H2H)
+3. Fator mandante (desempenho casa vs fora)
+4. Value nas odds oferecidas vs probabilidade calculada
+
+Responda EXCLUSIVAMENTE em JSON:
+{{
+    "recommendation": "CASA|EMPATE|FORA|NO_BET",
+    "confidence": 0-100,
+    "key_points": ["ponto 1", "ponto 2", "ponto 3"],
+    "value_assessment": "Odds com value? Sim/Nao e por que"
+}}"""
+
+    @staticmethod
+    def build_over_under_prompt(home_team: str, away_team: str, stats: dict, odds: dict) -> str:
+        """Prompt focado em Over/Under: lambda, xG, ritmo de jogo, gols por tempo."""
+        return f"""Voce e um analista profissional de apostas esportivas. Analise EXCLUSIVAMENTE o mercado Over/Under gols.
+
+JOGO: {home_team} vs {away_team}
+
+DADOS RELEVANTES:
+- Lambda Casa: {stats.get('lambdaHome', 'N/A')} gols | Lambda Fora: {stats.get('lambdaAway', 'N/A')} gols
+- xG medio/jogo: {home_team} {stats.get('homeXgForAvg', 'N/A')} vs {away_team} {stats.get('awayXgForAvg', 'N/A')}
+- Media gols total/jogo: {home_team} {stats.get('homeAvgTotalGoals', 'N/A')} vs {away_team} {stats.get('awayAvgTotalGoals', 'N/A')}
+- Over 2.5 %: {home_team} {stats.get('homeOver25Percentage', 'N/A')}% vs {away_team} {stats.get('awayOver25Percentage', 'N/A')}%
+- Liga avg gols: {stats.get('leagueAvgGoals', 'N/A')}
+- Chaos Score: {stats.get('chaosScore', 'N/A')}
+
+ODDS:
+- Over 2.5: {odds.get('over25', 'N/A')} | Under 2.5: {odds.get('under25', 'N/A')}
+- Over 3.5: {odds.get('over35', 'N/A')} | Under 3.5: {odds.get('under35', 'N/A')}
+
+FOCO DA ANALISE:
+1. Os lambdas sao coerentes com xG e historico de gols?
+2. Ritmo de jogo (finalizacoes, posse ofensiva)
+3. Distribuicao temporal de gols (1o vs 2o tempo)
+4. Value nas odds oferecidas
+
+Responda EXCLUSIVAMENTE em JSON:
+{{
+    "recommendation": "OVER_25|UNDER_25|OVER_35|UNDER_35|NO_BET",
+    "confidence": 0-100,
+    "key_points": ["ponto 1", "ponto 2", "ponto 3"],
+    "lambda_assessment": "Os lambdas estao adequados? Justifique"
+}}"""
+
+    @staticmethod
+    def build_btts_prompt(home_team: str, away_team: str, stats: dict, odds: dict) -> str:
+        """Prompt focado em BTTS: clean sheets, failed to score, equilibrio ofensivo/defensivo."""
+        return f"""Voce e um analista profissional de apostas esportivas. Analise EXCLUSIVAMENTE o mercado BTTS (Ambos Marcam).
+
+JOGO: {home_team} vs {away_team}
+
+DADOS RELEVANTES:
+- BTTS %: {home_team} {stats.get('homeBttsPercentage', 'N/A')}% vs {away_team} {stats.get('awayBttsPercentage', 'N/A')}%
+- Clean Sheet %: {home_team} {stats.get('homeCleanSheetPct', 'N/A')}% vs {away_team} {stats.get('awayCleanSheetPct', 'N/A')}%
+- Faltou Marcar (FTS) %: {home_team} {stats.get('homeFtsPercentage', 'N/A')}% vs {away_team} {stats.get('awayFtsPercentage', 'N/A')}%
+- Gols marcados/jogo: {home_team} {stats.get('homeScoredAvg', 'N/A')} vs {away_team} {stats.get('awayScoredAvg', 'N/A')}
+- Gols sofridos/jogo: {home_team} {stats.get('homeConcededAvg', 'N/A')} vs {away_team} {stats.get('awayConcededAvg', 'N/A')}
+- Chaos Score: {stats.get('chaosScore', 'N/A')}
+
+ODDS:
+- BTTS Sim: {odds.get('bttsYes', 'N/A')} | BTTS Nao: {odds.get('bttsNo', 'N/A')}
+
+FOCO DA ANALISE:
+1. Equilibrio ofensivo/defensivo de ambos os times
+2. Historico de clean sheets vs capacidade de marcar
+3. Times que falham em marcar — qual frequencia?
+4. Value nas odds oferecidas
+
+Responda EXCLUSIVAMENTE em JSON:
+{{
+    "recommendation": "BTTS_SIM|BTTS_NAO|NO_BET",
+    "confidence": 0-100,
+    "key_points": ["ponto 1", "ponto 2", "ponto 3"],
+    "defensive_assessment": "Analise do equilibrio defesa/ataque"
+}}"""
+
+    @staticmethod
+    def build_corners_prompt(home_team: str, away_team: str, stats: dict, odds: dict) -> str:
+        """Prompt focado em Corners: corners for/against, shots, possession, estilo tatico."""
+        return f"""Voce e um analista profissional de apostas esportivas. Analise EXCLUSIVAMENTE o mercado de Escanteios (Corners).
+
+JOGO: {home_team} vs {away_team}
+
+DADOS RELEVANTES:
+- Escanteios/jogo: {home_team} {stats.get('homeCornersPerMatch', 'N/A')} vs {away_team} {stats.get('awayCornersPerMatch', 'N/A')}
+- Escanteios sofridos/jogo: {home_team} {stats.get('homeCornersAgainstPerMatch', 'N/A')} vs {away_team} {stats.get('awayCornersAgainstPerMatch', 'N/A')}
+- Posse de bola: {home_team} {stats.get('homePossession', 'N/A')}% vs {away_team} {stats.get('awayPossession', 'N/A')}%
+- Finalizacoes/jogo: {home_team} {stats.get('homeShotsPerMatch', 'N/A')} vs {away_team} {stats.get('awayShotsPerMatch', 'N/A')}
+- Corners projetados FT: {stats.get('projectedTotalCornersFT', 'N/A')}
+- Corners projetados 1H: {stats.get('projectedTotalCorners1H', 'N/A')}
+- Liga avg corners: {stats.get('leagueAvgCorners', 'N/A')}
+- Chaos Score: {stats.get('chaosScore', 'N/A')}
+
+FOCO DA ANALISE:
+1. Estilo tatico: times que pressionam alto geram mais escanteios?
+2. Posse + finalizacoes indicam pressao ofensiva?
+3. Escanteios sofridos — indica defesa reativa (bloqueia com corners)?
+4. Linha projetada vs odds oferecidas
+
+Responda EXCLUSIVAMENTE em JSON:
+{{
+    "recommendation": "OVER|UNDER|NO_BET",
+    "line": 9.5,
+    "confidence": 0-100,
+    "key_points": ["ponto 1", "ponto 2", "ponto 3"],
+    "tactical_assessment": "Analise do estilo tatico e impacto nos escanteios"
+}}"""
+
+
 def _format_market_reference_stats(stats: dict | None) -> str:
     """Format market_reference_stats for inclusion in Mistral prompt."""
     if not stats:

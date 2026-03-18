@@ -10,7 +10,7 @@ from backend.services.util_service import status_map, parse_date, pick_column, c
 from backend.services.math_service import implied_probs, poisson_pmf, poisson_cdf
 from backend.modeling.xg_filter import aplicar_filtro_completo
 from backend.modeling.chaos_detector import detectar_caos_jogo
-from backend.services.market_service import selecionar_mercados_jogo
+from backend.services.market_service import selecionar_mercados_v2
 
 logger = logging.getLogger("sportsbankzu")
 
@@ -1019,7 +1019,7 @@ def build_records_from_matches(
                 except Exception as _ml_err:
                     logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
 
-            mercados = selecionar_mercados_jogo(record, _regime, _volatilidade, league_id=league_id)
+            mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
             record["mercados"] = mercados
         except Exception as e:
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")

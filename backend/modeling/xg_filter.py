@@ -136,26 +136,53 @@ def ajustar_lambda_por_xg(
         'lambda_adjusted': lambda_original
     }
     
-    # Se não detectou sorte, retornar lambda original
+    # Se não detectou sorte, verificar azar insustentável (xG >> gols)
     if not has_luck:
+        if games_played >= XG_MIN_SAMPLE_SIZE and xg > 0:
+            # Symmetric check: total xG - total goals > threshold (same scale as luck)
+            total_unlucky_disc = xg - goals_scored
+
+            if total_unlucky_disc > XG_DISCREPANCY_THRESHOLD:
+                xg_per_game = xg / games_played
+                goals_per_game = goals_scored / games_played
+                max_discrepancy = XG_DISCREPANCY_THRESHOLD * 10
+                disc_ratio = min(total_unlucky_disc / max_discrepancy, 1.0)
+                effective_adj = adjustment_factor * disc_ratio * 0.7  # more conservative than luck
+
+                lambda_adjusted = lambda_original * (1 + effective_adj)
+                # Cap at a reasonable max (original * 1.30)
+                lambda_adjusted = min(lambda_original * 1.30, lambda_adjusted)
+
+                metadata['unlucky_detected'] = True
+                metadata['unlucky_discrepancy'] = round(total_unlucky_disc, 3)
+                metadata['unlucky_adjustment'] = round(effective_adj, 4)
+                metadata['adjustment_applied'] = True
+                metadata['adjustment_direction'] = 'UP'
+                metadata['lambda_adjusted'] = lambda_adjusted
+
+                logger.info(
+                    f"Azar insustentável detectado: xG/jogo={xg_per_game:.2f} > gols/jogo={goals_per_game:.2f} "
+                    f"(diff={total_unlucky_disc:.2f}). Lambda ajustado +{effective_adj*100:.1f}%"
+                )
+
+                return lambda_adjusted, True, metadata
+
         logger.debug(f"Sem sorte detectada. Lambda mantido: {lambda_original:.3f}")
         return lambda_original, False, metadata
-    
-    # Calcular ajuste
-    # Quanto maior a discrepância, maior o ajuste (até o limite do adjustment_factor).
-    # Usa uma escala mais ampla para manter proporcionalidade entre "sorte leve" e "sorte alta".
+
+    # Calcular ajuste para sorte (reduzir lambda)
     max_discrepancy = XG_DISCREPANCY_THRESHOLD * 10
     discrepancy_ratio = min(discrepancy / max_discrepancy, 1.0)
     effective_adjustment = adjustment_factor * discrepancy_ratio
-    
+
     # Aplicar ajuste (reduzir lambda)
     lambda_adjusted = lambda_original * (1 - effective_adjustment)
-    
+
     # Atualizar metadados
     metadata['adjustment_applied'] = True
     metadata['adjustment_factor'] = effective_adjustment
     metadata['lambda_adjusted'] = lambda_adjusted
-    
+
     logger.info(
         f"Filtro de Mentira Aplicado | "
         f"Lambda: {lambda_original:.3f} → {lambda_adjusted:.3f} | "
@@ -163,7 +190,7 @@ def ajustar_lambda_por_xg(
         f"Discrepância: {discrepancy:.2f} | "
         f"Classificação: {classification}"
     )
-    
+
     return lambda_adjusted, True, metadata
 
 

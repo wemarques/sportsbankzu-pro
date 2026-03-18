@@ -23,6 +23,10 @@ class SafeBetTag(str, Enum):
     SAFE_CORNERS = "SAFE_CORNERS"
     SAFE_CORNERS_HT = "SAFE_CORNERS_HT"
     TIMING_2H = "TIMING_2H"
+    # V3.7 strategies
+    UNDER_25 = "UNDER_25"
+    BTTS_YES = "BTTS_YES"
+    OVER_25 = "OVER_25"
     NO_BET = "NO_BET"
 
 
