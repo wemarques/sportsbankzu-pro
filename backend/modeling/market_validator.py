@@ -33,10 +33,12 @@ MERCADOS_VALIDOS: List[str] = [
     'BTTS', 'BTTS No',
     '1X2 Home', '1X2 Draw', '1X2 Away',
     'Double Chance 1X', 'Double Chance 12', 'Double Chance X2',
-    'Escanteios Over 8.5', 'Escanteios Over 9.5', 'Escanteios Over 10.5',
-    'Escanteios Over 11.5',
-    'Escanteios Under 8.5', 'Escanteios Under 9.5', 'Escanteios Under 10.5',
-    'Escanteios Under 11.5',
+    'Escanteios Over 4.5', 'Escanteios Over 5.5', 'Escanteios Over 6.5',
+    'Escanteios Over 7.5', 'Escanteios Over 8.5', 'Escanteios Over 9.5',
+    'Escanteios Over 10.5', 'Escanteios Over 11.5', 'Escanteios Over 12.5',
+    'Escanteios Under 4.5', 'Escanteios Under 5.5', 'Escanteios Under 6.5',
+    'Escanteios Under 7.5', 'Escanteios Under 8.5', 'Escanteios Under 9.5',
+    'Escanteios Under 10.5', 'Escanteios Under 11.5', 'Escanteios Under 12.5',
 ]
 
 

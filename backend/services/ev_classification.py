@@ -405,32 +405,49 @@ def evaluate_match_markets(
     # Corner markets (governed framework v2 — bidirectional Over + Under)
     corner_governance = get_corner_governance_info(league_id)
     v2_projection = governed_corners.get("projection", {})
-    v2_engine_version = governed_corners.get("engineVersion", "1.0.0")
+    v2_engine_version = governed_corners.get("engine_version", governed_corners.get("engineVersion", "1.0.0"))
+    v2_lines = governed_corners.get("lines", {})
 
-    # Over lines — legacy 8.5-11.5 + any available from v2
-    for threshold_key, stat_key, odd_key in [
-        ("over_8.5", "cornerOver85Prob", "cornersOver85"),
-        ("over_9.5", "cornerOver95Prob", "cornersOver95"),
-        ("over_10.5", "cornerOver105Prob", "cornersOver105"),
-        ("over_11.5", "cornerOver115Prob", "cornersOver115"),
-    ]:
-        gov_line = governed_corners.get("lines", {}).get(threshold_key, {})
+    # FootyStats stat keys and odds keys for legacy lines (used as fallback)
+    _FOOTYSTATS_STAT_MAP = {
+        8.5: "cornerOver85Prob", 9.5: "cornerOver95Prob",
+        10.5: "cornerOver105Prob", 11.5: "cornerOver115Prob",
+    }
+    _FOOTYSTATS_ODD_MAP = {
+        8.5: "cornersOver85", 9.5: "cornersOver95",
+        10.5: "cornersOver105", 11.5: "cornersOver115",
+    }
+
+    # Iterate ALL v2 lines (4.5-12.5) for Over markets
+    from backend.modeling.corners import CORNER_LINES
+    for line_val in CORNER_LINES:
+        line_key = f"over_{line_val}"
+        gov_line = v2_lines.get(line_key, {})
         raw = gov_line.get("probability")
 
+        # Fallback to legacy corner_probs or FootyStats stat
         if raw is None:
-            raw = corner_probs.get(threshold_key)
+            raw = corner_probs.get(line_key)
         if raw is None:
-            raw = _prob(stat_key)
+            stat_key = _FOOTYSTATS_STAT_MAP.get(line_val)
+            if stat_key:
+                raw = _prob(stat_key)
         if raw is None:
             continue
 
-        threshold_label = threshold_key.replace("over_", "Over ")
+        threshold_label = f"Over {line_val}"
         calibrated = calibrate_prob(raw, f"Escanteios {threshold_label}", league_id, regime)
-        corner_odd = odds.get(odd_key)
+
+        # Odds: try v2 book_odd_over, then FootyStats odds key
+        corner_odd = gov_line.get("book_odd_over")
+        if corner_odd is None:
+            odd_key = _FOOTYSTATS_ODD_MAP.get(line_val)
+            if odd_key:
+                corner_odd = odds.get(odd_key)
         corner_odd = float(corner_odd) if corner_odd and float(corner_odd) > 1.0 else None
 
-        gov_line_info = corner_governance.get("lines", {}).get(threshold_key, {})
-        operational_state = gov_line_info.get("operationalState", "RESTRICTED")
+        gov_line_info = corner_governance.get("lines", {}).get(line_key, {})
+        operational_state = gov_line_info.get("operationalState", gov_line.get("operational_state", "RESTRICTED"))
         champion_model = gov_line_info.get("championModel", gov_line.get("champion_model"))
         fallback_model = gov_line_info.get("fallbackModel", gov_line.get("fallback_model"))
         model_used = gov_line.get("model_used", "corners_engine_v2")
@@ -452,6 +469,7 @@ def evaluate_match_markets(
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,
             "cornerModelStatus": operational_state,
+            "side": "OVER",
             "championModel": champion_model,
             "fallbackModel": fallback_model,
             "modelUsed": model_used,
@@ -467,10 +485,10 @@ def evaluate_match_markets(
         }
         markets.append(classified)
 
-    # Under lines (v2 — bidirectional)
-    for line_val in [8.5, 9.5, 10.5, 11.5]:
+    # Under lines (v2 — bidirectional, all lines from CORNER_LINES)
+    for line_val in CORNER_LINES:
         line_key = f"over_{line_val}"
-        gov_line = governed_corners.get("lines", {}).get(line_key, {})
+        gov_line = v2_lines.get(line_key, {})
         p_under = gov_line.get("probability_under")
 
         if p_under is None:
@@ -484,14 +502,16 @@ def evaluate_match_markets(
         threshold_label = f"Under {line_val}"
         calibrated = calibrate_prob(p_under, f"Escanteios {threshold_label}", league_id, regime)
 
-        # Under odds: try explicit key, else derive from Over
+        # Under odds: try v2 book_odd_under, then explicit key, else derive from Over
+        under_odd = gov_line.get("book_odd_under")
         line_tag = str(line_val).replace(".", "")
-        under_odd = odds.get(f"cornersUnder{line_tag}")
+        if under_odd is None:
+            under_odd = odds.get(f"cornersUnder{line_tag}")
         if under_odd:
             under_odd = float(under_odd) if float(under_odd) > 1.0 else None
         else:
-            over_odd_key = f"cornersOver{line_tag}"
-            over_odd = odds.get(over_odd_key)
+            over_odd_key = _FOOTYSTATS_ODD_MAP.get(line_val)
+            over_odd = odds.get(over_odd_key) if over_odd_key else None
             if over_odd and float(over_odd) > 1.0:
                 implied_over = 1.0 / float(over_odd)
                 implied_under = max(0.01, 1.0 - implied_over)
@@ -507,7 +527,7 @@ def evaluate_match_markets(
             book_odd=under_odd,
             odds_available=under_odd is not None,
             data_quality_score=quality,
-            source_flags=[*source_flags, "corner_model:corners_engine_v2", "under"],
+            source_flags=[*source_flags, f"corner_model:{gov_line.get('model_used', 'corners_engine_v2')}", "under"],
             display_label=f"Escanteios {threshold_label}",
         )
 
@@ -515,9 +535,11 @@ def evaluate_match_markets(
         classified.corner_governance = {
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,
-            "cornerModelStatus": "NEUTRAL",
+            "cornerModelStatus": gov_line.get("operational_state", "NEUTRAL"),
             "side": "UNDER",
             "projectedTotalCornersFT": v2_projection.get("expected_total_corners_ft"),
+            "projectedTotalCorners1H": v2_projection.get("expected_total_corners_1h"),
+            "projectedTotalCorners2H": v2_projection.get("expected_total_corners_2h"),
             "cornerValidationVersion": corner_governance.get("cornerValidationVersion", v2_engine_version),
         }
         markets.append(classified)
