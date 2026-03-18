@@ -52,6 +52,44 @@ def selecionar_mercados_v2(
             )
         )
 
+        # Deduplicate corners: keep only the single best corner market (highest prob)
+        # The v2 engine produces all lines (4.5-12.5) but the frontend should show
+        # only the best line, like the legacy function did.
+        _best_corner = None
+        _non_corner = []
+        for m in mercados:
+            nome = m.get("mercado", "")
+            if "Escanteios" in nome or "Escanteio" in nome:
+                if _best_corner is None:
+                    _best_corner = m
+                else:
+                    # Prefer higher classification, then higher probability
+                    cur_rank = _CLASSIFICATION_RANK.get(
+                        _best_corner.get("finalClassification", _best_corner.get("status")), 99
+                    )
+                    new_rank = _CLASSIFICATION_RANK.get(
+                        m.get("finalClassification", m.get("status")), 99
+                    )
+                    if new_rank < cur_rank:
+                        _best_corner = m
+                    elif new_rank == cur_rank:
+                        # Prefer corner with better edge (higher odd = more value)
+                        cur_odd = _best_corner.get("odd_minima") or 0
+                        new_odd = m.get("odd_minima") or 0
+                        if new_odd > cur_odd:
+                            _best_corner = m
+            else:
+                _non_corner.append(m)
+        mercados = _non_corner
+        if _best_corner:
+            mercados.append(_best_corner)
+        # Re-sort after dedup
+        mercados.sort(
+            key=lambda m: _CLASSIFICATION_RANK.get(
+                m.get("finalClassification", m.get("status", "NEUTRO")), 99
+            )
+        )
+
         # Apply regime validation (existing logic)
         if mercados:
             def normalizar_mercado(nome: str) -> str:
