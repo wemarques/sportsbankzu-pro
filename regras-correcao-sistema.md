@@ -136,3 +136,110 @@ API-Football /fixtures?live=all
 ### Regras
 1. **Campos backend→frontend devem bater com o tipo TS** — `"leagueId"` não `"league"`
 2. **Dropdowns nativos** — Sempre usar cores inline fixas nas `<option>`, browser ignora CSS variables
+
+---
+
+## Corners Engine v2 — Motor Bidirecional de Projeção de Escanteios
+
+**Data:** 2026-03-18
+**Branch:** `claude/corner-betting-framework-zh4G1`
+
+### Problema Original
+O motor v1 de escanteios era enviesado para Over: começava ancorado em Over 8.5 e só avaliava 4 linhas `[8.5, 9.5, 10.5, 11.5]`, todas Over. Linhas Under nunca eram candidatas. Além disso, o `ev_classification.py` tinha as linhas hardcoded em tuples fixos, descartando qualquer projeção do motor v2 fora dessas 4 linhas.
+
+### Causa Raiz (3 camadas)
+1. **`ev_classification.py`** — Loop de montagem de `MarketOutput` usava 4 tuples hardcoded `[(over_8.5, cornerOver85Prob, cornersOver85), ...]` para Over e `[8.5, 9.5, 10.5, 11.5]` para Under. O motor v2 projetava 9 linhas [4.5-12.5] mas só 4 apareciam.
+2. **`calibrator.py` / `market_validator.py`** — Só 8 mercados de escanteio registrados (4 Over + 4 Under para 8.5-11.5). Linhas v2 fora desse range eram rejeitadas como inválidas.
+3. **`safe_bets_service.py`** — Strategy C fixada em `market_label="Over 9.5 Escanteios"`, ignorando o motor v2.
+4. **`market_reference_signal.py`** — Corners retornava "NEUTRO by default" sem consultar governance do v2.
+
+### Arquitetura do Corners Engine v2 (5 camadas)
+
+```
+Layer A: Data Quality Assessment
+  → coverage_score, feature_completeness, sample_adequacy
+  → Tiers: HIGH / MEDIUM / LOW / INSUFFICIENT
+
+Layer B: Baseline Priors (Negative Binomial + Poisson)
+  → NB2 parameterization para overdispersão
+  → Method of moments para fitting de r, p
+
+Layer C: Projection (FT / 1H / 2H)
+  → Weighted projection com dynamic shrinkage
+  → Matchup pressure index (shots, SoT, possession, xG, corners)
+  → FH/2H decomposition (timing data ou default 45%/55%)
+
+Layer D: Bidirectional Price Ladder
+  → 9 linhas: [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
+  → Over AND Under para cada linha
+  → Fair odds, edge, quality-adjusted edge
+  → select_best_market() trata Over e Under como candidatos iguais
+
+Layer E: Decision Engine + Mistral Review
+  → Mistral como reviewer contextual (não pode promover)
+  → Ações: maintain, lower_confidence, force_no_bet
+```
+
+### Correções Aplicadas
+
+#### 1. Corners Engine v2 — Motor completo
+**Arquivos novos:**
+- `backend/modeling/corners/data_quality.py` — Layer A, avaliação de qualidade de dados
+- `backend/modeling/corners/price_ladder.py` — Layer D, pricing bidirecional Over+Under
+- `backend/modeling/corners/mistral_review.py` — Layer E, review contextual Mistral AI
+
+**Arquivos reescritos:**
+- `backend/modeling/corners/predictor.py` — Orquestrador v2, projeção com shrinkage dinâmico
+- `backend/modeling/corners/features.py` — 40+ features v2 + pressure index
+
+**Arquivos atualizados:**
+- `backend/modeling/corners/negative_binomial.py` — Emite Over + Under para todas as linhas
+- `backend/modeling/corners/poisson_model.py` — Idem, bidirecional
+- `backend/modeling/corners/ml_regression.py` — Idem, bidirecional
+- `backend/modeling/corners/__init__.py` — `CORNER_LINES = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]`
+
+#### 2. Integração — Ladder completo no output
+**Arquivo:** `backend/services/ev_classification.py`
+- **Antes:** 4 tuples hardcoded para Over, 4 valores fixos para Under
+- **Depois:** Itera `CORNER_LINES` (9 linhas) dinamicamente, Over + Under, com fallback para FootyStats stats/odds quando v2 não tem dados
+
+#### 3. Calibrador e Validador expandidos
+**Arquivos:** `backend/modeling/calibrator.py`, `backend/modeling/market_validator.py`
+- **Antes:** 8 mercados de escanteio (4 Over + 4 Under, só 8.5-11.5)
+- **Depois:** 18 mercados (9 Over + 9 Under, 4.5-12.5)
+
+#### 4. Strategy C — Consulta motor v2
+**Arquivo:** `backend/services/safe_bets_service.py`
+- **Antes:** `market_label="Over 9.5 Escanteios"` hardcoded
+- **Depois:** `_try_corners_v2()` consulta `predict_corners()` para melhor linha/lado; fallback `_corners_fallback_heuristic()` escolhe lado/linha dinamicamente baseado na média combinada
+
+#### 5. Market Reference Signal — Governance v2
+**Arquivo:** `backend/services/market_reference_signal.py`
+- **Antes:** `"Corners sem pipeline de validacao dedicado (v1)"` → sempre NEUTRO
+- **Depois:** `_get_corners_signal()` consulta `get_corner_governance_info()`:
+  - `ACTIVE / ACTIVE_GUARDED` → SAFE
+  - `NEUTRAL` → NEUTRO
+  - `RESTRICTED` → RESTRITO
+
+#### 6. Fixes CI/CD
+**Arquivo:** `backend/models/market_output.py`
+- Pydantic v2: `_corner_governance` (underscore proibido) → `corner_governance` com `AliasChoices`
+
+**Arquivo:** `frontend/next/src/lib/leagues.ts`
+- TypeScript: `marketReferenceSignal?: string` → `"SAFE" | "NEUTRO" | "RESTRITO"`
+
+### Testes
+- `tests/test_corners_v2.py` — 35 testes cobrindo todas as 5 camadas
+- `tests/test_corner_framework.py` — Testes de regressão atualizados
+- Total: 241 testes passando
+
+### Regras para Futuras Correções de Escanteios
+
+1. **Nunca hardcodar linhas** — Sempre usar `CORNER_LINES` de `backend/modeling/corners/__init__.py`. Se precisar expandir ou reduzir, alterar apenas a constante.
+2. **Under é candidato igual a Over** — O motor v2 trata ambos os lados como first-class. Nunca filtrar Under no pipeline de output.
+3. **Motor projeta primeiro, preços depois** — A projeção de expected corners FT vem antes de qualquer avaliação de linha. Não ancorar em Over 8.5.
+4. **Shrinkage dinâmico** — Adapta-se à qualidade dos dados. Não usar reducers fixos.
+5. **Mistral é reviewer, não decisor** — Pode rebaixar confiança ou forçar NO_BET, mas nunca promover um mercado fraco ou inventar probabilidades.
+6. **Governance > Mistral > Nada** — Hierarquia estrita: motor estatístico > governance de dados > review Mistral.
+7. **Fallback gracioso** — Se dados INSUFFICIENT, usar legacy engine (4 linhas) em vez de não mostrar nada.
+8. **Calibrador e validador devem estar sincronizados** — Se adicionar nova linha em `CORNER_LINES`, adicionar nos dois arquivos também.
