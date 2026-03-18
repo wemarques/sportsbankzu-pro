@@ -38,6 +38,20 @@ def selecionar_mercados_v2(
             legacy = market.to_legacy_mercado()
             mercados.append(legacy)
 
+        # Filter out NO_BET markets — legacy function never returned these
+        _CLASSIFICATION_RANK = {"SAFE": 0, "SAFE*": 1, "NEUTRO_QUALIFICADO": 2, "NEUTRO": 3}
+        mercados = [
+            m for m in mercados
+            if m.get("finalClassification", m.get("status", "NO_BET")) in _CLASSIFICATION_RANK
+        ]
+
+        # Sort by classification quality (SAFE first) so principal market is the best one
+        mercados.sort(
+            key=lambda m: _CLASSIFICATION_RANK.get(
+                m.get("finalClassification", m.get("status", "NEUTRO")), 99
+            )
+        )
+
         # Apply regime validation (existing logic)
         if mercados:
             def normalizar_mercado(nome: str) -> str:
@@ -75,8 +89,11 @@ def selecionar_mercados_v2(
             stats["mercado_principal"] = principal.get("mercado")
             stats["odd_minima"] = principal.get("odd_minima")
             stats["data_quality_score"] = bundle.data_quality_score
+            return mercados
 
-        return mercados
+        # V2 produced zero viable markets — fall back to legacy so match still appears
+        logger.info("[V2] No viable markets from v2 pipeline, falling back to legacy")
+        return selecionar_mercados_jogo(jogo, regime, volatilidade, league_id=league_id)
 
     except Exception as e:
         logger.warning(f"[V2] Fallback to legacy market selection: {e}")
