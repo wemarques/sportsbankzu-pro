@@ -9,6 +9,41 @@ from backend.services.market_reference_signal import apply_signal_capping
 
 logger = logging.getLogger("sportsbankzu")
 
+_CLASSIFICATION_RANK = {"SAFE": 0, "SAFE*": 1, "NEUTRO_QUALIFICADO": 2, "NEUTRO": 3}
+
+
+def _dedup_corners(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only the single best corner market from a list.
+
+    Selection criteria: best classification first, then highest odd (better edge).
+    """
+    best_corner = None
+    non_corner = []
+    for m in mercados:
+        nome = m.get("mercado", "")
+        if "Escanteios" in nome or "Escanteio" in nome:
+            if best_corner is None:
+                best_corner = m
+            else:
+                cur_rank = _CLASSIFICATION_RANK.get(
+                    best_corner.get("finalClassification", best_corner.get("status")), 99
+                )
+                new_rank = _CLASSIFICATION_RANK.get(
+                    m.get("finalClassification", m.get("status")), 99
+                )
+                if new_rank < cur_rank:
+                    best_corner = m
+                elif new_rank == cur_rank:
+                    cur_odd = best_corner.get("odd_minima") or 0
+                    new_odd = m.get("odd_minima") or 0
+                    if new_odd > cur_odd:
+                        best_corner = m
+        else:
+            non_corner.append(m)
+    if best_corner:
+        non_corner.append(best_corner)
+    return non_corner
+
 
 def selecionar_mercados_v2(
     jogo: Dict[str, Any],
@@ -39,7 +74,6 @@ def selecionar_mercados_v2(
             mercados.append(legacy)
 
         # Filter out NO_BET markets — legacy function never returned these
-        _CLASSIFICATION_RANK = {"SAFE": 0, "SAFE*": 1, "NEUTRO_QUALIFICADO": 2, "NEUTRO": 3}
         mercados = [
             m for m in mercados
             if m.get("finalClassification", m.get("status", "NO_BET")) in _CLASSIFICATION_RANK
@@ -52,38 +86,8 @@ def selecionar_mercados_v2(
             )
         )
 
-        # Deduplicate corners: keep only the single best corner market (highest prob)
-        # The v2 engine produces all lines (4.5-12.5) but the frontend should show
-        # only the best line, like the legacy function did.
-        _best_corner = None
-        _non_corner = []
-        for m in mercados:
-            nome = m.get("mercado", "")
-            if "Escanteios" in nome or "Escanteio" in nome:
-                if _best_corner is None:
-                    _best_corner = m
-                else:
-                    # Prefer higher classification, then higher probability
-                    cur_rank = _CLASSIFICATION_RANK.get(
-                        _best_corner.get("finalClassification", _best_corner.get("status")), 99
-                    )
-                    new_rank = _CLASSIFICATION_RANK.get(
-                        m.get("finalClassification", m.get("status")), 99
-                    )
-                    if new_rank < cur_rank:
-                        _best_corner = m
-                    elif new_rank == cur_rank:
-                        # Prefer corner with better edge (higher odd = more value)
-                        cur_odd = _best_corner.get("odd_minima") or 0
-                        new_odd = m.get("odd_minima") or 0
-                        if new_odd > cur_odd:
-                            _best_corner = m
-            else:
-                _non_corner.append(m)
-        mercados = _non_corner
-        if _best_corner:
-            mercados.append(_best_corner)
-        # Re-sort after dedup
+        # Deduplicate corners: keep only the single best line
+        mercados = _dedup_corners(mercados)
         mercados.sort(
             key=lambda m: _CLASSIFICATION_RANK.get(
                 m.get("finalClassification", m.get("status", "NEUTRO")), 99
@@ -293,6 +297,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     if corner_o105 is not None and corner_o105 >= _th_c105["NEUTRO"]:
         status_c = "SAFE" if corner_o105 >= _th_c105["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
+    # Deduplicate corners: keep only the single best line
+    mercados = _dedup_corners(mercados)
     if not mercados:
         # Fallback: only the single best candidate with stricter thresholds
         candidatos = []
