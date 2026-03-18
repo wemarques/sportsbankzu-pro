@@ -13,11 +13,11 @@ When alpha → 0, NB converges to Poisson.
 
 import logging
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from backend.modeling.corners import CORNER_LINES
+from backend.modeling.corners import CORNER_LINES, CORNER_LINES_LEGACY
 
 logger = logging.getLogger("sportsbankzu.corners.negative_binomial")
 
@@ -89,28 +89,33 @@ def fit_negative_binomial(
 def predict_corners_nb(
     expected_total_corners: float,
     alpha: float = 0.15,
+    lines: Optional[list] = None,
 ) -> Dict[str, float]:
     """Derive corner line probabilities from NB distribution.
 
     Args:
         expected_total_corners: mu parameter (expected total corners)
         alpha: dispersion parameter (higher = more variance)
+        lines: Lines to predict (defaults to full CORNER_LINES)
 
     Returns:
         Dict with probabilities for each line, e.g. {"over_8.5": 0.65, ...}
     """
+    target_lines = lines or CORNER_LINES
     mu = max(4.0, min(18.0, expected_total_corners))
     alpha = max(0.001, min(alpha, 5.0))
 
     result = {}
-    for line in CORNER_LINES:
+    for line in target_lines:
         threshold = int(line)  # e.g. 8.5 → P(X > 8.5) = P(X >= 9) = 1 - P(X <= 8)
         p_under = nb_cdf(threshold, mu, alpha)
-        result[f"over_{line}"] = max(0.0, min(1.0, 1.0 - p_under))
+        p_over = max(0.0, min(1.0, 1.0 - p_under))
+        result[f"over_{line}"] = p_over
+        result[f"under_{line}"] = max(0.0, min(1.0, p_under))
 
     logger.debug(
         f"NB prediction: mu={mu:.1f}, alpha={alpha:.3f} → "
-        + " ".join(f"O{l}={result[f'over_{l}']:.3f}" for l in CORNER_LINES)
+        + " ".join(f"O{l}={result[f'over_{l}']:.3f}" for l in target_lines)
     )
 
     return result

@@ -14,7 +14,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from backend.modeling.corners import CORNER_LINES
+from backend.modeling.corners import CORNER_LINES, CORNER_LINES_LEGACY
 
 logger = logging.getLogger("sportsbankzu.corners.poisson_model")
 
@@ -36,26 +36,31 @@ def poisson_cdf(threshold: int, lam: float) -> float:
 
 def predict_corners_poisson(
     expected_total_corners: float,
+    lines: list = None,
 ) -> Dict[str, float]:
     """Derive corner line probabilities from Poisson distribution.
 
     Args:
         expected_total_corners: lambda parameter
+        lines: Lines to predict (defaults to full CORNER_LINES)
 
     Returns:
-        Dict with probabilities for each line.
+        Dict with probabilities for each line (over and under).
     """
+    target_lines = lines or CORNER_LINES
     lam = max(4.0, min(18.0, expected_total_corners))
 
     result = {}
-    for line in CORNER_LINES:
+    for line in target_lines:
         threshold = int(line)
         p_under = poisson_cdf(threshold, lam)
-        result[f"over_{line}"] = max(0.0, min(1.0, 1.0 - p_under))
+        p_over = max(0.0, min(1.0, 1.0 - p_under))
+        result[f"over_{line}"] = p_over
+        result[f"under_{line}"] = max(0.0, min(1.0, p_under))
 
     logger.debug(
         f"Poisson prediction: lambda={lam:.1f} → "
-        + " ".join(f"O{l}={result[f'over_{l}']:.3f}" for l in CORNER_LINES)
+        + " ".join(f"O{l}={result[f'over_{l}']:.3f}" for l in target_lines)
     )
 
     return result

@@ -26,6 +26,8 @@ import numpy as np
 
 logger = logging.getLogger("sportsbankzu.corners.features")
 
+from backend.modeling.corners import CORNER_LINES_LEGACY
+
 ROLLING_WINDOWS = [5, 10]
 
 
@@ -227,7 +229,7 @@ def build_corner_features(
         features["away_corner_cv"] = away_cv
 
         # Historical line hit frequency
-        for line in [8.5, 9.5, 10.5, 11.5]:
+        for line in CORNER_LINES_LEGACY:
             features[f"home_total_over_{line}_rate_r10"] = tracker.line_hit_rate(
                 home_team, "total_corners", line, 10
             )
@@ -360,3 +362,268 @@ def build_match_corner_features(
                                      away_stats.get("matchesPlayed_overall", 15)))
 
     return features
+
+
+# ─── v2: Extended features for projection engine ───
+
+
+def _get_split_or_fallback(
+    stats: Dict[str, Any],
+    key: str,
+    split: str,
+    fallback_key: str = "",
+) -> float:
+    """Get a stat with home/away split preference, falling back to overall."""
+    # Try split-specific key first (e.g., "corners_total_per_match" with split="home")
+    split_key = f"{key}_{split}" if split else key
+    for k in [split_key, f"{split}_{key}", key, fallback_key]:
+        if k:
+            val = stats.get(k)
+            if val is not None and val != "" and val != -1:
+                return _safe_float(val)
+    return 0.0
+
+
+def build_v2_match_features(
+    home_stats: Dict[str, Any],
+    away_stats: Dict[str, Any],
+    league_stats: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build expanded feature set for Corners Engine v2 runtime.
+
+    Includes:
+    - League priors
+    - Team corner attack/defense
+    - FH/2H decomposition
+    - Pressure index (shots, possession, xG)
+    - Over-percentage features
+    - Stability proxies
+    """
+    f: Dict[str, Any] = {}
+    ls = league_stats or {}
+
+    # ── League priors ──
+    f["league_corner_mean_ft"] = _safe_float(
+        ls.get("average_corners_per_match",
+        ls.get("cornersAVG_overall",
+        ls.get("leagueAvgCorners", 10.0))),
+        10.0,
+    )
+    f["league_corner_mean_home"] = _safe_float(
+        ls.get("average_corners_per_match_home_team",
+        ls.get("cornersAVG_home", f["league_corner_mean_ft"] * 0.55)),
+    )
+    f["league_prediction_risk"] = _safe_float(ls.get("prediction_risk", 50))
+    f["league_home_advantage"] = _safe_float(ls.get("home_advantage_percentage", 45))
+    f["league_progress"] = _safe_float(ls.get("progress", 50))
+    f["league_matches_completed"] = _safe_float(ls.get("matches_completed", 0))
+
+    # ── Home team corner stats ──
+    f["home_corners_for_pm"] = _safe_float(
+        home_stats.get("corners_total_per_match",
+        home_stats.get("cornersAVG_home",
+        home_stats.get("homeCornersPerMatch",
+        home_stats.get("corners_per_match", 0))))
+    )
+    f["home_corners_against_pm"] = _safe_float(
+        home_stats.get("corners_against_per_match",
+        home_stats.get("cornersAgainstAVG_home",
+        home_stats.get("homeCornersAgainstPerMatch", 0)))
+    )
+    f["home_corner_sample"] = _safe_float(
+        home_stats.get("corners_recorded_matches_num",
+        home_stats.get("matchesPlayed_home", 0))
+    )
+
+    # ── Away team corner stats ──
+    f["away_corners_for_pm"] = _safe_float(
+        away_stats.get("corners_total_per_match",
+        away_stats.get("cornersAVG_away",
+        away_stats.get("awayCornersPerMatch",
+        away_stats.get("corners_per_match", 0))))
+    )
+    f["away_corners_against_pm"] = _safe_float(
+        away_stats.get("corners_against_per_match",
+        away_stats.get("cornersAgainstAVG_away",
+        away_stats.get("awayCornersAgainstPerMatch", 0)))
+    )
+    f["away_corner_sample"] = _safe_float(
+        away_stats.get("corners_recorded_matches_num",
+        away_stats.get("matchesPlayed_away", 0))
+    )
+
+    # ── FH/2H timing ──
+    f["home_corners_fh_pm"] = _safe_float(
+        home_stats.get("corners_total_per_match_fh",
+        home_stats.get("corners_total_fh", 0))
+    )
+    f["home_corners_2h_pm"] = _safe_float(
+        home_stats.get("corners_total_per_match_2h",
+        home_stats.get("corners_total_2h_overall", 0))
+    )
+    f["away_corners_fh_pm"] = _safe_float(
+        away_stats.get("corners_total_per_match_fh",
+        away_stats.get("corners_total_fh", 0))
+    )
+    f["away_corners_2h_pm"] = _safe_float(
+        away_stats.get("corners_total_per_match_2h",
+        away_stats.get("corners_total_2h_overall", 0))
+    )
+    f["home_timing_sample"] = _safe_float(
+        home_stats.get("cornerTimingRecorded_matches", 0)
+    )
+    f["away_timing_sample"] = _safe_float(
+        away_stats.get("cornerTimingRecorded_matches", 0)
+    )
+
+    # ── Pressure features ──
+    f["home_shots_pm"] = _safe_float(
+        home_stats.get("shots_per_match",
+        home_stats.get("shotsAVG_home",
+        home_stats.get("homeShotsPerMatch", 0)))
+    )
+    f["away_shots_pm"] = _safe_float(
+        away_stats.get("shots_per_match",
+        away_stats.get("shotsAVG_away",
+        away_stats.get("awayShotsPerMatch", 0)))
+    )
+    f["home_sot_pm"] = _safe_float(
+        home_stats.get("shots_on_target_per_match",
+        home_stats.get("shotsOnTargetAVG_home",
+        home_stats.get("homeShotsOnTarget", 0)))
+    )
+    f["away_sot_pm"] = _safe_float(
+        away_stats.get("shots_on_target_per_match",
+        away_stats.get("shotsOnTargetAVG_away",
+        away_stats.get("awayShotsOnTarget", 0)))
+    )
+    f["home_possession"] = _safe_float(
+        home_stats.get("average_possession",
+        home_stats.get("possessionAVG_home",
+        home_stats.get("homePossession", 50)))
+    )
+    f["away_possession"] = _safe_float(
+        away_stats.get("average_possession",
+        away_stats.get("possessionAVG_away",
+        away_stats.get("awayPossession", 50)))
+    )
+    f["home_xg_for"] = _safe_float(
+        home_stats.get("xg_for_avg",
+        home_stats.get("xgAVG_home",
+        home_stats.get("homeXG",
+        home_stats.get("team_a_xg", 0))))
+    )
+    f["away_xg_for"] = _safe_float(
+        away_stats.get("xg_for_avg",
+        away_stats.get("xgAVG_away",
+        away_stats.get("awayXG",
+        away_stats.get("team_b_xg", 0))))
+    )
+    f["home_xg_against"] = _safe_float(
+        home_stats.get("xg_against_avg",
+        home_stats.get("xgAgainstAVG_home", 0))
+    )
+    f["away_xg_against"] = _safe_float(
+        away_stats.get("xg_against_avg",
+        away_stats.get("xgAgainstAVG_away", 0))
+    )
+
+    # ── Over-percentage features ──
+    for threshold in ["65", "85", "95", "105", "115", "145"]:
+        f[f"home_over{threshold}_corners_pct"] = _safe_float(
+            home_stats.get(f"over{threshold}_corners_percentage", 0)
+        ) / 100.0
+        f[f"away_over{threshold}_corners_pct"] = _safe_float(
+            away_stats.get(f"over{threshold}_corners_percentage", 0)
+        ) / 100.0
+
+    # ── PPG (form proxy) ──
+    f["home_ppg"] = _safe_float(
+        home_stats.get("home_ppg",
+        home_stats.get("Pre-Match PPG (Home)", 0))
+    )
+    f["away_ppg"] = _safe_float(
+        away_stats.get("away_ppg",
+        away_stats.get("Pre-Match PPG (Away)", 0))
+    )
+
+    # ── Derived / composite features ──
+    f["direct_estimate_ft"] = f["home_corners_for_pm"] + f["away_corners_for_pm"]
+    f["cross_estimate_ft"] = 0.0
+    if f["home_corners_against_pm"] > 0 and f["away_corners_against_pm"] > 0:
+        f["cross_estimate_ft"] = (
+            f["home_corners_for_pm"] + f["away_corners_against_pm"]
+            + f["away_corners_for_pm"] + f["home_corners_against_pm"]
+        ) / 2.0
+
+    f["combined_fh"] = f["home_corners_fh_pm"] + f["away_corners_fh_pm"]
+    f["combined_2h"] = f["home_corners_2h_pm"] + f["away_corners_2h_pm"]
+
+    # ── Feature availability flags ──
+    f["_has_timing"] = f["combined_fh"] > 0 and f["combined_2h"] > 0
+    f["_has_against"] = f["home_corners_against_pm"] > 0 and f["away_corners_against_pm"] > 0
+    f["_has_pressure"] = f["home_shots_pm"] > 0 and f["away_shots_pm"] > 0
+    f["_has_xg"] = f["home_xg_for"] > 0 and f["away_xg_for"] > 0
+
+    return f
+
+
+def compute_matchup_pressure_index(features: Dict[str, Any]) -> float:
+    """Compute standardized matchup pressure index.
+
+    Combines shots, shots on target, possession dominance, xG,
+    and corner synergy into a single score normalized around 0.
+
+    Positive = more pressure (more corners expected).
+    Negative = less pressure.
+    """
+    components = []
+    weights = []
+
+    # Shots
+    total_shots = features.get("home_shots_pm", 0) + features.get("away_shots_pm", 0)
+    if total_shots > 0:
+        # Normalize: typical match ~24 total shots
+        components.append((total_shots - 24.0) / 8.0)
+        weights.append(0.20)
+
+    # Shots on target
+    total_sot = features.get("home_sot_pm", 0) + features.get("away_sot_pm", 0)
+    if total_sot > 0:
+        components.append((total_sot - 8.0) / 3.0)
+        weights.append(0.15)
+
+    # Possession dominance (extreme possession → more corners for dominant side)
+    home_poss = features.get("home_possession", 50)
+    poss_dominance = abs(home_poss - 50) / 20.0  # higher = more one-sided
+    components.append(poss_dominance)
+    weights.append(0.10)
+
+    # xG total
+    total_xg = features.get("home_xg_for", 0) + features.get("away_xg_for", 0)
+    if total_xg > 0:
+        components.append((total_xg - 2.5) / 1.0)
+        weights.append(0.15)
+
+    # Corner for/against synergy
+    direct = features.get("direct_estimate_ft", 0)
+    league_avg = features.get("league_corner_mean_ft", 10.0)
+    if direct > 0:
+        components.append((direct - league_avg) / 3.0)
+        weights.append(0.25)
+
+    # Cross estimate synergy
+    cross = features.get("cross_estimate_ft", 0)
+    if cross > 0:
+        components.append((cross - league_avg) / 3.0)
+        weights.append(0.15)
+
+    if not components:
+        return 0.0
+
+    total_weight = sum(weights)
+    if total_weight == 0:
+        return 0.0
+
+    index = sum(c * w for c, w in zip(components, weights)) / total_weight
+    return round(max(-2.0, min(2.0, index)), 4)

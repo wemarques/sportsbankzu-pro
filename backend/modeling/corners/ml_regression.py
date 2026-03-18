@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from backend.modeling.corners import CORNER_LINES
+from backend.modeling.corners import CORNER_LINES, CORNER_LINES_LEGACY
 from backend.modeling.corners.negative_binomial import nb_cdf, fit_negative_binomial
 
 logger = logging.getLogger("sportsbankzu.corners.ml_regression")
@@ -237,12 +237,14 @@ def predict_corners_ml(
         predicted_corners = float(model.predict(X)[0])
         predicted_corners = max(4.0, min(18.0, predicted_corners))
 
-        # Convert to line probabilities via NB distribution
+        # Convert to line probabilities via NB distribution (full ladder)
         result = {"expected_total_corners": predicted_corners}
         for line in CORNER_LINES:
             threshold = int(line)
-            p_over = 1.0 - nb_cdf(threshold, predicted_corners, alpha)
+            p_under = nb_cdf(threshold, predicted_corners, alpha)
+            p_over = 1.0 - p_under
             result[f"over_{line}"] = max(0.0, min(1.0, p_over))
+            result[f"under_{line}"] = max(0.0, min(1.0, p_under))
 
         return result
 
