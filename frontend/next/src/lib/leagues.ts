@@ -156,7 +156,8 @@ export type ReasonCode =
   | "ODDS_TOO_LOW"
   | "STABLE_MARKET"
   | "VOLATILE_MARKET"
-  | "COVERAGE_INSUFFICIENT";
+  | "COVERAGE_INSUFFICIENT"
+  | "SUSPICIOUS_EV";
 
 export type MatchPrediction = {
   mercado: string;

@@ -2314,3 +2314,213 @@
   background: #10b981;
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
 }
+
+/* ─── Reason Code Tags ─── */
+.mdc-reason-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 8px;
+}
+
+.mdc-reason-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.6em;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.mdc-reason-tag__icon {
+  font-size: 0.85em;
+}
+
+.mdc-reason-tag--positive { color: #00ff88; background: rgba(0,255,136,0.08); }
+.mdc-reason-tag--info     { color: #4a9eff; background: rgba(74,158,255,0.06); }
+.mdc-reason-tag--warning  { color: #ff6b35; background: rgba(255,107,53,0.08); }
+.mdc-reason-tag--danger   { color: #ff4444; background: rgba(255,68,68,0.12); }
+.mdc-reason-tag--neutral  { color: #666;    background: rgba(255,255,255,0.05); }
+
+/* ─── AI Tabs ─── */
+.mdc-ai-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.mdc-ai-tab {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted, #555);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.mdc-ai-tab:hover {
+  color: var(--color-text-secondary, #999);
+}
+
+.mdc-ai-tab--active {
+  color: var(--color-text-primary, #e0e0e0);
+  border-bottom-color: var(--color-primary, #00ff88);
+}
+
+/* ─── Glossary ─── */
+.mdc-glossary__search {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 5px;
+  color: #ccc;
+  font-size: 0.75rem;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}
+
+.mdc-glossary__search:focus {
+  border-color: rgba(0,255,136,0.3);
+}
+
+.mdc-glossary__header {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 2px;
+}
+
+.mdc-glossary__col-term,
+.mdc-glossary__col-desc {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mdc-glossary__col-term { flex: 0 0 150px; }
+.mdc-glossary__col-desc { flex: 1; }
+
+.mdc-glossary__list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.mdc-glossary__row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  align-items: flex-start;
+}
+
+.mdc-glossary__term {
+  flex: 0 0 150px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+.mdc-glossary__desc {
+  flex: 1;
+  font-size: 0.75rem;
+  color: #888;
+  line-height: 1.5;
+}
+
+/* ─── Responsive — Reason Tags + AI Tabs + Glossary ─── */
+
+/* Tablet */
+@media (max-width: 768px) {
+  .mdc-glossary__col-term,
+  .mdc-glossary__term {
+    flex: 0 0 120px;
+  }
+
+  .mdc-reason-tags {
+    padding-left: 4px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .mdc-glossary__header {
+    display: none;
+  }
+
+  .mdc-glossary__row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mdc-glossary__term {
+    flex: none;
+    font-size: 0.7rem;
+  }
+
+  .mdc-glossary__desc {
+    font-size: 0.7rem;
+  }
+
+  .mdc-glossary__list {
+    max-height: 400px;
+  }
+
+  .mdc-reason-tags {
+    padding-left: 0;
+  }
+
+  .mdc-reason-tag {
+    font-size: 0.55em;
+  }
+
+  .mdc-ai-tab {
+    padding: 9px 8px;
+    font-size: 0.7rem;
+  }
+
+  .mdc-prognostico__item {
+    flex-wrap: wrap;
+  }
+
+  .mdc-prognostico__market {
+    font-size: 0.7rem;
+  }
+
+  .mdc-prognostico__prob,
+  .mdc-prognostico__ev {
+    font-size: 0.65rem;
+  }
+}
+
+/* Large monitor (27"+) */
+@media (min-width: 1440px) {
+  .mdc-glossary__col-term,
+  .mdc-glossary__term {
+    flex: 0 0 180px;
+  }
+
+  .mdc-glossary__desc {
+    font-size: 0.8rem;
+  }
+
+  .mdc-reason-tag {
+    font-size: 0.65em;
+    padding: 3px 8px;
+  }
+}

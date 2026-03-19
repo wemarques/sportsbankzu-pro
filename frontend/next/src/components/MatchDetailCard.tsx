@@ -19,6 +19,56 @@ import {
 import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import "../styles/match-detail-card.css";
 
+/* ── Reason Code visual mapping ── */
+const REASON_META: Record<string, { icon: string; label: string; color: string; type: "positive" | "info" | "warning" | "danger" | "neutral" }> = {
+  POSITIVE_EV:          { icon: "\u2191", label: "EV+",           color: "#00ff88", type: "positive" },
+  STRONG_EDGE:          { icon: "\u25C6", label: "Edge",          color: "#00ff88", type: "positive" },
+  HIGH_CALIBRATED_PROB: { icon: "\u25CF", label: "Alta Prob",     color: "#4a9eff", type: "info" },
+  EARLY_SEASON_FALLBACK:{ icon: "\u25F7", label: "In\u00EDcio Temp.",  color: "#666",    type: "neutral" },
+  NO_ODDS_AVAILABLE:    { icon: "\u25CB", label: "Sem Odds",      color: "#ff6b35", type: "warning" },
+  SUSPICIOUS_EV:        { icon: "\u26A0", label: "EV Suspeito",   color: "#ff4444", type: "danger" },
+  LOW_DATA_QUALITY:     { icon: "\u25BD", label: "Dados Fraco",   color: "#ff6b35", type: "warning" },
+  NEGATIVE_EV:          { icon: "\u2193", label: "EV\u2212",           color: "#ff4444", type: "danger" },
+  INSUFFICIENT_EDGE:    { icon: "\u2212", label: "Sem Edge",      color: "#666",    type: "neutral" },
+  HIGH_PREDICTION_RISK: { icon: "\u25C7", label: "Risco Alto",    color: "#ff6b35", type: "warning" },
+  STABLE_MARKET:        { icon: "=", label: "Est\u00E1vel",       color: "#4a9eff", type: "info" },
+  VOLATILE_MARKET:      { icon: "~", label: "Vol\u00E1til",       color: "#ff6b35", type: "warning" },
+  COVERAGE_INSUFFICIENT:{ icon: "\u25BD", label: "Cobertura Baixa",color: "#ff6b35", type: "warning" },
+  REGIME_BLOCKED:       { icon: "\u2715", label: "Bloqueado",     color: "#ff4444", type: "danger" },
+  ODDS_TOO_LOW:         { icon: "\u2193", label: "Odd Baixa",     color: "#666",    type: "neutral" },
+  HIGH_MARKET_CORRELATION:{ icon: "\u229E", label: "Correla\u00E7\u00E3o",  color: "#666",    type: "neutral" },
+  LINEUP_UNCERTAINTY:   { icon: "?", label: "Escala\u00E7\u00E3o ?",   color: "#ff6b35", type: "warning" },
+};
+
+/* ── Glossary terms ── */
+const GLOSSARY = [
+  { term: "Edge", description: "Margem de vantagem \u2014 diferen\u00E7a entre a probabilidade do modelo e a probabilidade impl\u00EDcita na odd" },
+  { term: "EV (Expected Value)", description: "Valor esperado do retorno \u2014 quanto se espera ganhar ou perder por unidade apostada a longo prazo" },
+  { term: "EV+", description: "Retorno positivo esperado \u2014 a aposta tem valor matem\u00E1tico favor\u00E1vel" },
+  { term: "EV Suspeito", description: "Retorno calculado fora do normal (acima de 40%) \u2014 indica prov\u00E1vel diverg\u00EAncia entre fontes de dados" },
+  { term: "Strong Edge", description: "Margem de vantagem forte \u2014 o modelo identifica diferen\u00E7a significativa entre sua probabilidade e a da casa" },
+  { term: "Alta Prob", description: "Probabilidade alta de acerto segundo o modelo (acima do threshold da classifica\u00E7\u00E3o)" },
+  { term: "Sem Odds", description: "Sem cota\u00E7\u00E3o dispon\u00EDvel nas casas de apostas para este mercado" },
+  { term: "In\u00EDcio Temp.", description: "Dados de in\u00EDcio de temporada \u2014 calibra\u00E7\u00E3o usa fallback por amostra insuficiente de jogos" },
+  { term: "Fair (Odd Justa)", description: "Cota\u00E7\u00E3o justa calculada pelo modelo \u2014 se a odd da casa for maior, h\u00E1 valor na aposta" },
+  { term: "Odd (Cota\u00E7\u00E3o)", description: "Cota\u00E7\u00E3o oferecida pela casa de apostas \u2014 quanto voc\u00EA recebe por cada R$1 apostado" },
+  { term: "SAFE", description: "Classifica\u00E7\u00E3o m\u00E1xima \u2014 probabilidade alta, EV positivo, dados confi\u00E1veis, edge suficiente" },
+  { term: "NEUTRO-Q", description: "Neutro qualificado \u2014 eleg\u00EDvel para combinadas e duplas, tem EV positivo mas n\u00E3o atinge SAFE" },
+  { term: "NEUTRO", description: "Mercado identificado mas sem valor suficiente ou sem odds dispon\u00EDveis" },
+  { term: "RESTRITO", description: "Liga com dados limitados ou modelo ML n\u00E3o ativo \u2014 progn\u00F3sticos com cautela" },
+  { term: "Overround", description: "Margem da casa de apostas \u2014 a soma das probabilidades impl\u00EDcitas excede 100% (tipicamente 5-6%)" },
+  { term: "Lambda (\u03BB)", description: "M\u00E9dia de gols esperados por time \u2014 base do c\u00E1lculo Poisson para probabilidades de placares" },
+  { term: "xG (Expected Goals)", description: "Gols esperados \u2014 m\u00E9trica que mede a qualidade das finaliza\u00E7\u00F5es, n\u00E3o apenas a quantidade" },
+  { term: "Clean Sheet", description: "Quando o time n\u00E3o sofre gols durante a partida" },
+  { term: "BTTS", description: "Both Teams To Score \u2014 mercado onde ambas as equipes precisam marcar pelo menos um gol" },
+  { term: "FTS%", description: "Failed To Score \u2014 percentual de jogos em que o time n\u00E3o marcou gols" },
+  { term: "DC 1X", description: "Dupla Chance Casa ou Empate \u2014 aposta que cobre dois dos tr\u00EAs resultados poss\u00EDveis" },
+  { term: "Under / Over", description: "Menos / Mais \u2014 mercado de gols ou escanteios acima ou abaixo de uma linha (ex: Under 2.5 = menos de 3 gols)" },
+  { term: "Poisson", description: "Modelo estat\u00EDstico que calcula a probabilidade de cada placar baseado na m\u00E9dia de gols esperados" },
+  { term: "Calibra\u00E7\u00E3o", description: "Ajuste das probabilidades do modelo para reflitam a realidade hist\u00F3rica" },
+  { term: "Chaos Detectado", description: "Jogo identificado como imprevis\u00EDvel \u2014 alto desvio entre m\u00E9tricas, resultado dif\u00EDcil de modelar" },
+];
+
 /* ── ERROR BOUNDARY (reusable) ── */
 export class SafeErrorBoundary extends Component<
   { children: ReactNode; fallbackMessage?: string; section?: string },
@@ -289,6 +339,8 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
   const [showStandings, setShowStandings] = useState(false);
   const [standingsData, setStandingsData] = useState<any[]>([]);
   const [standingsLoading, setStandingsLoading] = useState(false);
+  const [aiTab, setAiTab] = useState<"resumo" | "pontos" | "glossario">("resumo");
+  const [glossarySearch, setGlossarySearch] = useState("");
 
   // Countdown timer
   useEffect(() => {
@@ -657,9 +709,15 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   )}
                                   {/* Show EV when available */}
                                   {pred.ev != null && (
-                                    <span className="mdc-prognostico__ev" style={{
-                                      color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555"
-                                    }} title="Expected Value">
+                                    <span
+                                      className="mdc-prognostico__ev"
+                                      style={{
+                                        color: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "#ff4444" : pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
+                                        textDecoration: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "line-through" : "none",
+                                        opacity: pred.reason_codes?.includes("SUSPICIOUS_EV") ? 0.6 : 1,
+                                      }}
+                                      title={pred.reason_codes?.includes("SUSPICIOUS_EV") ? "EV suspeito \u2014 prov\u00E1vel diverg\u00EAncia entre fonte de probabilidade e odds" : `EV: ${(pred.ev * 100).toFixed(1)}%`}
+                                    >
                                       EV: {(pred.ev * 100).toFixed(1)}%
                                     </span>
                                   )}
@@ -709,25 +767,20 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                 </div>
                                 {/* Reason codes */}
                                 {pred.reason_codes && pred.reason_codes.length > 0 && (
-                                  <div style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 4,
-                                    marginTop: 2,
-                                    marginBottom: 4,
-                                    paddingLeft: 8,
-                                  }}>
-                                    {pred.reason_codes.map((rc, rcIdx) => (
-                                      <span key={rcIdx} style={{
-                                        fontSize: "0.65em",
-                                        padding: "1px 6px",
-                                        borderRadius: 4,
-                                        background: "rgba(255,255,255,0.06)",
-                                        color: "rgba(255,255,255,0.5)",
-                                      }}>
-                                        {rc.replace(/_/g, " ")}
-                                      </span>
-                                    ))}
+                                  <div className="mdc-reason-tags">
+                                    {pred.reason_codes.map((rc, rcIdx) => {
+                                      const meta = REASON_META[rc] || { icon: "\u2022", label: rc.replace(/_/g, " "), color: "#666", type: "neutral" as const };
+                                      return (
+                                        <span
+                                          key={rcIdx}
+                                          className={`mdc-reason-tag mdc-reason-tag--${meta.type}`}
+                                          title={rc}
+                                        >
+                                          <span className="mdc-reason-tag__icon">{meta.icon}</span>
+                                          {meta.label}
+                                        </span>
+                                      );
+                                    })}
                                   </div>
                                 )}
                                 {targetCorners != null && match.status === "live" && (
@@ -764,16 +817,32 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           </div>
                         </div>
 
-                        {/* Summary */}
-                        <div className="mdc-ai-summary">
-                          <h4 className="mdc-ai-section-title">Resumo</h4>
-                          <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary ?? "")}</p>
+                        {/* AI Tabs */}
+                        <div className="mdc-ai-tabs">
+                          <button className={`mdc-ai-tab ${aiTab === "resumo" ? "mdc-ai-tab--active" : ""}`} onClick={() => setAiTab("resumo")}>Resumo</button>
+                          <button className={`mdc-ai-tab ${aiTab === "pontos" ? "mdc-ai-tab--active" : ""}`} onClick={() => setAiTab("pontos")}>Pontos-Chave</button>
+                          <button className={`mdc-ai-tab ${aiTab === "glossario" ? "mdc-ai-tab--active" : ""}`} onClick={() => setAiTab("glossario")}>Gloss&aacute;rio</button>
                         </div>
 
-                        {/* Key Points */}
-                        {Array.isArray(match.aiAnalysis.key_points) && match.aiAnalysis.key_points.length > 0 && (
+                        {/* Tab: Resumo */}
+                        {aiTab === "resumo" && (
+                          <>
+                            <div className="mdc-ai-summary">
+                              <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary ?? "")}</p>
+                            </div>
+                            <div className="mdc-ai-recommendation">
+                              <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                              <div className="mdc-ai-recommendation-box">
+                                <Sparkles size={16} className="mdc-ai-recommendation-icon" />
+                                <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Tab: Pontos-Chave */}
+                        {aiTab === "pontos" && Array.isArray(match.aiAnalysis.key_points) && match.aiAnalysis.key_points.length > 0 && (
                           <div className="mdc-ai-key-points">
-                            <h4 className="mdc-ai-section-title">Pontos-Chave</h4>
                             <ul className="mdc-ai-list">
                               {match.aiAnalysis.key_points.map((point, index) => (
                                 <li key={index} className="mdc-ai-list-item">
@@ -785,14 +854,32 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           </div>
                         )}
 
-                        {/* Recommendation */}
-                        <div className="mdc-ai-recommendation">
-                          <h4 className="mdc-ai-section-title">Recomendacao</h4>
-                          <div className="mdc-ai-recommendation-box">
-                            <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                            <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
+                        {/* Tab: Glossario */}
+                        {aiTab === "glossario" && (
+                          <div className="mdc-glossary">
+                            <input
+                              type="text"
+                              placeholder="Buscar termo..."
+                              value={glossarySearch}
+                              onChange={(e) => setGlossarySearch(e.target.value)}
+                              className="mdc-glossary__search"
+                            />
+                            <div className="mdc-glossary__header">
+                              <span className="mdc-glossary__col-term">Termo</span>
+                              <span className="mdc-glossary__col-desc">O que significa</span>
+                            </div>
+                            <div className="mdc-glossary__list">
+                              {GLOSSARY
+                                .filter(g => g.term.toLowerCase().includes(glossarySearch.toLowerCase()) || g.description.toLowerCase().includes(glossarySearch.toLowerCase()))
+                                .map((item, i) => (
+                                  <div key={i} className="mdc-glossary__row">
+                                    <span className="mdc-glossary__term">{item.term}</span>
+                                    <span className="mdc-glossary__desc">{item.description}</span>
+                                  </div>
+                                ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Timestamp + Regenerate + Audit */}
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
