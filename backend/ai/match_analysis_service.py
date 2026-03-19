@@ -70,16 +70,67 @@ ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds):
 - BTTS Nao: {odds.get('bttsNo', 'N/A')}
 
 DADOS AVANCADOS DO SISTEMA:
+
+OFENSIVOS:
 - xG Casa: {stats.get('homeXgForAvg', stats.get('xg_home', 'N/A'))}
 - xG Fora: {stats.get('awayXgForAvg', stats.get('xg_away', 'N/A'))}
+- xG Sofrido Casa: {stats.get('homeXgAgainstAvg', 'N/A')}
+- xG Sofrido Fora: {stats.get('awayXgAgainstAvg', 'N/A')}
 - Chutes/Jogo Casa: {stats.get('homeShotsPerMatch', 'N/A')}
 - Chutes/Jogo Fora: {stats.get('awayShotsPerMatch', 'N/A')}
-- Posse Casa: {stats.get('homePossession', 'N/A')}%
-- Posse Fora: {stats.get('awayPossession', 'N/A')}%
+- Chutes no Alvo Casa: {stats.get('homeShotsOnTarget', 'N/A')}
+- Chutes no Alvo Fora: {stats.get('awayShotsOnTarget', 'N/A')}
+- Media Total Gols/Jogo Casa: {stats.get('homeAvgTotalGoals', 'N/A')}
+- Media Total Gols/Jogo Fora: {stats.get('awayAvgTotalGoals', 'N/A')}
+
+DEFENSIVOS:
+- Clean Sheet Casa: {stats.get('homeCleanSheetPct', 'N/A')}%
+- Clean Sheet Fora: {stats.get('awayCleanSheetPct', 'N/A')}%
+- Failed To Score Casa: {stats.get('homeFtsPercentage', 'N/A')}%
+- Failed To Score Fora: {stats.get('awayFtsPercentage', 'N/A')}%
+
+PERCENTUAIS POR TIME:
+- Vitoria Casa: {stats.get('homeWinPercentage', 'N/A')}%
+- Vitoria Fora: {stats.get('awayWinPercentage', 'N/A')}%
+- Over 2.5 Casa: {stats.get('homeOver25Percentage', 'N/A')}%
+- Over 2.5 Fora: {stats.get('awayOver25Percentage', 'N/A')}%
+- BTTS Casa: {stats.get('homeBttsPercentage', 'N/A')}%
+- BTTS Fora: {stats.get('awayBttsPercentage', 'N/A')}%
+
+ESCANTEIOS:
 - Escanteios/Jogo Casa: {stats.get('homeCornersPerMatch', 'N/A')}
 - Escanteios/Jogo Fora: {stats.get('awayCornersPerMatch', 'N/A')}
 - Escanteios Contra Casa: {stats.get('homeCornersAgainstPerMatch', 'N/A')}
 - Escanteios Contra Fora: {stats.get('awayCornersAgainstPerMatch', 'N/A')}
+- Potencial Over 8.5 Corners: {stats.get('cornerOver85Prob', 'N/A')}%
+- Potencial Over 9.5 Corners: {stats.get('cornerOver95Prob', 'N/A')}%
+- Potencial Over 10.5 Corners: {stats.get('cornerOver105Prob', 'N/A')}%
+
+CARTOES E FALTAS:
+- Cartoes/Jogo Casa: {stats.get('homeCardsPerMatch', 'N/A')}
+- Cartoes/Jogo Fora: {stats.get('awayCardsPerMatch', 'N/A')}
+- Faltas/Jogo Casa: {stats.get('homeFoulsPerMatch', 'N/A')}
+- Faltas/Jogo Fora: {stats.get('awayFoulsPerMatch', 'N/A')}
+
+POSSE E CONTROLE:
+- Posse Casa: {stats.get('homePossession', 'N/A')}%
+- Posse Fora: {stats.get('awayPossession', 'N/A')}%
+
+MEDIAS DA LIGA:
+- Media Gols Liga: {stats.get('leagueAvgGoals', 'N/A')}
+- Media Escanteios Liga: {stats.get('leagueAvgCorners', 'N/A')}
+- Media Cartoes Liga: {stats.get('leagueAvgCards', 'N/A')}
+- Media Faltas Liga: {stats.get('leagueAvgFouls', 'N/A')}
+- Clean Sheets Liga: {stats.get('leagueCleanSheetsPct', 'N/A')}%
+- Over 2.5 Liga: {stats.get('leagueOver25Pct', 'N/A')}%
+- xG Medio Liga: {stats.get('leagueXgAvg', 'N/A')}
+- Vantagem Casa Liga: {stats.get('leagueHomeAdvantage', 'N/A')}%
+
+POSICAO NA LIGA:
+- Posicao Casa: {stats.get('homeLeaguePosition', 'N/A')}
+- Posicao Fora: {stats.get('awayLeaguePosition', 'N/A')}
+
+INDICADORES DO SISTEMA:
 - Chaos Detectado: {stats.get('chaosDetected', False)}
 - Regime da Liga: {stats.get('leagueRegime', 'N/A')}
 - Volatilidade: {stats.get('leagueVolatility', 'N/A')}
@@ -140,23 +191,27 @@ CONTEXTO ADICIONAL:
 Com base nesses dados, forneca uma analise OBJETIVA no seguinte formato JSON:
 
 {
-  "summary": "Resumo de 2-3 frases sobre o jogo, incluindo projecao de escanteios se relevante",
+  "summary": "Resumo de 2-3 frases cobrindo: resultado provavel, tendencia de gols, e destaque de escanteios ou cartoes se relevante",
   "key_points": [
-    "Ponto sobre gols/resultado",
-    "Ponto sobre BTTS/Under/Over",
-    "Ponto sobre escanteios se os dados forem relevantes",
-    "Ponto sobre contexto tatico/lesoes",
-    "Ponto sobre valor nas odds"
+    "Ponto sobre resultado 1X2 (usar win%, posicao na liga, forma)",
+    "Ponto sobre gols Over/Under (usar lambda, Over 2.5%, media total gols)",
+    "Ponto sobre BTTS (usar BTTS%, clean sheet%, FTS%)",
+    "Ponto sobre escanteios (usar corners/jogo, corners contra, potenciais, media liga)",
+    "Ponto sobre cartoes e disciplina (usar cards/jogo, fouls/jogo, media liga) OU valor nas odds"
   ],
-  "recommendation": "Recomendacao com mercado e odd REAL. Pode recomendar mercado de gols OU escanteios. NUNCA invente odds. Use as odds fornecidas.",
+  "recommendation": "Recomendacao com mercado e odd REAL. Pode ser gols, BTTS, escanteios ou cartoes. NUNCA invente odds. Use APENAS as odds fornecidas nos dados.",
   "confidence": 75
 }
 
 REGRAS:
 - Use APENAS odds fornecidas nos dados acima. NUNCA invente odds.
-- Se houver dados de escanteios relevantes, inclua na analise.
-- Se o sistema detectou chaos, mencione isso como fator de risco.
+- Se dados de escanteios estiverem disponiveis (nao N/A), INCLUA analise de corners nos pontos-chave.
+- Se dados de cartoes estiverem disponiveis (nao N/A), INCLUA analise de disciplina.
+- Compare os dados do time com as medias da liga para contextualizar.
+- Se o sistema detectou chaos, mencione como fator de risco.
 - Se houver lesoes de jogadores-chave, avalie o impacto.
+- Se Clean Sheet% for alto para algum time, destaque no contexto de BTTS.
+- Se Failed To Score% for alto, destaque no contexto de Under.
 - Retorne APENAS o JSON, sem texto adicional.
 """
 
