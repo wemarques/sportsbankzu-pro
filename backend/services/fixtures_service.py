@@ -934,56 +934,53 @@ def build_records_from_matches(
             "lastUpdated": datetime.utcnow().isoformat(),
         })
         # --- API-Football enrichment (odds, injuries, lineups) ---
-        # Fills gaps in FootyStats data; degrades silently if unavailable
+        # Fills gaps in FootyStats data; degrades silently if unavailable.
         _afc = None
         try:
             from backend.services.api_football_client import APIFootballClient
             _afc = APIFootballClient()
-        except Exception:
-            pass
+            _current_record = records[-1]
+            footystats_id = r.get("id")
+            if footystats_id and _afc:
+                # 2.1 — Enrich odds from API-Football (fill missing only)
+                try:
+                    af_odds = _afc.get_odds(int(footystats_id), ttl_minutes=180)
+                    if af_odds:
+                        best = _afc.extract_best_odds(af_odds)
+                        odds_dict = _current_record["odds"]
+                        if not odds_dict.get("under25") and best.get("under_25"):
+                            odds_dict["under25"] = best["under_25"]
+                            logger.info(f"[API-Football] Under 2.5 odd enriched: {best['under_25']}")
+                        if not odds_dict.get("bttsNo") and best.get("btts_no"):
+                            odds_dict["bttsNo"] = best["btts_no"]
+                        _current_record.setdefault("source_flags", []).append("api_football_odds")
+                except Exception as e:
+                    logger.debug(f"[API-Football] Odds enrichment skipped: {e}")
 
-        _record_ref = records[-1]
-        footystats_id = r.get("id")
+                # 2.2 — Enrich with pre-match injuries
+                try:
+                    injuries = _afc.get_injuries_sync(int(footystats_id), ttl_minutes=240)
+                    if injuries:
+                        injury_data = {
+                            "home": [inj for inj in injuries if inj.get("team", {}).get("name") == home],
+                            "away": [inj for inj in injuries if inj.get("team", {}).get("name") == away],
+                        }
+                        _current_record["injuries"] = injury_data
+                        _current_record.setdefault("source_flags", []).append("api_football_injuries")
+                except Exception as e:
+                    logger.debug(f"[API-Football] Injuries enrichment skipped: {e}")
 
-        # 2.1 Enrich odds from API-Football when available
-        if _afc and footystats_id:
-            try:
-                af_odds = _afc.get_odds(int(footystats_id), ttl_minutes=180)
-                if af_odds:
-                    best = _afc.extract_best_odds(af_odds)
-                    odds_dict = _record_ref["odds"]
-                    if not odds_dict.get("under25") and best.get("under_25"):
-                        odds_dict["under25"] = best["under_25"]
-                        logger.info(f"[API-Football] Under 2.5 odd enriched: {best['under_25']}")
-                    if not odds_dict.get("bttsNo") and best.get("btts_no"):
-                        odds_dict["bttsNo"] = best["btts_no"]
-                    _record_ref.setdefault("source_flags", []).append("api_football_odds")
-            except Exception as e:
-                logger.debug(f"[API-Football] Odds enrichment skipped: {e}")
-
-        # 2.2 Enrich with pre-match injuries when available
-        if _afc and footystats_id:
-            try:
-                injuries = _afc.get_injuries_sync(int(footystats_id), ttl_minutes=240)
-                if injuries:
-                    injury_data = {
-                        "home": [inj for inj in injuries if inj.get("team", {}).get("name") == home],
-                        "away": [inj for inj in injuries if inj.get("team", {}).get("name") == away],
-                    }
-                    _record_ref["injuries"] = injury_data
-                    _record_ref.setdefault("source_flags", []).append("api_football_injuries")
-            except Exception as e:
-                logger.debug(f"[API-Football] Injuries enrichment skipped: {e}")
-
-        # 2.3 Enrich with lineups (available 30-60 min before kickoff)
-        if _afc and footystats_id and status == "incomplete":
-            try:
-                lineups = _afc.get_fixture_lineups(int(footystats_id), ttl_minutes=30)
-                if lineups:
-                    _record_ref["lineups"] = lineups
-                    _record_ref.setdefault("source_flags", []).append("api_football_lineups")
-            except Exception as e:
-                logger.debug(f"[API-Football] Lineups enrichment skipped: {e}")
+                # 2.3 — Enrich with lineups (available 30-60 min before kickoff)
+                try:
+                    if status == "incomplete":
+                        lineups = _afc.get_fixture_lineups(int(footystats_id), ttl_minutes=30)
+                        if lineups:
+                            _current_record["lineups"] = lineups
+                            _current_record.setdefault("source_flags", []).append("api_football_lineups")
+                except Exception as e:
+                    logger.debug(f"[API-Football] Lineups enrichment skipped: {e}")
+        except Exception as e:
+            logger.debug(f"[API-Football] Client init skipped: {e}")
 
         # Calculate market predictions (mercados) for this match
         try:
