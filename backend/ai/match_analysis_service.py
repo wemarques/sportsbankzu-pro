@@ -68,7 +68,33 @@ ODDS DO MERCADO (SOMENTE estas odds estao disponiveis — NAO invente odds):
 - Under 2.5: {odds.get('under25', 'N/A')}
 - BTTS Sim: {odds.get('bttsYes', 'N/A')}
 - BTTS Nao: {odds.get('bttsNo', 'N/A')}
+
+DADOS AVANCADOS DO SISTEMA:
+- xG Casa: {stats.get('homeXgForAvg', stats.get('xg_home', 'N/A'))}
+- xG Fora: {stats.get('awayXgForAvg', stats.get('xg_away', 'N/A'))}
+- Chutes/Jogo Casa: {stats.get('homeShotsPerMatch', 'N/A')}
+- Chutes/Jogo Fora: {stats.get('awayShotsPerMatch', 'N/A')}
+- Posse Casa: {stats.get('homePossession', 'N/A')}%
+- Posse Fora: {stats.get('awayPossession', 'N/A')}%
+- Escanteios/Jogo Casa: {stats.get('homeCornersPerMatch', 'N/A')}
+- Escanteios/Jogo Fora: {stats.get('awayCornersPerMatch', 'N/A')}
+- Escanteios Contra Casa: {stats.get('homeCornersAgainstPerMatch', 'N/A')}
+- Escanteios Contra Fora: {stats.get('awayCornersAgainstPerMatch', 'N/A')}
+- Chaos Detectado: {stats.get('chaosDetected', False)}
+- Regime da Liga: {stats.get('leagueRegime', 'N/A')}
+- Volatilidade: {stats.get('leagueVolatility', 'N/A')}
 """
+
+    # Corner odds from bookmakers
+    corner_odds = []
+    for line in ["85", "95", "105", "115"]:
+        odd = odds.get(f"cornersOver{line}")
+        if odd:
+            corner_odds.append(f"Over {line[0]}.{line[1]} = {odd}")
+    if corner_odds:
+        prompt += "\nODDS DE ESCANTEIOS:\n"
+        prompt += "\n".join(f"- {o}" for o in corner_odds)
+        prompt += "\n"
 
     if context:
         prompt += f"""
@@ -76,26 +102,62 @@ CONTEXTO ADICIONAL:
 - Forma Casa: {context.get('home_form', 'N/A')}
 - Forma Fora: {context.get('away_form', 'N/A')}
 - Confrontos diretos: {context.get('h2h', 'N/A')}
-- Escalacoes provaveis: {context.get('lineups', 'Nenhuma informacao')}
 """
+        # Injuries from API-Football
+        injuries = context.get('injuries', {})
+        if injuries:
+            home_inj = injuries.get('home', [])
+            away_inj = injuries.get('away', [])
+            if home_inj:
+                names = [f"{i.get('player', {}).get('name', '?')} ({i.get('player', {}).get('type', '?')})" for i in home_inj[:5]]
+                prompt += f"- Lesoes/Suspensoes Casa: {', '.join(names)}\n"
+            if away_inj:
+                names = [f"{i.get('player', {}).get('name', '?')} ({i.get('player', {}).get('type', '?')})" for i in away_inj[:5]]
+                prompt += f"- Lesoes/Suspensoes Fora: {', '.join(names)}\n"
+            else:
+                prompt += "- Lesoes/Suspensoes: Sem informacoes disponiveis\n"
+
+        # Lineups
+        lineups = context.get('lineups')
+        if lineups:
+            prompt += "- Escalacoes confirmadas: Sim\n"
+        else:
+            prompt += "- Escalacoes: Nao confirmadas\n"
+
+    # Pipeline v2 predictions (reason codes + EV)
+    predictions = context.get('predictions', []) if context else []
+    if predictions:
+        prompt += "\nMERCADOS SELECIONADOS PELO SISTEMA:\n"
+        for p in predictions[:5]:
+            line = f"- {p.get('mercado', '?')}: {p.get('status', '?')} ({p.get('prob_min', '?')}-{p.get('prob_max', '?')}%)"
+            if p.get('ev') is not None:
+                line += f" EV={p['ev']:.1%}"
+            if p.get('reason_codes'):
+                line += f" [{', '.join(str(r) for r in p['reason_codes'][:3])}]"
+            prompt += line + "\n"
 
     prompt += """
-Com base nesses dados, forneça uma análise OBJETIVA no seguinte formato JSON:
+Com base nesses dados, forneca uma analise OBJETIVA no seguinte formato JSON:
 
 {
-  "summary": "Resumo de 2-3 frases sobre o jogo",
+  "summary": "Resumo de 2-3 frases sobre o jogo, incluindo projecao de escanteios se relevante",
   "key_points": [
-    "Ponto-chave 1",
-    "Ponto-chave 2",
-    "Ponto-chave 3",
-    "Ponto-chave 4",
-    "Ponto-chave 5"
+    "Ponto sobre gols/resultado",
+    "Ponto sobre BTTS/Under/Over",
+    "Ponto sobre escanteios se os dados forem relevantes",
+    "Ponto sobre contexto tatico/lesoes",
+    "Ponto sobre valor nas odds"
   ],
-  "recommendation": "Recomendacao de aposta com mercado e odd REAL das ODDS DO MERCADO acima. NUNCA invente odds. Ex: Over 2.5 @2.07",
+  "recommendation": "Recomendacao com mercado e odd REAL. Pode recomendar mercado de gols OU escanteios. NUNCA invente odds. Use as odds fornecidas.",
   "confidence": 75
 }
 
-Retorne APENAS o JSON, sem texto adicional.
+REGRAS:
+- Use APENAS odds fornecidas nos dados acima. NUNCA invente odds.
+- Se houver dados de escanteios relevantes, inclua na analise.
+- Se o sistema detectou chaos, mencione isso como fator de risco.
+- Se houver lesoes de jogadores-chave, avalie o impacto.
+- Retorne APENAS o JSON, sem texto adicional.
 """
 
     system = "Você é um gerador estrito de JSON. Responda somente JSON válido, sem markdown."

@@ -330,13 +330,19 @@ def evaluate_match_markets(
             raw_under = 1.0 - raw_over
         if raw_under is not None:
             calibrated = calibrate_prob(raw_under, f"Under {threshold}", league_id, regime)
-            # Derive under odd from over odd
-            under_odd = None
-            if book_odd and book_odd > 1.0:
-                prob_over = 1.0 / book_odd
-                prob_under = 1.0 - prob_over
-                if prob_under > 0:
-                    under_odd = round(1.0 / prob_under, 2)
+            # Under odds: prefer real odds, fallback to derived with overround discount
+            under_key = f"under{threshold.replace('.', '')}"  # "under25", "under35", "under45"
+            under_odd = odds.get(under_key)
+            if under_odd:
+                under_odd = float(under_odd) if float(under_odd) > 1.0 else None
+
+            if under_odd is None and book_odd and book_odd > 1.0:
+                # Derive from Over with overround discount (~5% margin)
+                OVERROUND = 1.05
+                implied_over = 1.0 / book_odd
+                implied_under_raw = max(0.01, 1.0 - implied_over)
+                implied_under_fair = implied_under_raw / OVERROUND
+                under_odd = round(1.0 / implied_under_fair, 2) if implied_under_fair > 0.01 else None
             mo = MarketOutput(
                 market_type="Over/Under",
                 selection=f"Under {threshold}",
@@ -513,9 +519,12 @@ def evaluate_match_markets(
             over_odd_key = _FOOTYSTATS_ODD_MAP.get(line_val)
             over_odd = odds.get(over_odd_key) if over_odd_key else None
             if over_odd and float(over_odd) > 1.0:
+                # Derive from Over with overround discount (~6% corners margin)
+                OVERROUND = 1.06
                 implied_over = 1.0 / float(over_odd)
-                implied_under = max(0.01, 1.0 - implied_over)
-                under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
+                implied_under_raw = max(0.01, 1.0 - implied_over)
+                implied_under_fair = implied_under_raw / OVERROUND
+                under_odd = round(1.0 / implied_under_fair, 2) if implied_under_fair > 0.01 else None
             else:
                 under_odd = None
 

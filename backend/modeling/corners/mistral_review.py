@@ -25,9 +25,24 @@ logger = logging.getLogger("sportsbankzu.corners.mistral_review")
 def build_corners_review_prompt(engine_output: Dict[str, Any]) -> str:
     """Build a structured prompt for Mistral to review corner predictions."""
     proj = engine_output.get("projection", {})
-    ladder = engine_output.get("pricing", {})
-    selected = ladder.get("selected", {})
+    pricing = engine_output.get("pricing", {})
+    selected = pricing.get("selected", {})
     quality = engine_output.get("data_quality", {})
+
+    # Build real odds section from pricing ladder
+    ladder_items = pricing.get("ladder", [])
+    odds_lines = []
+    for item in ladder_items:
+        if item.get("book_odd_over"):
+            odds_lines.append(f"O{item['line']} = {item['book_odd_over']} (real)")
+        if item.get("book_odd_under"):
+            odds_lines.append(f"U{item['line']} = {item['book_odd_under']} (real)")
+
+    odds_section = ""
+    if odds_lines:
+        odds_section = "\nODDS REAIS DE ESCANTEIOS DISPONIVEIS:\n"
+        odds_section += "\n".join(f"- {o}" for o in odds_lines)
+        odds_section += "\n\nNOTA: Odds marcadas como \"(real)\" sao de casas de apostas. Odds nao listadas foram derivadas pelo modelo.\n"
 
     return f"""Você é um analista sênior de escanteios (corners) de futebol.
 O motor estatístico do SportsBankZU Pro gerou a seguinte projeção de escanteios para um jogo.
@@ -37,16 +52,16 @@ PROJEÇÃO DO MOTOR:
 - Total esperado FT: {proj.get('expected_total_corners_ft', 'N/A')}
 - Total esperado 1H: {proj.get('expected_total_corners_1h', 'N/A')}
 - Total esperado 2H: {proj.get('expected_total_corners_2h', 'N/A')}
-- Intervalo de previsão: [{ladder.get('prediction_interval_low', '?')}, {ladder.get('prediction_interval_high', '?')}]
+- Intervalo de previsão: [{pricing.get('prediction_interval_low', '?')}, {pricing.get('prediction_interval_high', '?')}]
 - Modelo campeão: {engine_output.get('champion_model', 'N/A')}
-- Desvio padrão: {ladder.get('std_dev', 'N/A')}
+- Desvio padrão: {pricing.get('std_dev', 'N/A')}
 
 MELHOR CANDIDATO:
 - Mercado: {selected.get('market_label', 'NO BET')}
 - Probabilidade modelada: {selected.get('modeled_probability', 'N/A')}
 - Edge ajustado: {selected.get('edge', 'N/A')}
 - Fair odds: {selected.get('fair_odds', 'N/A')}
-
+{odds_section}
 QUALIDADE DOS DADOS:
 - Tier: {quality.get('data_quality_tier', 'UNKNOWN')}
 - Cobertura: {quality.get('coverage_score', 'N/A')}
