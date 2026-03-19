@@ -40,42 +40,43 @@ logger = logging.getLogger("sportsbankzu.ev_classification")
 
 DEFAULT_THRESHOLDS = {
     "1X2": {
-        "safe_prob": 0.55,    "neutro_prob": 0.42,
-        "safe_ev": 0.05,      "neutro_ev": 0.00,
-        "safe_edge": 0.04,    "neutro_edge": 0.01,
-        "min_quality": 0.3,
+        "safe_prob": 0.62,    "neutro_prob": 0.45,
+        "safe_ev": 0.08,      "neutro_ev": 0.00,
+        "safe_edge": 0.06,    "neutro_edge": 0.02,
+        "min_quality": 0.40,
     },
     "Over/Under": {
-        "safe_prob": 0.68,    "neutro_prob": 0.58,
-        "safe_ev": 0.04,      "neutro_ev": 0.00,
-        "safe_edge": 0.03,    "neutro_edge": 0.01,
-        "min_quality": 0.3,
+        "safe_prob": 0.75,    "neutro_prob": 0.60,
+        "safe_ev": 0.06,      "neutro_ev": 0.00,
+        "safe_edge": 0.05,    "neutro_edge": 0.02,
+        "min_quality": 0.40,
     },
     "BTTS": {
-        "safe_prob": 0.70,    "neutro_prob": 0.60,
-        "safe_ev": 0.04,      "neutro_ev": 0.00,
-        "safe_edge": 0.03,    "neutro_edge": 0.01,
-        "min_quality": 0.3,
+        "safe_prob": 0.75,    "neutro_prob": 0.62,
+        "safe_ev": 0.06,      "neutro_ev": 0.00,
+        "safe_edge": 0.05,    "neutro_edge": 0.02,
+        "min_quality": 0.40,
     },
     "Double Chance": {
-        "safe_prob": 0.75,    "neutro_prob": 0.65,
-        "safe_ev": 0.03,      "neutro_ev": 0.00,
-        "safe_edge": 0.02,    "neutro_edge": 0.01,
-        "min_quality": 0.3,
-    },
-    "Corners": {
-        "safe_prob": 0.65,    "neutro_prob": 0.55,
+        "safe_prob": 0.82,    "neutro_prob": 0.68,
         "safe_ev": 0.04,      "neutro_ev": 0.00,
         "safe_edge": 0.03,    "neutro_edge": 0.01,
-        "min_quality": 0.35,
+        "min_quality": 0.40,
+    },
+    "Corners": {
+        "safe_prob": 0.72,    "neutro_prob": 0.58,
+        "safe_ev": 0.08,      "neutro_ev": 0.02,
+        "safe_edge": 0.06,    "neutro_edge": 0.02,
+        "min_quality": 0.45,
     },
 }
 
 # Minimum thresholds for NEUTRO qualificado (eligible for multiples)
 NEUTRO_QUALIFICADO_THRESHOLDS = {
-    "min_ev": 0.02,          # EV must be >= 2%
-    "min_quality": 0.40,     # data quality >= 0.40
-    "min_prob": 0.50,        # calibrated prob >= 50%
+    "min_ev": 0.05,          # EV must be >= 5% (was 2%)
+    "min_edge": 0.03,        # edge must be >= 3%
+    "min_quality": 0.45,     # data quality >= 0.45 (was 0.40)
+    "min_prob": 0.52,        # calibrated prob >= 52% (was 50%)
     "must_have_odds": True,  # real odds required
 }
 
@@ -160,11 +161,14 @@ def classify_market(
         output.data_quality_score >= th.get("min_quality", 0.3)):
         if ReasonCode.SUSPICIOUS_EV in reason_codes:
             classification = MarketClassification.NEUTRO
-        elif output.odds_available and output.ev is not None and output.ev >= th.get("safe_ev", 0.05):
+        elif (output.odds_available and
+              output.ev is not None and output.ev >= th.get("safe_ev", 0.05) and
+              output.edge is not None and output.edge >= th.get("safe_edge", 0.04)):
+            # All conditions met: high prob + real EV + real edge
             classification = MarketClassification.SAFE
         elif output.odds_available and output.ev is not None and output.ev >= 0:
-            # Has odds, prob is high, but EV is marginal
-            classification = MarketClassification.SAFE
+            # High prob, positive EV but insufficient edge — NEUTRO, not SAFE
+            classification = MarketClassification.NEUTRO
         elif not output.odds_available:
             # High prob but no odds — NEUTRO (can show prob/fair_odd but no stake)
             classification = MarketClassification.NEUTRO
@@ -174,11 +178,10 @@ def classify_market(
           output.data_quality_score >= th.get("min_quality", 0.3) * 0.8):
         if output.odds_available and output.ev is not None and output.ev >= th.get("neutro_ev", 0.0):
             classification = MarketClassification.NEUTRO
-        elif output.odds_available and output.ev is not None and output.ev >= -0.03:
-            # Slightly negative EV but still usable
+        elif not output.odds_available:
+            # No odds — show as NEUTRO with fair odd only
             classification = MarketClassification.NEUTRO
-        else:
-            classification = MarketClassification.NEUTRO
+        # else: EV negative with odds → stays NO_BET (don't force NEUTRO)
 
     # NEUTRO qualificado: upgrade NEUTRO if it meets additional criteria
     # BUT NOT if EV is suspicious
@@ -206,6 +209,10 @@ def _is_neutro_qualificado(output: MarketOutput, prob: float) -> bool:
         return False
 
     if output.ev is None or output.ev < th["min_ev"]:
+        return False
+
+    # Require minimum edge
+    if output.edge is None or output.edge < th.get("min_edge", 0.03):
         return False
 
     if output.data_quality_score < th["min_quality"]:
