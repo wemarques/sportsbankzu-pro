@@ -99,6 +99,32 @@ class PromptTemplates:
         5. Identifique vieses sistematicos (ex: lambda consistentemente alto)
         6. Sugira correcoes ESPECIFICAS com parametros e valores numericos
 
+        REGRAS CRITICAS PARA SUGESTAO DE CORRECOES:
+        1. PRIORIDADE MAXIMA: Correcoes de lambda (lambda_home, lambda_away, lambda_total).
+           Lambda e a base de TODOS os calculos downstream (probabilidades, EV, thresholds).
+           Se lambda esta errado, TODAS as probabilidades estao erradas.
+           SEMPRE sugira correcao de lambda ANTES de correcoes de threshold.
+
+        2. PRIORIDADE MEDIA: Correcoes de peso/multiplicador (btts_weight_defense, corner_multiplier).
+           Estes afetam mercados especificos sem afetar a base de calculo.
+
+        3. PRIORIDADE BAIXA: Correcoes de threshold (over_25_threshold, etc).
+           SOMENTE sugira threshold se o lambda ja estiver correto e o threshold ainda gerar erro.
+           Na maioria dos casos, corrigir lambda torna desnecessario ajustar threshold.
+           NUNCA sugira threshold_adjustment se lambda_multiplier tambem esta sendo sugerido
+           — a correcao de lambda ja resolve o problema de threshold downstream.
+
+        4. Para mercados de ESCANTEIOS, sempre compare:
+           - Escanteios reais (home_corners + away_corners do resultado) vs projecao do modelo
+           - Potenciais da FootyStats vs escanteios reais
+           - Se a liga tem dados suficientes de escanteios (corners_recorded_matches_num)
+           Se os dados de escanteios reais estiverem disponiveis no resultado, AVALIE a precisao
+           do motor de corners e sugira corner_multiplier se necessario.
+
+        5. Para CARTOES, compare:
+           - Cartoes reais (total_cards do resultado) vs media esperada
+           - Se houve cartao vermelho, avalie impacto no jogo (vantagem numerica)
+
         Responda EXCLUSIVAMENTE em JSON valido (sem markdown, sem ```, apenas JSON puro):
         {{
             "picks_evaluation": [
@@ -118,13 +144,14 @@ class PromptTemplates:
             "accuracy_summary": "Resumo geral da precisao do sistema + AI",
             "corrections": [
                 {{
-                    "type": "lambda_multiplier|threshold_adjustment|weight_adjustment",
+                    "type": "lambda_multiplier|threshold_adjustment|weight_adjustment|corner_multiplier",
                     "parameter": "nome especifico do parametro a ajustar",
                     "current_value": 0.0,
                     "suggested_value": 0.0,
                     "reason": "Justificativa baseada nos dados",
                     "confidence": 75,
-                    "impact": "LOW|MEDIUM|HIGH"
+                    "impact": "LOW|MEDIUM|HIGH",
+                    "priority": "LAMBDA_ROOT_CAUSE|WEIGHT_ADJUSTMENT|THRESHOLD_SYMPTOM"
                 }}
             ],
             "biases_detected": ["descricao do vies detectado"],
@@ -176,6 +203,14 @@ class PromptTemplates:
            - Acuracia geral (<50% preocupante, <40% critico)
            - Acuracia SAFE (<60% preocupante, <50% critico)
            - Mercados especificos com performance muito baixa
+
+        REGRAS CRITICAS PARA CORRECOES:
+        - PRIORIDADE 1: Lambda (causa raiz). Se lambdas estao sobre/sub-estimando, corrigir PRIMEIRO.
+        - PRIORIDADE 2: Pesos/multiplicadores (btts_weight, corner_multiplier). Afetam mercados especificos.
+        - PRIORIDADE 3: Thresholds. SOMENTE se lambda e pesos ja estiverem corretos.
+        - NUNCA sugira threshold_adjustment junto com lambda_multiplier para o mesmo problema.
+        - Para ESCANTEIOS: inclua dados reais de corners quando disponiveis e sugira corner_multiplier.
+        - Para CARTOES: compare cards reais vs media esperada.
 
         Responda EXCLUSIVAMENTE em JSON valido (sem markdown, sem ```, apenas JSON puro):
         {{

@@ -248,6 +248,29 @@ async def audit_match(
             else:
                 result_1x2 = "2"
 
+            # Extract corner counts from match stats
+            match_stats = full_match.get("stats", {})
+            home_corners = match_stats.get("homeCornersCount") or full_match.get("home_team_corner_count") or 0
+            away_corners = match_stats.get("awayCornersCount") or full_match.get("away_team_corner_count") or 0
+            try:
+                home_corners = int(home_corners) if int(home_corners) >= 0 else 0
+                away_corners = int(away_corners) if int(away_corners) >= 0 else 0
+            except (ValueError, TypeError):
+                home_corners, away_corners = 0, 0
+            total_corners = home_corners + away_corners
+
+            # Extract card counts
+            home_yellow = match_stats.get("home_team_yellow_cards") or full_match.get("home_team_yellow_cards") or 0
+            away_yellow = match_stats.get("away_team_yellow_cards") or full_match.get("away_team_yellow_cards") or 0
+            home_red = match_stats.get("home_team_red_cards") or full_match.get("home_team_red_cards") or 0
+            away_red = match_stats.get("away_team_red_cards") or full_match.get("away_team_red_cards") or 0
+            try:
+                home_yellow = int(home_yellow) if int(home_yellow) >= 0 else 0
+                away_yellow = int(away_yellow) if int(away_yellow) >= 0 else 0
+                total_cards = home_yellow + away_yellow
+            except (ValueError, TypeError):
+                home_yellow, away_yellow, total_cards = 0, 0, 0
+
             actual_result = {
                 "home_goals": home_goals,
                 "away_goals": away_goals,
@@ -255,6 +278,16 @@ async def audit_match(
                 "btts": btts,
                 "result_1x2": result_1x2,
                 "score": f"{home_goals}x{away_goals}",
+                # Corner data for corner market audit
+                "home_corners": home_corners,
+                "away_corners": away_corners,
+                "total_corners": total_corners,
+                # Card data for card market audit
+                "home_yellow_cards": home_yellow,
+                "away_yellow_cards": away_yellow,
+                "total_cards": total_cards,
+                "home_red_cards": int(home_red) if str(home_red).isdigit() else 0,
+                "away_red_cards": int(away_red) if str(away_red).isdigit() else 0,
             }
 
             predictions = (request.predictions or []) if request else []
@@ -311,9 +344,35 @@ async def apply_audit_correction(match_id: str, correction: CorrectionApplicatio
             reason=correction.reason,
         )
 
-        # Apply threshold corrections immediately
+        # Apply corrections with validation
         if correction.correction_type == "threshold_adjustment":
+            # Validate: threshold corrections should only be applied if the change is < 15%
+            # Large threshold changes (>15%) usually indicate a lambda problem, not a threshold problem
+            if correction.old_value > 0:
+                change_pct = abs(correction.new_value - correction.old_value) / correction.old_value
+                if change_pct > 0.15:
+                    logger.warning(
+                        f"[Correction] BLOCKED threshold_adjustment {correction.parameter_name}: "
+                        f"{correction.old_value} -> {correction.new_value} (change={change_pct:.1%} > 15%). "
+                        f"Large threshold changes usually indicate a lambda problem."
+                    )
+                    return {
+                        "status": "blocked",
+                        "message": (
+                            f"Correcao bloqueada: mudanca de {change_pct:.0%} no threshold e muito grande. "
+                            f"Isso geralmente indica um problema de lambda, nao de threshold. "
+                            f"Aplique a correcao de lambda primeiro e reavalie se o threshold ainda precisa de ajuste."
+                        ),
+                        "old_value": correction.old_value,
+                        "new_value": correction.new_value,
+                    }
             _apply_threshold_correction(correction)
+        elif correction.correction_type == "lambda_multiplier":
+            # Lambda corrections are always allowed — they fix the root cause
+            logger.info(
+                f"[Correction] Lambda correction applied: {correction.parameter_name} "
+                f"{correction.old_value} -> {correction.new_value}"
+            )
 
         return {
             "status": "success",
@@ -1225,3 +1284,61 @@ async def correct_match_score(request: ScoreCorrectionRequest):
             f"Correção registrada no audit log."
         ),
     }
+
+
+@router.post("/correction/revert")
+async def revert_correction(
+    parameter_name: str = Query(..., description="Nome do parametro a reverter"),
+    original_value: float = Query(..., description="Valor original a restaurar"),
+):
+    """Revert a previously applied correction."""
+    from backend import audit as audit_db
+    from datetime import datetime
+
+    try:
+        # Extract market name from parameter
+        parts = parameter_name.split(".")
+        market = parts[0] if len(parts) == 1 else parts[1] if len(parts) >= 2 else parameter_name
+
+        conn = audit_db.init_db()
+        cursor = conn.cursor()
+
+        if audit_db._use_postgres():
+            cursor.execute(
+                "UPDATE thresholds SET safe_threshold = %s, last_updated = %s WHERE market = %s",
+                (original_value, datetime.now(), market),
+            )
+        else:
+            cursor.execute(
+                "UPDATE thresholds SET safe_threshold = ?, last_updated = ? WHERE market = ?",
+                (original_value, datetime.now(), market),
+            )
+
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        # Log the reversion
+        audit_db.log_correction(
+            match_id="manual_revert",
+            league="all",
+            correction_type="threshold_revert",
+            parameter_name=parameter_name,
+            old_value=0,
+            new_value=original_value,
+            suggested_by="manual",
+            applied_by="user",
+            audit_confidence=100,
+            reason=f"Revert: threshold was incorrectly adjusted (symptom, not root cause)",
+        )
+
+        logger.info(f"[Correction] Reverted {market} to {original_value} (affected={affected})")
+
+        return {
+            "status": "success" if affected > 0 else "no_change",
+            "message": f"Threshold '{market}' revertido para {original_value}",
+            "rows_affected": affected,
+        }
+    except Exception as e:
+        logger.error(f"Error reverting correction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
