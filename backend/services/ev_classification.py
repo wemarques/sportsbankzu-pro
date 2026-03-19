@@ -236,8 +236,11 @@ def evaluate_match_markets(
     stats = match_data.get("stats", {})
     odds = match_data.get("odds", {})
     league_stats = match_data.get("league_stats")
-    home_team = match_data.get("homeTeam", "")
-    away_team = match_data.get("awayTeam", "")
+    # Normalize team names — handle both string and dict formats
+    _raw_home = match_data.get("homeTeam", match_data.get("home_team", ""))
+    _raw_away = match_data.get("awayTeam", match_data.get("away_team", ""))
+    home_team = _raw_home.get("name", _raw_home.get("team_name", str(_raw_home))) if isinstance(_raw_home, dict) else str(_raw_home)
+    away_team = _raw_away.get("name", _raw_away.get("team_name", str(_raw_away))) if isinstance(_raw_away, dict) else str(_raw_away)
     match_id = str(match_data.get("id", match_data.get("match_id", "")))
 
     # ─── Data quality ───
@@ -407,7 +410,7 @@ def evaluate_match_markets(
             if dc_implied > 0 and dc_implied < 1.0:
                 dc_odd = round(1.0 / dc_implied, 2)
 
-        home_label = str(match_data.get("homeTeam", ""))[:3].upper()
+        home_label = home_team[:3].upper() if home_team else "CAS"
         mo = MarketOutput(
             market_type="Double Chance",
             selection="DC 1X",
@@ -587,6 +590,12 @@ def evaluate_match_markets(
     # ─── Filter NO_BET markets that have zero probability ───
     active_markets = [m for m in markets if (m.calibrated_probability or m.raw_probability or 0) > 0.05]
 
+    # ─── Filter redundant 1X2 ↔ Double Chance ───
+    active_markets = _filter_1x2_dc_redundancy(active_markets)
+
+    # ─── Filter corridor bets (Over X.5 + Under (X+1).5) ───
+    active_markets = _filter_corridor_bets(active_markets)
+
     # ─── Build bundle ───
     bundle = MatchMarketBundle(
         match_id=match_id,
@@ -622,3 +631,87 @@ def _market_category(market_type: str) -> str:
     if market_type in ("Corners",):
         return "Corners"
     return "1X2"  # fallback
+
+
+def _filter_1x2_dc_redundancy(markets: List[MarketOutput]) -> List[MarketOutput]:
+    """Remove redundant 1X2/DC pairs — keep only the more appropriate one.
+
+    Rules:
+    - 1X2 Home + DC 1X → keep 1X2 Home if prob >= 50%, else keep DC 1X
+    - 1X2 Away + DC X2 → keep 1X2 Away if prob >= 50%, else keep DC X2
+    """
+    remove_set = set()
+
+    # Check Home + DC 1X
+    home_markets = [m for m in markets if m.selection == "Home" and m.market_type == "1X2"]
+    dc1x_markets = [m for m in markets if m.selection == "DC 1X" and m.market_type == "Double Chance"]
+
+    if home_markets and dc1x_markets:
+        home_m = home_markets[0]
+        dc1x_m = dc1x_markets[0]
+        home_prob = home_m.calibrated_probability or home_m.raw_probability or 0
+        if home_prob >= 0.50:
+            remove_set.add(id(dc1x_m))
+            logger.debug(f"[Redundancy] Removed DC 1X (Home prob={home_prob:.1%} >= 50%)")
+        else:
+            remove_set.add(id(home_m))
+            logger.debug(f"[Redundancy] Removed 1X2 Home (prob={home_prob:.1%} < 50%), keeping DC 1X")
+
+    # Check Away + DC X2
+    away_markets = [m for m in markets if m.selection == "Away" and m.market_type == "1X2"]
+    dcx2_markets = [m for m in markets if m.selection == "DC X2" and m.market_type == "Double Chance"]
+
+    if away_markets and dcx2_markets:
+        away_m = away_markets[0]
+        dcx2_m = dcx2_markets[0]
+        away_prob = away_m.calibrated_probability or away_m.raw_probability or 0
+        if away_prob >= 0.50:
+            remove_set.add(id(dcx2_m))
+            logger.debug(f"[Redundancy] Removed DC X2 (Away prob={away_prob:.1%} >= 50%)")
+        else:
+            remove_set.add(id(away_m))
+            logger.debug(f"[Redundancy] Removed 1X2 Away (prob={away_prob:.1%} < 50%), keeping DC X2")
+
+    return [m for m in markets if id(m) not in remove_set]
+
+
+def _filter_corridor_bets(markets: List[MarketOutput]) -> List[MarketOutput]:
+    """When Over X.5 and Under (X+1).5 both appear, keep only the higher probability one.
+
+    Corridors detected:
+    - Over 1.5 + Under 2.5 → corridor of exactly 2 goals
+    - Over 2.5 + Under 3.5 → corridor of exactly 3 goals
+    - Over 3.5 + Under 4.5 → corridor of exactly 4 goals
+    """
+    CORRIDOR_PAIRS = [
+        ("Over 1.5", "Under 2.5"),
+        ("Over 2.5", "Under 3.5"),
+        ("Over 3.5", "Under 4.5"),
+    ]
+
+    remove_set = set()
+
+    for over_sel, under_sel in CORRIDOR_PAIRS:
+        over_markets = [m for m in markets if m.selection == over_sel and m.market_type == "Over/Under"]
+        under_markets = [m for m in markets if m.selection == under_sel and m.market_type == "Over/Under"]
+
+        if over_markets and under_markets:
+            over_m = over_markets[0]
+            under_m = under_markets[0]
+            over_prob = over_m.calibrated_probability or over_m.raw_probability or 0
+            under_prob = under_m.calibrated_probability or under_m.raw_probability or 0
+
+            if over_prob >= under_prob:
+                remove_set.add(id(under_m))
+                logger.debug(
+                    f"[Corridor] {over_sel} ({over_prob:.1%}) + {under_sel} ({under_prob:.1%}) "
+                    f"-> kept {over_sel} (higher prob)"
+                )
+            else:
+                remove_set.add(id(over_m))
+                logger.debug(
+                    f"[Corridor] {over_sel} ({over_prob:.1%}) + {under_sel} ({under_prob:.1%}) "
+                    f"-> kept {under_sel} (higher prob)"
+                )
+
+    return [m for m in markets if id(m) not in remove_set]
