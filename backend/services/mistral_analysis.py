@@ -301,8 +301,24 @@ class MistralAnalysisService:
         match_stats: Dict,
         odds: Dict,
         context: Optional[Dict] = None,
+        market_type: str = "general",
     ) -> str:
-        """Constroi o prompt para a MISTRAL AI"""
+        """Constroi o prompt para a MISTRAL AI.
+
+        When market_type is specified, uses a specialized template that sends
+        only the data relevant to that market family.
+        """
+        # Use specialized prompt if market_type is not generic
+        if market_type != "general":
+            from backend.ai.prompt_templates import PromptTemplates
+            if market_type == "1x2":
+                return PromptTemplates.build_1x2_prompt(home_team, away_team, match_stats, odds)
+            elif market_type in ("over_under", "under"):
+                return PromptTemplates.build_over_under_prompt(home_team, away_team, match_stats, odds)
+            elif market_type == "btts":
+                return PromptTemplates.build_btts_prompt(home_team, away_team, match_stats, odds)
+            elif market_type == "corners":
+                return PromptTemplates.build_corners_prompt(home_team, away_team, match_stats, odds)
         prob_home = self._format_prob_for_prompt(
             match_stats.get("prob_home") or match_stats.get("homeWinProb")
         )

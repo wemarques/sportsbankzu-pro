@@ -9,6 +9,41 @@ from backend.services.market_reference_signal import apply_signal_capping
 
 logger = logging.getLogger("sportsbankzu")
 
+_CLASSIFICATION_RANK = {"SAFE": 0, "SAFE*": 1, "NEUTRO_QUALIFICADO": 2, "NEUTRO": 3}
+
+
+def _dedup_corners(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only the single best corner market from a list.
+
+    Selection criteria: best classification first, then highest odd (better edge).
+    """
+    best_corner = None
+    non_corner = []
+    for m in mercados:
+        nome = m.get("mercado", "")
+        if "Escanteios" in nome or "Escanteio" in nome:
+            if best_corner is None:
+                best_corner = m
+            else:
+                cur_rank = _CLASSIFICATION_RANK.get(
+                    best_corner.get("finalClassification", best_corner.get("status")), 99
+                )
+                new_rank = _CLASSIFICATION_RANK.get(
+                    m.get("finalClassification", m.get("status")), 99
+                )
+                if new_rank < cur_rank:
+                    best_corner = m
+                elif new_rank == cur_rank:
+                    cur_odd = best_corner.get("odd_minima") or 0
+                    new_odd = m.get("odd_minima") or 0
+                    if new_odd > cur_odd:
+                        best_corner = m
+        else:
+            non_corner.append(m)
+    if best_corner:
+        non_corner.append(best_corner)
+    return non_corner
+
 
 def selecionar_mercados_v2(
     jogo: Dict[str, Any],
@@ -37,6 +72,27 @@ def selecionar_mercados_v2(
         for market in bundle.markets:
             legacy = market.to_legacy_mercado()
             mercados.append(legacy)
+
+        # Filter out NO_BET markets — legacy function never returned these
+        mercados = [
+            m for m in mercados
+            if m.get("finalClassification", m.get("status", "NO_BET")) in _CLASSIFICATION_RANK
+        ]
+
+        # Sort by classification quality (SAFE first) so principal market is the best one
+        mercados.sort(
+            key=lambda m: _CLASSIFICATION_RANK.get(
+                m.get("finalClassification", m.get("status", "NEUTRO")), 99
+            )
+        )
+
+        # Deduplicate corners: keep only the single best line
+        mercados = _dedup_corners(mercados)
+        mercados.sort(
+            key=lambda m: _CLASSIFICATION_RANK.get(
+                m.get("finalClassification", m.get("status", "NEUTRO")), 99
+            )
+        )
 
         # Apply regime validation (existing logic)
         if mercados:
@@ -75,8 +131,11 @@ def selecionar_mercados_v2(
             stats["mercado_principal"] = principal.get("mercado")
             stats["odd_minima"] = principal.get("odd_minima")
             stats["data_quality_score"] = bundle.data_quality_score
+            return mercados
 
-        return mercados
+        # V2 produced zero viable markets — fall back to legacy so match still appears
+        logger.info("[V2] No viable markets from v2 pipeline, falling back to legacy")
+        return selecionar_mercados_jogo(jogo, regime, volatilidade, league_id=league_id)
 
     except Exception as e:
         logger.warning(f"[V2] Fallback to legacy market selection: {e}")
@@ -138,6 +197,11 @@ def calcular_odd_under(odd_over: float) -> Optional[float]:
     return round(1.0 / prob_under, 2)
 
 def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str, league_id: str = "") -> List[Dict[str, Any]]:
+    """DEPRECATED — Use selecionar_mercados_v2() instead.
+
+    Mantida apenas para compatibilidade reversa. O pipeline v2
+    com ev_classification é o seletor principal desde V3.7.
+    """
     mercados: List[Dict[str, Any]] = []
     stats = jogo.get("stats", {})
     odds = jogo.get("odds", {})
@@ -152,12 +216,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     prob_under45 = normalize_prob(stats.get("under45Prob"))
     home = team_name(jogo.get("homeTeam", "?"))
     away = team_name(jogo.get("awayTeam", "?"))
-    logger.info(f"[DEBUG] {home} vs {away}:")
-    logger.info(f"  under35Prob raw={stats.get('under35Prob')}, normalized={prob_under35}")
-    logger.info(f"  under45Prob raw={stats.get('under45Prob')}, normalized={prob_under45}")
-    logger.info(f"  regime={regime}, volatilidade={volatilidade}")
-    logger.info(f"  leagueAvgGoals={stats.get('leagueAvgGoals')}")
-    logger.info(f"  odds: over35={odds.get('over35')}, over45={odds.get('over45')}")
+    logger.debug(f"{home} vs {away}: under35={prob_under35}, under45={prob_under45}, regime={regime}")
     prob_dc = None
     if stats.get("homeWinProb") is not None and stats.get("drawProb") is not None:
         prob_dc = normalize_prob(float(stats.get("homeWinProb", 0)) + float(stats.get("drawProb", 0)))
@@ -191,11 +250,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     else:
         threshold_u35 = 0.75
         threshold_u45 = 0.85
-    logger.info(f"  thresholds: u35={threshold_u35}, u45={threshold_u45}")
-    _u35_check = (prob_under35 >= threshold_u35) if prob_under35 is not None else False
-    _u45_check = (prob_under45 >= threshold_u45) if prob_under45 is not None else False
-    logger.info(f"  checks: u35({prob_under35} >= {threshold_u35})={_u35_check}")
-    logger.info(f"  checks: u45({prob_under45} >= {threshold_u45})={_u45_check}")
+    logger.debug(f"thresholds: u35={threshold_u35}, u45={threshold_u45}")
     if regime in ["NORMAL", "DEFENSIVA"]:
         if prob_under35 is not None and prob_under35 >= threshold_u35:
             if odd_under35 and odd_under35 >= 1.25:
@@ -242,6 +297,8 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
     if corner_o105 is not None and corner_o105 >= _th_c105["NEUTRO"]:
         status_c = "SAFE" if corner_o105 >= _th_c105["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
+    # Deduplicate corners: keep only the single best line
+    mercados = _dedup_corners(mercados)
     if not mercados:
         # Fallback: only the single best candidate with stricter thresholds
         candidatos = []

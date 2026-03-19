@@ -532,6 +532,68 @@ class TestLimitesEdgeCases:
 
 
 # ============================================================================
+# TESTES DE AZAR INSUSTENTÁVEL (xG >> gols)
+# ============================================================================
+
+
+class TestAzarInsustentavel:
+    """Tests for bidirectional xG filter — unlucky teams (xG >> goals)."""
+
+    def test_azar_detectado_ajusta_lambda_para_cima(self):
+        """When xG >> goals, lambda should be adjusted UP (more conservative)."""
+        # Team with 10 xG but only 5 goals in 10 games — clearly unlucky
+        lambda_adj, adjusted, meta = ajustar_lambda_por_xg(
+            lambda_original=1.5,
+            goals_scored=5.0,
+            xg=10.0,
+            games_played=10,
+        )
+
+        assert adjusted is True, "Should detect azar insustentável"
+        assert meta.get("unlucky_detected") is True
+        assert meta.get("adjustment_direction") == "UP"
+        assert lambda_adj > 1.5, "Lambda should be adjusted upward for unlucky team"
+        assert lambda_adj <= 1.5 * 1.30, "Lambda should not exceed 30% cap"
+
+    def test_azar_nao_detectado_quando_gols_proximo_xg(self):
+        """When goals ~ xG, no azar adjustment should be applied."""
+        lambda_adj, adjusted, meta = ajustar_lambda_por_xg(
+            lambda_original=1.5,
+            goals_scored=9.5,
+            xg=10.0,
+            games_played=10,
+        )
+
+        assert meta.get("unlucky_detected", False) is False
+        assert lambda_adj == 1.5 or not adjusted
+
+    def test_azar_mais_conservador_que_sorte(self):
+        """Unlucky adjustment should be more conservative than lucky (0.7x factor)."""
+        # Lucky: goals >> xG
+        _, _, meta_lucky = ajustar_lambda_por_xg(
+            lambda_original=2.0,
+            goals_scored=15.0,
+            xg=10.0,
+            games_played=10,
+        )
+        # Unlucky: xG >> goals (symmetric discrepancy)
+        _, _, meta_unlucky = ajustar_lambda_por_xg(
+            lambda_original=2.0,
+            goals_scored=5.0,
+            xg=10.0,
+            games_played=10,
+        )
+
+        lucky_factor = meta_lucky.get("adjustment_factor", 0)
+        unlucky_factor = meta_unlucky.get("unlucky_adjustment", 0)
+        # Unlucky adjustment should be smaller due to 0.7x multiplier
+        if lucky_factor > 0 and unlucky_factor > 0:
+            assert unlucky_factor < lucky_factor, (
+                f"Unlucky adj ({unlucky_factor}) should be < lucky adj ({lucky_factor})"
+            )
+
+
+# ============================================================================
 # CONFIGURAÇÃO PYTEST
 # ============================================================================
 

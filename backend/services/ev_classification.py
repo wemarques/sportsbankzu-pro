@@ -553,6 +553,16 @@ def evaluate_match_markets(
             if m.classification == MarketClassification.SAFE:
                 m.classification = MarketClassification.NEUTRO_QUALIFICADO
 
+    # ─── Apply chaos detector gate — chaotic matches cannot be SAFE ───
+    chaos_detected = stats.get("chaosDetected", False)
+    if chaos_detected:
+        for m in markets:
+            if m.classification == MarketClassification.SAFE:
+                m.classification = MarketClassification.NEUTRO
+                if ReasonCode.HIGH_PREDICTION_RISK not in m.reason_codes:
+                    m.reason_codes.append(ReasonCode.HIGH_PREDICTION_RISK)
+        logger.info("[Chaos] Capped all SAFE → NEUTRO for chaotic match")
+
     # ─── Filter NO_BET markets that have zero probability ───
     active_markets = [m for m in markets if (m.calibrated_probability or m.raw_probability or 0) > 0.05]
 
