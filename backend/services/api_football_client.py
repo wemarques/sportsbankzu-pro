@@ -1166,6 +1166,13 @@ class APIFootballClient:
 
         record["apiFootballStatus"] = af_status
 
+        # Overlay venue/stadium when FootyStats didn't provide it
+        if not record.get("stadium"):
+            venue = fixture.get("fixture", {}).get("venue", {}) or {}
+            venue_name = venue.get("name", "")
+            if venue_name:
+                record["stadium"] = venue_name
+
         return record
 
     # ==================================================================
@@ -1419,6 +1426,7 @@ class APIFootballClient:
                 "datetime": dt_str,
                 "timestamp": timestamp,
                 "venue": venue_name,
+                "stadium": venue_name,
                 "score": {
                     "home": goals_home,
                     "away": goals_away,

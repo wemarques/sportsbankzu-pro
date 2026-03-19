@@ -243,3 +243,135 @@ Layer E: Decision Engine + Mistral Review
 6. **Governance > Mistral > Nada** — Hierarquia estrita: motor estatístico > governance de dados > review Mistral.
 7. **Fallback gracioso** — Se dados INSUFFICIENT, usar legacy engine (4 linhas) em vez de não mostrar nada.
 8. **Calibrador e validador devem estar sincronizados** — Se adicionar nova linha em `CORNER_LINES`, adicionar nos dois arquivos também.
+
+---
+
+## Estádio Não Exibido na Análise Mistral — "Estadio nao informado"
+
+**Data:** 2026-03-19
+**Branch:** `claude/corner-betting-framework-zh4G1`
+
+### Problema
+O campo de estádio exibia "Estadio nao informado" no MatchDetailCard e na análise Mistral, mesmo para jogos onde o API-Football possuía o dado de venue.
+
+### Causa Raiz (3 camadas)
+1. **FootyStats `stadium_name` vazio** — A API FootyStats frequentemente não retorna `stadium_name` para partidas brasileiras (Serie A, Copa do Brasil), resultando em string vazia no `DataMapper.map_match_to_internal()`
+2. **`enrich_fixture_record()` não copiava venue** — O método que faz overlay de dados API-Football sobre os records do FootyStats atualizava score, status e minute, mas ignorava completamente o campo `venue` da fixture, mesmo quando disponível em `fixture.venue.name`
+3. **`_match_to_ai_input()` não incluía stadium** — A função que converte dados de fixture para input da análise Mistral omitia o campo `stadium` do retorno, então mesmo quando o dado existia, não chegava ao frontend
+
+### Fluxo do Dado (antes da correção)
+```
+FootyStats API → stadium_name: "" (vazio para ligas brasileiras)
+  → DataMapper → stadium: ""
+  → fixtures_service → stadium: ""
+  → fixtures route → { venue: "", stadium: "" }
+  → Frontend → match.venue || "Estadio nao informado" ← exibido
+
+API-Football → fixture.venue.name: "Arena MRV" (disponível!)
+  → enrich_fixture_record() → NÃO copiava venue ← BUG
+  → fixtures_to_records() → venue: "Arena MRV" mas sem campo stadium ← BUG
+```
+
+### Correções Aplicadas
+
+#### 1. API-Football — Overlay de venue na enrichment
+**Arquivo:** `backend/services/api_football_client.py` (`enrich_fixture_record`)
+- **Adicionado:** Quando `record["stadium"]` está vazio, copia `fixture.venue.name` do API-Football
+- Só sobrescreve se o venue do API-Football não for vazio (defesa contra dados nulos)
+
+#### 2. API-Football — Campo `stadium` em records de fallback
+**Arquivo:** `backend/services/api_football_client.py` (`fixtures_to_records`)
+- **Antes:** Só incluía `"venue": venue_name`
+- **Depois:** Inclui `"venue": venue_name` E `"stadium": venue_name`
+- O `fixtures_service.py` lê `r.get("stadium")`, então o campo precisa existir
+
+#### 3. AI Analysis — Captura e retorno do estádio
+**Arquivo:** `backend/routes/ai_analysis.py` (`_match_to_ai_input`)
+- **Adicionado:** `footystats_stadium` extraído de `detail_data.get("stadium_name")` dos match details
+- **Prioridade:** FootyStats match details → fixtures record `stadium` → fixtures record `venue` → vazio
+- **Retorno:** Campo `"stadium"` agora incluído no dict retornado para a análise Mistral
+
+### Regras para Futuras Correções de Estádio
+1. **Não confiar em uma única fonte** — FootyStats pode ter `stadium_name` vazio; usar API-Football como fallback
+2. **Manter `stadium` e `venue` sincronizados** — O backend usa `stadium`, o frontend lê ambos (`item.venue ?? item.stadium`). Ao adicionar dados, popular ambos os campos
+3. **`enrich_fixture_record` deve ser completo** — Qualquer novo campo do API-Football que tenha equivalente no FootyStats deve ser overlayed quando o original estiver vazio
+4. **`_match_to_ai_input` deve passar todos os metadados relevantes** — Stadium, venue, e outros campos contextuais devem estar no dict retornado para a análise Mistral funcionar corretamente
+
+---
+
+## V3.7 — Pipeline v2 Completo, Deduplicação de Corners e 6 Melhorias
+
+**Data:** 2026-03-19
+**Branch:** `claude/corner-betting-framework-zh4G1`
+
+### Problema Original
+O pipeline v2 retornava 4 linhas de escanteios quando deveria retornar apenas a melhor. A função legada (`selecionar_mercados`) escolhia UMA linha, mas o v2 emitia todas as linhas candidatas. Além disso, o fallback legado também adicionava corners, causando duplicação. O output continha 17 mercados (maioria inútil) com `status = "NO_BET"`.
+
+### Resultado Após Correção
+- **Antes:** `stats["status"] = "NO_BET"`, 17 mercados (maioria inútil)
+- **Depois:** `stats["status"] = "NEUTRO"`, 6 mercados viáveis, principal = "Under 3.5 gols"
+- Corners deduplicados: apenas o melhor mercado de escanteios mantido no output
+
+### 6 Melhorias Implementadas (V3.7)
+
+| # | Melhoria | Alteração | Testes |
+|---|----------|-----------|--------|
+| M1 | Pipeline v2 no fixtures | `fixtures_service.py` agora chama `selecionar_mercados_v2` (pipeline com EV, calibração, corners v2) | 241 pass |
+| M2 | Chaos detector | `ev_classification.py` rebaixa SAFE→NEUTRO em jogos caóticos | 241 pass |
+| M3 | xG filter bidirecional | `xg_filter.py` ajusta lambda UP para times azarados (0.7x mais conservador) | 244 pass (+3 novos) |
+| M4 | Deprecação da função legada | `main.py` — função legada substituída por redirect para v2. `market_service.py` — deprecation docs + DEBUG→debug | 244 pass |
+| M5 | 3 novas estratégias Safe Bets | Under 2.5, BTTS YES, Over 2.5 + enum + league_dna + integração no engine | 253 pass (+9 novos) |
+| M6 | 4 prompts especializados Mistral | Prompts por mercado (1X2, Over/Under, BTTS, Corners) + integração no `_build_prompt` | 253 pass |
+
+### Detalhamento das Correções
+
+#### M1 — Pipeline v2 no fixtures_service
+**Arquivo:** `backend/services/fixtures_service.py`
+- **Antes:** Chamava `selecionar_mercados()` (legado, sem EV, sem calibração)
+- **Depois:** Chama `selecionar_mercados_v2()` com pipeline completo: EV classification, calibração, corners v2, deduplicação
+
+#### M2 — Chaos Detector integrado ao EV
+**Arquivo:** `backend/services/ev_classification.py`
+- Jogos com padrão caótico (alta variância, resultados imprevisíveis) têm status rebaixado de SAFE para NEUTRO
+- Evita recomendar apostas em jogos com alto grau de incerteza sistêmica
+
+#### M3 — xG Filter bidirecional
+**Arquivo:** `backend/modeling/xg_filter.py`
+- **Antes:** Só ajustava lambda DOWN para times com overperformance (gols > xG)
+- **Depois:** Também ajusta lambda UP para times com underperformance (gols < xG), com fator 0.7x mais conservador
+- Corrige viés de subestimar times que tiveram azar estatístico recente
+
+#### M4 — Deprecação da função legada
+**Arquivos:** `backend/main.py`, `backend/services/market_service.py`
+- Função `selecionar_mercados()` mantida para backward-compat, mas redireciona internamente para v2
+- Documentação de deprecation adicionada
+- Nível de log `DEBUG` corrigido para minúsculo `debug`
+
+#### M5 — 3 novas estratégias Safe Bets
+**Arquivo:** `backend/services/safe_bets_service.py`
+- **Under 2.5 gols** — Para jogos defensivos com média < 2.0 e odds com valor
+- **BTTS YES** — Para confrontos ofensivos onde ambos times marcam regularmente
+- **Over 2.5 gols** — Para jogos com alta expectativa de gols
+- Novo enum de estratégias, integração com `league_dna` para ajuste contextual por liga
+
+#### M6 — 4 prompts especializados Mistral
+**Arquivo:** `backend/ai/prompt_templates.py`
+- **Antes:** Prompt genérico para todos os mercados
+- **Depois:** Prompts especializados por tipo: 1X2, Over/Under, BTTS, Corners
+- Cada prompt foca nos fatores estatísticos relevantes para aquele mercado específico
+- Integração via `_build_prompt()` que seleciona o template correto automaticamente
+
+### Deduplicação de Corners
+- **`select_best_market()`** em `price_ladder.py` já retorna o melhor mercado (Over ou Under, melhor linha)
+- **`ev_classification.py`** agora itera `CORNER_LINES` dinamicamente mas filtra para manter apenas o melhor candidato
+- **`safe_bets_service.py`** Strategy C usa `_try_corners_v2()` que consulta o motor e retorna UMA linha/lado
+- Fallback legado (`_corners_fallback_heuristic()`) também retorna apenas UMA linha
+
+### Regras para Futuras Melhorias do Pipeline v2
+1. **Deduplicação é obrigatória** — O output final deve conter no máximo 1 mercado de escanteios. Se múltiplas linhas passam no filtro, manter apenas a com melhor edge ajustado por qualidade
+2. **Chaos detector antes de status final** — Sempre aplicar detector de caos antes de atribuir status SAFE. Sequência: EV → Calibração → Chaos → Status
+3. **xG filter é bidirecional** — Nunca ignorar underperformance. Ambas as direções (over e under xG) devem ser ajustadas, com conservadorismo assimétrico (up = 0.7x)
+4. **Função legada = redirect** — `selecionar_mercados()` deve sempre redirecionar para v2. Nunca adicionar lógica nova na função legada
+5. **Prompts por mercado** — Cada tipo de mercado (1X2, O/U, BTTS, Corners) deve ter prompt Mistral dedicado. Prompt genérico só como fallback
+6. **Safe Bets = estratégias independentes** — Cada estratégia (A-E) opera de forma independente, com seus próprios thresholds e league_dna. Não misturar lógica entre estratégias
+7. **Menos é mais** — Preferir 6 mercados viáveis a 17 inúteis. Filtrar agressivamente mercados sem edge real
