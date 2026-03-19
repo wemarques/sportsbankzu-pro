@@ -125,6 +125,16 @@ def classify_market(
     if not output.odds_available:
         reason_codes.append(ReasonCode.NO_ODDS_AVAILABLE)
 
+    # ─── EV sanity cap ───
+    # EV > 40% is almost certainly a data issue (prob/odds mismatch)
+    MAX_CREDIBLE_EV = 0.40
+    if output.ev is not None and output.ev > MAX_CREDIBLE_EV:
+        reason_codes.append(ReasonCode.SUSPICIOUS_EV)
+        logger.warning(
+            f"[EV Cap] {output.display_label}: EV={output.ev:.1%} exceeds {MAX_CREDIBLE_EV:.0%} cap. "
+            f"Prob={prob:.1%}, Odd={output.book_odd}. Likely prob/odds source mismatch."
+        )
+
     # ─── EV checks ───
     if output.ev is not None:
         if output.ev < 0:
@@ -145,9 +155,12 @@ def classify_market(
     classification = MarketClassification.NO_BET
 
     # SAFE: high prob + positive EV + sufficient edge + good data
+    # BLOCK SAFE if EV is suspiciously high (prob/odds mismatch)
     if (prob >= th.get("safe_prob", 0.60) and
         output.data_quality_score >= th.get("min_quality", 0.3)):
-        if output.odds_available and output.ev is not None and output.ev >= th.get("safe_ev", 0.05):
+        if ReasonCode.SUSPICIOUS_EV in reason_codes:
+            classification = MarketClassification.NEUTRO
+        elif output.odds_available and output.ev is not None and output.ev >= th.get("safe_ev", 0.05):
             classification = MarketClassification.SAFE
         elif output.odds_available and output.ev is not None and output.ev >= 0:
             # Has odds, prob is high, but EV is marginal
@@ -168,8 +181,9 @@ def classify_market(
             classification = MarketClassification.NEUTRO
 
     # NEUTRO qualificado: upgrade NEUTRO if it meets additional criteria
+    # BUT NOT if EV is suspicious
     if classification == MarketClassification.NEUTRO:
-        if _is_neutro_qualificado(output, prob):
+        if _is_neutro_qualificado(output, prob) and ReasonCode.SUSPICIOUS_EV not in reason_codes:
             classification = MarketClassification.NEUTRO_QUALIFICADO
 
     # Force NO_BET on negative EV with odds (when prob is too low)
@@ -337,12 +351,11 @@ def evaluate_match_markets(
                 under_odd = float(under_odd) if float(under_odd) > 1.0 else None
 
             if under_odd is None and book_odd and book_odd > 1.0:
-                # Derive from Over with overround discount (~5% margin)
+                # Derive from Over: implied_under = OVERROUND - implied_over
                 OVERROUND = 1.05
                 implied_over = 1.0 / book_odd
-                implied_under_raw = max(0.01, 1.0 - implied_over)
-                implied_under_fair = implied_under_raw / OVERROUND
-                under_odd = round(1.0 / implied_under_fair, 2) if implied_under_fair > 0.01 else None
+                implied_under = OVERROUND - implied_over
+                under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
             mo = MarketOutput(
                 market_type="Over/Under",
                 selection=f"Under {threshold}",
@@ -519,12 +532,11 @@ def evaluate_match_markets(
             over_odd_key = _FOOTYSTATS_ODD_MAP.get(line_val)
             over_odd = odds.get(over_odd_key) if over_odd_key else None
             if over_odd and float(over_odd) > 1.0:
-                # Derive from Over with overround discount (~6% corners margin)
+                # Derive from Over: implied_under = OVERROUND - implied_over
                 OVERROUND = 1.06
                 implied_over = 1.0 / float(over_odd)
-                implied_under_raw = max(0.01, 1.0 - implied_over)
-                implied_under_fair = implied_under_raw / OVERROUND
-                under_odd = round(1.0 / implied_under_fair, 2) if implied_under_fair > 0.01 else None
+                implied_under = OVERROUND - implied_over
+                under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
             else:
                 under_odd = None
 

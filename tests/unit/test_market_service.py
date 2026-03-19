@@ -6,10 +6,12 @@ def test_normalize_prob():
     assert normalize_prob(-1) is None
 
 def test_calcular_odd_under():
-    # With default 5% overround: 1 / ((1 - 1/3.5) / 1.05) ≈ 1.47
-    assert round(calcular_odd_under(3.5), 2) == 1.47
-    # Without overround (legacy): 1 / (1 - 1/3.5) = 1.40
+    # With default 5% overround: implied_under = 1.05 - 1/3.5 = 0.764, odd = 1/0.764 ≈ 1.31
+    assert round(calcular_odd_under(3.5), 2) == 1.31
+    # Without overround: implied_under = 1.0 - 1/3.5 = 0.714, odd = 1/0.714 ≈ 1.40
     assert round(calcular_odd_under(3.5, overround=1.0), 2) == 1.4
+    # Over 2.5 @ 1.53 → Under ≈ 2.52
+    assert round(calcular_odd_under(1.53), 2) == 2.52
     assert calcular_odd_under(0.5) is None
 
 def test_selecionar_mercados_under35_safe():

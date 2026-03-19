@@ -216,12 +216,11 @@ def normalize_prob(value: Optional[float]) -> Optional[float]:
 def calcular_odd_under(odd_over: float, overround: float = 1.05) -> Optional[float]:
     if not odd_over or odd_over <= 1.0:
         return None
-    prob_over = 1.0 / odd_over
-    prob_under_raw = 1.0 - prob_over
-    prob_under_fair = prob_under_raw / overround
-    if prob_under_fair <= 0:
+    implied_over = 1.0 / odd_over
+    implied_under = overround - implied_over
+    if implied_under <= 0.01:
         return None
-    return round(1.0 / prob_under_fair, 2)
+    return round(1.0 / implied_under, 2)
 
 def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: str, league_id: str = "") -> List[Dict[str, Any]]:
     """DEPRECATED — Use selecionar_mercados_v2() instead.

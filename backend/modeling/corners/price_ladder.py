@@ -102,9 +102,11 @@ def attach_odds_and_edge(
         book_under = _extract_odd(odds, f"cornersUnder{line_tag}", f"corners_under_{line_tag}")
 
         # If we have Over but not Under, derive Under from Over implied
+        # implied_under = OVERROUND - implied_over (corners margin ~6%)
         if book_over and not book_under and item["p_over"] > 0:
+            OVERROUND = 1.06
             implied_over = 1.0 / book_over
-            implied_under = max(0.01, 1.0 - implied_over)
+            implied_under = OVERROUND - implied_over
             book_under = round(1.0 / implied_under, 3) if implied_under > 0.01 else None
 
         item["book_odd_over"] = book_over
