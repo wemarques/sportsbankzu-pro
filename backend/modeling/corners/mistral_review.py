@@ -22,6 +22,23 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger("sportsbankzu.corners.mistral_review")
 
 
+def _build_corner_odds_section(engine_output: Dict[str, Any]) -> str:
+    """Build odds section string from engine output pricing ladder."""
+    pricing = engine_output.get("pricing", {})
+    ladder = pricing.get("ladder", [])
+    odds_info = []
+    for item in ladder:
+        if isinstance(item, dict):
+            line = item.get("line", "?")
+            if item.get("book_odd_over"):
+                odds_info.append(f"- Over {line} = {item['book_odd_over']} (real)")
+            if item.get("book_odd_under"):
+                odds_info.append(f"- Under {line} = {item['book_odd_under']} (real)")
+    if odds_info:
+        return "\n".join(odds_info) + "\nNOTA: Odds marcadas como '(real)' sao de casas de apostas. Odds nao listadas foram derivadas pelo modelo."
+    return "- Nenhuma odd real disponivel para escanteios"
+
+
 def build_corners_review_prompt(engine_output: Dict[str, Any]) -> str:
     """Build a structured prompt for Mistral to review corner predictions."""
     proj = engine_output.get("projection", {})

@@ -115,7 +115,7 @@ def init_db():
         cursor.execute(
             """
 CREATE TABLE IF NOT EXISTS audit_results (
-    match_id TEXT PRIMARY KEY,
+    match_id TEXT,
     league TEXT,
     market TEXT,
     predicted_probs TEXT,
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS audit_results (
     cursor.execute(
         """
 CREATE TABLE IF NOT EXISTS thresholds (
-    market TEXT PRIMARY KEY,
+    market TEXT,
     safe_threshold REAL,
     neutro_threshold REAL,
     last_updated DATETIME
@@ -220,8 +220,73 @@ CREATE TABLE IF NOT EXISTS corrections (
 """
         )
 
+    # PostgreSQL: ensure UNIQUE constraints exist for ON CONFLICT clauses
+    # Tables may have been created without PRIMARY KEY by older code versions.
+    # Steps: (1) deduplicate existing rows, (2) create unique index idempotently.
+    if is_pg:
+        _ensure_pg_unique_constraints(cursor)
+
     conn.commit()
     return conn
+
+
+def _ensure_pg_unique_constraints(cursor) -> None:
+    """Create UNIQUE indexes on PostgreSQL tables if they don't exist.
+
+    Handles the case where tables were created without PRIMARY KEY constraints,
+    causing ON CONFLICT to fail. Deduplicates existing data before creating indexes.
+    """
+    # --- audit_results: unique on match_id ---
+    try:
+        # Check if unique constraint already exists
+        cursor.execute("""
+            SELECT 1 FROM pg_indexes
+            WHERE tablename = 'audit_results'
+              AND (indexdef LIKE '%UNIQUE%match_id%' OR indexdef LIKE '%PRIMARY%')
+            LIMIT 1
+        """)
+        if not cursor.fetchone():
+            # Deduplicate: keep latest row per match_id (by timestamp)
+            cursor.execute("""
+                DELETE FROM audit_results a
+                USING audit_results b
+                WHERE a.ctid < b.ctid AND a.match_id = b.match_id
+            """)
+            deduped = cursor.rowcount
+            if deduped:
+                audit_logger.info(f"[audit] Deduplicated {deduped} rows from audit_results")
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_results_match_id
+                ON audit_results (match_id)
+            """)
+            audit_logger.info("[audit] Created UNIQUE index on audit_results(match_id)")
+    except Exception as e:
+        audit_logger.warning(f"[audit] Failed to ensure audit_results unique constraint: {e}")
+
+    # --- thresholds: unique on market ---
+    try:
+        cursor.execute("""
+            SELECT 1 FROM pg_indexes
+            WHERE tablename = 'thresholds'
+              AND (indexdef LIKE '%UNIQUE%market%' OR indexdef LIKE '%PRIMARY%')
+            LIMIT 1
+        """)
+        if not cursor.fetchone():
+            cursor.execute("""
+                DELETE FROM thresholds a
+                USING thresholds b
+                WHERE a.ctid < b.ctid AND a.market = b.market
+            """)
+            deduped = cursor.rowcount
+            if deduped:
+                audit_logger.info(f"[audit] Deduplicated {deduped} rows from thresholds")
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_thresholds_market
+                ON thresholds (market)
+            """)
+            audit_logger.info("[audit] Created UNIQUE index on thresholds(market)")
+    except Exception as e:
+        audit_logger.warning(f"[audit] Failed to ensure thresholds unique constraint: {e}")
 
 
 def log_audit_result(

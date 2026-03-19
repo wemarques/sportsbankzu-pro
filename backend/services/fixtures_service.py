@@ -1070,6 +1070,16 @@ def build_records_from_matches(
 
             mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
             record["mercados"] = mercados
+
+            # Build enriched context for Mistral match analysis
+            record["_mistral_context"] = {
+                "home_form": record.get("homeForm"),
+                "away_form": record.get("awayForm"),
+                "h2h": record.get("h2h"),
+                "injuries": record.get("injuries"),
+                "lineups": record.get("lineups"),
+                "predictions": mercados,
+            }
         except Exception as e:
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
             records[-1]["mercados"] = []

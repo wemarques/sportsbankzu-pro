@@ -375,3 +375,62 @@ O pipeline v2 retornava 4 linhas de escanteios quando deveria retornar apenas a 
 5. **Prompts por mercado** — Cada tipo de mercado (1X2, O/U, BTTS, Corners) deve ter prompt Mistral dedicado. Prompt genérico só como fallback
 6. **Safe Bets = estratégias independentes** — Cada estratégia (A-E) opera de forma independente, com seus próprios thresholds e league_dna. Não misturar lógica entre estratégias
 7. **Menos é mais** — Preferir 6 mercados viáveis a 17 inúteis. Filtrar agressivamente mercados sem edge real
+
+---
+
+## V3.8 — Odds Reais Under + API-Football Enrichment + Mistral Data Enrichment
+
+**Data:** 2026-03-19
+**Branch:** `claude/corner-betting-framework-zh4G1`
+
+### Problema Original
+3 problemas interconectados no pipeline v2:
+1. **Odds de Under infladas** — O sistema derivava odds Under a partir de Over sem considerar overround da casa, gerando EV artificialmente alto (ex: 139.9% para Under 2.5). A odd real de Under 2.5 da FootyStats (`odds_ft_under25`) estava sendo PERDIDA por mismatch de field name.
+2. **API-Football não integrada** — A função `extract_best_odds()` já existia mas não era chamada no fluxo de cálculo.
+3. **Mistral com dados incompletos** — Não recebia corners, xG, shots, chaos score, injuries, lineups, data quality score nem reason codes do pipeline v2.
+
+### BLOCO 1 — Corrigir Odds de Under (Bug Fix Crítico)
+
+| Item | Arquivo | Alteração |
+|------|---------|-----------|
+| 1.1 | `data_mapper.py` | Adicionado `odds_ft_under25` no modelo Pydantic e no mapeamento |
+| 1.1b | `fixtures_service.py` | Corrigido field name: `r.get("odds_ft_under25", r.get("odds_under_25", ...))` |
+| 1.2 | `ev_classification.py` | Under gols: busca odd real primeiro, só deriva com overround 5% como fallback |
+| 1.3 | `ev_classification.py` | Under corners: derivação agora aplica overround 6% |
+| 1.4 | `market_service.py` | `calcular_odd_under()` aceita parâmetro `overround` (default 1.05) |
+
+**Impacto:** Under 2.5 agora mostra odd próxima da real (~2.50) e não mais derivada inflada (~2.89). EV de Under 2.5 não ultrapassa mais 100%.
+
+### BLOCO 2 — API-Football Enrichment
+
+| Item | Arquivo | Alteração |
+|------|---------|-----------|
+| 2.1 | `fixtures_service.py` | Enriquece odds (Under 2.5, BTTS No) da API-Football quando FootyStats não tem |
+| 2.2 | `fixtures_service.py` | Busca injuries pré-jogo da API-Football |
+| 2.3 | `fixtures_service.py` | Busca lineups 30-60 min antes do kickoff |
+
+**Degradação:** Todos os blocos são try/except com fallback silencioso. Se API-Football não estiver disponível, o fluxo continua normalmente.
+
+### BLOCO 3 — Mistral Data Enrichment
+
+| Item | Arquivo | Alteração |
+|------|---------|-----------|
+| 3.1 | `match_analysis_service.py` | Prompt agora inclui xG, shots, posse, corners, chaos, regime, volatilidade |
+| 3.2 | `match_analysis_service.py` | Injuries e lineups no contexto da Mistral quando disponíveis |
+| 3.3 | `match_analysis_service.py` | Reason codes e mercados selecionados pelo pipeline v2 |
+| 3.4 | `match_analysis_service.py` | Instrução final pede análise de escanteios quando relevante |
+| 3.5 | `fixtures_service.py` | `_mistral_context` montado com injuries, lineups e predictions |
+
+### BLOCO 4 — Corners Mistral Review
+
+| Item | Arquivo | Alteração |
+|------|---------|-----------|
+| 4.1 | `mistral_review.py` | Prompt de review inclui odds reais vs derivadas do pricing ladder |
+
+### Regras para Futuras Correções de Odds
+1. **Odd real > derivada** — Sempre preferir a odd real da casa de apostas. Só derivar como fallback.
+2. **Overround obrigatório** — Ao derivar Under de Over, aplicar overround: 5% para gols, 6% para corners
+3. **Field name mapping** — FootyStats usa `odds_ft_under25` (com prefixo `ft_`). Sempre mapear no `data_mapper.py` e buscar com fallback cascade no `fixtures_service.py`
+4. **API-Football = fallback silencioso** — Nunca bloquear o fluxo se a API-Football falhar. Usar try/except em todos os pontos de integração
+5. **Mistral = máxima informação** — Enviar todos os dados disponíveis (xG, shots, corners, chaos, injuries, predictions) para que a Mistral tenha contexto completo
+6. **EV sanity check** — Se EV > 50%, provavelmente a odd está errada (derivada sem overround). Investigar antes de confiar
