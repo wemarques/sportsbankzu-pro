@@ -449,6 +449,7 @@ def _match_to_ai_input(m: dict) -> dict:
     # Enrich with FootyStats match details (gpt_en analysis, H2H, lineups, etc.)
     footystats_analysis = ""
     footystats_lineup = ""
+    footystats_stadium = ""
     footystats_match_id = m.get("footystatsId")
     if footystats_match_id:
         try:
@@ -458,6 +459,7 @@ def _match_to_ai_input(m: dict) -> dict:
             if details.get("success"):
                 detail_data = details.get("data", {})
                 footystats_analysis = detail_data.get("gpt_en", "") or ""
+                footystats_stadium = detail_data.get("stadium_name", "") or ""
                 # Extract real H2H data if available
                 api_h2h = detail_data.get("h2h", {})
                 if api_h2h and isinstance(api_h2h, dict):
@@ -521,6 +523,10 @@ def _match_to_ai_input(m: dict) -> dict:
 
     home_name = team_name(m.get("homeTeam", ""))
     away_name = team_name(m.get("awayTeam", ""))
+
+    # Stadium: prefer FootyStats match details, then fixtures record
+    stadium = footystats_stadium or m.get("stadium", "") or m.get("venue", "") or ""
+
     return {
         "id": m.get("id"),
         "footystatsId": footystats_match_id,
@@ -531,6 +537,7 @@ def _match_to_ai_input(m: dict) -> dict:
         "league": m.get("leagueName", ""),
         "datetime": m.get("datetime", ""),  # needed by API-Football bridge
         "season": m.get("season"),
+        "stadium": stadium,
         "stats": stats,
         "odds": m.get("odds", {}),
         "context": context,
