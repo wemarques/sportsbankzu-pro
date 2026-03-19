@@ -243,3 +243,56 @@ Layer E: Decision Engine + Mistral Review
 6. **Governance > Mistral > Nada** — Hierarquia estrita: motor estatístico > governance de dados > review Mistral.
 7. **Fallback gracioso** — Se dados INSUFFICIENT, usar legacy engine (4 linhas) em vez de não mostrar nada.
 8. **Calibrador e validador devem estar sincronizados** — Se adicionar nova linha em `CORNER_LINES`, adicionar nos dois arquivos também.
+
+---
+
+## Estádio Não Exibido na Análise Mistral — "Estadio nao informado"
+
+**Data:** 2026-03-19
+**Branch:** `claude/corner-betting-framework-zh4G1`
+
+### Problema
+O campo de estádio exibia "Estadio nao informado" no MatchDetailCard e na análise Mistral, mesmo para jogos onde o API-Football possuía o dado de venue.
+
+### Causa Raiz (3 camadas)
+1. **FootyStats `stadium_name` vazio** — A API FootyStats frequentemente não retorna `stadium_name` para partidas brasileiras (Serie A, Copa do Brasil), resultando em string vazia no `DataMapper.map_match_to_internal()`
+2. **`enrich_fixture_record()` não copiava venue** — O método que faz overlay de dados API-Football sobre os records do FootyStats atualizava score, status e minute, mas ignorava completamente o campo `venue` da fixture, mesmo quando disponível em `fixture.venue.name`
+3. **`_match_to_ai_input()` não incluía stadium** — A função que converte dados de fixture para input da análise Mistral omitia o campo `stadium` do retorno, então mesmo quando o dado existia, não chegava ao frontend
+
+### Fluxo do Dado (antes da correção)
+```
+FootyStats API → stadium_name: "" (vazio para ligas brasileiras)
+  → DataMapper → stadium: ""
+  → fixtures_service → stadium: ""
+  → fixtures route → { venue: "", stadium: "" }
+  → Frontend → match.venue || "Estadio nao informado" ← exibido
+
+API-Football → fixture.venue.name: "Arena MRV" (disponível!)
+  → enrich_fixture_record() → NÃO copiava venue ← BUG
+  → fixtures_to_records() → venue: "Arena MRV" mas sem campo stadium ← BUG
+```
+
+### Correções Aplicadas
+
+#### 1. API-Football — Overlay de venue na enrichment
+**Arquivo:** `backend/services/api_football_client.py` (`enrich_fixture_record`)
+- **Adicionado:** Quando `record["stadium"]` está vazio, copia `fixture.venue.name` do API-Football
+- Só sobrescreve se o venue do API-Football não for vazio (defesa contra dados nulos)
+
+#### 2. API-Football — Campo `stadium` em records de fallback
+**Arquivo:** `backend/services/api_football_client.py` (`fixtures_to_records`)
+- **Antes:** Só incluía `"venue": venue_name`
+- **Depois:** Inclui `"venue": venue_name` E `"stadium": venue_name`
+- O `fixtures_service.py` lê `r.get("stadium")`, então o campo precisa existir
+
+#### 3. AI Analysis — Captura e retorno do estádio
+**Arquivo:** `backend/routes/ai_analysis.py` (`_match_to_ai_input`)
+- **Adicionado:** `footystats_stadium` extraído de `detail_data.get("stadium_name")` dos match details
+- **Prioridade:** FootyStats match details → fixtures record `stadium` → fixtures record `venue` → vazio
+- **Retorno:** Campo `"stadium"` agora incluído no dict retornado para a análise Mistral
+
+### Regras para Futuras Correções de Estádio
+1. **Não confiar em uma única fonte** — FootyStats pode ter `stadium_name` vazio; usar API-Football como fallback
+2. **Manter `stadium` e `venue` sincronizados** — O backend usa `stadium`, o frontend lê ambos (`item.venue ?? item.stadium`). Ao adicionar dados, popular ambos os campos
+3. **`enrich_fixture_record` deve ser completo** — Qualquer novo campo do API-Football que tenha equivalente no FootyStats deve ser overlayed quando o original estiver vazio
+4. **`_match_to_ai_input` deve passar todos os metadados relevantes** — Stadium, venue, e outros campos contextuais devem estar no dict retornado para a análise Mistral funcionar corretamente
