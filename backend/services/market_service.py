@@ -12,37 +12,63 @@ logger = logging.getLogger("sportsbankzu")
 _CLASSIFICATION_RANK = {"SAFE": 0, "SAFE*": 1, "NEUTRO_QUALIFICADO": 2, "NEUTRO": 3}
 
 
-def _dedup_corners(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keep only the single best corner market from a list.
+def _pick_best(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """From a list of market dicts, return the single best one.
 
-    Selection criteria: best classification first, then highest odd (better edge).
+    Criteria: best classification first, then highest odd (better edge).
     """
-    best_corner = None
-    non_corner = []
+    best = None
+    for m in candidates:
+        if best is None:
+            best = m
+            continue
+        cur_rank = _CLASSIFICATION_RANK.get(
+            best.get("finalClassification", best.get("status")), 99
+        )
+        new_rank = _CLASSIFICATION_RANK.get(
+            m.get("finalClassification", m.get("status")), 99
+        )
+        if new_rank < cur_rank:
+            best = m
+        elif new_rank == cur_rank:
+            if (m.get("odd_minima") or 0) > (best.get("odd_minima") or 0):
+                best = m
+    return best
+
+
+def _dedup_market_groups(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only the single best market per group (goals-over, goals-under, corners).
+
+    The v2 pipeline generates all lines (e.g. Under 2.5 + 3.5 + 4.5, Over 8.5 + 9.5)
+    but the frontend should show only the best line per group.
+    """
+    corners = []
+    goals_over = []
+    goals_under = []
+    others = []
+
     for m in mercados:
         nome = m.get("mercado", "")
         if "Escanteios" in nome or "Escanteio" in nome:
-            if best_corner is None:
-                best_corner = m
-            else:
-                cur_rank = _CLASSIFICATION_RANK.get(
-                    best_corner.get("finalClassification", best_corner.get("status")), 99
-                )
-                new_rank = _CLASSIFICATION_RANK.get(
-                    m.get("finalClassification", m.get("status")), 99
-                )
-                if new_rank < cur_rank:
-                    best_corner = m
-                elif new_rank == cur_rank:
-                    cur_odd = best_corner.get("odd_minima") or 0
-                    new_odd = m.get("odd_minima") or 0
-                    if new_odd > cur_odd:
-                        best_corner = m
+            corners.append(m)
+        elif nome.startswith("Over") and "gols" in nome:
+            goals_over.append(m)
+        elif nome.startswith("Under") and "gols" in nome:
+            goals_under.append(m)
         else:
-            non_corner.append(m)
+            others.append(m)
+
+    result = list(others)
+    best_corner = _pick_best(corners)
+    best_over = _pick_best(goals_over)
+    best_under = _pick_best(goals_under)
     if best_corner:
-        non_corner.append(best_corner)
-    return non_corner
+        result.append(best_corner)
+    if best_over:
+        result.append(best_over)
+    if best_under:
+        result.append(best_under)
+    return result
 
 
 def selecionar_mercados_v2(
@@ -87,7 +113,7 @@ def selecionar_mercados_v2(
         )
 
         # Deduplicate corners: keep only the single best line
-        mercados = _dedup_corners(mercados)
+        mercados = _dedup_market_groups(mercados)
         mercados.sort(
             key=lambda m: _CLASSIFICATION_RANK.get(
                 m.get("finalClassification", m.get("status", "NEUTRO")), 99
@@ -298,7 +324,7 @@ def selecionar_mercados_jogo(jogo: Dict[str, Any], regime: str, volatilidade: st
         status_c = "SAFE" if corner_o105 >= _th_c105["SAFE"] else "NEUTRO"
         add_mercado("Escanteios Over 10.5", status_c, corner_o105, odd_corners_o105)
     # Deduplicate corners: keep only the single best line
-    mercados = _dedup_corners(mercados)
+    mercados = _dedup_market_groups(mercados)
     if not mercados:
         # Fallback: only the single best candidate with stricter thresholds
         candidatos = []
