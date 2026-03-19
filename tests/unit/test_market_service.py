@@ -6,7 +6,10 @@ def test_normalize_prob():
     assert normalize_prob(-1) is None
 
 def test_calcular_odd_under():
-    assert round(calcular_odd_under(3.5), 2) == 1.4
+    # With 5% overround discount (default): derived Under odd is higher than naive
+    assert round(calcular_odd_under(3.5), 2) == 1.47
+    # Without overround (overround=1.0): same as old naive behavior
+    assert round(calcular_odd_under(3.5, overround=1.0), 2) == 1.4
     assert calcular_odd_under(0.5) is None
 
 def test_selecionar_mercados_under35_safe():

@@ -249,7 +249,7 @@ def build_records_from_matches(
         odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
         odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
         odds_over25 = r.get("odds_over_25", r.get("odds_ft_over25", None))
-        odds_under25 = r.get("odds_under_25", None)
+        odds_under25 = r.get("odds_ft_under25", r.get("odds_under_25", r.get("odds_under25", None)))
         odds_btts_yes = r.get("odds_btts_yes", None)
         odds_btts_no = r.get("odds_btts_no", None)
         homeProb, drawProb, awayProb = implied_probs(odds_home, odds_draw, odds_away)
@@ -933,6 +933,58 @@ def build_records_from_matches(
             "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
+        # --- API-Football enrichment (odds, injuries, lineups) ---
+        # Fills gaps in FootyStats data; degrades silently if unavailable
+        _afc = None
+        try:
+            from backend.services.api_football_client import APIFootballClient
+            _afc = APIFootballClient()
+        except Exception:
+            pass
+
+        _record_ref = records[-1]
+        footystats_id = r.get("id")
+
+        # 2.1 Enrich odds from API-Football when available
+        if _afc and footystats_id:
+            try:
+                af_odds = _afc.get_odds(int(footystats_id), ttl_minutes=180)
+                if af_odds:
+                    best = _afc.extract_best_odds(af_odds)
+                    odds_dict = _record_ref["odds"]
+                    if not odds_dict.get("under25") and best.get("under_25"):
+                        odds_dict["under25"] = best["under_25"]
+                        logger.info(f"[API-Football] Under 2.5 odd enriched: {best['under_25']}")
+                    if not odds_dict.get("bttsNo") and best.get("btts_no"):
+                        odds_dict["bttsNo"] = best["btts_no"]
+                    _record_ref.setdefault("source_flags", []).append("api_football_odds")
+            except Exception as e:
+                logger.debug(f"[API-Football] Odds enrichment skipped: {e}")
+
+        # 2.2 Enrich with pre-match injuries when available
+        if _afc and footystats_id:
+            try:
+                injuries = _afc.get_injuries_sync(int(footystats_id), ttl_minutes=240)
+                if injuries:
+                    injury_data = {
+                        "home": [inj for inj in injuries if inj.get("team", {}).get("name") == home],
+                        "away": [inj for inj in injuries if inj.get("team", {}).get("name") == away],
+                    }
+                    _record_ref["injuries"] = injury_data
+                    _record_ref.setdefault("source_flags", []).append("api_football_injuries")
+            except Exception as e:
+                logger.debug(f"[API-Football] Injuries enrichment skipped: {e}")
+
+        # 2.3 Enrich with lineups (available 30-60 min before kickoff)
+        if _afc and footystats_id and status == "incomplete":
+            try:
+                lineups = _afc.get_fixture_lineups(int(footystats_id), ttl_minutes=30)
+                if lineups:
+                    _record_ref["lineups"] = lineups
+                    _record_ref.setdefault("source_flags", []).append("api_football_lineups")
+            except Exception as e:
+                logger.debug(f"[API-Football] Lineups enrichment skipped: {e}")
+
         # Calculate market predictions (mercados) for this match
         try:
             record = records[-1]
@@ -1021,6 +1073,16 @@ def build_records_from_matches(
 
             mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
             record["mercados"] = mercados
+
+            # Build enriched context for Mistral match analysis
+            record["_mistral_context"] = {
+                "home_form": record.get("homeForm"),
+                "away_form": record.get("awayForm"),
+                "h2h": record.get("h2h"),
+                "injuries": record.get("injuries"),
+                "lineups": record.get("lineups"),
+                "predictions": mercados,
+            }
         except Exception as e:
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
             records[-1]["mercados"] = []

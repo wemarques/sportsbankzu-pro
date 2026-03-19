@@ -109,6 +109,7 @@ class FootyStatsMatchInput(BaseModel):
     odds_ft_over25: Optional[float] = 0.0
     odds_ft_over35: Optional[float] = 0.0
     odds_ft_over45: Optional[float] = 0.0
+    odds_ft_under25: Optional[float] = 0.0
     odds_btts_yes: Optional[float] = 0.0
     odds_btts_no: Optional[float] = 0.0
     competition_id: Optional[int] = None
@@ -234,6 +235,7 @@ class DataMapper:
             "odds_ft_over25": api_match.get("odds_ft_over25", 0.0),
             "odds_ft_over35": api_match.get("odds_ft_over35", 0.0),
             "odds_ft_over45": api_match.get("odds_ft_over45", 0.0),
+            "odds_ft_under25": api_match.get("odds_ft_under25", 0.0),
             "odds_btts_yes": api_match.get("odds_btts_yes", 0.0),
             "odds_btts_no": api_match.get("odds_btts_no", 0.0),
             "competition_id": api_match.get("competition_id"),
