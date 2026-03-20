@@ -21,6 +21,12 @@ logger = logging.getLogger("sportsbankzu.poisson_matrix")
 # Maximum scoreline to consider (0..MAX_GOALS for each team)
 MAX_GOALS = 8
 
+# ─── Lambda Deflation (Emergency Recalibration) ───
+# Lambda error was 0.90 (limit 0.5). Model systematically overestimates goals.
+# Applied only to Over/Under and BTTS — 1X2 uses original lambdas.
+LAMBDA_DEFLATION_FACTOR = 0.85   # Reduce lambdas by 15% for goal markets
+BTTS_DEFLATION_FACTOR = 0.80     # BTTS needs stronger deflation (0% accuracy)
+
 
 def build_scoreline_matrix(
     lambda_home: float,
@@ -121,12 +127,27 @@ def derive_all_markets(
     """Derive all goal-based market probabilities from lambdas.
 
     Returns a flat dict with all derived probabilities (0-1 scale).
+
+    Uses deflated lambdas for Over/Under and BTTS to correct systematic
+    overestimation (lambda error 0.90, audit accuracy 0% on these markets).
+    1X2 and Double Chance use original lambdas.
     """
-    matrix = build_scoreline_matrix(lambda_home, lambda_away)
-    x1x2 = derive_1x2(matrix)
-    ou = derive_over_under(matrix)
-    btts = derive_btts(matrix)
+    # 1X2 / Double Chance: original lambdas (no systematic error)
+    matrix_1x2 = build_scoreline_matrix(lambda_home, lambda_away)
+    x1x2 = derive_1x2(matrix_1x2)
     dc = derive_double_chance(x1x2)
+
+    # Over/Under: deflated lambdas (overestimation correction)
+    lh_ou = lambda_home * LAMBDA_DEFLATION_FACTOR
+    la_ou = lambda_away * LAMBDA_DEFLATION_FACTOR
+    matrix_ou = build_scoreline_matrix(lh_ou, la_ou)
+    ou = derive_over_under(matrix_ou)
+
+    # BTTS: stronger deflation (0% accuracy in 2 audits)
+    lh_btts = lambda_home * BTTS_DEFLATION_FACTOR
+    la_btts = lambda_away * BTTS_DEFLATION_FACTOR
+    matrix_btts = build_scoreline_matrix(lh_btts, la_btts)
+    btts = derive_btts(matrix_btts)
 
     result = {
         # 1X2
@@ -155,7 +176,8 @@ def derive_all_markets(
     }
 
     logger.debug(
-        f"Poisson matrix derived: λH={lambda_home:.2f} λA={lambda_away:.2f} → "
+        f"Poisson matrix derived: λH={lambda_home:.2f} λA={lambda_away:.2f} "
+        f"(O/U deflated: {lh_ou:.2f}/{la_ou:.2f}, BTTS deflated: {lh_btts:.2f}/{la_btts:.2f}) → "
         f"1X2=({x1x2['home']:.2f}/{x1x2['draw']:.2f}/{x1x2['away']:.2f}) "
         f"O2.5={ou['over_2.5']:.2f} BTTS={btts['btts_yes']:.2f}"
     )

@@ -73,6 +73,10 @@ WEIGHTS = {
 MIN_SHRINKAGE = 0.05  # strong data → low shrinkage
 MAX_SHRINKAGE = 0.60  # weak data → high shrinkage
 
+# ─── Corner Deflation (Emergency Recalibration) ───
+# Corners have 0% accuracy in 2 consecutive audits. Model overestimates corners.
+CORNER_DEFLATION_FACTOR = 0.80  # Reduce corner projections by 20%
+
 
 def predict_corners(
     home_stats: Dict[str, Any],
@@ -139,6 +143,33 @@ def predict_corners(
     selected = pricing.get("selected", {})
     decision = {**selected}
     decision["reason_codes"] = []
+
+    # ── H2H corner filter: block Over when historical average < threshold ──
+    h2h_avg_corners = home_stats.get("h2h_avg_corners")
+    league_avg_corners = (league_stats or {}).get("avg_corners_per_match") if league_stats else None
+    selected_line = decision.get("line", 9.5)
+
+    if h2h_avg_corners is not None:
+        try:
+            h2h_avg = float(h2h_avg_corners)
+            if h2h_avg < selected_line and decision.get("side") == "OVER":
+                decision["no_bet"] = True
+                decision["no_bet_reason"] = f"h2h_avg_corners ({h2h_avg:.1f}) < line ({selected_line})"
+                decision["reason_codes"].append("H2H_CORNER_FILTER")
+                logger.info(f"[Corners] H2H filter blocked Over {selected_line}: avg={h2h_avg:.1f}")
+        except (ValueError, TypeError):
+            pass
+
+    if league_avg_corners is not None and not decision.get("no_bet"):
+        try:
+            lg_avg = float(league_avg_corners)
+            if lg_avg < selected_line * 0.85 and decision.get("side") == "OVER":
+                decision["no_bet"] = True
+                decision["no_bet_reason"] = f"league_avg_corners ({lg_avg:.1f}) too low for Over {selected_line}"
+                decision["reason_codes"].append("LEAGUE_CORNER_FILTER")
+                logger.info(f"[Corners] League filter blocked Over {selected_line}: lg_avg={lg_avg:.1f}")
+        except (ValueError, TypeError):
+            pass
 
     # Apply governance gates
     governance_state = _determine_governance_state(league_id, data_quality)
@@ -233,6 +264,9 @@ def _project_expected_corners(
             expected_ft = expected_ft * 0.8 + ml_pred * 0.2
 
     model_divergence = _compute_divergence(predictions)
+
+    # Apply corner deflation (emergency recalibration — 0% accuracy in 2 audits)
+    expected_ft = expected_ft * CORNER_DEFLATION_FACTOR
 
     expected_ft = max(4.0, min(18.0, expected_ft))
 

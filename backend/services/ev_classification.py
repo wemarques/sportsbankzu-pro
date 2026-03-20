@@ -33,6 +33,10 @@ from backend.services.data_governance import (
 
 logger = logging.getLogger("sportsbankzu.ev_classification")
 
+# ─── SAFE Circuit Breaker ───
+# SAFE has 0% accuracy in 2 consecutive audits. Disable until recalibrated.
+# Reactivate when: SAFE accuracy > 55% in 3 consecutive audits, Brier < 0.25, Lambda error < 0.5
+SAFE_CIRCUIT_BREAKER_ENABLED = True
 
 # ─── Dynamic Thresholds per Market ───
 # Each market has thresholds for SAFE and NEUTRO classification
@@ -195,6 +199,16 @@ def classify_market(
         classification = MarketClassification.NO_BET
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)
+
+    # ─── SAFE Circuit Breaker ───
+    # Downgrade SAFE → NEUTRO_QUALIFICADO while circuit breaker is active
+    if classification == MarketClassification.SAFE and SAFE_CIRCUIT_BREAKER_ENABLED:
+        classification = MarketClassification.NEUTRO_QUALIFICADO
+        reason_codes.append(ReasonCode.SAFE_CIRCUIT_BREAKER)
+        logger.info(
+            f"[Circuit Breaker] {output.display_label}: SAFE → NEUTRO_QUALIFICADO "
+            f"(SAFE disabled until recalibration)"
+        )
 
     output.classification = classification
     output.reason_codes = reason_codes
