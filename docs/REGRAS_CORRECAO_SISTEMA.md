@@ -2435,7 +2435,181 @@ O `CREATE TABLE IF NOT EXISTS` incluía `PRIMARY KEY` no DDL, mas como as tabela
 1. `CREATE TABLE IF NOT EXISTS` NÃO altera tabelas existentes — não adianta adicionar PRIMARY KEY se a tabela já existe sem ela
 2. Para corrigir constraints em produção: deduplicar → criar UNIQUE INDEX → ON CONFLICT funciona
 3. Sempre verificar `pg_indexes` antes de assumir que a constraint existe
->>>>>>> 5d754aa (docs: add entries #029-#041 to REGRAS_CORRECAO_SISTEMA.md)
+
+---
+
+## 042 — Fórmula de overround corrigida + EV sanity cap
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/services/market_service.py`, `backend/modeling/corners/price_ladder.py`, `backend/models/market_output.py`, `tests/unit/test_market_service.py`
+**Severidade:** Alta (odds Under ainda infladas após #040)
+**Status:** Corrigido
+
+### Problema identificado
+
+A fórmula de overround implementada em #040 ainda produzia Under odds infladas. A fórmula `1 / ((1 - implied_over) / OVERROUND)` estava matematicamente incorreta — o overround deve ser subtraído da probabilidade implícita total, não dividido.
+
+### Correção aplicada
+
+1. **Fórmula correta:** `1 / (OVERROUND - implied_over)` — subtrai a probabilidade Over da margem total do bookmaker
+2. **`calcular_odd_under()` atualizada** em `market_service.py` com a mesma fórmula
+3. **Corners `price_ladder.py`** — Under derivation com margem de 6% usando fórmula correta
+4. **EV sanity cap** — Novo reason code `SUSPICIOUS_EV` para EV > 40%; bloqueia classificação SAFE/NEUTRO-Q quando EV é suspeitamente alto
+5. **Testes atualizados** para refletir novos valores esperados
+
+### Lição aprendida
+
+1. EV > 40% é um sinal de alerta — a odd provavelmente está errada, não é oportunidade real
+2. Sempre validar fórmulas matemáticas com exemplos numéricos concretos antes de deployar
+
+---
+
+## 043 — Redesign do painel AI Analysis — tags de reason codes, glossário, responsividade
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Melhoria (UX)
+**Status:** Implementado
+
+### Problema identificado
+
+O painel de análise AI mostrava reason codes como texto simples sem destaque visual. O usuário não conseguia entender o significado dos códigos (ex: `POISSON_VALIDATED`, `SUSPICIOUS_EV`) sem documentação externa. Layout não era responsivo para telas menores.
+
+### Correção aplicada
+
+1. **Reason code tags** — Tags coloridas com ícones: verde (positivo), azul (info), laranja (warning), vermelho (danger)
+2. **SUSPICIOUS_EV visual** — EV mostrado com ~~strikethrough~~ quando suspeito
+3. **Aba Glossário** — 25 termos explicados com busca, cobrindo toda a terminologia do sistema
+4. **Responsivo** — Media queries CSS para mobile (stacked), tablet, laptop, monitor 27"
+
+### Lição aprendida
+
+1. Reason codes são inúteis sem contexto visual — tags coloridas tornam a informação acionável
+2. Glossário integrado evita que o usuário precise consultar documentação externa
+
+---
+
+## 044 — Filtro de redundância 1X2/DC + filtro de corredor Over/Under
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Média (poluição visual + confusão do usuário)
+**Status:** Corrigido
+
+### Problema identificado
+
+3 problemas na apresentação de mercados:
+1. **Label DC quebrado** — `homeTeam` retornava como dict `{'N/EMP)` em vez de string
+2. **1X2 + DC redundância** — Quando `Home (1X2)` e `Home ou Empate (DC)` apareciam juntos, o usuário via informação redundante
+3. **Corredor Over/Under** — `Over 2.5` + `Under 3.5` formam um "corredor" que confunde mais que ajuda
+
+### Correção aplicada
+
+1. **DC label fix** — `homeTeam` tratado como dict (extrai nome) ou string
+2. **Filtro 1X2/DC** — Quando ambos existem para o mesmo lado, mantém apenas o de maior probabilidade
+3. **Filtro de corredor** — Quando `Over X.5` e `Under (X+1).5` coexistem, mantém apenas o de maior probabilidade
+
+### Lição aprendida
+
+1. Mercados redundantes diluem a atenção do apostador — menos é mais
+2. Dados de entrada (ex: `homeTeam`) podem ser string ou dict dependendo da fonte — sempre normalizar
+
+---
+
+## 045 — EV% real com sinal e cor no dashboard
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Média (informação enganosa)
+**Status:** Corrigido
+
+### Problema identificado
+
+O dashboard mostrava sempre "EV+" genérico com `odd_minima`, sem indicar o valor real do Expected Value calculado pelo pipeline v2. O usuário não conseguia diferenciar um EV de 2% de um EV de 25%.
+
+### Correção aplicada
+
+1. **EV% real** — Mostra o valor exato do EV calculado pelo pipeline (ex: "EV 12.3%")
+2. **Cor semântica** — Verde (EV ≥ 5%), amarelo (0-5%), vermelho (negativo)
+3. **Fallback** — "Odd min: X.XX" quando EV não disponível (pipeline legado)
+4. **Tooltip** — Mostra tanto EV% quanto odd_minima para referência
+
+### Lição aprendida
+
+1. Mostrar "EV+" sem valor é como mostrar "lucro" sem o montante — inútil para tomada de decisão
+
+---
+
+## 046 — Enriquecimento massivo do prompt Mistral (+40 campos)
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/ai/match_analysis_service.py`
+**Severidade:** Alta (análise AI superficial)
+**Status:** Implementado
+
+### Problema identificado
+
+O prompt enviado ao Mistral continha apenas estatísticas básicas (~10 campos). Dados como cartões, faltas, clean sheets, porcentagens de time, médias da liga e potenciais de escanteios estavam disponíveis no record mas não eram incluídos no prompt.
+
+### Correção aplicada
+
+Adicionados ~40 novos campos ao prompt:
+1. **Por time:** cartões/jogo, faltas/jogo, clean sheet %, FTS %, BTTS %, Over 2.5 %, win %, xG against, shots on target, avg total goals
+2. **Liga:** médias de corners, cartões, faltas, clean sheets, Over 2.5 %, xG
+3. **Contexto:** posição na liga, potenciais de escanteio (O8.5/9.5/10.5), home advantage %, gols home/away split
+4. **Instrução atualizada:** prompt agora exige análise de escanteios e cartões
+
+### Lição aprendida
+
+1. IA com dados pobres produz análises genéricas — quanto mais contexto relevante, melhor a revisão
+2. Campos disponíveis mas não enviados são desperdício de dados já pagos (API)
+
+---
+
+## 047 — Auditoria prioriza causa raiz (lambda) sobre sintomas (thresholds)
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/ai/prompt_templates.py`, `backend/routes/ai_analysis.py`
+**Severidade:** Alta (correções automáticas erradas)
+**Status:** Corrigido
+
+### Problema identificado
+
+O sistema de auditoria pós-jogo ajustava thresholds quando a verdadeira causa do erro era o lambda (projeção base). Corrigir thresholds quando o lambda está errado é tratar o sintoma, não a doença — e pode piorar previsões futuras.
+
+### Correção aplicada
+
+1. **Priorização de causa raiz:** Prompt de auditoria agora instrui: lambda > pesos > thresholds
+2. **Bloqueio de correções agressivas:** Mudanças de threshold > 15% são bloqueadas (indicam problema de lambda)
+3. **Dados de corners e cartões reais** incluídos no resultado de auditoria para validação
+4. **Endpoint `/correction/revert`** — Permite reverter correções incorretas
+5. **Batch audit** atualizado com mesmas regras de priorização
+
+### Lição aprendida
+
+1. Auto-correção sem hierarquia de causa raiz pode criar feedback loops destrutivos
+2. Sempre oferecer mecanismo de revert para correções automáticas
+
+---
+
+## 048 — Proxy Next.js para endpoint de revert de correções
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `frontend/next/src/app/api/ai/correction/revert/route.ts`
+**Severidade:** Baixa (infraestrutura)
+**Status:** Implementado
+
+### Problema identificado
+
+O endpoint `/correction/revert` criado em #047 só era acessível diretamente no backend Python. O frontend Next.js (deployado no Vercel) não conseguia chamá-lo por CORS e por estar em domínio diferente.
+
+### Correção aplicada
+
+1. **Proxy route** — `POST /api/ai/correction/revert` no Next.js que repassa para o backend Python via `PY_BACKEND_URL`
+
+### Lição aprendida
+
+1. Todo endpoint backend novo precisa de proxy correspondente no Next.js quando o frontend é servido por domínio diferente (Vercel)
 
 ---
 
