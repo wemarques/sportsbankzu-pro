@@ -6,12 +6,15 @@ import psycopg2
 SQLITE_DB = os.getenv("SQLITE_DB", "audit.db")
 
 POSTGRES_CONFIG = {
-    "host": os.getenv("PGHOST", "seu_host_postgres"),
-    "database": os.getenv("PGDATABASE", "audit_db"),
-    "user": os.getenv("PGUSER", "seu_usuario"),
-    "password": os.getenv("PGPASSWORD", "sua_senha"),
+    "host": os.getenv("PGHOST"),
+    "database": os.getenv("PGDATABASE", "postgres"),
+    "user": os.getenv("PGUSER"),
+    "password": os.getenv("PGPASSWORD"),
     "port": int(os.getenv("PGPORT", "5432")),
 }
+
+if not POSTGRES_CONFIG["host"]:
+    raise ValueError("PGHOST not set. Export PGHOST, PGUSER, PGPASSWORD first.")
 
 
 def migrate_sqlite_to_postgres():

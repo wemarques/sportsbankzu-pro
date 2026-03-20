@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query
+from datetime import datetime, timezone
 import os
 
 router = APIRouter(tags=["health"])
@@ -6,6 +7,46 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@router.get("/health/db")
+async def db_health():
+    """Check PostgreSQL / SQLite connectivity and return status."""
+    from backend.audit import _use_postgres, _pg_connect, _db_path
+
+    result: dict = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pg_host_set": bool(os.getenv("PGHOST")),
+        "database_url_set": bool(os.getenv("DATABASE_URL")),
+    }
+
+    if _use_postgres():
+        result["backend"] = "postgresql"
+        try:
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            cur.close()
+            conn.close()
+            result["status"] = "ok"
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = f"{type(e).__name__}: {e}"
+    else:
+        result["backend"] = "sqlite"
+        result["path"] = _db_path()
+        try:
+            import sqlite3
+            conn = sqlite3.connect(_db_path())
+            conn.execute("SELECT 1")
+            conn.close()
+            result["status"] = "ok"
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = f"{type(e).__name__}: {e}"
+
+    return result
 
 
 @router.get("/health/diag")

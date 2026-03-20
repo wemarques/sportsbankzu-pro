@@ -2,12 +2,15 @@ import os
 import psycopg2
 
 DB_CONFIG = {
-    "host": os.getenv("PGHOST", "seu_host_postgres"),
-    "database": os.getenv("PGDATABASE", "audit_db"),
-    "user": os.getenv("PGUSER", "seu_usuario"),
-    "password": os.getenv("PGPASSWORD", "sua_senha"),
+    "host": os.getenv("PGHOST"),
+    "database": os.getenv("PGDATABASE", "postgres"),
+    "user": os.getenv("PGUSER"),
+    "password": os.getenv("PGPASSWORD"),
     "port": int(os.getenv("PGPORT", "5432")),
 }
+
+if not DB_CONFIG["host"]:
+    raise ValueError("PGHOST not set. Export PGHOST, PGUSER, PGPASSWORD first.")
 
 conn = psycopg2.connect(**DB_CONFIG)
 cursor = conn.cursor()
