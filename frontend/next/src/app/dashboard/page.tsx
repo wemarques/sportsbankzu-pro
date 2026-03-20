@@ -15,6 +15,8 @@ import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorre
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
 import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
+import LeagueConfidenceBadge, { ConfidenceLegend } from "@/components/LeagueConfidenceBadge";
+import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
 import type { EmptyStateVariant } from "@/components/EmptyState";
@@ -611,6 +613,7 @@ export default function Dashboard() {
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
+  const leagueClassifications = useLeagueClassifications();
   const [shareBusy, setShareBusy] = useState<"copy" | "whatsapp" | null>(null);
   const [appVersion, setAppVersion] = useState(VERSION_FALLBACK);
   const [combinadas, setCombinadas] = useState<CombinadasData | null>(null);
@@ -1971,6 +1974,8 @@ export default function Dashboard() {
                 />
               )}
 
+              {!loading && leagueGroups.length > 0 && <ConfidenceLegend />}
+
               {!loading && leagueGroups.map((group, groupIdx) => {
                 const isCaptureTarget = group.leagueId === leagueIdForCapture;
                 const isBrazilian = group.leagueId === "brazil-serie-a" || group.leagueId === "brazil-serie-b";
@@ -1994,6 +1999,14 @@ export default function Dashboard() {
                       <span className="st-league-flag">{group.countryFlag}</span>
                       <span className="st-league-name">
                         {group.country ? `${group.country} - ` : ""}{group.leagueName}
+                        {leagueClassifications[group.leagueId] && (
+                          <LeagueConfidenceBadge
+                            classification={leagueClassifications[group.leagueId].classification}
+                            accuracy={leagueClassifications[group.leagueId].accuracy}
+                            brier={leagueClassifications[group.leagueId].brier}
+                            nSamples={leagueClassifications[group.leagueId].n_samples}
+                          />
+                        )}
                         <span className="st-league-count"> ({group.matches.length})</span>
                         {group.matches.some((m) => m.status === "live") && (
                           <span className="st-league-live-badge">

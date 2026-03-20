@@ -455,6 +455,132 @@
   color: var(--st-text);
 }
 
+/* ---- LEAGUE CONFIDENCE BADGE ---- */
+.league-confidence-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.league-confidence-badge:hover .confidence-tooltip {
+  display: block;
+}
+
+.confidence-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 14px;
+  white-space: nowrap;
+  z-index: 1000;
+  font-size: 12px;
+  color: #ccc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  margin-bottom: 6px;
+}
+
+.confidence-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #333;
+}
+
+.confidence-bars {
+  display: flex;
+  gap: 2px;
+}
+
+.confidence-bars .bar {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: #333;
+  transition: background 0.2s;
+}
+
+/* ML_ACTIVE */
+.confidence-badge--ai .bar.active {
+  background: #00ff88;
+}
+.confidence-badge--ai .confidence-label {
+  color: #00ff88;
+}
+
+/* POISSON */
+.confidence-badge--st .bar.active {
+  background: #ffa726;
+}
+.confidence-badge--st .confidence-label {
+  color: #ffa726;
+}
+
+/* DEACTIVATED */
+.confidence-badge--bs .bar.active {
+  background: #666;
+}
+.confidence-badge--bs .confidence-label {
+  color: #666;
+}
+
+.confidence-label {
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+}
+
+/* ---- CONFIDENCE LEGEND ---- */
+.confidence-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #888;
+  border-bottom: 1px solid var(--st-border);
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-bars {
+  display: flex;
+  gap: 2px;
+}
+
+.legend-bars .bar {
+  width: 10px;
+  height: 3px;
+  border-radius: 1px;
+  background: #333;
+}
+
+.legend-bars--ai .bar.active {
+  background: #00ff88;
+}
+.legend-bars--st .bar.active {
+  background: #ffa726;
+}
+.legend-bars--bs .bar.active {
+  background: #666;
+}
+
 /* ---- MATCH ROW ---- */
 .st-match-row {
   display: flex;
