@@ -183,14 +183,7 @@ class Counter(Synchronous):
         attributes: Optional[Attributes] = None,
         context: Optional[Context] = None,
     ) -> None:
-        """Records an increment to the counter.
-
-        Args:
-            amount: The amount to increment the counter by. Must be non-negative.
-            attributes: Optional set of attributes to associate with the measurement.
-            context: Optional context to associate with the measurement. If not
-                provided, the current context is used.
-        """
+        pass
 
 
 class NoOpCounter(Counter):
@@ -241,18 +234,7 @@ class UpDownCounter(Synchronous):
         attributes: Optional[Attributes] = None,
         context: Optional[Context] = None,
     ) -> None:
-        """Records an increment or decrement to the counter.
-
-        Unlike `Counter`, the ``amount`` may be negative, allowing the
-        instrument to track values that go up and down (e.g. number of
-        active requests, queue depth).
-
-        Args:
-            amount: The amount to add to the counter. May be positive or negative.
-            attributes: Optional set of attributes to associate with the measurement.
-            context: Optional context to associate with the measurement. If not
-                provided, the current context is used.
-        """
+        pass
 
 
 class NoOpUpDownCounter(UpDownCounter):
@@ -394,20 +376,7 @@ class Histogram(Synchronous):
         attributes: Optional[Attributes] = None,
         context: Optional[Context] = None,
     ) -> None:
-        """Records a measurement.
-
-        Used to report measurements that are likely to be statistically
-        meaningful, such as request durations, payload sizes, or any value
-        for which a distribution (e.g. percentiles) is useful.
-
-        Args:
-            amount: The measurement to record. Should be non-negative in most
-                cases; negative values are only meaningful when the histogram
-                is used to track signed deltas.
-            attributes: Optional set of attributes to associate with the measurement.
-            context: Optional context to associate with the measurement. If not
-                provided, the current context is used.
-        """
+        pass
 
 
 class NoOpHistogram(Histogram):
@@ -517,18 +486,7 @@ class Gauge(Synchronous):
         attributes: Optional[Attributes] = None,
         context: Optional[Context] = None,
     ) -> None:
-        """Records the current value of the gauge.
-
-        The gauge reports the last recorded value when observed. It is
-        intended for non-additive measurements where only the current
-        value matters (e.g. CPU utilisation percentage, room temperature).
-
-        Args:
-            amount: The current value to record.
-            attributes: Optional set of attributes to associate with the measurement.
-            context: Optional context to associate with the measurement. If not
-                provided, the current context is used.
-        """
+        pass
 
 
 class NoOpGauge(Gauge):

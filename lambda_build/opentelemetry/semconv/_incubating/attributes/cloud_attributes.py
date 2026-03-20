@@ -67,8 +67,6 @@ The following well-known definitions MUST be used if you set this attribute and 
 
 
 class CloudPlatformValues(Enum):
-    AKAMAI_CLOUD_COMPUTE = "akamai_cloud.compute"
-    """Akamai Cloud Compute."""
     ALIBABA_CLOUD_ECS = "alibaba_cloud_ecs"
     """Alibaba Cloud Elastic Compute Service."""
     ALIBABA_CLOUD_FC = "alibaba_cloud_fc"
@@ -103,8 +101,6 @@ class CloudPlatformValues(Enum):
     """Azure App Service."""
     AZURE_OPENSHIFT = "azure.openshift"
     """Azure Red Hat OpenShift."""
-    GCP_AGENT_ENGINE = "gcp.agent_engine"
-    """Google Vertex AI Agent Engine."""
     GCP_BARE_METAL_SOLUTION = "gcp_bare_metal_solution"
     """Google Bare Metal Solution (BMS)."""
     GCP_COMPUTE_ENGINE = "gcp_compute_engine"
@@ -119,8 +115,6 @@ class CloudPlatformValues(Enum):
     """Google Cloud App Engine (GAE)."""
     GCP_OPENSHIFT = "gcp_openshift"
     """Red Hat OpenShift on Google Cloud."""
-    HETZNER_CLOUD_SERVER = "hetzner.cloud_server"
-    """Server on Hetzner Cloud."""
     IBM_CLOUD_OPENSHIFT = "ibm_cloud_openshift"
     """Red Hat OpenShift on IBM Cloud."""
     ORACLE_CLOUD_COMPUTE = "oracle_cloud_compute"
@@ -133,13 +127,9 @@ class CloudPlatformValues(Enum):
     """Tencent Cloud Elastic Kubernetes Service (EKS)."""
     TENCENT_CLOUD_SCF = "tencent_cloud_scf"
     """Tencent Cloud Serverless Cloud Function (SCF)."""
-    VULTR_CLOUD_COMPUTE = "vultr.cloud_compute"
-    """Vultr Cloud Compute."""
 
 
 class CloudProviderValues(Enum):
-    AKAMAI_CLOUD = "akamai_cloud"
-    """Akamai Cloud."""
     ALIBABA_CLOUD = "alibaba_cloud"
     """Alibaba Cloud."""
     AWS = "aws"
@@ -150,13 +140,9 @@ class CloudProviderValues(Enum):
     """Google Cloud Platform."""
     HEROKU = "heroku"
     """Heroku Platform as a Service."""
-    HETZNER = "hetzner"
-    """Hetzner."""
     IBM_CLOUD = "ibm_cloud"
     """IBM Cloud."""
     ORACLE_CLOUD = "oracle_cloud"
     """Oracle Cloud Infrastructure (OCI)."""
     TENCENT_CLOUD = "tencent_cloud"
     """Tencent Cloud."""
-    VULTR = "vultr"
-    """Vultr."""

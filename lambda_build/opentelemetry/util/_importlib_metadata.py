@@ -36,7 +36,7 @@ def _original_entry_points_cached():
     return original_entry_points()
 
 
-def entry_points(**params) -> EntryPoints:
+def entry_points(**params):
     """Replacement for importlib_metadata.entry_points that caches getting all the entry points.
 
     That part can be very slow, and OTel uses this function many times."""

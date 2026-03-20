@@ -15,7 +15,9 @@ import {
   AlertTriangle,
   Layers,
   Link2,
+  FileText,
 } from "lucide-react";
+import AuditReportCard from "./AuditReportCard";
 import type {
   BatchAuditResult,
   BatchAuditCorrection,
@@ -386,6 +388,7 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [matchesExpanded, setMatchesExpanded] = useState(false);
+  const [view, setView] = useState<"detail" | "report">("detail");
 
   const ev = result.model_evaluation;
   const corrections = ev?.recommended_corrections ?? [];
@@ -419,6 +422,43 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
         </div>
 
         <div className="mdc-batch-audit__body">
+          {/* View toggle */}
+          {result.audited_matches > 0 && (
+            <div style={{ display: "flex", gap: 4, padding: "12px 16px 4px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <button
+                onClick={() => setView("detail")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
+                  background: view === "detail" ? "rgba(0,255,136,0.12)" : "transparent",
+                  border: view === "detail" ? "1px solid rgba(0,255,136,0.3)" : "1px solid transparent",
+                  borderRadius: 6, color: view === "detail" ? "#00ff88" : "#888",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                }}
+              >
+                <BarChart3 size={14} /> Detalhado
+              </button>
+              <button
+                onClick={() => setView("report")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
+                  background: view === "report" ? "rgba(0,255,136,0.12)" : "transparent",
+                  border: view === "report" ? "1px solid rgba(0,255,136,0.3)" : "1px solid transparent",
+                  borderRadius: 6, color: view === "report" ? "#00ff88" : "#888",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                }}
+              >
+                <FileText size={14} /> Report Card
+              </button>
+            </div>
+          )}
+
+          {/* Report Card view */}
+          {view === "report" && result.audited_matches > 0 && (
+            <div style={{ padding: "16px 0" }}>
+              <AuditReportCard data={result} />
+            </div>
+          )}
+
           {/* Empty / error state */}
           {(!result.audited_matches || result.status === "error") && (
             <div className="mdc-batch-audit__empty">
@@ -427,7 +467,7 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
             </div>
           )}
 
-          {result.audited_matches > 0 && (
+          {result.audited_matches > 0 && view === "detail" && (
             <>
               {/* Summary cards */}
               <div className="mdc-batch-audit__summary-cards">
