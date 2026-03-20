@@ -16,7 +16,8 @@ logger = logging.getLogger("sportsbankzu.ai.client")
 # Transient HTTP status codes that warrant a retry
 _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 3
-_BACKOFF_BASE = 1.5  # seconds
+_BACKOFF_BASE = 2.0  # seconds
+_SDK_TIMEOUT = 60  # seconds — avoid cold-start timeouts on Lambda
 
 
 class MistralClient:
@@ -25,7 +26,7 @@ class MistralClient:
             load_dotenv()
         self.api_key = os.getenv("MISTRAL_API_KEY")
         self.model = model
-        self.client = Mistral(api_key=self.api_key) if (self.api_key and Mistral) else None
+        self.client = Mistral(api_key=self.api_key, timeout_ms=_SDK_TIMEOUT * 1000) if (self.api_key and Mistral) else None
 
     def _fix_mojibake(self, text: str) -> str:
         if not text:
@@ -40,7 +41,11 @@ class MistralClient:
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:
         """Check if an exception is a transient error worth retrying."""
-        exc_str = str(exc)
+        exc_str = str(exc).lower()
+        if "timeout" in exc_str or "timed out" in exc_str:
+            return True
+        if "connection" in exc_str and ("reset" in exc_str or "refused" in exc_str or "error" in exc_str):
+            return True
         for code in _RETRYABLE_STATUSES:
             if str(code) in exc_str:
                 return True

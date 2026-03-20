@@ -440,6 +440,13 @@
   border-color: rgba(255, 68, 68, 0.1);
 }
 
+.mdc-prognostico__sep {
+  color: #444;
+  font-weight: 400;
+  user-select: text;
+  flex-shrink: 0;
+}
+
 .mdc-prognostico__status {
   font-size: 0.6rem;
   font-weight: 900;

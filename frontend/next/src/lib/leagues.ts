@@ -330,6 +330,19 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
+    id: "brazil-copa-do-brasil",
+    name: "Copa do Brasil",
+    country: "Brasil",
+    countryFlag: "🇧🇷",
+    logo: "/logos/copa-do-brasil.png",
+    season: "2026",
+    totalMatches: 80,
+    matchesToday: 0,
+    apiEndpoints: {
+      footystats: "/brazil/copa-do-brasil",
+    },
+  },
+  {
     id: "denmark-superliga",
     name: "Superliga",
     country: "Dinamarca",

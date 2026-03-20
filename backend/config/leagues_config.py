@@ -42,6 +42,7 @@ LEAGUE_ID_ALIASES = {
     "czech-first-league": "czech-first-league",
     "colombia-primera-a": "colombian-primera-a",
     "mexico-liga-mx": "liga-mx",
+    "brazil-copa-do-brasil": "copa-do-brasil",
 }
 
 LEAGUES_CONFIG = [
@@ -73,6 +74,8 @@ LEAGUES_CONFIG = [
     {"country": "Brazil", "name": "Serie A", "id": "brasileirao-serie-a"},
     {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b",
      "alt_names": ["brasileirão série b", "campeonato brasileiro série b"]},
+    {"country": "Brazil", "name": "Copa do Brasil", "id": "copa-do-brasil",
+     "alt_names": ["copa do brasil", "brazil cup"]},
 
     # OUTROS EUROPA
     {"country": "Netherlands", "name": "Eredivisie", "id": "eredivisie"},
@@ -150,6 +153,7 @@ API_FOOTBALL_LEAGUE_IDS = {
     # BRAZIL
     "brasileirao-serie-a": 71,
     "brasileirao-serie-b": 72,
+    "copa-do-brasil": 73,
     # NETHERLANDS
     "eredivisie": 88,
     "eerste-divisie": 89,
@@ -208,7 +212,7 @@ def get_api_football_league_id(league_id: str) -> int | None:
 # European leagues (Premier League 2025/26) started Aug 2025, season param = 2025.
 CALENDAR_YEAR_LEAGUES = {
     # BRAZIL
-    "brasileirao-serie-a", "brasileirao-serie-b",
+    "brasileirao-serie-a", "brasileirao-serie-b", "copa-do-brasil",
     # ARGENTINA (Apertura/Clausura within calendar year)
     "primera-division",
     # JAPAN

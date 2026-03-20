@@ -490,28 +490,47 @@ REGRA ANTI-VIES BTTS (CRITICO — LEIA COM ATENCAO):
         return prompt
 
     async def _call_mistral_api(self, prompt: str) -> str:
-        """Chama a API da MISTRAL via httpx"""
+        """Chama a API da MISTRAL via httpx with retry on transient errors."""
         if not httpx or not self.api_key:
             raise RuntimeError("httpx not available or API key missing")
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 2048,
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+        import asyncio
+
+        max_retries = 2
+        retry_delay = 3.0
+        last_exc = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": self.model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.3,
+                            "max_tokens": 2048,
+                        },
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+            except Exception as e:
+                last_exc = e
+                err_str = str(e).lower()
+                is_transient = any(k in err_str for k in ("timeout", "timed out", "429", "500", "502", "503", "504", "connection"))
+                if is_transient and attempt < max_retries:
+                    logger.warning(f"[MistralAnalysis] Transient error (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    raise
+        raise last_exc  # type: ignore[misc]
 
     @staticmethod
     def _sanitize_key_points(key_points: List[str], odds: Dict) -> List[str]:

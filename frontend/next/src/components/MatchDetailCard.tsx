@@ -694,40 +694,59 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   <span className={`mdc-prognostico__status mdc-prognostico__status--${statusClass}`}>
                                     {displayStatus === "NEUTRO_QUALIFICADO" ? "NEUTRO-Q" : displayStatus}
                                   </span>
+                                  <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
                                   <span className="mdc-prognostico__market">{pred.mercado}</span>
+                                  <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
                                   <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
                                   {/* Show fair odd and book odd */}
                                   {pred.book_odd != null && (
-                                    <span className="mdc-prognostico__ev" title="Odd da casa">
-                                      Odd: {pred.book_odd.toFixed(2)}
-                                    </span>
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span className="mdc-prognostico__ev" title="Odd da casa">
+                                        Odd: {pred.book_odd.toFixed(2)}
+                                      </span>
+                                    </>
                                   )}
                                   {pred.fair_odd != null && !pred.book_odd && (
-                                    <span className="mdc-prognostico__ev" style={{ opacity: 0.7 }} title="Fair odd (sem odd real)">
-                                      Fair: {pred.fair_odd.toFixed(2)}
-                                    </span>
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span className="mdc-prognostico__ev" style={{ opacity: 0.7 }} title="Fair odd (sem odd real)">
+                                        Fair: {pred.fair_odd.toFixed(2)}
+                                      </span>
+                                    </>
                                   )}
                                   {/* Show EV when available */}
                                   {pred.ev != null && (
-                                    <span
-                                      className="mdc-prognostico__ev"
-                                      style={{
-                                        color: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "#ff4444" : pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
-                                        textDecoration: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "line-through" : "none",
-                                        opacity: pred.reason_codes?.includes("SUSPICIOUS_EV") ? 0.6 : 1,
-                                      }}
-                                      title={pred.reason_codes?.includes("SUSPICIOUS_EV") ? "EV suspeito \u2014 prov\u00E1vel diverg\u00EAncia entre fonte de probabilidade e odds" : `EV: ${(pred.ev * 100).toFixed(1)}%`}
-                                    >
-                                      EV: {(pred.ev * 100).toFixed(1)}%
-                                    </span>
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span
+                                        className="mdc-prognostico__ev"
+                                        style={{
+                                          color: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "#ff4444" : pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
+                                          textDecoration: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "line-through" : "none",
+                                          opacity: pred.reason_codes?.includes("SUSPICIOUS_EV") ? 0.6 : 1,
+                                        }}
+                                        title={pred.reason_codes?.includes("SUSPICIOUS_EV") ? "EV suspeito \u2014 prov\u00E1vel diverg\u00EAncia entre fonte de probabilidade e odds" : `EV: ${(pred.ev * 100).toFixed(1)}%`}
+                                      >
+                                        EV: {(pred.ev * 100).toFixed(1)}%
+                                      </span>
+                                    </>
                                   )}
                                   {/* Show stake when available */}
                                   {pred.stake != null && pred.stake > 0 && (
-                                    <span className="mdc-prognostico__ev" style={{ color: "#c4a0ff" }} title="Stake sugerida">
-                                      R$ {pred.stake.toFixed(2)}
-                                    </span>
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span className="mdc-prognostico__ev" style={{ color: "#c4a0ff" }} title="Stake sugerida">
+                                        R$ {pred.stake.toFixed(2)}
+                                      </span>
+                                    </>
                                   )}
-                                  {pred.alerta && <span className="mdc-prognostico__alert">{pred.alerta}</span>}
+                                  {pred.alerta && (
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span className="mdc-prognostico__alert">{pred.alerta}</span>
+                                    </>
+                                  )}
                                   {/* Market reference signal badge */}
                                   {pred.marketReferenceSignal && (
                                     <span

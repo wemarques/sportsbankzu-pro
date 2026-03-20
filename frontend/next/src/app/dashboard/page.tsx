@@ -2240,25 +2240,38 @@ export default function Dashboard() {
                                   <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`}>
                                     {pred.status}
                                   </span>
+                                  <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-market">{pred.mercado}</span>
+                                  <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
                                   {/* EV display — show real EV% when available, fallback to odd_minima */}
                                   {pred.ev != null ? (
-                                    <span
-                                      className="st-prediction-odd"
-                                      style={{
-                                        color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
-                                      }}
-                                      title={`EV: ${(pred.ev * 100).toFixed(1)}% | Odd m\u00EDn: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
-                                    >
-                                      EV: {pred.ev >= 0 ? "+" : ""}{(pred.ev * 100).toFixed(1)}%
-                                    </span>
+                                    <>
+                                      <span className="st-prediction-sep" aria-hidden="true">|</span>
+                                      <span
+                                        className="st-prediction-odd"
+                                        style={{
+                                          color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
+                                        }}
+                                        title={`EV: ${(pred.ev * 100).toFixed(1)}% | Odd m\u00EDn: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
+                                      >
+                                        EV: {pred.ev >= 0 ? "+" : ""}{(pred.ev * 100).toFixed(1)}%
+                                      </span>
+                                    </>
                                   ) : pred.odd_minima != null ? (
-                                    <span className="st-prediction-odd" style={{ opacity: 0.7 }} title="Odd m\u00EDnima para EV positivo">
-                                      Odd m\u00EDn: {pred.odd_minima.toFixed(2)}
-                                    </span>
+                                    <>
+                                      <span className="st-prediction-sep" aria-hidden="true">|</span>
+                                      <span className="st-prediction-odd" style={{ opacity: 0.7 }} title="Odd m\u00EDnima para EV positivo">
+                                        Odd m\u00EDn: {pred.odd_minima.toFixed(2)}
+                                      </span>
+                                    </>
                                   ) : null}
-                                  {pred.alerta && <span className="st-prediction-alert">△ {pred.alerta}</span>}
+                                  {pred.alerta && (
+                                    <>
+                                      <span className="st-prediction-sep" aria-hidden="true">|</span>
+                                      <span className="st-prediction-alert">{pred.alerta}</span>
+                                    </>
+                                  )}
                                 </div>
                               ))}
                             </div>

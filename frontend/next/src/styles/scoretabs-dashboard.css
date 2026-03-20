@@ -1499,6 +1499,13 @@
   color: #ff4444;
 }
 
+.st-prediction-sep {
+  color: #555;
+  font-weight: 400;
+  user-select: text;
+  flex-shrink: 0;
+}
+
 .st-prediction-market {
   color: #ccc;
   font-weight: 500;
