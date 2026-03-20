@@ -1,8 +1,10 @@
-"""ML models for Over/Under and BTTS market predictions.
+"""ML models for binary market predictions.
 
 Extends the 1X2 ensemble with dedicated models for:
-    - Over/Under 1.5, 2.5, 3.5, 4.5 goals
+    - Over/Under 0.5, 1.5, 2.5, 3.5, 4.5 goals
     - BTTS (Both Teams To Score)
+    - Corners Over 4.5 through 11.5
+    - Cards Over 0.5 through 5.5
 
 Uses the same feature engineering pipeline but with binary classification
 targets instead of 3-class.
@@ -35,7 +37,7 @@ def _poisson_pmf(k: int, lam: float) -> float:
 
 
 def _poisson_over_prob(threshold: float, expected_total: float) -> float:
-    """P(goals > threshold) using Poisson CDF on total goals."""
+    """P(total > threshold) using Poisson CDF."""
     k = int(threshold)  # e.g. 2 for threshold 2.5
     cdf = sum(_poisson_pmf(i, expected_total) for i in range(k + 1))
     return 1.0 - cdf
@@ -49,14 +51,123 @@ def _poisson_btts_prob(lambda_home: float, lambda_away: float) -> float:
 
 _MODELS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".ml_models"
 
-# Market definitions: (market_name, target_extractor_fn_name)
+# ─── Market definitions: 19 markets across 3 categories ───
 MARKET_CONFIGS = {
-    "over15": {"threshold": 1.5, "description": "Over 1.5 goals"},
-    "over25": {"threshold": 2.5, "description": "Over 2.5 goals"},
-    "over35": {"threshold": 3.5, "description": "Over 3.5 goals"},
-    "over45": {"threshold": 4.5, "description": "Over 4.5 goals"},
-    "btts": {"threshold": None, "description": "Both Teams To Score"},
+    # === GOALS (6 markets) ===
+    "over05": {"threshold": 0.5, "category": "goals", "description": "Over 0.5 goals"},
+    "over15": {"threshold": 1.5, "category": "goals", "description": "Over 1.5 goals"},
+    "over25": {"threshold": 2.5, "category": "goals", "description": "Over 2.5 goals"},
+    "over35": {"threshold": 3.5, "category": "goals", "description": "Over 3.5 goals"},
+    "over45": {"threshold": 4.5, "category": "goals", "description": "Over 4.5 goals"},
+    "btts": {"threshold": None, "category": "goals", "description": "Both Teams To Score"},
+
+    # === CORNERS (8 markets) ===
+    "corners_over45": {"threshold": 4.5, "category": "corners", "description": "Over 4.5 corners"},
+    "corners_over55": {"threshold": 5.5, "category": "corners", "description": "Over 5.5 corners"},
+    "corners_over65": {"threshold": 6.5, "category": "corners", "description": "Over 6.5 corners"},
+    "corners_over75": {"threshold": 7.5, "category": "corners", "description": "Over 7.5 corners"},
+    "corners_over85": {"threshold": 8.5, "category": "corners", "description": "Over 8.5 corners"},
+    "corners_over95": {"threshold": 9.5, "category": "corners", "description": "Over 9.5 corners"},
+    "corners_over105": {"threshold": 10.5, "category": "corners", "description": "Over 10.5 corners"},
+    "corners_over115": {"threshold": 11.5, "category": "corners", "description": "Over 11.5 corners"},
+
+    # === CARDS (6 markets) ===
+    "cards_over05": {"threshold": 0.5, "category": "cards", "description": "Over 0.5 cards"},
+    "cards_over15": {"threshold": 1.5, "category": "cards", "description": "Over 1.5 cards"},
+    "cards_over25": {"threshold": 2.5, "category": "cards", "description": "Over 2.5 cards"},
+    "cards_over35": {"threshold": 3.5, "category": "cards", "description": "Over 3.5 cards"},
+    "cards_over45": {"threshold": 4.5, "category": "cards", "description": "Over 4.5 cards"},
+    "cards_over55": {"threshold": 5.5, "category": "cards", "description": "Over 5.5 cards"},
 }
+
+
+def _extract_total_corners(match: Dict[str, Any]) -> Optional[int]:
+    """Extract total corners from match data, trying multiple field name conventions."""
+    for key in ("totalCorner", "total_corners", "corners_total"):
+        val = match.get(key)
+        if val is not None and val != -1:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                pass
+
+    # Sum home + away corners
+    home_c = None
+    away_c = None
+    for hk in ("team_a_corners", "homeCorners", "home_team_corner_count", "home_corners"):
+        val = match.get(hk)
+        if val is not None and val != -1:
+            try:
+                home_c = int(val)
+                break
+            except (ValueError, TypeError):
+                pass
+    for ak in ("team_b_corners", "awayCorners", "away_team_corner_count", "away_corners"):
+        val = match.get(ak)
+        if val is not None and val != -1:
+            try:
+                away_c = int(val)
+                break
+            except (ValueError, TypeError):
+                pass
+
+    if home_c is not None and away_c is not None:
+        return home_c + away_c
+    return None
+
+
+def _extract_total_cards(match: Dict[str, Any]) -> Optional[int]:
+    """Extract total cards (yellow + red) from match data."""
+    # Try direct total
+    for key in ("totalCards", "total_cards", "cards_total"):
+        val = match.get(key)
+        if val is not None and val != -1:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                pass
+
+    # Sum from yellow + red per team
+    total = 0
+    found_any = False
+    for key in (
+        "team_a_yellow_cards", "team_b_yellow_cards",
+        "team_a_red_cards", "team_b_red_cards",
+    ):
+        val = match.get(key)
+        if val is not None and val != -1:
+            try:
+                total += int(val)
+                found_any = True
+            except (ValueError, TypeError):
+                pass
+
+    if found_any:
+        return total
+
+    # Try home_cards + away_cards (combined yellow+red)
+    home_cards = None
+    away_cards = None
+    for hk in ("team_a_cards_num", "homeCards", "home_cards"):
+        val = match.get(hk)
+        if val is not None and val != -1:
+            try:
+                home_cards = int(val)
+                break
+            except (ValueError, TypeError):
+                pass
+    for ak in ("team_b_cards_num", "awayCards", "away_cards"):
+        val = match.get(ak)
+        if val is not None and val != -1:
+            try:
+                away_cards = int(val)
+                break
+            except (ValueError, TypeError):
+                pass
+
+    if home_cards is not None and away_cards is not None:
+        return home_cards + away_cards
+    return None
 
 
 def _extract_market_target(
@@ -67,27 +178,49 @@ def _extract_market_target(
 
     Returns 1 if the market outcome occurred, 0 otherwise, None if data missing.
     """
-    home_goals = match.get("homeGoalCount", match.get("home_goals"))
-    away_goals = match.get("awayGoalCount", match.get("away_goals"))
-
-    if home_goals is None or away_goals is None:
-        return None
-    try:
-        hg = int(home_goals)
-        ag = int(away_goals)
-    except (ValueError, TypeError):
+    config = MARKET_CONFIGS.get(market)
+    if config is None:
         return None
 
-    if hg < 0 or ag < 0:
-        return None
-
-    total = hg + ag
+    category = config.get("category", "goals")
 
     if market == "btts":
+        home_goals = match.get("homeGoalCount", match.get("home_goals"))
+        away_goals = match.get("awayGoalCount", match.get("away_goals"))
+        if home_goals is None or away_goals is None:
+            return None
+        try:
+            hg = int(home_goals)
+            ag = int(away_goals)
+        except (ValueError, TypeError):
+            return None
+        if hg < 0 or ag < 0:
+            return None
         return 1 if hg > 0 and ag > 0 else 0
 
-    config = MARKET_CONFIGS.get(market)
-    if config and config["threshold"] is not None:
+    if category == "goals":
+        home_goals = match.get("homeGoalCount", match.get("home_goals"))
+        away_goals = match.get("awayGoalCount", match.get("away_goals"))
+        if home_goals is None or away_goals is None:
+            return None
+        try:
+            total = int(home_goals) + int(away_goals)
+        except (ValueError, TypeError):
+            return None
+        if total < 0:
+            return None
+        return 1 if total > config["threshold"] else 0
+
+    if category == "corners":
+        total = _extract_total_corners(match)
+        if total is None or total < 0:
+            return None
+        return 1 if total > config["threshold"] else 0
+
+    if category == "cards":
+        total = _extract_total_cards(match)
+        if total is None or total < 0:
+            return None
         return 1 if total > config["threshold"] else 0
 
     return None
@@ -117,25 +250,40 @@ def _compute_poisson_brier(
 ) -> Optional[float]:
     """Compute Poisson-based Brier score on the validation set.
 
-    Uses the same goal-average features that the Poisson fallback uses
-    in production, so the comparison is fair: ML vs the actual fallback.
+    Uses rolling-average features as lambda estimates for a fair
+    comparison: ML vs the actual Poisson fallback.
     """
+    config = MARKET_CONFIGS.get(market)
+    if config is None:
+        return None
+
+    category = config.get("category", "goals")
+
+    # Determine which feature columns to use as lambda estimates
+    if category == "goals" or market == "btts":
+        home_key = "home_goals_scored_avg_r5"
+        away_key = "away_goals_scored_avg_r5"
+    elif category == "corners":
+        home_key = "home_corners_avg_r5"
+        away_key = "away_corners_avg_r5"
+    elif category == "cards":
+        home_key = "home_cards_avg_r5"
+        away_key = "away_cards_avg_r5"
+    else:
+        return None
+
     home_avg_idx = None
     away_avg_idx = None
     for i, f in enumerate(feature_names):
-        if f == "home_goals_scored_avg_r5":
+        if f == home_key:
             home_avg_idx = i
-        elif f == "away_goals_scored_avg_r5":
+        elif f == away_key:
             away_avg_idx = i
 
     if home_avg_idx is None or away_avg_idx is None:
         return None
 
     poisson_probs = np.zeros(len(y_val), dtype=np.float64)
-
-    config = MARKET_CONFIGS.get(market)
-    if config is None:
-        return None
 
     for i in range(len(y_val)):
         lam_h = max(X_val[i, home_avg_idx], 0.1)
@@ -148,6 +296,48 @@ def _compute_poisson_brier(
             poisson_probs[i] = _poisson_over_prob(config["threshold"], expected_total)
 
     return float(np.mean((poisson_probs - y_val) ** 2))
+
+
+def get_features_for_market(
+    market: str,
+    all_feature_names: List[str],
+) -> List[str]:
+    """Select category-specific feature subset for a market.
+
+    Goals markets use all features. Corners and cards use targeted subsets
+    to improve signal-to-noise ratio.
+    """
+    config = MARKET_CONFIGS.get(market)
+    if config is None:
+        return all_feature_names
+
+    category = config.get("category", "goals")
+
+    if category == "goals":
+        # Goals: use all features (established pipeline)
+        return all_feature_names
+
+    # Base features used by all categories
+    base_keywords = ["elo", "implied_odds"]
+
+    if category == "corners":
+        specific_keywords = ["corners", "possession", "shots", "xg"]
+    elif category == "cards":
+        specific_keywords = ["cards", "fouls", "elo_diff"]
+    else:
+        return all_feature_names
+
+    selected = []
+    keywords = base_keywords + specific_keywords
+    for f in all_feature_names:
+        if any(kw in f for kw in keywords):
+            selected.append(f)
+
+    # Need minimum 5 features for training
+    if len(selected) < 5:
+        return all_feature_names
+
+    return selected
 
 
 def train_market_model(
@@ -181,6 +371,18 @@ def train_market_model(
     if len(y_valid) < 50:
         logger.warning(f"Insufficient data for {market}: {len(y_valid)} samples")
         return {"status": "insufficient_data", "market": market}
+
+    # Check positive rate — skip if extreme (no variance to learn)
+    positive_rate = float(np.mean(y_valid))
+    if positive_rate < 0.02 or positive_rate > 0.98:
+        logger.warning(
+            f"Extreme positive rate for {market}: {positive_rate:.3f} — skipping"
+        )
+        return {
+            "status": "insufficient_data",
+            "market": market,
+            "reason": f"extreme positive rate: {positive_rate:.3f}",
+        }
 
     # Train/val split (chronological)
     split = int(len(X_valid) * 0.85)
@@ -231,9 +433,6 @@ def train_market_model(
     # Brier scores
     brier_ml = float(np.mean((ensemble_probs - y_val) ** 2))
     accuracy = float(np.mean((ensemble_probs >= 0.5).astype(int) == y_val))
-
-    # Class distribution
-    positive_rate = float(np.mean(y_valid))
 
     # Quality gate: compute Poisson Brier on the same validation split
     brier_poisson = None
@@ -302,11 +501,40 @@ def train_all_markets(
                 pad = np.full(len(X) - len(y_market), -1, dtype=np.int32)
                 y_market = np.concatenate([pad, y_market])
 
+            # Check data availability — skip if all targets are -1
+            valid_count = int(np.sum(y_market >= 0))
+            if valid_count < 50:
+                config = MARKET_CONFIGS[market]
+                cat = config.get("category", "goals")
+                logger.info(
+                    f"Skipping {market} for {league_id}: only {valid_count} "
+                    f"valid samples (category={cat}, likely missing data)"
+                )
+                results[market] = {
+                    "status": "insufficient_data",
+                    "market": market,
+                    "reason": f"only {valid_count} valid samples",
+                }
+                continue
+
+            # Select category-specific features
+            market_features = feature_names
+            if feature_names:
+                market_features = get_features_for_market(market, feature_names)
+
+            # If using subset, select only those columns from X
+            if market_features and feature_names and market_features != feature_names:
+                indices = [feature_names.index(f) for f in market_features if f in feature_names]
+                X_market = X[:, indices]
+            else:
+                X_market = X
+                market_features = feature_names
+
             result = train_market_model(
-                X, y_market,
+                X_market, y_market,
                 sample_weights=sample_weights,
                 market=market,
-                feature_names=feature_names,
+                feature_names=market_features,
             )
             results[market] = result
 
@@ -317,7 +545,7 @@ def train_all_markets(
                     pickle.dump({
                         "rf": result["rf"],
                         "xgb": result["xgb"],
-                        "feature_names": feature_names,
+                        "feature_names": market_features,
                         "brier_ml": result["brier_ml"],
                         "brier_poisson": result["brier_poisson"],
                         "beats_poisson": result["beats_poisson"],

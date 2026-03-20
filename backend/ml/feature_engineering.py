@@ -314,6 +314,8 @@ def build_features_from_matches(
                 features[f"{side}_shots_avg{suffix}"] = rolling.get_rolling_avg(team, "shots", w)
                 features[f"{side}_corners_avg{suffix}"] = rolling.get_rolling_avg(team, "corners", w)
                 features[f"{side}_possession_avg{suffix}"] = rolling.get_rolling_avg(team, "possession", w)
+                features[f"{side}_cards_avg{suffix}"] = rolling.get_rolling_avg(team, "cards", w)
+                features[f"{side}_fouls_avg{suffix}"] = rolling.get_rolling_avg(team, "fouls", w)
 
         # Volatility (std of goals over last 5 games)
         features["home_goals_std"] = rolling.get_rolling_std(home_team, "goals_scored", 5)

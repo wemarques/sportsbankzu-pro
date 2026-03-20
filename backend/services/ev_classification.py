@@ -73,6 +73,12 @@ DEFAULT_THRESHOLDS = {
         "safe_edge": 0.06,    "neutro_edge": 0.02,
         "min_quality": 0.45,
     },
+    "Cards": {
+        "safe_prob": 0.75,    "neutro_prob": 0.60,
+        "safe_ev": 0.08,      "neutro_ev": 0.02,
+        "safe_edge": 0.06,    "neutro_edge": 0.02,
+        "min_quality": 0.45,
+    },
 }
 
 # Minimum thresholds for NEUTRO qualificado (eligible for multiples)
@@ -651,6 +657,8 @@ def _market_category(market_type: str) -> str:
         return "Double Chance"
     if market_type in ("Corners",):
         return "Corners"
+    if market_type in ("Cards",):
+        return "Cards"
     return "1X2"  # fallback
 
 

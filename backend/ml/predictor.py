@@ -320,11 +320,29 @@ def predict_markets(
         from backend.ml.market_models import predict_market as predict_market_model
 
         market_mapping = {
+            # Goals
+            "over05": "over05Prob",
             "over15": "over15Prob",
             "over25": "over25Prob",
             "over35": "over35Prob",
             "over45": "over45Prob",
             "btts": "bttsProb",
+            # Corners
+            "corners_over45": "cornersOver45Prob",
+            "corners_over55": "cornersOver55Prob",
+            "corners_over65": "cornersOver65Prob",
+            "corners_over75": "cornersOver75Prob",
+            "corners_over85": "cornersOver85Prob",
+            "corners_over95": "cornersOver95Prob",
+            "corners_over105": "cornersOver105Prob",
+            "corners_over115": "cornersOver115Prob",
+            # Cards
+            "cards_over05": "cardsOver05Prob",
+            "cards_over15": "cardsOver15Prob",
+            "cards_over25": "cardsOver25Prob",
+            "cards_over35": "cardsOver35Prob",
+            "cards_over45": "cardsOver45Prob",
+            "cards_over55": "cardsOver55Prob",
         }
         ml_markets_used = []
         for market_key, prob_key in market_mapping.items():
@@ -358,7 +376,7 @@ def predict_markets(
     try:
         from backend.services.math_service import poisson_cdf
 
-        for threshold, key in [(1.5, "over15"), (2.5, "over25"), (3.5, "over35"), (4.5, "over45")]:
+        for threshold, key in [(0.5, "over05"), (1.5, "over15"), (2.5, "over25"), (3.5, "over35"), (4.5, "over45")]:
             prob_key = f"{key}Prob"
             if prob_key not in result:  # don't overwrite ML model predictions
                 over_prob = 1.0 - poisson_cdf(int(threshold), expected_total)
@@ -369,6 +387,26 @@ def predict_markets(
             if prob_key not in result:
                 under_prob = poisson_cdf(int(threshold), expected_total)
                 result[prob_key] = round(under_prob * 100, 1)
+
+        # Poisson fallback for corners
+        home_corners_avg = features.get("home_corners_avg_r5", 4.5)
+        away_corners_avg = features.get("away_corners_avg_r5", 4.0)
+        expected_corners = home_corners_avg + away_corners_avg
+        for threshold in [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]:
+            key = f"cornersOver{str(threshold).replace('.', '')}Prob"
+            if key not in result:
+                over_prob = 1.0 - poisson_cdf(int(threshold), expected_corners)
+                result[key] = round(over_prob * 100, 1)
+
+        # Poisson fallback for cards
+        home_cards_avg = features.get("home_cards_avg_r5", 1.8)
+        away_cards_avg = features.get("away_cards_avg_r5", 1.8)
+        expected_cards = home_cards_avg + away_cards_avg
+        for threshold in [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]:
+            key = f"cardsOver{str(threshold).replace('.', '')}Prob"
+            if key not in result:
+                over_prob = 1.0 - poisson_cdf(int(threshold), expected_cards)
+                result[key] = round(over_prob * 100, 1)
 
     except ImportError:
         pass
