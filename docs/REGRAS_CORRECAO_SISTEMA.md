@@ -2018,6 +2018,7 @@ A política **não** restringe o sistema a "só SAFE":
 
 ---
 
+<<<<<<< HEAD
 ## 029 — Pipeline ML: 8 melhorias de qualidade + temporal decay + quality gate Poisson
 
 **Data:** 2026-03-17
@@ -2238,6 +2239,203 @@ Extraída toda a lógica de merge de placar para `live_score_merge.py` com:
 2. **Merge de múltiplas fontes exige prioridade explícita e monotonia** — Com 3-4 fontes de placar, regras ad-hoc em diferentes pontos do código geram comportamento imprevisível. Uma função centralizada com prioridade declarada e guarda monotônica é mais robusta e testável.
 
 3. **Observabilidade retroativa é cara** — Sem logs de diagnóstico, o bug de "placar travado" exigiu análise manual do código para identificar qual fonte estava prevalecendo. Campos de observabilidade (`scoreSourceFinal`, `scoreConflictDetected`) permitem diagnosticar problemas semelhantes em produção sem code review.
+
+---
+
+## 033 — Corner Betting Governance Framework (3 modelos + estados operacionais)
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/modeling/corners/` (novo diretório completo — `predictor.py`, `operational_states.py`, `champion_selector.py`, `data_quality.py`, `features.py`, `poisson_model.py`, `negative_binomial.py`, `ml_regression.py`, `price_ladder.py`, `benchmarks.py`, `artifacts.py`, `mistral_review.py`, `retrain.py`)
+**Severidade:** Evolução arquitetural
+**Status:** Implementado
+
+### Problema identificado
+
+O sistema não tinha framework de governança para mercados de escanteios. As previsões usavam apenas probabilidades crus da FootyStats sem calibração, sem modelos próprios e sem controle de qualidade por linha.
+
+### Correção aplicada
+
+1. **3 modelos de corners** — Poisson, Negative Binomial, ML Regression — com champion/challenger selection por linha
+2. **Operational states** — ACTIVE/RESTRICTED/SUSPENDED por linha (4.5-12.5), baseado em qualidade de dados e performance do modelo
+3. **Data quality scoring** — Tier system (GOLD/SILVER/BRONZE) com coverage score
+4. **Price ladder** — Fair odds + edge por linha, separando Over e Under
+5. **Mistral review** — Camada contextual que pode reduzir confiança ou forçar NO_BET
+6. **Benchmarks** — Cada modelo benchmarkado contra os outros + FootyStats baseline
+
+---
+
+## 034 — Corners Engine v2 — motor bidirecional Over + Under
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/modeling/corners/predictor.py`, `backend/modeling/corners/price_ladder.py`, `backend/services/ev_classification.py`
+**Severidade:** Evolução
+**Status:** Implementado
+
+### Problema identificado
+
+O sistema só gerava previsões para Over em escanteios. Under corners não era calculado, perdendo oportunidades de mercado com edge real.
+
+### Correções aplicadas
+
+1. **Bidirectional** — Cada linha (4.5-12.5) agora gera probabilidades Over E Under
+2. **Full ladder** — Expandido de 4 linhas (8.5-11.5) para 17 linhas (4.5-12.5)
+3. **CI/CD fixes** — Resolvidos bugs de integração que quebravam tests na primeira versão
+
+---
+
+## 035 — Ativação do Pipeline V2 (6 módulos M1-M6)
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/modeling/xg_filter.py`, `backend/main.py`, `backend/services/market_service.py`, `backend/services/safe_bets_service.py`, `backend/ai/prompt_templates.py`
+**Severidade:** Evolução (ativação de pipeline)
+**Status:** Implementado
+
+### Problema identificado
+
+O pipeline v2 com EV classification, calibração, corners v2 e chaos detector estava implementado mas não ativado. O fluxo principal ainda usava a função legada `selecionar_mercados()`.
+
+### Correções aplicadas (6 módulos)
+
+| # | Melhoria | Alteração |
+|---|----------|-----------|
+| M1 | Pipeline v2 no fixtures | `fixtures_service.py` chama `selecionar_mercados_v2` |
+| M2 | Chaos detector | `ev_classification.py` rebaixa SAFE→NEUTRO em jogos caóticos |
+| M3 | xG filter bidirecional | `xg_filter.py` ajusta lambda UP para times azarados (0.7x) |
+| M4 | Deprecação legada | `main.py` redireciona para v2; market_service.py com deprecation docs |
+| M5 | 3 novas Safe Bets | Under 2.5, BTTS YES, Over 2.5 + enum + league_dna |
+| M6 | 4 prompts Mistral | Prompts especializados por mercado (1X2, O/U, BTTS, Corners) |
+
+---
+
+## 036 — Filtro de NO_BET e ordenação por classificação no v2
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/market_service.py`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+O pipeline v2 retornava mercados com classificação NO_BET para o frontend, inflando a lista de mercados. O status final mostrava "NO_BET" em vez de "NEUTRO" mesmo quando havia mercados viáveis.
+
+### Correção aplicada
+
+1. **Filtro NO_BET** — `selecionar_mercados_v2()` agora filtra mercados com classificação NO_BET antes de retornar
+2. **Ordenação** — Mercados ordenados por classificação (SAFE > SAFE* > NEUTRO_QUALIFICADO > NEUTRO), mercado principal = primeiro da lista
+3. **Resultado**: 17 mercados inúteis → 6 mercados viáveis, `stats["status"] = "NEUTRO"`
+
+---
+
+## 037 — Deduplicação de mercados de escanteios
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/market_service.py`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+O pipeline v2 retornava 4+ linhas de escanteios (Over 8.5, 9.5, 10.5, 11.5) quando deveria retornar apenas a melhor. A função legada escolhia UMA linha, mas o v2 emitia todas.
+
+### Correções aplicadas
+
+1. **`_pick_best()`** — Seleciona melhor mercado por grupo (classificação, depois odd)
+2. **`_dedup_market_groups()`** — Mantém no máximo 1 corner, 1 goals-over, 1 goals-under
+3. **Aplicado em ambos os paths** — v2 e legado usam a mesma função de dedup
+
+---
+
+## 038 — Deduplicação de mercados de gols (Over/Under)
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/market_service.py`
+**Severidade:** Média
+**Status:** Corrigido
+
+### Problema identificado
+
+Assim como corners, múltiplas linhas de gols (Over 2.5 + 3.5 + 4.5, Under 2.5 + 3.5 + 4.5) apareciam no output. O frontend deveria mostrar apenas a melhor linha por direção.
+
+### Correção aplicada
+
+A função `_dedup_market_groups()` foi estendida para separar goals-over e goals-under em grupos distintos, mantendo apenas o melhor de cada.
+
+---
+
+## 039 — Propagação de stadium/venue do API-Football para records
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/fixtures_service.py`
+**Severidade:** Baixa
+**Status:** Corrigido
+
+### Problema identificado
+
+O campo `stadium` da FootyStats frequentemente vinha vazio. O API-Football tinha a informação, mas não era propagada para os records do match.
+
+### Correção aplicada
+
+Enrich de stadium/venue a partir do API-Football quando o campo está vazio no FootyStats. Ambos os campos (`stadium` e `venue`) são populados para compatibilidade frontend.
+
+---
+
+## 040 — Odds reais Under + API-Football enrichment + Mistral data enrichment
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/services/market_service.py`, `backend/ai/match_analysis_service.py`, `backend/modeling/corners/mistral_review.py`
+**Severidade:** Alta (bug de EV inflado)
+**Status:** Corrigido
+
+### Problema identificado
+
+3 problemas interconectados:
+1. **Odds Under infladas** — Derivadas de Over sem overround, gerando EV >100% (ex: 139.9% para Under 2.5)
+2. **API-Football não integrada** — `extract_best_odds()` existia mas ninguém a chamava
+3. **Mistral incompleta** — Não recebia xG, shots, corners, chaos, injuries, lineups
+
+### Correções aplicadas (4 blocos)
+
+1. **BLOCO 1 (Bug Fix)** — Mapeamento de `odds_ft_under25` no data_mapper; odd real preferida sobre derivada; overround 5% (gols) e 6% (corners) no fallback
+2. **BLOCO 2 (API-Football)** — Enrich de odds, injuries, lineups com degradação silenciosa
+3. **BLOCO 3 (Mistral)** — Prompt expandido com +15 campos (xG, shots, posse, corners, chaos, injuries, predictions, reason codes)
+4. **BLOCO 4 (Corners review)** — Odds reais vs derivadas no prompt de review
+
+### Lição aprendida
+
+1. Sempre aplicar overround ao derivar odds de Under (5% gols, 6% corners)
+2. Se EV > 50%, a odd provavelmente está errada — investigar antes de confiar
+3. Field name mismatch (`odds_under_25` vs `odds_ft_under25`) é causa silenciosa de dados perdidos
+
+---
+
+## 041 — PostgreSQL UNIQUE constraints para ON CONFLICT no audit
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/audit.py`
+**Severidade:** Alta (audit falhando em produção)
+**Status:** Corrigido
+
+### Problema identificado
+
+O audit estava falhando no RDS com erro: `there is no unique or exclusion constraint matching the ON CONFLICT specification`. As tabelas `audit_results` e `thresholds` foram criadas sem constraints UNIQUE/PRIMARY KEY, mas os INSERT usavam `ON CONFLICT`.
+
+### Causa raiz
+
+O `CREATE TABLE IF NOT EXISTS` incluía `PRIMARY KEY` no DDL, mas como as tabelas já existiam no RDS (criadas por versão anterior SEM a constraint), o IF NOT EXISTS pulava a criação e a constraint nunca era adicionada.
+
+### Correção aplicada
+
+1. **`_ensure_pg_unique_constraints()`** — Nova função chamada no `init_db()` para PostgreSQL
+2. **Deduplicação prévia** — `DELETE ... USING ... WHERE ctid <` remove rows duplicadas antes de criar o index
+3. **`CREATE UNIQUE INDEX IF NOT EXISTS`** — Idempotente, seguro para rodar múltiplas vezes
+4. **Removido PRIMARY KEY do CREATE TABLE (PG)** — Evita conflito com tabelas existentes; UNIQUE INDEX serve o mesmo propósito
+
+### Lição aprendida
+
+1. `CREATE TABLE IF NOT EXISTS` NÃO altera tabelas existentes — não adianta adicionar PRIMARY KEY se a tabela já existe sem ela
+2. Para corrigir constraints em produção: deduplicar → criar UNIQUE INDEX → ON CONFLICT funciona
+3. Sempre verificar `pg_indexes` antes de assumir que a constraint existe
+>>>>>>> 5d754aa (docs: add entries #029-#041 to REGRAS_CORRECAO_SISTEMA.md)
 
 ---
 
