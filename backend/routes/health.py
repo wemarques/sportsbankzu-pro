@@ -49,6 +49,70 @@ async def db_health():
     return result
 
 
+@router.get("/health/db/diag")
+async def db_diagnostics():
+    """Query audit tables for diagnostic info."""
+    from backend.audit import _use_postgres, _pg_connect
+
+    if not _use_postgres():
+        return {"error": "Not using PostgreSQL"}
+
+    try:
+        conn = _pg_connect()
+        cur = conn.cursor()
+
+        # Table row counts
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")
+        tables = {}
+        for (tname,) in cur.fetchall():
+            cur.execute(f'SELECT COUNT(*) FROM "{tname}"')
+            tables[tname] = cur.fetchone()[0]
+
+        # Leagues in audit_results
+        leagues = []
+        if "audit_results" in tables:
+            cur.execute("SELECT DISTINCT league FROM audit_results ORDER BY league")
+            leagues = [r[0] for r in cur.fetchall()]
+
+            # Columns in audit_results
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'audit_results' ORDER BY ordinal_position")
+            audit_cols = [r[0] for r in cur.fetchall()]
+
+            # Confidence stats — column may not exist
+            if "confidence" in audit_cols:
+                cur.execute("SELECT AVG(confidence), MIN(confidence), MAX(confidence) FROM audit_results WHERE confidence IS NOT NULL")
+                conf = cur.fetchone()
+            else:
+                conf = (None, None, None)
+        else:
+            conf = (None, None, None)
+
+        # Sample recent audit
+        recent = []
+        audit_cols_list = audit_cols if "audit_results" in tables else []
+        if "audit_results" in tables:
+            # Use timestamp column (may be named created_at or timestamp)
+            ts_col = "created_at" if "created_at" in audit_cols else "timestamp" if "timestamp" in audit_cols else None
+            order = f"ORDER BY {ts_col} DESC" if ts_col else ""
+            cur.execute(f"SELECT * FROM audit_results {order} LIMIT 3")
+            cols = [d[0] for d in cur.description]
+            for row in cur.fetchall():
+                recent.append(dict(zip(cols, [str(v) if v is not None else None for v in row])))
+
+        cur.close()
+        conn.close()
+
+        return {
+            "tables": tables,
+            "leagues": leagues,
+            "audit_columns": audit_cols_list,
+            "confidence": {"avg": conf[0], "min": conf[1], "max": conf[2]},
+            "recent_audits": recent,
+        }
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 @router.get("/health/diag")
 async def diagnostics(league: str = Query("premier-league")):
     """Diagnostic endpoint to debug FootyStats API integration."""
