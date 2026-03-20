@@ -76,8 +76,114 @@ Antes de propor ou implementar qualquer correção:
 ## Conventions
 
 - Language: Portuguese (pt-BR) for UI, English for code and comments
-- Supported leagues: 22+ European and South American leagues
-- Prediction markets: 1X2, Over/Under (1.5-4.5), BTTS, Double Chance
-- Status levels: SAFE, NEUTRO, ALERTA
+- Supported leagues: 22+ European and South American leagues + Copa do Brasil
+- Prediction markets: 1X2, Over/Under (0.5-4.5), BTTS, Double Chance, Corners (4.5-12.5), Cards (0.5-5.5)
+- Classification levels: SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET (see REGRAS #028)
 - Regimes: NORMAL, HIPER-OFENSIVA
 - Sempre que solicitado a realizar análises financeiras ou previsões esportivas, utilize as ferramentas mapeadas no Antigravity localizadas em `backend/services` e `backend/modeling`. Não tente simular a lógica de cálculo manualmente.
+
+## Leitura Obrigatória
+
+Antes de qualquer alteração no sistema, LEIA:
+
+1. **`docs/REGRAS_CORRECAO_SISTEMA.md`** — Registro completo de todas as correções e decisões do sistema (49 entradas). Contém causa raiz, correções aplicadas e lições aprendidas de cada mudança. Se a regra já existe, NÃO reimplemente.
+2. **Este arquivo (CLAUDE.md)** — Especialmente as seções "Estado Atual do Pipeline" e "Proibições".
+
+Se o arquivo REGRAS tiver uma entrada sobre o problema que você está investigando, leia-a inteira antes de propor qualquer correção.
+
+## Estado Atual do Pipeline (Março 2026)
+
+> **ATENÇÃO:** Esta seção reflete o estado real em produção. Atualizar sempre que uma REGRA nova for adicionada.
+
+### Pipeline Ativo: V2 de 5 Camadas (REGRAS #028, ativado em #035)
+
+```
+FootyStats API + API-Football v3
+    │
+    ▼
+build_records_from_matches (fixtures_service.py)
+    ├─► calcular_lambda_jogo (lambda_calculator.py) — com deflation 0.85 ATIVO (#043)
+    ├─► xg_filter BIDIRECIONAL (#035-M3)
+    ├─► chaos_detector com SAFE blocker (#035-M2)
+    ├─► Poisson matrix → todos mercados de gols (#028)
+    ├─► BTTS fusion: FootyStats 40% + Poisson 30% + team_avg 30% — com deflation 0.80 (#043)
+    ├─► Corners Engine v2 bidirecional 4.5-12.5 (#033) — com redução 20% (#043)
+    ├─► 1X2: implied_probs(odds) [+ ML ensemble quando ativo]
+    │
+    ▼
+selecionar_mercados_v2 (market_service.py) ← ATIVO desde #035-M1
+    ├─► ev_classification: 4 níveis (#028) — SAFE desabilitado via circuit breaker (#043)
+    ├─► market_reference_signal: capping por qualidade (#031)
+    ├─► bankroll_engine: Quarter Kelly com caps (#028)
+    ├─► correlation_matrix: anti-redundância (#028)
+    │
+    ▼
+API → Next.js 14 (Vercel) + Streamlit
+```
+
+### Alertas Críticos Ativos
+
+| Alerta | REGRA | Critério de Remoção |
+|--------|-------|---------------------|
+| **SAFE desabilitado** (circuit breaker) | #043 | 3 auditorias com accuracy > 50%, Brier < 0.25, lambda error < 0.5 |
+| **Lambda deflation 0.85** (O/U) | #043 | Lambda error < 0.5 por 3 rodadas |
+| **BTTS deflation 0.80** | #043 | BTTS accuracy > 55% por 3 rodadas |
+| **Corners redução 20%** | #043 | Corners accuracy > 50% por 3 rodadas |
+| **Thresholds endurecidos** | #042 | Backtesting por liga validar valores |
+
+### Parâmetros Calibráveis (todos com pesos FIXOS — precisam backtesting por liga)
+
+| Módulo | Parâmetro | Valor | Arquivo |
+|--------|-----------|-------|---------|
+| Lambda (NORMAL) | temporada / últimos5 | 0.60 / 0.40 | lambda_calculator.py |
+| Lambda (HIPER) | temporada / últimos5 | 0.30 / 0.70 | lambda_calculator.py |
+| xG blend | λ / xG | 0.70 / 0.30 | fixtures_service.py |
+| BTTS fusion (3 fontes) | FS / Poisson / team_avg | 0.40 / 0.30 / 0.30 | fixtures_service.py |
+| Corners engine | direto / cruzado / liga | 0.60 / 0.30 / 0.10 | corners_engine.py |
+| Corners blend | FootyStats / Poisson | 0.60 / 0.40 | corners_engine.py |
+| Corners Under margin | overround | 6% | price_ladder.py |
+| Thresholds 1X2 | safe_prob / safe_ev | 62% / 8% | ev_classification.py |
+| Thresholds O/U | safe_prob / safe_ev | 75% / 6% | ev_classification.py |
+| Thresholds BTTS | safe_prob / safe_ev | 75% / 6% | ev_classification.py |
+| Thresholds DC | safe_prob / safe_ev | 82% / 4% | ev_classification.py |
+| Thresholds Corners | safe_prob / safe_ev | 72% / 8% | ev_classification.py |
+| Thresholds Cards | safe_prob / safe_ev | 75% / 8% | ev_classification.py |
+| NEUTRO-Q gate | min_ev / min_edge / min_prob | 5% / 3% / 50% | ev_classification.py |
+
+## Proibições
+
+1. **NÃO criar nomes de especificação fictícios** — Exemplo: "v5.5-ML" foi inventado por uma sessão anterior e propagado como se fosse real. Se não está no REGRAS, não existe.
+2. **NÃO alterar thresholds sem dados de auditoria** — Os thresholds atuais (#042) vieram de uma auditoria de 27 jogos. Qualquer mudança exige backtesting documentado.
+3. **NÃO reativar SAFE** sem 3 auditorias consecutivas com accuracy > 50% (#043).
+4. **NÃO remover deflations de lambda** sem lambda error < 0.5 por 3 rodadas (#043).
+5. **NÃO duplicar funções** — `main.py` tinha cópia de `selecionar_mercados_jogo` (deprecated em #035-M4). Verificar se a função já existe em services/ ou modeling/ antes de criar.
+6. **NÃO alterar o prompt Mistral** sem manter as 4 camadas de defesa anti-alucinação (#001, #002).
+7. **NÃO mergear PRs** sem registrar a alteração no `docs/REGRAS_CORRECAO_SISTEMA.md`.
+8. **NÃO assumir causa raiz** — Seguir as 7 regras de investigação obrigatória acima.
+
+## Registro de Alterações
+
+Toda alteração significativa DEVE ser registrada em `docs/REGRAS_CORRECAO_SISTEMA.md` seguindo o formato:
+
+```
+## NNN — Título descritivo
+
+**Data:** YYYY-MM-DD
+**Arquivos afetados:** lista de arquivos
+**Severidade:** Crítica / Alta / Média / Baixa
+**Status:** Corrigido / Implementado
+
+### Problema identificado
+(descrição do problema)
+
+### Causa raiz
+(análise da causa)
+
+### Correções aplicadas
+(lista de correções com camadas)
+
+### Lição aprendida
+(o que aprendemos para não repetir)
+```
+
+Se a alteração não justifica uma entrada no REGRAS (ex: typo, formatação), não precisa de registro. Mas qualquer mudança em lógica de cálculo, thresholds, pesos, pipeline, prompt Mistral, ou infraestrutura DEVE ter entrada.
