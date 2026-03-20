@@ -113,6 +113,87 @@ async def db_diagnostics():
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+@router.get("/health/safe-status")
+async def safe_status():
+    """Return SAFE circuit breaker state and reactivation metrics.
+
+    Reference: REGRAS #043 — circuit breaker SAFE.
+    """
+    from backend.services.ev_classification import SAFE_CIRCUIT_BREAKER_ENABLED
+    from backend.services.backtesting import evaluate_safe_reactivation, run_backtest
+
+    try:
+        reactivation = evaluate_safe_reactivation()
+        recent = run_backtest(days=7)
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}", "circuit_breaker_enabled": True}
+
+    return {
+        "circuit_breaker_enabled": SAFE_CIRCUIT_BREAKER_ENABLED,
+        "reactivation": reactivation,
+        "recent_metrics": {
+            "brier": recent.get("brier"),
+            "lambda_error": (recent.get("lambda_error") or {}).get("mean_error"),
+            "hit_rate": (recent.get("hit_rate") or {}).get("overall"),
+            "n_picks": recent.get("n_picks", 0),
+            "period_days": 7,
+        },
+        "deflations_active": {
+            "lambda_ou": 0.85,
+            "lambda_btts": 0.80,
+            "corners_reduction": 0.20,
+        },
+        "reference": "REGRAS #043",
+    }
+
+
+@router.get("/health/calibration-params")
+async def calibration_params():
+    """Return all current calibrable parameters.
+
+    Reference: CLAUDE.md section 'Parâmetros Calibráveis'.
+    """
+    from backend.modeling.lambda_calculator import PESOS_LAMBDA, LAMBDA_MIN, LAMBDA_MAX
+    from backend.services.ev_classification import (
+        DEFAULT_THRESHOLDS, NEUTRO_QUALIFICADO_THRESHOLDS, SAFE_CIRCUIT_BREAKER_ENABLED
+    )
+
+    return {
+        "lambda": {
+            "pesos": PESOS_LAMBDA,
+            "limits": {"min": LAMBDA_MIN, "max": LAMBDA_MAX},
+        },
+        "btts_fusion": {
+            "weights_3_sources": {"footystats": 0.40, "poisson": 0.30, "team_avg": 0.30},
+            "weights_2_sources": {"source1": 0.60, "source2": 0.40},
+            "note": "Fixed in fixtures_service.py — need per-league backtesting",
+        },
+        "corners": {
+            "direct_weight": 0.60,
+            "cross_weight": 0.30,
+            "league_weight": 0.10,
+            "blend_footystats": 0.60,
+            "blend_poisson": 0.40,
+            "under_margin": 0.06,
+            "note": "Fixed in corners_engine.py — need per-league backtesting",
+        },
+        "xg_blend": {
+            "lambda_weight": 0.70,
+            "xg_weight": 0.30,
+            "note": "Fixed in fixtures_service.py",
+        },
+        "thresholds": DEFAULT_THRESHOLDS,
+        "neutro_qualificado": NEUTRO_QUALIFICADO_THRESHOLDS,
+        "circuit_breaker": SAFE_CIRCUIT_BREAKER_ENABLED,
+        "deflations": {
+            "lambda_ou": 0.85,
+            "lambda_btts": 0.80,
+            "corners": -0.20,
+            "reference": "#043 — remove when criteria met",
+        },
+    }
+
+
 @router.get("/health/diag")
 async def diagnostics(league: str = Query("premier-league")):
     """Diagnostic endpoint to debug FootyStats API integration."""

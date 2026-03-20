@@ -1,6 +1,33 @@
+def _build_feedback_block(league: str) -> str:
+    """Build feedback loop block for prompts when historical accuracy data is available.
+
+    Reference: REGRAS #050 — Mistral feedback loop.
+    """
+    try:
+        from backend.audit import get_mistral_accuracy
+        accuracy = get_mistral_accuracy(league, days=30)
+        if not accuracy or accuracy.get("total_predictions", 0) < 10:
+            return ""
+        lines = [
+            f"\nHISTORICO DE ACERTOS DESTE SISTEMA (ultimos 30 dias, {league}):",
+            f"- Total de analises: {accuracy['total_predictions']}",
+            f"- Accuracy geral: {accuracy['overall_accuracy']:.0%}",
+        ]
+        for mkt, stats in accuracy.get("by_market", {}).items():
+            if stats.get("total", 0) >= 5:
+                lines.append(f"- {mkt}: {stats['accuracy']:.0%} ({stats['correct']}/{stats['total']})")
+        lines.append(
+            "Considere este historico ao calibrar sua confianca. "
+            "Se a accuracy esta baixa para um mercado especifico, seja mais conservador nesse mercado.\n"
+        )
+        return "\n".join(lines)
+    except Exception:
+        return ""  # Silent fallback — don't break analysis if DB unavailable
+
+
 class PromptTemplates:
     """Templates de prompts otimizados para análise de futebol e auditoria de cálculos."""
-    
+
     @staticmethod
     def context_analysis_prompt(home_team: str, away_team: str, news_summary: str, stats: dict) -> str:
         """Prompt para análise de contexto profundo."""

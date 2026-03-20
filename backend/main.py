@@ -145,6 +145,11 @@ try:
     app.include_router(_r_market_analysis.router)
 except Exception:
     pass
+try:
+    from backend.routes import backtesting as _r_backtesting
+    app.include_router(_r_backtesting.router, prefix="/api")
+except Exception:
+    pass
 
 def get_base_root() -> str:
     return os.getenv("FUTEBOL_ROOT") or os.getenv("DATA_ROOT") or r"C:\Users\wxamb\futebol"

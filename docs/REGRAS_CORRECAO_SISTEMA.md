@@ -2018,14 +2018,15 @@ A política **não** restringe o sistema a "só SAFE":
 
 ---
 
-<<<<<<< HEAD
-## 029 — Pipeline ML: 8 melhorias de qualidade + temporal decay + quality gate Poisson
+## 029 — ML pipeline improvements
 
 **Data:** 2026-03-17
 **Arquivos afetados:** `backend/ml/train_model.py`, `backend/ml/predictor.py`, `backend/ml/feature_engineering.py`, `backend/ml/market_models.py`, `backend/routes/ml.py`, `backend/cron_handler.py`, `cli/commands/ml.py`
 **Severidade:** Alta (evolução arquitetural ML)
 **Status:** Implementado
 **Commits:** `64fd2e6`, `23797a1`, `dd40f7d`, `614e603`
+
+**Alias:** Pipeline ML — 8 melhorias de qualidade + temporal decay + quality gate Poisson
 
 ### Problema identificado
 
@@ -2077,13 +2078,15 @@ O pipeline ML tinha múltiplas fraquezas que comprometiam a qualidade das previs
 
 ---
 
-## 030 — ML Ops: workflows de validação e promoção com auditoria completa
+## 030 — ML retrain validate + promote workflows
 
 **Data:** 2026-03-17
 **Arquivos afetados:** `.github/workflows/ml-retrain-validate.yml` (novo), `.github/workflows/ml-retrain-promote.yml` (novo), `scripts/retrain_validate.py` (novo), `.gitignore`
 **Severidade:** Evolução operacional
 **Status:** Implementado
-**Commits:** `91e998c`, `e469a7b`, `f617064`, `aaf46d6`, `697e515`
+**Commits:** `e469a7b`, `f617064`, `aaf46d6`, `697e515` (ver também `91e998c` — scaffold inicial do split validate/promote)
+
+**Alias:** ML Ops — workflows de validação e promoção com auditoria completa
 
 ### Problema identificado
 
@@ -2133,13 +2136,15 @@ O pipeline ML usava um workflow monolítico (`ml-retrain.yml`) que treinava e pu
 
 ---
 
-## 031 — Camada de governança Market Reference Signal
+## 031 — Market Reference Signal governance
 
 **Data:** 2026-03-17
 **Arquivos afetados:** `backend/services/market_reference_signal.py` (novo), `backend/services/market_service.py`, `backend/audit.py`, `backend/ai/prompt_templates.py`, `frontend/next/src/lib/api.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/components/BatchAuditPanel.tsx`, `tests/unit/test_market_reference_signal.py` (novo)
 **Severidade:** Alta (nova camada de governança)
 **Status:** Implementado
 **Commit:** `21ed430`
+
+**Alias:** Camada de governança Market Reference Signal
 
 ### Problema identificado
 
@@ -2189,13 +2194,15 @@ Novo serviço que computa um **sinal de qualidade estrutural** por liga+mercado 
 
 ---
 
-## 032 — Placar ao vivo travado em 0-0 para jogos em andamento (A-League, etc.)
+## 032 — Live score stuck at 0-0 + centralized merge
 
 **Data:** 2026-03-17
 **Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/footstats_client.py`, `backend/services/live_score_merge.py` (novo), `tests/unit/test_live_score_merge.py` (novo)
 **Severidade:** Alta
 **Status:** Corrigido
 **Commits:** `1d812c4`, `ff620b1`, `00b9c48`
+
+**Alias:** Placar ao vivo travado em 0-0 para jogos em andamento (A-League, etc.)
 
 ### Problema identificado
 
@@ -2242,374 +2249,520 @@ Extraída toda a lógica de merge de placar para `live_score_merge.py` com:
 
 ---
 
-## 033 — Corner Betting Governance Framework (3 modelos + estados operacionais)
+## 033 — Corners Engine v2: Motor bidirecional com ladder Over/Under 4.5-12.5
 
 **Data:** 2026-03-18
-**Arquivos afetados:** `backend/modeling/corners/` (novo diretório completo — `predictor.py`, `operational_states.py`, `champion_selector.py`, `data_quality.py`, `features.py`, `poisson_model.py`, `negative_binomial.py`, `ml_regression.py`, `price_ladder.py`, `benchmarks.py`, `artifacts.py`, `mistral_review.py`, `retrain.py`)
+**Arquivos afetados:** `backend/modeling/corners_engine.py` (reescrito), `backend/modeling/corners/price_ladder.py` (novo), `backend/modeling/corners/predictor.py` (atualizado)
 **Severidade:** Evolução arquitetural
 **Status:** Implementado
+**Commits:** `52d5f39`, `5bed500`, `64dfd6b`
+**PRs:** #126, #127
 
 ### Problema identificado
 
-O sistema não tinha framework de governança para mercados de escanteios. As previsões usavam apenas probabilidades crus da FootyStats sem calibração, sem modelos próprios e sem controle de qualidade por linha.
+O Corners Engine v1 era unidirecional — calculava apenas probabilidades Over (8.5, 9.5, 10.5, 11.5) usando Poisson com blend fixo de FootyStats potentials. Não existiam mercados Under de escanteios, e a cobertura de linhas era limitada.
 
-### Correção aplicada
+### Solução implementada
 
-1. **3 modelos de corners** — Poisson, Negative Binomial, ML Regression — com champion/challenger selection por linha
-2. **Operational states** — ACTIVE/RESTRICTED/SUSPENDED por linha (4.5-12.5), baseado em qualidade de dados e performance do modelo
-3. **Data quality scoring** — Tier system (GOLD/SILVER/BRONZE) com coverage score
-4. **Price ladder** — Fair odds + edge por linha, separando Over e Under
-5. **Mistral review** — Camada contextual que pode reduzir confiança ou forçar NO_BET
-6. **Benchmarks** — Cada modelo benchmarkado contra os outros + FootyStats baseline
+1. **Motor bidirecional** — Reescrita completa para gerar tanto Over quanto Under para cada linha, usando `1 - P(Over)` com ajuste de margem para derivar odds Under
+2. **Ladder expandido [4.5-12.5]** — Nova `price_ladder.py` que gera probabilidades para 9 linhas (4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5) em ambas direções
+3. **Overround consistente** — Fórmula de derivação Under: `1/(OVERROUND - implied_over)` com margem de 6%
+4. **CI/CD fixes** — Correções de imports e type errors que quebravam build
+
+### Lição aprendida
+
+Motor unidirecional (só Over) limita o universo de apostas e impede que o sistema identifique valor em mercados Under de escanteios, que frequentemente oferecem EV positivo em ligas defensivas.
 
 ---
 
-## 034 — Corners Engine v2 — motor bidirecional Over + Under
+## 034 — Corner Betting Governance Framework: 3 modelos candidatos + estados operacionais
 
-**Data:** 2026-03-18
-**Arquivos afetados:** `backend/modeling/corners/predictor.py`, `backend/modeling/corners/price_ladder.py`, `backend/services/ev_classification.py`
-**Severidade:** Evolução
+**Data:** 2026-03-17
+**Arquivos afetados:** `backend/modeling/corners/negative_binomial.py` (novo), `backend/modeling/corners/poisson_model.py` (novo), `backend/modeling/corners/ml_regression.py` (novo), `backend/modeling/corners/features.py` (novo), `backend/modeling/corners/benchmarks.py` (novo), `backend/modeling/corners/champion_selector.py` (novo), `backend/modeling/corners/operational_states.py` (novo)
+**Severidade:** Evolução arquitetural
 **Status:** Implementado
+**Commits:** `5771950`, `0ac2153`
+**PR:** #123
 
 ### Problema identificado
 
-O sistema só gerava previsões para Over em escanteios. Under corners não era calculado, perdendo oportunidades de mercado com edge real.
+O motor de escanteios usava apenas Poisson simples sem benchmarking formal, sem seleção de modelo por liga/linha, e sem estados operacionais graduados.
+
+### Solução implementada
+
+1. **3 modelos candidatos** — Negative Binomial (NB2, baseline primário), Poisson (baseline secundário), GBR Supervised Regression (candidato ML)
+2. **Benchmarking formal** (`benchmarks.py`) — Comparação por Brier Score, LogLoss, ECE, ROI simulado
+3. **Champion/fallback selection** (`champion_selector.py`) — Score composto seleciona melhor modelo por liga e por linha, com fallback automático
+4. **Estados operacionais graduados** (`operational_states.py`) — RESTRICTED → NEUTRAL → ACTIVE_GUARDED → ACTIVE, com promoção baseada em evidência acumulada
+5. **Feature engineering dedicado** (`features.py`) — Pipeline de features específicas para escanteios
+
+### Lição aprendida
+
+Governança formal de modelos (benchmark + seleção + estados operacionais) é necessária para prevenir publicação de modelos piores que o fallback. O padrão de champion/fallback por granularidade (liga×linha) permite que cada combinação use o melhor modelo disponível.
+
+---
+
+## 035 — Ativação do Pipeline V2: 6 módulos (M1-M6)
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/modeling/xg_filter.py`, `backend/main.py`, `backend/models/safe_bets.py`, `backend/ai/prompt_templates.py`, `backend/config/league_dna.py`
+**Severidade:** Alta (mudança de pipeline de produção)
+**Status:** Implementado
+**Commit:** `756139b`
+**PR:** #128
+
+### Problema identificado
+
+O Pipeline B (5 camadas, regra #028) estava implementado mas inativo. O `fixtures_service.py` ainda chamava `selecionar_mercados_jogo` (pipeline A legado). Além disso, o chaos detector não bloqueava picks SAFE, o xG filter era unidirecional (só penalizava SORTE_ALTA), e existia código duplicado no `main.py`.
+
+### Solução implementada — 6 módulos
+
+1. **M1: Switch para V2** — `fixtures_service.py` agora chama `selecionar_mercados_v2()` (ativa EV, calibração, corner governance)
+2. **M2: Chaos blocker** — Chaos detector agora rebaixa SAFE → NEUTRO para jogos caóticos
+3. **M3: xG bidirecional** — `xg_filter.py` agora ajusta lambda PARA CIMA para times com azar (xG >> gols), não apenas para baixo
+4. **M4: Remoção de duplicata** — `selecionar_mercados_jogo()` do `main.py` (linha 842) marcado como deprecated
+5. **M5: 3 novas estratégias Safe Bets** — Under 2.5, BTTS YES, Over 2.5
+6. **M6: Prompts Mistral especializados** — Prompts diferentes por família de mercado (gols, corners, cartões)
+
+### Lição aprendida
+
+Ativar o pipeline V2 requer ativação simultânea de todas as defesas (chaos blocker, xG bidirecional) para evitar que mercados de baixa qualidade sejam classificados como SAFE pelo novo pipeline.
+
+---
+
+## 036 — Deduplicação de mercados: corners, gols e filtro NO_BET
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `backend/services/market_service.py`, `backend/services/ev_classification.py`
+**Severidade:** Média
+**Status:** Implementado
+**Commits:** `199c4c3`, `29e2708`, `1bce85e`, `1e8ff74`
+**PRs:** #128, #129
+
+### Problema identificado
+
+O pipeline V2 gerava múltiplas linhas por família de mercado (ex: Over 8.5, 9.5, 10.5, 11.5 corners), todas aparecendo no dashboard. Isso sobrecarregava a UI e confundia o usuário. Além disso, mercados NO_BET apareciam na saída.
 
 ### Correções aplicadas
 
-1. **Bidirectional** — Cada linha (4.5-12.5) agora gera probabilidades Over E Under
-2. **Full ladder** — Expandido de 4 linhas (8.5-11.5) para 17 linhas (4.5-12.5)
-3. **CI/CD fixes** — Resolvidos bugs de integração que quebravam tests na primeira versão
+1. **Corner dedup** — Função compartilhada que mantém apenas a melhor linha por direção (melhor Over + melhor Under), aplicada em ambos os paths V2 e legacy
+2. **Goal dedup** — Mantém apenas melhor Over e melhor Under por jogo
+3. **NO_BET filter** — Mercados com classificação NO_BET removidos da saída final
+4. **Sort por classificação** — SAFE primeiro, depois NEUTRO_QUALIFICADO, depois NEUTRO
+
+### Lição aprendida
+
+Quando o pipeline gera múltiplas variantes do mesmo mercado, a UI precisa de uma camada de deduplicação que selecione a melhor opção. Sem isso, o volume de output cresce exponencialmente com o número de linhas.
 
 ---
 
-## 035 — Ativação do Pipeline V2 (6 módulos M1-M6)
+## 037 — Correção da fórmula de overround para Under + filtros de redundância
 
-**Data:** 2026-03-18
-**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/modeling/xg_filter.py`, `backend/main.py`, `backend/services/market_service.py`, `backend/services/safe_bets_service.py`, `backend/ai/prompt_templates.py`
-**Severidade:** Evolução (ativação de pipeline)
-**Status:** Implementado
-
-### Problema identificado
-
-O pipeline v2 com EV classification, calibração, corners v2 e chaos detector estava implementado mas não ativado. O fluxo principal ainda usava a função legada `selecionar_mercados()`.
-
-### Correções aplicadas (6 módulos)
-
-| # | Melhoria | Alteração |
-|---|----------|-----------|
-| M1 | Pipeline v2 no fixtures | `fixtures_service.py` chama `selecionar_mercados_v2` |
-| M2 | Chaos detector | `ev_classification.py` rebaixa SAFE→NEUTRO em jogos caóticos |
-| M3 | xG filter bidirecional | `xg_filter.py` ajusta lambda UP para times azarados (0.7x) |
-| M4 | Deprecação legada | `main.py` redireciona para v2; market_service.py com deprecation docs |
-| M5 | 3 novas Safe Bets | Under 2.5, BTTS YES, Over 2.5 + enum + league_dna |
-| M6 | 4 prompts Mistral | Prompts especializados por mercado (1X2, O/U, BTTS, Corners) |
-
----
-
-## 036 — Filtro de NO_BET e ordenação por classificação no v2
-
-**Data:** 2026-03-18
-**Arquivos afetados:** `backend/services/market_service.py`
-**Severidade:** Média
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/market_service.py`, `backend/services/ev_classification.py`, `backend/modeling/corners/price_ladder.py`
+**Severidade:** Alta (odds incorretas)
 **Status:** Corrigido
+**Commits:** `a4e9420`, `d2ac843`
 
 ### Problema identificado
 
-O pipeline v2 retornava mercados com classificação NO_BET para o frontend, inflando a lista de mercados. O status final mostrava "NO_BET" em vez de "NEUTRO" mesmo quando havia mercados viáveis.
-
-### Correção aplicada
-
-1. **Filtro NO_BET** — `selecionar_mercados_v2()` agora filtra mercados com classificação NO_BET antes de retornar
-2. **Ordenação** — Mercados ordenados por classificação (SAFE > SAFE* > NEUTRO_QUALIFICADO > NEUTRO), mercado principal = primeiro da lista
-3. **Resultado**: 17 mercados inúteis → 6 mercados viáveis, `stats["status"] = "NEUTRO"`
-
----
-
-## 037 — Deduplicação de mercados de escanteios
-
-**Data:** 2026-03-18
-**Arquivos afetados:** `backend/services/market_service.py`
-**Severidade:** Média
-**Status:** Corrigido
-
-### Problema identificado
-
-O pipeline v2 retornava 4+ linhas de escanteios (Over 8.5, 9.5, 10.5, 11.5) quando deveria retornar apenas a melhor. A função legada escolhia UMA linha, mas o v2 emitia todas.
+1. **Fórmula de Under errada** — Under odds eram derivadas como `1/((1-implied_over)/OVERROUND)` em vez de `1/(OVERROUND - implied_over)`. Isso gerava odds Under sistematicamente erradas, inflando EV
+2. **EV fantasma** — Mercados com EV > 40% eram aceitos sem questionamento
+3. **Redundância 1X2/DC** — Quando 1X2 Home e DC 1X apareciam juntos, ambos ficavam no output
+4. **Corridor bets** — Over X.5 + Under (X+1).5 apareciam simultaneamente
 
 ### Correções aplicadas
 
-1. **`_pick_best()`** — Seleciona melhor mercado por grupo (classificação, depois odd)
-2. **`_dedup_market_groups()`** — Mantém no máximo 1 corner, 1 goals-over, 1 goals-under
-3. **Aplicado em ambos os paths** — v2 e legado usam a mesma função de dedup
-
----
-
-## 038 — Deduplicação de mercados de gols (Over/Under)
-
-**Data:** 2026-03-18
-**Arquivos afetados:** `backend/services/market_service.py`
-**Severidade:** Média
-**Status:** Corrigido
-
-### Problema identificado
-
-Assim como corners, múltiplas linhas de gols (Over 2.5 + 3.5 + 4.5, Under 2.5 + 3.5 + 4.5) apareciam no output. O frontend deveria mostrar apenas a melhor linha por direção.
-
-### Correção aplicada
-
-A função `_dedup_market_groups()` foi estendida para separar goals-over e goals-under em grupos distintos, mantendo apenas o melhor de cada.
-
----
-
-## 039 — Propagação de stadium/venue do API-Football para records
-
-**Data:** 2026-03-19
-**Arquivos afetados:** `backend/services/fixtures_service.py`
-**Severidade:** Baixa
-**Status:** Corrigido
-
-### Problema identificado
-
-O campo `stadium` da FootyStats frequentemente vinha vazio. O API-Football tinha a informação, mas não era propagada para os records do match.
-
-### Correção aplicada
-
-Enrich de stadium/venue a partir do API-Football quando o campo está vazio no FootyStats. Ambos os campos (`stadium` e `venue`) são populados para compatibilidade frontend.
-
----
-
-## 040 — Odds reais Under + API-Football enrichment + Mistral data enrichment
-
-**Data:** 2026-03-19
-**Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/services/market_service.py`, `backend/ai/match_analysis_service.py`, `backend/modeling/corners/mistral_review.py`
-**Severidade:** Alta (bug de EV inflado)
-**Status:** Corrigido
-
-### Problema identificado
-
-3 problemas interconectados:
-1. **Odds Under infladas** — Derivadas de Over sem overround, gerando EV >100% (ex: 139.9% para Under 2.5)
-2. **API-Football não integrada** — `extract_best_odds()` existia mas ninguém a chamava
-3. **Mistral incompleta** — Não recebia xG, shots, corners, chaos, injuries, lineups
-
-### Correções aplicadas (4 blocos)
-
-1. **BLOCO 1 (Bug Fix)** — Mapeamento de `odds_ft_under25` no data_mapper; odd real preferida sobre derivada; overround 5% (gols) e 6% (corners) no fallback
-2. **BLOCO 2 (API-Football)** — Enrich de odds, injuries, lineups com degradação silenciosa
-3. **BLOCO 3 (Mistral)** — Prompt expandido com +15 campos (xG, shots, posse, corners, chaos, injuries, predictions, reason codes)
-4. **BLOCO 4 (Corners review)** — Odds reais vs derivadas no prompt de review
+1. **Fórmula corrigida** — `1/(OVERROUND - implied_over)` aplicada em `market_service.py`, `ev_classification.py` e `price_ladder.py`
+2. **EV sanity cap** — Novo reason code `SUSPICIOUS_EV` para EV > 40% (provável erro de dados)
+3. **Filtro 1X2/DC** — Quando ambos aparecem, mantém apenas o de maior probabilidade
+4. **Filtro corridor** — Quando Over X.5 e Under (X+1).5 aparecem, mantém apenas o de maior probabilidade
 
 ### Lição aprendida
 
-1. Sempre aplicar overround ao derivar odds de Under (5% gols, 6% corners)
-2. Se EV > 50%, a odd provavelmente está errada — investigar antes de confiar
-3. Field name mismatch (`odds_under_25` vs `odds_ft_under25`) é causa silenciosa de dados perdidos
+Fórmulas de derivação de odds (Over→Under) devem ser validadas com exemplos numéricos reais antes de deploy. EV > 40% é quase sempre erro de dados, não oportunidade real.
 
 ---
 
-## 041 — PostgreSQL UNIQUE constraints para ON CONFLICT no audit
-
-**Data:** 2026-03-20
-**Arquivos afetados:** `backend/audit.py`
-**Severidade:** Alta (audit falhando em produção)
-**Status:** Corrigido
-
-### Problema identificado
-
-O audit estava falhando no RDS com erro: `there is no unique or exclusion constraint matching the ON CONFLICT specification`. As tabelas `audit_results` e `thresholds` foram criadas sem constraints UNIQUE/PRIMARY KEY, mas os INSERT usavam `ON CONFLICT`.
-
-### Causa raiz
-
-O `CREATE TABLE IF NOT EXISTS` incluía `PRIMARY KEY` no DDL, mas como as tabelas já existiam no RDS (criadas por versão anterior SEM a constraint), o IF NOT EXISTS pulava a criação e a constraint nunca era adicionada.
-
-### Correção aplicada
-
-1. **`_ensure_pg_unique_constraints()`** — Nova função chamada no `init_db()` para PostgreSQL
-2. **Deduplicação prévia** — `DELETE ... USING ... WHERE ctid <` remove rows duplicadas antes de criar o index
-3. **`CREATE UNIQUE INDEX IF NOT EXISTS`** — Idempotente, seguro para rodar múltiplas vezes
-4. **Removido PRIMARY KEY do CREATE TABLE (PG)** — Evita conflito com tabelas existentes; UNIQUE INDEX serve o mesmo propósito
-
-### Lição aprendida
-
-1. `CREATE TABLE IF NOT EXISTS` NÃO altera tabelas existentes — não adianta adicionar PRIMARY KEY se a tabela já existe sem ela
-2. Para corrigir constraints em produção: deduplicar → criar UNIQUE INDEX → ON CONFLICT funciona
-3. Sempre verificar `pg_indexes` antes de assumir que a constraint existe
-
----
-
-## 042 — Fórmula de overround corrigida + EV sanity cap
+## 038 — Odds Under reais + enrichment API-Football/Mistral + estádio
 
 **Data:** 2026-03-19
-**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/services/market_service.py`, `backend/modeling/corners/price_ladder.py`, `backend/models/market_output.py`, `tests/unit/test_market_service.py`
-**Severidade:** Alta (odds Under ainda infladas após #040)
-**Status:** Corrigido
-
-### Problema identificado
-
-A fórmula de overround implementada em #040 ainda produzia Under odds infladas. A fórmula `1 / ((1 - implied_over) / OVERROUND)` estava matematicamente incorreta — o overround deve ser subtraído da probabilidade implícita total, não dividido.
-
-### Correção aplicada
-
-1. **Fórmula correta:** `1 / (OVERROUND - implied_over)` — subtrai a probabilidade Over da margem total do bookmaker
-2. **`calcular_odd_under()` atualizada** em `market_service.py` com a mesma fórmula
-3. **Corners `price_ladder.py`** — Under derivation com margem de 6% usando fórmula correta
-4. **EV sanity cap** — Novo reason code `SUSPICIOUS_EV` para EV > 40%; bloqueia classificação SAFE/NEUTRO-Q quando EV é suspeitamente alto
-5. **Testes atualizados** para refletir novos valores esperados
-
-### Lição aprendida
-
-1. EV > 40% é um sinal de alerta — a odd provavelmente está errada, não é oportunidade real
-2. Sempre validar fórmulas matemáticas com exemplos numéricos concretos antes de deployar
-
----
-
-## 043 — Redesign do painel AI Analysis — tags de reason codes, glossário, responsividade
-
-**Data:** 2026-03-19
-**Arquivos afetados:** `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/styles/match-detail-card.css`
-**Severidade:** Melhoria (UX)
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/api_football_client.py`, `backend/ai/match_analysis_service.py`
+**Severidade:** Média (melhoria de dados)
 **Status:** Implementado
+**Commits:** `cc85e07`, `38f1c14`, `c803ae3`
 
 ### Problema identificado
 
-O painel de análise AI mostrava reason codes como texto simples sem destaque visual. O usuário não conseguia entender o significado dos códigos (ex: `POISSON_VALIDATED`, `SUSPICIOUS_EV`) sem documentação externa. Layout não era responsivo para telas menores.
+1. Under odds eram derivadas matematicamente mas odds Under reais da API-Football não eram usadas
+2. Dados pré-jogo da API-Football não enriqueciam o record de fixtures
+3. Informações de estádio/venue não eram propagadas para o frontend
 
-### Correção aplicada
+### Correções aplicadas
 
-1. **Reason code tags** — Tags coloridas com ícones: verde (positivo), azul (info), laranja (warning), vermelho (danger)
-2. **SUSPICIOUS_EV visual** — EV mostrado com ~~strikethrough~~ quando suspeito
-3. **Aba Glossário** — 25 termos explicados com busca, cobrindo toda a terminologia do sistema
-4. **Responsivo** — Media queries CSS para mobile (stacked), tablet, laptop, monitor 27"
-
-### Lição aprendida
-
-1. Reason codes são inúteis sem contexto visual — tags coloridas tornam a informação acionável
-2. Glossário integrado evita que o usuário precise consultar documentação externa
-
----
-
-## 044 — Filtro de redundância 1X2/DC + filtro de corredor Over/Under
-
-**Data:** 2026-03-19
-**Arquivos afetados:** `backend/services/ev_classification.py`
-**Severidade:** Média (poluição visual + confusão do usuário)
-**Status:** Corrigido
-
-### Problema identificado
-
-3 problemas na apresentação de mercados:
-1. **Label DC quebrado** — `homeTeam` retornava como dict `{'N/EMP)` em vez de string
-2. **1X2 + DC redundância** — Quando `Home (1X2)` e `Home ou Empate (DC)` apareciam juntos, o usuário via informação redundante
-3. **Corredor Over/Under** — `Over 2.5` + `Under 3.5` formam um "corredor" que confunde mais que ajuda
-
-### Correção aplicada
-
-1. **DC label fix** — `homeTeam` tratado como dict (extrai nome) ou string
-2. **Filtro 1X2/DC** — Quando ambos existem para o mesmo lado, mantém apenas o de maior probabilidade
-3. **Filtro de corredor** — Quando `Over X.5` e `Under (X+1).5` coexistem, mantém apenas o de maior probabilidade
+1. **Under odds reais** — Quando disponíveis via API-Football, usar odds Under reais em vez de derivadas
+2. **API-Football enrichment** — Dados pré-jogo (H2H, standings, statistics) enriquecem fixtures
+3. **Estádio propagado** — Campo venue/stadium da API-Football inserido no record do match
 
 ### Lição aprendida
 
-1. Mercados redundantes diluem a atenção do apostador — menos é mais
-2. Dados de entrada (ex: `homeTeam`) podem ser string ou dict dependendo da fonte — sempre normalizar
+Odds reais sempre devem ter prioridade sobre odds derivadas. A derivação matemática é um fallback, não a fonte primária.
 
 ---
 
-## 045 — EV% real com sinal e cor no dashboard
-
-**Data:** 2026-03-19
-**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
-**Severidade:** Média (informação enganosa)
-**Status:** Corrigido
-
-### Problema identificado
-
-O dashboard mostrava sempre "EV+" genérico com `odd_minima`, sem indicar o valor real do Expected Value calculado pelo pipeline v2. O usuário não conseguia diferenciar um EV de 2% de um EV de 25%.
-
-### Correção aplicada
-
-1. **EV% real** — Mostra o valor exato do EV calculado pelo pipeline (ex: "EV 12.3%")
-2. **Cor semântica** — Verde (EV ≥ 5%), amarelo (0-5%), vermelho (negativo)
-3. **Fallback** — "Odd min: X.XX" quando EV não disponível (pipeline legado)
-4. **Tooltip** — Mostra tanto EV% quanto odd_minima para referência
-
-### Lição aprendida
-
-1. Mostrar "EV+" sem valor é como mostrar "lucro" sem o montante — inútil para tomada de decisão
-
----
-
-## 046 — Enriquecimento massivo do prompt Mistral (+40 campos)
+## 039 — Enriquecimento do prompt Mistral: +40 campos de dados
 
 **Data:** 2026-03-19
 **Arquivos afetados:** `backend/ai/match_analysis_service.py`
-**Severidade:** Alta (análise AI superficial)
+**Severidade:** Média (melhoria de qualidade da análise AI)
 **Status:** Implementado
+**Commit:** `9a28292`
 
 ### Problema identificado
 
-O prompt enviado ao Mistral continha apenas estatísticas básicas (~10 campos). Dados como cartões, faltas, clean sheets, porcentagens de time, médias da liga e potenciais de escanteios estavam disponíveis no record mas não eram incluídos no prompt.
+O prompt da Mistral recebia apenas ~15 campos (lambda, probs 1X2, Over 2.5, BTTS, xG, shots, posse, corners). Dados disponíveis como cartões, faltas, clean sheets, FTS%, Win%, médias da liga, posição na tabela e corner potentials não eram enviados — resultando em análises superficiais.
 
 ### Correção aplicada
 
-Adicionados ~40 novos campos ao prompt:
-1. **Por time:** cartões/jogo, faltas/jogo, clean sheet %, FTS %, BTTS %, Over 2.5 %, win %, xG against, shots on target, avg total goals
-2. **Liga:** médias de corners, cartões, faltas, clean sheets, Over 2.5 %, xG
-3. **Contexto:** posição na liga, potenciais de escanteio (O8.5/9.5/10.5), home advantage %, gols home/away split
-4. **Instrução atualizada:** prompt agora exige análise de escanteios e cartões
+Expansão do prompt para ~55 campos organizados em 8 categorias:
+- **Ofensivos**: xG sofrido, chutes no alvo, média total gols/jogo
+- **Defensivos**: Clean Sheet %, Failed To Score %
+- **% por time**: Win %, Over 2.5 %, BTTS %
+- **Escanteios**: Potenciais O8.5/9.5/10.5 da FootyStats
+- **Cartões**: Cartões/jogo casa e fora (era zero no prompt anterior)
+- **Faltas**: Faltas/jogo casa e fora (era zero)
+- **Médias da liga**: Corners, cartões, faltas, CS%, Over 2.5%, xG, vantagem casa
+- **Posição**: Posição na liga de cada time
+
+Instrução atualizada para exigir comentários sobre corners e cartões nos key_points quando dados existirem.
 
 ### Lição aprendida
 
-1. IA com dados pobres produz análises genéricas — quanto mais contexto relevante, melhor a revisão
-2. Campos disponíveis mas não enviados são desperdício de dados já pagos (API)
+O LLM só pode analisar o que recebe. Dados disponíveis no backend mas não passados no prompt são invisíveis para a análise AI. Sempre auditar quais campos o prompt recebe vs quais estão disponíveis.
 
 ---
 
-## 047 — Auditoria prioriza causa raiz (lambda) sobre sintomas (thresholds)
+## 040 — UI: EV% real + redesign do painel AI Analysis
 
 **Data:** 2026-03-19
-**Arquivos afetados:** `backend/ai/prompt_templates.py`, `backend/routes/ai_analysis.py`
-**Severidade:** Alta (correções automáticas erradas)
+**Arquivos afetados:** `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Média (UX)
+**Status:** Implementado
+**Commits:** `30f5a48`, `be07432`
+
+### Problema identificado
+
+1. O EV% exibido era sempre "EV+" sem valor numérico real
+2. O painel de AI Analysis não mostrava reason codes da classificação
+3. Sem glossário para explicar termos técnicos ao usuário
+
+### Correções aplicadas
+
+1. **EV% real** — Exibe valor numérico com sinal correto e cor (verde positivo, vermelho negativo)
+2. **Reason code tags** — Cada mercado mostra tags visuais dos reason codes (LOW_DATA_QUALITY, POSITIVE_EV, etc.)
+3. **Glossary tab** — Aba de glossário com explicações dos termos técnicos
+4. **Layout responsivo** — Redesign do painel para melhor legibilidade mobile
+
+### Lição aprendida
+
+Mostrar dados técnicos (EV, reason codes) sem contexto confunde o usuário. Glossário integrado e formatação visual (cores, tags) transformam dados brutos em informação acionável.
+
+---
+
+## 041 — Auditoria: priorização de lambda root cause + endpoint de revert
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/audit.py`, `backend/routes/correction.py`, `frontend/next/src/app/api/correction/`
+**Severidade:** Alta (governança de correções)
+**Status:** Implementado
+**Commits:** `b733759`, `c15ebdd`, `0583b0d`
+
+### Problema identificado
+
+1. O sistema de auditoria tratava erros de threshold como causa raiz quando o verdadeiro problema era lambda incorreto
+2. Correções de threshold com >15% de alteração eram aplicadas automaticamente, mascarando problemas de lambda
+3. Não havia forma de reverter uma correção incorreta
+4. PostgreSQL ON CONFLICT falhava sem UNIQUE constraints
+
+### Correções aplicadas
+
+1. **Priorização no prompt de auditoria** — Instrução à Mistral para priorizar lambda > pesos > thresholds
+2. **Bloqueio de correções grandes** — Threshold corrections com >15% de mudança bloqueadas (provavelmente problema de lambda)
+3. **Endpoint /correction/revert** — Permite reverter correções incorretas via API
+4. **Next.js proxy route** — Frontend pode chamar o endpoint de revert
+5. **UNIQUE constraints** — Adicionados ao audit.py para PostgreSQL ON CONFLICT funcionar
+
+### Lição aprendida
+
+Correções automáticas devem tratar a causa raiz (lambda) antes dos sintomas (thresholds). Bloqueio de correções grandes evita que o sistema "conserte" mascarando o problema real. Endpoint de revert é essencial para governança.
+
+---
+
+## 042 — Recalibração de thresholds: auditoria de 27 jogos com 0% SAFE accuracy
+
+**Data:** 2026-03-19
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Crítica
+**Status:** Implementado
+**Commit:** `7b5e135`
+
+### Problema identificado
+
+Auditoria de 27 jogos revelou 0% de accuracy para mercados classificados como SAFE. Os thresholds definidos na regra #028 eram muito permissivos.
+
+### Correções aplicadas
+
+| Parâmetro | Antes | Depois |
+|-----------|-------|--------|
+| safe_prob 1X2 | 55% | 62% |
+| safe_prob O/U | 68% | 75% |
+| safe_prob Corners | 65% | 72% |
+| safe_ev (todos) | 4-5% | 6-8% |
+| SAFE condição | EV >= safe_ev | EV >= safe_ev AND edge >= safe_edge |
+| NEUTRO aceita EV < 0 | Sim (até -3%) | Não |
+| NEUTRO-Q min_ev | 2% | 5% |
+| NEUTRO-Q min_edge | 0% | 3% |
+| min_quality | 0.30 | 0.40-0.45 |
+
+### Lição aprendida
+
+Thresholds teóricos devem ser validados com dados reais de auditoria antes de confiar neles. A primeira auditoria real revelou que 0% dos picks SAFE acertaram — indicando thresholds gravemente permissivos. Calibração contínua via auditoria é obrigatória.
+
+---
+
+## 043 — Recalibração emergencial: circuit breaker SAFE + deflação lambda 15%
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/modeling/lambda_calculator.py`, `backend/modeling/corners_engine.py`
+**Severidade:** Crítica (emergencial)
+**Status:** Implementado
+**Commit:** `3b10063`
+
+### Problema identificado
+
+Duas auditorias consecutivas com SAFE accuracy = 0% e Brier Score em tendência crítica (0.2611 → 0.3071). Over goals com 0% accuracy. BTTS caindo de 66.7% para 0%. Lambda error = 0.90 (limite = 0.5) indicando superestimação sistemática.
+
+### Correções aplicadas
+
+1. **Circuit breaker SAFE** — Toda classificação SAFE rebaixada para NEUTRO_QUALIFICADO até reativação manual
+2. **Lambda deflation 0.85** — Fator multiplicativo de 0.85 nos lambdas para mercados O/U
+3. **BTTS deflation 0.80** — Fator mais agressivo para BTTS (era o mercado mais incorreto)
+4. **Corners reduction 20%** — Projeção de corners reduzida em 20%
+5. **H2H filter** — Adicionado filtro de confrontos diretos para corners
+
+**Critérios de reativação do SAFE:**
+- 3 auditorias consecutivas com accuracy > 50%
+- Lambda error < 0.5
+- Brier Score < 0.25
+
+### Lição aprendida
+
+Quando o modelo superestima sistematicamente (lambda error alto), a correção mais rápida é deflação uniforme enquanto investiga a causa raiz. Circuit breaker SAFE é uma medida de proteção essencial — impede que o sistema recomende com confiança alta quando comprovadamente erra.
+
+---
+
+## 044 — AuditReportCard + League Confidence Badges
+
+**Data:** 2026-03-19/20
+**Arquivos afetados:** `frontend/next/src/components/AuditReportCard.tsx` (novo), `frontend/next/src/components/LeagueConfidenceBadge.tsx` (novo)
+**Severidade:** Média (UX/observabilidade)
+**Status:** Implementado
+**Commits:** `243db1e`, `5842da9`
+
+### Problema identificado
+
+Resultados de auditoria eram exibidos apenas em formato técnico (JSON/tabela), sem resumo executivo nem indicação visual de confiança por liga.
+
+### Correções aplicadas
+
+1. **AuditReportCard** — Componente com resumo executivo da auditoria, copy-to-clipboard para compartilhamento, toggle Detalhado/Report Card
+2. **League Confidence Badges** — Badges visuais por liga com tooltip mostrando métricas (Brier, accuracy, lambda error)
+
+### Lição aprendida
+
+Dados de auditoria são inúteis se não são acessíveis ao operador. Resumo visual + copy para clipboard permitem avaliação e compartilhamento rápidos.
+
+---
+
+## 045 — Expansão de market models: 5 → 20 modelos binários (corners, cards, Over 0.5)
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/ml/market_models.py`, `backend/ml/train_model.py`
+**Severidade:** Evolução arquitetural
+**Status:** Implementado
+**Commit:** `409bff1`
+
+### Problema identificado
+
+O pipeline ML tinha apenas 5 modelos binários (Over 1.5-4.5 + BTTS). Mercados de corners e cartões não tinham modelos ML dedicados.
+
+### Correção aplicada
+
+Expansão de 5 para 20 modelos por liga:
+- **Gols**: +1 modelo (Over 0.5) → total 6 (Over 0.5-4.5 + BTTS)
+- **Corners**: +8 modelos novos (Over 4.5 a Over 11.5)
+- **Cartões**: +6 modelos novos (Over 0.5 a Over 5.5)
+
+Todos seguem o mesmo pipeline com quality gate Poisson (#029) e temporal decay.
+
+### Lição aprendida
+
+Expandir modelos ML para novos mercados é barato quando o pipeline já tem quality gates robustos — modelos ruins são automaticamente desativados pelo gate Poisson.
+
+---
+
+## 046 — Health/DB endpoint + remoção de credenciais placeholder
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/routes/health.py`, `scripts/test_postgres_connection.py`, `scripts/migrate_sqlite_to_postgres.py`
+**Severidade:** Alta (infraestrutura)
+**Status:** Implementado
+**Commits:** `604ab94`, `a0a55fb`
+
+### Problema identificado
+
+1. Não havia endpoint para verificar conectividade do banco de dados em produção
+2. Scripts de migração e teste tinham `"seu_host_postgres"` como valor default — credencial placeholder que causava erro HTTP 500 na auditoria (#032 já documentava o sintoma)
+3. Não havia diagnóstico da tabela de auditoria
+
+### Correções aplicadas
+
+1. **GET /health/db** — Testa conectividade PostgreSQL (ou SQLite fallback), retorna status, tipo de backend, presença de env vars
+2. **GET /health/db/diag** — Diagnóstico da tabela de auditoria (contagem, últimas entradas)
+3. **Remoção de defaults placeholder** — Scripts agora exigem env vars configuradas, sem fallback para `"seu_host_postgres"`
+
+### Lição aprendida
+
+Credenciais placeholder em scripts nunca devem ter fallback funcional — devem falhar explicitamente quando não configuradas. Endpoint /health/db é essencial para diagnóstico rápido de problemas de conexão.
+
+---
+
+## 047 — Mistral timeout/retry + Copa do Brasil + separadores visuais
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/ai/match_analysis_service.py`, `backend/config/leagues_config.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/PredictionBadge.tsx`
+**Severidade:** Média
+**Status:** Implementado
+**Commit:** `d8ef882`
+
+### Problema identificado
+
+1. Mistral API falhava silenciosamente em timeouts, retornando confidence=0 sem retry
+2. Copa do Brasil não estava configurada no sistema
+3. Badges de predição tinham campos grudados sem separador visual
+
+### Correções aplicadas
+
+1. **Retry com backoff** — 2 tentativas com backoff em erros transientes (timeout, connection reset). Só retorna confidence=0 após esgotar retries
+2. **Copa do Brasil** — Adicionada ao backend (league ID 73), frontend AVAILABLE_LEAGUES, aliases, e CALENDAR_YEAR_LEAGUES
+3. **Separadores visuais** — Spans "|" explícitos entre campos do badge (status, mercado, prob, odds)
+
+### Lição aprendida
+
+APIs externas devem sempre ter retry com backoff — um único timeout não deve invalidar a análise. Timeout de 60s é necessário para prompts enriquecidos com 55+ campos.
+
+---
+
+## 048 — Live fallback "- : -" → 0-0 para jogos sem dados de placar
+
+**Data:** 2026-03-18
+**Arquivos afetados:** `frontend/next/src/components/MatchCard.tsx`
+**Severidade:** Baixa (UX)
+**Status:** Implementado
+**Commit:** `a5109cd`
+**PR:** #125
+
+### Problema identificado
+
+Jogos ao vivo sem dados de placar da API exibiam "- : -" no dashboard, causando confusão visual.
+
+### Correção aplicada
+
+Fallback para 0-0 quando API não retorna dados de placar, com indicador visual de que o placar pode não estar atualizado.
+
+### Lição aprendida
+
+Exibir dados ausentes como "- : -" é menos informativo que 0-0 com disclaimer. O usuário entende "0-0" como "jogo começou, aguardando dados" melhor do que traço.
+
+---
+
+## 049 — Format string bug em market_models log (WORSE_THAN_POISSON)
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/ml/market_models.py`
+**Severidade:** Baixa (bug de log)
 **Status:** Corrigido
+**Commit:** `d8d786b`
 
 ### Problema identificado
 
-O sistema de auditoria pós-jogo ajustava thresholds quando a verdadeira causa do erro era o lambda (projeção base). Corrigir thresholds quando o lambda está errado é tratar o sintoma, não a doença — e pode piorar previsões futuras.
+F-string condicional no logger.info de market models gerava exceção ao tentar formatar `brier_poisson:.4f if...`, impedindo log de modelos que falharam no quality gate.
 
 ### Correção aplicada
 
-1. **Priorização de causa raiz:** Prompt de auditoria agora instrui: lambda > pesos > thresholds
-2. **Bloqueio de correções agressivas:** Mudanças de threshold > 15% são bloqueadas (indicam problema de lambda)
-3. **Dados de corners e cartões reais** incluídos no resultado de auditoria para validação
-4. **Endpoint `/correction/revert`** — Permite reverter correções incorretas
-5. **Batch audit** atualizado com mesmas regras de priorização
+Formato condicional corrigido para avaliar a condição antes da formatação.
 
 ### Lição aprendida
 
-1. Auto-correção sem hierarquia de causa raiz pode criar feedback loops destrutivos
-2. Sempre oferecer mecanismo de revert para correções automáticas
+F-strings com expressões condicionais complexas são propensas a erros de sintaxe. Usar variável intermediária para o valor formatado é mais seguro.
 
 ---
 
-## 048 — Proxy Next.js para endpoint de revert de correções
+## Nota — Verificação CI (documentação + suite completa)
 
-**Data:** 2026-03-19
-**Arquivos afetados:** `frontend/next/src/app/api/ai/correction/revert/route.ts`
-**Severidade:** Baixa (infraestrutura)
+**Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
+
+| Job | Duração (aprox.) | Resultado |
+|-----|------------------|-----------|
+| `backend-tests` | ~57 s | Sucesso |
+| `e2e-tests` | ~3 m 16 s | Sucesso |
+| **Total pipeline** | ~3 m 20 s | **Success** |
+
+**Avisos (não falha):** deprecação Node.js 20 nos actions `checkout` / `setup-python` / `setup-node` / `upload-artifact` — planejar upgrade para Node 24 conforme [changelog GitHub Actions](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
+
+**Artefato:** `playwright-report` (~207 KB) gerado no job e2e.
+
+---
+
+## 050 — Relatório V3: backtesting, calibração, SAFE monitoring e feedback loop Mistral
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/services/backtesting.py` (novo), `backend/routes/backtesting.py` (novo), `backend/routes/health.py`, `backend/audit.py`, `backend/ai/prompt_templates.py`, `backend/main.py`, `REVIEW.md` (novo), `.github/workflows/claude-review.yml` (novo)
+**Severidade:** Média (infraestrutura de monitoramento)
 **Status:** Implementado
 
-### Problema identificado
+### Funcionalidades adicionadas
 
-O endpoint `/correction/revert` criado em #047 só era acessível diretamente no backend Python. O frontend Next.js (deployado no Vercel) não conseguia chamá-lo por CORS e por estar em domínio diferente.
+1. **Backtesting service** (`backend/services/backtesting.py`) — 6 métricas: Brier score, log-loss, calibration bins, ROI, lambda error, hit rate. Lê dados do audit DB via funções existentes em `audit.py`.
 
-### Correção aplicada
+2. **API routes** (`backend/routes/backtesting.py`) — 3 endpoints:
+   - `GET /backtesting/run` — executa backtesting com filtros de liga/mercado/período
+   - `GET /backtesting/safe-reactivation` — avalia critérios de reativação do SAFE (#043)
+   - `GET /backtesting/calibration-search` — grid search para parâmetros calibráveis
 
-1. **Proxy route** — `POST /api/ai/correction/revert` no Next.js que repassa para o backend Python via `PY_BACKEND_URL`
+3. **Health endpoints** (`backend/routes/health.py`):
+   - `GET /health/safe-status` — estado do circuit breaker SAFE + métricas de reativação
+   - `GET /health/calibration-params` — inventário completo de parâmetros calibráveis
+
+4. **Feedback loop Mistral** (`backend/audit.py` + `backend/ai/prompt_templates.py`):
+   - `log_mistral_prediction()` — armazena predições Mistral para feedback
+   - `get_mistral_accuracy()` — calcula accuracy por liga/mercado
+   - `_build_feedback_block()` — injeta histórico de acurácia no prompt quando ≥10 predições disponíveis
+
+5. **PR Review automation** (`REVIEW.md` + `.github/workflows/claude-review.yml`) — Claude Code Review action para revisão automática de PRs com regras de bloqueio baseadas nas REGRAS.
+
+### Critérios de reativação SAFE (#043)
+
+O endpoint `/backtesting/safe-reactivation` verifica 3 critérios:
+- ≥3 auditorias com accuracy > 50%
+- Brier score < 0.25
+- Lambda error médio < 0.5
+
+Todos devem ser atendidos para recomendar reativação do circuit breaker.
 
 ### Lição aprendida
 
-1. Todo endpoint backend novo precisa de proxy correspondente no Next.js quando o frontend é servido por domínio diferente (Vercel)
+Monitoramento contínuo (backtesting + feedback loop) é essencial para validar calibrações antes de reativar features desabilitadas por baixa performance. O pipeline V3 fecha o ciclo: previsão → auditoria → backtesting → recalibração.
 
 ---
 

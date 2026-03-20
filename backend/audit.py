@@ -697,6 +697,181 @@ def validate_adjustment(
     return True, "OK"
 
 
+# ---------------------------------------------------------------------------
+# Mistral feedback loop storage (REGRAS #050)
+# ---------------------------------------------------------------------------
+
+def _ensure_mistral_predictions_table():
+    """Create mistral_predictions table if not exists."""
+    is_pg = _use_postgres()
+    if is_pg:
+        conn = _pg_connect()
+    else:
+        conn = sqlite3.connect(_db_path())
+    cursor = conn.cursor()
+    if is_pg:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS mistral_predictions (
+                id SERIAL PRIMARY KEY,
+                match_id TEXT,
+                league TEXT,
+                market TEXT,
+                mistral_confidence INTEGER,
+                recommended_market TEXT,
+                recommended_odd REAL,
+                actual_result TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    else:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS mistral_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id TEXT,
+                league TEXT,
+                market TEXT,
+                mistral_confidence INTEGER,
+                recommended_market TEXT,
+                recommended_odd REAL,
+                actual_result TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def log_mistral_prediction(
+    match_id: str,
+    league: str,
+    market: str,
+    mistral_confidence: int,
+    recommended_market: str,
+    recommended_odd: float | None = None,
+    actual_result: str | None = None,
+) -> None:
+    """Store Mistral prediction for feedback loop.
+
+    Reference: REGRAS #050 section 5.2E — Mistral feedback loop.
+    """
+    try:
+        _ensure_mistral_predictions_table()
+        is_pg = _use_postgres()
+        if is_pg:
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO mistral_predictions (match_id, league, market, mistral_confidence, recommended_market, recommended_odd, actual_result) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (match_id, league, market, mistral_confidence, recommended_market, recommended_odd, actual_result),
+            )
+        else:
+            conn = sqlite3.connect(_db_path())
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO mistral_predictions (match_id, league, market, mistral_confidence, recommended_market, recommended_odd, actual_result) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (match_id, league, market, mistral_confidence, recommended_market, recommended_odd, actual_result),
+            )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        audit_logger.error(f"Failed to log Mistral prediction: {e}")
+
+
+def get_mistral_accuracy(league: str, days: int = 30) -> dict:
+    """Return Mistral accuracy by league and market.
+
+    Used to include in prompt: "In the last N analyses for this league, we hit X%"
+    """
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    cutoff = (_dt.now(_tz.utc) - _td(days=days)).isoformat()
+    result = {
+        "league": league,
+        "period_days": days,
+        "total_predictions": 0,
+        "overall_accuracy": 0.0,
+        "by_market": {},
+        "confidence_calibration": {
+            "high_confidence_accuracy": 0.0,
+            "low_confidence_accuracy": 0.0,
+        },
+    }
+
+    try:
+        _ensure_mistral_predictions_table()
+        is_pg = _use_postgres()
+        if is_pg:
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT market, mistral_confidence, recommended_market, actual_result "
+                "FROM mistral_predictions WHERE league = %s AND created_at >= %s AND actual_result IS NOT NULL",
+                (league, cutoff),
+            )
+        else:
+            conn = sqlite3.connect(_db_path())
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT market, mistral_confidence, recommended_market, actual_result "
+                "FROM mistral_predictions WHERE league = ? AND created_at >= ? AND actual_result IS NOT NULL",
+                (league, cutoff),
+            )
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            return result
+
+        total = 0
+        correct = 0
+        by_market: dict = {}
+        high_conf_total, high_conf_correct = 0, 0
+        low_conf_total, low_conf_correct = 0, 0
+
+        for mkt, confidence, rec_market, actual in rows:
+            total += 1
+            hit = str(actual).lower() in ("true", "1", "yes", "win", "hit", "correct")
+            if hit:
+                correct += 1
+
+            by_market.setdefault(mkt, {"total": 0, "correct": 0})
+            by_market[mkt]["total"] += 1
+            if hit:
+                by_market[mkt]["correct"] += 1
+
+            conf = int(confidence) if confidence else 0
+            if conf >= 70:
+                high_conf_total += 1
+                if hit:
+                    high_conf_correct += 1
+            elif conf < 50:
+                low_conf_total += 1
+                if hit:
+                    low_conf_correct += 1
+
+        for mkt_stats in by_market.values():
+            mkt_stats["accuracy"] = round(mkt_stats["correct"] / mkt_stats["total"], 4) if mkt_stats["total"] > 0 else 0.0
+
+        result["total_predictions"] = total
+        result["overall_accuracy"] = round(correct / total, 4) if total > 0 else 0.0
+        result["by_market"] = by_market
+        result["confidence_calibration"] = {
+            "high_confidence_accuracy": round(high_conf_correct / high_conf_total, 4) if high_conf_total > 0 else 0.0,
+            "low_confidence_accuracy": round(low_conf_correct / low_conf_total, 4) if low_conf_total > 0 else 0.0,
+        }
+
+    except Exception as e:
+        audit_logger.error(f"Failed to get Mistral accuracy: {e}")
+
+    return result
+
+
 def increment_version() -> str:
     """Increment the patch component of APP_VERSION (e.g. 'pro V2.7' -> 'pro V2.8')."""
     global APP_VERSION
