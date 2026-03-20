@@ -556,9 +556,10 @@ def train_all_markets(
                     logger.info(f"Saved {market} model to {model_path} (ACTIVE — beats Poisson)")
                 else:
                     brier_p = result["brier_poisson"]
+                    bp_str = f"{brier_p:.4f}" if brier_p is not None else "?"
                     logger.warning(
                         f"Saved {market} model to {model_path} (INACTIVE — "
-                        f"ML={result['brier_ml']:.4f} vs Poisson={brier_p:.4f if brier_p is not None else '?'})"
+                        f"ML={result['brier_ml']:.4f} vs Poisson={bp_str})"
                     )
 
         except Exception as e:
