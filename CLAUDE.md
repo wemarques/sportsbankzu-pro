@@ -41,6 +41,34 @@ cd frontend/next && npm run test:e2e
 - `cli/` — Click-based CLI wrapping backend services
 - `scripts/` — Deployment and utility scripts
 
+## API Routes (Lambda / API Gateway)
+
+O backend Lambda é acessado via API Gateway em `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`.
+
+**ATENÇÃO:** Os prefixos são inconsistentes:
+
+| Endpoint | Rota Correta | ERRADO |
+|----------|-------------|--------|
+| Health check | `/health` | ~~/api/health~~ (404) |
+| Fixtures | `/api/fixtures/...` | |
+| Backtesting | `/api/backtesting/...` | |
+| Calibrate | `POST /api/backtesting/calibrate?league=X` | ~~/api/backtesting/calibrate?league_id=X~~ (param errado) |
+| Calibration status | `/api/backtesting/calibration-status` | |
+| SAFE status | `/api/health/safe-status` | |
+
+**Parâmetro de calibração:** O endpoint usa `league=` (NÃO `league_id=`).
+
+**Timeout:** API Gateway tem hard limit de 30s. Calibração leva 15-40s. Se retornar 503, o Lambda continua processando e salva os dados.
+
+**Deploy Lambda:**
+```bash
+# Verificar estado ANTES de deploy
+MSYS_NO_PATHCONV=1 aws lambda get-function-configuration --function-name sportsbank-pro-backend --region us-east-1 --query '{State: State, LastUpdateStatus: LastUpdateStatus}'
+
+# Só deployar quando State=Active e LastUpdateStatus=Successful
+MSYS_NO_PATHCONV=1 aws lambda update-function-code --function-name sportsbank-pro-backend --s3-bucket meu-bucket-sportsbank --s3-key deploy/sportsbank_lambda.zip --region us-east-1
+```
+
 ## Context7 Usage
 
 Context7 MCP is configured for this project. Use it to fetch up-to-date documentation:

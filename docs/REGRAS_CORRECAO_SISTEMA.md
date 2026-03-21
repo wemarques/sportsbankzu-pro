@@ -2500,6 +2500,8 @@ Correções automáticas devem tratar a causa raiz (lambda) antes dos sintomas (
 
 ## 042 — Recalibração de thresholds: auditoria de 27 jogos com 0% SAFE accuracy
 
+> **SUPERADO:** Thresholds globais foram substituídos por thresholds per-league calibrados automaticamente em #055 (safe_prob por Brier quality heuristic). Os valores fixos desta regra servem apenas como defaults/fallback.
+
 **Data:** 2026-03-19
 **Arquivos afetados:** `backend/services/ev_classification.py`
 **Severidade:** Crítica
@@ -2531,6 +2533,15 @@ Thresholds teóricos devem ser validados com dados reais de auditoria antes de c
 ---
 
 ## 043 — Recalibração emergencial: circuit breaker SAFE + deflação lambda 15%
+
+> **SUPERADO:** Os alertas desta regra foram substituídos por calibração per-league:
+> - SAFE circuit breaker → reativado per-league em #054 (36/37 ligas com safe_enabled=true)
+> - Lambda deflation 0.85 → per-league em #052-#053 (Dixon-Coles, grid 0.80-1.50)
+> - BTTS deflation 0.80 → per-league em #054-#056 (calibrado contra seasonBTTSPercentage)
+> - Corners redução 20% → per-league em #055-#056 (Brier-based + season stats)
+> - Thresholds endurecidos → per-league em #055 (safe_prob calibrado por Brier quality)
+>
+> Os critérios de remoção originais não se aplicam mais. A calibração automática per-league substituiu as deflações fixas.
 
 **Data:** 2026-03-20
 **Arquivos afetados:** `backend/services/ev_classification.py`, `backend/modeling/lambda_calculator.py`, `backend/modeling/corners_engine.py`
@@ -2982,8 +2993,6 @@ Calibrar apenas lambda O/U e assumir que outros mercados estão cobertos cria in
 
 ---
 
----
-
 ## 056 — Fix extração de cards/corners/BTTS + enriquecimento com league-season stats
 
 **Data:** 2026-03-21
@@ -3015,5 +3024,34 @@ Calibrar apenas lambda O/U e assumir que outros mercados estão cobertos cria in
 1. **Verificar tipos de campo da API** — `team_a_cards` é array, `team_a_cards_num` é integer. Nomes similares, tipos diferentes. A Regra de Investigação #5 (validar com dados reais) teria pego isso.
 2. **Sentinel values** — APIs usam -1, -2, 0 para "não disponível". Python `or` não trata -1 como falsy. Sanitizar ANTES de processar.
 3. **Dados existentes ignorados** — O `league-matches` já retorna cards/corners/btts per-match e o `league-season` retorna percentuais. O calibrador simplesmente não lia esses campos. Antes de criar novos endpoints, verificar o que a API já retorna.
+
+---
+
+## 057 — Correções de governança: testes, documentação, rotas
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `CLAUDE.md`, `docs/REGRAS_CORRECAO_SISTEMA.md`, `.gitignore`, `tests/KNOWN_FAILURES.md`
+**Severidade:** Média (governança e rastreabilidade)
+**Status:** Implementado
+
+### Problema identificado
+
+1. 9 testes falhando em todos os deploys sem documentação de quais são e por quê
+2. REGRAS #043 diverge do CLAUDE.md — #043 diz SAFE desabilitado, CLAUDE.md diz reativado
+3. Rotas API não documentadas — /health vs /api/... causou tempo perdido
+4. `---` duplicado no REGRAS entre #055 e #056
+5. `.claude/settings.local.json` versionado gerando warnings em todo commit
+
+### Correções aplicadas
+
+1. Listar e documentar os 9+1 testes falhando em `tests/KNOWN_FAILURES.md` (pandas, sklearn, Streamlit)
+2. Adicionar nota SUPERADO no REGRAS #043 e #042 referenciando #054-#056
+3. Documentar rotas API e procedimento de deploy no CLAUDE.md
+4. Remover `---` duplicado no REGRAS entre #055 e #056
+5. Expandir `.claude/worktrees/` para `.claude/` no .gitignore, remover do tracking
+
+### Lição aprendida
+
+Deploy com testes falhando exige baseline explícito. Documentação divergente entre CLAUDE.md e REGRAS é risco operacional — quando uma regra é superada, a anterior deve ser marcada explicitamente.
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
