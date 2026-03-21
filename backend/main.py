@@ -536,10 +536,12 @@ def expected_goals_v2(
     league_data: Dict[str, Any],
     regime: str,
     xg_home: Optional[float] = None,
-    xg_away: Optional[float] = None
+    xg_away: Optional[float] = None,
+    league_id: Optional[str] = None,
 ) -> Tuple[float, float]:
     """
     Calcula lambda usando modelo de forças relativas (Dixon-Coles) com blend xG.
+    xG blend weight is calibrated per league (#055).
     """
     lam_home, lam_away = calcular_lambda_jogo(
         home_team_data=home_team_data,
@@ -548,10 +550,22 @@ def expected_goals_v2(
         regime=regime,
     )
 
+    # Read calibrated xG blend weight per league (#055)
+    _xg_weight = 0.30  # default
+    if league_id:
+        try:
+            from backend.modeling.lambda_calculator import get_lambda_corrections
+            _corr = get_lambda_corrections(league_id)
+            _xg_val = _corr.get("xg_blend_weight", {}).get("value")
+            if _xg_val is not None:
+                _xg_weight = float(_xg_val)
+        except Exception:
+            pass
+
     if xg_home is not None and xg_home > 0:
-        lam_home = 0.7 * lam_home + 0.3 * xg_home
+        lam_home = (1.0 - _xg_weight) * lam_home + _xg_weight * xg_home
     if xg_away is not None and xg_away > 0:
-        lam_away = 0.7 * lam_away + 0.3 * xg_away
+        lam_away = (1.0 - _xg_weight) * lam_away + _xg_weight * xg_away
 
     lam_home = max(0.2, min(4.5, lam_home))
     lam_away = max(0.2, min(4.5, lam_away))

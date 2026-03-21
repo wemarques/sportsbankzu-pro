@@ -114,20 +114,52 @@ NEUTRO_QUALIFICADO_THRESHOLDS = {
 }
 
 
-def _get_thresholds(market_category: str) -> Dict[str, float]:
-    """Get thresholds for a market category, with audit DB override."""
-    base = DEFAULT_THRESHOLDS.get(market_category, DEFAULT_THRESHOLDS["1X2"])
+def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Dict[str, float] | None:
+    """Get per-league calibrated threshold from corrections DB (#055)."""
+    if not league_id:
+        return None
+    try:
+        from backend.modeling.lambda_calculator import get_lambda_corrections
+        corrections = get_lambda_corrections(league_id)
 
-    # Try to load dynamic thresholds from audit DB
+        param_map = {
+            "Over/Under": "safe_prob_ou",
+            "BTTS": "safe_prob_btts",
+            "1X2": "safe_prob_1x2",
+            "Double Chance": "safe_prob_dc",
+            "Corners": "safe_prob_corners",
+            "Cards": "safe_prob_cards",
+        }
+
+        param_name = param_map.get(market_category)
+        if param_name:
+            val = corrections.get(param_name, {}).get("value")
+            if val is not None:
+                return {"safe_prob": float(val)}
+        return None
+    except Exception:
+        return None
+
+
+def _get_thresholds(market_category: str, league_id: str | None = None) -> Dict[str, float]:
+    """Get thresholds with priority: calibrated per-league > audit DB > defaults."""
+    base = dict(DEFAULT_THRESHOLDS.get(market_category, DEFAULT_THRESHOLDS["1X2"]))
+
+    # 1. Check per-league calibration (#055)
+    calibrated = _get_calibrated_threshold(league_id, market_category)
+    if calibrated:
+        base.update(calibrated)
+        return base
+
+    # 2. Check audit DB dynamic thresholds
     try:
         from backend.services.market_service import _get_dynamic_thresholds
         db_th = _get_dynamic_thresholds(market_category)
         if db_th:
-            # Override prob thresholds if available
             if "SAFE" in db_th:
-                base = {**base, "safe_prob": db_th["SAFE"]}
+                base["safe_prob"] = db_th["SAFE"]
             if "NEUTRO" in db_th:
-                base = {**base, "neutro_prob": db_th["NEUTRO"]}
+                base["neutro_prob"] = db_th["NEUTRO"]
     except Exception:
         pass
 
@@ -145,7 +177,7 @@ def classify_market(
     """
     prob = output.calibrated_probability or output.raw_probability or 0.0
     market_cat = _market_category(output.market_type)
-    th = thresholds or _get_thresholds(market_cat)
+    th = thresholds or _get_thresholds(market_cat, league_id=league_id)
 
     # Compute EV and display
     output.compute_ev()

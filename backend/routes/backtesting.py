@@ -324,6 +324,8 @@ async def recalibrate_all(
             results[league_id] = {"league": league_id, "status": "ERROR", "error": str(e)}
 
     # Bias detection: check if >70% of leagues hit the same grid boundary
+    from backend.services.league_calibrator import DEFLATION_GRID
+
     calibrated = [r for r in results.values() if r.get("status") == "CALIBRATED"]
     n_calibrated = len(calibrated)
     bias_report = {"detected": False}
@@ -352,8 +354,6 @@ async def recalibrate_all(
                     "grid_min": grid_min,
                     "recommendation": "Lambda formula may overestimate. Consider grid expansion or formula adjustment.",
                 }
-
-    from backend.services.league_calibrator import DEFLATION_GRID
 
     return {
         "total_leagues": len(results),
@@ -401,10 +401,28 @@ async def calibration_status():
                 "league": league_id,
                 "name": cfg["name"],
                 "calibrated": has_calibration,
+                # Deflations
                 "lambda_ou": corrections.get("lambda_multiplier", {}).get("value", "1.0 (default)"),
                 "btts": corrections.get("btts_multiplier", {}).get("value", "1.0 (default)"),
+                "1x2": corrections.get("1x2_multiplier", {}).get("value", "1.0 (default)"),
                 "corners": corrections.get("corner_multiplier", {}).get("value", "1.0 (default)"),
+                "cards": corrections.get("cards_multiplier", {}).get("value", "1.0 (default)"),
+                # xG and BTTS weights
+                "xg_blend": corrections.get("xg_blend_weight", {}).get("value", "0.30 (default)"),
+                "btts_w_fs": corrections.get("btts_weight_footystats", {}).get("value", "0.40 (default)"),
+                "btts_w_po": corrections.get("btts_weight_poisson", {}).get("value", "0.30 (default)"),
+                "btts_w_ta": corrections.get("btts_weight_team_avg", {}).get("value", "0.30 (default)"),
+                # Thresholds
+                "safe_prob_ou": corrections.get("safe_prob_ou", {}).get("value", "0.75 (default)"),
+                "safe_prob_1x2": corrections.get("safe_prob_1x2", {}).get("value", "0.62 (default)"),
+                "safe_prob_corners": corrections.get("safe_prob_corners", {}).get("value", "0.72 (default)"),
+                "safe_prob_cards": corrections.get("safe_prob_cards", {}).get("value", "0.75 (default)"),
                 "safe_enabled": safe_display,
+                # Brier diagnostic
+                "brier_over": corrections.get("brier_over_avg", {}).get("value"),
+                "brier_1x2": corrections.get("brier_1x2_avg", {}).get("value"),
+                "brier_corners": corrections.get("brier_corners_avg", {}).get("value"),
+                "brier_cards": corrections.get("brier_cards_avg", {}).get("value"),
             })
         except Exception as e:
             results.append({"league": league_id, "name": cfg["name"], "error": str(e)})

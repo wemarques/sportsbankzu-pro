@@ -26,24 +26,26 @@ MAX_GOALS = 8
 # Default: 1.0 (no deflation) when no calibration exists for a league.
 _DEFAULT_OU_DEFLATION = 1.0
 _DEFAULT_BTTS_DEFLATION = 1.0
+_DEFAULT_1X2_DEFLATION = 1.0
 
 
-def _get_league_deflation(league_id: str | None) -> tuple[float, float]:
+def _get_league_deflation(league_id: str | None) -> tuple[float, float, float]:
     """Get per-league deflation factors from calibration DB.
 
-    Returns (ou_deflation, btts_deflation).
+    Returns (ou_deflation, btts_deflation, x1x2_deflation).
     Falls back to 1.0 (no deflation) if no calibration exists.
     """
     if not league_id:
-        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION)
+        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION, _DEFAULT_1X2_DEFLATION)
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
         corrections = get_lambda_corrections(league_id)
         ou = float(corrections.get("lambda_multiplier", {}).get("value", _DEFAULT_OU_DEFLATION))
         btts = float(corrections.get("btts_multiplier", {}).get("value", _DEFAULT_BTTS_DEFLATION))
-        return (ou, btts)
+        x1x2 = float(corrections.get("1x2_multiplier", {}).get("value", _DEFAULT_1X2_DEFLATION))
+        return (ou, btts, x1x2)
     except Exception:
-        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION)
+        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION, _DEFAULT_1X2_DEFLATION)
 
 
 def build_scoreline_matrix(
@@ -150,10 +152,12 @@ def derive_all_markets(
     Uses per-league deflated lambdas for Over/Under and BTTS (#052).
     1X2 and Double Chance use original lambdas.
     """
-    ou_defl, btts_defl = _get_league_deflation(league_id)
+    ou_defl, btts_defl, x1x2_defl = _get_league_deflation(league_id)
 
-    # 1X2 / Double Chance: original lambdas (no deflation)
-    matrix_1x2 = build_scoreline_matrix(lambda_home, lambda_away)
+    # 1X2 / Double Chance: per-league 1X2 deflation (#055)
+    lh_1x2 = lambda_home * x1x2_defl
+    la_1x2 = lambda_away * x1x2_defl
+    matrix_1x2 = build_scoreline_matrix(lh_1x2, la_1x2)
     x1x2 = derive_1x2(matrix_1x2)
     dc = derive_double_chance(x1x2)
 
@@ -197,7 +201,8 @@ def derive_all_markets(
 
     logger.debug(
         f"Poisson matrix derived: λH={lambda_home:.2f} λA={lambda_away:.2f} "
-        f"(O/U deflated: {lh_ou:.2f}/{la_ou:.2f}, BTTS deflated: {lh_btts:.2f}/{la_btts:.2f}) → "
+        f"(O/U={lh_ou:.2f}/{la_ou:.2f}, BTTS={lh_btts:.2f}/{la_btts:.2f}, "
+        f"1X2={lh_1x2:.2f}/{la_1x2:.2f}) → "
         f"1X2=({x1x2['home']:.2f}/{x1x2['draw']:.2f}/{x1x2['away']:.2f}) "
         f"O2.5={ou['over_2.5']:.2f} BTTS={btts['btts_yes']:.2f}"
     )

@@ -398,10 +398,20 @@ def predict_markets(
                 over_prob = 1.0 - poisson_cdf(int(threshold), expected_corners)
                 result[key] = round(over_prob * 100, 1)
 
-        # Poisson fallback for cards
+        # Poisson fallback for cards — with per-league calibrated multiplier (#055)
         home_cards_avg = features.get("home_cards_avg_r5", 1.8)
         away_cards_avg = features.get("away_cards_avg_r5", 1.8)
         expected_cards = home_cards_avg + away_cards_avg
+        _cards_mult = 1.0
+        try:
+            from backend.modeling.lambda_calculator import get_lambda_corrections
+            _corr = get_lambda_corrections(league_id)
+            _cm = _corr.get("cards_multiplier", {}).get("value")
+            if _cm is not None:
+                _cards_mult = float(_cm)
+        except Exception:
+            pass
+        expected_cards *= _cards_mult
         for threshold in [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]:
             key = f"cardsOver{str(threshold).replace('.', '')}Prob"
             if key not in result:

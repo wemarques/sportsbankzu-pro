@@ -30,6 +30,10 @@ LAMBDA_WEIGHT_GRID = [
 ]
 BTTS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30]
 CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
+ONE_X_TWO_DEFLATION_GRID = [0.90, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]
+CORNER_BRIER_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
+CARDS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
+XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
 
 
 def _brier(prob: float, outcome: int) -> float:
@@ -37,44 +41,69 @@ def _brier(prob: float, outcome: int) -> float:
     return (prob - outcome) ** 2
 
 
-def _simulate_poisson_brier(
+def _simulate_all_markets(
     matches: List[Dict],
     lambda_deflation_ou: float,
     lambda_weights: Tuple[float, float],
     lambda_deflation_btts: float | None = None,
+    lambda_deflation_1x2: float | None = None,
+    corner_deflation: float = 1.0,
+    cards_deflation: float = 1.0,
+    xg_blend_weight: float = 0.0,
 ) -> Dict[str, float]:
-    """Simulate Brier scores with SEPARATE deflation for O/U and BTTS.
+    """Simulate Brier scores for ALL markets with per-market deflation.
+
+    Markets computed:
+    - Over 1.5, 2.5, 3.5, 4.5 + Under (averaged as brier_over_avg / brier_under_avg)
+    - BTTS (separate deflation)
+    - 1X2 Home, Draw, Away (separate deflation, averaged)
+    - Double Chance 1X, 12, X2 (derived from 1X2)
+    - Corners Over 8.5, 9.5, 10.5 (when corner data available)
+    - Cards Over 2.5, 3.5, 4.5 (when card data available)
 
     Args:
-        lambda_deflation_ou: Deflation factor for Over/Under markets
-        lambda_weights: (weight_season, weight_recent)
-        lambda_deflation_btts: Deflation for BTTS. If None, uses same as O/U.
-
-    Returns dict with brier_ou, brier_btts, brier_1x2, n_matches.
+        xg_blend_weight: weight for xG in lambda blend. 0.0=ignore xG, 0.3=current default.
     """
-    btts_defl = lambda_deflation_btts if lambda_deflation_btts is not None else lambda_deflation_ou
-
-    brier_ou = []
-    brier_btts = []
-    brier_1x2 = []
+    defl_btts = lambda_deflation_btts if lambda_deflation_btts is not None else lambda_deflation_ou
+    defl_1x2 = lambda_deflation_1x2 if lambda_deflation_1x2 is not None else 1.0
 
     w_season, w_recent = lambda_weights
+
+    # Accumulators per market
+    brier = {
+        "over_15": [], "over_25": [], "over_35": [], "over_45": [],
+        "under_15": [], "under_25": [], "under_35": [], "under_45": [],
+        "btts": [],
+        "1x2_home": [], "1x2_draw": [], "1x2_away": [],
+        "dc_1x": [], "dc_12": [], "dc_x2": [],
+        "corners_o85": [], "corners_o95": [], "corners_o105": [],
+        "cards_o25": [], "cards_o35": [], "cards_o45": [],
+    }
 
     for m in matches:
         home_avg_season = m.get("home_goals_scored_avg", 0) or 0
         away_avg_season = m.get("away_goals_scored_avg", 0) or 0
         home_avg_recent = m.get("home_goals_scored_avg_recent", home_avg_season) or home_avg_season
         away_avg_recent = m.get("away_goals_scored_avg_recent", away_avg_season) or away_avg_season
-
         home_def_factor = m.get("away_goals_conceded_factor", 1.0) or 1.0
         away_def_factor = m.get("home_goals_conceded_factor", 1.0) or 1.0
 
         lh_raw = (home_avg_season * w_season + home_avg_recent * w_recent) * home_def_factor
         la_raw = (away_avg_season * w_season + away_avg_recent * w_recent) * away_def_factor
 
+        # xG blend
+        if xg_blend_weight > 0:
+            home_xg = m.get("home_xg")
+            away_xg = m.get("away_xg")
+            if home_xg is not None and home_xg > 0:
+                lh_raw = (1.0 - xg_blend_weight) * lh_raw + xg_blend_weight * home_xg
+            if away_xg is not None and away_xg > 0:
+                la_raw = (1.0 - xg_blend_weight) * la_raw + xg_blend_weight * away_xg
+
         lh_raw = max(0.2, min(4.5, lh_raw))
         la_raw = max(0.2, min(4.5, la_raw))
 
+        # Per-market lambdas
         lh_ou = lh_raw * lambda_deflation_ou
         la_ou = la_raw * lambda_deflation_ou
 
@@ -82,55 +111,104 @@ def _simulate_poisson_brier(
         ga = m.get("goals_away", 0) or 0
         total = gh + ga
 
-        separate_btts = (lambda_deflation_btts is not None and btts_defl != lambda_deflation_ou)
-
-        # O/U, 1X2, and BTTS (when same deflation) — single loop
-        prob_over25 = 0.0
-        prob_btts = 0.0
-        prob_home = 0.0
-        prob_draw = 0.0
+        # ── O/U matrix (all lines) ──
+        prob_over = {1.5: 0.0, 2.5: 0.0, 3.5: 0.0, 4.5: 0.0}
         for h in range(9):
             ph = poisson_pmf(h, lh_ou)
             for a in range(9):
                 pa = poisson_pmf(a, la_ou)
                 p = ph * pa
-                if h + a > 2:
-                    prob_over25 += p
-                if not separate_btts and h >= 1 and a >= 1:
-                    prob_btts += p
+                t = h + a
+                for line in prob_over:
+                    if t > line:
+                        prob_over[line] += p
+
+        for line, prob in prob_over.items():
+            actual = 1 if total > line else 0
+            key_suffix = f"{int(line)}5"
+            brier[f"over_{key_suffix}"].append(_brier(prob, actual))
+            brier[f"under_{key_suffix}"].append(_brier(1.0 - prob, 1 - actual))
+
+        # ── BTTS ──
+        lh_btts = lh_raw * defl_btts
+        la_btts = la_raw * defl_btts
+        prob_btts = 0.0
+        for h in range(9):
+            ph = poisson_pmf(h, lh_btts)
+            for a in range(9):
+                if h >= 1 and a >= 1:
+                    prob_btts += ph * poisson_pmf(a, la_btts)
+
+        brier["btts"].append(_brier(prob_btts, 1 if (gh > 0 and ga > 0) else 0))
+
+        # ── 1X2 ──
+        lh_1x2 = lh_raw * defl_1x2
+        la_1x2 = la_raw * defl_1x2
+        prob_home = 0.0
+        prob_draw = 0.0
+        for h in range(9):
+            ph = poisson_pmf(h, lh_1x2)
+            for a in range(9):
+                pa = poisson_pmf(a, la_1x2)
+                p = ph * pa
                 if h > a:
                     prob_home += p
                 elif h == a:
                     prob_draw += p
+        prob_away = max(0, 1.0 - prob_home - prob_draw)
 
-        # BTTS with separate deflation — only when needed
-        if separate_btts:
-            lh_btts = lh_raw * btts_defl
-            la_btts = la_raw * btts_defl
-            prob_btts = 0.0
-            for h in range(9):
-                ph = poisson_pmf(h, lh_btts)
-                for a in range(9):
-                    pa = poisson_pmf(a, la_btts)
-                    if h >= 1 and a >= 1:
-                        prob_btts += ph * pa
+        brier["1x2_home"].append(_brier(prob_home, 1 if gh > ga else 0))
+        brier["1x2_draw"].append(_brier(prob_draw, 1 if gh == ga else 0))
+        brier["1x2_away"].append(_brier(prob_away, 1 if gh < ga else 0))
 
-        actual_over25 = 1 if total > 2.5 else 0
-        brier_ou.append(_brier(prob_over25, actual_over25))
+        # ── Double Chance (derived from 1X2) ──
+        brier["dc_1x"].append(_brier(prob_home + prob_draw, 1 if gh >= ga else 0))
+        brier["dc_12"].append(_brier(prob_home + prob_away, 1 if gh != ga else 0))
+        brier["dc_x2"].append(_brier(prob_draw + prob_away, 1 if gh <= ga else 0))
 
-        actual_btts = 1 if (gh > 0 and ga > 0) else 0
-        brier_btts.append(_brier(prob_btts, actual_btts))
+        # ── Corners (when data available) ──
+        tc = m.get("total_corners")
+        if tc is not None and tc > 0:
+            corner_lambda = (m.get("avg_corners_total") or tc) * corner_deflation
+            corner_lambda = max(3.0, min(20.0, corner_lambda))
+            for line, key in [(8.5, "corners_o85"), (9.5, "corners_o95"), (10.5, "corners_o105")]:
+                prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
+                brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
 
-        actual_home = 1 if gh > ga else 0
-        brier_1x2.append(_brier(prob_home, actual_home))
+        # ── Cards (when data available) ──
+        total_cards = m.get("total_cards")
+        if total_cards is not None and total_cards > 0:
+            cards_lambda = (m.get("avg_cards_total") or total_cards) * cards_deflation
+            cards_lambda = max(1.0, min(12.0, cards_lambda))
+            for line, key in [(2.5, "cards_o25"), (3.5, "cards_o35"), (4.5, "cards_o45")]:
+                prob_over_cards = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
+                brier[key].append(_brier(prob_over_cards, 1 if total_cards > line else 0))
 
-    n = len(brier_ou)
-    return {
-        "brier_ou": sum(brier_ou) / n if n > 0 else None,
-        "brier_btts": sum(brier_btts) / n if n > 0 else None,
-        "brier_1x2": sum(brier_1x2) / n if n > 0 else None,
-        "n_matches": n,
-    }
+    # Aggregate
+    def avg(lst):
+        return sum(lst) / len(lst) if lst else None
+
+    result = {}
+    for k, v in brier.items():
+        result[f"brier_{k}"] = avg(v)
+
+    # Grouped averages
+    result["brier_over_avg"] = avg(brier["over_15"] + brier["over_25"] + brier["over_35"] + brier["over_45"])
+    result["brier_under_avg"] = avg(brier["under_15"] + brier["under_25"] + brier["under_35"] + brier["under_45"])
+    result["brier_1x2_avg"] = avg(brier["1x2_home"] + brier["1x2_draw"] + brier["1x2_away"])
+    result["brier_dc_avg"] = avg(brier["dc_1x"] + brier["dc_12"] + brier["dc_x2"])
+    result["brier_corners_avg"] = avg(brier["corners_o85"] + brier["corners_o95"] + brier["corners_o105"])
+    result["brier_cards_avg"] = avg(brier["cards_o25"] + brier["cards_o35"] + brier["cards_o45"])
+    result["n_matches"] = len(brier["over_25"])
+    result["n_corners_matches"] = len(brier["corners_o85"])
+    result["n_cards_matches"] = len(brier["cards_o25"])
+
+    # Backward-compatible aliases
+    result["brier_ou"] = result.get("brier_over_25")
+    result["brier_btts"] = result.get("brier_btts")
+    result["brier_1x2"] = result.get("brier_1x2_home")
+
+    return result
 
 
 def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
@@ -199,6 +277,12 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
     all_goals = [rm["goals_home"] + rm["goals_away"] for rm in raw_matches]
     league_avg_per_team = sum(all_goals) / len(all_goals) / 2.0 if all_goals else 1.25
 
+    # League average corners and cards (for Poisson baselines)
+    corners_with_data = [rm["total_corners"] for rm in raw_matches if rm["total_corners"] > 0]
+    avg_corners = sum(corners_with_data) / len(corners_with_data) if corners_with_data else 0
+    cards_with_data = [rm["total_cards"] for rm in raw_matches if rm["total_cards"] > 0]
+    avg_cards = sum(cards_with_data) / len(cards_with_data) if cards_with_data else 0
+
     # Pass 3: enrich each match with team averages (Dixon-Coles inputs)
     matches = []
     for rm in raw_matches:
@@ -229,6 +313,8 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
             "home_goals_conceded_factor": home_def_rel,
             "total_corners": rm["total_corners"],
             "total_cards": rm["total_cards"],
+            "avg_corners_total": avg_corners,
+            "avg_cards_total": avg_cards,
         })
 
     return matches
@@ -501,105 +587,221 @@ def calibrate_league(
             "params": None,
         }
 
-    # ── Grid search: lambda deflation x lambda weights ──
+    # ── Grid search 1: O/U deflation × lambda weights ──
     best_ou = {"brier": 1.0}
-    best_1x2 = {"brier": 1.0}
 
     for deflation in DEFLATION_GRID:
         for weights in LAMBDA_WEIGHT_GRID:
-            result = _simulate_poisson_brier(
+            result = _simulate_all_markets(
                 matches, lambda_deflation_ou=deflation, lambda_weights=weights,
             )
 
-            if result["brier_ou"] is not None and result["brier_ou"] < best_ou["brier"]:
+            b = result.get("brier_over_avg")
+            if b is not None and b < best_ou["brier"]:
                 best_ou = {
-                    "brier": result["brier_ou"],
+                    "brier": b,
                     "deflation": deflation,
                     "weight_season": weights[0],
                     "weight_recent": weights[1],
                 }
 
-            # 1X2 uses undeflated lambda — search only weights
-            if deflation == 1.0 and result["brier_1x2"] is not None and result["brier_1x2"] < best_1x2["brier"]:
-                best_1x2 = {
-                    "brier": result["brier_1x2"],
-                    "weight_season": weights[0],
-                    "weight_recent": weights[1],
-                }
-
-    # ── Grid search: BTTS deflation (O/U fixed at optimal, BTTS varies independently) ──
-    best_btts = {"brier": 1.0}
     best_ou_weights = (best_ou.get("weight_season", 0.60), best_ou.get("weight_recent", 0.40))
     best_ou_defl = best_ou.get("deflation", 1.0)
 
+    # ── Grid search 2: BTTS deflation (O/U fixed) ──
+    best_btts = {"brier": 1.0}
+
     for btts_defl in BTTS_DEFLATION_GRID:
-        result = _simulate_poisson_brier(
+        result = _simulate_all_markets(
             matches,
             lambda_deflation_ou=best_ou_defl,
             lambda_weights=best_ou_weights,
             lambda_deflation_btts=btts_defl,
         )
-        if result["brier_btts"] is not None and result["brier_btts"] < best_btts["brier"]:
-            best_btts = {
-                "brier": result["brier_btts"],
-                "deflation": btts_defl,
-            }
+        b = result.get("brier_btts")
+        if b is not None and b < best_btts["brier"]:
+            best_btts = {"brier": b, "deflation": btts_defl}
 
-    # ── Corner deflation (based on avg corners error) ──
-    avg_corners_actual = 0
-    n_corners = 0
-    for m in matches:
-        tc = m.get("total_corners")
-        if tc and tc > 0:
-            avg_corners_actual += tc
-            n_corners += 1
-    avg_corners_actual = avg_corners_actual / n_corners if n_corners > 0 else 10.0
+    # ── Grid search 3: 1X2 deflation ──
+    best_1x2_defl = {"brier": 1.0}
 
-    # Compare with league DNA expected
-    try:
-        from backend.config.league_dna import get_league_dna
-        dna = get_league_dna(league_id)
-        expected_corners = dna.avg_corners if dna else 10.0
-    except Exception:
-        expected_corners = 10.0
+    for defl_1x2 in ONE_X_TWO_DEFLATION_GRID:
+        result = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=defl_1x2,
+        )
+        b = result.get("brier_1x2_avg")
+        if b is not None and b < best_1x2_defl["brier"]:
+            best_1x2_defl = {"brier": b, "deflation": defl_1x2}
 
-    corner_factor = avg_corners_actual / expected_corners if expected_corners > 0 else 1.0
-    corner_factor = max(0.70, min(1.20, round(corner_factor, 2)))
+    # ── Grid search 4: Corners deflation (Brier-based) ──
+    best_corner = {"brier": 1.0}
 
-    # ── SAFE threshold recommendation ──
-    # Based on Brier score with optimal params
-    optimal_result = _simulate_poisson_brier(
+    for c_defl in CORNER_BRIER_GRID:
+        result = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+            corner_deflation=c_defl,
+        )
+        b = result.get("brier_corners_avg")
+        if b is not None and b < best_corner["brier"]:
+            best_corner = {"brier": b, "deflation": c_defl}
+
+    # Fallback: ratio-based if no corner Brier matches
+    if best_corner["brier"] >= 1.0:
+        avg_corners_actual = 0
+        n_corners = 0
+        for m in matches:
+            tc = m.get("total_corners")
+            if tc and tc > 0:
+                avg_corners_actual += tc
+                n_corners += 1
+        avg_corners_actual = avg_corners_actual / n_corners if n_corners > 0 else 10.0
+        try:
+            from backend.config.league_dna import get_league_dna
+            dna = get_league_dna(league_id)
+            expected_corners = dna.avg_corners if dna else 10.0
+        except Exception:
+            expected_corners = 10.0
+        corner_factor = avg_corners_actual / expected_corners if expected_corners > 0 else 1.0
+        corner_factor = max(0.70, min(1.20, round(corner_factor, 2)))
+    else:
+        corner_factor = best_corner.get("deflation", 1.0)
+
+    # ── Grid search 5: Cards deflation ──
+    best_cards = {"brier": 1.0}
+
+    for c_defl in CARDS_DEFLATION_GRID:
+        result = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+            corner_deflation=corner_factor,
+            cards_deflation=c_defl,
+        )
+        b = result.get("brier_cards_avg")
+        if b is not None and b < best_cards["brier"]:
+            best_cards = {"brier": b, "deflation": c_defl}
+
+    cards_factor = best_cards.get("deflation", 1.0)
+
+    # ── Grid search 6: xG blend weight ──
+    best_xg = {"brier": 1.0, "weight": 0.0}
+
+    for xg_w in XG_BLEND_GRID:
+        result = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+            corner_deflation=corner_factor,
+            cards_deflation=cards_factor,
+            xg_blend_weight=xg_w,
+        )
+        b = result.get("brier_over_avg")
+        if b is not None and b < best_xg["brier"]:
+            best_xg = {"brier": b, "weight": xg_w}
+
+    # ── BTTS fusion weights suggestion (heuristic from BTTS deflation) ──
+    btts_defl_val = best_btts.get("deflation", 1.0)
+    if btts_defl_val > 1.10:
+        suggested_btts_weights = {"footystats": 0.50, "poisson": 0.20, "team_avg": 0.30}
+    elif btts_defl_val < 0.90:
+        suggested_btts_weights = {"footystats": 0.30, "poisson": 0.40, "team_avg": 0.30}
+    else:
+        suggested_btts_weights = {"footystats": 0.40, "poisson": 0.30, "team_avg": 0.30}
+
+    # ── Final optimal simulation with all best params ──
+    optimal = _simulate_all_markets(
         matches,
         lambda_deflation_ou=best_ou_defl,
         lambda_weights=best_ou_weights,
         lambda_deflation_btts=best_btts.get("deflation", 1.0),
+        lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+        corner_deflation=corner_factor,
+        cards_deflation=cards_factor,
+        xg_blend_weight=best_xg.get("weight", 0.0),
     )
 
+    # ── Threshold suggestions per market (Brier heuristic) ──
+    def _threshold_from_brier(brier_val, tight=0.62, loose=0.78):
+        if brier_val is None:
+            return loose
+        if brier_val < 0.20:
+            return tight
+        elif brier_val < 0.23:
+            return tight + 0.05
+        elif brier_val < 0.25:
+            return tight + 0.10
+        else:
+            return loose
+
+    suggested_safe_prob = {
+        "over_under": _threshold_from_brier(optimal.get("brier_over_avg"), 0.65, 0.78),
+        "btts": _threshold_from_brier(optimal.get("brier_btts"), 0.65, 0.78),
+        "1x2": _threshold_from_brier(optimal.get("brier_1x2_avg"), 0.55, 0.68),
+        "dc": _threshold_from_brier(optimal.get("brier_dc_avg"), 0.72, 0.85),
+        "corners": _threshold_from_brier(optimal.get("brier_corners_avg"), 0.62, 0.75),
+        "cards": _threshold_from_brier(optimal.get("brier_cards_avg"), 0.65, 0.78),
+    }
+
+    # ── SAFE determination ──
     safe_enabled = (
-        optimal_result["brier_ou"] is not None and optimal_result["brier_ou"] < 0.25
+        optimal.get("brier_over_avg") is not None
+        and optimal["brier_over_avg"] < 0.25
         and len(matches) >= 100
     )
 
     params = {
-        "lambda_deflation_ou": best_ou.get("deflation", 1.0),
+        # Existing
+        "lambda_deflation_ou": best_ou_defl,
         "lambda_deflation_btts": best_btts.get("deflation", 1.0),
         "lambda_weight_season": best_ou.get("weight_season", 0.60),
         "lambda_weight_recent": best_ou.get("weight_recent", 0.40),
         "corner_factor": corner_factor,
         "safe_enabled": safe_enabled,
-        "brier_ou": best_ou.get("brier"),
-        "brier_btts": best_btts.get("brier"),
-        "brier_1x2": best_1x2.get("brier"),
+        # New — per-market deflation
+        "lambda_deflation_1x2": best_1x2_defl.get("deflation", 1.0),
+        "cards_factor": cards_factor,
+        "xg_blend_weight": best_xg.get("weight", 0.0),
+        # New — BTTS fusion weights
+        "btts_weight_footystats": suggested_btts_weights["footystats"],
+        "btts_weight_poisson": suggested_btts_weights["poisson"],
+        "btts_weight_team_avg": suggested_btts_weights["team_avg"],
+        # New — thresholds per market
+        "safe_prob_ou": suggested_safe_prob["over_under"],
+        "safe_prob_btts": suggested_safe_prob["btts"],
+        "safe_prob_1x2": suggested_safe_prob["1x2"],
+        "safe_prob_dc": suggested_safe_prob["dc"],
+        "safe_prob_corners": suggested_safe_prob["corners"],
+        "safe_prob_cards": suggested_safe_prob["cards"],
+        # Brier diagnostics
+        "brier_over_avg": optimal.get("brier_over_avg"),
+        "brier_under_avg": optimal.get("brier_under_avg"),
+        "brier_ou": optimal.get("brier_over_25"),
+        "brier_btts": optimal.get("brier_btts"),
+        "brier_1x2": optimal.get("brier_1x2_avg"),
+        "brier_dc_avg": optimal.get("brier_dc_avg"),
+        "brier_corners_avg": optimal.get("brier_corners_avg"),
+        "brier_cards_avg": optimal.get("brier_cards_avg"),
     }
 
     logger.info(
-        f"[calibrator] {league_id}: optimal params — "
-        f"lambda_defl_ou={params['lambda_deflation_ou']}, "
-        f"btts_defl={params['lambda_deflation_btts']}, "
-        f"weights={params['lambda_weight_season']}/{params['lambda_weight_recent']}, "
-        f"corner_factor={params['corner_factor']}, "
-        f"safe={params['safe_enabled']}, "
-        f"brier_ou={params['brier_ou']:.4f}"
+        f"[calibrator] {league_id}: optimal — "
+        f"ou={best_ou_defl}, btts={best_btts.get('deflation', 1.0)}, "
+        f"1x2={best_1x2_defl.get('deflation', 1.0)}, "
+        f"corners={corner_factor}, cards={cards_factor}, "
+        f"xg_w={best_xg.get('weight', 0.0)}, safe={safe_enabled}, "
+        f"brier_ou={optimal.get('brier_over_avg', '?')}"
     )
 
     return {
@@ -622,12 +824,35 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
     from backend.audit import log_correction
 
     param_map = {
+        # Existing
         "lambda_deflation_ou": ("lambda_multiplier", "Calibrated lambda deflation for O/U"),
         "lambda_deflation_btts": ("btts_multiplier", "Calibrated BTTS deflation"),
-        "corner_factor": ("corner_multiplier", "Calibrated corner factor"),
+        "corner_factor": ("corner_multiplier", "Calibrated corner factor (Brier-based)"),
         "lambda_weight_season": ("lambda_weight_season", "Calibrated season weight"),
         "lambda_weight_recent": ("lambda_weight_recent", "Calibrated recent weight"),
         "safe_enabled": ("safe_enabled", "Per-league SAFE status"),
+        # New — per-market deflation
+        "lambda_deflation_1x2": ("1x2_multiplier", "Calibrated 1X2 deflation"),
+        "cards_factor": ("cards_multiplier", "Calibrated cards factor (Brier-based)"),
+        "xg_blend_weight": ("xg_blend_weight", "Calibrated xG blend weight"),
+        # New — BTTS fusion weights
+        "btts_weight_footystats": ("btts_weight_footystats", "Calibrated BTTS FootyStats weight"),
+        "btts_weight_poisson": ("btts_weight_poisson", "Calibrated BTTS Poisson weight"),
+        "btts_weight_team_avg": ("btts_weight_team_avg", "Calibrated BTTS team_avg weight"),
+        # New — thresholds per market
+        "safe_prob_ou": ("safe_prob_ou", "Calibrated SAFE threshold for O/U"),
+        "safe_prob_btts": ("safe_prob_btts", "Calibrated SAFE threshold for BTTS"),
+        "safe_prob_1x2": ("safe_prob_1x2", "Calibrated SAFE threshold for 1X2"),
+        "safe_prob_dc": ("safe_prob_dc", "Calibrated SAFE threshold for DC"),
+        "safe_prob_corners": ("safe_prob_corners", "Calibrated SAFE threshold for Corners"),
+        "safe_prob_cards": ("safe_prob_cards", "Calibrated SAFE threshold for Cards"),
+        # Diagnostic Brier scores
+        "brier_over_avg": ("brier_over_avg", "Diagnostic: Brier Over all lines"),
+        "brier_under_avg": ("brier_under_avg", "Diagnostic: Brier Under all lines"),
+        "brier_1x2": ("brier_1x2_avg", "Diagnostic: Brier 1X2 averaged"),
+        "brier_dc_avg": ("brier_dc_avg", "Diagnostic: Brier Double Chance averaged"),
+        "brier_corners_avg": ("brier_corners_avg", "Diagnostic: Brier Corners averaged"),
+        "brier_cards_avg": ("brier_cards_avg", "Diagnostic: Brier Cards averaged"),
     }
 
     n_matches = params.get("n_matches", "?")

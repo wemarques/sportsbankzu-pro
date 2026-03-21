@@ -712,6 +712,7 @@ def build_records_from_matches(
             regime=league_regime,
             xg_home=xg_home_team,
             xg_away=xg_away_team,
+            league_id=league_id,
         )
         lam_home, lam_away, xg_metadata = aplicar_filtro_completo(
             lambda_home=lam_home,
@@ -777,8 +778,20 @@ def build_records_from_matches(
             _btts_sources.append(("team_avg", round(_btts_team_avg, 1)))
 
         if len(_btts_sources) >= 3:
-            # 3 sources: weighted average (FootyStats 40%, Poisson 30%, Team avg 30%)
-            _w = {"footystats": 0.40, "poisson": 0.30, "team_avg": 0.30}
+            # 3 sources: read calibrated weights per league, fallback to defaults (#055)
+            _w_default = {"footystats": 0.40, "poisson": 0.30, "team_avg": 0.30}
+            try:
+                from backend.modeling.lambda_calculator import get_lambda_corrections
+                _corr = get_lambda_corrections(league_id)
+                _btts_fs = _corr.get("btts_weight_footystats", {}).get("value")
+                _btts_po = _corr.get("btts_weight_poisson", {}).get("value")
+                _btts_ta = _corr.get("btts_weight_team_avg", {}).get("value")
+                if _btts_fs is not None and _btts_po is not None and _btts_ta is not None:
+                    _w = {"footystats": float(_btts_fs), "poisson": float(_btts_po), "team_avg": float(_btts_ta)}
+                else:
+                    _w = _w_default
+            except Exception:
+                _w = _w_default
             btts_final = sum(v * _w[k] for k, v in _btts_sources)
         elif len(_btts_sources) == 2:
             k1, v1 = _btts_sources[0]

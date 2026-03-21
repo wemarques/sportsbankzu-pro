@@ -2929,4 +2929,57 @@ FootyStats não retornava season data para algumas ligas. Sem dados, ficavam com
 
 ---
 
+## 055 — Calibração completa de TODOS os mercados e parâmetros por liga
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `backend/modeling/poisson_matrix.py`, `backend/services/ev_classification.py`, `backend/services/fixtures_service.py`, `backend/main.py`, `backend/ml/predictor.py`, `backend/routes/backtesting.py`
+**Severidade:** Alta (assertividade global — cobre tabelas C.1-C.5 do relatório v3)
+**Status:** Implementado
+**Referência:** Relatório v3, Seção 5.2C (tabelas C.1-C.5)
+
+### Problema identificado
+
+O calibrador (#052-#054) cobria apenas lambda O/U, BTTS deflation, corner ratio e SAFE flag. Mercados e parâmetros não calibrados causavam:
+1. **1X2** sem deflation própria — probabilidades potencialmente incorretas
+2. **Under** sem validação separada — EV absurdo em mercados Under
+3. **Cards** zero calibração — Poisson sem tuning de threshold ou multiplier
+4. **Corners** apenas ratio sem Brier — sem validação de melhoria
+5. **BTTS fusion weights** (40/30/30) fixos — não otimizados por liga
+6. **xG blend** (70/30) fixo — não otimizado por liga
+7. **Thresholds** (safe_prob) iguais para todas as ligas — ligas boas penalizadas
+
+### Correções aplicadas — Calibração completa
+
+| Parâmetro | Grid Search | Arquivo que Lê | Antes |
+|-----------|------------|----------------|-------|
+| lambda O/U | 0.75-1.50 | poisson_matrix.py | existia |
+| lambda BTTS | 0.80-1.30 | poisson_matrix.py | existia |
+| lambda 1X2 | 0.90-1.10 | poisson_matrix.py | NOVO |
+| lambda weights | 0.40-0.70 | lambda_calculator.py | existia |
+| corner factor | 0.80-1.20 (Brier) | corners/predictor.py | era ratio |
+| cards factor | 0.80-1.20 (Brier) | ml/predictor.py | NOVO |
+| xG blend | 0.0-0.50 | main.py | NOVO |
+| BTTS weights | heurístico | fixtures_service.py | NOVO |
+| safe_prob O/U | heurístico Brier | ev_classification.py | era global |
+| safe_prob BTTS | heurístico Brier | ev_classification.py | NOVO |
+| safe_prob 1X2 | heurístico Brier | ev_classification.py | NOVO |
+| safe_prob DC | heurístico Brier | ev_classification.py | NOVO |
+| safe_prob Corners | heurístico Brier | ev_classification.py | NOVO |
+| safe_prob Cards | heurístico Brier | ev_classification.py | NOVO |
+
+**Simulação expandida:** `_simulate_all_markets()` computa Brier para 20 mercados: Over 4 linhas, Under 4 linhas, BTTS, 1X2 ×3, DC ×3, Corners ×3, Cards ×3.
+
+**Pipeline reads:** Cada parâmetro calibrado é lido da corrections DB no ponto onde é usado:
+- `poisson_matrix.py` → 1X2 deflation (novo `_get_league_deflation` retorna 3 valores)
+- `ev_classification.py` → `_get_thresholds(market_cat, league_id)` com priority calibrated > audit DB > defaults
+- `fixtures_service.py` → BTTS fusion weights lidos de `get_lambda_corrections()`
+- `main.py` → `expected_goals_v2()` recebe `league_id`, lê `xg_blend_weight` calibrado
+- `ml/predictor.py` → Cards Poisson aplica `cards_multiplier` calibrado
+
+### Lição aprendida
+
+Calibrar apenas lambda O/U e assumir que outros mercados estão cobertos cria inconsistências. O mapeamento completo de parâmetros calibráveis (tabelas C.1-C.5 do relatório v3) deveria ter sido implementado desde a primeira versão do calibrador.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
