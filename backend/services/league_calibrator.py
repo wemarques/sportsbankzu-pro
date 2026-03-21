@@ -22,13 +22,13 @@ SEASON_WEIGHTS = [0.50, 0.25, 0.13, 0.07, 0.03, 0.02]
 # Grid search ranges — expanded after all 28 leagues hit 1.10 ceiling (#053)
 DEFLATION_GRID = [
     0.75, 0.80, 0.85, 0.90, 0.92, 0.95, 0.97,
-    1.00, 1.03, 1.05, 1.08, 1.10, 1.15, 1.20, 1.25, 1.30,
+    1.00, 1.03, 1.05, 1.08, 1.10, 1.15, 1.20, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50,
 ]
 LAMBDA_WEIGHT_GRID = [
     (0.40, 0.60), (0.45, 0.55), (0.50, 0.50),
     (0.55, 0.45), (0.60, 0.40), (0.65, 0.35), (0.70, 0.30),
 ]
-BTTS_DEFLATION_GRID = [0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25]
+BTTS_DEFLATION_GRID = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80, 2.00]
 CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 
 
@@ -129,17 +129,21 @@ def _simulate_poisson_brier(
 
 
 def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
-    """Extract finished matches with stats from FootyStats league-matches response.
+    """Extract finished matches from FootyStats league-matches response.
 
-    Maps FootyStats fields to our internal structure for simulation.
+    Two-pass approach:
+    1. Extract all finished matches with their raw goals
+    2. Compute per-team averages from actual results (not unreliable per-match fields)
+
+    This ensures the calibrator uses real data rather than xG or missing averages.
     """
-    matches = []
+    # Pass 1: extract raw match results
+    raw_matches = []
     items = raw_data.get("data", [])
     if isinstance(items, dict):
         items = [items]
 
     for m in items:
-        # Only finished matches
         status = m.get("status", "")
         if status not in ("complete", "finished", "ft"):
             continue
@@ -154,17 +158,72 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
         except (ValueError, TypeError):
             continue
 
-        matches.append({
+        home_name = m.get("home_name") or m.get("homeTeam") or "unknown_home"
+        away_name = m.get("away_name") or m.get("awayTeam") or "unknown_away"
+
+        raw_matches.append({
             "goals_home": gh,
             "goals_away": ga,
-            "home_goals_scored_avg": m.get("team_a_xg") or m.get("homeGoalsAVG_overall") or 1.3,
-            "away_goals_scored_avg": m.get("team_b_xg") or m.get("awayGoalsAVG_overall") or 1.1,
-            "home_goals_scored_avg_recent": m.get("homeGoalsAVG_last5") or m.get("homeGoalsAVG_overall") or 1.3,
-            "away_goals_scored_avg_recent": m.get("awayGoalsAVG_last5") or m.get("awayGoalsAVG_overall") or 1.1,
-            "away_goals_conceded_factor": m.get("awayConcededAVG_factor") or 1.0,
-            "home_goals_conceded_factor": m.get("homeConcededAVG_factor") or 1.0,
+            "home_name": home_name,
+            "away_name": away_name,
             "total_corners": (m.get("team_a_corners") or 0) + (m.get("team_b_corners") or 0),
             "total_cards": (m.get("team_a_cards") or 0) + (m.get("team_b_cards") or 0),
+        })
+
+    if not raw_matches:
+        return []
+
+    # Pass 2: compute per-team averages from actual results
+    from collections import defaultdict
+    team_home_goals = defaultdict(list)  # goals scored at home
+    team_away_goals = defaultdict(list)  # goals scored away
+    team_home_conceded = defaultdict(list)  # goals conceded at home
+    team_away_conceded = defaultdict(list)  # goals conceded away
+
+    for rm in raw_matches:
+        h, a = rm["home_name"], rm["away_name"]
+        team_home_goals[h].append(rm["goals_home"])
+        team_away_goals[a].append(rm["goals_away"])
+        team_home_conceded[h].append(rm["goals_away"])
+        team_away_conceded[a].append(rm["goals_home"])
+
+    def _avg(lst):
+        return sum(lst) / len(lst) if lst else 1.25
+
+    # League average goals per team
+    all_goals = [rm["goals_home"] + rm["goals_away"] for rm in raw_matches]
+    league_avg_per_team = sum(all_goals) / len(all_goals) / 2.0 if all_goals else 1.25
+
+    # Pass 3: enrich each match with team averages (Dixon-Coles inputs)
+    matches = []
+    for rm in raw_matches:
+        h, a = rm["home_name"], rm["away_name"]
+
+        home_scored_avg = _avg(team_home_goals[h])
+        away_scored_avg = _avg(team_away_goals[a])
+
+        # Recent form: last 5 matches for each team at their respective venue
+        home_recent = team_home_goals[h][-5:] if len(team_home_goals[h]) >= 5 else team_home_goals[h]
+        away_recent = team_away_goals[a][-5:] if len(team_away_goals[a]) >= 5 else team_away_goals[a]
+
+        # Opponent defensive factor (Dixon-Coles relative strength)
+        away_conceded_avg = _avg(team_away_conceded[a])  # how many goals away team concedes away
+        home_conceded_avg = _avg(team_home_conceded[h])   # how many goals home team concedes at home
+
+        away_def_rel = away_conceded_avg / league_avg_per_team if league_avg_per_team > 0 else 1.0
+        home_def_rel = home_conceded_avg / league_avg_per_team if league_avg_per_team > 0 else 1.0
+
+        matches.append({
+            "goals_home": rm["goals_home"],
+            "goals_away": rm["goals_away"],
+            "home_goals_scored_avg": home_scored_avg,
+            "away_goals_scored_avg": away_scored_avg,
+            "home_goals_scored_avg_recent": _avg(home_recent),
+            "away_goals_scored_avg_recent": _avg(away_recent),
+            "away_goals_conceded_factor": away_def_rel,
+            "home_goals_conceded_factor": home_def_rel,
+            "total_corners": rm["total_corners"],
+            "total_cards": rm["total_cards"],
         })
 
     return matches
