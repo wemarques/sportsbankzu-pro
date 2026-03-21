@@ -53,8 +53,11 @@ def _is_safe_enabled(league_id: str | None) -> bool:
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
         corrections = get_lambda_corrections(league_id)
-        safe_val = corrections.get("safe_enabled", {}).get("value", "False")
-        return str(safe_val).lower() in ("true", "1", "yes")
+        safe_val = corrections.get("safe_enabled", {}).get("value", "0")
+        try:
+            return float(safe_val) >= 1.0
+        except (ValueError, TypeError):
+            return str(safe_val).lower() in ("true", "1", "yes", "1.0")
     except Exception:
         return False  # Default: disabled
 

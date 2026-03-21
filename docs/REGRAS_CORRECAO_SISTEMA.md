@@ -2896,4 +2896,37 @@ Calibração (#052) revelou que TODOS os 28 leagues calibrados atingiram o teto 
 
 ---
 
+## 054 — Fix BTTS calibration (deflação separada) + Fix SAFE save + Dual source
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `backend/services/ev_classification.py`, `backend/services/api_football_client.py`, `backend/routes/backtesting.py`
+**Severidade:** Alta (calibração incorreta + feature não funcional)
+**Status:** Corrigido
+
+### Problema 1: BTTS deflation absurda (1.8-2.0)
+
+A simulação `_simulate_poisson_brier()` aceitava UM ÚNICO `lambda_deflation` aplicado a TODOS os mercados. No grid search de BTTS, passava o fator BTTS como deflação única, boosting lambdas para O/U e BTTS juntos. Em produção, `poisson_matrix.py` aplica deflações SEPARADAS. O resultado: BTTS deflation batia no teto do grid (2.0) porque a simulação não refletia o pipeline real.
+
+**Fix:** `_simulate_poisson_brier()` agora aceita `lambda_deflation_ou` e `lambda_deflation_btts` separadamente. O grid search de BTTS mantém O/U fixo no valor ótimo e varia apenas BTTS. Grid BTTS reduzido para 0.80-1.30.
+
+### Problema 2: safe_enabled nunca gravado no DB
+
+`log_correction()` declara `new_value: float` e formata com `.4f`. `save_calibration()` passava `str(True)` — crash silencioso no format. safe_enabled nunca era gravado.
+
+**Fix:** `save_calibration()` converte booleans para 1.0/0.0 antes de gravar. `_is_safe_enabled()` lê float >= 1.0 como True.
+
+### Evolução: Dual source FootyStats + API-Football
+
+FootyStats não retornava season data para algumas ligas. Sem dados, ficavam com INSUFFICIENT_DATA.
+
+**Fix:** Dual source — FootyStats e API-Football buscados para cada liga. `merge_dual_sources()` seleciona o dataset mais completo. API-Football data agora usa two-pass team average computation (mesmo algoritmo do FootyStats path).
+
+### Lição aprendida
+
+1. **Simulação de calibração deve espelhar produção** — Se produção usa deflações separadas, a simulação de calibração também deve.
+2. **Type mismatch silencioso** é fatal para features condicionais — `log_correction(new_value: float)` recebendo string crashava silenciosamente.
+3. **Dual source > fallback** — Buscar de ambas as fontes e mergear é mais robusto que fallback sequencial.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

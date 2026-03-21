@@ -386,6 +386,17 @@ async def calibration_status():
                 for c in corrections.values()
                 if isinstance(c, dict)
             )
+            # Read safe_enabled as float (1.0=true, 0.0=false)
+            _safe_raw = corrections.get("safe_enabled", {}).get("value")
+            if _safe_raw is not None:
+                try:
+                    _safe = float(_safe_raw) >= 1.0
+                except (ValueError, TypeError):
+                    _safe = str(_safe_raw).lower() in ("true", "1", "yes")
+                safe_display = str(_safe).lower()
+            else:
+                safe_display = "false (default)"
+
             results.append({
                 "league": league_id,
                 "name": cfg["name"],
@@ -393,7 +404,7 @@ async def calibration_status():
                 "lambda_ou": corrections.get("lambda_multiplier", {}).get("value", "1.0 (default)"),
                 "btts": corrections.get("btts_multiplier", {}).get("value", "1.0 (default)"),
                 "corners": corrections.get("corner_multiplier", {}).get("value", "1.0 (default)"),
-                "safe_enabled": corrections.get("safe_enabled", {}).get("value", "false (default)"),
+                "safe_enabled": safe_display,
             })
         except Exception as e:
             results.append({"league": league_id, "name": cfg["name"], "error": str(e)})

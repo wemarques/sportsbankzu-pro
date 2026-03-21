@@ -28,7 +28,7 @@ LAMBDA_WEIGHT_GRID = [
     (0.40, 0.60), (0.45, 0.55), (0.50, 0.50),
     (0.55, 0.45), (0.60, 0.40), (0.65, 0.35), (0.70, 0.30),
 ]
-BTTS_DEFLATION_GRID = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80, 2.00]
+BTTS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30]
 CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 
 
@@ -39,20 +39,21 @@ def _brier(prob: float, outcome: int) -> float:
 
 def _simulate_poisson_brier(
     matches: List[Dict],
-    lambda_deflation: float,
+    lambda_deflation_ou: float,
     lambda_weights: Tuple[float, float],
+    lambda_deflation_btts: float | None = None,
 ) -> Dict[str, float]:
-    """Simulate Brier scores for goal markets given deflation and weight params.
+    """Simulate Brier scores with SEPARATE deflation for O/U and BTTS.
 
-    For each match:
-    1. Compute lambda from team averages using given weights
-    2. Apply deflation factor
-    3. Use Poisson to predict Over/Under probabilities
-    4. Compare with actual result
-    5. Compute Brier score
+    Args:
+        lambda_deflation_ou: Deflation factor for Over/Under markets
+        lambda_weights: (weight_season, weight_recent)
+        lambda_deflation_btts: Deflation for BTTS. If None, uses same as O/U.
 
     Returns dict with brier_ou, brier_btts, brier_1x2, n_matches.
     """
+    btts_defl = lambda_deflation_btts if lambda_deflation_btts is not None else lambda_deflation_ou
+
     brier_ou = []
     brier_btts = []
     brier_1x2 = []
@@ -60,62 +61,61 @@ def _simulate_poisson_brier(
     w_season, w_recent = lambda_weights
 
     for m in matches:
-        # Extract team averages
         home_avg_season = m.get("home_goals_scored_avg", 0) or 0
         away_avg_season = m.get("away_goals_scored_avg", 0) or 0
         home_avg_recent = m.get("home_goals_scored_avg_recent", home_avg_season) or home_avg_season
         away_avg_recent = m.get("away_goals_scored_avg_recent", away_avg_season) or away_avg_season
 
-        # Opponent defensive factors
         home_def_factor = m.get("away_goals_conceded_factor", 1.0) or 1.0
         away_def_factor = m.get("home_goals_conceded_factor", 1.0) or 1.0
 
-        # Compute lambda with given weights
         lh_raw = (home_avg_season * w_season + home_avg_recent * w_recent) * home_def_factor
         la_raw = (away_avg_season * w_season + away_avg_recent * w_recent) * away_def_factor
 
-        # Clamp
         lh_raw = max(0.2, min(4.5, lh_raw))
         la_raw = max(0.2, min(4.5, la_raw))
 
-        # Deflated lambdas for O/U
-        lh = lh_raw * lambda_deflation
-        la = la_raw * lambda_deflation
+        # SEPARATE deflations: O/U uses one, BTTS uses another
+        lh_ou = lh_raw * lambda_deflation_ou
+        la_ou = la_raw * lambda_deflation_ou
+        lh_btts = lh_raw * btts_defl
+        la_btts = la_raw * btts_defl
 
-        # Actual results
         gh = m.get("goals_home", 0) or 0
         ga = m.get("goals_away", 0) or 0
         total = gh + ga
 
-        # Poisson probabilities
+        # O/U and 1X2 — with O/U deflation
         prob_over25 = 0.0
-        prob_btts = 0.0
         prob_home = 0.0
         prob_draw = 0.0
-
         for h in range(9):
-            ph = poisson_pmf(h, lh)
+            ph = poisson_pmf(h, lh_ou)
             for a in range(9):
-                pa = poisson_pmf(a, la)
+                pa = poisson_pmf(a, la_ou)
                 p = ph * pa
                 if h + a > 2:
                     prob_over25 += p
-                if h >= 1 and a >= 1:
-                    prob_btts += p
                 if h > a:
                     prob_home += p
                 elif h == a:
                     prob_draw += p
 
-        # Brier for Over 2.5
+        # BTTS — with BTTS-specific deflation
+        prob_btts = 0.0
+        for h in range(9):
+            ph = poisson_pmf(h, lh_btts)
+            for a in range(9):
+                pa = poisson_pmf(a, la_btts)
+                if h >= 1 and a >= 1:
+                    prob_btts += ph * pa
+
         actual_over25 = 1 if total > 2.5 else 0
         brier_ou.append(_brier(prob_over25, actual_over25))
 
-        # Brier for BTTS
         actual_btts = 1 if (gh > 0 and ga > 0) else 0
         brier_btts.append(_brier(prob_btts, actual_btts))
 
-        # Brier for 1X2 (Home)
         actual_home = 1 if gh > ga else 0
         brier_1x2.append(_brier(prob_home, actual_home))
 
@@ -286,104 +286,168 @@ def fetch_historical_matches(league_id: str, n_seasons: int = 6) -> List[Dict]:
     return all_matches
 
 
-def _extract_matches_from_api_football(fixtures: list) -> List[Dict]:
-    """Extract finished matches from API-Football fixture response for calibration."""
-    matches = []
-    for fx in fixtures:
-        fx_data = fx.get("fixture", {})
-        goals = fx.get("goals", {})
-        status_short = fx_data.get("status", {}).get("short", "NS")
+def fetch_from_api_football(league_id: str, n_seasons: int = 6) -> List[Dict]:
+    """Fetch historical matches from API-Football for calibration.
 
-        if status_short not in ("FT", "AET", "PEN"):
-            continue
+    Uses get_season_fixtures() to get full seasons. Applies two-pass
+    team average computation (same as FootyStats path) for consistency.
 
-        gh = goals.get("home")
-        ga = goals.get("away")
-        if gh is None or ga is None:
-            continue
-
-        try:
-            gh, ga = int(gh), int(ga)
-        except (ValueError, TypeError):
-            continue
-
-        # API-Football doesn't provide per-team averages in fixture data,
-        # so we use league-wide defaults. The grid search will find the
-        # best deflation factor regardless.
-        matches.append({
-            "goals_home": gh,
-            "goals_away": ga,
-            "home_goals_scored_avg": 1.3,
-            "away_goals_scored_avg": 1.1,
-            "home_goals_scored_avg_recent": 1.3,
-            "away_goals_scored_avg_recent": 1.1,
-            "away_goals_conceded_factor": 1.0,
-            "home_goals_conceded_factor": 1.0,
-            "total_corners": 0,
-            "total_cards": 0,
-        })
-
-    return matches
-
-
-def fetch_historical_matches_fallback(league_id: str, n_seasons: int = 6) -> List[Dict]:
-    """Fallback: fetch historical matches from API-Football when FootyStats has no data.
-
-    Uses API-Football's fixtures endpoint without date filter to get full seasons.
-    Reference: REGRAS #053 — API-Football fallback.
+    Reference: REGRAS #054 — dual source.
     """
-    from backend.services.api_football_client import APIFootballClient
-    from backend.config.leagues_config import (
-        get_api_football_league_id, get_season_for_league, CALENDAR_YEAR_LEAGUES,
-        LEAGUE_ID_ALIASES,
-    )
+    try:
+        from backend.services.api_football_client import APIFootballClient
+        from backend.config.leagues_config import (
+            get_api_football_league_id, get_season_for_league, CALENDAR_YEAR_LEAGUES,
+            LEAGUE_ID_ALIASES,
+        )
 
-    af_league_id = get_api_football_league_id(league_id)
-    if not af_league_id:
-        logger.warning(f"[calibrator-fallback] No API-Football ID for {league_id}")
+        af_league_id = get_api_football_league_id(league_id)
+        if not af_league_id:
+            logger.info(f"[calibrator] No API-Football ID for {league_id}")
+            return []
+
+        current_season = get_season_for_league(league_id)
+        resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+        is_calendar = resolved_id in CALENDAR_YEAR_LEAGUES
+
+        client = APIFootballClient()
+        all_matches = []
+        weights = SEASON_WEIGHTS[:n_seasons]
+
+        for i in range(n_seasons):
+            season = current_season - i
+            if not is_calendar and season < 2018:
+                break
+            if is_calendar and season < 2019:
+                break
+
+            try:
+                fixtures = client.get_season_fixtures(
+                    league_id=af_league_id,
+                    season=season,
+                )
+                if not fixtures:
+                    continue
+
+                # Extract raw match data
+                raw_season = []
+                for fx in fixtures:
+                    goals = fx.get("goals", {})
+                    teams = fx.get("teams", {})
+                    gh, ga = goals.get("home"), goals.get("away")
+                    if gh is None or ga is None:
+                        continue
+                    try:
+                        gh, ga = int(gh), int(ga)
+                    except (ValueError, TypeError):
+                        continue
+                    raw_season.append({
+                        "goals_home": gh,
+                        "goals_away": ga,
+                        "home_name": teams.get("home", {}).get("name", f"home_{i}"),
+                        "away_name": teams.get("away", {}).get("name", f"away_{i}"),
+                        "total_corners": 0,
+                        "total_cards": 0,
+                    })
+
+                if not raw_season:
+                    continue
+
+                # Compute per-team averages (same two-pass as FootyStats)
+                from collections import defaultdict
+                team_hg = defaultdict(list)
+                team_ag = defaultdict(list)
+                team_hc = defaultdict(list)
+                team_ac = defaultdict(list)
+
+                for rm in raw_season:
+                    h, a = rm["home_name"], rm["away_name"]
+                    team_hg[h].append(rm["goals_home"])
+                    team_ag[a].append(rm["goals_away"])
+                    team_hc[h].append(rm["goals_away"])
+                    team_ac[a].append(rm["goals_home"])
+
+                def _avg(lst):
+                    return sum(lst) / len(lst) if lst else 1.25
+
+                all_g = [rm["goals_home"] + rm["goals_away"] for rm in raw_season]
+                league_avg_pt = sum(all_g) / len(all_g) / 2.0 if all_g else 1.25
+
+                w = weights[i] if i < len(weights) else 0.02
+
+                for rm in raw_season:
+                    h, a = rm["home_name"], rm["away_name"]
+                    away_c_avg = _avg(team_ac[a])
+                    home_c_avg = _avg(team_hc[h])
+
+                    all_matches.append({
+                        "goals_home": rm["goals_home"],
+                        "goals_away": rm["goals_away"],
+                        "home_goals_scored_avg": _avg(team_hg[h]),
+                        "away_goals_scored_avg": _avg(team_ag[a]),
+                        "home_goals_scored_avg_recent": _avg(team_hg[h][-5:]),
+                        "away_goals_scored_avg_recent": _avg(team_ag[a][-5:]),
+                        "away_goals_conceded_factor": away_c_avg / league_avg_pt if league_avg_pt > 0 else 1.0,
+                        "home_goals_conceded_factor": home_c_avg / league_avg_pt if league_avg_pt > 0 else 1.0,
+                        "total_corners": 0,
+                        "total_cards": 0,
+                        "season_weight": w,
+                        "season_index": i,
+                        "source": "api_football",
+                    })
+
+                logger.info(
+                    f"[calibrator] API-Football: {league_id} season {season}: "
+                    f"{len(raw_season)} matches (weight={w})"
+                )
+            except Exception as e:
+                logger.warning(f"[calibrator] API-Football season {season} failed for {league_id}: {e}")
+
+        return all_matches
+    except Exception as e:
+        logger.error(f"[calibrator] API-Football fetch error for {league_id}: {e}")
         return []
 
-    current_season = get_season_for_league(league_id)
-    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
-    is_calendar = resolved_id in CALENDAR_YEAR_LEAGUES
 
-    client = APIFootballClient()
-    all_matches = []
-    weights = SEASON_WEIGHTS[:n_seasons]
+def merge_dual_sources(
+    fs_matches: List[Dict],
+    af_matches: List[Dict],
+    league_id: str,
+) -> List[Dict]:
+    """Merge FootyStats + API-Football, picking most complete dataset per league.
 
-    for i in range(n_seasons):
-        season = current_season - i
-        if not is_calendar and season < 2018:
-            break
-        if is_calendar and season < 2019:
-            break
+    Strategy:
+    - If one has >50% more matches -> use that one entirely
+    - If similar -> use FootyStats as base (has better team stats),
+      fill gaps from API-Football for seasons FootyStats doesn't cover
+    - Deduplicate by season_index to avoid double-counting
+    """
+    n_fs = len(fs_matches)
+    n_af = len(af_matches)
 
-        try:
-            # Call API-Football fixtures endpoint without date to get full season
-            params = {
-                "league": str(af_league_id),
-                "season": str(season),
-                "timezone": "America/Sao_Paulo",
-            }
-            data = client._get_sync("fixtures", params, ttl_minutes=1440)
-            fixtures = data.get("response", [])
-            season_matches = _extract_matches_from_api_football(fixtures)
-            w = weights[i] if i < len(weights) else 0.02
+    logger.info(f"[calibrator] {league_id}: FootyStats={n_fs}, API-Football={n_af}")
 
-            for m in season_matches:
-                m["season_weight"] = w
-                m["season_index"] = i
+    if n_fs == 0 and n_af == 0:
+        return []
+    if n_fs == 0:
+        logger.info(f"[calibrator] {league_id}: FootyStats empty — using API-Football ({n_af})")
+        return af_matches
+    if n_af == 0:
+        logger.info(f"[calibrator] {league_id}: API-Football empty — using FootyStats ({n_fs})")
+        return fs_matches
 
-            all_matches.extend(season_matches)
-            logger.info(
-                f"[calibrator-fallback] {league_id} season {season}: "
-                f"{len(season_matches)} matches from API-Football (weight={w})"
-            )
-        except Exception as e:
-            logger.error(f"[calibrator-fallback] Failed season {season} for {league_id}: {e}")
+    # API-Football has >50% more -> use as primary
+    if n_af > n_fs * 1.5:
+        logger.info(f"[calibrator] {league_id}: API-Football has {n_af} vs FootyStats {n_fs} — using API-Football")
+        return af_matches
 
-    logger.info(f"[calibrator-fallback] {league_id}: total {len(all_matches)} matches from API-Football")
-    return all_matches
+    # FootyStats as base, fill missing seasons from API-Football
+    fs_seasons = {m.get("season_index", 0) for m in fs_matches}
+    af_unique = [m for m in af_matches if m.get("season_index", 0) not in fs_seasons]
+
+    merged = fs_matches + af_unique
+    logger.info(f"[calibrator] {league_id}: merged FS({n_fs}) + AF unique({len(af_unique)}) = {len(merged)}")
+    return merged
 
 
 def calibrate_league(
@@ -402,24 +466,28 @@ def calibrate_league(
     Returns optimal parameters for the league.
     """
     if matches is None:
-        matches = fetch_historical_matches(league_id, n_seasons)
+        # Dual source: fetch from both FootyStats and API-Football (#054)
+        fs_matches = fetch_historical_matches(league_id, n_seasons)
+        af_matches = fetch_from_api_football(league_id, n_seasons)
+        matches = merge_dual_sources(fs_matches, af_matches, league_id)
 
-    # Fallback to API-Football if FootyStats has insufficient data (#053)
-    data_source = "FootyStats"
-    if len(matches) < 30:
-        logger.info(f"[calibrator] {league_id}: only {len(matches)} from FootyStats, trying API-Football fallback")
-        fallback = fetch_historical_matches_fallback(league_id, n_seasons)
-        if len(fallback) >= 30:
-            matches = fallback
-            data_source = "API-Football"
+        if len(fs_matches) > 0 and len(af_matches) > 0:
+            data_source = "footystats+api_football"
+        elif len(fs_matches) > 0:
+            data_source = "footystats"
+        elif len(af_matches) > 0:
+            data_source = "api_football"
         else:
-            logger.warning(f"[calibrator] {league_id}: only {len(matches)}+{len(fallback)} matches — insufficient")
-            return {
-                "league": league_id,
-                "status": "INSUFFICIENT_DATA",
-                "n_matches": len(matches),
-                "params": None,
-            }
+            data_source = "none"
+
+    if len(matches) < 30:
+        logger.warning(f"[calibrator] {league_id}: only {len(matches)} matches — insufficient")
+        return {
+            "league": league_id,
+            "status": "INSUFFICIENT_DATA",
+            "n_matches": len(matches),
+            "params": None,
+        }
 
     # ── Grid search: lambda deflation x lambda weights ──
     best_ou = {"brier": 1.0}
@@ -427,7 +495,9 @@ def calibrate_league(
 
     for deflation in DEFLATION_GRID:
         for weights in LAMBDA_WEIGHT_GRID:
-            result = _simulate_poisson_brier(matches, deflation, weights)
+            result = _simulate_poisson_brier(
+                matches, lambda_deflation_ou=deflation, lambda_weights=weights,
+            )
 
             if result["brier_ou"] is not None and result["brier_ou"] < best_ou["brier"]:
                 best_ou = {
@@ -445,12 +515,18 @@ def calibrate_league(
                     "weight_recent": weights[1],
                 }
 
-    # ── Grid search: BTTS deflation (using best O/U weights) ──
+    # ── Grid search: BTTS deflation (O/U fixed at optimal, BTTS varies independently) ──
     best_btts = {"brier": 1.0}
     best_ou_weights = (best_ou.get("weight_season", 0.60), best_ou.get("weight_recent", 0.40))
+    best_ou_defl = best_ou.get("deflation", 1.0)
 
     for btts_defl in BTTS_DEFLATION_GRID:
-        result = _simulate_poisson_brier(matches, btts_defl, best_ou_weights)
+        result = _simulate_poisson_brier(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=btts_defl,
+        )
         if result["brier_btts"] is not None and result["brier_btts"] < best_btts["brier"]:
             best_btts = {
                 "brier": result["brier_btts"],
@@ -480,7 +556,12 @@ def calibrate_league(
 
     # ── SAFE threshold recommendation ──
     # Based on Brier score with optimal params
-    optimal_result = _simulate_poisson_brier(matches, best_ou.get("deflation", 1.0), best_ou_weights)
+    optimal_result = _simulate_poisson_brier(
+        matches,
+        lambda_deflation_ou=best_ou_defl,
+        lambda_weights=best_ou_weights,
+        lambda_deflation_btts=best_btts.get("deflation", 1.0),
+    )
 
     safe_enabled = (
         optimal_result["brier_ou"] is not None and optimal_result["brier_ou"] < 0.25
@@ -544,18 +625,24 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
         value = params.get(key)
         if value is not None:
             try:
+                # log_correction expects float — convert booleans to 1.0/0.0
+                if isinstance(value, bool):
+                    numeric_value = 1.0 if value else 0.0
+                else:
+                    numeric_value = float(value)
+
                 log_correction(
                     match_id=f"calibration_{league_id}",
                     league=league_id,
                     parameter_name=param_name,
-                    old_value=None,
-                    new_value=str(value),
+                    old_value=0.0,
+                    new_value=numeric_value,
                     correction_type="calibration",
                     reason=f"[Auto-calibration] {reason} (n={n_matches} matches, "
                            f"brier_ou={brier_ou})",
                 )
             except Exception as e:
-                logger.error(f"Failed to save calibration {key} for {league_id}: {e}")
+                logger.error(f"Failed to save calibration {key}={value} for {league_id}: {e}")
 
 
 def calibrate_all_leagues(n_seasons: int = 6) -> Dict[str, Dict]:

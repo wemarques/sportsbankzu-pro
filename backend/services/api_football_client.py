@@ -315,6 +315,32 @@ class APIFootballClient:
         data = self._get_sync("fixtures", params, ttl_minutes=ttl_minutes)
         return data.get("response", [])
 
+    def get_season_fixtures(
+        self,
+        league_id: int,
+        season: int,
+        ttl_minutes: int = 1440,
+    ) -> List[Dict]:
+        """Fetch ALL finished fixtures for a league+season (sync, cached 24h).
+
+        Returns only finished matches. Used for historical calibration.
+        """
+        params: Dict[str, str] = {
+            "league": str(league_id),
+            "season": str(season),
+            "timezone": "America/Sao_Paulo",
+        }
+        data = self._get_sync("fixtures", params, ttl_minutes=ttl_minutes)
+        fixtures = data.get("response", [])
+
+        finished = [
+            f for f in fixtures
+            if f.get("fixture", {}).get("status", {}).get("short") in ("FT", "AET", "PEN")
+        ]
+
+        logger.info(f"[api-football] season {season} league {league_id}: {len(finished)} finished / {len(fixtures)} total")
+        return finished
+
     def get_live_fixtures(self, league_id: Optional[int] = None) -> List[Dict]:
         """Fetch all currently live fixtures (sync, 1min cache).
 
