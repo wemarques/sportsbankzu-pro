@@ -123,32 +123,29 @@ API → Next.js 14 (Vercel) + Streamlit
 
 ### Alertas Críticos Ativos
 
-| Alerta | REGRA | Critério de Remoção |
-|--------|-------|---------------------|
-| **SAFE desabilitado** (circuit breaker) | #043 | 3 auditorias com accuracy > 50%, Brier < 0.25, lambda error < 0.5 |
-| **Lambda deflation 0.85** (O/U) | #043 | Lambda error < 0.5 por 3 rodadas |
-| **BTTS deflation 0.80** | #043 | BTTS accuracy > 55% por 3 rodadas |
-| **Corners redução 20%** | #043 | Corners accuracy > 50% por 3 rodadas |
-| **Thresholds endurecidos** | #042 | Backtesting por liga validar valores |
+| Alerta | REGRA | Status |
+|--------|-------|--------|
+| **SAFE reativado** per liga | #054 | 36/37 ligas com safe_enabled=true |
+| **Lambda deflation per liga** | #052-#053 | Dixon-Coles + grid 0.80-1.50 |
+| **BTTS deflation per liga** | #054-#056 | Calibrado contra seasonBTTSPercentage real |
+| **Corners per liga** | #055-#056 | Brier-based + season stats |
+| **Cards per liga** | #056 | Fix extração + season stats Poisson |
+| **Thresholds per liga** | #055 | safe_prob calibrado por Brier quality |
 
-### Parâmetros Calibráveis (todos com pesos FIXOS — precisam backtesting por liga)
+### Parâmetros Calibráveis (PER-LEAGUE desde #052, calibrados automaticamente)
 
-| Módulo | Parâmetro | Valor | Arquivo |
-|--------|-----------|-------|---------|
-| Lambda (NORMAL) | temporada / últimos5 | 0.60 / 0.40 | lambda_calculator.py |
-| Lambda (HIPER) | temporada / últimos5 | 0.30 / 0.70 | lambda_calculator.py |
-| xG blend | λ / xG | 0.70 / 0.30 | fixtures_service.py |
-| BTTS fusion (3 fontes) | FS / Poisson / team_avg | 0.40 / 0.30 / 0.30 | fixtures_service.py |
-| Corners engine | direto / cruzado / liga | 0.60 / 0.30 / 0.10 | corners_engine.py |
-| Corners blend | FootyStats / Poisson | 0.60 / 0.40 | corners_engine.py |
-| Corners Under margin | overround | 6% | price_ladder.py |
-| Thresholds 1X2 | safe_prob / safe_ev | 62% / 8% | ev_classification.py |
-| Thresholds O/U | safe_prob / safe_ev | 75% / 6% | ev_classification.py |
-| Thresholds BTTS | safe_prob / safe_ev | 75% / 6% | ev_classification.py |
-| Thresholds DC | safe_prob / safe_ev | 82% / 4% | ev_classification.py |
-| Thresholds Corners | safe_prob / safe_ev | 72% / 8% | ev_classification.py |
-| Thresholds Cards | safe_prob / safe_ev | 75% / 8% | ev_classification.py |
-| NEUTRO-Q gate | min_ev / min_edge / min_prob | 5% / 3% / 50% | ev_classification.py |
+| Módulo | Parâmetro | Calibrado? | Arquivo |
+|--------|-----------|-----------|---------|
+| Lambda O/U | deflation | Per-league | league_calibrator.py |
+| Lambda BTTS | deflation | Per-league | league_calibrator.py |
+| Lambda 1X2 | deflation | Per-league | league_calibrator.py |
+| Lambda weights | season/recent | Per-league | league_calibrator.py |
+| Cards | deflation | Per-league (#056) | league_calibrator.py |
+| Corners | deflation (Brier) | Per-league | league_calibrator.py |
+| xG blend | weight | Per-league | league_calibrator.py |
+| BTTS fusion | weights | Heuristic | league_calibrator.py |
+| Thresholds | safe_prob x 6 mercados | Per-league | league_calibrator.py |
+| SAFE | enabled | Per-league | league_calibrator.py |
 
 ## Proibições
 

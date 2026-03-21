@@ -2982,4 +2982,38 @@ Calibrar apenas lambda O/U e assumir que outros mercados estão cobertos cria in
 
 ---
 
+---
+
+## 056 — Fix extração de cards/corners/BTTS + enriquecimento com league-season stats
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `CLAUDE.md`
+**Severidade:** Alta (cards null + BTTS ceiling 1.30)
+**Status:** Implementado
+**Referência:** FootyStats API docs (league-matches, league-season)
+
+### Problema identificado
+
+1. **Cards = null:** `_extract_matches_from_season()` lia `team_a_cards` (ARRAY de timings `[69,31,18]`) em vez de `team_a_cards_num` (INTEGER `3`). Somar arrays não produz contagem → cards_lambda = 0 → Brier null.
+2. **Corners com -1:** FootyStats usa `-1` para "dados não disponíveis". `(-1 or 0)` = `-1` (truthy em Python). `total_corners` = `-2` → Brier corrompido.
+3. **BTTS ceiling 1.30:** O campo `btts: true/false` existe no `league-matches` mas não era extraído. O calibrador simulava BTTS com Poisson puro, que sistematicamente subestima → deflation batia no teto do grid.
+4. **Season stats não usados:** `get_league_season_stats()` já existia no client mas o calibrador não chamava. Contém `seasonBTTSPercentage`, `cardsAVG_overall`, `over25CardsPercentage_overall` — dados reais para calibração.
+
+### Correções aplicadas
+
+1. **Fix cards:** ler `team_a_cards_num` (ou `team_a_yellow_cards` como fallback)
+2. **Fix corners:** `_sanitize()` trata -1/-2/None → default 0
+3. **Extrair btts:** campo `btts: true/false` do league-matches agora usado no Brier
+4. **Season stats:** `fetch_season_stats()` chama `get_league_season_stats()` para percentuais reais
+5. **BTTS calibração dual:** per-match Brier + season Brier; usa o melhor ou season quando per-match bate no ceiling
+6. **Cards season:** `_calibrate_cards_from_season()` usa `cardsAVG + over25-55CardsPercentage`
+7. **Corners season:** `_calibrate_corners_from_season()` usa `cornersAVG + over85-105CornersPercentage`
+8. **CLAUDE.md atualizado:** seção pipeline reflete estado real pós-#052 a #056
+
+### Lição aprendida
+
+1. **Verificar tipos de campo da API** — `team_a_cards` é array, `team_a_cards_num` é integer. Nomes similares, tipos diferentes. A Regra de Investigação #5 (validar com dados reais) teria pego isso.
+2. **Sentinel values** — APIs usam -1, -2, 0 para "não disponível". Python `or` não trata -1 como falsy. Sanitizar ANTES de processar.
+3. **Dados existentes ignorados** — O `league-matches` já retorna cards/corners/btts per-match e o `league-season` retorna percentuais. O calibrador simplesmente não lia esses campos. Antes de criar novos endpoints, verificar o que a API já retorna.
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -79,6 +79,13 @@ def _simulate_all_markets(
         "cards_o25": [], "cards_o35": [], "cards_o45": [],
     }
 
+    # Pre-compute league averages for cards and corners
+    _cards_vals = [m.get("total_cards", 0) for m in matches if m.get("total_cards", 0) > 0]
+    avg_cards_league = sum(_cards_vals) / len(_cards_vals) if _cards_vals else 4.0
+
+    _corners_vals = [m.get("total_corners", 0) for m in matches if m.get("total_corners", 0) > 0]
+    avg_corners_league = sum(_corners_vals) / len(_corners_vals) if _corners_vals else 10.0
+
     for m in matches:
         home_avg_season = m.get("home_goals_scored_avg", 0) or 0
         away_avg_season = m.get("away_goals_scored_avg", 0) or 0
@@ -129,7 +136,7 @@ def _simulate_all_markets(
                 brier[f"over_{key_suffix}"].append(_brier(prob, actual))
                 brier[f"under_{key_suffix}"].append(_brier(1.0 - prob, 1 - actual))
 
-        # ── BTTS ──
+        # ── BTTS (use real btts boolean when available) ──
         if do_btts:
             lh_btts = lh_raw * defl_btts
             la_btts = la_raw * defl_btts
@@ -139,7 +146,9 @@ def _simulate_all_markets(
                 for a in range(9):
                     if h >= 1 and a >= 1:
                         prob_btts += ph * poisson_pmf(a, la_btts)
-            brier["btts"].append(_brier(prob_btts, 1 if (gh > 0 and ga > 0) else 0))
+            btts_real = m.get("btts")
+            actual_btts = (1 if btts_real else 0) if btts_real is not None else (1 if (gh > 0 and ga > 0) else 0)
+            brier["btts"].append(_brier(prob_btts, actual_btts))
 
         # ── 1X2 ──
         if do_1x2:
@@ -167,21 +176,21 @@ def _simulate_all_markets(
             brier["dc_12"].append(_brier(prob_home + prob_away, 1 if gh != ga else 0))
             brier["dc_x2"].append(_brier(prob_draw + prob_away, 1 if gh <= ga else 0))
 
-        # ── Corners (when data available) ──
+        # ── Corners (use league average as lambda, real total as outcome) ──
         if do_corners:
             tc = m.get("total_corners")
             if tc is not None and tc > 0:
-                corner_lambda = (m.get("avg_corners_total") or tc) * corner_deflation
+                corner_lambda = avg_corners_league * corner_deflation
                 corner_lambda = max(3.0, min(20.0, corner_lambda))
                 for line, key in [(8.5, "corners_o85"), (9.5, "corners_o95"), (10.5, "corners_o105")]:
                     prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
                     brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
 
-        # ── Cards (when data available) ──
+        # ── Cards (use league average as lambda, real total as outcome) ──
         if do_cards:
             total_cards = m.get("total_cards")
             if total_cards is not None and total_cards > 0:
-                cards_lambda = (m.get("avg_cards_total") or total_cards) * cards_deflation
+                cards_lambda = avg_cards_league * cards_deflation
                 cards_lambda = max(1.0, min(12.0, cards_lambda))
                 for line, key in [(2.5, "cards_o25"), (3.5, "cards_o35"), (4.5, "cards_o45")]:
                     prob_over_cards = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
@@ -247,13 +256,45 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
         home_name = m.get("home_name") or m.get("homeTeam") or "unknown_home"
         away_name = m.get("away_name") or m.get("awayTeam") or "unknown_away"
 
+        # Sanitize sentinel values: FootyStats uses -1 for "not available"
+        def _sanitize(val, default=0):
+            if val is None:
+                return default
+            try:
+                v = int(val)
+                return v if v >= 0 else default
+            except (ValueError, TypeError):
+                if isinstance(val, list):
+                    return len(val)
+                return default
+
+        # Cards: use team_a_cards_num (integer), NOT team_a_cards (array of timings)
+        home_cards = _sanitize(m.get("team_a_cards_num") or m.get("team_a_yellow_cards"))
+        away_cards = _sanitize(m.get("team_b_cards_num") or m.get("team_b_yellow_cards"))
+
+        # Corners: sanitize -1 sentinel
+        home_corners = _sanitize(m.get("team_a_corners"))
+        away_corners = _sanitize(m.get("team_b_corners"))
+
+        # BTTS: boolean field from league-matches
+        btts_actual = m.get("btts")
+        if btts_actual is None:
+            btts_actual = (gh > 0 and ga > 0)
+
         raw_matches.append({
             "goals_home": gh,
             "goals_away": ga,
             "home_name": home_name,
             "away_name": away_name,
-            "total_corners": (m.get("team_a_corners") or 0) + (m.get("team_b_corners") or 0),
-            "total_cards": (m.get("team_a_cards") or 0) + (m.get("team_b_cards") or 0),
+            "total_corners": home_corners + away_corners,
+            "home_corners": home_corners,
+            "away_corners": away_corners,
+            "total_cards": home_cards + away_cards,
+            "home_cards": home_cards,
+            "away_cards": away_cards,
+            "btts": bool(btts_actual),
+            "cards_potential": _sanitize(m.get("cards_potential")),
+            "corners_potential": _sanitize(m.get("corners_potential")),
         })
 
     if not raw_matches:
@@ -318,6 +359,13 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
             "total_cards": rm["total_cards"],
             "avg_corners_total": avg_corners,
             "avg_cards_total": avg_cards,
+            "home_corners": rm.get("home_corners", 0),
+            "away_corners": rm.get("away_corners", 0),
+            "home_cards": rm.get("home_cards", 0),
+            "away_cards": rm.get("away_cards", 0),
+            "btts": rm.get("btts", False),
+            "cards_potential": rm.get("cards_potential", 0),
+            "corners_potential": rm.get("corners_potential", 0),
         })
 
     return matches
@@ -544,6 +592,190 @@ def merge_dual_sources(
     return merged
 
 
+def _safe_float(val):
+    if val is None:
+        return None
+    try:
+        v = float(val)
+        return v if v >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_int(val):
+    if val is None:
+        return None
+    try:
+        v = int(val)
+        return v if v >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_season_stats(league_id: str, n_seasons: int = 6) -> List[Dict]:
+    """Fetch league-season aggregate stats from FootyStats.
+
+    Returns 1 dict per season with real percentages for cards, corners, BTTS, O/U.
+    Uses get_league_season_stats() — 1 API call per season, cached 6h.
+    Reference: REGRAS #056
+    """
+    try:
+        from backend.services.footstats_client import FootyStatsClient
+        from backend.config.leagues_config import LEAGUES_CONFIG
+
+        client = FootyStatsClient()
+        all_stats = []
+
+        league_cfg = next((c for c in LEAGUES_CONFIG if c["id"] == league_id), None)
+        if not league_cfg:
+            return []
+
+        season_ids = league_cfg.get("season_ids", [])
+
+        for i, season_id in enumerate(season_ids[:n_seasons]):
+            try:
+                data = client.get_league_season_stats(season_id)
+                items = data.get("data", [])
+                stats = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
+
+                if not stats:
+                    continue
+
+                weight = SEASON_WEIGHTS[i] if i < len(SEASON_WEIGHTS) else 0.02
+
+                all_stats.append({
+                    "season_index": i,
+                    "season_weight": weight,
+                    "avg_goals_overall": _safe_float(stats.get("seasonAVG_overall")),
+                    "avg_goals_home": _safe_float(stats.get("seasonAVG_home")),
+                    "avg_goals_away": _safe_float(stats.get("seasonAVG_away")),
+                    "total_matches": _safe_int(stats.get("matchesCompleted")),
+                    "btts_pct": _safe_float(stats.get("seasonBTTSPercentage")),
+                    "over15_pct": _safe_float(stats.get("seasonOver15Percentage_overall")),
+                    "over25_pct": _safe_float(stats.get("seasonOver25Percentage_overall")),
+                    "over35_pct": _safe_float(stats.get("seasonOver35Percentage_overall")),
+                    "cards_avg": _safe_float(stats.get("cardsAVG_overall")),
+                    "over25_cards_pct": _safe_float(stats.get("over25CardsPercentage_overall")),
+                    "over35_cards_pct": _safe_float(stats.get("over35CardsPercentage_overall")),
+                    "over45_cards_pct": _safe_float(stats.get("over45CardsPercentage_overall")),
+                    "over55_cards_pct": _safe_float(stats.get("over55CardsPercentage_overall")),
+                    "corners_avg": _safe_float(stats.get("cornersAVG_overall")),
+                    "over85_corners_pct": _safe_float(stats.get("over85CornersPercentage_overall")),
+                    "over95_corners_pct": _safe_float(stats.get("over95CornersPercentage_overall")),
+                    "over105_corners_pct": _safe_float(stats.get("over105CornersPercentage_overall")),
+                    "home_win_pct": _safe_float(stats.get("homeWinPercentage")),
+                    "draw_pct": _safe_float(stats.get("drawPercentage")),
+                    "away_win_pct": _safe_float(stats.get("awayWinPercentage")),
+                })
+
+                logger.info(f"[calibrator] league-season {league_id} s={season_id}: "
+                            f"btts={stats.get('seasonBTTSPercentage')}%, cards_avg={stats.get('cardsAVG_overall')}")
+
+            except Exception as e:
+                logger.warning(f"[calibrator] league-season {league_id} s={season_id} failed: {e}")
+
+        return all_stats
+    except Exception as e:
+        logger.error(f"[calibrator] league-season fetch error for {league_id}: {e}")
+        return []
+
+
+def _calibrate_btts_from_season(season_stats: List[Dict], lambda_weights) -> Dict:
+    """Calibrate BTTS deflation against real seasonBTTSPercentage."""
+    best = {"brier": 1.0, "deflation": 1.0}
+    w_season, w_recent = lambda_weights
+
+    for defl in BTTS_DEFLATION_GRID:
+        total_brier = 0.0
+        n = 0.0
+        for ss in season_stats:
+            btts_real = ss.get("btts_pct")
+            avg_home = ss.get("avg_goals_home")
+            avg_away = ss.get("avg_goals_away")
+            if btts_real is None or avg_home is None or avg_away is None:
+                continue
+            if avg_home <= 0 or avg_away <= 0:
+                continue
+
+            weight = ss.get("season_weight", 1.0)
+            lh = avg_home * defl
+            la = avg_away * defl
+
+            prob_btts = 0.0
+            for h in range(9):
+                ph = poisson_pmf(h, lh)
+                for a in range(9):
+                    if h >= 1 and a >= 1:
+                        prob_btts += ph * poisson_pmf(a, la)
+
+            actual = btts_real / 100.0
+            total_brier += ((prob_btts - actual) ** 2) * weight
+            n += weight
+
+        if n > 0 and (total_brier / n) < best["brier"]:
+            best = {"brier": total_brier / n, "deflation": defl}
+
+    return best
+
+
+def _calibrate_cards_from_season(season_stats: List[Dict]) -> Dict:
+    """Calibrate cards deflation against real Over X Cards percentages."""
+    lines = [("over25_cards_pct", 2.5), ("over35_cards_pct", 3.5), ("over45_cards_pct", 4.5)]
+    best = {"brier": 1.0, "deflation": 1.0}
+
+    for defl in CARDS_DEFLATION_GRID:
+        total_brier = 0.0
+        n = 0.0
+        for ss in season_stats:
+            cards_avg = ss.get("cards_avg")
+            if cards_avg is None or cards_avg <= 0:
+                continue
+            weight = ss.get("season_weight", 1.0)
+            cards_lambda = cards_avg * defl
+
+            for pct_key, line in lines:
+                actual_pct = ss.get(pct_key)
+                if actual_pct is None:
+                    continue
+                prob = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
+                total_brier += ((prob - actual_pct / 100.0) ** 2) * weight
+                n += weight
+
+        if n > 0 and (total_brier / n) < best["brier"]:
+            best = {"brier": total_brier / n, "deflation": defl}
+
+    return best
+
+
+def _calibrate_corners_from_season(season_stats: List[Dict]) -> Dict:
+    """Calibrate corners deflation against real Over X Corners percentages."""
+    lines = [("over85_corners_pct", 8.5), ("over95_corners_pct", 9.5), ("over105_corners_pct", 10.5)]
+    best = {"brier": 1.0, "deflation": 1.0}
+
+    for defl in CORNER_BRIER_GRID:
+        total_brier = 0.0
+        n = 0.0
+        for ss in season_stats:
+            corners_avg = ss.get("corners_avg")
+            if corners_avg is None or corners_avg <= 0:
+                continue
+            weight = ss.get("season_weight", 1.0)
+            corners_lambda = corners_avg * defl
+
+            for pct_key, line in lines:
+                actual_pct = ss.get(pct_key)
+                if actual_pct is None:
+                    continue
+                prob = sum(poisson_pmf(k, corners_lambda) for k in range(int(line) + 1, 25))
+                total_brier += ((prob - actual_pct / 100.0) ** 2) * weight
+                n += weight
+
+        if n > 0 and (total_brier / n) < best["brier"]:
+            best = {"brier": total_brier / n, "deflation": defl}
+
+    return best
+
+
 def calibrate_league(
     league_id: str,
     n_seasons: int = 6,
@@ -719,6 +951,33 @@ def calibrate_league(
         b = result.get("brier_over_avg")
         if b is not None and b < best_xg["brier"]:
             best_xg = {"brier": b, "weight": xg_w}
+
+    # ── Enrich with season stats (resolves BTTS ceiling + cards null) (#056) ──
+    season_stats = fetch_season_stats(league_id, n_seasons)
+
+    if season_stats:
+        # BTTS: calibrate against real seasonBTTSPercentage
+        btts_season = _calibrate_btts_from_season(season_stats, best_ou_weights)
+        if btts_season.get("brier") is not None:
+            btts_match_brier = best_btts.get("brier", 1.0)
+            # Prefer season-based if better or if match-based hit ceiling
+            if btts_season["brier"] < btts_match_brier or best_btts.get("deflation") == BTTS_DEFLATION_GRID[-1]:
+                best_btts = btts_season
+                logger.info(f"[calibrator] {league_id}: BTTS from season stats = {best_btts['deflation']} "
+                           f"(brier {best_btts['brier']:.4f})")
+
+        # Cards: calibrate against real cardsAVG + over%
+        cards_season = _calibrate_cards_from_season(season_stats)
+        if cards_season.get("brier") is not None:
+            cards_factor = cards_season["deflation"]
+            logger.info(f"[calibrator] {league_id}: cards from season stats = {cards_factor}")
+
+        # Corners: compare with season stats
+        corners_season = _calibrate_corners_from_season(season_stats)
+        if corners_season.get("brier") is not None:
+            if corners_season["brier"] < best_corner.get("brier", 1.0):
+                corner_factor = corners_season["deflation"]
+                logger.info(f"[calibrator] {league_id}: corners from season stats = {corner_factor}")
 
     # ── BTTS fusion weights suggestion (heuristic from BTTS deflation) ──
     btts_defl_val = best_btts.get("deflation", 1.0)
