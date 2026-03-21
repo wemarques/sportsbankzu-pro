@@ -337,6 +337,11 @@ def evaluate_match_markets(
     derived = {}
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
         derived = derive_all_markets(float(lambda_home), float(lambda_away), league_id=league_id)
+    if not derived:
+        logger.warning(
+            f"[ev] No Poisson-derived probs: λH={lambda_home} λA={lambda_away} "
+            f"match={home_team} vs {away_team}"
+        )
 
     # ─── Derive corner probabilities (governed framework v2) ───
     governed_corners = predict_corners(
@@ -361,14 +366,25 @@ def evaluate_match_markets(
     markets: List[MarketOutput] = []
     source_flags = ["footystats"]
 
-    # Helper: derived (deflated via calibration) first, then stats (raw) (#058)
+    # Helper: get probability — PRIORITY depends on market type (#061)
+    # For O/U and BTTS: prefer Poisson-derived (deflated) over FootyStats
+    # For 1X2: prefer stats (odds-implied) over Poisson
     def _prob(stat_key: str, derived_key: str = "") -> Optional[float]:
         # Priority 1: derived probabilities (with per-league deflation)
-        if derived_key and derived_key in derived:
-            v = derived[derived_key]
-            if v is not None and 0 < float(v) <= 1.0:
-                return float(v)
-        # Priority 2: stats (may be without deflation)
+        if derived_key:
+            # Try exact key
+            d_val = derived.get(derived_key)
+            # Try without "Prob" suffix (handle key format variations)
+            if d_val is None:
+                alt_key = derived_key.replace("Prob", "")
+                d_val = derived.get(alt_key)
+            if d_val is not None:
+                v = float(d_val)
+                if 0 < v <= 1.0:
+                    return v
+                elif v > 1.0:
+                    return v / 100.0
+        # Priority 2: stats (FootyStats pre-match %, may be league aggregate)
         val = stats.get(stat_key)
         if val is not None:
             try:
@@ -410,7 +426,17 @@ def evaluate_match_markets(
         )
         markets.append(classify_market(mo, league_id=league_id))
 
-    # Over/Under markets
+    # Over/Under markets — diagnostic: trace Poisson vs FootyStats source (#061)
+    _derived_key_sample = f"over25Prob"
+    _d_val = derived.get(_derived_key_sample)
+    _s_val = stats.get("over25Prob")
+    if _d_val is not None or _s_val is not None:
+        logger.info(
+            f"[ev][prob-source] {home_team} vs {away_team} | "
+            f"derived[over25Prob]={_d_val} stats[over25Prob]={_s_val} "
+            f"derived_keys={len(derived)} λH={lambda_home} λA={lambda_away}"
+        )
+
     for threshold, stat_over, stat_under, odd_key in [
         ("2.5", "over25Prob", "under25Prob", "over25"),
         ("3.5", "over35Prob", "under35Prob", "over35"),

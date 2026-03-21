@@ -3189,4 +3189,35 @@ Confirmado: o código #058 e #059 **NÃO** causaram o problema (health OK, impor
 
 ---
 
+## 061 — Fix _prob(): priorizar Poisson deflacionado sobre FootyStats pré-match
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** CRÍTICA
+**Status:** Corrigido
+
+### Problema identificado
+
+O #058 aplicou deflation nos lambdas Poisson em `fixtures_service.py` e `derive_all_markets()`, mas a função `_prob()` em `ev_classification.py` usava `stats` (FootyStats pre-match %) quando `derived` (Poisson deflacionado) não era encontrado por mismatch de keys.
+
+Evidência: Under 2.5 com probabilidade IDÊNTICA (65-67%) para TODOS os jogos do Brasileirão, independente dos times. Poisson produz valores diferentes por jogo porque depende de ataque x defesa de cada time.
+
+### Causa raiz
+
+1. `_prob()` tentava buscar em `derived` com key exata, mas não tentava variações de key (com/sem sufixo "Prob")
+2. Quando a key não era encontrada em `derived`, fallback para `stats["over25Prob"]` que vinha do FootyStats `over_25_percentage_pre_match` — um valor agregado da liga, não específico por jogo
+3. Sem logging para diagnosticar qual fonte era usada em runtime
+
+### Correções aplicadas
+
+1. `_prob()` agora tenta key exata E variação sem "Prob" no dict `derived`
+2. Logging de diagnóstico: `[ev][prob-source]` mostra `derived[over25Prob]` vs `stats[over25Prob]` para cada jogo
+3. Warning quando `derived` está vazio (lambdas indisponíveis)
+
+### Lição aprendida
+
+Seguir Regra de Investigação #2 (trace o fluxo completo) até o VALOR FINAL: não basta verificar que `derive_all_markets()` computa corretamente — é preciso confirmar que o valor chega ao dashboard. Sempre adicionar logging de diagnóstico ao alterar prioridade de fontes de dados.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
