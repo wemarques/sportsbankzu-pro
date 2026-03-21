@@ -3034,6 +3034,51 @@ Deploy com testes vermelhos exige **baseline explícito** (`KNOWN_FAILURES.md` o
 
 ---
 
+## 058 — Aplicar deflação per-league no pipeline de produção
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/modeling/corners_engine.py`, `scripts/deploy_lambda.py`, `docs/REGRAS_CORRECAO_SISTEMA.md`
+**Severidade:** Crítica (EVs inflados no dashboard — ex.: Under 2.5 com +50% a +70%; escanteios com EV extremo quando o multiplicador era ignorado)
+**Status:** Corrigido e deployado (Lambda `sportsbank-pro-backend`)
+**Commit:** `2879c71` — *fix(critical): apply per-league deflation in production pipeline (#058)*
+
+### Problema identificado
+
+A calibração **per-league** (**#052–#056**) estava na corrections DB e era usada em `derive_all_markets()` / `poisson_matrix.py`, mas as probabilidades servidas ao cliente seguiam caminhos em que **deflação e multiplicadores não entravam de forma consistente**:
+
+1. **`fixtures_service.py`** — Cálculos Poisson (O/U etc.) com **lambdas em bruto**, sem aplicar deflação O/U / BTTS **antes** dos `poisson_cdf` (ou equivalente na matriz de mercados).
+2. **`ev_classification.py`** — `_prob()` priorizava valores em **`stats`** (caminho cru) sobre **`derived`** (após `derive_all_markets` com deflação).
+3. **`corners_engine.py`** — `derive_corner_probabilities()` **sem** `corner_multiplier` calibrado por liga.
+4. **BTTS** — Risco de **dupla aplicação** de multiplicador; o fix **unifica** via ajuste nas lambdas (uma aplicação coerente com o calibrador).
+
+### Causa raiz
+
+Dois grafos de probabilidade **desalinhados**: o calibrador e `poisson_matrix` usavam deflação; **produção** ainda misturava saídas cruas (`stats`) com classificação baseada em `derived`, e corners sem fator da DB.
+
+### Correções aplicadas
+
+| Componente | Antes #058 | Depois #058 |
+|------------|------------|-------------|
+| `fixtures_service.py` | Lambdas cruas no Poisson | Deflação O/U aplicada às lambdas; BTTS alinhado (sem multiplicador paralelo incoerente) |
+| `ev_classification._prob()` | Prioridade a `stats` (cru) | Prioridade a **`derived`** (deflacionado) |
+| `corners_engine.py` | Sem `corner_multiplier` | `corner_multiplier` da DB aplicado ao lambda de corners |
+| `deploy_lambda.py` | Sem retry | Retry com espera para **`ResourceConflictException`** no update do Lambda |
+
+### Validação e deploy
+
+- **Lambda:** ZIP → S3 → `update-function-code`; estado **Active**; `GET /health` → `{"status":"ok"}`.
+- **Fixtures em produção:** chamadas a `/api/fixtures` (várias ligas e datas) devolveram **0 jogos** ou **503** em alguns parâmetros — atribuído a **disponibilidade FootyStats** / janela sem jogos (ex.: pausa), não a regressão lógica do patch.
+- **Sanity check local (ex.: Eliteserien, defl. O/U ≈ 1,20, lambda bruto 1,8):** sem deflação U2.5 ≈ **73,1%**, EV a odd 1,50 ≈ **+9,6%**; com deflação U2.5 ≈ **63,3%**, EV ≈ **−5,0%** (~10 p.p. em U2.5).
+- **Windows:** consola **cp1252** pode falhar ao imprimir caractere lambda (`UnicodeEncodeError`) — usar `PYTHONIOENCODING=utf-8` ou evitar símbolos não ASCII em `print` de debug.
+
+### Lição aprendida
+
+1. **Calibrar sem ligar ao mesmo grafo que o dashboard consome não corrige produção** — seguir o dado desde `fixtures_service` até a resposta JSON (investigação obrigatória, **CLAUDE.md**).
+2. **`derived` deve vencer `stats`** quando ambos existem após calibração per-league.
+3. **Deploy:** `ResourceConflictException` exige retry (coerente com checklist **#057** / `CLAUDE.md`).
+
+---
+
 ## Nota — Verificação CI (documentação + suite completa)
 
 **Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
@@ -3050,43 +3095,56 @@ Deploy com testes vermelhos exige **baseline explícito** (`KNOWN_FAILURES.md` o
 
 ---
 
----
-
-## 058 — Fix pipeline: deflation não aplicada nas probabilidades de produção
+## 059 — Persistência de calibrações no S3 (Lambda perde /tmp/ em cada deploy)
 
 **Data:** 2026-03-21
-**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/modeling/corners_engine.py`, `scripts/deploy_lambda.py`
-**Severidade:** CRÍTICA (EVs absurdos em todas as ligas — Under +69%, Corners +149%)
-**Status:** Corrigido
+**Arquivos afetados:** `backend/audit.py`, `backend/services/league_calibrator.py`
+**Severidade:** Crítica
+**Status:** Implementado
 
 ### Problema identificado
 
-A calibração per-league (#052-#056) estava salva no DB e lida corretamente pelo `derive_all_markets()` em `poisson_matrix.py`. Porém, as probabilidades servidas ao dashboard vinham de um caminho DIFERENTE:
-
-1. `fixtures_service.py` computa `over25 = 1 - poisson_cdf(2, lam_total)` com lambdas RAW (sem deflation)
-2. `ev_classification.py` chama `derive_all_markets()` com deflation, mas `_prob()` prioriza `stats` (sem deflation) sobre `derived` (com deflation)
-3. `corners_engine.py` `derive_corner_probabilities()` não aplica `corner_multiplier`
+Após deploy do #058 (que corrige deflation no pipeline), os EVs continuaram absurdos. Investigação revelou que o Lambda armazena calibrações em SQLite no `/tmp/audit.db`. Cada novo deployment do Lambda cria um novo container, apagando `/tmp/` e todas as 36 calibrações de liga feitas em #052-#056.
 
 ### Causa raiz
 
-Dois caminhos de computação de probabilidade desconectados:
-- **Caminho 1 (produção):** `fixtures_service.py` → `poisson_cdf(k, lam_total)` → sem deflation
-- **Caminho 2 (calibração):** `poisson_matrix.py` → `derive_all_markets()` → com deflation
+**Calibrações não persistem entre deploys do Lambda.**
 
-O caminho 2 era usado apenas para classificação, mas os valores finais vinham do caminho 1.
+Fluxo do problema:
+1. Calibrar 36 ligas → correções salvas em `/tmp/audit.db` no container Lambda
+2. Deploy de nova versão → `aws lambda update-function-code` → novo container criado
+3. Novo container: `/tmp/` vazio → todas calibrações perdidas
+4. `get_lambda_corrections()` retorna `{}` → todos multiplicadores = 1.0 (sem deflation)
+5. EVs absurdos mesmo com código #058 correto
 
 ### Correções aplicadas
 
-1. **`fixtures_service.py`:** Ler `lambda_multiplier` (O/U deflation) da corrections DB e aplicar nos lambdas ANTES do cálculo Poisson. BTTS deflation aplicada via lambdas (não multiplicador pós-cálculo).
-2. **`ev_classification.py`:** `_prob()` agora prioriza `derived` (com deflation) sobre `stats` (sem deflation).
-3. **`corners_engine.py`:** `derive_corner_probabilities()` recebe `league_id` e aplica `corner_multiplier` ao lambda de corners.
-4. **`deploy_lambda.py`:** Adicionado retry com wait para `ResourceConflictException`.
+1. **Camada S3 — `backend/audit.py`**:
+   - `export_corrections_to_s3()`: exporta todas correções de calibração para `s3://meu-bucket-sportsbank/calibrations/corrections.json`
+   - `_import_corrections_from_s3()`: importa correções do S3 para SQLite local
+   - Guard `_s3_imported` para importar apenas uma vez por lifecycle do container
+
+2. **Camada init_db — `backend/audit.py`**:
+   - Em `init_db()`, após criar tabelas, se estiver no Lambda e corrections vazio, auto-importa do S3
+
+3. **Camada save — `backend/services/league_calibrator.py`**:
+   - Após `save_calibration()`, chama `export_corrections_to_s3()` para persistir
+
+### Fluxo corrigido
+
+```
+Calibrar liga → log_correction() → SQLite /tmp/audit.db
+                                  → export_corrections_to_s3() → S3
+Deploy novo   → container novo   → init_db()
+                                  → corrections vazio?
+                                  → _import_corrections_from_s3() → SQLite preenchido
+              → get_lambda_corrections() → multiplicadores corretos → deflation aplicado
+```
 
 ### Lição aprendida
 
-1. **Calibrar sem conectar ao pipeline é inútil** — A calibração funcionava no calibrador mas nunca chegava ao dashboard.
-2. **Trace o fluxo completo (Regra #2)** — Se tivéssemos seguido o dado de fixtures_service até o dashboard, teríamos visto que a deflation nunca chegava.
-3. **Deploy atomicity** — `ResourceConflictException` precisa de retry automático.
+Lambda é **efêmero por design**. Qualquer dado que precisa sobreviver entre deploys DEVE ser persistido em storage durável (S3, DynamoDB, RDS). `/tmp/` é volátil — não apenas entre deploys mas também quando containers são reciclados por inatividade.
+
+---
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
-

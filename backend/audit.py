@@ -55,6 +55,113 @@ def _db_path() -> str:
     return DEFAULT_DB_PATH
 
 
+# ── S3 persistence for calibrations (#059) ─────────────────────────────
+# On Lambda, /tmp/audit.db is wiped on every deployment. Calibration
+# corrections are persisted to S3 and auto-loaded on cold start.
+
+_S3_CALIBRATION_KEY = "calibrations/corrections.json"
+_s3_imported = False  # guard: import only once per container lifecycle
+
+logger = logging.getLogger("sportsbankzu.audit")
+
+
+def _s3_bucket() -> str | None:
+    return os.getenv("S3_BUCKET") or None
+
+
+def export_corrections_to_s3() -> bool:
+    """Export all calibration corrections to S3 as JSON.
+
+    Called after save_calibration() to persist across Lambda deploys.
+    """
+    bucket = _s3_bucket()
+    if not bucket:
+        return False
+    try:
+        import boto3
+        conn = sqlite3.connect(_db_path())
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT match_id, league, correction_type, parameter_name, "
+            "old_value, new_value, suggested_by, applied_by, "
+            "audit_confidence, reason, status, created_at "
+            "FROM corrections WHERE status = 'applied' AND correction_type = 'calibration'"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        corrections = []
+        for row in rows:
+            corrections.append({
+                "match_id": row[0], "league": row[1],
+                "correction_type": row[2], "parameter_name": row[3],
+                "old_value": row[4], "new_value": row[5],
+                "suggested_by": row[6], "applied_by": row[7],
+                "audit_confidence": row[8], "reason": row[9],
+                "status": row[10], "created_at": str(row[11]),
+            })
+
+        payload = json.dumps(corrections, ensure_ascii=False)
+        s3 = boto3.client("s3")
+        s3.put_object(Bucket=bucket, Key=_S3_CALIBRATION_KEY, Body=payload.encode("utf-8"))
+        logger.info(f"[S3] Exported {len(corrections)} calibration corrections to s3://{bucket}/{_S3_CALIBRATION_KEY}")
+        return True
+    except Exception as e:
+        logger.warning(f"[S3] Failed to export corrections: {e}")
+        return False
+
+
+def _import_corrections_from_s3(conn) -> int:
+    """Import calibration corrections from S3 into local SQLite.
+
+    Called on Lambda cold start when corrections table is empty.
+    Returns number of corrections imported.
+    """
+    global _s3_imported
+    if _s3_imported:
+        return 0
+
+    bucket = _s3_bucket()
+    if not bucket:
+        _s3_imported = True
+        return 0
+
+    try:
+        import boto3
+        s3 = boto3.client("s3")
+        obj = s3.get_object(Bucket=bucket, Key=_S3_CALIBRATION_KEY)
+        data = json.loads(obj["Body"].read().decode("utf-8"))
+        if not data:
+            _s3_imported = True
+            return 0
+
+        cursor = conn.cursor()
+        count = 0
+        for c in data:
+            cursor.execute(
+                "INSERT INTO corrections "
+                "(match_id, league, correction_type, parameter_name, old_value, "
+                "new_value, suggested_by, applied_by, audit_confidence, reason, "
+                "status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (c["match_id"], c["league"], c["correction_type"],
+                 c["parameter_name"], c["old_value"], c["new_value"],
+                 c.get("suggested_by", "calibration"),
+                 c.get("applied_by", "system"),
+                 c.get("audit_confidence", 0), c.get("reason", ""),
+                 c.get("status", "applied"), c.get("created_at", "")),
+            )
+            count += 1
+        conn.commit()
+        _s3_imported = True
+        logger.info(f"[S3] Imported {count} calibration corrections from s3://{bucket}/{_S3_CALIBRATION_KEY}")
+        return count
+    except Exception as e:
+        _s3_imported = True
+        logger.info(f"[S3] No calibrations to import (first deploy?): {e}")
+        return 0
+
+
 _PG_PLACEHOLDER_VALUES = {"seu_host_postgres", "seu_usuario", "sua_senha", "localhost", ""}
 
 
@@ -227,6 +334,16 @@ CREATE TABLE IF NOT EXISTS corrections (
         _ensure_pg_unique_constraints(cursor)
 
     conn.commit()
+
+    # Auto-import calibrations from S3 on Lambda cold start (#059)
+    if not is_pg and os.getenv("AWS_LAMBDA_FUNCTION_NAME") and not _s3_imported:
+        try:
+            cursor.execute("SELECT COUNT(*) FROM corrections WHERE correction_type = 'calibration'")
+            if cursor.fetchone()[0] == 0:
+                _import_corrections_from_s3(conn)
+        except Exception:
+            pass
+
     return conn
 
 

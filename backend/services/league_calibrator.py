@@ -1158,6 +1158,13 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
             except Exception as e:
                 logger.error(f"Failed to save calibration {key}={value} for {league_id}: {e}")
 
+    # Persist calibrations to S3 for Lambda deploy survival (#059)
+    try:
+        from backend.audit import export_corrections_to_s3
+        export_corrections_to_s3()
+    except Exception as e:
+        logger.warning(f"S3 export after calibration failed: {e}")
+
 
 def calibrate_all_leagues(n_seasons: int = 6) -> Dict[str, Dict]:
     """Run calibration for all configured leagues.
