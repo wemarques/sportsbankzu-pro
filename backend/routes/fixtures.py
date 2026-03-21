@@ -936,6 +936,14 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     return {"matches": out}
 
 
+# ── Last-known live scores cache (#060) ──────────────────────────────
+# When both FootyStats and API-Football fail (rate limit, outage),
+# serve the last successful live-scores response instead of empty [].
+# Expires after 5 minutes to avoid serving extremely stale data.
+_LIVE_CACHE_TTL = 300  # seconds
+_last_live_scores: Dict[str, Any] = {"matches": [], "ts": 0}
+
+
 @router.get("/live-scores")
 def live_scores() -> Dict[str, Any]:
     """Retorna placares ao vivo dos jogos do dia (cache de 1 min)."""
@@ -944,6 +952,20 @@ def live_scores() -> Dict[str, Any]:
     try:
         data = footstats.get_live_scores()
         if not data.get("success"):
+            # Serve cached data if FootyStats fails entirely (#060)
+            _now_fail = int(_time.time())
+            _age_fail = _now_fail - _last_live_scores["ts"]
+            if _last_live_scores["matches"] and _age_fail < _LIVE_CACHE_TTL:
+                logger.warning(
+                    f"[live-scores] FootyStats failed → serving cached data "
+                    f"({len(_last_live_scores['matches'])} matches, age={_age_fail}s)"
+                )
+                return {
+                    "matches": _last_live_scores["matches"],
+                    "nextUpdate": 30,
+                    "stale": True,
+                    "cacheAge": _age_fail,
+                }
             return {"matches": [], "error": "Falha ao buscar placares"}
         raw_list = data.get("data", [])
 
@@ -1025,11 +1047,28 @@ def live_scores() -> Dict[str, Any]:
                             f"[live-scores] FootyStats empty → API-Football primary: "
                             f"{len(af_result)} matches"
                         )
+                        # Cache successful result (#060)
+                        _last_live_scores["matches"] = af_result
+                        _last_live_scores["ts"] = int(_time.time())
                         return {"matches": af_result, "nextUpdate": 30}
             except Exception as _af_err:
                 logger.warning(f"[live-scores] API-Football primary fallback failed: {_af_err}")
 
         if not raw_list:
+            # Both APIs failed — serve last-known scores if fresh enough (#060)
+            _now = int(_time.time())
+            _age = _now - _last_live_scores["ts"]
+            if _last_live_scores["matches"] and _age < _LIVE_CACHE_TTL:
+                logger.warning(
+                    f"[live-scores] Both APIs empty → serving cached data "
+                    f"({len(_last_live_scores['matches'])} matches, age={_age}s)"
+                )
+                return {
+                    "matches": _last_live_scores["matches"],
+                    "nextUpdate": 30,
+                    "stale": True,
+                    "cacheAge": _age,
+                }
             return {"matches": []}
         now_ts = int(_time.time())
         result = []
@@ -1399,6 +1438,11 @@ def live_scores() -> Dict[str, Any]:
             except Exception as _af_err:
                 logger.warning(f"[live-scores] API-Football enrichment failed: {_af_err}")
 
+        # Cache successful live scores for resilience (#060)
+        if result:
+            _last_live_scores["matches"] = result
+            _last_live_scores["ts"] = int(_time.time())
+
         logger.info(
             f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
             f"| scores: {[(r['homeTeam'][:12], r['score']['home'] if r.get('score') else '?', r['score']['away'] if r.get('score') else '?') for r in result[:5]]}"
@@ -1406,6 +1450,22 @@ def live_scores() -> Dict[str, Any]:
         return {"matches": result, "nextUpdate": 60}
     except Exception as e:
         logger.error(f"[live-scores] Error: {e}")
+        # Serve cached data on exception too (#060)
+        import time as _t2
+        _now = int(_t2.time())
+        _age = _now - _last_live_scores["ts"]
+        if _last_live_scores["matches"] and _age < _LIVE_CACHE_TTL:
+            logger.warning(
+                f"[live-scores] Exception → serving cached data "
+                f"({len(_last_live_scores['matches'])} matches, age={_age}s)"
+            )
+            return {
+                "matches": _last_live_scores["matches"],
+                "nextUpdate": 30,
+                "stale": True,
+                "cacheAge": _age,
+                "error": str(e),
+            }
         return {"matches": [], "error": str(e)}
 
 

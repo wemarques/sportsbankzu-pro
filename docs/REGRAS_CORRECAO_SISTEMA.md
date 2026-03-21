@@ -3079,6 +3079,62 @@ Dois grafos de probabilidade **desalinhados**: o calibrador e `poisson_matrix` u
 
 ---
 
+## 059 — Export/import de calibrações (S3) e investigação «EVs absurdos» pós-#058
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/audit.py`, `backend/services/league_calibrator.py`, `docs/REGRAS_CORRECAO_SISTEMA.md`
+**Severidade:** Alta (continuidade operacional, diagnóstico de EV e armazenamento de correções)
+**Status:** Implementado
+**Commit:** `0688909` — *feat: persist calibrations to S3 for Lambda deploy survival (#059)*
+
+### Problema identificado
+
+1. Queixa: após **#058**, os **EVs continuavam absurdos** em produção.
+2. Hipótese inicial — **SQLite em `/tmp`** perdido a cada deploy do Lambda — aplica-se a ambientes que **não** usam PostgreSQL. Na investigação, o Lambda tinha **`DATABASE_URL` → PostgreSQL (RDS)** e `_use_postgres() == True`, logo as correções **persistem entre deploys** nesse modo.
+
+### Causa raiz efetiva (linha temporal)
+
+| Quando | O que ocorreu | Efeito |
+|--------|---------------|--------|
+| **2026-03-19** | Poucas entradas na DB (ex.: `lambda_home_multiplier=0.9` para todas as ligas) | Ajuste limitado |
+| **Deploy #058** | Código lê **`lambda_multiplier`** (deflação O/U per-league) na corrections DB | Se o valor **não existir** por liga → default **`1.0`** → **sem** deflação O/U na pipeline |
+| **2026-03-21** | Calibração em massa (**~36 ligas**, milhares de correções em PostgreSQL) | `lambda_multiplier` e restantes fatores **gravados**; exemplos observados na sessão: O/U ~**1,0–1,1**, BTTS ~**0,9–1,3**, 1X2 ~**0,9** |
+
+**Conclusão:** **#058** estava alinhado ao desenho, mas existiu **janela** em que o binário já consumia chaves per-league **antes** da DB estar populada → EVs inflados até à recalibração.
+
+### Correções aplicadas (#059 — S3 como rede de segurança)
+
+Objetivo: **export/import de calibrações em S3** para:
+
+- Ambientes **sem** RDS (ex.: SQLite local ou efémero);
+- **Recuperação** em cold start / deploy quando o armazenamento primário não está disponível ou está vazio.
+
+Resumo técnico:
+
+1. **`backend/audit.py`** — export das correções de calibração para objeto em S3; import no arranque (`init_db` / lifecycle do container), com guard para não reimportar em loop.
+2. **`backend/services/league_calibrator.py`** — após `save_calibration()`, chamada ao export S3.
+
+*(Bucket e key seguem configuração do projeto; não documentar credenciais neste ficheiro.)*
+
+### Estado pós-calibração (referência da investigação)
+
+- **~36 ligas** com multipliers persistidos em PostgreSQL.
+- **EV em produção:** verificação **não conclusiva** na sessão (API sem jogos — ex.: pausa internacional).
+
+### Próximos passos (verificação)
+
+1. `GET /api/fixtures?leagues=<liga>&date=...` com jogos reais.
+2. Rever EV no array de picks.
+3. Se anomalias persistirem, auditar percentagens pré-jogo FootyStats vs prioridade **`derived`** em `_prob()` (**#058**).
+
+### Lição aprendida
+
+1. **Confirmar o backend de persistência** (`DATABASE_URL`, `_use_postgres()`) antes de atribuir falhas a «perda de `/tmp`».
+2. **Código que lê novas chaves na DB** deve ir acompanhado de **dados** ou defaults explícitos — senão o utilizador vê deploy novo com comportamento idêntico.
+3. **RDS (verdade em produção) + S3 (export)** — redundância útil para degradados e para não depender só do ciclo de vida do container.
+
+---
+
 ## Nota — Verificação CI (documentação + suite completa)
 
 **Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
@@ -3095,55 +3151,41 @@ Dois grafos de probabilidade **desalinhados**: o calibrador e `poisson_matrix` u
 
 ---
 
-## 059 — Persistência de calibrações no S3 (Lambda perde /tmp/ em cada deploy)
+## 060 — Live scores resilience: "last known scores" cache
 
 **Data:** 2026-03-21
-**Arquivos afetados:** `backend/audit.py`, `backend/services/league_calibrator.py`
-**Severidade:** Crítica
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
 **Status:** Implementado
 
 ### Problema identificado
 
-Após deploy do #058 (que corrige deflation no pipeline), os EVs continuaram absurdos. Investigação revelou que o Lambda armazena calibrações em SQLite no `/tmp/audit.db`. Cada novo deployment do Lambda cria um novo container, apagando `/tmp/` e todas as 36 calibrações de liga feitas em #052-#056.
+Bragantino vs Botafogo apareceu 0-0 no dashboard quando o placar real era 2-1 (minuto 90).
+Ambas fontes externas falharam simultaneamente:
+- **API-Football:** Rate limit diário excedido desde ~19:13 UTC
+- **FootyStats `todays-matches`:** Retornando vazio
+
+O endpoint `/live-scores` retornou `{"matches":[]}` → frontend não recebeu overlay de placar → score ficou 0-0.
 
 ### Causa raiz
 
-**Calibrações não persistem entre deploys do Lambda.**
+**Vulnerabilidade estrutural**: o endpoint `/live-scores` não tinha nenhum mecanismo de fallback quando ambas APIs externas falhavam. O código retornava `{"matches":[]}` imediatamente, sem tentar servir dados recentes da memória.
 
-Fluxo do problema:
-1. Calibrar 36 ligas → correções salvas em `/tmp/audit.db` no container Lambda
-2. Deploy de nova versão → `aws lambda update-function-code` → novo container criado
-3. Novo container: `/tmp/` vazio → todas calibrações perdidas
-4. `get_lambda_corrections()` retorna `{}` → todos multiplicadores = 1.0 (sem deflation)
-5. EVs absurdos mesmo com código #058 correto
+Confirmado: o código #058 e #059 **NÃO** causaram o problema (health OK, imports OK, nenhum syntax error).
 
 ### Correções aplicadas
 
-1. **Camada S3 — `backend/audit.py`**:
-   - `export_corrections_to_s3()`: exporta todas correções de calibração para `s3://meu-bucket-sportsbank/calibrations/corrections.json`
-   - `_import_corrections_from_s3()`: importa correções do S3 para SQLite local
-   - Guard `_s3_imported` para importar apenas uma vez por lifecycle do container
-
-2. **Camada init_db — `backend/audit.py`**:
-   - Em `init_db()`, após criar tabelas, se estiver no Lambda e corrections vazio, auto-importa do S3
-
-3. **Camada save — `backend/services/league_calibrator.py`**:
-   - Após `save_calibration()`, chama `export_corrections_to_s3()` para persistir
-
-### Fluxo corrigido
-
-```
-Calibrar liga → log_correction() → SQLite /tmp/audit.db
-                                  → export_corrections_to_s3() → S3
-Deploy novo   → container novo   → init_db()
-                                  → corrections vazio?
-                                  → _import_corrections_from_s3() → SQLite preenchido
-              → get_lambda_corrections() → multiplicadores corretos → deflation aplicado
-```
+1. **Cache "last known scores" em memória** (`_last_live_scores` dict): armazena o último resultado bem-sucedido do `/live-scores` com timestamp
+2. **TTL de 5 minutos** (`_LIVE_CACHE_TTL = 300`): dados cacheados expiram após 5 min para evitar servir placares muito antigos
+3. **3 pontos de fallback**: cache é consultado quando (a) FootyStats falha completamente, (b) ambas APIs retornam vazio, (c) exceção não tratada no handler
+4. **2 pontos de cache**: resultados são armazenados quando (a) API-Football primary retorna dados, (b) processamento FootyStats + enrichment completam com sucesso
+5. **Flag `stale: true`**: resposta inclui indicador para o frontend saber que dados são do cache
+6. **Flag `cacheAge`**: tempo em segundos desde o último fetch bem-sucedido
 
 ### Lição aprendida
 
-Lambda é **efêmero por design**. Qualquer dado que precisa sobreviver entre deploys DEVE ser persistido em storage durável (S3, DynamoDB, RDS). `/tmp/` é volátil — não apenas entre deploys mas também quando containers são reciclados por inatividade.
+- Live scores dependem de APIs externas com quotas limitadas. O sistema DEVE ter cache de resiliência para servir dados recentes quando ambas fontes falham
+- A API-Football tem limite diário de requisições que pode ser atingido durante rodadas com muitos jogos simultâneos. Considerar upgrade de plano ou implementar budget management para priorizar live scores sobre enrichment
 
 ---
 
