@@ -630,9 +630,18 @@ def fetch_season_stats(league_id: str, n_seasons: int = 6) -> List[Dict]:
         if not league_cfg:
             return []
 
-        season_ids = league_cfg.get("season_ids", [])
+        # Resolve season IDs dynamically (same as fetch_historical_matches)
+        resolved = client.resolve_season_ids(
+            country=league_cfg["country"],
+            league_name=league_cfg["name"],
+            alt_names=league_cfg.get("alt_names", []),
+            n_seasons=n_seasons,
+        )
+        if not resolved:
+            logger.warning(f"[calibrator] No season IDs resolved for {league_id} season stats")
+            return []
 
-        for i, season_id in enumerate(season_ids[:n_seasons]):
+        for i, (season_id, _api_name) in enumerate(resolved[:n_seasons]):
             try:
                 data = client.get_league_season_stats(season_id)
                 items = data.get("data", [])
