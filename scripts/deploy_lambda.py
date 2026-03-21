@@ -2,6 +2,8 @@ import os
 import zipfile
 import subprocess
 import shutil
+import time
+import json
 from pathlib import Path
 
 # Configurações
@@ -63,25 +65,76 @@ def create_zip():
 S3_BUCKET = "meu-bucket-sportsbank"
 S3_KEY = "deploy/sportsbank_lambda.zip"
 
+MAX_RETRIES = 5
+WAIT_SECONDS = 30
+
+
+def _get_lambda_state():
+    """Check Lambda function state."""
+    result = subprocess.run(
+        ["aws", "lambda", "get-function-configuration",
+         "--function-name", FUNCTION_NAME,
+         "--region", REGION,
+         "--query", "{State: State, LastUpdateStatus: LastUpdateStatus}",
+         "--output", "json"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return None
+    return json.loads(result.stdout)
+
+
+def _wait_for_active():
+    """Wait until Lambda is Active and LastUpdateStatus is Successful."""
+    for i in range(MAX_RETRIES):
+        state = _get_lambda_state()
+        if state and state.get("State") == "Active" and state.get("LastUpdateStatus") == "Successful":
+            return True
+        print(f"  Waiting... ({state}) [{i+1}/{MAX_RETRIES}]")
+        time.sleep(WAIT_SECONDS)
+    return False
+
+
 def deploy_to_aws_via_s3():
+    print(f"Checking Lambda state before deploy...")
+    if not _wait_for_active():
+        print("ERROR: Lambda not Active after waiting. Aborting.")
+        return
+
     print(f"Enviando ZIP para S3: s3://{S3_BUCKET}/{S3_KEY}")
     try:
         # 1. Upload para S3
         subprocess.run([
-            "aws", "s3", "cp", 
-            str(ZIP_FILE), 
+            "aws", "s3", "cp",
+            str(ZIP_FILE),
             f"s3://{S3_BUCKET}/{S3_KEY}"
         ], check=True)
-        
-        # 2. Update Lambda via S3
+
+        # 2. Update Lambda via S3 with retry for ResourceConflictException (#058)
         print(f"Atualizando Lambda {FUNCTION_NAME} a partir do S3...")
-        subprocess.run([
-            "aws", "lambda", "update-function-code",
-            "--function-name", FUNCTION_NAME,
-            "--s3-bucket", S3_BUCKET,
-            "--s3-key", S3_KEY
-        ], check=True)
-        print("Deploy realizado com sucesso via S3!")
+        for attempt in range(MAX_RETRIES):
+            result = subprocess.run([
+                "aws", "lambda", "update-function-code",
+                "--function-name", FUNCTION_NAME,
+                "--s3-bucket", S3_BUCKET,
+                "--s3-key", S3_KEY,
+                "--region", REGION
+            ], capture_output=True, text=True)
+
+            if result.returncode == 0:
+                print("Deploy realizado com sucesso via S3!")
+                time.sleep(5)
+                if _wait_for_active():
+                    print("Lambda Active and ready.")
+                return
+
+            if "ResourceConflictException" in result.stderr:
+                print(f"  ResourceConflictException — waiting {WAIT_SECONDS}s (attempt {attempt+1}/{MAX_RETRIES})")
+                time.sleep(WAIT_SECONDS)
+            else:
+                print(f"ERROR: {result.stderr}")
+                return
+        print("ERROR: Max retries exceeded.")
     except Exception as e:
         print(f"Erro ao realizar deploy via S3: {e}")
 

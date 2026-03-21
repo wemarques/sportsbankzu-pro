@@ -86,6 +86,7 @@ def derive_corner_probabilities(
     away_stats: Dict[str, Any],
     league_stats: Optional[Dict[str, Any]] = None,
     footystats_probs: Optional[Dict[str, Any]] = None,
+    league_id: Optional[str] = None,
 ) -> Dict[str, float]:
     """Derive corner market probabilities.
 
@@ -95,6 +96,16 @@ def derive_corner_probabilities(
     Returns probabilities in 0-1 scale.
     """
     total_corners_lambda = estimate_corners_lambda(home_stats, away_stats, league_stats)
+
+    # Apply per-league corner factor from calibration (#058)
+    if league_id:
+        try:
+            from backend.modeling.lambda_calculator import get_lambda_corrections
+            _corr = get_lambda_corrections(league_id)
+            _corner_mult = float(_corr.get("corner_multiplier", {}).get("value", 1.0))
+            total_corners_lambda = total_corners_lambda * _corner_mult
+        except Exception:
+            pass
 
     # Poisson-based probabilities
     thresholds = [8.5, 9.5, 10.5, 11.5]

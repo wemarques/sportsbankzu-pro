@@ -729,6 +729,8 @@ def build_records_from_matches(
         # Apply lambda corrections from audit DB (Gap 2 — feedback loop)
         _btts_multiplier = None
         _corner_multiplier = None
+        _ou_deflation = 1.0
+        _1x2_deflation = 1.0
         try:
             from backend.modeling.lambda_calculator import get_lambda_corrections, LAMBDA_MIN, LAMBDA_MAX
             _lc = get_lambda_corrections(league_id)
@@ -743,27 +745,49 @@ def build_records_from_matches(
             if _corr := _lc.get("corner_multiplier"):
                 _corner_multiplier = float(_corr.get("value", 1.0))
                 logger.info(f"[Gap2] Corner multiplier loaded: {_corner_multiplier:.3f}")
+            # O/U and 1X2 deflation per-league (calibration #052-#058)
+            if _corr := _lc.get("lambda_multiplier"):
+                _ou_deflation = float(_corr.get("value", 1.0))
+            if _corr := _lc.get("1x2_multiplier"):
+                _1x2_deflation = float(_corr.get("value", 1.0))
         except Exception as _e:
             logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {_e}")
 
-        lam_total = lam_home + lam_away
-        if lam_total < 2.2:
+        # Apply O/U deflation to lambdas for Poisson (#058)
+        lam_home_ou = lam_home * _ou_deflation
+        lam_away_ou = lam_away * _ou_deflation
+        lam_total_ou = lam_home_ou + lam_away_ou
+
+        # Raw total for volatility classification (no deflation)
+        lam_total_raw = lam_home + lam_away
+        if lam_total_raw < 2.2:
             league_volatility = "BAIXA"
-        elif lam_total < 3.0:
+        elif lam_total_raw < 3.0:
             league_volatility = "MODERADA"
         else:
             league_volatility = "ALTA"
-        btts_poisson = (1.0 - poisson_pmf(0, lam_home)) * (1.0 - poisson_pmf(0, lam_away))
-        over05 = 1.0 - poisson_cdf(0, lam_total)
-        over15 = 1.0 - poisson_cdf(1, lam_total)
-        over25 = 1.0 - poisson_cdf(2, lam_total)
-        over35 = 1.0 - poisson_cdf(3, lam_total)
 
-        # Apply BTTS audit correction multiplier (Gap 2 extension)
+        # Over/Under with deflation applied (#058)
+        over05 = 1.0 - poisson_cdf(0, lam_total_ou)
+        over15 = 1.0 - poisson_cdf(1, lam_total_ou)
+        over25 = 1.0 - poisson_cdf(2, lam_total_ou)
+        over35 = 1.0 - poisson_cdf(3, lam_total_ou)
+
+        # BTTS with deflation via lambdas (#058)
+        lam_home_btts = lam_home * (_btts_multiplier if _btts_multiplier else 1.0)
+        lam_away_btts = lam_away * (_btts_multiplier if _btts_multiplier else 1.0)
+        btts_poisson = (1.0 - poisson_pmf(0, lam_home_btts)) * (1.0 - poisson_pmf(0, lam_away_btts))
+
+        # Apply BTTS multiplier to FootyStats pre-match % (separate source)
         if _btts_multiplier is not None and btts_pct is not None:
             btts_pct = min(100.0, max(0.0, float(btts_pct) * _btts_multiplier))
-        if _btts_multiplier is not None:
-            btts_poisson = min(1.0, max(0.0, btts_poisson * _btts_multiplier))
+
+        if _ou_deflation != 1.0:
+            logger.info(
+                f"[deflation] {league_id}: O/U defl={_ou_deflation:.2f}, "
+                f"lam_raw={lam_total_raw:.3f}, lam_defl={lam_total_ou:.3f}, "
+                f"P(O2.5)={over25:.3f}"
+            )
 
         # BTTS fusion: blend available sources for more robust estimate
         # Sources: (1) FootyStats pre-match %, (2) Poisson model, (3) team-level BTTS %
@@ -861,14 +885,14 @@ def build_records_from_matches(
                 "over15Prob": float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1),
                 "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),
                 "over35Prob": float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1),
-                "over45Prob": float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1),
+                "over45Prob": float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total_ou)) * 100.0, 1),
                 "under15Prob": 100.0 - (float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1)),
                 "under25Prob": 100.0 - (float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1)),
                 "under35Prob": 100.0 - (float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1)),
-                "under45Prob": 100.0 - (float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total)) * 100.0, 1)),
+                "under45Prob": 100.0 - (float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total_ou)) * 100.0, 1)),
                 "lambdaHome": round(lam_home, 3),
                 "lambdaAway": round(lam_away, 3),
-                "lambdaTotal": round(lam_total, 3),
+                "lambdaTotal": round(lam_total_raw, 3),
                 "leagueAvgGoals": league_avgs["avg_goals"],
                 "totalGoals": total_gols,
                 "leagueRegime": league_regime,

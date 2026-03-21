@@ -2500,7 +2500,7 @@ Correções automáticas devem tratar a causa raiz (lambda) antes dos sintomas (
 
 ## 042 — Recalibração de thresholds: auditoria de 27 jogos com 0% SAFE accuracy
 
-> **SUPERADO:** Thresholds globais foram substituídos por thresholds per-league calibrados automaticamente em #055 (safe_prob por Brier quality heuristic). Os valores fixos desta regra servem apenas como defaults/fallback.
+> **SUPERADO:** Thresholds globais foram substituídos por thresholds **per-league** calibrados automaticamente em **#055** (safe_prob por heurística de qualidade Brier). Os valores fixos desta regra servem apenas como defaults/fallback.
 
 **Data:** 2026-03-19
 **Arquivos afetados:** `backend/services/ev_classification.py`
@@ -2534,14 +2534,14 @@ Thresholds teóricos devem ser validados com dados reais de auditoria antes de c
 
 ## 043 — Recalibração emergencial: circuit breaker SAFE + deflação lambda 15%
 
-> **SUPERADO:** Os alertas desta regra foram substituídos por calibração per-league:
-> - SAFE circuit breaker → reativado per-league em #054 (36/37 ligas com safe_enabled=true)
-> - Lambda deflation 0.85 → per-league em #052-#053 (Dixon-Coles, grid 0.80-1.50)
-> - BTTS deflation 0.80 → per-league em #054-#056 (calibrado contra seasonBTTSPercentage)
-> - Corners redução 20% → per-league em #055-#056 (Brier-based + season stats)
-> - Thresholds endurecidos → per-league em #055 (safe_prob calibrado por Brier quality)
+> **SUPERADO:** Os alertas desta regra foram substituídos por calibração **per-league**:
+> - SAFE circuit breaker → reativado per-league em **#054** (ex.: 36/37 ligas com `safe_enabled=true`)
+> - Lambda deflation 0.85 → per-league em **#052–#053** (Dixon-Coles, grid 0.80–1.50)
+> - BTTS deflation 0.80 → per-league em **#054–#056** (calibrado contra `seasonBTTSPercentage`)
+> - Corners redução 20% → per-league em **#055–#056** (Brier + season stats)
+> - Thresholds endurecidos → per-league em **#055** (safe_prob por Brier)
 >
-> Os critérios de remoção originais não se aplicam mais. A calibração automática per-league substituiu as deflações fixas.
+> Os critérios de remoção originais não se aplicam mais da mesma forma; a calibração automática per-league substituiu as deflações fixas globais.
 
 **Data:** 2026-03-20
 **Arquivos afetados:** `backend/services/ev_classification.py`, `backend/modeling/lambda_calculator.py`, `backend/modeling/corners_engine.py`
@@ -2719,21 +2719,7 @@ F-strings com expressões condicionais complexas são propensas a erros de sinta
 
 ---
 
-## Nota — Verificação CI (documentação + suite completa)
-
-**Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
-
-| Job | Duração (aprox.) | Resultado |
-|-----|------------------|-----------|
-| `backend-tests` | ~57 s | Sucesso |
-| `e2e-tests` | ~3 m 16 s | Sucesso |
-| **Total pipeline** | ~3 m 20 s | **Success** |
-
-**Avisos (não falha):** deprecação Node.js 20 nos actions `checkout` / `setup-python` / `setup-node` / `upload-artifact` — planejar upgrade para Node 24 conforme [changelog GitHub Actions](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
-
-**Artefato:** `playwright-report` (~207 KB) gerado no job e2e.
-
----
+> **Sincronização:** Entradas **#050–#055** alinhadas ao ficheiro canónico em [`wemarques/sportsbankzu-pro` — `docs/REGRAS_CORRECAO_SISTEMA.md`](https://github.com/wemarques/sportsbankzu-pro/blob/main/docs/REGRAS_CORRECAO_SISTEMA.md) (branch `main`).
 
 ## 050 — Relatório V3: backtesting, calibração, SAFE monitoring e feedback loop Mistral
 
@@ -2996,62 +2982,111 @@ Calibrar apenas lambda O/U e assumir que outros mercados estão cobertos cria in
 ## 056 — Fix extração de cards/corners/BTTS + enriquecimento com league-season stats
 
 **Data:** 2026-03-21
-**Arquivos afetados:** `backend/services/league_calibrator.py`, `CLAUDE.md`
-**Severidade:** Alta (cards null + BTTS ceiling 1.30)
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `CLAUDE.md` (estado do pipeline), `docs/REGRAS_CORRECAO_SISTEMA.md` (registro)
+**Severidade:** Alta (cards Brier nulo + BTTS no teto 1,30 + season stats)
 **Status:** Implementado
-**Referência:** FootyStats API docs (league-matches, league-season)
+**Commits:** `be1328b` (extração + season stats + docs), `c4d54f2` (`fetch_season_stats`: `resolve_season_ids` dinâmico, alinhado a `fetch_historical_matches`)
 
-### Problema identificado
+### Problema identificado (resumo)
 
-1. **Cards = null:** `_extract_matches_from_season()` lia `team_a_cards` (ARRAY de timings `[69,31,18]`) em vez de `team_a_cards_num` (INTEGER `3`). Somar arrays não produz contagem → cards_lambda = 0 → Brier null.
-2. **Corners com -1:** FootyStats usa `-1` para "dados não disponíveis". `(-1 or 0)` = `-1` (truthy em Python). `total_corners` = `-2` → Brier corrompido.
-3. **BTTS ceiling 1.30:** O campo `btts: true/false` existe no `league-matches` mas não era extraído. O calibrador simulava BTTS com Poisson puro, que sistematicamente subestima → deflation batia no teto do grid.
-4. **Season stats não usados:** `get_league_season_stats()` já existia no client mas o calibrador não chamava. Contém `seasonBTTSPercentage`, `cardsAVG_overall`, `over25CardsPercentage_overall` — dados reais para calibração.
-
-### Correções aplicadas
-
-1. **Fix cards:** ler `team_a_cards_num` (ou `team_a_yellow_cards` como fallback)
-2. **Fix corners:** `_sanitize()` trata -1/-2/None → default 0
-3. **Extrair btts:** campo `btts: true/false` do league-matches agora usado no Brier
-4. **Season stats:** `fetch_season_stats()` chama `get_league_season_stats()` para percentuais reais
-5. **BTTS calibração dual:** per-match Brier + season Brier; usa o melhor ou season quando per-match bate no ceiling
-6. **Cards season:** `_calibrate_cards_from_season()` usa `cardsAVG + over25-55CardsPercentage`
-7. **Corners season:** `_calibrate_corners_from_season()` usa `cornersAVG + over85-105CornersPercentage`
-8. **CLAUDE.md atualizado:** seção pipeline reflete estado real pós-#052 a #056
+1. **Cards Brier null** — uso de campo array (`team_a_cards`) em vez de contagem inteira (`team_a_cards_num` / fallback).
+2. **Corners** — sentinel FootyStats `-1` tratado incorretamente com `or`, corrompendo totais.
+3. **BTTS** — flag `btts` em `league-matches` não usada; Poisson puro empurrava deflation ao teto do grid (1,30).
+4. **Season stats** — `get_league_season_stats` existia mas não alimentava calibração; após deploy, lista vazia porque `season_ids` no config estava vazio — corrigido em **`c4d54f2`** com `client.resolve_season_ids(...)`.
 
 ### Lição aprendida
 
-1. **Verificar tipos de campo da API** — `team_a_cards` é array, `team_a_cards_num` é integer. Nomes similares, tipos diferentes. A Regra de Investigação #5 (validar com dados reais) teria pego isso.
-2. **Sentinel values** — APIs usam -1, -2, 0 para "não disponível". Python `or` não trata -1 como falsy. Sanitizar ANTES de processar.
-3. **Dados existentes ignorados** — O `league-matches` já retorna cards/corners/btts per-match e o `league-season` retorna percentuais. O calibrador simplesmente não lia esses campos. Antes de criar novos endpoints, verificar o que a API já retorna.
+Validar tipos e sentinels da API; reutilizar o mesmo mecanismo de resolução de temporadas que o restante do pipeline (`resolve_season_ids`).
 
 ---
 
-## 057 — Correções de governança: testes, documentação, rotas
+## 057 — Correções de governança: testes, documentação, rotas API
 
 **Data:** 2026-03-21
-**Arquivos afetados:** `CLAUDE.md`, `docs/REGRAS_CORRECAO_SISTEMA.md`, `.gitignore`, `tests/KNOWN_FAILURES.md`
+**Arquivos afetados:** `CLAUDE.md`, `docs/REGRAS_CORRECAO_SISTEMA.md`, `.gitignore`, `tests/KNOWN_FAILURES.md` (+ remoção de `.claude/` do versionamento: `settings.local.json`, skills)
 **Severidade:** Média (governança e rastreabilidade)
 **Status:** Implementado
+**Commit:** `8d9b638` — *docs: governance fixes — test baseline, REGRAS sync, API routes, gitignore (#057)*
 
 ### Problema identificado
 
-1. 9 testes falhando em todos os deploys sem documentação de quais são e por quê
-2. REGRAS #043 diverge do CLAUDE.md — #043 diz SAFE desabilitado, CLAUDE.md diz reativado
-3. Rotas API não documentadas — /health vs /api/... causou tempo perdido
-4. `---` duplicado no REGRAS entre #055 e #056
-5. `.claude/settings.local.json` versionado gerando warnings em todo commit
+1. Falhas de teste recorrentes sem **baseline** documentado (9 execuções + 1 erro de coleta).
+2. Divergência **REGRAS #043** vs **CLAUDE.md** (circuit breaker / deflações vs estado per-league reativado).
+3. Rotas API Gateway pouco claras (`/health` vs `/api/health`, parâmetro `league=` vs `league_id=`).
+4. Separador Markdown `---` duplicado antes da entrada **#056** (formatação).
+5. `.claude/settings.local.json` versionado → avisos CRLF e ruído em commits.
 
 ### Correções aplicadas
 
-1. Listar e documentar os 9+1 testes falhando em `tests/KNOWN_FAILURES.md` (pandas, sklearn, Streamlit)
-2. Adicionar nota SUPERADO no REGRAS #043 e #042 referenciando #054-#056
-3. Documentar rotas API e procedimento de deploy no CLAUDE.md
-4. Remover `---` duplicado no REGRAS entre #055 e #056
-5. Expandir `.claude/worktrees/` para `.claude/` no .gitignore, remover do tracking
+1. **`tests/KNOWN_FAILURES.md`** — Baseline dos **10** problemas conhecidos no ambiente Windows/local:
+   - **1** erro de coleta: `tests/unit/test_util_service.py` — `pandas._libs.pandas_parser` (instalação pandas corrompida no `.venv`; mitigação típica: `pip install --force-reinstall pandas`).
+   - **1** falha ML: `tests/test_corner_framework.py::TestMLRegression::test_train_corner_regressor` — dependência **sklearn** / ambiente.
+   - **7** falhas **Streamlit** em `tests/test_visual.py` (ex.: `test_app_loads`, `test_title_present`, …) — UI/headless/ambiente.
+   - Nota: `tests/unit/test_calibrator.py` **não existe** no repo (comando de verificação retorna file not found).
+2. Notas **SUPERADO** em **#042** e **#043** (sincronia com calibração per-league **#054–#056**).
+3. **CLAUDE.md** — Seção **API Routes (Lambda / API Gateway)** com URL base, tabela de rotas corretas vs erros comuns, `league=`, timeout API Gateway vs duração da calibração, checklist de deploy Lambda (`State` / `LastUpdateStatus` antes de `update-function-code`).
+4. Remoção do **`---`** duplicado imediatamente antes de **## 056**.
+5. **`.gitignore`:** `.claude/` (substitui `.claude/worktrees/` apenas); **`git rm --cached .claude/`** para parar de versionar settings locais.
 
 ### Lição aprendida
 
-Deploy com testes falhando exige baseline explícito. Documentação divergente entre CLAUDE.md e REGRAS é risco operacional — quando uma regra é superada, a anterior deve ser marcada explicitamente.
+Deploy com testes vermelhos exige **baseline explícito** (`KNOWN_FAILURES.md` ou CI allowlist documentada). Regras históricas **SUPERADAS** devem ser marcadas no próprio REGRAS para não contradizer `CLAUDE.md`. Rotas e parâmetros de API devem estar no guia do repositório para evitar perda de tempo em produção.
+
+---
+
+## Nota — Verificação CI (documentação + suite completa)
+
+**Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
+
+| Job | Duração (aprox.) | Resultado |
+|-----|------------------|-----------|
+| `backend-tests` | ~57 s | Sucesso |
+| `e2e-tests` | ~3 m 16 s | Sucesso |
+| **Total pipeline** | ~3 m 20 s | **Success** |
+
+**Avisos (não falha):** deprecação Node.js 20 nos actions `checkout` / `setup-python` / `setup-node` / `upload-artifact` — planejar upgrade para Node 24 conforme [changelog GitHub Actions](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
+
+**Artefato:** `playwright-report` (~207 KB) gerado no job e2e.
+
+---
+
+---
+
+## 058 — Fix pipeline: deflation não aplicada nas probabilidades de produção
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/services/ev_classification.py`, `backend/modeling/corners_engine.py`, `scripts/deploy_lambda.py`
+**Severidade:** CRÍTICA (EVs absurdos em todas as ligas — Under +69%, Corners +149%)
+**Status:** Corrigido
+
+### Problema identificado
+
+A calibração per-league (#052-#056) estava salva no DB e lida corretamente pelo `derive_all_markets()` em `poisson_matrix.py`. Porém, as probabilidades servidas ao dashboard vinham de um caminho DIFERENTE:
+
+1. `fixtures_service.py` computa `over25 = 1 - poisson_cdf(2, lam_total)` com lambdas RAW (sem deflation)
+2. `ev_classification.py` chama `derive_all_markets()` com deflation, mas `_prob()` prioriza `stats` (sem deflation) sobre `derived` (com deflation)
+3. `corners_engine.py` `derive_corner_probabilities()` não aplica `corner_multiplier`
+
+### Causa raiz
+
+Dois caminhos de computação de probabilidade desconectados:
+- **Caminho 1 (produção):** `fixtures_service.py` → `poisson_cdf(k, lam_total)` → sem deflation
+- **Caminho 2 (calibração):** `poisson_matrix.py` → `derive_all_markets()` → com deflation
+
+O caminho 2 era usado apenas para classificação, mas os valores finais vinham do caminho 1.
+
+### Correções aplicadas
+
+1. **`fixtures_service.py`:** Ler `lambda_multiplier` (O/U deflation) da corrections DB e aplicar nos lambdas ANTES do cálculo Poisson. BTTS deflation aplicada via lambdas (não multiplicador pós-cálculo).
+2. **`ev_classification.py`:** `_prob()` agora prioriza `derived` (com deflation) sobre `stats` (sem deflation).
+3. **`corners_engine.py`:** `derive_corner_probabilities()` recebe `league_id` e aplica `corner_multiplier` ao lambda de corners.
+4. **`deploy_lambda.py`:** Adicionado retry com wait para `ResourceConflictException`.
+
+### Lição aprendida
+
+1. **Calibrar sem conectar ao pipeline é inútil** — A calibração funcionava no calibrador mas nunca chegava ao dashboard.
+2. **Trace o fluxo completo (Regra #2)** — Se tivéssemos seguido o dado de fixtures_service até o dashboard, teríamos visto que a deflation nunca chegava.
+3. **Deploy atomicity** — `ResourceConflictException` precisa de retry automático.
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
+

@@ -354,20 +354,31 @@ def evaluate_match_markets(
         away_stats=stats,
         league_stats=league_stats if isinstance(league_stats, dict) else None,
         footystats_probs=stats,
+        league_id=league_id,
     )
 
     # ─── Build market outputs ───
     markets: List[MarketOutput] = []
     source_flags = ["footystats"]
 
-    # Helper to get probability with fallback to derived
+    # Helper: derived (deflated via calibration) first, then stats (raw) (#058)
     def _prob(stat_key: str, derived_key: str = "") -> Optional[float]:
+        # Priority 1: derived probabilities (with per-league deflation)
+        if derived_key and derived_key in derived:
+            v = derived[derived_key]
+            if v is not None and 0 < float(v) <= 1.0:
+                return float(v)
+        # Priority 2: stats (may be without deflation)
         val = stats.get(stat_key)
         if val is not None:
-            v = float(val)
-            return v / 100.0 if v > 1.0 else v
-        if derived_key and derived_key in derived:
-            return derived[derived_key]
+            try:
+                v = float(val)
+                if v > 1.0:
+                    return v / 100.0
+                if v > 0:
+                    return v
+            except (ValueError, TypeError):
+                pass
         return None
 
     # 1X2 markets
