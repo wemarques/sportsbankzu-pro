@@ -50,24 +50,25 @@ def _simulate_all_markets(
     corner_deflation: float = 1.0,
     cards_deflation: float = 1.0,
     xg_blend_weight: float = 0.0,
+    compute_only: str | None = None,
 ) -> Dict[str, float]:
-    """Simulate Brier scores for ALL markets with per-market deflation.
-
-    Markets computed:
-    - Over 1.5, 2.5, 3.5, 4.5 + Under (averaged as brier_over_avg / brier_under_avg)
-    - BTTS (separate deflation)
-    - 1X2 Home, Draw, Away (separate deflation, averaged)
-    - Double Chance 1X, 12, X2 (derived from 1X2)
-    - Corners Over 8.5, 9.5, 10.5 (when corner data available)
-    - Cards Over 2.5, 3.5, 4.5 (when card data available)
+    """Simulate Brier scores for markets with per-market deflation.
 
     Args:
-        xg_blend_weight: weight for xG in lambda blend. 0.0=ignore xG, 0.3=current default.
+        compute_only: If set, only compute this market group for performance.
+            Options: "ou", "btts", "1x2", "corners", "cards", None (all).
     """
     defl_btts = lambda_deflation_btts if lambda_deflation_btts is not None else lambda_deflation_ou
     defl_1x2 = lambda_deflation_1x2 if lambda_deflation_1x2 is not None else 1.0
 
     w_season, w_recent = lambda_weights
+
+    # Compute flags for performance — skip unnecessary loops in grid search
+    do_ou = compute_only is None or compute_only == "ou"
+    do_btts = compute_only is None or compute_only == "btts"
+    do_1x2 = compute_only is None or compute_only in ("1x2", "ou")
+    do_corners = compute_only is None or compute_only == "corners"
+    do_cards = compute_only is None or compute_only == "cards"
 
     # Accumulators per market
     brier = {
@@ -112,77 +113,81 @@ def _simulate_all_markets(
         total = gh + ga
 
         # ── O/U matrix (all lines) ──
-        prob_over = {1.5: 0.0, 2.5: 0.0, 3.5: 0.0, 4.5: 0.0}
-        for h in range(9):
-            ph = poisson_pmf(h, lh_ou)
-            for a in range(9):
-                pa = poisson_pmf(a, la_ou)
-                p = ph * pa
-                t = h + a
-                for line in prob_over:
-                    if t > line:
-                        prob_over[line] += p
+        if do_ou:
+            prob_over = {1.5: 0.0, 2.5: 0.0, 3.5: 0.0, 4.5: 0.0}
+            for h in range(9):
+                ph = poisson_pmf(h, lh_ou)
+                for a in range(9):
+                    pa = poisson_pmf(a, la_ou)
+                    p = ph * pa
+                    t = h + a
+                    for line in prob_over:
+                        if t > line:
+                            prob_over[line] += p
 
-        for line, prob in prob_over.items():
-            actual = 1 if total > line else 0
-            key_suffix = f"{int(line)}5"
-            brier[f"over_{key_suffix}"].append(_brier(prob, actual))
-            brier[f"under_{key_suffix}"].append(_brier(1.0 - prob, 1 - actual))
+            for line, prob in prob_over.items():
+                actual = 1 if total > line else 0
+                key_suffix = f"{int(line)}5"
+                brier[f"over_{key_suffix}"].append(_brier(prob, actual))
+                brier[f"under_{key_suffix}"].append(_brier(1.0 - prob, 1 - actual))
 
         # ── BTTS ──
-        lh_btts = lh_raw * defl_btts
-        la_btts = la_raw * defl_btts
-        prob_btts = 0.0
-        for h in range(9):
-            ph = poisson_pmf(h, lh_btts)
-            for a in range(9):
-                if h >= 1 and a >= 1:
-                    prob_btts += ph * poisson_pmf(a, la_btts)
-
-        brier["btts"].append(_brier(prob_btts, 1 if (gh > 0 and ga > 0) else 0))
+        if do_btts:
+            lh_btts = lh_raw * defl_btts
+            la_btts = la_raw * defl_btts
+            prob_btts = 0.0
+            for h in range(9):
+                ph = poisson_pmf(h, lh_btts)
+                for a in range(9):
+                    if h >= 1 and a >= 1:
+                        prob_btts += ph * poisson_pmf(a, la_btts)
+            brier["btts"].append(_brier(prob_btts, 1 if (gh > 0 and ga > 0) else 0))
 
         # ── 1X2 ──
-        lh_1x2 = lh_raw * defl_1x2
-        la_1x2 = la_raw * defl_1x2
-        prob_home = 0.0
-        prob_draw = 0.0
-        for h in range(9):
-            ph = poisson_pmf(h, lh_1x2)
-            for a in range(9):
-                pa = poisson_pmf(a, la_1x2)
-                p = ph * pa
-                if h > a:
-                    prob_home += p
-                elif h == a:
-                    prob_draw += p
-        prob_away = max(0, 1.0 - prob_home - prob_draw)
+        if do_1x2:
+            lh_1x2 = lh_raw * defl_1x2
+            la_1x2 = la_raw * defl_1x2
+            prob_home = 0.0
+            prob_draw = 0.0
+            for h in range(9):
+                ph = poisson_pmf(h, lh_1x2)
+                for a in range(9):
+                    pa = poisson_pmf(a, la_1x2)
+                    p = ph * pa
+                    if h > a:
+                        prob_home += p
+                    elif h == a:
+                        prob_draw += p
+            prob_away = max(0, 1.0 - prob_home - prob_draw)
 
-        brier["1x2_home"].append(_brier(prob_home, 1 if gh > ga else 0))
-        brier["1x2_draw"].append(_brier(prob_draw, 1 if gh == ga else 0))
-        brier["1x2_away"].append(_brier(prob_away, 1 if gh < ga else 0))
+            brier["1x2_home"].append(_brier(prob_home, 1 if gh > ga else 0))
+            brier["1x2_draw"].append(_brier(prob_draw, 1 if gh == ga else 0))
+            brier["1x2_away"].append(_brier(prob_away, 1 if gh < ga else 0))
 
-        # ── Double Chance (derived from 1X2) ──
-        brier["dc_1x"].append(_brier(prob_home + prob_draw, 1 if gh >= ga else 0))
-        brier["dc_12"].append(_brier(prob_home + prob_away, 1 if gh != ga else 0))
-        brier["dc_x2"].append(_brier(prob_draw + prob_away, 1 if gh <= ga else 0))
+            # ── Double Chance (derived from 1X2) ──
+            brier["dc_1x"].append(_brier(prob_home + prob_draw, 1 if gh >= ga else 0))
+            brier["dc_12"].append(_brier(prob_home + prob_away, 1 if gh != ga else 0))
+            brier["dc_x2"].append(_brier(prob_draw + prob_away, 1 if gh <= ga else 0))
 
         # ── Corners (when data available) ──
-        tc = m.get("total_corners")
-        if tc is not None and tc > 0:
-            corner_lambda = (m.get("avg_corners_total") or tc) * corner_deflation
-            corner_lambda = max(3.0, min(20.0, corner_lambda))
-            for line, key in [(8.5, "corners_o85"), (9.5, "corners_o95"), (10.5, "corners_o105")]:
-                prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
-                brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
+        if do_corners:
+            tc = m.get("total_corners")
+            if tc is not None and tc > 0:
+                corner_lambda = (m.get("avg_corners_total") or tc) * corner_deflation
+                corner_lambda = max(3.0, min(20.0, corner_lambda))
+                for line, key in [(8.5, "corners_o85"), (9.5, "corners_o95"), (10.5, "corners_o105")]:
+                    prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
+                    brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
 
         # ── Cards (when data available) ──
-        total_cards = m.get("total_cards")
-        if total_cards is not None and total_cards > 0:
-            cards_lambda = (m.get("avg_cards_total") or total_cards) * cards_deflation
-            cards_lambda = max(1.0, min(12.0, cards_lambda))
-            for line, key in [(2.5, "cards_o25"), (3.5, "cards_o35"), (4.5, "cards_o45")]:
-                prob_over_cards = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
-                brier[key].append(_brier(prob_over_cards, 1 if total_cards > line else 0))
+        if do_cards:
+            total_cards = m.get("total_cards")
+            if total_cards is not None and total_cards > 0:
+                cards_lambda = (m.get("avg_cards_total") or total_cards) * cards_deflation
+                cards_lambda = max(1.0, min(12.0, cards_lambda))
+                for line, key in [(2.5, "cards_o25"), (3.5, "cards_o35"), (4.5, "cards_o45")]:
+                    prob_over_cards = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
+                    brier[key].append(_brier(prob_over_cards, 1 if total_cards > line else 0))
 
     # Aggregate
     def avg(lst):
@@ -594,6 +599,7 @@ def calibrate_league(
         for weights in LAMBDA_WEIGHT_GRID:
             result = _simulate_all_markets(
                 matches, lambda_deflation_ou=deflation, lambda_weights=weights,
+                compute_only="ou",
             )
 
             b = result.get("brier_over_avg")
@@ -617,6 +623,7 @@ def calibrate_league(
             lambda_deflation_ou=best_ou_defl,
             lambda_weights=best_ou_weights,
             lambda_deflation_btts=btts_defl,
+            compute_only="btts",
         )
         b = result.get("brier_btts")
         if b is not None and b < best_btts["brier"]:
@@ -632,6 +639,7 @@ def calibrate_league(
             lambda_weights=best_ou_weights,
             lambda_deflation_btts=best_btts.get("deflation", 1.0),
             lambda_deflation_1x2=defl_1x2,
+            compute_only="1x2",
         )
         b = result.get("brier_1x2_avg")
         if b is not None and b < best_1x2_defl["brier"]:
@@ -648,6 +656,7 @@ def calibrate_league(
             lambda_deflation_btts=best_btts.get("deflation", 1.0),
             lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
             corner_deflation=c_defl,
+            compute_only="corners",
         )
         b = result.get("brier_corners_avg")
         if b is not None and b < best_corner["brier"]:
@@ -686,6 +695,7 @@ def calibrate_league(
             lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
             corner_deflation=corner_factor,
             cards_deflation=c_defl,
+            compute_only="cards",
         )
         b = result.get("brier_cards_avg")
         if b is not None and b < best_cards["brier"]:
@@ -706,6 +716,7 @@ def calibrate_league(
             corner_deflation=corner_factor,
             cards_deflation=cards_factor,
             xg_blend_weight=xg_w,
+            compute_only="ou",
         )
         b = result.get("brier_over_avg")
         if b is not None and b < best_xg["brier"]:
