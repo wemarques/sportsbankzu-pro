@@ -73,9 +73,21 @@ WEIGHTS = {
 MIN_SHRINKAGE = 0.05  # strong data → low shrinkage
 MAX_SHRINKAGE = 0.60  # weak data → high shrinkage
 
-# ─── Corner Deflation (Emergency Recalibration) ───
-# Corners have 0% accuracy in 2 consecutive audits. Model overestimates corners.
-CORNER_DEFLATION_FACTOR = 0.80  # Reduce corner projections by 20%
+# ─── Corner Deflation — Per-League from Calibration DB (#052) ───
+# Uniform deflation (#043) replaced by per-league factor from calibration.
+_DEFAULT_CORNER_FACTOR = 1.0
+
+
+def _get_corner_factor(league_id: str | None) -> float:
+    """Get per-league corner factor from calibration DB."""
+    if not league_id:
+        return _DEFAULT_CORNER_FACTOR
+    try:
+        from backend.modeling.lambda_calculator import get_lambda_corrections
+        corrections = get_lambda_corrections(league_id)
+        return float(corrections.get("corner_multiplier", {}).get("value", _DEFAULT_CORNER_FACTOR))
+    except Exception:
+        return _DEFAULT_CORNER_FACTOR
 
 
 def predict_corners(
@@ -265,8 +277,8 @@ def _project_expected_corners(
 
     model_divergence = _compute_divergence(predictions)
 
-    # Apply corner deflation (emergency recalibration — 0% accuracy in 2 audits)
-    expected_ft = expected_ft * CORNER_DEFLATION_FACTOR
+    # Apply per-league corner factor from calibration (#052)
+    expected_ft = expected_ft * _get_corner_factor(league_id)
 
     expected_ft = max(4.0, min(18.0, expected_ft))
 

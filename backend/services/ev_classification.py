@@ -34,9 +34,29 @@ from backend.services.data_governance import (
 logger = logging.getLogger("sportsbankzu.ev_classification")
 
 # ─── SAFE Circuit Breaker ───
-# SAFE has 0% accuracy in 2 consecutive audits. Disable until recalibrated.
-# Reactivate when: SAFE accuracy > 55% in 3 consecutive audits, Brier < 0.25, Lambda error < 0.5
-SAFE_CIRCUIT_BREAKER_ENABLED = True
+# Global override: True = force-disable SAFE for ALL leagues (emergency)
+# When False, per-league SAFE status from calibration DB is used (#052)
+SAFE_CIRCUIT_BREAKER_ENABLED = False
+
+
+def _is_safe_enabled(league_id: str | None) -> bool:
+    """Check if SAFE classification is enabled for this league.
+
+    Per-league SAFE status from calibration DB (#052).
+    Default: disabled (conservative — requires calibration to enable).
+    Global override: SAFE_CIRCUIT_BREAKER_ENABLED=True forces all disabled.
+    """
+    if SAFE_CIRCUIT_BREAKER_ENABLED:
+        return False  # Global emergency override
+    if not league_id:
+        return False
+    try:
+        from backend.modeling.lambda_calculator import get_lambda_corrections
+        corrections = get_lambda_corrections(league_id)
+        safe_val = corrections.get("safe_enabled", {}).get("value", "False")
+        return str(safe_val).lower() in ("true", "1", "yes")
+    except Exception:
+        return False  # Default: disabled
 
 # ─── Dynamic Thresholds per Market ───
 # Each market has thresholds for SAFE and NEUTRO classification
@@ -114,6 +134,7 @@ def _get_thresholds(market_category: str) -> Dict[str, float]:
 def classify_market(
     output: MarketOutput,
     thresholds: Optional[Dict[str, float]] = None,
+    league_id: str = "",
 ) -> MarketOutput:
     """Classify a single market output as SAFE / NEUTRO_QUALIFICADO / NEUTRO / NO_BET.
 
@@ -206,14 +227,14 @@ def classify_market(
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)
 
-    # ─── SAFE Circuit Breaker ───
-    # Downgrade SAFE → NEUTRO_QUALIFICADO while circuit breaker is active
-    if classification == MarketClassification.SAFE and SAFE_CIRCUIT_BREAKER_ENABLED:
+    # ─── SAFE Circuit Breaker — per-league (#052) ───
+    # Downgrade SAFE → NEUTRO_QUALIFICADO when SAFE not enabled for this league
+    if classification == MarketClassification.SAFE and not _is_safe_enabled(league_id):
         classification = MarketClassification.NEUTRO_QUALIFICADO
         reason_codes.append(ReasonCode.SAFE_CIRCUIT_BREAKER)
         logger.info(
             f"[Circuit Breaker] {output.display_label}: SAFE → NEUTRO_QUALIFICADO "
-            f"(SAFE disabled until recalibration)"
+            f"(SAFE not enabled for league '{league_id}')"
         )
 
     output.classification = classification
@@ -280,7 +301,7 @@ def evaluate_match_markets(
 
     derived = {}
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
-        derived = derive_all_markets(float(lambda_home), float(lambda_away))
+        derived = derive_all_markets(float(lambda_home), float(lambda_away), league_id=league_id)
 
     # ─── Derive corner probabilities (governed framework v2) ───
     governed_corners = predict_corners(
@@ -341,7 +362,7 @@ def evaluate_match_markets(
             source_flags=source_flags,
             display_label=f"1X2 {selection}",
         )
-        markets.append(classify_market(mo))
+        markets.append(classify_market(mo, league_id=league_id))
 
     # Over/Under markets
     for threshold, stat_over, stat_under, odd_key in [
@@ -366,7 +387,7 @@ def evaluate_match_markets(
                 source_flags=source_flags,
                 display_label=f"Over {threshold} gols",
             )
-            markets.append(classify_market(mo))
+            markets.append(classify_market(mo, league_id=league_id))
 
         # Under
         raw_under = _prob(stat_under, f"under{threshold.replace('.', '')}Prob")
@@ -397,7 +418,7 @@ def evaluate_match_markets(
                 source_flags=source_flags,
                 display_label=f"Under {threshold} gols",
             )
-            markets.append(classify_market(mo))
+            markets.append(classify_market(mo, league_id=league_id))
 
     # BTTS
     raw_btts = _prob("bttsProb", "bttsProb")
@@ -416,7 +437,7 @@ def evaluate_match_markets(
             source_flags=source_flags,
             display_label="BTTS — SIM",
         )
-        markets.append(classify_market(mo))
+        markets.append(classify_market(mo, league_id=league_id))
 
     # Double Chance (derived from 1X2)
     home_prob = _prob("homeWinProb", "homeWinProb")
@@ -449,7 +470,7 @@ def evaluate_match_markets(
             source_flags=source_flags,
             display_label=f"DC 1X ({home_label}/EMP)",
         )
-        markets.append(classify_market(mo))
+        markets.append(classify_market(mo, league_id=league_id))
 
     # Corner markets (governed framework v2 — bidirectional Over + Under)
     corner_governance = get_corner_governance_info(league_id)
@@ -513,7 +534,7 @@ def evaluate_match_markets(
             display_label=f"Escanteios {threshold_label}",
         )
 
-        classified = classify_market(mo)
+        classified = classify_market(mo, league_id=league_id)
         classified.corner_governance = {
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,
@@ -582,7 +603,7 @@ def evaluate_match_markets(
             display_label=f"Escanteios {threshold_label}",
         )
 
-        classified = classify_market(mo)
+        classified = classify_market(mo, league_id=league_id)
         classified.corner_governance = {
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,

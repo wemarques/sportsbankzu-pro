@@ -2,6 +2,7 @@
 
 Reference: REGRAS #050 — backtesting, calibration, SAFE monitoring.
 Reference: REGRAS #051 — lambda error null fix, by-league/by-market reports.
+Reference: REGRAS #052 — per-league calibration.
 """
 from fastapi import APIRouter, Query
 from typing import Optional
@@ -254,4 +255,70 @@ async def backtest_by_market(
         "league": league or "ALL",
         "total_markets": len(results),
         "results": results,
+    }
+
+
+@router.post("/backtesting/calibrate")
+async def run_calibration(
+    league: Optional[str] = Query(None, description="Liga específica ou None para todas"),
+    n_seasons: int = Query(4, ge=2, le=6, description="Número de temporadas históricas"),
+):
+    """Run per-league calibration using historical match data.
+
+    Fetches N seasons from FootyStats, runs grid search for optimal
+    lambda deflation, BTTS deflation, corner factor, and lambda weights.
+    Stores results in corrections DB.
+
+    WARNING: This is slow — ~30s per league, ~15min for all leagues.
+    Reference: REGRAS #052
+    """
+    from backend.services.league_calibrator import calibrate_league, calibrate_all_leagues, save_calibration
+
+    if league:
+        result = calibrate_league(league, n_seasons=n_seasons)
+        if result.get("status") == "CALIBRATED" and result.get("params"):
+            save_calibration(league, result["params"])
+        return result
+    else:
+        return calibrate_all_leagues(n_seasons=n_seasons)
+
+
+@router.get("/backtesting/calibration-status")
+async def calibration_status():
+    """Show current calibration status for all leagues.
+
+    Reads corrections DB to show which leagues have been calibrated
+    and their current per-league parameters.
+    """
+    from backend.config.leagues_config import LEAGUES_CONFIG
+    from backend.modeling.lambda_calculator import get_lambda_corrections
+
+    results = []
+    for cfg in LEAGUES_CONFIG:
+        league_id = cfg["id"]
+        try:
+            corrections = get_lambda_corrections(league_id)
+            has_calibration = any(
+                c.get("type") == "calibration"
+                for c in corrections.values()
+                if isinstance(c, dict)
+            )
+            results.append({
+                "league": league_id,
+                "name": cfg["name"],
+                "calibrated": has_calibration,
+                "lambda_ou": corrections.get("lambda_multiplier", {}).get("value", "1.0 (default)"),
+                "btts": corrections.get("btts_multiplier", {}).get("value", "1.0 (default)"),
+                "corners": corrections.get("corner_multiplier", {}).get("value", "1.0 (default)"),
+                "safe_enabled": corrections.get("safe_enabled", {}).get("value", "false (default)"),
+            })
+        except Exception as e:
+            results.append({"league": league_id, "name": cfg["name"], "error": str(e)})
+
+    calibrated = sum(1 for r in results if r.get("calibrated"))
+    return {
+        "total_leagues": len(results),
+        "calibrated": calibrated,
+        "uncalibrated": len(results) - calibrated,
+        "leagues": results,
     }

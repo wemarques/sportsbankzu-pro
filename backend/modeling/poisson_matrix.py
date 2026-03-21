@@ -21,11 +21,29 @@ logger = logging.getLogger("sportsbankzu.poisson_matrix")
 # Maximum scoreline to consider (0..MAX_GOALS for each team)
 MAX_GOALS = 8
 
-# ─── Lambda Deflation (Emergency Recalibration) ───
-# Lambda error was 0.90 (limit 0.5). Model systematically overestimates goals.
-# Applied only to Over/Under and BTTS — 1X2 uses original lambdas.
-LAMBDA_DEFLATION_FACTOR = 0.85   # Reduce lambdas by 15% for goal markets
-BTTS_DEFLATION_FACTOR = 0.80     # BTTS needs stronger deflation (0% accuracy)
+# ─── Lambda Deflation — Per-League from Calibration DB (#052) ───
+# Uniform deflation (#043) replaced by per-league factors from calibration.
+# Default: 1.0 (no deflation) when no calibration exists for a league.
+_DEFAULT_OU_DEFLATION = 1.0
+_DEFAULT_BTTS_DEFLATION = 1.0
+
+
+def _get_league_deflation(league_id: str | None) -> tuple[float, float]:
+    """Get per-league deflation factors from calibration DB.
+
+    Returns (ou_deflation, btts_deflation).
+    Falls back to 1.0 (no deflation) if no calibration exists.
+    """
+    if not league_id:
+        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION)
+    try:
+        from backend.modeling.lambda_calculator import get_lambda_corrections
+        corrections = get_lambda_corrections(league_id)
+        ou = float(corrections.get("lambda_multiplier", {}).get("value", _DEFAULT_OU_DEFLATION))
+        btts = float(corrections.get("btts_multiplier", {}).get("value", _DEFAULT_BTTS_DEFLATION))
+        return (ou, btts)
+    except Exception:
+        return (_DEFAULT_OU_DEFLATION, _DEFAULT_BTTS_DEFLATION)
 
 
 def build_scoreline_matrix(
@@ -123,29 +141,31 @@ def derive_double_chance(x1x2: Dict[str, float]) -> Dict[str, float]:
 def derive_all_markets(
     lambda_home: float,
     lambda_away: float,
+    league_id: str = "",
 ) -> Dict[str, float]:
     """Derive all goal-based market probabilities from lambdas.
 
     Returns a flat dict with all derived probabilities (0-1 scale).
 
-    Uses deflated lambdas for Over/Under and BTTS to correct systematic
-    overestimation (lambda error 0.90, audit accuracy 0% on these markets).
+    Uses per-league deflated lambdas for Over/Under and BTTS (#052).
     1X2 and Double Chance use original lambdas.
     """
-    # 1X2 / Double Chance: original lambdas (no systematic error)
+    ou_defl, btts_defl = _get_league_deflation(league_id)
+
+    # 1X2 / Double Chance: original lambdas (no deflation)
     matrix_1x2 = build_scoreline_matrix(lambda_home, lambda_away)
     x1x2 = derive_1x2(matrix_1x2)
     dc = derive_double_chance(x1x2)
 
-    # Over/Under: deflated lambdas (overestimation correction)
-    lh_ou = lambda_home * LAMBDA_DEFLATION_FACTOR
-    la_ou = lambda_away * LAMBDA_DEFLATION_FACTOR
+    # Over/Under: per-league deflated lambdas
+    lh_ou = lambda_home * ou_defl
+    la_ou = lambda_away * ou_defl
     matrix_ou = build_scoreline_matrix(lh_ou, la_ou)
     ou = derive_over_under(matrix_ou)
 
-    # BTTS: stronger deflation (0% accuracy in 2 audits)
-    lh_btts = lambda_home * BTTS_DEFLATION_FACTOR
-    la_btts = lambda_away * BTTS_DEFLATION_FACTOR
+    # BTTS: per-league deflation
+    lh_btts = lambda_home * btts_defl
+    la_btts = lambda_away * btts_defl
     matrix_btts = build_scoreline_matrix(lh_btts, la_btts)
     btts = derive_btts(matrix_btts)
 

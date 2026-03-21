@@ -138,12 +138,9 @@ async def safe_status():
             "n_picks": recent.get("n_picks", 0),
             "period_days": 7,
         },
-        "deflations_active": {
-            "lambda_ou": 0.85,
-            "lambda_btts": 0.80,
-            "corners_reduction": 0.20,
-        },
-        "reference": "REGRAS #043",
+        "deflation_mode": "per_league",
+        "note": "Deflation is now per-league from calibration DB (#052). Use GET /api/backtesting/calibration-status for details.",
+        "reference": "REGRAS #052 (replaced #043 uniform deflation)",
     }
 
 
@@ -185,12 +182,8 @@ async def calibration_params():
         "thresholds": DEFAULT_THRESHOLDS,
         "neutro_qualificado": NEUTRO_QUALIFICADO_THRESHOLDS,
         "circuit_breaker": SAFE_CIRCUIT_BREAKER_ENABLED,
-        "deflations": {
-            "lambda_ou": 0.85,
-            "lambda_btts": 0.80,
-            "corners": -0.20,
-            "reference": "#043 — remove when criteria met",
-        },
+        "deflation_mode": "per_league",
+        "deflation_note": "Uniform deflation replaced by per-league calibration (#052). Use GET /api/backtesting/calibration-status.",
     }
 
 

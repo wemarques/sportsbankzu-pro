@@ -2795,4 +2795,47 @@ Ao criar um sistema de métricas (backtesting), verificar que os dados necessár
 
 ---
 
+## 052 — Calibração por liga: remoção da deflação uniforme + treino com 4 temporadas
+
+**Data:** 2026-03-21
+**Arquivos afetados:**
+- Novos: `backend/services/league_calibrator.py`
+- Modificados: `backend/modeling/poisson_matrix.py`, `backend/modeling/corners/predictor.py`, `backend/services/ev_classification.py`, `backend/routes/backtesting.py`, `backend/routes/health.py`
+**Severidade:** Crítica (mudança fundamental no pipeline)
+**Status:** Implementado
+
+### Problema identificado
+
+A deflação uniforme (#043) — lambda 0.85, BTTS 0.80, corners 0.80 — era aplicada igualmente a todas as ligas. O backtesting by-league revelou que:
+- Ligas com bom desempenho (Colômbia 80%, Turquia 75%) eram PREJUDICADAS pela deflação
+- Ligas ruins (Brasil 39%) não melhoravam o suficiente com a deflação uniforme
+- Cada liga tem perfil estatístico diferente que exige calibração individual
+
+### Solução implementada — Calibração por liga
+
+1. **league_calibrator.py** — Serviço que busca 4 temporadas de dados históricos por liga via FootyStats, roda grid search para encontrar fatores ótimos de lambda deflation (O/U e BTTS separados), pesos de lambda (temporada/recente), fator de corners, e status do SAFE
+2. **Remoção de constantes uniformes** — `LAMBDA_DEFLATION_FACTOR`, `BTTS_DEFLATION_FACTOR` e `CORNER_DEFLATION_FACTOR` substituídos por funções que leem da corrections DB por liga
+3. **SAFE por liga** — `SAFE_CIRCUIT_BREAKER_ENABLED` global mantido como override de emergência, mas cada liga agora tem status individual baseado na calibração
+4. **Endpoints** — `POST /backtesting/calibrate` (roda calibração) e `GET /backtesting/calibration-status` (mostra estado por liga)
+5. **Integração com sistema existente** — Usa `get_active_corrections(league)` e `log_correction()` do audit.py, que já são lidos pelo fixtures_service.py
+
+### Parâmetros calibrados por liga
+
+| Parâmetro | Range de Grid Search | Default (sem calibração) |
+|-----------|---------------------|--------------------------|
+| lambda_deflation_ou | 0.70 - 1.10 | 1.0 (sem deflação) |
+| lambda_deflation_btts | 0.70 - 1.05 | 1.0 (sem deflação) |
+| corner_factor | 0.70 - 1.20 | 1.0 |
+| lambda_weight_season | 0.40 - 0.70 | 0.60 |
+| lambda_weight_recent | 0.30 - 0.60 | 0.40 |
+| safe_enabled | true/false | false (conservador) |
+
+### Lição aprendida
+
+1. **Deflação uniforme é um band-aid** — Resolve o sintoma (superestimação) mas prejudica ligas que não tinham o problema. Calibração individual é a solução correta.
+2. **4 temporadas com decay temporal** dão massa de dados suficiente (200+ jogos por liga) para grid search robusto enquanto dão mais peso às tendências recentes.
+3. **SAFE por liga** permite que ligas bem calibradas tenham picks SAFE enquanto ligas problemáticas permanecem conservadoras.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
