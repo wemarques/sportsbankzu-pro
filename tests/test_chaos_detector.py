@@ -1,7 +1,7 @@
 """
 Testes Unitários para Chaos Detector (S4)
 
-Testa a implementação de Detecção de Caos conforme v5.5-ML.
+Testa a implementação de Detecção de Caos.
 
 Cobertura:
 - Cálculo de Coeficiente de Variação

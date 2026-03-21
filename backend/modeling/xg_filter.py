@@ -1,18 +1,11 @@
 """
 Módulo de Filtro de Mentira (xG Adjustment)
 
-Este módulo implementa a detecção de times com "sorte insustentável" conforme
-especificação FUT-PRÉ-JOGO v5.5-ML, ajustando lambda quando há discrepância
-significativa entre gols marcados e xG (Expected Goals).
-
-ESPECIFICAÇÃO v5.5-ML:
+Detecta times com "sorte insustentável", ajustando lambda quando há
+discrepância significativa entre gols marcados e xG (Expected Goals).
 - Se (gols_marcados - xG) > THRESHOLD: Time está com "sorte"
 - Ajustar lambda para baixo para corrigir viés otimista
 - THRESHOLD padrão: 0.50 gols
-
-Autor: SportsBankPro Team
-Data: Janeiro 2026
-Versão: 1.0 (S2 - Filtro de Mentira)
 """
 
 from typing import Dict, Any, Optional, Tuple

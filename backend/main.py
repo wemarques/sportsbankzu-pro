@@ -539,7 +539,7 @@ def expected_goals_v2(
     xg_away: Optional[float] = None
 ) -> Tuple[float, float]:
     """
-    Calcula lambda usando metodo v5.5-ML (Peso Dinamico).
+    Calcula lambda usando modelo de forças relativas (Dixon-Coles) com blend xG.
     """
     lam_home, lam_away = calcular_lambda_jogo(
         home_team_data=home_team_data,
@@ -557,7 +557,7 @@ def expected_goals_v2(
     lam_away = max(0.2, min(4.5, lam_away))
 
     logger.info(
-        "Lambda v5.5 | Home: %.3f | Away: %.3f | Regime: %s",
+        "Lambda | Home: %.3f | Away: %.3f | Regime: %s",
         lam_home,
         lam_away,
         regime,
@@ -1014,7 +1014,7 @@ def gerar_quadro_resumo(
     sep = "═" * 67
     liga_formatada = formatar_nome_liga(liga)
     linhas.append(sep)
-    linhas.append(f"{liga_formatada} | QUADRO-RESUMO PRÉ-JOGO v5.5-ML")
+    linhas.append(f"{liga_formatada} | QUADRO-RESUMO PRÉ-JOGO")
     linhas.append(sep)
     linhas.append("")
     mercado_ancora = "UNDER 4.5" if regime == "NORMAL" else "OVER 2.5"
@@ -1053,7 +1053,7 @@ def gerar_quadro_resumo(
         if duplas:
             linhas.append(sep)
             linhas.append("")
-            linhas.append("DUPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("DUPLAS SAFE (correlação controlada)")
             if motivo_duplas.get("modo") == "NEUTRO":
                 linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
             if motivo_duplas.get("modo") == "QUALQUER":
@@ -1067,7 +1067,7 @@ def gerar_quadro_resumo(
         else:
             linhas.append(sep)
             linhas.append("")
-            linhas.append("DUPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("DUPLAS SAFE (correlação controlada)")
             linhas.append("")
             linhas.append("Nenhuma dupla gerada.")
             linhas.append(f"Motivo: modo={motivo_duplas.get('modo')}, sem mercado={motivo_duplas.get('missing_market')}, sem odd={motivo_duplas.get('missing_odd')}")
@@ -1078,7 +1078,7 @@ def gerar_quadro_resumo(
         if triplas:
             linhas.append(sep)
             linhas.append("")
-            linhas.append("TRIPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("TRIPLAS SAFE (correlação controlada)")
             if motivo_triplas.get("modo") == "NEUTRO":
                 linhas.append("⚠️ Sem jogos SAFE suficientes; usando NEUTRO para combinar")
             if motivo_triplas.get("modo") == "QUALQUER":
@@ -1093,7 +1093,7 @@ def gerar_quadro_resumo(
         else:
             linhas.append(sep)
             linhas.append("")
-            linhas.append("TRIPLAS SAFE (v5.5 — correlação controlada)")
+            linhas.append("TRIPLAS SAFE (correlação controlada)")
             linhas.append("")
             linhas.append("Nenhuma tripla gerada.")
             linhas.append(f"Motivo: modo={motivo_triplas.get('modo')}, sem mercado={motivo_triplas.get('missing_market')}, sem odd={motivo_triplas.get('missing_odd')}")
@@ -1102,7 +1102,7 @@ def gerar_quadro_resumo(
     if incluir_governanca:
         linhas.append(sep)
         linhas.append("")
-        linhas.append("GOVERNANÇA v5.5")
+        linhas.append("GOVERNANÇA")
         if regime == "NORMAL":
             under45_ok = 0
             for j in jogos:

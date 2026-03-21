@@ -1,7 +1,7 @@
 """
 Testes Unitários para Lambda Calculator (S1)
 
-Testa a implementação do cálculo dinâmico de lambda conforme especificação v5.5-ML.
+Testa a implementação do cálculo dinâmico de lambda (Dixon-Coles).
 
 Cobertura:
 - Ponderação correta por regime (NORMAL vs HIPER-OFENSIVA)

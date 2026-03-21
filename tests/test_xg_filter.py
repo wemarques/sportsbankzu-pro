@@ -1,7 +1,7 @@
 """
 Testes Unitários para xG Filter (S2)
 
-Testa a implementação do Filtro de Mentira conforme especificação v5.5-ML.
+Testa a implementação do Filtro de Mentira.
 
 Cobertura:
 - Detecção de sorte insustentável

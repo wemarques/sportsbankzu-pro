@@ -2838,4 +2838,62 @@ A deflação uniforme (#043) — lambda 0.85, BTTS 0.80, corners 0.80 — era ap
 
 ---
 
+## 053 — Fix lambda underestimation root cause (Dixon-Coles) + expanded calibration
+
+**Data:** 2026-03-21
+**Arquivos afetados:** `backend/modeling/lambda_calculator.py`, `backend/services/league_calibrator.py`, `backend/routes/backtesting.py`, `backend/main.py`, `backend/modeling/chaos_detector.py`, `backend/modeling/xg_filter.py`, `backend/modeling/market_validator.py`, test files
+**Severidade:** Crítica
+**Status:** Implementado
+
+### Problema identificado
+
+Calibração (#052) revelou que TODOS os 28 leagues calibrados atingiram o teto do grid (`lambda_deflation_ou = 1.10`). Isso indicava um problema **sistemático na fórmula** de lambda, não variação por liga.
+
+### Causa raiz
+
+**Double-counting do fator defensivo** na fórmula original de `calcular_lambda_dinamico()`:
+- Fórmula antiga: `λ = gols_ponderados × fator_defesa_adversario`
+- `gols_ponderados` já reflete os adversários enfrentados (é a média de gols marcados)
+- Multiplicar novamente pela defesa adversária aplica a correção defensiva **duas vezes**
+- Resultado: lambda **sistematicamente subestimado** → previsões conservadoras demais → deflation 1.10 (ceiling) era necessário para compensar
+
+### Correções aplicadas
+
+**Camada 1 — Lambda Calculator (formula fix):**
+- Reescrito `calcular_lambda_dinamico()` com modelo **Dixon-Coles de forças relativas**
+- Nova fórmula: `λ = media_liga_per_team × ataque_relativo × defesa_relativa_adversario`
+  - `media_liga_per_team = average_goals_per_match / 2`
+  - `ataque_relativo = gols_ponderados / media_liga_per_team` (ratio vs liga, não absoluto)
+  - `defesa_relativa = gols_sofridos_adversario / media_liga_per_team` (ratio vs liga)
+- Isso elimina a dupla contagem: ataque e defesa são expressos como ratios relativos à média da liga
+
+**Camada 2 — Limpeza de spec fictícia "v5.5-ML":**
+- Removidas todas as 18+ referências a "v5.5-ML" em docstrings, logs e quadro-resumo
+- Referência era nome inventado por sessão anterior, sem existência no REGRAS
+
+**Camada 3 — Grid expandido + 6 temporadas:**
+- `DEFLATION_GRID`: [0.75 ... 1.30] (era [0.70 ... 1.10])
+- `BTTS_DEFLATION_GRID`: [0.75 ... 1.25]
+- `CORNER_DEFLATION_GRID`: [0.70 ... 1.20]
+- `SEASON_WEIGHTS`: 6 temporadas [0.50, 0.25, 0.13, 0.07, 0.03, 0.02]
+- Default `n_seasons=6` (era 4)
+
+**Camada 4 — API-Football fallback:**
+- `fetch_historical_matches_fallback()` usa API-Football quando FootyStats não tem dados
+- `calibrate_league()` automaticamente tenta fallback se < 30 matches do FootyStats
+- Cobre as 9 ligas que retornavam INSUFFICIENT_DATA
+
+**Camada 5 — Recalibrate-all endpoint com bias detector:**
+- `POST /backtesting/recalibrate-all` com opção `clear_previous`
+- Detecta viés uniforme: se > 70% das ligas hit o grid boundary, reporta como problema de fórmula
+
+### Lição aprendida
+
+1. **Quando calibração uniforme atinge limites do grid**, o problema está na fórmula base, não nos parâmetros per-league. O grid search é um ajuste fino, não uma correção de viés sistemático.
+2. **Dixon-Coles** expressa ataque e defesa como ratios relativos à média da liga, eliminando qualquer dupla contagem.
+3. **"v5.5-ML" era um nome fictício** — proibido criar nomes de especificação não documentados no REGRAS.
+4. **API-Football como fallback** garante cobertura para ligas sem dados no FootyStats.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

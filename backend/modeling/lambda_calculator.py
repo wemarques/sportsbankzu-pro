@@ -1,16 +1,14 @@
 """
 Módulo de Cálculo de Lambda (Taxa de Gols Esperados)
 
-Este módulo implementa o cálculo dinâmico de lambda conforme especificação
-FUT-PRÉ-JOGO v5.5-ML, aplicando ponderação adaptativa baseada no regime da liga.
+Calcula lambda usando modelo de forças relativas (Dixon-Coles):
+  λ = media_liga_per_team × ataque_relativo × defesa_relativa_adversario
 
-ESPECIFICAÇÃO v5.5-ML:
-- REGIME NORMAL:         λ = (Média_Temporada × 0.60) + (Média_Últimos5 × 0.40)
-- REGIME HIPER-OFENSIVO: λ = (Média_Temporada × 0.30) + (Média_Últimos5 × 0.70)
+Ponderação adaptativa por regime:
+  NORMAL:         gols = (Temporada × 0.60) + (Últimos5 × 0.40)
+  HIPER-OFENSIVO: gols = (Temporada × 0.30) + (Últimos5 × 0.70)
 
-Autor: SportsBankPro Team
-Data: Janeiro 2026
-Versão: 1.0 (S1 - Peso Dinâmico de Lambda)
+Correções por liga via audit DB (REGRAS #052).
 """
 
 from typing import Dict, Any, Optional, Tuple
@@ -44,135 +42,81 @@ def calcular_lambda_dinamico(
     is_home: bool
 ) -> float:
     """
-    Calcula λ (lambda) com ponderação adaptativa ao regime da liga.
-    
-    Implementa a especificação v5.5-ML:
-    - REGIME NORMAL:         λ = (Média_Temp × 0.60) + (Média_Ult5 × 0.40)
-    - REGIME HIPER-OFENSIVO: λ = (Média_Temp × 0.30) + (Média_Ult5 × 0.70)
-    
-    Args:
-        team_data: Dados estatísticos do time atacante
-            Campos esperados:
-            - goals_scored_avg_home: Média de gols em casa (temporada)
-            - goals_scored_avg_away: Média de gols fora (temporada)
-            - goals_scored_avg_overall: Média geral de gols (fallback)
-            - goals_scored_avg_last_5: Média de gols nos últimos 5 jogos
-            
-        opponent_data: Dados estatísticos do adversário
-            Campos esperados:
-            - goals_conceded_avg_home: Média de gols sofridos em casa
-            - goals_conceded_avg_away: Média de gols sofridos fora
-            - goals_conceded_avg_overall: Média geral de gols sofridos (fallback)
-            
-        league_data: Dados estatísticos da liga
-            Campos esperados:
-            - average_goals_per_match: Média de gols por jogo da liga
-            
-        regime: Regime da liga ('NORMAL' ou 'HIPER-OFENSIVA')
-        is_home: True se o time é mandante, False se visitante
-    
-    Returns:
-        float: Lambda (taxa de gols esperados) calculado
-    
-    Raises:
-        ValueError: Se regime inválido ou dados insuficientes
-    
-    Examples:
-        >>> team = {
-        ...     'goals_scored_avg_overall': 2.0,
-        ...     'goals_scored_avg_last_5': 2.5
-        ... }
-        >>> opponent = {'goals_conceded_avg_overall': 1.5}
-        >>> league = {'average_goals_per_match': 2.7}
-        >>> calcular_lambda_dinamico(team, opponent, league, 'NORMAL', True)
-        2.44...
+    Calcula λ (lambda) usando modelo de forças relativas (Dixon-Coles).
+
+    Fórmula:
+        λ = media_liga_per_team × ataque_relativo × defesa_relativa_adversario
+
+    Onde:
+        media_liga_per_team = average_goals_per_match / 2
+        ataque_relativo = gols_marcados / media_liga_per_team (ponderado por regime)
+        defesa_relativa = gols_sofridos_adversario / media_liga_per_team
+
+    Isso elimina a dupla contagem do fator defensivo presente na versão anterior (#053).
     """
-    # Validar regime
     if regime not in PESOS_LAMBDA:
-        logger.warning(
-            f"Regime '{regime}' inválido. Usando 'NORMAL' como fallback."
-        )
         regime = 'NORMAL'
-    
-    # Obter pesos de ponderação
+
     peso_temp = PESOS_LAMBDA[regime]['temporada']
     peso_recente = PESOS_LAMBDA[regime]['ultimos5']
-    
-    # 1. Extrair média de gols da temporada (baseado em mando)
-    if is_home:
-        gols_temp = team_data.get(
-            'goals_scored_avg_home',
-            team_data.get('goals_scored_avg_overall', 0.0)
-        )
-    else:
-        gols_temp = team_data.get(
-            'goals_scored_avg_away',
-            team_data.get('goals_scored_avg_overall', 0.0)
-        )
-    
-    # 2. Extrair média de gols dos últimos 5 jogos
-    gols_ult5 = team_data.get('goals_scored_avg_last_5', gols_temp)
-    
-    # Validar dados
-    if gols_temp <= 0 and gols_ult5 <= 0:
-        logger.error(
-            f"Dados insuficientes para calcular lambda. "
-            f"Team: {team_data.get('team_name', 'Unknown')}"
-        )
-        # Usar média da liga como fallback
-        media_liga = league_data.get('average_goals_per_match', 2.5) / 2
-        return max(LAMBDA_MIN, min(LAMBDA_MAX, media_liga))
-    
-    # 3. Calcular lambda de ataque com ponderação dinâmica
-    lambda_ataque = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
-    
-    logger.debug(
-        f"Lambda Ataque (antes ajuste defesa): {lambda_ataque:.3f} | "
-        f"Gols Temp: {gols_temp:.2f} (peso {peso_temp}) | "
-        f"Gols Ult5: {gols_ult5:.2f} (peso {peso_recente}) | "
-        f"Regime: {regime}"
-    )
-    
-    # 4. Ajustar pela defesa adversária
-    media_liga = league_data.get('average_goals_per_match', 2.5) / 2
-    
-    # Defesa adversária (considerar mando oposto)
-    if is_home:
-        # Time casa ataca defesa visitante fora
-        def_adversaria = opponent_data.get(
-            'goals_conceded_avg_away',
-            opponent_data.get('goals_conceded_avg_overall', media_liga)
-        )
-    else:
-        # Time fora ataca defesa mandante em casa
-        def_adversaria = opponent_data.get(
-            'goals_conceded_avg_home',
-            opponent_data.get('goals_conceded_avg_overall', media_liga)
-        )
-    
-    # Fator de ajuste defensivo
-    if media_liga > 0:
-        fator_defesa = def_adversaria / media_liga
-    else:
-        fator_defesa = 1.0
 
-    if regime == 'HIPER-OFENSIVA' and fator_defesa < FATOR_DEFESA_MIN_HIPER:
-        fator_defesa = FATOR_DEFESA_MIN_HIPER
-    
-    # 5. Lambda final ajustado
-    lambda_final = lambda_ataque * fator_defesa
-    
-    # 6. Aplicar limites de segurança
+    # Liga baseline
+    media_liga = league_data.get('average_goals_per_match', 2.5)
+    media_liga_per_team = media_liga / 2.0
+
+    if media_liga_per_team <= 0:
+        media_liga_per_team = 1.25  # fallback
+
+    # 1. Média de gols do time (temporada, home/away específico)
+    if is_home:
+        gols_temp = team_data.get('goals_scored_avg_home',
+                   team_data.get('goals_scored_avg_overall', media_liga_per_team))
+    else:
+        gols_temp = team_data.get('goals_scored_avg_away',
+                   team_data.get('goals_scored_avg_overall', media_liga_per_team))
+
+    # 2. Últimos 5 jogos
+    gols_ult5 = team_data.get('goals_scored_avg_last_5', gols_temp)
+
+    # Fallback
+    if gols_temp <= 0 and gols_ult5 <= 0:
+        return max(LAMBDA_MIN, min(LAMBDA_MAX, media_liga_per_team))
+
+    # 3. Ataque ponderado
+    ataque_ponderado = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
+
+    # 4. FORÇA RELATIVA de ataque (ratio vs liga)
+    ataque_relativo = ataque_ponderado / media_liga_per_team
+
+    # 5. Defesa adversária - força relativa
+    if is_home:
+        def_adversaria = opponent_data.get('goals_conceded_avg_away',
+                        opponent_data.get('goals_conceded_avg_overall', media_liga_per_team))
+    else:
+        def_adversaria = opponent_data.get('goals_conceded_avg_home',
+                        opponent_data.get('goals_conceded_avg_overall', media_liga_per_team))
+
+    defesa_relativa = def_adversaria / media_liga_per_team if media_liga_per_team > 0 else 1.0
+
+    # Piso para regime hiper-ofensivo
+    if regime == 'HIPER-OFENSIVA' and defesa_relativa < FATOR_DEFESA_MIN_HIPER:
+        defesa_relativa = FATOR_DEFESA_MIN_HIPER
+
+    # 6. Lambda final = baseline × ataque_relativo × defesa_relativa
+    lambda_final = media_liga_per_team * ataque_relativo * defesa_relativa
+
+    # Limites de segurança
     lambda_final = max(LAMBDA_MIN, min(LAMBDA_MAX, lambda_final))
-    
+
     logger.info(
         f"Lambda Final: {lambda_final:.3f} | "
-        f"Ataque: {lambda_ataque:.3f} | "
-        f"Fator Defesa: {fator_defesa:.3f} | "
+        f"Ataque Rel: {ataque_relativo:.3f} | "
+        f"Defesa Rel: {defesa_relativa:.3f} | "
+        f"Base Liga: {media_liga_per_team:.3f} | "
         f"Regime: {regime} | "
         f"Mando: {'Casa' if is_home else 'Fora'}"
     )
-    
+
     return lambda_final
 
 

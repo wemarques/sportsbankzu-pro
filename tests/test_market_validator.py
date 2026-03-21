@@ -1,7 +1,7 @@
 """
 Testes Unitários para Market Validator (S3)
 
-Testa a implementação de Validação de Mercados Proibidos conforme v5.5-ML.
+Testa a implementação de Validação de Mercados Proibidos.
 
 Cobertura:
 - Validação de mercados individuais

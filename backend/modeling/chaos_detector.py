@@ -1,17 +1,10 @@
 """
 Módulo de Detecção de Caos
 
-Este módulo implementa a detecção de jogos imprevisíveis ("caos") conforme
-especificação FUT-PRÉ-JOGO v5.5-ML.
-
-ESPECIFICAÇÃO v5.5-ML:
+Detecta jogos imprevisíveis ("caos"):
 - Caos = Alta variância em xG ou resultados inconsistentes
 - Threshold: Coeficiente de Variação (CV) > 30%
 - Jogos em caos devem ser filtrados ou ter confiança reduzida
-
-Autor: SportsBankPro Team
-Data: Janeiro 2026
-Versão: 1.0 (S4 - Detecção de Caos)
 """
 
 from typing import Dict, List, Tuple, Optional

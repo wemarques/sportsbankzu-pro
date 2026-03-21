@@ -261,7 +261,7 @@ async def backtest_by_market(
 @router.post("/backtesting/calibrate")
 async def run_calibration(
     league: Optional[str] = Query(None, description="Liga específica ou None para todas"),
-    n_seasons: int = Query(4, ge=2, le=6, description="Número de temporadas históricas"),
+    n_seasons: int = Query(6, ge=2, le=8, description="Número de temporadas históricas"),
 ):
     """Run per-league calibration using historical match data.
 
@@ -281,6 +281,89 @@ async def run_calibration(
         return result
     else:
         return calibrate_all_leagues(n_seasons=n_seasons)
+
+
+@router.post("/backtesting/recalibrate-all")
+async def recalibrate_all(
+    n_seasons: int = Query(6, ge=2, le=8, description="Número de temporadas históricas"),
+    clear_previous: bool = Query(False, description="Limpar calibrações anteriores antes"),
+):
+    """Recalibrate all leagues with expanded grid and bias detection.
+
+    After calibrating, checks for uniform bias (>70% of leagues hitting the same
+    grid boundary), which indicates a systematic formula issue rather than
+    per-league variation.
+
+    Reference: REGRAS #053
+    """
+    from backend.services.league_calibrator import calibrate_league, save_calibration
+    from backend.config.leagues_config import LEAGUES_CONFIG
+
+    if clear_previous:
+        try:
+            from backend.audit import _use_postgres, _pg_connect
+            if _use_postgres():
+                conn = _pg_connect()
+                cur = conn.cursor()
+                cur.execute("DELETE FROM audit_corrections WHERE correction_type = 'calibration'")
+                conn.commit()
+                cur.close()
+                conn.close()
+        except Exception:
+            pass
+
+    results = {}
+    for cfg in LEAGUES_CONFIG:
+        league_id = cfg["id"]
+        try:
+            result = calibrate_league(league_id, n_seasons=n_seasons)
+            if result.get("status") == "CALIBRATED" and result.get("params"):
+                save_calibration(league_id, result["params"])
+            results[league_id] = result
+        except Exception as e:
+            results[league_id] = {"league": league_id, "status": "ERROR", "error": str(e)}
+
+    # Bias detection: check if >70% of leagues hit the same grid boundary
+    calibrated = [r for r in results.values() if r.get("status") == "CALIBRATED"]
+    n_calibrated = len(calibrated)
+    bias_report = {"detected": False}
+
+    if n_calibrated >= 5:
+        defl_values = [r["params"]["lambda_deflation_ou"] for r in calibrated if r.get("params")]
+        if defl_values:
+            grid_min = min(DEFLATION_GRID)
+            grid_max = max(DEFLATION_GRID)
+            at_ceiling = sum(1 for v in defl_values if v >= grid_max)
+            at_floor = sum(1 for v in defl_values if v <= grid_min)
+
+            if at_ceiling / n_calibrated > 0.70:
+                bias_report = {
+                    "detected": True,
+                    "direction": "underestimation",
+                    "pct_at_ceiling": round(at_ceiling / n_calibrated * 100, 1),
+                    "grid_max": grid_max,
+                    "recommendation": "Lambda formula may still underestimate. Consider further grid expansion or formula adjustment.",
+                }
+            elif at_floor / n_calibrated > 0.70:
+                bias_report = {
+                    "detected": True,
+                    "direction": "overestimation",
+                    "pct_at_floor": round(at_floor / n_calibrated * 100, 1),
+                    "grid_min": grid_min,
+                    "recommendation": "Lambda formula may overestimate. Consider grid expansion or formula adjustment.",
+                }
+
+    from backend.services.league_calibrator import DEFLATION_GRID
+
+    return {
+        "total_leagues": len(results),
+        "calibrated": n_calibrated,
+        "insufficient_data": sum(1 for r in results.values() if r.get("status") == "INSUFFICIENT_DATA"),
+        "errors": sum(1 for r in results.values() if r.get("status") == "ERROR"),
+        "bias_report": bias_report,
+        "grid_range": {"min": min(DEFLATION_GRID), "max": max(DEFLATION_GRID)},
+        "results": results,
+    }
 
 
 @router.get("/backtesting/calibration-status")

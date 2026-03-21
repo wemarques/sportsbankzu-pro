@@ -16,17 +16,20 @@ from backend.services.math_service import poisson_pmf
 
 logger = logging.getLogger("sportsbankzu.league_calibrator")
 
-# Temporal decay weights for 4 seasons (T-1 most recent)
-SEASON_WEIGHTS = [0.45, 0.28, 0.17, 0.10]
+# Temporal decay weights for 6 seasons (T-1 most recent)
+SEASON_WEIGHTS = [0.50, 0.25, 0.13, 0.07, 0.03, 0.02]
 
-# Grid search ranges
-DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10]
+# Grid search ranges — expanded after all 28 leagues hit 1.10 ceiling (#053)
+DEFLATION_GRID = [
+    0.75, 0.80, 0.85, 0.90, 0.92, 0.95, 0.97,
+    1.00, 1.03, 1.05, 1.08, 1.10, 1.15, 1.20, 1.25, 1.30,
+]
 LAMBDA_WEIGHT_GRID = [
     (0.40, 0.60), (0.45, 0.55), (0.50, 0.50),
     (0.55, 0.45), (0.60, 0.40), (0.65, 0.35), (0.70, 0.30),
 ]
-BTTS_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05]
-CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05]
+BTTS_DEFLATION_GRID = [0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25]
+CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 
 
 def _brier(prob: float, outcome: int) -> float:
@@ -167,7 +170,7 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
     return matches
 
 
-def fetch_historical_matches(league_id: str, n_seasons: int = 4) -> List[Dict]:
+def fetch_historical_matches(league_id: str, n_seasons: int = 6) -> List[Dict]:
     """Fetch up to n_seasons of historical match data for a league.
 
     Uses FootyStats API via FootyStatsClient. Applies temporal weighting
@@ -224,14 +227,114 @@ def fetch_historical_matches(league_id: str, n_seasons: int = 4) -> List[Dict]:
     return all_matches
 
 
+def _extract_matches_from_api_football(fixtures: list) -> List[Dict]:
+    """Extract finished matches from API-Football fixture response for calibration."""
+    matches = []
+    for fx in fixtures:
+        fx_data = fx.get("fixture", {})
+        goals = fx.get("goals", {})
+        status_short = fx_data.get("status", {}).get("short", "NS")
+
+        if status_short not in ("FT", "AET", "PEN"):
+            continue
+
+        gh = goals.get("home")
+        ga = goals.get("away")
+        if gh is None or ga is None:
+            continue
+
+        try:
+            gh, ga = int(gh), int(ga)
+        except (ValueError, TypeError):
+            continue
+
+        # API-Football doesn't provide per-team averages in fixture data,
+        # so we use league-wide defaults. The grid search will find the
+        # best deflation factor regardless.
+        matches.append({
+            "goals_home": gh,
+            "goals_away": ga,
+            "home_goals_scored_avg": 1.3,
+            "away_goals_scored_avg": 1.1,
+            "home_goals_scored_avg_recent": 1.3,
+            "away_goals_scored_avg_recent": 1.1,
+            "away_goals_conceded_factor": 1.0,
+            "home_goals_conceded_factor": 1.0,
+            "total_corners": 0,
+            "total_cards": 0,
+        })
+
+    return matches
+
+
+def fetch_historical_matches_fallback(league_id: str, n_seasons: int = 6) -> List[Dict]:
+    """Fallback: fetch historical matches from API-Football when FootyStats has no data.
+
+    Uses API-Football's fixtures endpoint without date filter to get full seasons.
+    Reference: REGRAS #053 — API-Football fallback.
+    """
+    from backend.services.api_football_client import APIFootballClient
+    from backend.config.leagues_config import (
+        get_api_football_league_id, get_season_for_league, CALENDAR_YEAR_LEAGUES,
+        LEAGUE_ID_ALIASES,
+    )
+
+    af_league_id = get_api_football_league_id(league_id)
+    if not af_league_id:
+        logger.warning(f"[calibrator-fallback] No API-Football ID for {league_id}")
+        return []
+
+    current_season = get_season_for_league(league_id)
+    resolved_id = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    is_calendar = resolved_id in CALENDAR_YEAR_LEAGUES
+
+    client = APIFootballClient()
+    all_matches = []
+    weights = SEASON_WEIGHTS[:n_seasons]
+
+    for i in range(n_seasons):
+        season = current_season - i
+        if not is_calendar and season < 2018:
+            break
+        if is_calendar and season < 2019:
+            break
+
+        try:
+            # Call API-Football fixtures endpoint without date to get full season
+            params = {
+                "league": str(af_league_id),
+                "season": str(season),
+                "timezone": "America/Sao_Paulo",
+            }
+            data = client._get_sync("fixtures", params, ttl_minutes=1440)
+            fixtures = data.get("response", [])
+            season_matches = _extract_matches_from_api_football(fixtures)
+            w = weights[i] if i < len(weights) else 0.02
+
+            for m in season_matches:
+                m["season_weight"] = w
+                m["season_index"] = i
+
+            all_matches.extend(season_matches)
+            logger.info(
+                f"[calibrator-fallback] {league_id} season {season}: "
+                f"{len(season_matches)} matches from API-Football (weight={w})"
+            )
+        except Exception as e:
+            logger.error(f"[calibrator-fallback] Failed season {season} for {league_id}: {e}")
+
+    logger.info(f"[calibrator-fallback] {league_id}: total {len(all_matches)} matches from API-Football")
+    return all_matches
+
+
 def calibrate_league(
     league_id: str,
-    n_seasons: int = 4,
+    n_seasons: int = 6,
     matches: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
     """Run full calibration for a single league.
 
-    1. Fetch 4 seasons of historical data (or use provided matches)
+    1. Fetch 6 seasons of historical data (or use provided matches)
     2. Grid search: lambda deflation x lambda weights
     3. Grid search: BTTS deflation
     4. Grid search: corner deflation
@@ -242,14 +345,22 @@ def calibrate_league(
     if matches is None:
         matches = fetch_historical_matches(league_id, n_seasons)
 
+    # Fallback to API-Football if FootyStats has insufficient data (#053)
+    data_source = "FootyStats"
     if len(matches) < 30:
-        logger.warning(f"[calibrator] {league_id}: only {len(matches)} matches — insufficient for calibration")
-        return {
-            "league": league_id,
-            "status": "INSUFFICIENT_DATA",
-            "n_matches": len(matches),
-            "params": None,
-        }
+        logger.info(f"[calibrator] {league_id}: only {len(matches)} from FootyStats, trying API-Football fallback")
+        fallback = fetch_historical_matches_fallback(league_id, n_seasons)
+        if len(fallback) >= 30:
+            matches = fallback
+            data_source = "API-Football"
+        else:
+            logger.warning(f"[calibrator] {league_id}: only {len(matches)}+{len(fallback)} matches — insufficient")
+            return {
+                "league": league_id,
+                "status": "INSUFFICIENT_DATA",
+                "n_matches": len(matches),
+                "params": None,
+            }
 
     # ── Grid search: lambda deflation x lambda weights ──
     best_ou = {"brier": 1.0}
@@ -344,6 +455,7 @@ def calibrate_league(
         "status": "CALIBRATED",
         "n_matches": len(matches),
         "n_seasons": n_seasons,
+        "data_source": data_source,
         "params": params,
         "calibrated_at": datetime.now().isoformat(),
     }
@@ -387,7 +499,7 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
                 logger.error(f"Failed to save calibration {key} for {league_id}: {e}")
 
 
-def calibrate_all_leagues(n_seasons: int = 4) -> Dict[str, Dict]:
+def calibrate_all_leagues(n_seasons: int = 6) -> Dict[str, Dict]:
     """Run calibration for all configured leagues.
 
     Returns dict of league_id -> calibration result.

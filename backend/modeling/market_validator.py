@@ -1,17 +1,10 @@
 """
 Módulo de Validação de Mercados Proibidos
 
-Este módulo implementa a validação de mercados conforme regime da liga,
-seguindo especificação FUT-PRÉ-JOGO v5.5-ML.
-
-ESPECIFICAÇÃO v5.5-ML:
+Valida mercados conforme regime da liga:
 - NORMAL: Proibido Over 3.5, Over 4.5
 - DEFENSIVA: Proibido Over 2.5, Over 3.5, Over 4.5
 - HIPER-OFENSIVA: Todos permitidos
-
-Autor: SportsBankPro Team
-Data: Janeiro 2026
-Versão: 1.0 (S3 - Validação de Mercados)
 """
 
 from typing import Dict, List, Set, Tuple, Optional
@@ -19,7 +12,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Mercados proibidos por regime (v5.5-ML)
+# Mercados proibidos por regime
 MERCADOS_PROIBIDOS: Dict[str, List[str]] = {
     'NORMAL': ['Over 3.5', 'Over 4.5'],
     'DEFENSIVA': ['Over 2.5', 'Over 3.5', 'Over 4.5', 'BTTS'],
