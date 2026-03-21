@@ -75,18 +75,18 @@ def _simulate_poisson_brier(
         lh_raw = max(0.2, min(4.5, lh_raw))
         la_raw = max(0.2, min(4.5, la_raw))
 
-        # SEPARATE deflations: O/U uses one, BTTS uses another
         lh_ou = lh_raw * lambda_deflation_ou
         la_ou = la_raw * lambda_deflation_ou
-        lh_btts = lh_raw * btts_defl
-        la_btts = la_raw * btts_defl
 
         gh = m.get("goals_home", 0) or 0
         ga = m.get("goals_away", 0) or 0
         total = gh + ga
 
-        # O/U and 1X2 — with O/U deflation
+        separate_btts = (lambda_deflation_btts is not None and btts_defl != lambda_deflation_ou)
+
+        # O/U, 1X2, and BTTS (when same deflation) — single loop
         prob_over25 = 0.0
+        prob_btts = 0.0
         prob_home = 0.0
         prob_draw = 0.0
         for h in range(9):
@@ -96,19 +96,24 @@ def _simulate_poisson_brier(
                 p = ph * pa
                 if h + a > 2:
                     prob_over25 += p
+                if not separate_btts and h >= 1 and a >= 1:
+                    prob_btts += p
                 if h > a:
                     prob_home += p
                 elif h == a:
                     prob_draw += p
 
-        # BTTS — with BTTS-specific deflation
-        prob_btts = 0.0
-        for h in range(9):
-            ph = poisson_pmf(h, lh_btts)
-            for a in range(9):
-                pa = poisson_pmf(a, la_btts)
-                if h >= 1 and a >= 1:
-                    prob_btts += ph * pa
+        # BTTS with separate deflation — only when needed
+        if separate_btts:
+            lh_btts = lh_raw * btts_defl
+            la_btts = la_raw * btts_defl
+            prob_btts = 0.0
+            for h in range(9):
+                ph = poisson_pmf(h, lh_btts)
+                for a in range(9):
+                    pa = poisson_pmf(a, la_btts)
+                    if h >= 1 and a >= 1:
+                        prob_btts += ph * pa
 
         actual_over25 = 1 if total > 2.5 else 0
         brier_ou.append(_brier(prob_over25, actual_over25))
@@ -466,19 +471,26 @@ def calibrate_league(
     Returns optimal parameters for the league.
     """
     if matches is None:
-        # Dual source: fetch from both FootyStats and API-Football (#054)
+        # Dual source: FootyStats first, API-Football only if needed (#054)
         fs_matches = fetch_historical_matches(league_id, n_seasons)
-        af_matches = fetch_from_api_football(league_id, n_seasons)
-        matches = merge_dual_sources(fs_matches, af_matches, league_id)
 
-        if len(fs_matches) > 0 and len(af_matches) > 0:
-            data_source = "footystats+api_football"
-        elif len(fs_matches) > 0:
+        # Only fetch API-Football if FootyStats has insufficient data
+        if len(fs_matches) >= 100:
+            # FootyStats has enough — skip API-Football to save time
+            matches = fs_matches
             data_source = "footystats"
-        elif len(af_matches) > 0:
-            data_source = "api_football"
         else:
-            data_source = "none"
+            af_matches = fetch_from_api_football(league_id, n_seasons)
+            matches = merge_dual_sources(fs_matches, af_matches, league_id)
+
+            if len(fs_matches) > 0 and len(af_matches) > 0:
+                data_source = "footystats+api_football"
+            elif len(fs_matches) > 0:
+                data_source = "footystats"
+            elif len(af_matches) > 0:
+                data_source = "api_football"
+            else:
+                data_source = "none"
 
     if len(matches) < 30:
         logger.warning(f"[calibrator] {league_id}: only {len(matches)} matches — insufficient")
