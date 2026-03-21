@@ -2766,4 +2766,33 @@ Monitoramento contínuo (backtesting + feedback loop) é essencial para validar 
 
 ---
 
+## 051 — Lambda error null no backtesting + relatórios por liga e mercado
+
+**Data:** 2026-03-20
+**Arquivos afetados:** `backend/cron_handler.py`, `backend/routes/backtesting.py`
+**Severidade:** Alta (backtesting incompleto)
+**Status:** Corrigido
+
+### Problema identificado
+
+O endpoint `/health/safe-status` retornava `lambda_error: null`, impedindo avaliação completa dos critérios de reativação do SAFE (#043). O backtesting de ROI também não funcionava porque as odds não eram gravadas.
+
+### Causa raiz
+
+O `cron_handler.py` chamava `audit_db.log_pick()` com context contendo apenas `regime` e `source`. Os dados necessários para lambda error (lambdaHome, lambdaAway, goals_home, goals_away) e para ROI (odd do pick) existiam no escopo mas não eram passados.
+
+### Correções aplicadas (5 camadas)
+
+1. **Context enriquecido** — `log_pick()` agora recebe lambdas (Home/Away/Total), gols reais (home/away/total), corners totais, classificação e data_quality no context
+2. **predicted_probs enriquecido** — Agora inclui `odd` e `book_odd` para cálculo de ROI no backtesting
+3. **Backfill endpoint** — `POST /backtesting/backfill-lambda` preenche picks existentes copiando lambda data de picks irmãos do mesmo jogo
+4. **Relatório por liga** — `GET /backtesting/by-league` com flag `needs_calibration` por liga
+5. **Relatório por mercado** — `GET /backtesting/by-market` com filtro opcional por liga
+
+### Lição aprendida
+
+Ao criar um sistema de métricas (backtesting), verificar que os dados necessários são gravados na ORIGEM (log_pick). Criar o consumer (backtesting) sem verificar o producer (cron_handler) resulta em métricas null. Conforme regra de investigação #2: trace o fluxo completo.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

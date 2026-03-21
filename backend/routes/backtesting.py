@@ -1,9 +1,11 @@
 """Backtesting API routes for SportsBankZU Pro.
 
 Reference: REGRAS #050 — backtesting, calibration, SAFE monitoring.
+Reference: REGRAS #051 — lambda error null fix, by-league/by-market reports.
 """
 from fastapi import APIRouter, Query
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter(tags=["backtesting"])
 
@@ -53,3 +55,203 @@ async def calibration_search(
         return {"error": f"Parameter '{param}' not recognized. Valid: {list(PARAM_RANGES.keys())}"}
 
     return calibration_grid_search(league=league, market=market, param_name=param, param_range=param_range)
+
+
+@router.post("/backtesting/backfill-lambda")
+async def backfill_lambda_data():
+    """Backfill lambda data into existing audit picks that lack it.
+
+    Reads sibling picks of the same match and copies lambda/goals data.
+
+    Reference: REGRAS #051
+    """
+    import json
+    from backend.audit import _use_postgres, _pg_connect
+
+    updated = 0
+    skipped = 0
+    errors = []
+
+    try:
+        if not _use_postgres():
+            return {"error": "Backfill only supported with PostgreSQL", "updated": 0}
+
+        conn = _pg_connect()
+        cur = conn.cursor()
+        # Find picks missing lambda data in context
+        cur.execute("""
+            SELECT match_id, context
+            FROM audit_results
+            WHERE context IS NOT NULL
+            AND context NOT LIKE '%lambdaHome%'
+            AND context NOT LIKE '%lambda_home%'
+            AND actual_result IS NOT NULL
+        """)
+        rows = cur.fetchall()
+
+        for match_id, ctx_raw in rows:
+            try:
+                ctx = json.loads(ctx_raw) if isinstance(ctx_raw, str) else ctx_raw or {}
+
+                # match_id may contain market suffix — extract base id
+                base_id = match_id.split(":")[0] if ":" in match_id else match_id
+
+                # Look for a sibling pick of the same match that has lambda data
+                cur.execute("""
+                    SELECT context FROM audit_results
+                    WHERE match_id LIKE %s
+                    AND context LIKE '%%lambdaHome%%'
+                    LIMIT 1
+                """, (f"{base_id}%",))
+
+                donor_row = cur.fetchone()
+                if donor_row:
+                    donor_ctx = json.loads(donor_row[0]) if isinstance(donor_row[0], str) else donor_row[0] or {}
+                    for key in ["lambdaHome", "lambdaAway", "lambdaTotal",
+                                "goals_home", "goals_away", "total_goals", "total_corners"]:
+                        if key in donor_ctx and key not in ctx:
+                            ctx[key] = donor_ctx[key]
+
+                    cur.execute(
+                        "UPDATE audit_results SET context = %s WHERE match_id = %s",
+                        (json.dumps(ctx), match_id)
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+
+            except Exception as e:
+                errors.append(f"{match_id}: {str(e)[:80]}")
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        return {"error": str(e), "updated": updated, "skipped": skipped}
+
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors[:10],
+        "note": "Lambda data backfilled from sibling picks. New picks will have data automatically."
+    }
+
+
+@router.get("/backtesting/by-league")
+async def backtest_by_league(
+    days: int = Query(30, ge=7, le=180),
+):
+    """Run backtesting per league, returning a comparison table.
+
+    Identifies which leagues need calibration most urgently.
+    """
+    from backend.services.backtesting import run_backtest
+    from backend.audit import _use_postgres, _pg_connect
+
+    leagues = []
+    try:
+        if _use_postgres():
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            cur.execute(
+                "SELECT DISTINCT league FROM audit_results WHERE timestamp >= %s AND actual_result IS NOT NULL",
+                (cutoff,)
+            )
+            leagues = [row[0] for row in cur.fetchall() if row[0]]
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    if not leagues:
+        return {"error": "No leagues with picks found", "leagues": []}
+
+    results = []
+    for lg in sorted(leagues):
+        bt = run_backtest(league=lg, days=days)
+        le = bt.get("lambda_error") or {}
+        hr = bt.get("hit_rate") or {}
+        roi = bt.get("roi") or {}
+        results.append({
+            "league": lg,
+            "n_picks": bt.get("n_picks", 0),
+            "brier": bt.get("brier"),
+            "log_loss": bt.get("log_loss"),
+            "hit_rate": hr.get("overall"),
+            "lambda_error_mean": le.get("mean_error"),
+            "roi_pct": roi.get("roi_pct"),
+            "needs_calibration": (
+                (bt.get("brier") or 1) > 0.25 or
+                (le.get("mean_error") or 1) > 0.5 or
+                (hr.get("overall") or 0) < 0.50
+            ),
+        })
+
+    # Sort: worst leagues first (highest brier)
+    results.sort(key=lambda x: -(x.get("brier") or 0))
+
+    return {
+        "period_days": days,
+        "total_leagues": len(results),
+        "leagues_needing_calibration": sum(1 for r in results if r.get("needs_calibration")),
+        "results": results,
+    }
+
+
+@router.get("/backtesting/by-market")
+async def backtest_by_market(
+    league: Optional[str] = Query(None),
+    days: int = Query(30, ge=7, le=180),
+):
+    """Run backtesting per market type, optionally filtered by league.
+
+    Shows which markets need calibration within a league.
+    """
+    from backend.services.backtesting import run_backtest
+    from backend.audit import _use_postgres, _pg_connect
+
+    markets = []
+    try:
+        if _use_postgres():
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            query = "SELECT DISTINCT market FROM audit_results WHERE timestamp >= %s AND actual_result IS NOT NULL"
+            params = [cutoff]
+            if league:
+                query += " AND league = %s"
+                params.append(league)
+            cur.execute(query, params)
+            markets = [row[0] for row in cur.fetchall() if row[0]]
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    if not markets:
+        return {"error": "No markets with picks found", "markets": []}
+
+    results = []
+    for mkt in sorted(markets):
+        bt = run_backtest(league=league, market=mkt, days=days)
+        hr = bt.get("hit_rate") or {}
+        roi = bt.get("roi") or {}
+        results.append({
+            "market": mkt,
+            "league": league or "ALL",
+            "n_picks": bt.get("n_picks", 0),
+            "brier": bt.get("brier"),
+            "hit_rate": hr.get("overall"),
+            "roi_pct": roi.get("roi_pct"),
+        })
+
+    results.sort(key=lambda x: -(x.get("brier") or 0))
+
+    return {
+        "period_days": days,
+        "league": league or "ALL",
+        "total_markets": len(results),
+        "results": results,
+    }

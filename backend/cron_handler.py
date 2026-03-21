@@ -214,10 +214,31 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                     match_id=m.get("id", f"{home}-{away}"),
                     league=league,
                     market=_norm_market,
-                    predicted_probs={"prob": prob_pick, "market": _norm_market},
+                    predicted_probs={
+                        "prob": prob_pick,
+                        "market": _norm_market,
+                        "odd": odd_pick if odd_pick > 0 else None,
+                        "book_odd": odd_pick if odd_pick > 0 else None,
+                    },
                     pick_type=merc_status,
                     ev=ev_pick,
-                    context={"regime": stats.get("leagueRegime", ""), "source": "cron_batch"},
+                    context={
+                        "regime": stats.get("leagueRegime", ""),
+                        "source": "cron_batch",
+                        # Lambda data for compute_lambda_error in backtesting
+                        "lambdaHome": stats.get("lambdaHome"),
+                        "lambdaAway": stats.get("lambdaAway"),
+                        "lambdaTotal": stats.get("lambdaTotal"),
+                        # Actual goals for compute_lambda_error in backtesting
+                        "goals_home": home_goals,
+                        "goals_away": away_goals,
+                        "total_goals": total_goals,
+                        # Corners for corners accuracy
+                        "total_corners": total_corners,
+                        # Classification metadata
+                        "pick_classification": merc.get("classification", merc_status),
+                        "data_quality": merc.get("data_quality_score"),
+                    },
                     actual_result=actual_outcome,
                 )
             except Exception as _log_err:
