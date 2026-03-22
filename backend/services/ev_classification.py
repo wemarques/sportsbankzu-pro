@@ -432,7 +432,7 @@ def evaluate_match_markets(
     logger.warning(
         f"[ev][prob-source] {home_team} vs {away_team} | "
         f"derived[over25Prob]={_d_val} stats[over25Prob]={_s_val} "
-        f"derived_keys={len(derived)} λH={lambda_home} λA={lambda_away}"
+        f"derived_keys={len(derived)} lamH={lambda_home} lamA={lambda_away}"
     )
 
     for threshold, stat_over, stat_under, odd_key in [
