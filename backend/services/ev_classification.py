@@ -427,15 +427,13 @@ def evaluate_match_markets(
         markets.append(classify_market(mo, league_id=league_id))
 
     # Over/Under markets — diagnostic: trace Poisson vs FootyStats source (#061)
-    _derived_key_sample = f"over25Prob"
-    _d_val = derived.get(_derived_key_sample)
+    _d_val = derived.get("over25Prob")
     _s_val = stats.get("over25Prob")
-    if _d_val is not None or _s_val is not None:
-        logger.info(
-            f"[ev][prob-source] {home_team} vs {away_team} | "
-            f"derived[over25Prob]={_d_val} stats[over25Prob]={_s_val} "
-            f"derived_keys={len(derived)} λH={lambda_home} λA={lambda_away}"
-        )
+    logger.warning(
+        f"[ev][prob-source] {home_team} vs {away_team} | "
+        f"derived[over25Prob]={_d_val} stats[over25Prob]={_s_val} "
+        f"derived_keys={len(derived)} λH={lambda_home} λA={lambda_away}"
+    )
 
     for threshold, stat_over, stat_under, odd_key in [
         ("2.5", "over25Prob", "under25Prob", "over25"),
