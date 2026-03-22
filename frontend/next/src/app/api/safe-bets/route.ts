@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
+export const maxDuration = 30;
+
 /**
  * POST /api/safe-bets
  *

@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { AVAILABLE_LEAGUES } from "@/lib/leagues";
 import { generateMockMatches } from "@/lib/mockMatches";
 
+export const maxDuration = 30;
+
 const ua =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 

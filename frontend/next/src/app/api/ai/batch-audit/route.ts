@@ -4,6 +4,8 @@
  * calls the old endpoint. It returns immediately with a "please refresh"
  * message instead of calling the backend (which would timeout anyway).
  */
+export const maxDuration = 60;
+
 export async function POST() {
   return Response.json(
     {

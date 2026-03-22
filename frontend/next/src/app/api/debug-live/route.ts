@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 const PY_BACKEND = process.env.PY_BACKEND_URL || "http://127.0.0.1:5001";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 export async function GET() {
   try {

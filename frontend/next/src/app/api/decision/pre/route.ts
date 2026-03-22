@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
-export const maxDuration = 25;
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
