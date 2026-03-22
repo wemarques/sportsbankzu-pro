@@ -647,6 +647,90 @@ def build_records_from_matches(
             smaller = min(len(a_tokens), len(b_tokens))
             return len(overlap) / smaller if smaller > 0 else 0.0
 
+        # ---- Previous season blending (#064) ----
+        _MIN_SEASON_MATCHES = 5
+        _BLEND_STAT_COLS = [
+            "goals_scored_per_match_home", "goals_scored_per_match_away",
+            "goals_scored_per_match_overall", "goals_conceded_per_match_home",
+            "goals_conceded_per_match_away", "goals_conceded_per_match_overall",
+            "goals_scored_avg_home", "goals_scored_avg_away",
+            "goals_conceded_avg_home", "goals_conceded_avg_away",
+            "goals_scored_avg_overall", "goals_conceded_avg_overall",
+            "corners_per_match", "cards_per_match",
+            "btts_percentage", "clean_sheet_percentage",
+            "xg_for_avg", "xg_against_avg",
+        ]
+
+        def _find_team_in_df(name: str, df, log_prefix: str = "") -> Optional["pd.Series"]:
+            """Find a team in a DataFrame using 6 matching strategies. Shared by current/prev season."""
+            if df is None:
+                return None
+            nc = pick_column(df, ["team_name", "team", "name", "club"])
+            if not nc:
+                return None
+            # 1. Exact
+            row = df[df[nc] == name]
+            if len(row) > 0:
+                return row.iloc[0]
+            # 1b. Alias
+            alias = _TEAM_ALIASES.get(name.lower())
+            if alias:
+                for idx, tv in df[nc].items():
+                    if alias in str(tv).lower():
+                        return df.loc[idx]
+            # 2. Substring
+            for idx, tv in df[nc].items():
+                tvl = str(tv).lower()
+                nl = name.lower()
+                if nl in tvl or tvl in nl:
+                    return df.loc[idx]
+            # 3. Normalized
+            norm = _normalize_team_name(name)
+            for idx, tv in df[nc].items():
+                if _normalize_team_name(str(tv)) == norm:
+                    return df.loc[idx]
+            # 4. Token overlap
+            best_s, best_i, best_v = 0.0, None, None
+            for idx, tv in df[nc].items():
+                s = _token_match_score(name, str(tv))
+                if s > best_s:
+                    best_s, best_i, best_v = s, idx, tv
+            if best_s >= 0.5 and len(name) > 2:
+                return df.loc[best_i]
+            # 5. Prefix
+            if len(name) <= 4:
+                nl = name.lower()
+                for idx, tv in df[nc].items():
+                    tvl = str(tv).lower()
+                    if tvl.startswith(nl + " ") or tvl.startswith(nl + "."):
+                        return df.loc[idx]
+            return None
+
+        def _blend_row(current_row, prev_row, games_played):
+            """Blend current + previous season stats based on games played.
+
+            weight = current season weight (0.0 = 100% previous season, 1.0 = 100% current).
+            E.g. mp=0 → weight=0.00 (fully previous), mp=3 → weight=0.60, mp>=5 → weight=1.00.
+            """
+            if prev_row is None:
+                return current_row
+            if current_row is None:
+                return prev_row
+            # weight = current season weight: 0.0 means 100% prev, 1.0 means 100% current
+            weight = min(1.0, (games_played or 0) / _MIN_SEASON_MATCHES)
+            blended = current_row.copy()
+            for col in _BLEND_STAT_COLS:
+                curr_v = current_row.get(col) if col in current_row.index else None
+                prev_v = prev_row.get(col) if col in prev_row.index else None
+                try:
+                    if curr_v is not None and prev_v is not None:
+                        blended[col] = float(curr_v) * weight + float(prev_v) * (1 - weight)
+                    elif prev_v is not None and (curr_v is None or weight < 0.5):
+                        blended[col] = float(prev_v)
+                except (ValueError, TypeError):
+                    pass
+            return blended
+
         def get_team_row(name: str) -> Optional["pd.Series"]:
             if teams is None:
                 logger.warning(f"[lambda-diag] teams DataFrame is None for league={league_id}")
@@ -761,6 +845,37 @@ def build_records_from_matches(
             return []
         home_row = get_team_row(home)
         away_row = get_team_row(away)
+
+        # #064: Blend with previous season if current season has insufficient data
+        if teams2 is not None:
+            mp_cols = ["matches_played", "games_played", "matches"]
+            home_mp = safe(get_stat(home_row, mp_cols) if home_row is not None else None, None)
+            away_mp = safe(get_stat(away_row, mp_cols) if away_row is not None else None, None)
+            try:
+                home_mp_f = float(home_mp) if home_mp is not None else 0
+            except (ValueError, TypeError):
+                home_mp_f = 0
+            try:
+                away_mp_f = float(away_mp) if away_mp is not None else 0
+            except (ValueError, TypeError):
+                away_mp_f = 0
+
+            if home_mp_f < _MIN_SEASON_MATCHES or home_row is None:
+                prev_home = _find_team_in_df(home, teams2, log_prefix="prev-home")
+                if prev_home is not None:
+                    home_row = _blend_row(home_row, prev_home, home_mp_f)
+                    logger.warning(
+                        f"[lambda-diag] Blended {home}: mp={home_mp_f}, "
+                        f"prev-season data available, weight={min(1.0, home_mp_f / _MIN_SEASON_MATCHES):.2f}"
+                    )
+            if away_mp_f < _MIN_SEASON_MATCHES or away_row is None:
+                prev_away = _find_team_in_df(away, teams2, log_prefix="prev-away")
+                if prev_away is not None:
+                    away_row = _blend_row(away_row, prev_away, away_mp_f)
+                    logger.warning(
+                        f"[lambda-diag] Blended {away}: mp={away_mp_f}, "
+                        f"prev-season data available, weight={min(1.0, away_mp_f / _MIN_SEASON_MATCHES):.2f}"
+                    )
         home_attack = safe(get_stat(home_row, ["goals_scored_per_match_home", "goals_scored_avg_home"]) if home_row is not None else None, 1.3)
         away_defense = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, 1.2)
         away_attack = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, 1.2)

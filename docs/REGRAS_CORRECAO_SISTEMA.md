@@ -3135,22 +3135,6 @@ Resumo técnico:
 
 ---
 
-## Nota — Verificação CI (documentação + suite completa)
-
-**Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
-
-| Job | Duração (aprox.) | Resultado |
-|-----|------------------|-----------|
-| `backend-tests` | ~57 s | Sucesso |
-| `e2e-tests` | ~3 m 16 s | Sucesso |
-| **Total pipeline** | ~3 m 20 s | **Success** |
-
-**Avisos (não falha):** deprecação Node.js 20 nos actions `checkout` / `setup-python` / `setup-node` / `upload-artifact` — planejar upgrade para Node 24 conforme [changelog GitHub Actions](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
-
-**Artefato:** `playwright-report` (~207 KB) gerado no job e2e.
-
----
-
 ## 060 — Live scores resilience: "last known scores" cache
 
 **Data:** 2026-03-21
@@ -3264,6 +3248,8 @@ A funcao `get_team_row()` fazia match EXATO (`teams[name_col] == name`). Como "E
 **Severidade:** Critica
 **Status:** Corrigido
 
+**Commit:** `5c751a0` — *fix(critical): raise LAMBDA_MIN to 0.5 and add 6-strategy fuzzy team matching (#063)*
+
 ### Problema identificado
 
 Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em Eliteserien, TODOS os times tinham lambdas identicos (1.053/1.08) — defaulting para media da liga. O fuzzy match simples do #062 (substring) nao resolvia times como PSG, NEC, Inter Milan, Rennes.
@@ -3294,9 +3280,23 @@ Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em E
 - PL: lambdas variam (Newcastle 1.558/0.839, Tottenham 1.316/1.185)
 - Brasileirao: todos os times matched (Corinthians->SC Corinthians Paulista, Flamengo->CR Flamengo)
 - Bundesliga: Mainz 05->1. FSV Mainz 05 (substring)
-- Zero teams "NOT FOUND" em CloudWatch
-- Draw probabilities normalizadas (24-28% para PL)
-- EVs capped a 40% quando prob/odds mismatch detectado
+- Zero teams "NOT FOUND" em CloudWatch (nas ligas amostradas)
+- Draw probabilities normalizadas (24-28% para PL; antes ~68% em cenários com λ no chão)
+- Pipeline aplica **cap de EV** quando há mismatch prob/odd (ver **Cuidado — cap de EV** abaixo)
+
+### Nota pos-deploy — Eliteserien, Argentina e MLS
+
+Após **`5c751a0`**, testes em **produção** ainda mostraram padrões compatíveis com **cobertura de dados**, não só com falha de fuzzy:
+
+- **Argentina (primera-division):** vários jogos com **ambos os λ no floor (0,5)** quando stats por clube / `league-teams` **faltam ou vêm vazios** no path FootyStats — o match de nomes pode estar correto e ainda assim **não haver linha utilizável**.
+- **Eliteserien:** parte dos jogos manteve **λ idênticos (ex.: 1,053 / 1,08)** — típico de **média da liga** quando stats por equipa não entram (época a iniciar, cobertura).
+- **MLS:** **misto** (alguns clubes com λ realistas; outros no **floor**) — esperável com **disponibilidade desigual** por equipa.
+
+**Interpretação:** λ no **LAMBDA_MIN** ou **iguais em demasia** entre jogos = priorizar **governação de dados** (pré-carga `league-teams`, cache, época anterior — ver **#064**), não assumir só “bug de código”.
+
+### Cuidado — cap de EV (~40%)
+
+O **cap de EV** (e flags associadas) **atenua valores extremos na API/UI** mas **não corrige** sozinho probabilidade mal calibrada: o modelo pode continuar errado com EV “apresentável”. Acompanhar **Brier**, distribuição de EV, **% de mercados tocados pelo cap** e logs **`[prob-trace]`** — **não** concluir saúde do sistema só porque `abs(EV)` raramente passa de ~40%.
 
 ### Licao aprendida
 
@@ -3305,7 +3305,70 @@ Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em E
 
 ---
 
-## 064 — EVs absurdos residuais: 1X2 Poisson inflado, lambda floor, e EV sem cap real
+## 064 — Fallback de temporada anterior para ligas com dados insuficientes
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/fixtures_service.py`, `backend/modeling/lambda_calculator.py`
+**Severidade:** Alta
+**Status:** Implementado
+
+**Complemento:** encadeia **#063** (*commit* `5c751a0`): mantém-se `LAMBDA_MIN=0.5` e o **Cuidado — cap de EV (~40%)** em **#063**; **#064** reduz casos em que a época corrente tem **poucos ou zero jogos** e stats quase vazios — **não** substitui o cap nem elimina por si só lacunas de `league-teams` (ver **Nota pos-deploy — Eliteserien, Argentina e MLS** em **#063**).
+
+### Problema identificado
+
+Ligas com temporada recem-iniciada (Argentina, Eliteserien, MLS) tinham times com 0-4 jogos na temporada atual. Os stats (gols/jogo, gols sofridos/jogo) eram proximos de zero, resultando em lambdas calculados abaixo de 0.5 e sendo "floored" pelo LAMBDA_MIN. Isso gerava probabilidades Poisson incorretas para todos os mercados.
+
+Exemplos reais (CloudWatch, **antes** do blend completo operacional):
+- Argentina: Argentinos Juniors, Platense, River Plate — muitos com lambda=0.5 (floor)
+- Eliteserien: varios jogos defaultando para media da liga (1.053/1.08)
+- MLS: Montreal, Seattle — casos no floor
+
+Complementa **#063**: o floor evita λ impossíveis; **#064** reduz a **frequência** em que o modelo precisa dele ao **enriquecer** stats no início de época.
+
+### Causa raiz
+
+`_process_single_league()` so carregava a temporada atual via `resolve_season_id()` (singular). Para temporadas recem-iniciadas, `matches_played` era 0-4, gerando stats insuficientes para o modelo Dixon-Coles.
+
+### Correcoes aplicadas
+
+**Camada 1 — Regressao Bayesiana (lambda_calculator.py):**
+- Quando `games_played < 5`, regride `ataque_ponderado` em direcao a media da liga
+- Formula: `weight = games_played / 5.0`, `ataque = ataque * weight + media_liga * (1 - weight)`
+- Defesa em profundidade: funciona mesmo sem dados de temporada anterior
+
+**Camada 2 — Blending de temporada anterior (fixtures_service.py):**
+- `_find_team_in_df()`: matching de 6 estrategias reutilizavel para qualquer DataFrame
+- `_blend_row()`: combina stats da temporada atual com anterior, peso proporcional a `matches_played / 5`
+- Aplicado no ponto de extracao de `home_row`/`away_row` em `build_records_from_matches()`
+- Se `matches_played < 5` e `teams2` disponivel, busca time na temporada anterior e faz blend
+
+**Camada 3 — Carga de temporada anterior (fixtures.py):**
+- `resolve_season_id()` substituido por `resolve_season_ids(n_seasons=2)`
+- Se >30% dos times tem `matches_played < 5`, carrega `get_league_teams(prev_season_id)` (gate com `pd.to_numeric(..., errors="coerce")` para evitar `FutureWarning` pandas em `.fillna`/downcasting)
+- Passa `teams2=prev_teams_df` para `build_records_from_matches()` (parametro ja existia mas era sempre `None`)
+
+### Verificacao
+
+CloudWatch confirmou:
+- `[fixtures] primera-division: loaded 30 prev-season teams as fallback (prev_sid=15746)`
+- `[fixtures] eliteserien: loaded 16 prev-season teams as fallback (prev_sid=16260)`
+- `[fixtures] mls: loaded 30 prev-season teams as fallback (prev_sid=13973)`
+- `[lambda-diag] Blended Argentinos Juniors: mp=0, prev-season data available, weight=0.00`
+- `[lambda-diag] Blended Bodo/Glimt: mp=0, prev-season data available, weight=0.00`
+
+**Semântica do log:** `weight=0.00` com `mp=0` indica **0% época atual / 100% época anterior** no blend (esperado para equipas sem jogos contabilizados na época).
+
+**Pendente:** validar **λ e EV finais** em `GET /api/fixtures?...` quando houver jogos e quotas API OK (smoke com `/fixtures` sem prefixo `/api/` pode não refletir o API Gateway documentado em **#057**).
+
+### Licao aprendida
+
+- Temporadas nao comecam todas em agosto/setembro. Ligas de calendario-ano (Argentina, Noruega, MLS, J-League) comecam em fev-mar. O sistema precisa lidar com early-season gracefully.
+- O parametro `teams2` em `build_records_from_matches()` existia desde a criacao da funcao mas nunca foi utilizado — era dead code. Agora esta ativo.
+- Defesa em profundidade: 3 camadas independentes (regressao no lambda, blending no service, carga no route) garantem que mesmo se uma falhar, as outras compensam.
+
+---
+
+## 065 — EVs absurdos residuais: 1X2 Poisson inflado, lambda floor e cap real de EV
 
 **Data:** 2026-03-22
 **Arquivos afetados:** `backend/services/ev_classification.py`
@@ -3314,7 +3377,7 @@ Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em E
 
 ### Problema identificado
 
-Apos #063, tres categorias de EVs absurdos persistiam:
+Apos **#063** (e com early-season ainda sensível antes de **#064**), tres categorias de EVs absurdos persistiam:
 1. **Cat 1 — Lambda floor:** Argentinos vs Platense Under 2.5=89-91%. Ambos lambdas batendo em LAMBDA_MIN=0.5, Poisson gera probabilidades extremas para Under.
 2. **Cat 2 — 1X2 inflado:** Paris Home=80-82% (Poisson) mas odd=2.00 (implied 50%). EV=+60% falso. O `_prob()` usava Poisson-derived para 1X2 apesar do comentario dizer "prefer stats (odds-implied)".
 3. **Cat 3 — Over extremos:** Portland vs LA Galaxy Over 4.5=76-78% EV +195%. Poisson com lambda=3.0 da ~18%, nao 76%. FootyStats pre-match % vazando quando derived vazio.
@@ -3360,6 +3423,79 @@ Cenarios esperados:
 - Comentarios de intencao ("prefer stats for 1X2") devem ser implementados no codigo, nao apenas documentados. O gap entre comentario e implementacao persistiu por multiplas sessoes.
 - Flag de EV suspeito sem cap real e inutil — o mercado ainda mostra na UI como NEUTRO com +195%. O cap deve atuar na probabilidade e recomputar todos os valores derivados.
 - Quando lambdas batem no floor, o output Poisson e ruido — deve ser descartado, nao usado. Defesa em profundidade: detectar na entrada (lambda floor), capar na saida (EV cap), e bloquear extremos (NO_BET).
+- **Relação com #063:** o cap ~40% altera **prob/EV exibidos**; a advertência em **#063 — Cuidado — cap de EV** mantém-se — continuar a monitorizar Brier e % de mercados capados.
+
+## Nota — Verificação CI (documentação + suite completa)
+
+**Referência:** [GitHub Actions run 23361270140](https://github.com/wemarques/sportsbankzu-pro/actions/runs/23361270140) — workflow `ci.yml`, commit `d4b31ed`, branch `claude/corner-betting-framework-zh4G1`.
+
+| Job | Duração (aprox.) | Resultado |
+|-----|------------------|-----------|
+| `backend-tests` | ~57 s | Sucesso |
+| `e2e-tests` | ~3 m 16 s | Sucesso |
+| **Total pipeline** | ~3 m 20 s | **Success** |
+
+**Avisos (não falha):** deprecação Node.js 20 nos actions `checkout` / `setup-python` / `setup-node` / `upload-artifact` — planejar upgrade para Node 24 conforme [changelog GitHub Actions](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
+
+**Artefato:** `playwright-report` (~207 KB) gerado no job e2e.
+
+---
+
+## 065 — Fallback de temporada anterior para ligas com dados insuficientes
+
+**Commit:** `bdfa001`
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/fixtures_service.py`, `backend/modeling/lambda_calculator.py`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+
+Ligas com temporada recem-iniciada (Argentina, Eliteserien, MLS) tinham times com 0-4 jogos na temporada atual. Os stats (gols/jogo, gols sofridos/jogo) eram proximos de zero, resultando em lambdas calculados abaixo de 0.5 e sendo "floored" pelo LAMBDA_MIN. Isso gerava probabilidades Poisson incorretas para todos os mercados.
+
+Exemplos reais (CloudWatch):
+- Argentina: Argentinos Juniors, Platense, River Plate — todos com lambda=0.5 (floor)
+- Eliteserien: 4/6 times defaultando para media da liga (1.053/1.08)
+- MLS: Montreal, Seattle — no floor
+
+### Causa raiz
+
+`_process_single_league()` so carregava a temporada atual via `resolve_season_id()` (singular). Para temporadas recem-iniciadas, `matches_played` era 0-4, gerando stats insuficientes para o modelo Dixon-Coles.
+
+### Correcoes aplicadas
+
+**Camada 1 — Regressao Bayesiana (lambda_calculator.py):**
+- Quando `games_played < 5`, regride `ataque_ponderado` em direcao a media da liga
+- Formula: `weight = games_played / 5.0`, `ataque = ataque * weight + media_liga * (1 - weight)`
+- Defesa em profundidade: funciona mesmo sem dados de temporada anterior
+
+**Camada 2 — Blending de temporada anterior (fixtures_service.py):**
+- `_find_team_in_df()`: matching de 6 estrategias reutilizavel para qualquer DataFrame
+- `_blend_row()`: combina stats da temporada atual com anterior, peso proporcional a `matches_played / 5`
+- Aplicado no ponto de extracao de `home_row`/`away_row` em `build_records_from_matches()`
+- Se `matches_played < 5` e `teams2` disponivel, busca time na temporada anterior e faz blend
+
+**Camada 3 — Carga de temporada anterior (fixtures.py):**
+- `resolve_season_id()` substituido por `resolve_season_ids(n_seasons=2)`
+- Se >30% dos times tem `matches_played < 5`, carrega `get_league_teams(prev_season_id)`
+- Passa `teams2=prev_teams_df` para `build_records_from_matches()` (parametro ja existia mas era sempre `None`)
+
+### Verificacao
+
+CloudWatch confirmou:
+- `[fixtures] primera-division: loaded 30 prev-season teams as fallback (prev_sid=15746)`
+- `[fixtures] eliteserien: loaded 16 prev-season teams as fallback (prev_sid=16260)`
+- `[fixtures] mls: loaded 30 prev-season teams as fallback (prev_sid=13973)`
+- `[lambda-diag] Blended Argentinos Juniors: mp=0, prev-season data available, weight=0.00`
+- `[lambda-diag] Blended Bodo/Glimt: mp=0, prev-season data available, weight=0.00`
+
+**Pendente:** Validar lambda/EV em fixtures reais quando houver jogos com quota API disponivel.
+
+### Licao aprendida
+
+- Temporadas nao comecam todas em agosto/setembro. Ligas de calendario-ano (Argentina, Noruega, MLS, J-League) comecam em fev-mar. O sistema precisa lidar com early-season gracefully.
+- O parametro `teams2` em `build_records_from_matches()` existia desde a criacao da funcao mas nunca foi utilizado — era dead code. Agora esta ativo.
+- Defesa em profundidade: 3 camadas independentes (regressao no lambda, blending no service, carga no route) garantem que mesmo se uma falhar, as outras compensam.
 
 ---
 

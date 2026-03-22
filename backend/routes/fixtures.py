@@ -152,10 +152,14 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
 
     if league_config:
         try:
-            season_id = footstats.resolve_season_id(
+            # #064: resolve up to 2 seasons for prev-season fallback
+            _season_ids = footstats.resolve_season_ids(
                 league_config["country"], league_config["name"],
                 alt_names=league_config.get("alt_names"),
+                n_seasons=2,
             )
+            season_id = _season_ids[0][0] if _season_ids else None
+            prev_season_id = _season_ids[1][0] if len(_season_ids) > 1 else None
             if season_id:
                 matches_data = footstats.get_league_matches(season_id)
 
@@ -225,6 +229,31 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         except Exception as e:
                             logger.warning(f"[fixtures] {lid}: fallback league-tables also failed: {e}")
 
+                    # #064: Load previous season teams as fallback for early-season blending
+                    prev_teams_df = None
+                    if teams_df is not None and prev_season_id:
+                        try:
+                            from backend.services.util_service import pick_column
+                            mp_col = pick_column(teams_df, ["matches_played", "games_played", "matches"])
+                            needs_prev = False
+                            if mp_col:
+                                low_count = int((pd.to_numeric(teams_df[mp_col], errors="coerce").fillna(0) < 5).sum())
+                                needs_prev = low_count > len(teams_df) * 0.3
+                            else:
+                                needs_prev = True
+                            if needs_prev:
+                                prev_data = footstats.get_league_teams(prev_season_id)
+                                if prev_data.get("success"):
+                                    raw_prev = prev_data.get("data", [])
+                                    if raw_prev:
+                                        prev_teams_df = DataMapper.teams_to_df(raw_prev)
+                                        logger.warning(
+                                            f"[fixtures] {lid}: loaded {len(prev_teams_df)} "
+                                            f"prev-season teams as fallback (prev_sid={prev_season_id})"
+                                        )
+                        except Exception as e:
+                            logger.warning(f"[fixtures] {lid}: prev-season teams fallback failed: {e}")
+
                     league_df = None
                     if league_season_data:
                         try:
@@ -274,7 +303,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                             league_id=lid,
                             matches=matches_df,
                             teams=teams_df,
-                            teams2=None,
+                            teams2=prev_teams_df,
                             league_df=league_df,
                             players=None,
                             date_filter=date,

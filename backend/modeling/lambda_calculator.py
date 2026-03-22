@@ -85,6 +85,24 @@ def calcular_lambda_dinamico(
     # 3. Ataque ponderado
     ataque_ponderado = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
 
+    # 3b. Early season regression to mean (#064)
+    # When team has < 5 games, regress attack toward league average
+    # to avoid extreme lambdas from insufficient data.
+    games_played = team_data.get('games_played')
+    if games_played is not None:
+        try:
+            gp = float(games_played)
+            if gp < 5:
+                # regress = current season weight: 0.0 = 100% league avg, 1.0 = 100% team data
+                regress = gp / 5.0
+                ataque_ponderado = ataque_ponderado * regress + media_liga_per_team * (1 - regress)
+                logger.info(
+                    f"[lambda-regress] Early season regression: gp={gp}, "
+                    f"regress_weight={regress:.2f}, ataque_adj={ataque_ponderado:.3f}"
+                )
+        except (ValueError, TypeError):
+            pass
+
     # 4. FORÇA RELATIVA de ataque (ratio vs liga)
     ataque_relativo = ataque_ponderado / media_liga_per_team
 
