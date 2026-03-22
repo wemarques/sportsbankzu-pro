@@ -192,14 +192,29 @@ def classify_market(
     if not output.odds_available:
         reason_codes.append(ReasonCode.NO_ODDS_AVAILABLE)
 
-    # ─── EV sanity cap ───
-    # EV > 40% is almost certainly a data issue (prob/odds mismatch)
+    # ─── EV sanity cap (#064) ───
+    # EV > 40% is almost certainly a data issue (prob/odds mismatch).
+    # Previously this only flagged — now it actively caps probability to prevent
+    # absurd EVs (+67%, +195%) from reaching the UI as NEUTRO.
     MAX_CREDIBLE_EV = 0.40
-    if output.ev is not None and output.ev > MAX_CREDIBLE_EV:
+    if output.ev is not None and output.ev > MAX_CREDIBLE_EV and output.book_odd and output.book_odd > 1.0:
+        # Cap probability to the level that produces MAX_CREDIBLE_EV
+        max_prob = (1.0 + MAX_CREDIBLE_EV) / output.book_odd
+        original_prob = prob
+        original_ev = output.ev
+        if output.calibrated_probability and output.calibrated_probability > max_prob:
+            output.calibrated_probability = round(max_prob, 4)
+        if output.raw_probability and output.raw_probability > max_prob:
+            output.raw_probability = round(max_prob, 4)
+        # Recompute EV, edge, and display with capped probability
+        output.compute_ev()
+        output.compute_display()
+        prob = output.calibrated_probability or output.raw_probability or 0.0
         reason_codes.append(ReasonCode.SUSPICIOUS_EV)
         logger.warning(
-            f"[EV Cap] {output.display_label}: EV={output.ev:.1%} exceeds {MAX_CREDIBLE_EV:.0%} cap. "
-            f"Prob={prob:.1%}, Odd={output.book_odd}. Likely prob/odds source mismatch."
+            f"[EV Cap] {output.display_label}: prob capped {original_prob:.1%}→{prob:.1%}, "
+            f"EV capped {original_ev:.1%}→{output.ev:.1%} (max={MAX_CREDIBLE_EV:.0%}). "
+            f"Odd={output.book_odd}."
         )
 
     # ─── EV checks ───
@@ -261,6 +276,17 @@ def classify_market(
         classification = MarketClassification.NO_BET
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)
+
+    # ─── Force NO_BET on absurdly high EV (#064) ───
+    # After the cap above, if EV STILL exceeds 100% it's clearly broken data.
+    # This catches edge cases where cap didn't fully apply (e.g. missing book_odd).
+    if (ReasonCode.SUSPICIOUS_EV in reason_codes and
+            output.ev is not None and output.ev > 1.0):
+        classification = MarketClassification.NO_BET
+        logger.warning(
+            f"[EV Force NO_BET] {output.display_label}: EV={output.ev:.1%} still >100% after cap, "
+            f"forcing NO_BET"
+        )
 
     # ─── SAFE Circuit Breaker — per-league (#052) ───
     # Downgrade SAFE → NEUTRO_QUALIFICADO when SAFE not enabled for this league
@@ -337,6 +363,26 @@ def evaluate_match_markets(
     derived = {}
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
         derived = derive_all_markets(float(lambda_home), float(lambda_away), league_id=league_id)
+
+    # Lambda floor detection (#064): when both lambdas are clamped to LAMBDA_MIN,
+    # it means team lookup failed — Poisson output is pure noise from league averages.
+    # Discard derived to fall through to FootyStats/odds-implied.
+    from backend.modeling.lambda_calculator import LAMBDA_MIN
+    _FLOOR_TOLERANCE = 0.02
+    _lambda_at_floor = (
+        lambda_home is not None and lambda_away is not None
+        and float(lambda_home) <= LAMBDA_MIN + _FLOOR_TOLERANCE
+        and float(lambda_away) <= LAMBDA_MIN + _FLOOR_TOLERANCE
+    )
+    if _lambda_at_floor and derived:
+        logger.warning(
+            f"[lambda-floor] {home_team} vs {away_team}: both lambdas at floor "
+            f"({lambda_home}/{lambda_away}), discarding Poisson-derived probs"
+        )
+        derived = {}
+        # Reduce quality score — model has no real data for these teams
+        quality = max(0.0, quality - 0.20)
+
     if not derived:
         logger.warning(
             f"[ev] No Poisson-derived probs: λH={lambda_home} λA={lambda_away} "
@@ -397,13 +443,29 @@ def evaluate_match_markets(
                 pass
         return None
 
-    # 1X2 markets
+    # 1X2 markets — prefer odds-implied (stats) when odds available (#064)
+    # Poisson 1X2 diverges 20-30pp from market (e.g. Paris Home=80% vs odd=2.00=50%),
+    # creating fake EV. Use odds-implied as primary; Poisson only as fallback.
+    _1x2_has_odds = (
+        odds.get("home") and odds.get("draw") and odds.get("away")
+        and float(odds.get("home", 0)) > 1.0
+    )
+    # Diagnostic: trace 1X2 source (#064)
+    logger.warning(
+        f"[prob-trace][1X2] {home_team} vs {away_team} | "
+        f"has_odds={_1x2_has_odds} "
+        f"stats[homeWinProb]={stats.get('homeWinProb')} "
+        f"derived[homeWinProb]={derived.get('homeWinProb')} "
+        f"odds={{h={odds.get('home')},d={odds.get('draw')},a={odds.get('away')}}}"
+    )
     for selection, stat_key, derived_key, odd_key in [
         ("Home", "homeWinProb", "homeWinProb", "home"),
         ("Draw", "drawProb", "drawProb", "draw"),
         ("Away", "awayWinProb", "awayWinProb", "away"),
     ]:
-        raw = _prob(stat_key, derived_key)
+        # When odds available: skip derived_key so _prob uses stats (odds-implied)
+        # When no odds: use Poisson-derived as fallback
+        raw = _prob(stat_key) if _1x2_has_odds else _prob(stat_key, derived_key)
         if raw is None:
             continue
         calibrated = calibrate_prob(raw, f"1X2_{selection.lower()}", league_id, regime)
@@ -517,10 +579,15 @@ def evaluate_match_markets(
         )
         markets.append(classify_market(mo, league_id=league_id))
 
-    # Double Chance (derived from 1X2)
-    home_prob = _prob("homeWinProb", "homeWinProb")
-    draw_prob = _prob("drawProb", "drawProb")
-    away_prob = _prob("awayWinProb", "awayWinProb")
+    # Double Chance (derived from 1X2 — use same source priority as 1X2 #064)
+    if _1x2_has_odds:
+        home_prob = _prob("homeWinProb")
+        draw_prob = _prob("drawProb")
+        away_prob = _prob("awayWinProb")
+    else:
+        home_prob = _prob("homeWinProb", "homeWinProb")
+        draw_prob = _prob("drawProb", "drawProb")
+        away_prob = _prob("awayWinProb", "awayWinProb")
 
     if home_prob is not None and draw_prob is not None:
         dc_1x = home_prob + draw_prob
@@ -574,16 +641,29 @@ def evaluate_match_markets(
         raw = gov_line.get("probability")
 
         # Fallback to legacy corner_probs or FootyStats stat
+        _corner_source = "v2_governed" if raw is not None else None
         if raw is None:
             raw = corner_probs.get(line_key)
+            if raw is not None:
+                _corner_source = "legacy_engine"
         if raw is None:
             stat_key = _FOOTYSTATS_STAT_MAP.get(line_val)
             if stat_key:
                 raw = _prob(stat_key)
+                if raw is not None:
+                    _corner_source = "footystats_raw"
         if raw is None:
             continue
 
         threshold_label = f"Over {line_val}"
+
+        # Diagnostic: trace corner probability source (#064)
+        logger.warning(
+            f"[prob-trace][corners] {home_team} vs {away_team} | "
+            f"line={line_val} source={_corner_source} raw={raw:.3f} "
+            f"v2={gov_line.get('probability')} legacy={corner_probs.get(line_key)}"
+        )
+
         calibrated = calibrate_prob(raw, f"Escanteios {threshold_label}", league_id, regime)
 
         # Odds: try v2 book_odd_over, then FootyStats odds key

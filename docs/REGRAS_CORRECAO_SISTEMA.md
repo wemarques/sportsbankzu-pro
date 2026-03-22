@@ -3305,4 +3305,62 @@ Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em E
 
 ---
 
+## 064 — EVs absurdos residuais: 1X2 Poisson inflado, lambda floor, e EV sem cap real
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Critica
+**Status:** Corrigido
+
+### Problema identificado
+
+Apos #063, tres categorias de EVs absurdos persistiam:
+1. **Cat 1 — Lambda floor:** Argentinos vs Platense Under 2.5=89-91%. Ambos lambdas batendo em LAMBDA_MIN=0.5, Poisson gera probabilidades extremas para Under.
+2. **Cat 2 — 1X2 inflado:** Paris Home=80-82% (Poisson) mas odd=2.00 (implied 50%). EV=+60% falso. O `_prob()` usava Poisson-derived para 1X2 apesar do comentario dizer "prefer stats (odds-implied)".
+3. **Cat 3 — Over extremos:** Portland vs LA Galaxy Over 4.5=76-78% EV +195%. Poisson com lambda=3.0 da ~18%, nao 76%. FootyStats pre-match % vazando quando derived vazio.
+
+### Causa raiz
+
+**Tripla:**
+1. `_prob()` sempre verificava `derived` (Poisson) primeiro para TODOS os mercados, incluindo 1X2. O comentario na linha 370 dizia "For 1X2: prefer stats (odds-implied)" mas **nunca foi implementado**. Poisson 1X2 diverge 20-30pp do mercado.
+2. Quando ambos lambdas = LAMBDA_MIN (team lookup falhou), `derive_all_markets()` gerava probabilidades de puro ruido (Under 2.5=92% com lambda_total=1.0). Sem deteccao de lambda floor.
+3. `MAX_CREDIBLE_EV=0.40` apenas adicionava flag `SUSPICIOUS_EV` e downgradeava SAFE→NEUTRO, mas **nao capava a probabilidade**. Mercados com EV +195% continuavam mostrando como NEUTRO.
+
+### Correcoes aplicadas
+
+**Camada 1 — 1X2 usa odds-implied quando odds disponiveis (ev_classification.py):**
+- Quando odds 1X2 existem, `_prob()` e chamado sem `derived_key` → usa stats (odds-implied de `implied_probs()`)
+- Quando odds nao existem, Poisson-derived serve como fallback
+- Resultado: 1X2 EV fica proximo de 0 (correto para mercado eficiente), eliminando falsos +60%
+
+**Camada 2 — Lambda floor detection (ev_classification.py):**
+- Detecta quando ambos lambdas <= LAMBDA_MIN + 0.02 (team lookup falhou)
+- Descarta dict `derived` inteiro → _prob cai para FootyStats/odds-implied (mais realista)
+- Reduz quality score em -0.20 (modelo sem dados reais para esses times)
+
+**Camada 3 — EV cap com recompute de probabilidade (ev_classification.py):**
+- Quando EV > 40%: calcula `max_prob = (1 + 0.40) / book_odd`
+- Capa `calibrated_probability` e `raw_probability` para max_prob
+- Recomputa `compute_ev()` e `compute_display()` com prob capada
+- Resultado: probabilidade e EV exibidos sao consistentes e capados a 40%
+
+**Camada 4 — Force NO_BET para EV > 100% (ev_classification.py):**
+- Apos todas as camadas, se EV ainda > 100% com SUSPICIOUS_EV flag, forca NO_BET
+- Captura edge cases onde cap nao aplicou completamente (ex: book_odd missing)
+
+### Verificacao pos-deploy
+
+Cenarios esperados:
+- Paris Home: EV ~0% (odds-implied = Poisson nao mais usado para 1X2)
+- Argentinos vs Platense Under 2.5: derived descartado (lambda floor), FootyStats/odds usados
+- Portland Over 4.5: se EV > 40%, prob capada; se > 100%, NO_BET
+
+### Licao aprendida
+
+- Comentarios de intencao ("prefer stats for 1X2") devem ser implementados no codigo, nao apenas documentados. O gap entre comentario e implementacao persistiu por multiplas sessoes.
+- Flag de EV suspeito sem cap real e inutil — o mercado ainda mostra na UI como NEUTRO com +195%. O cap deve atuar na probabilidade e recomputar todos os valores derivados.
+- Quando lambdas batem no floor, o output Poisson e ruido — deve ser descartado, nao usado. Defesa em profundidade: detectar na entrada (lambda floor), capar na saida (EV cap), e bloquear extremos (NO_BET).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
