@@ -47,17 +47,17 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
 
 /**
  * Max leagues per batch — keeps each Lambda call under timeout.
- * Backend processes leagues in parallel (ThreadPoolExecutor, 4 workers),
- * so 5 leagues/batch ≈ 2 waves of parallel work ≈ 10-20s on warm cache.
+ * Reduced from 5→3 to stay well under API Gateway 30s hard limit.
+ * 3 leagues/batch ≈ 1 wave of parallel work ≈ 8-15s on warm cache.
  */
-const LEAGUES_PER_BATCH = 5;
+const LEAGUES_PER_BATCH = 3;
 
 /**
  * Max concurrent batch requests — avoids overwhelming Lambda with
  * too many simultaneous cold starts.
- * With 22 leagues / 5 per batch = 5 batches, 3 concurrent = 2 waves.
+ * With 37 leagues / 3 per batch = 13 batches, 4 concurrent ≈ 4 waves.
  */
-const MAX_CONCURRENT = 3;
+const MAX_CONCURRENT = 4;
 
 /**
  * Run async tasks with a concurrency limit (semaphore pattern).
@@ -108,11 +108,64 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
   }
 
   console.log(`[api] Fan-out: ${leagueIds.length} leagues → ${batches.length} batches of ≤${LEAGUES_PER_BATCH} (max ${MAX_CONCURRENT} concurrent)`);
+  for (let b = 0; b < batches.length; b++) {
+    console.log(`[api]   batch ${b + 1}: ${batches[b].join(", ")}`);
+  }
 
   const results = await parallelWithLimit(
-    batches.map((batch) => () => _fetchMatchesBatch(batch.join(","), date)),
+    batches.map((batch, idx) => async () => {
+      const res = await _fetchMatchesBatch(batch.join(","), date);
+      const ok = res.matches.length > 0 || res._dataSource === "backend-empty";
+      console.log(`[api]   batch ${idx + 1} ${ok ? "OK" : "FAIL"}: ${res.matches.length} matches, src=${res._dataSource}${res._error ? `, err=${res._error.kind}` : ""}`);
+      return res;
+    }),
     MAX_CONCURRENT,
   );
+
+  // Identify failed batches for retry
+  const RETRYABLE_ERRORS = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR"]);
+  const failedBatchIndices: number[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "rejected") {
+      failedBatchIndices.push(i);
+    } else if (r.value._error && RETRYABLE_ERRORS.has(r.value._error.kind) && r.value.matches.length === 0) {
+      failedBatchIndices.push(i);
+    }
+  }
+
+  // Retry failed batches individually (1 league at a time for reliability)
+  if (failedBatchIndices.length > 0) {
+    console.log(`[api] Retrying ${failedBatchIndices.length} failed batch(es) individually...`);
+    const retryTasks: (() => Promise<{ batchIdx: number; res: MatchesResponse }>)[] = [];
+    for (const batchIdx of failedBatchIndices) {
+      for (const leagueId of batches[batchIdx]) {
+        retryTasks.push(async () => {
+          const res = await _fetchMatchesBatch(leagueId, date);
+          console.log(`[api]   retry ${leagueId}: ${res.matches.length} matches, src=${res._dataSource}${res._error ? `, err=${res._error.kind}` : ""}`);
+          return { batchIdx, res };
+        });
+      }
+    }
+    const retryResults = await parallelWithLimit(retryTasks, MAX_CONCURRENT);
+
+    // Replace failed batch results with individual league results
+    for (const batchIdx of failedBatchIndices) {
+      const batchRetries = retryResults
+        .filter((r) => r.status === "fulfilled" && r.value.batchIdx === batchIdx)
+        .map((r) => (r as PromiseSettledResult<{ batchIdx: number; res: MatchesResponse }> & { status: "fulfilled" }).value.res);
+      if (batchRetries.length > 0) {
+        const merged: MatchesResponse = {
+          matches: batchRetries.flatMap((r) => r.matches),
+          _dataSource: batchRetries.some((r) => r._dataSource === "backend") ? "backend" : "backend-empty",
+          _isMockData: batchRetries.some((r) => r._isMockData),
+          _error: batchRetries.find((r) => r._error)?._error,
+          _latencyMs: Math.max(...batchRetries.map((r) => r._latencyMs ?? 0)),
+        };
+        results[batchIdx] = { status: "fulfilled", value: merged };
+      }
+    }
+  }
 
   // Merge results
   const allMatches: unknown[] = [];
@@ -145,6 +198,8 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
       hasAnySuccess = true;
     }
   }
+
+  console.log(`[api] Fan-out complete: ${allMatches.length} total matches, ${failedCount}/${batches.length} batches failed`);
 
   // Propagate retryable error kind even on partial success so dashboard
   // can decide to retry. Only suppress error if majority succeeded.
