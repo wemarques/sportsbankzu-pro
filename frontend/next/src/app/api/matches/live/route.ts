@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchBackend, getBackendUrl } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
   const backendBase = getBackendUrl();

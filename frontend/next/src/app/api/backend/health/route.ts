@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
 
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
   const debug = new URL(req.url).searchParams.get("debug") === "true";

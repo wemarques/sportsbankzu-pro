@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
 /** Mistral-only evaluation — lightweight, no fixture fetching. ~3-5s. */
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {

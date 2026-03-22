@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBackend } from "@/lib/backend";
 
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   const parameterName = req.nextUrl.searchParams.get("parameter_name");

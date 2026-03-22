@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 30;
+
 export async function GET(req: NextRequest) {
   const backend = process.env.PY_BACKEND_URL;
   if (!backend) {
