@@ -595,6 +595,58 @@ def build_records_from_matches(
         league_regime = "HIPER-OFENSIVA" if league_goal_avg > 3.0 else "NORMAL"
         def safe(val: Optional[float], default: float) -> float:
             return float(val) if val is not None and val > 0 else default
+        # Known aliases: API name -> canonical substring to search in DB
+        _TEAM_ALIASES = {
+            "psg": "paris saint-germain",
+            "inter milan": "internazionale",
+            "nec": "n.e.c.",
+            "rennes": "rennais",
+            "man united": "manchester united",
+            "man city": "manchester city",
+            "atletico madrid": "atletico de madrid",
+            "fc barcelona": "barcelona",
+            "ac milan": "milan",
+            "napoli": "napoli",
+            "real sociedad": "real sociedad",
+            "celta vigo": "celta de vigo",
+            "betis": "real betis",
+            "hertha": "hertha",
+            "mainz": "mainz",
+            "wolfsburg": "wolfsburg",
+            "rb leipzig": "rasenballsport leipzig",
+        }
+
+        def _normalize_team_name(name: str) -> str:
+            """Strip common suffixes/prefixes and normalize for matching."""
+            import re
+            n = name.strip().lower()
+            # Remove common suffixes/prefixes
+            for suffix in [" fc", " sc", " ec", " ac", " cf", " fk", " bk", " sk",
+                           " afc", " ssc", " as", " rcd", " cd", " se", " rc",
+                           " fr", " nfc", " if", " ff"]:
+                if n.endswith(suffix):
+                    n = n[:-len(suffix)].strip()
+            for prefix in ["fc ", "sc ", "fk ", "sk ", "ac ", "as ", "rc ", "se ",
+                           "club atletico ", "clube atletico ", "ca "]:
+                if n.startswith(prefix):
+                    n = n[len(prefix):].strip()
+            # Remove dots (N.E.C. -> NEC)
+            n = n.replace(".", "")
+            # Normalize whitespace
+            n = re.sub(r'\s+', ' ', n).strip()
+            return n
+
+        def _token_match_score(name_a: str, name_b: str) -> float:
+            """Token overlap score between two names (0.0-1.0)."""
+            a_tokens = set(_normalize_team_name(name_a).split())
+            b_tokens = set(_normalize_team_name(name_b).split())
+            if not a_tokens or not b_tokens:
+                return 0.0
+            overlap = a_tokens & b_tokens
+            # Score = overlap relative to the smaller set
+            smaller = min(len(a_tokens), len(b_tokens))
+            return len(overlap) / smaller if smaller > 0 else 0.0
+
         def get_team_row(name: str) -> Optional["pd.Series"]:
             if teams is None:
                 logger.warning(f"[lambda-diag] teams DataFrame is None for league={league_id}")
@@ -603,24 +655,79 @@ def build_records_from_matches(
             if not name_col:
                 logger.warning(f"[lambda-diag] no name column found in teams. cols={list(teams.columns)[:10]}")
                 return None
+            # 1. Exact match
             row = teams[teams[name_col] == name]
-            if len(row) == 0:
-                # Try fuzzy: check if team name is contained in any team name
+            if len(row) > 0:
+                return row.iloc[0]
+
+            # 1b. Known alias lookup
+            alias = _TEAM_ALIASES.get(name.lower())
+            if alias:
                 for idx, team_val in teams[name_col].items():
-                    if name.lower() in str(team_val).lower() or str(team_val).lower() in name.lower():
+                    if alias in str(team_val).lower():
                         logger.warning(
                             f"[lambda-diag] Exact match failed for '{name}', "
-                            f"fuzzy matched '{team_val}' in col={name_col}"
+                            f"alias matched '{team_val}' (alias='{alias}') in col={name_col}"
                         )
                         return teams.loc[idx]
-                # Log sample team names for debugging
-                sample = list(teams[name_col].head(5))
+
+            # 2. Substring match (both directions)
+            for idx, team_val in teams[name_col].items():
+                tv = str(team_val).lower()
+                nl = name.lower()
+                if nl in tv or tv in nl:
+                    logger.warning(
+                        f"[lambda-diag] Exact match failed for '{name}', "
+                        f"fuzzy matched '{team_val}' (substring) in col={name_col}"
+                    )
+                    return teams.loc[idx]
+
+            # 3. Normalized exact match (strip FC/SC/AC etc.)
+            norm_name = _normalize_team_name(name)
+            for idx, team_val in teams[name_col].items():
+                if _normalize_team_name(str(team_val)) == norm_name:
+                    logger.warning(
+                        f"[lambda-diag] Exact match failed for '{name}', "
+                        f"normalized matched '{team_val}' in col={name_col}"
+                    )
+                    return teams.loc[idx]
+
+            # 4. Token overlap (>= 50% token match for multi-word names)
+            best_score = 0.0
+            best_idx = None
+            best_val = None
+            for idx, team_val in teams[name_col].items():
+                score = _token_match_score(name, str(team_val))
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+                    best_val = team_val
+            if best_score >= 0.5 and len(name) > 2:
                 logger.warning(
-                    f"[lambda-diag] Team '{name}' not found in {name_col}. "
-                    f"Sample teams: {sample}"
+                    f"[lambda-diag] Exact match failed for '{name}', "
+                    f"token matched '{best_val}' (score={best_score:.2f}) in col={name_col}"
                 )
-                return None
-            return row.iloc[0]
+                return teams.loc[best_idx]
+
+            # 5. Short name prefix match (for "AZ" -> "AZ Alkmaar", "NEC" -> "NEC Nijmegen")
+            if len(name) <= 4:
+                nl = name.lower()
+                for idx, team_val in teams[name_col].items():
+                    tv = str(team_val).lower()
+                    # Check if db name starts with the short name + space
+                    if tv.startswith(nl + " ") or tv.startswith(nl + "."):
+                        logger.warning(
+                            f"[lambda-diag] Exact match failed for '{name}', "
+                            f"prefix matched '{team_val}' in col={name_col}"
+                        )
+                        return teams.loc[idx]
+
+            sample = list(teams[name_col].head(5))
+            logger.warning(
+                f"[lambda-diag] Team '{name}' NOT FOUND after 5 strategies. "
+                f"norm='{norm_name}' Sample: {sample}"
+            )
+            return None
         def get_stat(row: Optional["pd.Series"], keys: List[str]) -> Optional[float]:
             if row is None:
                 return None

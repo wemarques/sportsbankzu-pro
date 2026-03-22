@@ -440,6 +440,14 @@ def evaluate_match_markets(
         ("3.5", "over35Prob", "under35Prob", "over35"),
         ("4.5", "over45Prob", "under45Prob", "over45"),
     ]:
+        # Diagnostic: trace which source _prob() uses (#063)
+        _dk = f"over{threshold.replace('.', '')}Prob"
+        _dk_alt = _dk.replace("Prob", "")
+        logger.warning(
+            f"[prob-trace] {home_team} vs {away_team} | {stat_over}: "
+            f"stats={stats.get(stat_over)} derived={derived.get(_dk)} "
+            f"derived_alt={derived.get(_dk_alt)} lamH={lambda_home} lamA={lambda_away}"
+        )
         # Over
         raw_over = _prob(stat_over, f"over{threshold.replace('.', '')}Prob")
         if raw_over is not None:

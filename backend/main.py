@@ -567,8 +567,8 @@ def expected_goals_v2(
     if xg_away is not None and xg_away > 0:
         lam_away = (1.0 - _xg_weight) * lam_away + _xg_weight * xg_away
 
-    lam_home = max(0.2, min(4.5, lam_home))
-    lam_away = max(0.2, min(4.5, lam_away))
+    lam_home = max(0.5, min(4.5, lam_home))
+    lam_away = max(0.5, min(4.5, lam_away))
 
     logger.info(
         "Lambda | Home: %.3f | Away: %.3f | Regime: %s",

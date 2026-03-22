@@ -3257,4 +3257,52 @@ A funcao `get_team_row()` fazia match EXATO (`teams[name_col] == name`). Como "E
 
 ---
 
+## 063 — EVs absurdos por LAMBDA_MIN=0.2 e falhas residuais de fuzzy match
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/services/fixtures_service.py`, `backend/modeling/lambda_calculator.py`, `backend/main.py`, `backend/services/ev_classification.py`
+**Severidade:** Critica
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogos como Argentinos vs Platense mostravam Draw=68-70% e Under 2.5=97-99%. Em Eliteserien, TODOS os times tinham lambdas identicos (1.053/1.08) — defaulting para media da liga. O fuzzy match simples do #062 (substring) nao resolvia times como PSG, NEC, Inter Milan, Rennes.
+
+### Causa raiz
+
+**Dupla:** (1) `LAMBDA_MIN=0.2` permitia lambdas irrealisticamente baixos (total lambda=0.42 gera P(draw)=68%), e (2) `get_team_row()` falhava para times cujo nome no CSV nao continha substring do nome da API (PSG vs "Paris Saint-Germain", NEC vs "N.E.C.", Inter Milan vs "Internazionale").
+
+### Correcoes aplicadas
+
+**Camada 1 — LAMBDA_MIN elevado (lambda_calculator.py + main.py):**
+- `LAMBDA_MIN = 0.2` -> `LAMBDA_MIN = 0.5` — nenhum time real marca menos de 0.5 gols/jogo em media
+- Aplicado em `calcular_lambda_dinamico()` e em `expected_goals_v2()` no main.py
+
+**Camada 2 — Fuzzy matching robusto com 6 estrategias (fixtures_service.py):**
+1. Exact match (ja existia)
+2. Alias lookup: `_TEAM_ALIASES` dict (PSG->paris saint-germain, NEC->n.e.c., Inter Milan->internazionale, Rennes->rennais)
+3. Substring match bidirecional (ja existia)
+4. Normalized match: `_normalize_team_name()` strip FC/SC/AC/FK, remove dots (N.E.C.->NEC)
+5. Token overlap: `_token_match_score()` >= 50% = match
+6. Short name prefix match: "AZ" -> "AZ Alkmaar"
+
+**Camada 3 — Diagnostico (ev_classification.py):**
+- `[prob-trace]` log mostrando derived vs stats para cada mercado O/U
+
+### Verificacao pos-deploy
+
+- PL: lambdas variam (Newcastle 1.558/0.839, Tottenham 1.316/1.185)
+- Brasileirao: todos os times matched (Corinthians->SC Corinthians Paulista, Flamengo->CR Flamengo)
+- Bundesliga: Mainz 05->1. FSV Mainz 05 (substring)
+- Zero teams "NOT FOUND" em CloudWatch
+- Draw probabilities normalizadas (24-28% para PL)
+- EVs capped a 40% quando prob/odds mismatch detectado
+
+### Licao aprendida
+
+- `LAMBDA_MIN` deve refletir limites realisticos do futebol (nenhum time marca < 0.5 gols/jogo de media). O floor anterior de 0.2 era matematicamente possivel mas nao realistico.
+- Fuzzy matching de nomes de times precisa de multiplas estrategias porque fontes de dados (API-Football, FootyStats, odds providers) usam convencoes diferentes. Substring sozinho nao basta.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

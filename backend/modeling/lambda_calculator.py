@@ -29,7 +29,7 @@ PESOS_LAMBDA = {
 }
 
 # Limites de Lambda (segurança)
-LAMBDA_MIN = 0.2
+LAMBDA_MIN = 0.5  # #063: no real team scores < 0.5 goals/game on average
 LAMBDA_MAX = 4.5
 FATOR_DEFESA_MIN_HIPER = 0.90
 
