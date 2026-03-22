@@ -3363,4 +3363,48 @@ Cenarios esperados:
 
 ---
 
+## 065 — Ligas desaparecendo do dashboard por timeout silencioso no fan-out batching
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `frontend/next/src/lib/api.ts`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Ligas como brazil-serie-a, brazil-serie-b, england-league-one e england-league-two pararam de aparecer no dashboard. Backend responde normalmente quando chamado diretamente. Logs do Vercel mostram zero chamadas para essas ligas nas ultimas 6h. Erros 504 esporadicos persistem.
+
+### Causa raiz
+
+O fan-out batching agrupava 5 ligas por batch. Com a ordem do `AVAILABLE_LEAGUES`, as ligas pesadas (Premier League, Championship, League One, League Two) ficavam no batch 1, e as brasileiras (Serie A, Serie B) no batch 2. Com Lambda cold start (~10-20s) + 5 ligas em paralelo (~8-15s), o tempo total (~18-35s) excedia o hard limit de 30s do API Gateway, causando 504.
+
+O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Vercel. Como mais de 50% dos batches (3-8) succedem, o erro era suprimido silenciosamente pelo merge de resultados — o dashboard mostrava jogos das ligas que respondiam mas omitia as que falhavam sem nenhum indicador visual.
+
+### Correcoes aplicadas (3 camadas)
+
+**Camada 1 — Reducao do batch size (api.ts):**
+- `LEAGUES_PER_BATCH`: 5 → 3 (cada batch processa menos ligas, fica bem abaixo do limite de 30s do API Gateway)
+- `MAX_CONCURRENT`: 3 → 4 (compensa o aumento de batches mantendo throughput)
+
+**Camada 2 — Retry individual de batches falhados (api.ts):**
+- Apos o fan-out inicial, identifica batches que falharam (rejected ou erro retryable com 0 matches)
+- Retenta as ligas desses batches individualmente (1 liga por chamada) com o mesmo MAX_CONCURRENT
+- Substitui o resultado do batch falhado pelo merge dos retries individuais
+- Resultado: mesmo que o batch com 3 ligas falhe, cada liga e retentada sozinha (~5-10s, bem dentro do timeout)
+
+**Camada 3 — Logging detalhado por batch (api.ts):**
+- Log de composicao de cada batch antes do fetch
+- Log de resultado (OK/FAIL) de cada batch com count de matches e erro
+- Log de retries individuais com resultado por liga
+- Log final com total de matches e count de batches falhados
+- Permite diagnostico rapido via logs do Vercel
+
+### Licao aprendida
+
+- Fan-out batching com suppression de erro parcial pode esconder falhas silenciosamente. Quando >50% dos batches succedem, o dashboard parece funcional mas esta incompleto. O retry individual de batches falhados e essencial para garantir que timeouts intermitentes nao causem perda permanente de ligas.
+- O batch size deve considerar o elo mais fraco da timeout chain (API Gateway 30s), nao apenas o timeout do fetch client (35s).
+- Logging por batch e critico para diagnosticar falhas parciais em producao — sem ele, a unica evidencia e a ausencia de dados no dashboard.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
