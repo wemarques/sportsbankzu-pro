@@ -597,12 +597,28 @@ def build_records_from_matches(
             return float(val) if val is not None and val > 0 else default
         def get_team_row(name: str) -> Optional["pd.Series"]:
             if teams is None:
+                logger.warning(f"[lambda-diag] teams DataFrame is None for league={league_id}")
                 return None
             name_col = pick_column(teams, ["team_name", "team", "name", "club"])
             if not name_col:
+                logger.warning(f"[lambda-diag] no name column found in teams. cols={list(teams.columns)[:10]}")
                 return None
             row = teams[teams[name_col] == name]
             if len(row) == 0:
+                # Try fuzzy: check if team name is contained in any team name
+                for idx, team_val in teams[name_col].items():
+                    if name.lower() in str(team_val).lower() or str(team_val).lower() in name.lower():
+                        logger.warning(
+                            f"[lambda-diag] Exact match failed for '{name}', "
+                            f"fuzzy matched '{team_val}' in col={name_col}"
+                        )
+                        return teams.loc[idx]
+                # Log sample team names for debugging
+                sample = list(teams[name_col].head(5))
+                logger.warning(
+                    f"[lambda-diag] Team '{name}' not found in {name_col}. "
+                    f"Sample teams: {sample}"
+                )
                 return None
             return row.iloc[0]
         def get_stat(row: Optional["pd.Series"], keys: List[str]) -> Optional[float]:
