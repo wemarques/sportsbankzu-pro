@@ -450,6 +450,14 @@ def evaluate_match_markets(
         odds.get("home") and odds.get("draw") and odds.get("away")
         and float(odds.get("home", 0)) > 1.0
     )
+    # Diagnostic: trace 1X2 source (#064)
+    logger.warning(
+        f"[prob-trace][1X2] {home_team} vs {away_team} | "
+        f"has_odds={_1x2_has_odds} "
+        f"stats[homeWinProb]={stats.get('homeWinProb')} "
+        f"derived[homeWinProb]={derived.get('homeWinProb')} "
+        f"odds={{h={odds.get('home')},d={odds.get('draw')},a={odds.get('away')}}}"
+    )
     for selection, stat_key, derived_key, odd_key in [
         ("Home", "homeWinProb", "homeWinProb", "home"),
         ("Draw", "drawProb", "drawProb", "draw"),
@@ -571,10 +579,15 @@ def evaluate_match_markets(
         )
         markets.append(classify_market(mo, league_id=league_id))
 
-    # Double Chance (derived from 1X2)
-    home_prob = _prob("homeWinProb", "homeWinProb")
-    draw_prob = _prob("drawProb", "drawProb")
-    away_prob = _prob("awayWinProb", "awayWinProb")
+    # Double Chance (derived from 1X2 — use same source priority as 1X2 #064)
+    if _1x2_has_odds:
+        home_prob = _prob("homeWinProb")
+        draw_prob = _prob("drawProb")
+        away_prob = _prob("awayWinProb")
+    else:
+        home_prob = _prob("homeWinProb", "homeWinProb")
+        draw_prob = _prob("drawProb", "drawProb")
+        away_prob = _prob("awayWinProb", "awayWinProb")
 
     if home_prob is not None and draw_prob is not None:
         dc_1x = home_prob + draw_prob
@@ -628,16 +641,29 @@ def evaluate_match_markets(
         raw = gov_line.get("probability")
 
         # Fallback to legacy corner_probs or FootyStats stat
+        _corner_source = "v2_governed" if raw is not None else None
         if raw is None:
             raw = corner_probs.get(line_key)
+            if raw is not None:
+                _corner_source = "legacy_engine"
         if raw is None:
             stat_key = _FOOTYSTATS_STAT_MAP.get(line_val)
             if stat_key:
                 raw = _prob(stat_key)
+                if raw is not None:
+                    _corner_source = "footystats_raw"
         if raw is None:
             continue
 
         threshold_label = f"Over {line_val}"
+
+        # Diagnostic: trace corner probability source (#064)
+        logger.warning(
+            f"[prob-trace][corners] {home_team} vs {away_team} | "
+            f"line={line_val} source={_corner_source} raw={raw:.3f} "
+            f"v2={gov_line.get('probability')} legacy={corner_probs.get(line_key)}"
+        )
+
         calibrated = calibrate_prob(raw, f"Escanteios {threshold_label}", league_id, regime)
 
         # Odds: try v2 book_odd_over, then FootyStats odds key
