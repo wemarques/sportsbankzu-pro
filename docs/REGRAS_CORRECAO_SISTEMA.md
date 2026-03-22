@@ -3443,7 +3443,7 @@ Cenarios esperados:
 
 ## 065 — Fallback de temporada anterior para ligas com dados insuficientes
 
-**Commit:** `bdfa001`
+**Commit:** `a967728`
 **Data:** 2026-03-22
 **Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/fixtures_service.py`, `backend/modeling/lambda_calculator.py`
 **Severidade:** Alta
