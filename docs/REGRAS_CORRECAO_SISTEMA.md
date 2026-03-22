@@ -3220,4 +3220,41 @@ Seguir Regra de Investigação #2 (trace o fluxo completo) até o VALOR FINAL: n
 
 ---
 
+## 062 — Fix: team name mismatch entre league-teams e league-matches (causa raiz dos EVs absurdos)
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/services/fixtures_service.py`
+**Severidade:** CRITICA
+**Status:** Corrigido
+
+### Problema identificado
+
+TODOS os jogos de uma liga tinham lambdas IDENTICOS (ex: Premier League: lamH=1.025, lamA=0.964 para todos os 5 jogos). Isso gerava probabilidades Poisson identicas e EVs absurdos (50-200%+).
+
+### Causa raiz
+
+O FootyStats retorna nomes de times diferentes entre endpoints:
+- `league-teams`: "Everton FC", "Chelsea FC", "Liverpool FC", "Cuiaba EC"
+- `league-matches`/`todays-matches`: "Everton", "Chelsea", "Liverpool", "Cuiaba"
+
+A funcao `get_team_row()` fazia match EXATO (`teams[name_col] == name`). Como "Everton" != "Everton FC", o lookup falhava silenciosamente para TODOS os times, e os lambdas caiam para defaults da liga (1.025/0.964), resultando em lambdas identicos para todos os jogos.
+
+### Correcoes aplicadas
+
+1. Fuzzy match como fallback: quando match exato falha, tenta `name.lower() in team_val.lower()` (substring match)
+2. Logging `[lambda-diag]` em WARNING para monitorar matches fuzzy ativados
+3. Se fuzzy tambem falha, loga sample de nomes para debugging
+
+### Resultado
+
+- **Antes:** lamH=1.025 lamA=0.964 para TODOS os 5 jogos da PL
+- **Depois:** Everton vs Chelsea (1.086/1.574), Man City vs Palace (1.663/0.640), Fulham vs Burnley (2.455/0.957) — valores unicos por jogo
+
+### Licao aprendida
+
+- NUNCA assumir que nomes de times sao consistentes entre endpoints de uma mesma API. O FootyStats usa "Everton FC" no endpoint `league-teams` mas "Everton" no `todays-matches`. Sempre implementar fuzzy/substring matching para dados de times.
+- Quando TODOS os valores de uma metrica sao identicos, a causa mais provavel e fallback para defaults — investigar se o lookup de dados falha silenciosamente.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
