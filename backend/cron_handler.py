@@ -101,6 +101,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     brier_scores = []
     ev_values = []
     match_results = []
+    # Per-league tracking for BUG #069: Brier/SAFE/lambda were global-only
+    league_metrics: dict[str, dict] = {}
 
     for m in finished_matches:
         home = team_name(m.get("homeTeam", ""))
@@ -244,17 +246,23 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             except Exception as _log_err:
                 logger.debug(f"[Gap3] Could not log pick {merc_name}: {_log_err}")
 
-        lambda_total = stats.get("lambdaTotal") or (
-            (stats.get("lambdaHome") or 0) + (stats.get("lambdaAway") or 0)
-        )
-        if lambda_total and lambda_total > 0:
-            lambda_errors.append(abs(lambda_total - total_goals))
+        # Lambda error: per-team deltas (BUG #069 fix — was |λ_total - total_goals|)
+        lh = stats.get("lambdaHome")
+        la = stats.get("lambdaAway")
+        match_lambda_err = None
+        if lh is not None and la is not None:
+            try:
+                match_lambda_err = abs(float(lh) - home_goals) + abs(float(la) - away_goals)
+                lambda_errors.append(match_lambda_err)
+            except (ValueError, TypeError):
+                pass
 
         over25_prob = stats.get("over25Prob")
+        match_brier = None
         if over25_prob is not None:
             actual_over25 = 1 if total_goals > 2.5 else 0
-            brier = (over25_prob / 100.0 - actual_over25) ** 2
-            brier_scores.append(brier)
+            match_brier = (over25_prob / 100.0 - actual_over25) ** 2
+            brier_scores.append(match_brier)
 
         match_results.append({
             "match_id": m.get("id", ""),
@@ -265,6 +273,28 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             "picks_correct": match_correct,
             "picks_total": match_total,
         })
+
+        # Accumulate per-league metrics (#069)
+        if league:
+            lm = league_metrics.setdefault(league, {
+                "correct": 0, "total": 0,
+                "safe_correct": 0, "safe_total": 0,
+                "brier_scores": [], "lambda_errors": [],
+            })
+            lm["correct"] += match_correct
+            lm["total"] += match_total
+            if match_brier is not None:
+                lm["brier_scores"].append(match_brier)
+            if match_lambda_err is not None:
+                lm["lambda_errors"].append(match_lambda_err)
+            # Per-league SAFE: count picks classified as SAFE for this match
+            for merc in mercados:
+                ms = merc.get("status", merc.get("pick_type", "NEUTRO"))
+                if ms == "SAFE":
+                    lm["safe_total"] += 1
+                    pick_d = {"mercado": merc.get("mercado", merc.get("market", ""))}
+                    if _evaluate_pick_deterministic(pick_d, actual_result):
+                        lm["safe_correct"] += 1
 
     # ── Dupla (combinada) accuracy: INTRA and INTER ──
     # Build actual_result lookup by match ID for leg evaluation
@@ -362,6 +392,23 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             f"{mr['picks_correct']}/{mr['picks_total']} acertos"
         )
 
+    # Build per-league accuracy text (#069: was missing — Brier/SAFE were global-only)
+    league_accuracy_lines = []
+    for lg_name in sorted(league_metrics):
+        lm = league_metrics[lg_name]
+        lg_acc = (lm["correct"] / lm["total"] * 100.0) if lm["total"] > 0 else 0.0
+        lg_brier = sum(lm["brier_scores"]) / len(lm["brier_scores"]) if lm["brier_scores"] else None
+        lg_lambda = sum(lm["lambda_errors"]) / len(lm["lambda_errors"]) if lm["lambda_errors"] else None
+        lg_safe_acc = (lm["safe_correct"] / lm["safe_total"] * 100.0) if lm["safe_total"] > 0 else None
+        parts = [f"{lg_name}: {lm['correct']}/{lm['total']} ({lg_acc:.1f}%)"]
+        if lg_brier is not None:
+            parts.append(f"Brier={lg_brier:.4f}")
+        if lg_lambda is not None:
+            parts.append(f"λErr={lg_lambda:.2f}")
+        if lg_safe_acc is not None:
+            parts.append(f"SAFE={lm['safe_correct']}/{lm['safe_total']}({lg_safe_acc:.0f}%)")
+        league_accuracy_lines.append("- " + ", ".join(parts))
+
     batch_summary = {
         "total_audited": len(match_results),
         "overall_correct": overall_correct,
@@ -377,6 +424,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "avg_lambda_error": avg_lambda_error,
         "avg_ev": avg_ev,
         "market_accuracy_text": "\n".join(market_accuracy_list) or "Sem dados",
+        "league_accuracy_text": "\n".join(league_accuracy_lines) or "Sem dados",
         "matches_summary_text": "\n".join(matches_summary_lines) or "Sem detalhes",
         "dupla_intra_correct": dupla_stats["intra"]["correct"],
         "dupla_intra_total": dupla_stats["intra"]["total"],

@@ -3575,4 +3575,51 @@ CornerProgressBar nunca aparecia em jogos ao vivo apesar do codigo estar present
 
 ---
 
+## 069 — Fix auditoria: Brier/SAFE/lambda per-league + CSS placeholder + lambda formula
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/cron_handler.py`, `backend/ai/prompt_templates.py`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+
+Tres bugs na auditoria batch e um bug visual no frontend:
+
+1. **Brier identico para todas as ligas:** `avg_brier` era calculado como media global unica (cron_handler.py:348) e passado ao prompt Mistral como valor singular. Mistral repetia o valor global em cada linha da tabela per-league.
+2. **SAFE global = 0.0% mas ligas mostram 50-100%:** `safe_total` so conta picks com `status == "SAFE"` (cron_handler.py:187). Com circuit breaker #043 ativo, nenhum pick tem status SAFE → `safe_accuracy_pct = 0.0`. Mistral gerava valores per-league inventados a partir de `matches_summary_text`.
+3. **Lambda erro 1.42 com formula imprecisa:** Usava `|lambda_total - total_goals|` (uma comparacao por jogo). A formula correta e `|lambda_home - goals_home| + |lambda_away - goals_away|` (per-team, conforme backtesting.py:138).
+4. **Placeholder CornerProgressBar sem espacamento:** `.cpb-root` tinha `display: block !important` que sobrescrevia o `display: flex` do `.cpb-placeholder`, resultando em texto colado "ESCANTEIOSLimite: 9Aguardando dados...".
+
+### Causa raiz
+
+`_run_batch_audit()` acumulava metricas apenas em listas globais (`brier_scores`, `lambda_errors`, `safe_total/safe_correct`). Nao havia `league_metrics` dict para acumular per-league. O prompt template so recebia `avg_brier_score` como numero unico.
+
+### Correcoes aplicadas
+
+**BUG 1 — Brier per-league (cron_handler.py + prompt_templates.py):**
+- Adicionado `league_metrics` dict que acumula `brier_scores`, `lambda_errors`, `correct/total`, `safe_correct/safe_total` por liga
+- Gerado `league_accuracy_text` com Brier, lambda error e SAFE per-league
+- Adicionado ao `batch_summary` e ao prompt template como secao "ACURACIA POR LIGA"
+
+**BUG 2 — SAFE per-league (cron_handler.py):**
+- Per-league SAFE accuracy agora e acumulada em `league_metrics[league]["safe_correct/safe_total"]`
+- Inclusa no `league_accuracy_text` quando `safe_total > 0`
+- O global `safe_accuracy_pct` continua correto (0.0% quando circuit breaker ativo)
+
+**BUG 3 — Lambda formula (cron_handler.py):**
+- Substituido `abs(lambda_total - total_goals)` por `abs(lambda_home - goals_home) + abs(lambda_away - goals_away)`
+- Consistente com `compute_lambda_error()` em backtesting.py:138
+
+**BUG 4 — CSS placeholder (match-detail-card.css):**
+- `.cpb-root.cpb-placeholder` agora tem `display: flex !important` para sobrescrever o `!important` de `.cpb-root`
+
+### Licao aprendida
+
+- Quando o prompt para a AI so contem metricas globais, a AI inventa valores per-league. Fornecer dados reais per-league no prompt e essencial para relatorios corretos.
+- Formulas de erro devem ser consistentes entre modulos (cron vs backtesting). A formula per-team (`|λh-gh| + |λa-ga|`) captura desvios que a formula total (`|λt-gt|`) mascara por cancelamento.
+- CSS `!important` em seletores base (`.cpb-root`) impede que modificadores (`.cpb-placeholder`) funcionem sem seu proprio `!important`.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

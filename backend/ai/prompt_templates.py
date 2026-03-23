@@ -205,6 +205,9 @@ class PromptTemplates:
         ACURACIA POR MERCADO:
         {batch_data.get("market_accuracy_text", "Sem dados")}
 
+        ACURACIA POR LIGA (Brier, lambda erro e SAFE calculados POR LIGA):
+        {batch_data.get("league_accuracy_text", "Sem dados")}
+
         DETALHES DOS JOGOS (resumo):
         {batch_data.get("matches_summary_text", "Sem dados")}
 

@@ -2237,7 +2237,7 @@
 }
 
 .cpb-root.cpb-placeholder {
-  display: flex;
+  display: flex !important;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
