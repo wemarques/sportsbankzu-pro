@@ -3489,7 +3489,7 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 **Data:** 2026-03-22
 **Commit:** `f33262d`
-**Nota (numeracao):** A mensagem de commit pode citar **(#069)**; neste ficheiro existe **apenas esta secao #067** (sequencia apos #066). **Nao** adicionar uma segunda entrada `## 069` com o mesmo conteudo — seria duplicata.
+**Nota (historico):** O commit `f33262d` pode citar **(#069)** na mensagem Git; **neste documento** esse pacote (live-scores/proxy/Unicode) esta como **#067**. A secao **#069** abaixo e **outra** correcao (auditoria Brier/SAFE/lambda, commit `832c0a8`).
 **Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
 **Severidade:** Critica (Fix 1), Alta (Fix 2), Media (Fix 3), Baixa (Fix 4), Diagnostico (Fix 5)
 **Status:** Implementado
@@ -3508,7 +3508,7 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 **Fix 3 — Unicode literal em JSX:**
 - `m\u00EDn` em texto JSX renderizava literalmente "m\u00EDn" em vez de "mín"
-- Substituido por UTF-8 direto (`min`) em todas as 3 ocorrencias
+- Substituido por UTF-8 direto (`mín`) em todas as 3 ocorrencias
 
 **Fix 4 — Odds 0.00 em jogos finalizados:**
 - Odds removidas pos-jogo chegam como 0; `.toFixed(2)` mostrava "0.00"
@@ -3621,6 +3621,8 @@ Tres bugs na auditoria batch e um bug visual no frontend:
 - Quando o prompt para a AI so contem metricas globais, a AI inventa valores per-league. Fornecer dados reais per-league no prompt e essencial para relatorios corretos.
 - Formulas de erro devem ser consistentes entre modulos (cron vs backtesting). A formula per-team (`|λh-gh| + |λa-ga|`) captura desvios que a formula total (`|λt-gt|`) mascara por cancelamento.
 - CSS `!important` em seletores base (`.cpb-root`) impede que modificadores (`.cpb-placeholder`) funcionem sem seu proprio `!important`.
+
+**Registo documentacao:** commit `4b41af5` — acrescentados SHAs **#068** (`441c531`) e **#069** (`832c0a8`) aos cabecalhos das respetivas seccoes.
 
 ---
 
