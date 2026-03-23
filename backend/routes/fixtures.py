@@ -1311,7 +1311,20 @@ def live_scores() -> Dict[str, Any]:
             away_name = team_name(m.get("away_name") or m.get("awayTeam") or "").strip()
 
             _raw_id = m.get("id")
-            result.append({
+
+            # FootyStats corner data (#070 — was never read in /live-scores)
+            _fs_hc = m.get("team_a_corners")
+            _fs_ac = m.get("team_b_corners")
+            _fs_corners: int | None = None
+            if _fs_hc is not None and _fs_ac is not None:
+                try:
+                    _fhc, _fac = int(_fs_hc), int(_fs_ac)
+                    if _fhc >= 0 and _fac >= 0:
+                        _fs_corners = _fhc + _fac
+                except (ValueError, TypeError):
+                    pass
+
+            _rec: Dict[str, Any] = {
                 "id": int(_raw_id) if _raw_id is not None else None,
                 "homeTeam": home_name,
                 "awayTeam": away_name,
@@ -1323,7 +1336,10 @@ def live_scores() -> Dict[str, Any]:
                 # Observability fields
                 "scoreSourceFinal": _score_source,
                 "scoreConflictDetected": _score_conflict,
-            })
+            }
+            if _fs_corners is not None:
+                _rec["currentCorners"] = _fs_corners
+            result.append(_rec)
         if skipped_statuses:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
 
@@ -1477,6 +1493,12 @@ def live_scores() -> Dict[str, Any]:
                                     logger.info(f"[live-scores] corners fallback failed fixture_id={_fx_id}: {_stat_err}")
                         if _corners is not None:
                             rec["currentCorners"] = _corners
+                        elif rec.get("currentCorners") is None:
+                            # Camada 2 (#070): warn when no corner source found for live match
+                            logger.warning(
+                                f"[live-scores][corners] No corner data for live match "
+                                f"{rh} vs {ra} (AF=none, FS pre-enrich=none)"
+                            )
 
                         _af_enriched += 1
 
