@@ -332,6 +332,17 @@ function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | n
   }
 }
 
+/** Minutes elapsed since kickoff (null if in the future or invalid). */
+function elapsedMinutes(datetime: string): number | null {
+  try {
+    const diff = Date.now() - new Date(datetime).getTime();
+    if (diff <= 0) return null;
+    return Math.floor(diff / 60_000);
+  } catch {
+    return null;
+  }
+}
+
 /** Minutes until match kickoff (null if already started). */
 function minutesToKickoff(datetime: string): number | null {
   try {
@@ -752,94 +763,145 @@ export default function Dashboard() {
     liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
   }, [allMatches]);
 
+  // Track consecutive live-score failures for retry backoff (#071 Camada 3)
+  const liveScoreFailCountRef = useRef(0);
+
   const fetchLiveScores = useCallback(async () => {
     try {
       // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
       const leagues = liveLeagueIdsRef.current;
       const qs = leagues ? `?leagues=${encodeURIComponent(leagues)}` : "";
       const res = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
-      if (!res.ok) return;
+
+      // Camada 3 (#071): retry on 503 with backoff instead of silencing
+      if (!res.ok) {
+        if (res.status === 503) {
+          liveScoreFailCountRef.current++;
+          const delay = Math.min(3000 * liveScoreFailCountRef.current, 15_000);
+          console.warn(`[live-scores] 503 — retry #${liveScoreFailCountRef.current} in ${delay}ms`);
+          await new Promise((r) => setTimeout(r, delay));
+          const retry = await fetch(`/api/matches/live${qs}`, { cache: "no-store" });
+          if (!retry.ok) return;
+          const retryData = await retry.json();
+          const retryList = retryData.matches ?? [];
+          if (retryList.length > 0) {
+            liveScoreFailCountRef.current = 0;
+            // Fall through to merge logic below via recursive-like pattern
+            mergeLiveOverlay(retryList);
+            return;
+          }
+        }
+        return;
+      }
+
+      liveScoreFailCountRef.current = 0;
       const data = await res.json();
       const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
-      if (liveList.length === 0) return;
+
+      // Camada 2 (#071): when liveList is empty but we have "live" matches in state,
+      // check elapsed time — game probably ended and left the live feed
+      if (liveList.length === 0) {
+        setAllMatches((prev) => {
+          let changed = false;
+          const updated = prev.map((m) => {
+            if (m.status !== "live") return m;
+            const elapsed = elapsedMinutes(m.datetime);
+            if (elapsed !== null && elapsed > 100) {
+              console.log(`[live-scores] Auto-finish: ${m.homeTeam.name} vs ${m.awayTeam.name} (elapsed=${elapsed}min, gone from live feed)`);
+              changed = true;
+              return { ...m, status: "finished" as const };
+            }
+            return m;
+          });
+          return changed ? updated : prev;
+        });
+        return;
+      }
+
       // Diagnostic: log live overlay data
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
         console.log(`[live-scores] Overlay: ${liveList.length} matches`, liveList.map((lm) => `${lm.homeTeam} ${lm.score?.home}-${lm.score?.away} ${lm.awayTeam} (id=${lm.id})`));
       }
-      setAllMatches((prev) => {
-        let changed = false;
-        let matched = 0;
-        let unmatched = 0;
-        const updated = prev.map((m) => {
-          const live = liveList.find((lm) => {
-            // Match by FootyStats ID (coerce to number for safe comparison)
-            if (m.footystatsId != null && lm.id != null) {
-              if (Number(m.footystatsId) === Number(lm.id)) return true;
-            }
-            // Fallback: alias-resolved + normalized team name comparison
-            const mHome = resolveTeamAlias(m.homeTeam.name);
-            const mAway = resolveTeamAlias(m.awayTeam.name);
-            const lHome = resolveTeamAlias(lm.homeTeam);
-            const lAway = resolveTeamAlias(lm.awayTeam);
-            if (mHome === lHome && mAway === lAway) return true;
-            // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
-            if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
-                lAway && mAway && (mAway.includes(lAway) || lAway.includes(mAway))) return true;
-            return false;
-          });
-          if (!live) return m;
-          matched++;
-          const newStatus = live.status as Match["status"];
-          // When score is null/undefined from overlay (missing goal data),
-          // keep existing score but still update status/period/minute.
-          // If existing score is also missing for a live match, default to 0-0.
-          const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
-          let liveScore = m.score;
-          if (hasLiveScore) {
-            const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) ?? 0;
-            const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) ?? 0;
-            // Guard: never overwrite a non-zero score with 0-0 from live overlay
-            const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
-            const liveTotal = liveScoreHome + liveScoreAway;
-            const useExistingScore = existingTotal > 0 && liveTotal === 0;
-            liveScore = useExistingScore
-              ? m.score!
-              : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
-          } else if (!liveScore && newStatus === "live") {
-            // Overlay has no score AND existing has no score — safe 0-0 fallback
-            // so the card never shows "- : -" for a confirmed live match.
-            console.warn(`[live-scores] No score data for live match ${live.homeTeam} vs ${live.awayTeam}, using 0-0 fallback`);
-            liveScore = { home: 0, away: 0 };
-          }
-          const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
-          const statusChanged = m.status !== newStatus;
-          const periodChanged = m.period !== (live.period as Match["period"]);
-          const minuteChanged = m.minute !== live.minute;
-          const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
-          if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
-          changed = true;
-          if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
-            console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
-          }
-          return {
-            ...m,
-            status: newStatus,
-            score: liveScore,
-            period: live.period as Match["period"],
-            minute: live.minute,
-            ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
-          };
-        });
-        unmatched = liveList.length - matched;
-        if (unmatched > 0) {
-          console.warn(`[live-scores] ${matched} matched, ${unmatched} unmatched from overlay`);
-        }
-        return changed ? updated : prev;
-      });
-    } catch {
-      // Silently ignore live score fetch errors
+      mergeLiveOverlay(liveList);
+    } catch (err) {
+      // Camada 3 (#071): log the error instead of silencing
+      console.warn("[live-scores] fetch error:", err instanceof Error ? err.message : err);
     }
   }, []);
+
+  /** Merge live overlay data into allMatches state */
+  function mergeLiveOverlay(liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }>) {
+    setAllMatches((prev) => {
+      let changed = false;
+      let matched = 0;
+      let unmatched = 0;
+      const updated = prev.map((m) => {
+        const live = liveList.find((lm) => {
+          // Match by FootyStats ID (coerce to number for safe comparison)
+          if (m.footystatsId != null && lm.id != null) {
+            if (Number(m.footystatsId) === Number(lm.id)) return true;
+          }
+          // Fallback: alias-resolved + normalized team name comparison
+          const mHome = resolveTeamAlias(m.homeTeam.name);
+          const mAway = resolveTeamAlias(m.awayTeam.name);
+          const lHome = resolveTeamAlias(lm.homeTeam);
+          const lAway = resolveTeamAlias(lm.awayTeam);
+          if (mHome === lHome && mAway === lAway) return true;
+          // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
+          if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
+              lAway && mAway && (mAway.includes(lAway) || lAway.includes(mAway))) return true;
+          return false;
+        });
+        if (!live) return m;
+        matched++;
+        const newStatus = live.status as Match["status"];
+        // When score is null/undefined from overlay (missing goal data),
+        // keep existing score but still update status/period/minute.
+        // If existing score is also missing for a live match, default to 0-0.
+        const hasLiveScore = live.score != null && (live.score.home != null || live.score.away != null);
+        let liveScore = m.score;
+        if (hasLiveScore) {
+          const liveScoreHome = typeof live.score?.home === "number" ? live.score.home : Number(live.score?.home) ?? 0;
+          const liveScoreAway = typeof live.score?.away === "number" ? live.score.away : Number(live.score?.away) ?? 0;
+          // Guard: never overwrite a non-zero score with 0-0 from live overlay
+          const existingTotal = (m.score?.home ?? 0) + (m.score?.away ?? 0);
+          const liveTotal = liveScoreHome + liveScoreAway;
+          const useExistingScore = existingTotal > 0 && liveTotal === 0;
+          liveScore = useExistingScore
+            ? m.score!
+            : { home: liveScoreHome, away: liveScoreAway, halftime: live.score?.halftime };
+        } else if (!liveScore && newStatus === "live") {
+          // Overlay has no score AND existing has no score — safe 0-0 fallback
+          // so the card never shows "- : -" for a confirmed live match.
+          console.warn(`[live-scores] No score data for live match ${live.homeTeam} vs ${live.awayTeam}, using 0-0 fallback`);
+          liveScore = { home: 0, away: 0 };
+        }
+        const scoreChanged = liveScore?.home !== m.score?.home || liveScore?.away !== m.score?.away;
+        const statusChanged = m.status !== newStatus;
+        const periodChanged = m.period !== (live.period as Match["period"]);
+        const minuteChanged = m.minute !== live.minute;
+        const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
+        if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
+        changed = true;
+        if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
+          console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
+        }
+        return {
+          ...m,
+          status: newStatus,
+          score: liveScore,
+          period: live.period as Match["period"],
+          minute: live.minute,
+          ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+        };
+      });
+      unmatched = liveList.length - matched;
+      if (unmatched > 0) {
+        console.warn(`[live-scores] ${matched} matched, ${unmatched} unmatched from overlay`);
+      }
+      return changed ? updated : prev;
+    });
+  }
 
   /* Fetch all leagues — fallback to "week" if today returns empty */
   useEffect(() => {
@@ -946,6 +1008,29 @@ export default function Dashboard() {
       setAllMatches((prev) => (prev.length ? [...prev] : prev));
     }, 30_000);
     return () => clearInterval(tick);
+  }, [hasLiveMatches]);
+
+  // Camada 1 (#071): safety timeout — if a match stays "live" for > 120min
+  // since kickoff, mark as finished locally. Checks every 60s.
+  useEffect(() => {
+    if (!hasLiveMatches) return;
+    const timer = setInterval(() => {
+      setAllMatches((prev) => {
+        let changed = false;
+        const updated = prev.map((m) => {
+          if (m.status !== "live") return m;
+          const elapsed = elapsedMinutes(m.datetime);
+          if (elapsed !== null && elapsed > 120) {
+            console.log(`[live-scores] Safety timeout: ${m.homeTeam.name} vs ${m.awayTeam.name} (elapsed=${elapsed}min > 120)`);
+            changed = true;
+            return { ...m, status: "finished" as const };
+          }
+          return m;
+        });
+        return changed ? updated : prev;
+      });
+    }, 60_000);
+    return () => clearInterval(timer);
   }, [hasLiveMatches]);
 
   const selectedMatch = useMemo(() => allMatches.find((m) => m.id === selectedMatchId), [allMatches, selectedMatchId]);
