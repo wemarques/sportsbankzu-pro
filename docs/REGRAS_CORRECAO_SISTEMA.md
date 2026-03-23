@@ -3441,65 +3441,7 @@ Cenarios esperados:
 
 ---
 
-## 065 — Fallback de temporada anterior para ligas com dados insuficientes
-
-**Commit:** `a967728`
-**Data:** 2026-03-22
-**Arquivos afetados:** `backend/routes/fixtures.py`, `backend/services/fixtures_service.py`, `backend/modeling/lambda_calculator.py`
-**Severidade:** Alta
-**Status:** Implementado
-
-### Problema identificado
-
-Ligas com temporada recem-iniciada (Argentina, Eliteserien, MLS) tinham times com 0-4 jogos na temporada atual. Os stats (gols/jogo, gols sofridos/jogo) eram proximos de zero, resultando em lambdas calculados abaixo de 0.5 e sendo "floored" pelo LAMBDA_MIN. Isso gerava probabilidades Poisson incorretas para todos os mercados.
-
-Exemplos reais (CloudWatch):
-- Argentina: Argentinos Juniors, Platense, River Plate — todos com lambda=0.5 (floor)
-- Eliteserien: 4/6 times defaultando para media da liga (1.053/1.08)
-- MLS: Montreal, Seattle — no floor
-
-### Causa raiz
-
-`_process_single_league()` so carregava a temporada atual via `resolve_season_id()` (singular). Para temporadas recem-iniciadas, `matches_played` era 0-4, gerando stats insuficientes para o modelo Dixon-Coles.
-
-### Correcoes aplicadas
-
-**Camada 1 — Regressao Bayesiana (lambda_calculator.py):**
-- Quando `games_played < 5`, regride `ataque_ponderado` em direcao a media da liga
-- Formula: `weight = games_played / 5.0`, `ataque = ataque * weight + media_liga * (1 - weight)`
-- Defesa em profundidade: funciona mesmo sem dados de temporada anterior
-
-**Camada 2 — Blending de temporada anterior (fixtures_service.py):**
-- `_find_team_in_df()`: matching de 6 estrategias reutilizavel para qualquer DataFrame
-- `_blend_row()`: combina stats da temporada atual com anterior, peso proporcional a `matches_played / 5`
-- Aplicado no ponto de extracao de `home_row`/`away_row` em `build_records_from_matches()`
-- Se `matches_played < 5` e `teams2` disponivel, busca time na temporada anterior e faz blend
-
-**Camada 3 — Carga de temporada anterior (fixtures.py):**
-- `resolve_season_id()` substituido por `resolve_season_ids(n_seasons=2)`
-- Se >30% dos times tem `matches_played < 5`, carrega `get_league_teams(prev_season_id)`
-- Passa `teams2=prev_teams_df` para `build_records_from_matches()` (parametro ja existia mas era sempre `None`)
-
-### Verificacao
-
-CloudWatch confirmou:
-- `[fixtures] primera-division: loaded 30 prev-season teams as fallback (prev_sid=15746)`
-- `[fixtures] eliteserien: loaded 16 prev-season teams as fallback (prev_sid=16260)`
-- `[fixtures] mls: loaded 30 prev-season teams as fallback (prev_sid=13973)`
-- `[lambda-diag] Blended Argentinos Juniors: mp=0, prev-season data available, weight=0.00`
-- `[lambda-diag] Blended Bodo/Glimt: mp=0, prev-season data available, weight=0.00`
-
-**Pendente:** Validar lambda/EV em fixtures reais quando houver jogos com quota API disponivel.
-
-### Licao aprendida
-
-- Temporadas nao comecam todas em agosto/setembro. Ligas de calendario-ano (Argentina, Noruega, MLS, J-League) comecam em fev-mar. O sistema precisa lidar com early-season gracefully.
-- O parametro `teams2` em `build_records_from_matches()` existia desde a criacao da funcao mas nunca foi utilizado — era dead code. Agora esta ativo.
-- Defesa em profundidade: 3 camadas independentes (regressao no lambda, blending no service, carga no route) garantem que mesmo se uma falhar, as outras compensam.
-
----
-
-## 065 — Ligas desaparecendo do dashboard por timeout silencioso no fan-out batching
+## 066 — Ligas desaparecendo do dashboard por timeout silencioso no fan-out batching
 
 **Data:** 2026-03-22
 **Arquivos afetados:** `frontend/next/src/lib/api.ts`
@@ -3543,9 +3485,10 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 ---
 
-## 069 — Live-score swap matching, proxy timeout, Unicode, FT odds, goals-null log
+## 067 — Live-score swap matching, proxy timeout, Unicode, FT odds, goals-null log
 
 **Data:** 2026-03-22
+**Commit:** `f33262d`
 **Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
 **Severidade:** Critica (Fix 1), Alta (Fix 2), Media (Fix 3), Baixa (Fix 4), Diagnostico (Fix 5)
 **Status:** Implementado
