@@ -1,444 +1,78 @@
-# backend/routes/ai_analysis.py
+# backend/routers/ai_analysis.py
 """
-Router para endpoints de analise AI com MISTRAL
+Router para endpoints de análise AI com MISTRAL — v3.0
 """
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-import logging
-import os
+from typing import Optional
 
-from backend.services.mistral_analysis import MistralAnalysisService, AIAnalysisResponse
-from backend.services.api_football_client import APIFootballClient
-from backend.services.util_service import team_name
+from backend.services.mistral_analysis import (
+    MistralAnalysisService,
+    AIAnalysisResponse,
+)
 
-logger = logging.getLogger("sportsbankzu.routes.ai_analysis")
 
 router = APIRouter(
     prefix="/api/ai",
-    tags=["AI Analysis"],
+    tags=["AI Analysis v3.0"]
 )
 
 
 @router.get("/match/{match_id}/analysis", response_model=AIAnalysisResponse)
 async def get_match_analysis(
     match_id: str,
-    home_team: str = Query(None, description="Nome do time da casa (para busca precisa)"),
-    away_team: str = Query(None, description="Nome do time visitante (para busca precisa)"),
-    include_context: bool = Query(True, description="Incluir contexto adicional (forma, H2H)"),
+    include_context: bool = Query(
+        True, description="Incluir contexto adicional (forma, H2H, lesões titulares)"
+    ),
 ):
     """
-    Retorna analise completa de um jogo usando MISTRAL AI.
+    Análise completa v3.0 — 24 mercados.
 
-    - **match_id**: ID do jogo
-    - **home_team**: Nome do time da casa (opcional, para busca precisa)
-    - **away_team**: Nome do time visitante (opcional, para busca precisa)
-    - **include_context**: Se deve incluir contexto adicional na analise
+    Retorna: 1X2, Double Chance, Over/Under 0.5-4.5, BTTS,
+    Escanteios Over/Under 8.5-11.5, lesões de titulares, alertas.
     """
-    try:
-        match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
-        service = MistralAnalysisService()
-
-        h = match_data["home_team"]
-        a = match_data["away_team"]
-        context = match_data.get("context") if include_context else None
-        if context is None:
-            context = {}
-
-        # ==================================================================
-        # API-Football: COMPLEMENTARY data source (livescore + injuries)
-        # FootyStats is PRIMARY — form, H2H, stats, odds are already in context.
-        # API-Football only fills the gaps: live score and injury status.
-        #
-        # Flow:
-        # 1. Use FootyStats data (team names, date, league) as the BRIDGE
-        #    to find the corresponding fixture_id in API-Football.
-        # 2. If bridge succeeds → extract livescore → check coverage → fetch injuries.
-        # 3. If bridge fails → graceful degradation with safe defaults.
-        # ==================================================================
-        api_football_data = {
-            "live_data": None, "league_info": None,
-            "injuries": [], "absences": "", "live_status": "",
-        }
-        try:
-            afc = APIFootballClient()
-            if afc.is_configured:
-                # --- STEP 1: Build the bridge using FootyStats-sourced data ---
-                match_date_str = match_data.get("match_date") or match_data.get("datetime", "")
-                if match_date_str and "T" in match_date_str:
-                    match_date_str = match_date_str.split("T")[0]
-
-                af_league_id = None
-                league_str = match_data.get("league", "")
-                if league_str:
-                    from backend.config.leagues_config import get_api_football_league_id
-                    af_league_id = get_api_football_league_id(league_str)
-
-                # Cross-reference: FootyStats team names + date → API-Football fixture
-                api_football_data = await afc.get_match_live_data(
-                    home_team=h,
-                    away_team=a,
-                    match_date=match_date_str or None,
-                    league_id=af_league_id,
-                    season=match_data.get("season"),
-                )
-
-                # --- STEP 2: Inject ONLY complementary data into context ---
-                # (form, H2H, stats, footystats_analysis are already set by FootyStats)
-                bridge_succeeded = api_football_data.get("live_data", {}).get("fixture_id") is not None
-
-                if bridge_succeeded:
-                    context["absences"] = api_football_data.get("absences", "Dados de lesoes nao disponiveis")
-                    context["live_status"] = api_football_data.get("live_status", "Status nao disponivel")
-
-                    # Build extended tactical context from statistics + events
-                    match_stats_parsed = api_football_data.get("match_statistics", {})
-                    match_events_parsed = api_football_data.get("match_events", {})
-                    live_data_obj = api_football_data.get("live_data", {})
-                    if match_stats_parsed and (live_data_obj.get("is_live") or live_data_obj.get("is_finished")):
-                        try:
-                            context["live_data_extended"] = MistralAnalysisService._format_extended_live_context(
-                                stats=match_stats_parsed,
-                                events=match_events_parsed,
-                                live_data=live_data_obj,
-                                home_team=h,
-                                away_team=a,
-                            )
-                        except Exception as ext_err:
-                            logger.warning(f"[api-football] Extended context formatting failed: {ext_err}")
-
-                    league_info = api_football_data.get("league_info", {})
-                    if league_info and league_info.get("league_name"):
-                        context["league_info"] = (
-                            f"{league_info.get('league_name', '')} "
-                            f"({league_info.get('league_country', '')}, "
-                            f"Temporada {league_info.get('league_season', 'N/A')}) "
-                            f"— {league_info.get('league_round', '')}"
-                        )
-
-                    logger.info(
-                        f"[api-football] Bridge OK for {h} vs {a}: "
-                        f"fixture_id={api_football_data['live_data'].get('fixture_id')}, "
-                        f"status={api_football_data['live_data'].get('status')}, "
-                        f"injuries={len(api_football_data.get('injuries', []))}, "
-                        f"has_stats={'home' in match_stats_parsed}, "
-                        f"has_events={bool(match_events_parsed.get('goals') or match_events_parsed.get('cards'))}"
-                    )
-                else:
-                    # --- STEP 3: Graceful degradation — bridge failed ---
-                    logger.info(
-                        f"[api-football] Bridge FAILED for {h} vs {a} — "
-                        f"fixture not found in API-Football. "
-                        f"Continuing with FootyStats data only."
-                    )
-                    context.setdefault("absences", "Dados de lesoes nao disponiveis (partida nao encontrada na API-Football)")
-                    context.setdefault("live_status", "Status nao disponivel (partida nao encontrada na API-Football)")
-        except Exception as e:
-            # --- Graceful degradation — any API-Football error ---
-            logger.warning(f"[api-football] Call failed for {h} vs {a}: {e}. Continuing with FootyStats data only.")
-            context.setdefault("absences", "Dados de lesoes nao disponiveis")
-            context.setdefault("live_status", "Status nao disponivel")
-
-        analysis = await service.analyze_match(
-            home_team=h,
-            away_team=a,
-            league=match_data["league"],
-            match_stats=match_data["stats"],
-            odds=match_data["odds"],
-            context=context,
-        )
-
-        # Attach live data to the response for frontend consumption
-        analysis.match_live_data = api_football_data.get("live_data")
-
-        return analysis
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Dados invalidos: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error generating analysis for match {match_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar analise: {str(e)}")
-
-
-@router.post("/match/{match_id}/analysis/regenerate", response_model=AIAnalysisResponse)
-async def regenerate_match_analysis(match_id: str):
-    """Forca regeneracao da analise AI para um jogo."""
-    return await get_match_analysis(match_id, include_context=True)
-
-
-class AuditRequest(BaseModel):
-    predictions: Optional[List[dict]] = None  # System picks (SAFE/NEUTRO)
-    ai_summary: Optional[dict] = None  # Mistral AI analysis summary
-
-
-class CorrectionApplication(BaseModel):
-    correction_type: str  # 'lambda_multiplier', 'threshold_adjustment', 'weight_adjustment'
-    parameter_name: str
-    old_value: float
-    new_value: float
-    reason: str
-    audit_confidence: int = 0
-
-
-@router.post("/match/{match_id}/audit")
-async def audit_match(
-    match_id: str,
-    request: AuditRequest = None,
-    home_team: str = Query(None),
-    away_team: str = Query(None),
-):
-    """
-    Audit a match's predictions vs actual results.
-    - Scheduled matches: validates calculation consistency
-    - Finished matches: compares system picks + Mistral analysis vs real result
-    """
-    from backend.ai.mistral_auditor import MistralAuditor
-    from backend import audit as audit_db
-
-    try:
-        match_data = _get_match_data(match_id, home_team=home_team, away_team=away_team)
-        # Ensure both camelCase and snake_case team name keys exist for auditor compatibility
-        if "homeTeam" not in match_data and "home_team" in match_data:
-            match_data["homeTeam"] = match_data["home_team"]
-        if "awayTeam" not in match_data and "away_team" in match_data:
-            match_data["awayTeam"] = match_data["away_team"]
-        # Fallback to query params if neither key is populated
-        if not match_data.get("homeTeam") and home_team:
-            match_data["homeTeam"] = home_team
-            match_data["home_team"] = home_team
-        if not match_data.get("awayTeam") and away_team:
-            match_data["awayTeam"] = away_team
-            match_data["away_team"] = away_team
-        auditor = MistralAuditor()
-
-        # Get full match record to check status and extract actual result
-        full_match = _get_full_match_record(match_id, home_team, away_team)
-        match_status = full_match.get("status", "scheduled") if full_match else "scheduled"
-        is_finished = match_status in ("finished", "complete", "ft")
-
-        if is_finished and full_match:
-            # Extract actual result — fixtures service returns score: {"home": N, "away": N}
-            score_obj = full_match.get("score") or {}
-            home_goals = (
-                (score_obj.get("home") if isinstance(score_obj, dict) else None)
-                or full_match.get("home_team_goal_count")
-                or full_match.get("homeGoals")
-                or full_match.get("homeGoalCount")
-                or 0
-            )
-            away_goals = (
-                (score_obj.get("away") if isinstance(score_obj, dict) else None)
-                or full_match.get("away_team_goal_count")
-                or full_match.get("awayGoals")
-                or full_match.get("awayGoalCount")
-                or 0
-            )
-            try:
-                home_goals = int(home_goals)
-                away_goals = int(away_goals)
-            except (ValueError, TypeError):
-                home_goals, away_goals = 0, 0
-            logger.info(f"Audit score for {match_id}: {home_goals}x{away_goals} (from score_obj={score_obj})")
-            total_goals = home_goals + away_goals
-            btts = home_goals > 0 and away_goals > 0
-            if home_goals > away_goals:
-                result_1x2 = "1"
-            elif home_goals == away_goals:
-                result_1x2 = "X"
-            else:
-                result_1x2 = "2"
-
-            # Extract corner counts from match stats
-            match_stats = full_match.get("stats", {})
-            home_corners = match_stats.get("homeCornersCount") or full_match.get("home_team_corner_count") or 0
-            away_corners = match_stats.get("awayCornersCount") or full_match.get("away_team_corner_count") or 0
-            try:
-                home_corners = int(home_corners) if int(home_corners) >= 0 else 0
-                away_corners = int(away_corners) if int(away_corners) >= 0 else 0
-            except (ValueError, TypeError):
-                home_corners, away_corners = 0, 0
-            total_corners = home_corners + away_corners
-
-            # Extract card counts
-            home_yellow = match_stats.get("home_team_yellow_cards") or full_match.get("home_team_yellow_cards") or 0
-            away_yellow = match_stats.get("away_team_yellow_cards") or full_match.get("away_team_yellow_cards") or 0
-            home_red = match_stats.get("home_team_red_cards") or full_match.get("home_team_red_cards") or 0
-            away_red = match_stats.get("away_team_red_cards") or full_match.get("away_team_red_cards") or 0
-            try:
-                home_yellow = int(home_yellow) if int(home_yellow) >= 0 else 0
-                away_yellow = int(away_yellow) if int(away_yellow) >= 0 else 0
-                total_cards = home_yellow + away_yellow
-            except (ValueError, TypeError):
-                home_yellow, away_yellow, total_cards = 0, 0, 0
-
-            actual_result = {
-                "home_goals": home_goals,
-                "away_goals": away_goals,
-                "total_goals": total_goals,
-                "btts": btts,
-                "result_1x2": result_1x2,
-                "score": f"{home_goals}x{away_goals}",
-                # Corner data for corner market audit
-                "home_corners": home_corners,
-                "away_corners": away_corners,
-                "total_corners": total_corners,
-                # Card data for card market audit
-                "home_yellow_cards": home_yellow,
-                "away_yellow_cards": away_yellow,
-                "total_cards": total_cards,
-                "home_red_cards": int(home_red) if str(home_red).isdigit() else 0,
-                "away_red_cards": int(away_red) if str(away_red).isdigit() else 0,
-            }
-
-            predictions = (request.predictions or []) if request else []
-            ai_analysis = (request.ai_summary or {}) if request else {}
-
-            # Include team names in stats dict for audit metadata
-            audit_stats = dict(match_data.get("stats", {}))
-            audit_stats["homeTeam"] = team_name(match_data.get("homeTeam", ""))
-            audit_stats["awayTeam"] = team_name(match_data.get("awayTeam", ""))
-            audit_result = auditor.audit_match_vs_result(
-                match_data=audit_stats,
-                predictions=predictions,
-                ai_analysis=ai_analysis,
-                actual_result=actual_result,
-            )
-        else:
-            # Pre-match: validate calculation consistency
-            audit_result = auditor.audit_match_calculation(match_data)
-
-        # Store audit result
-        audit_db.log_audit_result(
-            match_id=match_id,
-            league=match_data.get("league", ""),
-            audit_data=audit_result,
-            match_status="finished" if is_finished else "scheduled",
-            user="user",
-        )
-
-        return {"status": "success", "audit": audit_result, "match_status": match_status}
-    except Exception as e:
-        logger.error(f"Audit error for match {match_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro na auditoria: {str(e)}")
-
-
-@router.post("/match/{match_id}/audit/apply")
-async def apply_audit_correction(match_id: str, correction: CorrectionApplication):
-    """Apply a correction suggested by the audit."""
-    from backend import audit as audit_db
-    from datetime import datetime
-
     try:
         match_data = _get_match_data(match_id)
+        service = MistralAnalysisService()
 
-        audit_db.log_correction(
-            match_id=match_id,
-            league=match_data.get("league", ""),
-            correction_type=correction.correction_type,
-            parameter_name=correction.parameter_name,
-            old_value=correction.old_value,
-            new_value=correction.new_value,
-            suggested_by="mistral_audit",
-            applied_by="user",
-            audit_confidence=correction.audit_confidence,
-            reason=correction.reason,
+        analysis = await service.analyze_match(
+            home_team=match_data['home_team'],
+            away_team=match_data['away_team'],
+            league=match_data['league'],
+            match_stats=match_data['stats'],
+            odds=match_data['odds'],
+            context=match_data.get('context') if include_context else None,
         )
+        return analysis
 
-        # Apply corrections with validation
-        if correction.correction_type == "threshold_adjustment":
-            # Validate: threshold corrections should only be applied if the change is < 15%
-            # Large threshold changes (>15%) usually indicate a lambda problem, not a threshold problem
-            if correction.old_value > 0:
-                change_pct = abs(correction.new_value - correction.old_value) / correction.old_value
-                if change_pct > 0.15:
-                    logger.warning(
-                        f"[Correction] BLOCKED threshold_adjustment {correction.parameter_name}: "
-                        f"{correction.old_value} -> {correction.new_value} (change={change_pct:.1%} > 15%). "
-                        f"Large threshold changes usually indicate a lambda problem."
-                    )
-                    return {
-                        "status": "blocked",
-                        "message": (
-                            f"Correcao bloqueada: mudanca de {change_pct:.0%} no threshold e muito grande. "
-                            f"Isso geralmente indica um problema de lambda, nao de threshold. "
-                            f"Aplique a correcao de lambda primeiro e reavalie se o threshold ainda precisa de ajuste."
-                        ),
-                        "old_value": correction.old_value,
-                        "new_value": correction.new_value,
-                    }
-            _apply_threshold_correction(correction)
-        elif correction.correction_type == "lambda_multiplier":
-            # Lambda corrections are always allowed — they fix the root cause
-            logger.info(
-                f"[Correction] Lambda correction applied: {correction.parameter_name} "
-                f"{correction.old_value} -> {correction.new_value}"
-            )
-
-        return {
-            "status": "success",
-            "message": f"Correcao aplicada: {correction.parameter_name}",
-            "old_value": correction.old_value,
-            "new_value": correction.new_value,
-        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Dados inválidos: {e}")
     except Exception as e:
-        logger.error(f"Error applying correction for match {match_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao aplicar correcao: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro análise: {e}")
 
 
-def _apply_threshold_correction(correction: CorrectionApplication):
-    """Apply a threshold correction to the thresholds table."""
-    from backend import audit as audit_db
-    from datetime import datetime
-
-    parts = correction.parameter_name.split(".")
-    if len(parts) >= 2:
-        market = parts[0] if len(parts) == 2 else parts[1]
-        conn = audit_db.init_db()
-        cursor = conn.cursor()
-        if audit_db._use_postgres():
-            cursor.execute(
-                "UPDATE thresholds SET safe_threshold = %s, last_updated = %s WHERE market = %s",
-                (correction.new_value, datetime.now(), market),
-            )
-        else:
-            cursor.execute(
-                "UPDATE thresholds SET safe_threshold = ?, last_updated = ? WHERE market = ?",
-                (correction.new_value, datetime.now(), market),
-            )
-        conn.commit()
-        conn.close()
+@router.get("/match/{match_id}/analysis/legacy")
+async def get_match_analysis_legacy(match_id: str):
+    """Formato legado para MatchDetailCard.tsx (summary, keyPoints, etc)."""
+    analysis = await get_match_analysis(match_id, include_context=True)
+    return MistralAnalysisService.to_legacy_format(analysis)
 
 
-def _get_full_match_record(match_id: str, home_team: str = None, away_team: str = None) -> dict | None:
-    """Get the full raw match record including status and goals, without AI transformation."""
-    try:
-        from backend.routes.fixtures import fixtures as fixtures_endpoint
-        league_id = _extract_league_id(match_id)
-        for date_filter in ("today", "week"):
-            if not league_id:
-                break
-            result = fixtures_endpoint(leagues=league_id, date=date_filter)
-            for m in result.get("matches", []):
-                if str(m.get("id")) == str(match_id):
-                    return m
-                if home_team and away_team:
-                    h = team_name(m.get("homeTeam", ""))
-                    a = team_name(m.get("awayTeam", ""))
-                    if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
-                       (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
-                        return m
-    except Exception as e:
-        logger.warning(f"Could not fetch full match record for {match_id}: {e}")
-    return None
+@router.post(
+    "/match/{match_id}/analysis/regenerate",
+    response_model=AIAnalysisResponse,
+)
+async def regenerate_match_analysis(match_id: str):
+    """Força regeneração da análise (quando odds mudam)."""
+    return await get_match_analysis(match_id, include_context=True)
 
 
 @router.get("/batch-analysis")
 async def get_batch_analysis(
-    league: str = Query("", description="ID da liga"),
-    date: str = Query("today", description="Data dos jogos (today/tomorrow/YYYY-MM-DD)"),
-    limit: int = Query(10, ge=1, le=50, description="Numero maximo de jogos"),
+    league: str = Query(..., description="ID da liga"),
+    date: str = Query("today", description="today/tomorrow/YYYY-MM-DD"),
+    limit: int = Query(10, ge=1, le=50),
 ):
-    """Retorna analises AI para multiplos jogos de uma liga."""
+    """Análises v3.0 em batch para múltiplos jogos."""
     try:
         matches = _get_matches_by_league_and_date(league, date, limit)
         service = MistralAnalysisService()
@@ -447,898 +81,120 @@ async def get_batch_analysis(
         for match in matches:
             try:
                 analysis = await service.analyze_match(
-                    home_team=match["home_team"],
-                    away_team=match["away_team"],
-                    league=match["league"],
-                    match_stats=match["stats"],
-                    odds=match["odds"],
-                    context=match.get("context"),
+                    home_team=match['home_team'],
+                    away_team=match['away_team'],
+                    league=match['league'],
+                    match_stats=match['stats'],
+                    odds=match['odds'],
+                    context=match.get('context'),
                 )
-                analyses.append(
-                    {
-                        "match_id": match["id"],
-                        "home_team": match["home_team"],
-                        "away_team": match["away_team"],
-                        "start_time": match.get("start_time", ""),
-                        "analysis": analysis.model_dump(),
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Batch analysis failed for match {match['id']}: {e}")
-                continue
-
-        return {
-            "league": league,
-            "date": date,
-            "total_matches": len(matches),
-            "analyzed": len(analyses),
-            "analyses": analyses,
-        }
-    except Exception as e:
-        logger.error(f"Batch analysis error: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar analises em batch: {str(e)}")
-
-
-# ===== HELPER FUNCTIONS =====
-
-def _extract_league_id(match_id: str) -> str:
-    """Extract league ID from match_id format 'premier-league-mock-0'."""
-    # Remove trailing '-mock-N' or '-m-N' suffix to get league id
-    parts = match_id.rsplit("-mock-", 1)
-    if len(parts) == 2:
-        return parts[0]
-    parts = match_id.rsplit("-m", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return parts[0]
-    # Fallback: try all known league prefixes
-    from backend.config.leagues_config import LEAGUE_ID_ALIASES
-    for alias in LEAGUE_ID_ALIASES:
-        if match_id.startswith(alias):
-            return alias
-    return ""
-
-
-def _match_to_ai_input(m: dict) -> dict:
-    """Convert a fixtures match object to the dict expected by AI analysis."""
-    stats = m.get("stats", {})
-    home_form = stats.get("homeForm") or m.get("homeForm") or []
-    away_form = stats.get("awayForm") or m.get("awayForm") or []
-    h2h = m.get("h2h", {})
-
-    # Enrich with FootyStats match details (gpt_en analysis, H2H, lineups, etc.)
-    footystats_analysis = ""
-    footystats_lineup = ""
-    footystats_stadium = ""
-    footystats_match_id = m.get("footystatsId")
-    if footystats_match_id:
-        try:
-            from backend.services.footstats_client import FootyStatsClient
-            client = FootyStatsClient()
-            details = client.get_match_details(int(footystats_match_id))
-            if details.get("success"):
-                detail_data = details.get("data", {})
-                footystats_analysis = detail_data.get("gpt_en", "") or ""
-                footystats_stadium = detail_data.get("stadium_name", "") or ""
-                # Extract real H2H data if available
-                api_h2h = detail_data.get("h2h", {})
-                if api_h2h and isinstance(api_h2h, dict):
-                    prev = api_h2h.get("previous_matches_results", {})
-                    betting = api_h2h.get("betting_stats", {})
-                    h2h = {
-                        "totalMatches": prev.get("totalMatches", 0),
-                        "homeWins": prev.get("team_a_wins", 0),
-                        "draws": prev.get("draw", 0),
-                        "awayWins": prev.get("team_b_wins", 0),
-                        "avgGoals": betting.get("avg_goals", 0),
-                        "bttsPercentage": betting.get("bttsPercentage", 0),
-                        "over25Percentage": betting.get("over25Percentage", 0),
-                    }
-                # Extract lineups if available
-                raw_lineup = detail_data.get("lineup", {})
-                raw_bench = detail_data.get("bench", {})
-                if raw_lineup and isinstance(raw_lineup, dict):
-                    lineup_parts = []
-                    for side, label in [("home", "Casa"), ("away", "Fora")]:
-                        players = raw_lineup.get(side, [])
-                        if players and isinstance(players, list):
-                            names = [
-                                f"{p.get('name', '?')} ({p.get('position', '?')})"
-                                for p in players if isinstance(p, dict)
-                            ]
-                            if names:
-                                lineup_parts.append(f"{label}: {', '.join(names)}")
-                    bench_parts = []
-                    if raw_bench and isinstance(raw_bench, dict):
-                        for side, label in [("home", "Casa"), ("away", "Fora")]:
-                            players = raw_bench.get(side, [])
-                            if players and isinstance(players, list):
-                                names = [
-                                    p.get("name", "?")
-                                    for p in players if isinstance(p, dict)
-                                ]
-                                if names:
-                                    bench_parts.append(f"{label}: {', '.join(names)}")
-                    if lineup_parts:
-                        lineup_text = "Titulares — " + " | ".join(lineup_parts)
-                        if bench_parts:
-                            lineup_text += " || Banco — " + " | ".join(bench_parts)
-                        footystats_lineup = lineup_text
-        except Exception as e:
-            logger.warning(f"Could not fetch match details for {footystats_match_id}: {e}")
-
-    h2h_text = f"Total: {h2h.get('totalMatches', 0)} jogos, Casa: {h2h.get('homeWins', 0)}, Empates: {h2h.get('draws', 0)}, Fora: {h2h.get('awayWins', 0)}, Media gols: {h2h.get('avgGoals', 0)}"
-    if h2h.get("bttsPercentage"):
-        h2h_text += f", BTTS: {h2h['bttsPercentage']}%, Over 2.5: {h2h.get('over25Percentage', 0)}%"
-
-    context = {
-        "home_form": ", ".join(home_form) if isinstance(home_form, list) else str(home_form),
-        "away_form": ", ".join(away_form) if isinstance(away_form, list) else str(away_form),
-        "h2h": h2h_text,
-    }
-    if footystats_analysis:
-        context["footystats_analysis"] = footystats_analysis
-    if footystats_lineup:
-        context["lineups"] = footystats_lineup
-
-    home_name = team_name(m.get("homeTeam", ""))
-    away_name = team_name(m.get("awayTeam", ""))
-
-    # Stadium: prefer FootyStats match details, then fixtures record
-    stadium = footystats_stadium or m.get("stadium", "") or m.get("venue", "") or ""
-
-    return {
-        "id": m.get("id"),
-        "footystatsId": footystats_match_id,
-        "home_team": home_name,
-        "away_team": away_name,
-        "homeTeam": home_name,
-        "awayTeam": away_name,
-        "league": m.get("leagueName", ""),
-        "datetime": m.get("datetime", ""),  # needed by API-Football bridge
-        "season": m.get("season"),
-        "stadium": stadium,
-        "stats": stats,
-        "odds": m.get("odds", {}),
-        "context": context,
-    }
-
-
-def _get_match_data(match_id: str, home_team: str = None, away_team: str = None) -> dict:
-    """Fetch match data from the fixtures system, falling back to mock."""
-    try:
-        from backend.routes.fixtures import fixtures as fixtures_endpoint
-
-        # Extract league from match_id so the fixtures endpoint returns data
-        league_id = _extract_league_id(match_id)
-
-        # Try today first, then week as fallback
-        for date_filter in ("today", "week"):
-            if not league_id:
-                break
-            result = fixtures_endpoint(leagues=league_id, date=date_filter)
-            # 1. Try exact ID match
-            for m in result.get("matches", []):
-                if str(m.get("id")) == str(match_id):
-                    logger.info(f"Found match {match_id} via fixtures (date={date_filter})")
-                    return _match_to_ai_input(m)
-
-            # 2. Try matching by team names (handles ID format mismatches)
-            if home_team and away_team:
-                for m in result.get("matches", []):
-                    h = team_name(m.get("homeTeam", ""))
-                    a = team_name(m.get("awayTeam", ""))
-                    if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
-                       (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
-                        logger.info(f"Found match by team names: {h} vs {a} (date={date_filter})")
-                        return _match_to_ai_input(m)
-
-        # If no league could be extracted but we have team names, try all leagues
-        if home_team and away_team and not league_id:
-            from backend.config.leagues_config import LEAGUE_ID_ALIASES
-            for alias in LEAGUE_ID_ALIASES:
-                try:
-                    result = fixtures_endpoint(leagues=alias, date="today")
-                    for m in result.get("matches", []):
-                        h = team_name(m.get("homeTeam", ""))
-                        a = team_name(m.get("awayTeam", ""))
-                        if (home_team.lower() in h.lower() or h.lower() in home_team.lower()) and \
-                           (away_team.lower() in a.lower() or a.lower() in away_team.lower()):
-                            logger.info(f"Found match by team names in {alias}: {h} vs {a}")
-                            return _match_to_ai_input(m)
-                except Exception:
-                    continue
-
-    except Exception as e:
-        logger.warning(f"Could not fetch live fixtures for match {match_id}: {e}")
-
-    # Fallback — use generic data with descriptive names instead of hardcoded mock
-    logger.warning(f"Using fallback mock data for match {match_id}")
-    fallback_home = home_team or "Home Team"
-    fallback_away = away_team or "Away Team"
-    return {
-        "id": match_id,
-        "home_team": fallback_home,
-        "away_team": fallback_away,
-        "homeTeam": fallback_home,
-        "awayTeam": fallback_away,
-        "league": "Unknown League",
-        "stats": {
-            "homeWinProb": 40.0,
-            "drawProb": 30.0,
-            "awayWinProb": 30.0,
-            "avgGoals": 2.5,
-            "bttsProb": 52.0,
-            "lambdaHome": 1.3,
-            "lambdaAway": 1.2,
-        },
-        "odds": {
-            "home": 2.10,
-            "draw": 3.30,
-            "away": 3.40,
-            "over25": 1.85,
-            "bttsYes": 1.80,
-        },
-        "context": {
-            "home_form": "Dados indisponiveis",
-            "away_form": "Dados indisponiveis",
-            "h2h": "Dados indisponiveis",
-        },
-    }
-
-
-def _get_matches_by_league_and_date(league: str, date: str, limit: int) -> list:
-    """Fetch matches from fixtures, fallback to week then mock."""
-    try:
-        from backend.routes.fixtures import fixtures as fixtures_endpoint
-
-        # Try requested date first, then week as fallback
-        for date_filter in (date, "week"):
-            if not league:
-                break
-            result = fixtures_endpoint(leagues=league, date=date_filter)
-            matches = []
-            for m in result.get("matches", [])[:limit]:
-                data = _match_to_ai_input(m)
-                data["start_time"] = m.get("datetime", "")
-                matches.append(data)
-            if matches:
-                return matches
-    except Exception as e:
-        logger.warning(f"Could not fetch fixtures for batch: {e}")
-
-    return [_get_match_data("fallback-0")][:limit]
-
-
-# ===== BATCH AUDIT =====
-
-class BatchAuditRequest(BaseModel):
-    date: str = "today"  # today / tomorrow / week / YYYY-MM-DD
-    leagues: List[str] = []  # Optional: limit audit to specific leagues (avoids 22-league scan)
-
-
-class BatchCorrectionRequest(BaseModel):
-    corrections: List[dict]  # List of corrections to apply
-
-
-def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
-    """Deterministic evaluation of a single pick against actual result.
-    Returns True if the pick was correct, False otherwise."""
-    mercado = str(pick.get("mercado", "")).strip().upper()
-    total_goals = actual_result.get("total_goals", 0)
-    btts = actual_result.get("btts", False)
-    result_1x2 = actual_result.get("result_1x2", "")
-
-    # Corner markets — evaluate against total_corners
-    if "ESCANTEIO" in mercado or "CORNER" in mercado:
-        total_corners = actual_result.get("total_corners", 0)
-        if "OVER" in mercado:
-            for threshold in (7.5, 8.5, 9.5, 10.5, 11.5, 12.5):
-                if str(threshold) in mercado:
-                    return total_corners > threshold
-        if "UNDER" in mercado:
-            for threshold in (7.5, 8.5, 9.5, 10.5, 11.5, 12.5):
-                if str(threshold) in mercado:
-                    return total_corners < threshold
-        # Bare corner market — cannot evaluate without threshold
-        logger.warning(f"Corner market without threshold: {mercado}")
-        return False
-
-    # Over/Under markets (goals)
-    if "UNDER" in mercado or "MENOS" in mercado:
-        for threshold in (0.5, 1.5, 2.5, 3.5, 4.5):
-            if str(threshold) in mercado:
-                return total_goals < threshold
-    if "OVER" in mercado or "MAIS" in mercado or "ACIMA" in mercado:
-        for threshold in (0.5, 1.5, 2.5, 3.5, 4.5):
-            if str(threshold) in mercado:
-                return total_goals > threshold
-
-    # BTTS — handle "BTTS — SIM", "BTTS - SIM", "BTTS SIM", etc.
-    if "BTTS" in mercado or "AMBAS" in mercado:
-        if "SIM" in mercado or "YES" in mercado:
-            return btts
-        if "NAO" in mercado or "NO" in mercado or "NÃO" in mercado:
-            return not btts
-        # Bare "BTTS" without qualifier defaults to YES
-        return btts
-
-    # Double Chance — handle "DC 1X (ARS/EMP)" format with parentheses
-    if mercado.startswith("DC 1X") or mercado.startswith("1X") or "CASA OU EMPATE" in mercado:
-        return result_1x2 in ("1", "X")
-    if mercado.startswith("DC 12") or mercado.startswith("12") or "CASA OU FORA" in mercado:
-        return result_1x2 in ("1", "2")
-    if mercado.startswith("DC X2") or mercado.startswith("X2") or "EMPATE OU FORA" in mercado:
-        return result_1x2 in ("X", "2")
-
-    # 1X2
-    if mercado in ("1", "VITORIA CASA", "HOME WIN", "CASA"):
-        return result_1x2 == "1"
-    if mercado in ("X", "EMPATE", "DRAW"):
-        return result_1x2 == "X"
-    if mercado in ("2", "VITORIA FORA", "AWAY WIN", "FORA"):
-        return result_1x2 == "2"
-
-    # Unknown market — cannot evaluate
-    logger.warning(f"Cannot evaluate unknown market: {mercado}")
-    return False
-
-
-def _get_all_finished_matches(
-    date_filter: str,
-    before_time_brt: str | None = None,
-    leagues: list[str] | None = None,
-) -> list:
-    """Fetch all finished matches across leagues for the given date range.
-
-    Args:
-        date_filter: 'today' | 'yesterday' | 'week'
-        before_time_brt: Optional cutoff time in BRT (HH:MM). When set, only matches
-            that finished strictly before this BRT time are included. Used by the
-            today_audit cron action (23:45 BRT) to audit European matches same-day.
-        leagues: Optional list of league IDs to check. When provided, only these leagues
-            are queried instead of all 22 (avoids API Gateway timeout on cold Lambda).
-    """
-    from backend.routes.fixtures import fixtures as fixtures_endpoint
-    from backend.config.leagues_config import LEAGUE_ID_ALIASES
-    from datetime import timezone, timedelta
-
-    BRT = timezone(timedelta(hours=-3))
-    cutoff_hour, cutoff_min = (int(p) for p in before_time_brt.split(":")) if before_time_brt else (None, None)
-
-    all_finished = []
-    tried_leagues = set()
-
-    # If specific leagues provided, use them; otherwise scan all configured leagues
-    if leagues:
-        league_iter = [(lid, lid) for lid in leagues]
-    else:
-        league_iter = list(LEAGUE_ID_ALIASES.items())
-
-    for alias, resolved in league_iter:
-        resolved_id = LEAGUE_ID_ALIASES.get(alias, alias) if leagues else resolved
-        if resolved_id in tried_leagues:
-            continue
-        tried_leagues.add(resolved_id)
-        try:
-            result = fixtures_endpoint(leagues=alias, date=date_filter)
-            for m in result.get("matches", []):
-                status = str(m.get("status", "")).lower()
-                if status not in ("finished", "complete", "ft"):
-                    continue
-
-                # Apply BRT time cutoff when requested (Gap 1 — today_audit)
-                if before_time_brt is not None:
-                    try:
-                        dt_str = m.get("datetime", "")
-                        dt_utc = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                        dt_brt = dt_utc.astimezone(BRT)
-                        if dt_brt.hour > cutoff_hour or (dt_brt.hour == cutoff_hour and dt_brt.minute >= cutoff_min):
-                            continue  # Match after cutoff — skip
-                    except Exception:
-                        pass  # Cannot parse datetime → include the match
-
-                all_finished.append(m)
-        except Exception as e:
-            logger.debug(f"Skipping league {alias} for batch audit: {e}")
-            continue
-
-    if before_time_brt:
-        logger.info(f"[TODAY_AUDIT] {len(all_finished)} jogos finalizados antes das {before_time_brt} BRT")
-
-    return all_finished
-
-
-@router.post("/batch-audit")
-async def batch_audit(
-    request: BatchAuditRequest = None,
-    date: str = Query("today", description="Date filter: today/tomorrow/week/YYYY-MM-DD"),
-):
-    """
-    Audit ALL finished matches for the given date range.
-    - Evaluates each pick deterministically (no AI call per match)
-    - ONE Mistral call at the end for aggregate model evaluation
-    """
-    from backend.ai.mistral_auditor import MistralAuditor
-    from backend import audit as audit_db
-
-    date_filter = request.date if request and request.date else date
-    leagues_filter = request.leagues if request and request.leagues else None
-
-    try:
-        # 1. Get all finished matches (scoped to specific leagues if provided)
-        finished_matches = _get_all_finished_matches(date_filter, leagues=leagues_filter)
-
-        if not finished_matches:
-            return {
-                "status": "success",
-                "total_matches": 0,
-                "finished_matches": 0,
-                "audited_matches": 0,
-                "message": "Nenhum jogo finalizado encontrado para o periodo.",
-                "match_results": [],
-                "model_evaluation": None,
-            }
-
-        # 2. Evaluate each match deterministically
-        match_results = []
-        overall_correct = 0
-        overall_total = 0
-        safe_correct = 0
-        safe_total = 0
-        neutro_correct = 0
-        neutro_total = 0
-        market_stats = {}  # {market: {correct: int, total: int}}
-        lambda_errors = []
-        brier_scores = []
-
-        for m in finished_matches:
-            home = team_name(m.get("homeTeam", ""))
-            away = team_name(m.get("awayTeam", ""))
-            league = m.get("leagueName", m.get("leagueId", ""))
-            score = m.get("score") or {}
-            stats = m.get("stats", {})
-            mercados = m.get("mercados", [])
-
-            # Extract actual result — reject matches with missing score data
-            # to avoid auditing against a fake 0-0 (e.g. Lanús vs Boca 0-3 bug)
-            home_goals = score.get("home") if score else None
-            away_goals = score.get("away") if score else None
-
-            # If score not from new field, try legacy fields
-            if home_goals is None or away_goals is None:
-                home_goals = m.get("home_team_goal_count") or m.get("homeGoals")
-                away_goals = m.get("away_team_goal_count") or m.get("awayGoals")
-                try:
-                    home_goals = int(home_goals) if home_goals is not None else None
-                    away_goals = int(away_goals) if away_goals is not None else None
-                except (ValueError, TypeError):
-                    home_goals, away_goals = None, None
-
-            # Skip matches with no verified score — auditing against missing data
-            # produces wrong accuracy metrics
-            if home_goals is None or away_goals is None:
-                logger.warning(
-                    f"[batch-audit] Skipping {home} vs {away} — no verified score data"
-                )
-                continue
-
-            total_goals = home_goals + away_goals
-            btts = home_goals > 0 and away_goals > 0
-            if home_goals > away_goals:
-                result_1x2 = "1"
-            elif home_goals == away_goals:
-                result_1x2 = "X"
-            else:
-                result_1x2 = "2"
-
-            # Extract total corners for corner market evaluation
-            home_corners = stats.get("homeCornersCount") or m.get("home_team_corner_count") or 0
-            away_corners = stats.get("awayCornersCount") or m.get("away_team_corner_count") or 0
-            try:
-                home_corners = int(home_corners) if home_corners and int(home_corners) >= 0 else 0
-                away_corners = int(away_corners) if away_corners and int(away_corners) >= 0 else 0
-                total_corners = home_corners + away_corners
-            except (ValueError, TypeError):
-                total_corners = 0
-            if any("ESCANTEIO" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
-                logger.info(f"[batch-audit] {home} vs {away}: corners home={home_corners} away={away_corners} total={total_corners}")
-
-            actual_result = {
-                "home_goals": home_goals,
-                "away_goals": away_goals,
-                "total_goals": total_goals,
-                "btts": btts,
-                "result_1x2": result_1x2,
-                "total_corners": total_corners,
-            }
-
-            # Evaluate picks
-            picks_eval = []
-            match_correct = 0
-            match_total = 0
-
-            for merc in mercados:
-                merc_name = merc.get("mercado", merc.get("market", ""))
-                merc_status = merc.get("status", merc.get("pick_type", "NEUTRO"))
-
-                pick_dict = {"mercado": merc_name}
-                is_correct = _evaluate_pick_deterministic(pick_dict, actual_result)
-
-                picks_eval.append({
-                    "mercado": merc_name,
-                    "status_pick": merc_status,
-                    "resultado": "ACERTOU" if is_correct else "ERROU",
+                analyses.append({
+                    'match_id': match['id'],
+                    'home_team': match['home_team'],
+                    'away_team': match['away_team'],
+                    'start_time': match['start_time'],
+                    'analysis': analysis.model_dump(),
                 })
-
-                match_total += 1
-                overall_total += 1
-                if is_correct:
-                    match_correct += 1
-                    overall_correct += 1
-
-                # Track by pick status
-                if merc_status == "SAFE":
-                    safe_total += 1
-                    if is_correct:
-                        safe_correct += 1
-                elif merc_status == "NEUTRO":
-                    neutro_total += 1
-                    if is_correct:
-                        neutro_correct += 1
-
-                # Track by market
-                market_key = merc_name.upper().strip()
-                if market_key not in market_stats:
-                    market_stats[market_key] = {"correct": 0, "total": 0}
-                market_stats[market_key]["total"] += 1
-                if is_correct:
-                    market_stats[market_key]["correct"] += 1
-
-            # Lambda error calculation
-            lambda_total = stats.get("lambdaTotal") or (
-                (stats.get("lambdaHome") or 0) + (stats.get("lambdaAway") or 0)
-            )
-            if lambda_total and lambda_total > 0:
-                lambda_errors.append(abs(lambda_total - total_goals))
-
-            # Brier score (simplified: use over25Prob)
-            over25_prob = stats.get("over25Prob")
-            if over25_prob is not None:
-                actual_over25 = 1 if total_goals > 2.5 else 0
-                brier = (over25_prob / 100.0 - actual_over25) ** 2
-                brier_scores.append(brier)
-
-            match_results.append({
-                "match_id": m.get("id", ""),
-                "home_team": home,
-                "away_team": away,
-                "league": league,
-                "score": f"{home_goals}x{away_goals}",
-                "picks": picks_eval,
-                "picks_correct": match_correct,
-                "picks_total": match_total,
-            })
-
-        # 3. Aggregate metrics
-        overall_accuracy_pct = (overall_correct / overall_total * 100.0) if overall_total > 0 else 0.0
-        safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else 0.0
-        neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else 0.0
-        avg_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.0
-        avg_lambda_error = sum(lambda_errors) / len(lambda_errors) if lambda_errors else 0.0
-
-        # Build market accuracy text for prompt
-        market_accuracy_list = []
-        market_accuracy_output = []
-        for mkt, data in sorted(market_stats.items()):
-            acc = (data["correct"] / data["total"] * 100.0) if data["total"] > 0 else 0.0
-            market_accuracy_list.append(f"- {mkt}: {data['correct']}/{data['total']} ({acc:.1f}%)")
-            market_accuracy_output.append({
-                "market": mkt,
-                "correct": data["correct"],
-                "total": data["total"],
-                "accuracy_pct": round(acc, 1),
-            })
-
-        # Build match summary text for prompt (abbreviated)
-        matches_summary_lines = []
-        for mr in match_results[:20]:  # Limit to 20 for prompt size
-            picks_str = ", ".join(
-                f"{p['mercado']}:{p['resultado']}" for p in mr["picks"]
-            )
-            matches_summary_lines.append(
-                f"- {mr['home_team']} {mr['score']} {mr['away_team']} ({mr['league']}) | {picks_str}"
-            )
-
-        # 4. ONE Mistral call for aggregate model evaluation
-        batch_summary = {
-            "total_audited": len(match_results),
-            "overall_correct": overall_correct,
-            "overall_total": overall_total,
-            "overall_accuracy_pct": overall_accuracy_pct,
-            "safe_correct": safe_correct,
-            "safe_total": safe_total,
-            "safe_accuracy_pct": safe_accuracy_pct,
-            "neutro_correct": neutro_correct,
-            "neutro_total": neutro_total,
-            "neutro_accuracy_pct": neutro_accuracy_pct,
-            "avg_brier_score": avg_brier,
-            "avg_lambda_error": avg_lambda_error,
-            "market_accuracy_text": "\n".join(market_accuracy_list) if market_accuracy_list else "Sem dados de mercado",
-            "matches_summary_text": "\n".join(matches_summary_lines) if matches_summary_lines else "Sem detalhes",
-        }
-
-        model_evaluation = None
-        try:
-            auditor = MistralAuditor()
-            model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
-        except Exception as e:
-            logger.error(f"Mistral batch evaluation failed: {e}")
-
-        # 5. Store aggregate audit result
-        # Determine user source: "cron" for EventBridge, "user" for manual
-        _audit_user = "cron" if os.getenv("EVENTBRIDGE_TRIGGERED") else "user"
-        try:
-            audit_db.log_audit_result(
-                match_id=f"batch:{date_filter}:{datetime.now().strftime('%Y%m%d%H%M')}",
-                league="ALL",
-                audit_data={
-                    "overall_accuracy": overall_accuracy_pct,
-                    "safe_accuracy": safe_accuracy_pct,
-                    "neutro_accuracy": neutro_accuracy_pct,
-                    "total_matches": len(match_results),
-                    "avg_brier_score": avg_brier,
-                    "avg_lambda_error": avg_lambda_error,
-                    "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
-                },
-                match_status="batch_audit",
-                user=_audit_user,
-            )
-        except Exception as e:
-            logger.warning(f"Could not store batch audit result: {e}")
+            except Exception as e:
+                print(f"[BatchV3] Erro jogo {match['id']}: {e}")
+                continue
 
         return {
-            "status": "success",
-            "total_matches": len(finished_matches),
-            "finished_matches": len(finished_matches),
-            "audited_matches": len(match_results),
-            "overall_accuracy": round(overall_accuracy_pct, 1),
-            "safe_accuracy": round(safe_accuracy_pct, 1),
-            "neutro_accuracy": round(neutro_accuracy_pct, 1),
-            "safe_correct": safe_correct,
-            "safe_total": safe_total,
-            "neutro_correct": neutro_correct,
-            "neutro_total": neutro_total,
-            "avg_brier_score": round(avg_brier, 4),
-            "avg_lambda_error": round(avg_lambda_error, 2),
-            "market_accuracy": market_accuracy_output,
-            "match_results": match_results,
-            "model_evaluation": model_evaluation,
+            'version': MistralAnalysisService.VERSION,
+            'league': league,
+            'date': date,
+            'total_matches': len(matches),
+            'analyzed': len(analyses),
+            'analyses': analyses,
         }
     except Exception as e:
-        logger.error(f"Batch audit error: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro na auditoria em lote: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro batch: {e}")
 
 
-class MistralEvaluateRequest(BaseModel):
-    """Lightweight request for Mistral-only evaluation.
-    Receives pre-computed audit stats — no fixture fetching needed."""
-    total_audited: int = 0
-    overall_correct: int = 0
-    overall_total: int = 0
-    overall_accuracy_pct: float = 0.0
-    safe_correct: int = 0
-    safe_total: int = 0
-    safe_accuracy_pct: float = 0.0
-    neutro_correct: int = 0
-    neutro_total: int = 0
-    neutro_accuracy_pct: float = 0.0
-    avg_brier_score: float = 0.0
-    avg_lambda_error: float = 0.0
-    market_accuracy_text: str = ""
-    matches_summary_text: str = ""
+# ===== MOCK — substituir por dados reais =====
 
-
-@router.post("/batch-audit/evaluate")
-async def batch_audit_evaluate(request: MistralEvaluateRequest):
-    """Mistral-only model evaluation — receives pre-computed audit summary.
-    No fixture fetching, no FootyStats API calls. Fast (~3-5s)."""
-    from backend.ai.mistral_auditor import MistralAuditor
-
-    try:
-        batch_summary = request.model_dump()
-        auditor = MistralAuditor()
-        model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
-        return {"status": "success", "model_evaluation": model_evaluation}
-    except Exception as e:
-        logger.error(f"Mistral evaluate error: {e}")
-        return {
-            "status": "error",
-            "message": f"Erro na avaliacao Mistral: {str(e)}",
-            "model_evaluation": None,
+def _get_match_data(match_id: str) -> dict:
+    """Mock v3.0 com todos os campos"""
+    mock_data = {
+        '1': {
+            'id': '1',
+            'home_team': 'Deportivo Táchira',
+            'away_team': 'The Strongest',
+            'league': 'Copa Libertadores',
+            'start_time': '2026-02-10T21:30:00',
+            'stats': {
+                'lambda_home': 1.45,
+                'lambda_away': 1.22,
+                'prob_home': 38.5,
+                'prob_draw': 28.3,
+                'prob_away': 33.2,
+                'prob_over_05': 93.2,
+                'prob_over_15': 82.3,
+                'prob_over_25': 65.8,
+                'prob_over_35': 40.1,
+                'prob_over_45': 18.7,
+                'prob_btts': 58.4,
+                'homeCornersPerMatch': 5.2,
+                'awayCornersPerMatch': 4.8,
+                'homeCornersAgainstPerMatch': 4.5,
+                'awayCornersAgainstPerMatch': 5.1,
+                'cornerOver85Prob': 72.0,
+                'cornerOver95Prob': 55.0,
+                'cornerOver105Prob': 38.0,
+                'leagueAvgCorners': 10.2,
+                'homeXg': 1.35,
+                'awayXg': 1.10,
+                'homeXgAgainstAvg': 0.95,
+                'awayXgAgainstAvg': 1.22,
+                'homeCleanSheetPct': 35.0,
+                'awayCleanSheetPct': 20.0,
+                'homeFtsPercentage': 15.0,
+                'awayFtsPercentage': 25.0,
+                'homeBttsPercentage': 55.0,
+                'awayBttsPercentage': 60.0,
+                'homeOver25Percentage': 60.0,
+                'awayOver25Percentage': 65.0,
+                'homeWinPercentage': 70.0,
+                'awayWinPercentage': 40.0,
+                'homeCardsPerMatch': 2.1,
+                'awayCardsPerMatch': 2.5,
+                'homeFoulsPerMatch': 14.2,
+                'awayFoulsPerMatch': 15.8,
+                'homeAvgTotalGoals': 2.8,
+                'awayAvgTotalGoals': 2.5,
+                'leagueAvgCards': 4.3,
+                'leagueAvgFouls': 28.5,
+                'leagueCleanSheetsPct': 25.0,
+                'leagueOver25Pct': 58.0,
+                'leagueHomeAdvantage': 48.0,
+            },
+            'odds': {
+                'home': 1.66, 'draw': 3.60, 'away': 4.75,
+                'over_05': 1.05, 'over_15': 1.35, 'over_25': 2.07,
+                'over_35': 3.50, 'over_45': 7.00,
+                'under_25': 1.75, 'under_35': 1.30, 'under_45': 1.10,
+                'btts_yes': 2.00, 'btts_no': 1.72,
+                'dc_1x': 1.18, 'dc_12': 1.28, 'dc_x2': 2.20,
+            },
+            'context': {
+                'home_form': 'V-V-E-V-D (70% aproveitamento)',
+                'away_form': 'V-D-V-V-E (60% aproveitamento)',
+                'h2h': 'Últimos 5: Casa 3V, 1E, 1D. Média 2.8 gols/jogo',
+                'home_position': '3º lugar',
+                'away_position': '5º lugar',
+                'home_injuries_starters': (
+                    'Carlos Pérez (ATA) [FORA] - lesão muscular; '
+                    'Juan García (DEF) [DÚVIDA] - desconforto no joelho'
+                ),
+                'away_injuries_starters': 'Sem desfalques entre titulares',
+            },
         }
-
-
-@router.post("/batch-audit/apply")
-async def apply_batch_corrections(request: BatchCorrectionRequest):
-    """Apply multiple corrections from a batch audit at once."""
-    from backend import audit as audit_db
-
-    applied = []
-    errors = []
-
-    for idx, corr in enumerate(request.corrections):
-        try:
-            corr_type = corr.get("type", corr.get("correction_type", ""))
-            param = corr.get("parameter", corr.get("parameter_name", ""))
-            old_val = float(corr.get("current_value", corr.get("old_value", 0)))
-            new_val = float(corr.get("suggested_value", corr.get("new_value", 0)))
-            reason = corr.get("reason", "")
-            confidence = int(corr.get("confidence", corr.get("audit_confidence", 0)))
-
-            audit_db.log_correction(
-                match_id=f"batch_correction_{datetime.now().strftime('%Y%m%d%H%M')}_{idx}",
-                league="ALL",
-                correction_type=corr_type,
-                parameter_name=param,
-                old_value=old_val,
-                new_value=new_val,
-                suggested_by="mistral_batch_audit",
-                applied_by="user",
-                audit_confidence=confidence,
-                reason=reason,
-            )
-
-            # Apply threshold corrections immediately
-            if corr_type in ("THRESHOLD", "threshold_adjustment"):
-                corr_model = CorrectionApplication(
-                    correction_type="threshold_adjustment",
-                    parameter_name=param,
-                    old_value=old_val,
-                    new_value=new_val,
-                    reason=reason,
-                    audit_confidence=confidence,
-                )
-                _apply_threshold_correction(corr_model)
-
-            applied.append({"parameter": param, "old_value": old_val, "new_value": new_val})
-        except Exception as e:
-            errors.append({"index": idx, "error": str(e)})
-
-    return {
-        "status": "success" if not errors else "partial",
-        "applied": len(applied),
-        "errors": len(errors),
-        "details": applied,
-        "error_details": errors if errors else None,
     }
 
-
-class ScoreCorrectionRequest(BaseModel):
-    """Manual score correction for matches where API data was missing or wrong."""
-    match_id: str
-    home_team: str
-    away_team: str
-    home_goals: int
-    away_goals: int
-    league: str = ""
-    reason: str = "manual_correction"
+    if match_id not in mock_data:
+        raise ValueError(f"Jogo {match_id} não encontrado")
+    return mock_data[match_id]
 
 
-@router.post("/score-correction")
-async def correct_match_score(request: ScoreCorrectionRequest):
-    """Manually correct a match score and re-audit affected picks.
-
-    Use when the API returned wrong/missing scores (e.g. 0-0 instead of real 0-3).
-    Logs the correction and re-evaluates all picks for that match.
-    """
-    from backend import audit as audit_db
-
-    # Log the score correction
-    audit_db.log_correction(
-        match_id=request.match_id,
-        league=request.league,
-        correction_type="SCORE_CORRECTION",
-        parameter_name=f"score:{request.home_team}_vs_{request.away_team}",
-        old_value=0.0,  # unknown previous score
-        new_value=float(f"{request.home_goals}.{request.away_goals:02d}"),
-        suggested_by="user",
-        applied_by="user",
-        audit_confidence=100,
-        reason=request.reason,
-    )
-
-    # Build the corrected actual result
-    home_goals = request.home_goals
-    away_goals = request.away_goals
-    total_goals = home_goals + away_goals
-    btts = home_goals > 0 and away_goals > 0
-    if home_goals > away_goals:
-        result_1x2 = "1"
-    elif home_goals == away_goals:
-        result_1x2 = "X"
-    else:
-        result_1x2 = "2"
-
-    corrected_result = {
-        "home_goals": home_goals,
-        "away_goals": away_goals,
-        "total_goals": total_goals,
-        "btts": btts,
-        "result_1x2": result_1x2,
-    }
-
-    logger.info(
-        f"[score-correction] {request.home_team} vs {request.away_team}: "
-        f"corrected to {home_goals}-{away_goals} (1X2={result_1x2}, "
-        f"total={total_goals}, btts={btts})"
-    )
-
-    return {
-        "status": "success",
-        "match_id": request.match_id,
-        "corrected_score": f"{home_goals}-{away_goals}",
-        "corrected_result": corrected_result,
-        "message": (
-            f"Score corrigido para {request.home_team} {home_goals} x "
-            f"{away_goals} {request.away_team}. "
-            f"Correção registrada no audit log."
-        ),
-    }
-
-
-@router.post("/correction/revert")
-async def revert_correction(
-    parameter_name: str = Query(..., description="Nome do parametro a reverter"),
-    original_value: float = Query(..., description="Valor original a restaurar"),
-):
-    """Revert a previously applied correction."""
-    from backend import audit as audit_db
-    from datetime import datetime
-
-    try:
-        # Extract market name from parameter
-        parts = parameter_name.split(".")
-        market = parts[0] if len(parts) == 1 else parts[1] if len(parts) >= 2 else parameter_name
-
-        conn = audit_db.init_db()
-        cursor = conn.cursor()
-
-        if audit_db._use_postgres():
-            cursor.execute(
-                "UPDATE thresholds SET safe_threshold = %s, last_updated = %s WHERE market = %s",
-                (original_value, datetime.now(), market),
-            )
-        else:
-            cursor.execute(
-                "UPDATE thresholds SET safe_threshold = ?, last_updated = ? WHERE market = ?",
-                (original_value, datetime.now(), market),
-            )
-
-        affected = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        # Log the reversion
-        audit_db.log_correction(
-            match_id="manual_revert",
-            league="all",
-            correction_type="threshold_revert",
-            parameter_name=parameter_name,
-            old_value=0,
-            new_value=original_value,
-            suggested_by="manual",
-            applied_by="user",
-            audit_confidence=100,
-            reason=f"Revert: threshold was incorrectly adjusted (symptom, not root cause)",
-        )
-
-        logger.info(f"[Correction] Reverted {market} to {original_value} (affected={affected})")
-
-        return {
-            "status": "success" if affected > 0 else "no_change",
-            "message": f"Threshold '{market}' revertido para {original_value}",
-            "rows_affected": affected,
-        }
-    except Exception as e:
-        logger.error(f"Error reverting correction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+def _get_matches_by_league_and_date(league: str, date: str, limit: int):
+    return [_get_match_data('1')][:limit]
