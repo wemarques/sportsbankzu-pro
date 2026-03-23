@@ -588,10 +588,10 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
         """Converte v3.0 para formato legado do MatchDetailCard.tsx"""
         return {
             'summary': analysis.resumo_analitico,
-            'keyPoints': analysis.key_points,
+            'key_points': analysis.key_points,
             'recommendation': analysis.recomendacao_principal,
             'confidence': analysis.confidence,
-            'lastUpdated': analysis.last_updated
+            'last_updated': analysis.last_updated,
         }
 
     @staticmethod

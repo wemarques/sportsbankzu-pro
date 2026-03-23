@@ -30,8 +30,10 @@ export async function GET(
   if (homeTeam) qs.set("home_team", homeTeam);
   if (awayTeam) qs.set("away_team", awayTeam);
   const qsStr = qs.toString() ? `?${qs.toString()}` : "";
+  // Use /legacy endpoint to get format expected by MatchDetailCard
+  // (summary, key_points, recommendation, confidence)
   const result = await fetchBackend(
-    `/api/ai/match/${encodeURIComponent(matchId)}/analysis${qsStr}`,
+    `/api/ai/match/${encodeURIComponent(matchId)}/analysis/legacy${qsStr}`,
     { timeoutMs: 55_000 },
   );
 
