@@ -3542,7 +3542,7 @@ CornerProgressBar nunca aparecia em jogos ao vivo apesar do codigo estar present
 
 ### Causa raiz
 
-`extract_live_data()` retorna `home_corners` e `away_corners` (linhas 618-619), mas `enrich_fixture_record()` nunca copiava esses valores para o record. O frontend so recebia corners via `/live-scores` (polling separado) — se o polling falhasse (rate limit, ambas APIs vazias), corners nunca chegavam.
+`extract_live_data()` retorna `home_corners` e `away_corners` (linhas 618-619 em api_football_client.py), mas `enrich_fixture_record()` nunca copiava esses valores para o record. O frontend so recebia corners via `/live-scores` (polling separado) — se o polling falhasse (rate limit, ambas APIs vazias), corners nunca chegavam.
 
 ### Correcoes aplicadas
 
@@ -3622,7 +3622,7 @@ Tres bugs na auditoria batch e um bug visual no frontend:
 - Formulas de erro devem ser consistentes entre modulos (cron vs backtesting). A formula per-team (`|λh-gh| + |λa-ga|`) captura desvios que a formula total (`|λt-gt|`) mascara por cancelamento.
 - CSS `!important` em seletores base (`.cpb-root`) impede que modificadores (`.cpb-placeholder`) funcionem sem seu proprio `!important`.
 
-**Registo documentacao:** commit `4b41af5` — acrescentados SHAs **#068** (`441c531`) e **#069** (`832c0a8`) aos cabecalhos das respetivas seccoes.
+**Registo documentacao:** commit `4b41af5` — acrescentados SHAs **#068** (`441c531`) e **#069** (`832c0a8`) aos cabecalhos das respetivas seccoes (repo `sportsbankzu-pro`; copia na raiz do monorepo alinhada).
 
 ---
 
