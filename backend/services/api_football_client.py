@@ -1192,6 +1192,12 @@ class APIFootballClient:
 
         record["apiFootballStatus"] = af_status
 
+        # Overlay corners from API-Football live data (#068)
+        if live.get("home_corners") is not None and live.get("away_corners") is not None:
+            record["currentCorners"] = live["home_corners"] + live["away_corners"]
+        elif live.get("home_corners") is not None:
+            record["currentCorners"] = live["home_corners"]
+
         # Overlay venue/stadium when FootyStats didn't provide it
         if not record.get("stadium"):
             venue = fixture.get("fixture", {}).get("venue", {}) or {}

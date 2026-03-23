@@ -3489,6 +3489,7 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 **Data:** 2026-03-22
 **Commit:** `f33262d`
+**Nota (numeracao):** A mensagem de commit pode citar **(#069)**; neste ficheiro existe **apenas esta secao #067** (sequencia apos #066). **Nao** adicionar uma segunda entrada `## 069` com o mesmo conteudo — seria duplicata.
 **Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
 **Severidade:** Critica (Fix 1), Alta (Fix 2), Media (Fix 3), Baixa (Fix 4), Diagnostico (Fix 5)
 **Status:** Implementado
@@ -3500,13 +3501,13 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 - `/live-scores` so fazia 1 passagem → jogos com convencao invertida nao matchavam
 - Adicionada segunda passagem com flag `af_swapped`; quando True, inverte `af_home_g`/`af_away_g` no overlay
 
-**Fix 2 — Timeout proxy live 10s→20s (ref #066):**
+**Fix 2 — Timeout proxy live 10s→20s (cadeia Vercel→Lambda; ver tambem **#066** fan-out / timeouts):**
 - Pipeline live-scores chama FootyStats + API-Football + matching + fallback
 - Com cold start Lambda, >10s e plausivel; Fluid Compute permite ate 300s
 - `timeoutMs` aumentado para 20_000 em ambos os calls (live-scores e fixtures fallback)
 
 **Fix 3 — Unicode literal em JSX:**
-- `m\u00EDn` em texto JSX renderizava literalmente "m\u00EDn" em vez de "min"
+- `m\u00EDn` em texto JSX renderizava literalmente "m\u00EDn" em vez de "mín"
 - Substituido por UTF-8 direto (`min`) em todas as 3 ocorrencias
 
 **Fix 4 — Odds 0.00 em jogos finalizados:**
@@ -3521,6 +3522,56 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 - Ao adicionar matching robusto em um endpoint (find_fixture), verificar se TODOS os endpoints que fazem matching similar foram atualizados. O /live-scores foi esquecido no #005.
 - Timeouts devem considerar o pipeline completo (cold start + N API calls + processing), nao apenas um unico call.
+
+---
+
+## 068 — Fix CornerProgressBar invisivel em jogos ao vivo
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/services/api_football_client.py`, `frontend/next/src/components/CornerProgressBar.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+
+CornerProgressBar nunca aparecia em jogos ao vivo apesar do codigo estar presente. Tres gaps:
+1. `enrich_fixture_record()` descartava corners do `extract_live_data()` — `currentCorners` nunca era populado na carga inicial via `/fixtures`
+2. `extractTargetCorners()` so reconhecia "Over", ignorando picks "Escanteios Under X.5"
+3. Sem suporte visual para Under (barra deveria indicar perigo ao ultrapassar limite)
+
+### Causa raiz
+
+`extract_live_data()` retorna `home_corners` e `away_corners` (linhas 618-619), mas `enrich_fixture_record()` nunca copiava esses valores para o record. O frontend so recebia corners via `/live-scores` (polling separado) — se o polling falhasse (rate limit, ambas APIs vazias), corners nunca chegavam.
+
+### Correcoes aplicadas
+
+**Camada 1 — Backend: popular currentCorners em enrich_fixture_record() (api_football_client.py):**
+- Apos overlay de status/score/minute/venue, copia `home_corners + away_corners` para `record["currentCorners"]`
+- Se so `home_corners` disponivel, usa esse valor parcial
+- Corners agora chegam na carga inicial via `/fixtures`, nao dependendo exclusivamente do polling `/live-scores`
+
+**Camada 2 — Frontend: extractTargetCorners reconhece Over e Under (CornerProgressBar.tsx):**
+- Retorno mudou de `number | null` para `{ target: number; direction: "over" | "under" } | null`
+- Regex separado para Over (Math.ceil) e Under (Math.floor)
+
+**Camada 3 — Frontend: CornerProgressBar com prop direction (CornerProgressBar.tsx):**
+- Over: barra verde quando atinge meta (comportamento existente)
+- Under: barra vermelha quando ultrapassa limite (novo)
+- `isGood = direction === "over" ? hit : !hit` — logica invertida para Under
+
+**Camada 4 — Frontend: MatchDetailCard passa direction (MatchDetailCard.tsx):**
+- `extractTargetCorners` retorna objeto; desestrutura `target` e `direction`
+- Passa `direction` ao `CornerProgressBar` e ao placeholder
+- Placeholder mostra "Meta" (Over) ou "Limite" (Under)
+
+**Camada 5 — CSS: classes danger para Under (match-detail-card.css):**
+- `.cpb-fill--danger`: gradiente vermelho (substitui verde)
+- `.cpb-badge--danger`: badge vermelho com glow
+
+### Licao aprendida
+
+- Funcao que extrai dados (`extract_live_data`) e funcao que aplica dados (`enrich_fixture_record`) sao separadas. Se a segunda nao consome um campo da primeira, o dado e silenciosamente descartado. Verificar que TODOS os campos extraidos sao usados downstream.
+- Mercados bidirecionais (Over/Under) exigem que a UI represente ambas direcoes — uma regex so para "Over" ignora metade dos picks possiveis.
 
 ---
 

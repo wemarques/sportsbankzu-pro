@@ -685,7 +685,9 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         <h4 className="mdc-ai-section-title">Prognostico</h4>
                         <div className="mdc-prognostico__list">
                           {match.predictions.map((pred, idx) => {
-                            const targetCorners = extractTargetCorners(pred.mercado);
+                            const cornerInfo = extractTargetCorners(pred.mercado);
+                            const targetCorners = cornerInfo?.target ?? null;
+                            const cornerDirection = cornerInfo?.direction ?? "over";
                             const displayStatus = pred.classification || pred.status;
                             const statusClass = displayStatus.toLowerCase().replace("*", "-star").replace("_", "-");
                             return (
@@ -807,11 +809,12 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                     <CornerProgressBar
                                       currentCorners={match.currentCorners}
                                       targetCorners={targetCorners}
+                                      direction={cornerDirection}
                                     />
                                   ) : (
                                     <div className="cpb-root cpb-placeholder">
                                       <span className="cpb-label">Escanteios</span>
-                                      <span className="cpb-target">Meta: {targetCorners}</span>
+                                      <span className="cpb-target">{cornerDirection === "over" ? "Meta" : "Limite"}: {targetCorners}</span>
                                       <span className="cpb-loading">Aguardando dados...</span>
                                     </div>
                                   )

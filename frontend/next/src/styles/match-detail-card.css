@@ -2322,6 +2322,16 @@
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
 }
 
+.cpb-fill--danger {
+  background: linear-gradient(90deg, #ff4444, #cc0000);
+  box-shadow: 0 0 12px rgba(255, 68, 68, 0.5);
+}
+
+.cpb-badge--danger {
+  background: #ff4444;
+  box-shadow: 0 2px 8px rgba(255, 68, 68, 0.5);
+}
+
 /* ─── Reason Code Tags ─── */
 .mdc-reason-tags {
   display: flex;
