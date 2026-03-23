@@ -3666,4 +3666,53 @@ O fix #068 (enrich_fixture_record) cobria apenas o endpoint `/fixtures`, não o 
 
 ---
 
+## 071 — Jogos ficam "VIVO 2T 90'" indefinidamente — nunca transitam para FT
+
+**Data:** 2026-03-23
+**Commit:** `d665249`
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Jogos ao vivo ficavam travados em "VIVO 2T 90'" indefinidamente no dashboard — nunca transitavam para "FT" (finished). O status permanecia "live" mesmo horas após o término real do jogo.
+
+### Causa raiz (3 pontos de falha no frontend)
+
+1. **`fetchLiveScores` retornava cedo em liveList vazio (linha 764):** Quando `/live-scores` retornava `matches: []` (jogo acabou e saiu da lista de live), o `return` impedia qualquer atualização de status. Jogos com `status === "live"` no state nunca eram marcados como "finished".
+
+2. **`catch {}` silenciava erros 503 (linha 839):** Quando o backend retornava 503 (Lambda cold start, API Gateway timeout), o catch vazio engolia o erro sem retry. O status ficava congelado.
+
+3. **Sem timeout de segurança:** Não havia mecanismo baseado em tempo decorrido para forçar transição de live → finished quando nenhuma fonte de dados confirmava o status.
+
+### Correções aplicadas (3 camadas — defesa em profundidade)
+
+**Camada 1 — Safety timeout (`useEffect` com `setInterval` 60s):**
+- Se `match.status === "live"` E `elapsedMinutes(match.datetime) > 120` → marca como `"finished"` localmente
+- Helper `elapsedMinutes()` adicionado como utility (baseado em `Date.now() - kickoff`)
+- 120min = tempo máximo razoável para qualquer jogo de futebol (90min + intervalo + acréscimos)
+
+**Camada 2 — Empty liveList handler (dentro de `fetchLiveScores`):**
+- Quando `liveList.length === 0` mas existem matches com `status === "live"` no state, verifica `elapsedMinutes > 100`
+- Se sim, marca como `"finished"` (o jogo provavelmente acabou e saiu da lista de live do FootyStats)
+- 100min = threshold mais agressivo que Camada 1 porque temos confirmação (liveList vazio)
+
+**Camada 3 — Retry com backoff no 503 + log de erros:**
+- Em vez de silenciar o catch, faz 1 retry com delay progressivo (`3s * failCount`, max 15s)
+- `liveScoreFailCountRef` rastreia falhas consecutivas
+- Erros logados com `console.warn` em vez de engolidos silenciosamente
+
+**Refatoração auxiliar:**
+- Lógica de merge extraída para função `mergeLiveOverlay()` para reutilização no retry path e no path normal
+- `elapsedMinutes(datetime)` helper adicionado junto com `computeLiveInfo` e `minutesToKickoff`
+
+### Lição aprendida
+
+- Um `return` silencioso quando `liveList.length === 0` é perigoso: ignora a informação de que o jogo NÃO está mais na lista de live. A ausência de dados É um dado relevante.
+- `catch {}` vazio em polling é anti-pattern: erros transientes (503) devem ter retry, e erros persistentes devem ser logados para diagnóstico.
+- Timeout de segurança baseado em elapsed time é a última linha de defesa contra estado stale. Ver também #021b (computeLiveInfo) e #032 (live score merge).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
