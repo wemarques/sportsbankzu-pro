@@ -3528,6 +3528,7 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 ## 068 — Fix CornerProgressBar invisivel em jogos ao vivo
 
 **Data:** 2026-03-22
+**Commit:** `441c531`
 **Arquivos afetados:** `backend/services/api_football_client.py`, `frontend/next/src/components/CornerProgressBar.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
 **Severidade:** Media
 **Status:** Implementado
@@ -3577,7 +3578,8 @@ CornerProgressBar nunca aparecia em jogos ao vivo apesar do codigo estar present
 
 ## 069 — Fix auditoria: Brier/SAFE/lambda per-league + CSS placeholder + lambda formula
 
-**Data:** 2026-03-22
+**Data:** 2026-03-23
+**Commit:** `832c0a8`
 **Arquivos afetados:** `backend/cron_handler.py`, `backend/ai/prompt_templates.py`, `frontend/next/src/styles/match-detail-card.css`
 **Severidade:** Alta
 **Status:** Implementado
