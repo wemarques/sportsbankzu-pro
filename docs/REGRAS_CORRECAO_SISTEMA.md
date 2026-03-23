@@ -3715,4 +3715,129 @@ Jogos ao vivo ficavam travados em "VIVO 2T 90'" indefinidamente no dashboard —
 
 ---
 
+## 072 — Router AI Mistral v3.0 usava mock: análise real falhava para qualquer `match_id` válido
+
+**Data:** 2026-03-23  
+**Commit:** `2d26513`  
+**Arquivos afetados:** `backend/routes/ai_analysis.py`  
+**Severidade:** Alta (análise por jogo inutilizável em produção)  
+**Status:** Corrigido  
+**Relacionado:** `dc9dd31` (prompt v3.0 — 24 mercados), `b097961` (frontend `/analysis/legacy`)
+
+### Problema identificado
+
+O router `GET /api/ai/match/{match_id}/analysis` (v3.0) dependia de `_get_match_data()` e `_get_matches_by_league_and_date()` **mockados**, com um único registo falso (`id == '1'`). Para qualquer `match_id` real do pipeline (`fixtures`), o mock levantava `ValueError` → o utilizador via **serviço indisponível** / erro 400 apesar do prompt Mistral v3.0 e do frontend estarem corretos.
+
+### Causa raiz
+
+1. **Dados não ligados ao pipeline** — Nenhuma chamada a `fixtures_service` / `_process_single_league`; só dicionário estático.  
+2. **Incompatibilidade de nomes de campos** — `mistral_analysis._build_prompt()` espera chaves **snake_case** (`lambda_home`, `prob_over_25`, `over_25`, `btts_yes`), enquanto os records do pipeline expõem **camelCase** (`lambdaHome`, `over25Prob`, `over25`, `bttsYes`). Sem mapeamento, mesmo com dados reais o prompt ficaria inconsistente.  
+3. **Contexto Mistral** — `_mistral_context` (forma, H2H, lesões) precisava ser convertido para as strings que o v3.0 espera (`home_injuries_starters`, `h2h` legível, posições na tabela).
+
+### Correções aplicadas
+
+**Camada 1 — Fetch real assíncrono (`ai_analysis.py`):**
+- `_get_match_data(match_id)` passa a ser `async`: `asyncio.to_thread(_process_single_league, league_id, date_str, base)` com `get_data_dir()` e procura do record por `r["id"] == match_id`.
+- `_get_matches_by_league_and_date(league, date, limit)` idem, retornando lista mapeada com `[:limit]`.
+- Callers `get_match_analysis` / `get_batch_analysis` usam `await`.
+
+**Camada 2 — Resolução de `league_id` e data a partir do `match_id`:**
+- `_extract_league_id()`: prefix-match do `match_id` contra `LEAGUES_CONFIG` (lista de slugs), **mais longo primeiro** para evitar colisão (ex.: `brasileirao-serie-a` vs `serie-a`).
+- `_extract_date_from_id()`: segmento final do ID como timestamp Unix → `YYYY-MM-DD`; fallback `"today"` se parse falhar.
+
+**Camada 3 — `_map_record_to_v3(record)`:**
+- **stats:** cópia do dict do pipeline + aliases `lambda_home`/`lambda_away`, `prob_home`/`prob_draw`/`prob_away`, `prob_over_05`…`prob_over_45`, `prob_btts`, `homeXg`/`awayXg` (a partir de `homeXgForAvg`/`awayXgForAvg` quando existir).
+- **odds:** aliases `over_05`…`over_45`, `under_25`/`under_35`/`under_45`, `btts_yes`/`btts_no` a partir de `over05`, `under35`, etc. Odds **Double Chance** (`dc_*`) continuam **N/A** se o pipeline não as expuser (aceite no desenho).
+- **context:** `home_form`/`away_form`, `h2h` via `_format_h2h_str()`, lesões via `_format_injuries_str()` sobre `injuries.home`/`injuries.away`, posições a partir de `homeLeaguePosition`/`awayLeaguePosition`.
+- **Equipas / meta:** `home_team`/`away_team` a partir de `homeTeam`/`awayTeam`, `league`, `start_time` ← `datetime`.
+
+**Camada 4 — Correção de import:** uso de `LEAGUES_CONFIG` (nome real em `leagues_config.py`), não `SUPPORTED_LEAGUES` (inexistente).
+
+**Sem alteração** em `backend/services/mistral_analysis.py` (regra do projeto: não mexer no prompt sem processo explícito — ver CLAUDE.md).
+
+### Verificação sugerida
+
+- `python -c "import py_compile; py_compile.compile('backend/routes/ai_analysis.py', doraise=True)"`  
+- `python -c "from backend.routes.ai_analysis import router; ..."`  
+- Chamada real: `/api/ai/match/{id_real_de_/fixtures}/analysis/legacy` após deploy Lambda.
+
+### Lição aprendida
+
+- **Mock com um único ID** dá falsa sensação de integração: E2E e UI podem parecer OK enquanto produção quebra para todos os jogos reais.  
+- **Contrato de nomes** entre pipeline e consumidor LLM deve ser documentado ou centralizado (mapper único como `_map_record_to_v3`) para não divergir camelCase vs snake_case.  
+- **Lesões e H2H** em formato bruto (dict/list API-Football) precisam de formatação explícita antes do prompt, senão o modelo ignora ou interpreta mal.
+
+---
+
+## 073 — Migração Mistral v3.7 → v3.0: prompt 24 mercados, remoção de rota orphan, ponte de formato legado
+
+**Data:** 2026-03-23
+**Commits:** `dc9dd31` (prompt v3.0), `2a8c896` (remoção orphan), `b097961` (ponte legado)
+**Arquivos afetados:** `backend/services/mistral_analysis.py` (novo), `backend/routes/ai_analysis.py` (novo), `backend/main.py`, `frontend/next/src/app/api/ai/match/[id]/analysis/route.ts`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+
+O sistema usava o prompt Mistral v3.7 (`backend/ai/match_analysis_service.py`) com apenas 6 mercados. Havia 3 problemas simultâneos:
+
+1. **Prompt limitado:** v3.7 cobria apenas 1X2, Over/Under 2.5, BTTS. Faltavam Over/Under 0.5-4.5, Double Chance, Escanteios 8.5-11.5, impacto de lesões de titulares.
+2. **Rota orphan:** `POST /ai/match-analysis` no `main.py:1268` chamava `match_analysis_service.py` (v3.7), mas o frontend já usava `GET /api/ai/match/{id}/analysis` via `routes/ai_analysis.py` (v3.0). A rota orphan nunca era chamada.
+3. **Mismatch de formato:** O frontend (`MatchDetailCard.tsx`) espera `{summary, key_points, recommendation, confidence}` (legado), mas o v3.0 retorna `{resumo_analitico, key_points, recomendacao_principal, confidence}`. Além disso, `to_legacy_format()` usava `keyPoints` (camelCase) e `lastUpdated` em vez de `key_points` e `last_updated`.
+
+### Correções aplicadas
+
+**Passo 1 — Upgrade do prompt para v3.0 (`dc9dd31`):**
+- Novos ficheiros: `backend/services/mistral_analysis.py` (MistralAnalysisService v3.0) e `backend/routes/ai_analysis.py` (router com 4 endpoints).
+- Output expandido: 24 mercados (1X2, Double Chance, Over/Under 0.5-4.5, BTTS, Escanteios Over/Under 8.5-11.5).
+- Lesões filtradas apenas para titulares ([FORA]/[DÚVIDA]).
+- Input enriquecido: +40 campos (xG, cartões/jogo, faltas, clean sheet %, médias da liga).
+- 4 camadas de defesa anti-alucinação mantidas (CLAUDE.md proibição #6).
+
+**Passo 2 — Remoção da rota orphan v3.7 (`2a8c896`):**
+- Removida `POST /ai/match-analysis` (~25 linhas) e modelo `MatchAnalysisRequest` de `main.py`.
+- `backend/ai/match_analysis_service.py` NÃO foi deletado (pode servir de referência futura).
+
+**Passo 3 — Ponte de formato legado (`b097961`):**
+- Frontend Next.js route alterada para chamar `/analysis/legacy` em vez de `/analysis`.
+- `to_legacy_format()` corrigido: `keyPoints` → `key_points`, `lastUpdated` → `last_updated` para corresponder à interface `AIAnalysis` do frontend.
+
+### Lição aprendida
+
+- **Contrato frontend/backend** deve ser validado ANTES de deploy: nomes de campos (camelCase vs snake_case) entre Pydantic models, `to_legacy_format()`, e interfaces TypeScript devem ser explicitamente verificados.
+- **Rotas orphan** acumulam-se silenciosamente quando endpoints são substituídos. Após migrar, sempre verificar todas as rotas que chamam o serviço antigo e eliminar as que não são mais usadas.
+
+---
+
+## 074 — Vercel Fluid Compute + maxDuration para plano Pro
+
+**Data:** 2026-03-23
+**Commit:** `e3ac3a6`
+**Arquivos afetados:** `vercel.json`
+**Severidade:** Média (infraestrutura)
+**Status:** Implementado
+
+### Problema identificado
+
+O `vercel.json` tinha apenas `{"framework": "nextjs"}` sem configuração de Fluid Compute nem `maxDuration`. Funções serverless no Vercel tinham o timeout default (10s no plano Hobby), insuficiente para:
+- `/api/matches/fetch` (busca fixtures de múltiplas ligas — até 30s)
+- `/api/matches/live` (proxy para live scores — até 20s)
+- `/api/ai/*/analysis` (chamada à API Mistral — até 55s)
+
+### Correções aplicadas
+
+- **Fluid Compute:** `"fluid": true` para reutilizar instâncias entre invocações.
+- **maxDuration por rota:**
+  - `app/api/matches/fetch/route.ts`: 60s, 1024MB
+  - `app/api/matches/live/route.ts`: 60s, 1024MB
+  - `app/api/ai/*/route.ts`: 30s, 1024MB
+  - `app/api/**/*.ts`: 30s (fallback)
+- Nota: path correto é `app/api/matches/live/route.ts` (não `app/api/live-scores/route.ts` que não existe).
+
+### Lição aprendida
+
+- Confirmar sempre o path real da rota antes de configurar `vercel.json` — o path no config deve corresponder ao filesystem relativo à raiz do Next.js, sem `src/`.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
