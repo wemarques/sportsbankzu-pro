@@ -3626,4 +3626,44 @@ Tres bugs na auditoria batch e um bug visual no frontend:
 
 ---
 
+## 070 — /live-scores não lia corners do FootyStats (currentCorners sempre null)
+
+**Data:** 2026-03-23
+**Commit:** `799675a`
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+CornerProgressBar mostrava "Aguardando dados..." para TODOS os jogos ao vivo, mesmo quando FootyStats retornava dados de corners (`team_a_corners`, `team_b_corners`). O campo `currentCorners` era sempre `null` no endpoint `/live-scores`.
+
+### Causa raiz
+
+Investigação de 7 passos (PROMPT_INVESTIGATE_CORNERS.md) revelou que o `/live-scores` Path A (FootyStats primary) construía os registros de match sem NUNCA ler os campos `team_a_corners` / `team_b_corners` do FootyStats `todays-matches`. Os corners só apareciam se:
+- API-Football enrichment (Path B) encontrasse o match E tivesse dados de corners
+- Isso falhava quando AF não encontrava match (nome diferente) ou corners eram null no AF
+
+O fix #068 (enrich_fixture_record) cobria apenas o endpoint `/fixtures`, não o `/live-scores` que é usado pelo polling do frontend.
+
+### Correções aplicadas
+
+**Camada 1 — FootyStats corners no /live-scores (fixtures.py:1315-1341):**
+- Ler `m.get("team_a_corners")` e `m.get("team_b_corners")` antes de `result.append()`
+- Validar: int, >= 0, try/except para ValueError/TypeError
+- Setar `_rec["currentCorners"] = _fhc + _fac` quando ambos disponíveis
+- AF overlay (linhas 1461-1495) sobrescreve se tiver dados mais recentes
+
+**Camada 2 — Diagnostic WARNING (fixtures.py:1496-1500):**
+- Log `[live-scores][corners] No corner data for live match` quando nenhuma fonte (FS nem AF) fornece corners
+- Permite monitorar via CloudWatch quais jogos ficam sem dados
+
+### Lição aprendida
+
+- O endpoint `/live-scores` tem seu PRÓPRIO código de construção de records, separado do `enrich_fixture_record()` usado por `/fixtures`. Fixes em um não se propagam ao outro automaticamente.
+- Ao corrigir um campo (como `currentCorners`), é preciso verificar TODOS os pontos de construção de records: `/fixtures` (via enrich), `/live-scores` Path A (FootyStats), `/live-scores` Path B (AF overlay), e `/live-scores` Path C (AF primary).
+- A investigação de 7 passos confirmou que frontend (route.ts, dashboard merge, MatchDetailCard) repassa `currentCorners` corretamente — o problema era exclusivamente backend.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
