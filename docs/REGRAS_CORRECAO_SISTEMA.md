@@ -3543,4 +3543,42 @@ O retry automatico no route.ts (2x 35s = 70s) excedia o maxDuration de 60s do Ve
 
 ---
 
+## 069 — Live-score swap matching, proxy timeout, Unicode, FT odds, goals-null log
+
+**Data:** 2026-03-22
+**Arquivos afetados:** `backend/routes/fixtures.py`, `frontend/next/src/app/api/matches/live/route.ts`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Critica (Fix 1), Alta (Fix 2), Media (Fix 3), Baixa (Fix 4), Diagnostico (Fix 5)
+**Status:** Implementado
+
+### Correcoes aplicadas
+
+**Fix 1 — Swap home/away no AF matching do /live-scores (gap do #005):**
+- `find_fixture` em `api_football_client.py` ja fazia 2 passagens (normal + swap) desde #005
+- `/live-scores` so fazia 1 passagem → jogos com convencao invertida nao matchavam
+- Adicionada segunda passagem com flag `af_swapped`; quando True, inverte `af_home_g`/`af_away_g` no overlay
+
+**Fix 2 — Timeout proxy live 10s→20s (ref #066):**
+- Pipeline live-scores chama FootyStats + API-Football + matching + fallback
+- Com cold start Lambda, >10s e plausivel; Fluid Compute permite ate 300s
+- `timeoutMs` aumentado para 20_000 em ambos os calls (live-scores e fixtures fallback)
+
+**Fix 3 — Unicode literal em JSX:**
+- `m\u00EDn` em texto JSX renderizava literalmente "m\u00EDn" em vez de "min"
+- Substituido por UTF-8 direto (`min`) em todas as 3 ocorrencias
+
+**Fix 4 — Odds 0.00 em jogos finalizados:**
+- Odds removidas pos-jogo chegam como 0; `.toFixed(2)` mostrava "0.00"
+- Agora exibe em-dash quando `odd <= 0`
+
+**Fix 5 — Log diagnostico para goals=null (gap do #008):**
+- Quando AF match encontrado mas `goals_home` is None, o `continue` era silencioso
+- Adicionado `logger.warning` com `fixture_id` antes do `continue`
+
+### Licao aprendida
+
+- Ao adicionar matching robusto em um endpoint (find_fixture), verificar se TODOS os endpoints que fazem matching similar foram atualizados. O /live-scores foi esquecido no #005.
+- Timeouts devem considerar o pipeline completo (cold start + N API calls + processing), nao apenas um unico call.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

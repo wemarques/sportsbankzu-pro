@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   }
 
   // 1. Try the dedicated /live-scores endpoint first
-  const result = await fetchBackend("/live-scores", { timeoutMs: 10_000 });
+  const result = await fetchBackend("/live-scores", { timeoutMs: 20_000 });
 
   if (result.ok) {
     const data = result.data as { matches?: unknown[]; nextUpdate?: number };
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (leagues) {
     try {
       const qs = new URLSearchParams({ leagues, date: "today" });
-      const fbResult = await fetchBackend(`/fixtures?${qs}`, { timeoutMs: 10_000 });
+      const fbResult = await fetchBackend(`/fixtures?${qs}`, { timeoutMs: 20_000 });
       if (fbResult.ok) {
         const fbData = fbResult.data as { matches?: Array<Record<string, unknown>> };
         const fbMatches = (fbData.matches ?? [])

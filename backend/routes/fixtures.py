@@ -1344,12 +1344,24 @@ def live_scores() -> Dict[str, Any]:
 
                         # Use robust matching (unicode normalization, prefix removal, token overlap)
                         matched_fx = None
+                        af_swapped = False
                         for fx in af_live:
                             fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
                             fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
                             if _afc._team_names_match(rh, fx_home) and _afc._team_names_match(ra, fx_away):
                                 matched_fx = fx
                                 break
+
+                        # Pass 2: swapped order (#069, same pattern as find_fixture in api_football_client.py)
+                        if not matched_fx:
+                            for fx in af_live:
+                                fx_home = fx.get("teams", {}).get("home", {}).get("name", "")
+                                fx_away = fx.get("teams", {}).get("away", {}).get("name", "")
+                                if _afc._team_names_match(rh, fx_away) and _afc._team_names_match(ra, fx_home):
+                                    matched_fx = fx
+                                    af_swapped = True
+                                    logger.info(f"[live-scores] AF match found via SWAP for {rh} vs {ra}")
+                                    break
 
                         if not matched_fx:
                             # Log unmatched live matches for debugging (esp. Arabic teams)
@@ -1367,11 +1379,17 @@ def live_scores() -> Dict[str, Any]:
 
                         ld = _afc.extract_live_data(matched_fx)
                         if ld["goals_home"] is None:
+                            logger.warning(
+                                f"[live-scores] AF match found for {rh} vs {ra} but goals=null "
+                                f"(fixture_id={matched_fx.get('fixture', {}).get('id')}). "
+                                f"Skipping AF overlay."
+                            )
                             continue
 
                         # Overlay score from API-Football via merge function
-                        af_home_g = ld["goals_home"]
-                        af_away_g = ld["goals_away"]
+                        # When matched via swap (#069), invert goals to match our home/away
+                        af_home_g = ld["goals_away"] if af_swapped else ld["goals_home"]
+                        af_away_g = ld["goals_home"] if af_swapped else ld["goals_away"]
 
                         cur_score = rec.get("score") or {}
                         cur_home = cur_score.get("home", 0) if isinstance(cur_score, dict) else 0

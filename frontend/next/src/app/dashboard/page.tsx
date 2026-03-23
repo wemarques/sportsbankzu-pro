@@ -2127,15 +2127,15 @@ export default function Dashboard() {
                             <div className="st-match-row__odds">
                               <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">1</span>
-                                <span className="st-match-row__odd-value">{h.toFixed(2)}</span>
+                                <span className="st-match-row__odd-value">{h > 0 ? h.toFixed(2) : "\u2014"}</span>
                               </div>
                               <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">X</span>
-                                <span className="st-match-row__odd-value">{d.toFixed(2)}</span>
+                                <span className="st-match-row__odd-value">{d > 0 ? d.toFixed(2) : "\u2014"}</span>
                               </div>
                               <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">2</span>
-                                <span className="st-match-row__odd-value">{a.toFixed(2)}</span>
+                                <span className="st-match-row__odd-value">{a > 0 ? a.toFixed(2) : "\u2014"}</span>
                               </div>
                             </div>
                           )}
@@ -2253,7 +2253,7 @@ export default function Dashboard() {
                                         style={{
                                           color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
                                         }}
-                                        title={`EV: ${(pred.ev * 100).toFixed(1)}% | Odd m\u00EDn: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
+                                        title={`EV: ${(pred.ev * 100).toFixed(1)}% | Odd mín: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
                                       >
                                         EV: {pred.ev >= 0 ? "+" : ""}{(pred.ev * 100).toFixed(1)}%
                                       </span>
@@ -2261,8 +2261,8 @@ export default function Dashboard() {
                                   ) : pred.odd_minima != null ? (
                                     <>
                                       <span className="st-prediction-sep" aria-hidden="true">|</span>
-                                      <span className="st-prediction-odd" style={{ opacity: 0.7 }} title="Odd m\u00EDnima para EV positivo">
-                                        Odd m\u00EDn: {pred.odd_minima.toFixed(2)}
+                                      <span className="st-prediction-odd" style={{ opacity: 0.7 }} title="Odd mínima para EV positivo">
+                                        Odd mín: {pred.odd_minima.toFixed(2)}
                                       </span>
                                     </>
                                   ) : null}
