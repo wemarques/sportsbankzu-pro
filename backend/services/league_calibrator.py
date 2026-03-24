@@ -17,6 +17,7 @@ from backend.services.math_service import poisson_pmf
 from backend.modeling.poisson_matrix import dixon_coles_tau
 
 logger = logging.getLogger("sportsbankzu.league_calibrator")
+logger.setLevel(logging.INFO)
 
 # Temporal decay weights for 6 seasons (T-1 most recent)
 SEASON_WEIGHTS = [0.50, 0.25, 0.13, 0.07, 0.03, 0.02]
@@ -251,8 +252,12 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
         if status not in ("complete", "finished", "ft"):
             continue
 
-        gh = m.get("homeGoalCount") or m.get("home_goals")
-        ga = m.get("awayGoalCount") or m.get("away_goals")
+        gh = m.get("homeGoalCount")
+        if gh is None:
+            gh = m.get("home_goals")
+        ga = m.get("awayGoalCount")
+        if ga is None:
+            ga = m.get("away_goals")
         if gh is None or ga is None:
             continue
 
@@ -901,41 +906,70 @@ def calibrate_league(
     defl_1x2_for_rho = best_1x2_defl.get("deflation", 1.0)
     w_s, w_r = best_ou_weights
 
+    # Pre-compute per-match lambdas and count scoreline types (once)
+    match_lambdas = []
+    score_counts = {"00": 0, "01": 0, "10": 0, "11": 0, "other": 0}
+    sum_lh = sum_la = 0.0
+
+    for m in matches:
+        home_s = m.get("home_goals_scored_avg", 0) or 0
+        away_s = m.get("away_goals_scored_avg", 0) or 0
+        home_r = m.get("home_goals_scored_avg_recent", home_s) or home_s
+        away_r = m.get("away_goals_scored_avg_recent", away_s) or away_s
+        h_def = m.get("away_goals_conceded_factor", 1.0) or 1.0
+        a_def = m.get("home_goals_conceded_factor", 1.0) or 1.0
+
+        lh = max(0.2, min(4.5, (home_s * w_s + home_r * w_r) * h_def)) * defl_1x2_for_rho
+        la = max(0.2, min(4.5, (away_s * w_s + away_r * w_r) * a_def)) * defl_1x2_for_rho
+
+        gh = m.get("goals_home", 0) or 0
+        ga = m.get("goals_away", 0) or 0
+
+        match_lambdas.append((gh, ga, lh, la))
+        sum_lh += lh
+        sum_la += la
+
+        if gh <= 1 and ga <= 1:
+            score_counts[f"{gh}{ga}"] += 1
+        else:
+            score_counts["other"] += 1
+
+    n_total = len(match_lambdas)
+    avg_lh = sum_lh / n_total if n_total else 0
+    avg_la = sum_la / n_total if n_total else 0
+
+    logger.info(
+        f"[rho-data] {league_id}: N={n_total} "
+        f"scores={{0-0:{score_counts['00']}, 0-1:{score_counts['01']}, "
+        f"1-0:{score_counts['10']}, 1-1:{score_counts['11']}, other:{score_counts['other']}}} "
+        f"avg_lh={avg_lh:.3f} avg_la={avg_la:.3f} defl_1x2={defl_1x2_for_rho}"
+    )
+
     best_rho = {"ll": -1e18, "rho": 0.0}
+    ll_curve = {}
 
     for rho_val in RHO_GRID:
         log_lik = 0.0
-        n_affected = 0  # matches where τ != 1.0
 
-        for m in matches:
-            home_s = m.get("home_goals_scored_avg", 0) or 0
-            away_s = m.get("away_goals_scored_avg", 0) or 0
-            home_r = m.get("home_goals_scored_avg_recent", home_s) or home_s
-            away_r = m.get("away_goals_scored_avg_recent", away_s) or away_s
-            h_def = m.get("away_goals_conceded_factor", 1.0) or 1.0
-            a_def = m.get("home_goals_conceded_factor", 1.0) or 1.0
-
-            lh = max(0.2, min(4.5, (home_s * w_s + home_r * w_r) * h_def)) * defl_1x2_for_rho
-            la = max(0.2, min(4.5, (away_s * w_s + away_r * w_r) * a_def)) * defl_1x2_for_rho
-
-            gh = m.get("goals_home", 0) or 0
-            ga = m.get("goals_away", 0) or 0
-
+        for gh, ga, lh, la in match_lambdas:
             tau = dixon_coles_tau(gh, ga, lh, la, rho_val)
             if tau > 0:
                 log_lik += math.log(tau)
             else:
-                log_lik += -50  # heavy penalty for τ <= 0 (invalid)
+                log_lik += -50  # heavy penalty for invalid tau
 
-            if gh <= 1 and ga <= 1:
-                n_affected += 1
-
+        ll_curve[rho_val] = log_lik
         if log_lik > best_rho["ll"]:
-            best_rho = {"ll": log_lik, "rho": rho_val, "n_affected": n_affected}
+            best_rho = {"ll": log_lik, "rho": rho_val}
+
+    # Log LL curve at key points for diagnostics
+    diag_rhos = [-0.25, -0.20, -0.15, -0.10, -0.05, 0.0, 0.05]
+    ll_str = " | ".join(f"{r:+.2f}:{ll_curve.get(r, 0):.3f}" for r in diag_rhos if r in ll_curve)
+    logger.info(f"[rho-LL] {league_id}: {ll_str}")
 
     optimal_rho = best_rho.get("rho", 0.0)
 
-    # Sanity guard: cap extreme ρ values (#078-validation)
+    # Sanity guard: cap extreme rho values (#078-validation)
     if optimal_rho <= -0.20:
         logger.warning(
             f"[calibrator] {league_id}: rho={optimal_rho} is extreme (< -0.20). "
@@ -950,7 +984,7 @@ def calibrate_league(
 
     logger.info(
         f"[calibrator] {league_id}: optimal rho={optimal_rho} "
-        f"(LL={best_rho['ll']:.2f}, n_affected={best_rho.get('n_affected', '?')})"
+        f"(raw_best={best_rho['rho']}, LL={best_rho['ll']:.2f})"
     )
 
     # ── Grid search 5: Corners deflation (Brier-based) ──
