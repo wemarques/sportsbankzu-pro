@@ -3885,4 +3885,53 @@ Ao migrar routers, verificar não apenas os endpoints de CRUD principal (analysi
 
 ---
 
+## 076 — /live-scores retorna 0 jogos quando FootyStats tem dados mas todos filtrados
+
+**Data:** 2026-03-24
+**Commit:** `e1858d5`
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+O endpoint `/live-scores` retornava `{"matches": []}` mesmo com jogos ao vivo (Huracán vs Barracas Central, Argentina Primera División, 78', 0-0). O endpoint `/live` (API-Football direto) retornava 9 jogos corretamente.
+
+### Causa raiz
+
+O fallback API-Football no `/live-scores` (linha 1005) era ativado APENAS quando `raw_list` (FootyStats `todays-matches`) estava completamente vazio:
+
+```python
+if not raw_list and _afc.is_configured:  # fallback
+```
+
+Porém FootyStats retornava jogos de outras ligas (status "scheduled") — `raw_list` não estava vazio. Todos os items eram filtrados por `status not in ("live", "finished")` na linha 1138, resultando em `result = []`. O API-Football enrichment (linha 1346+) faz overlay apenas em items já existentes em `result` — com `result` vazio, nada era enriched.
+
+### Correções aplicadas
+
+**Camada única — Fallback API-Football post-filter:**
+
+Após processar todos os jogos do FootyStats e obter `result` vazio (todos filtrados), aplicar API-Football como fonte primária (mesmo padrão do bloco existente na linha 1005-1082):
+
+```python
+if not result and _afc.is_configured:
+    # Same logic as existing empty-raw_list fallback
+    af_live = _afc.get_live_fixtures()
+    ...
+```
+
+Inclui extração de corners via `extract_live_data()` + fallback `get_fixture_statistics()`.
+
+### Verificação
+
+- Antes: `/live-scores` → 0 matches
+- Depois: `/live-scores` → 9 matches (Huracán corners=9, Aucas corners=4)
+- `/live` endpoint (API-Football direto) retorna os mesmos jogos — confirmação de consistência
+
+### Lição aprendida
+
+Fallbacks devem cobrir TODOS os cenários de "sem dados úteis", não apenas "sem dados brutos". Um `raw_list` não-vazio mas sem items relevantes é funcionalmente equivalente a vazio.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
