@@ -3850,38 +3850,127 @@ O `vercel.json` tinha apenas `{"framework": "nextjs"}` sem configuração de Flu
 
 ### Problema identificado
 
-Botão "Auditar" no painel de jogo chama `POST /api/ai/match/{id}/audit` e `POST /api/ai/match/{id}/audit/apply`, mas ambos retornavam HTTP 404. A análise AI funcionava normalmente (75% confiança, resumo, pontos-chave), mas a seção "Resultado da Auditoria" mostrava 0% de confiança com todas as validações UNKNOWN.
+Ao clicar "Auditar" no painel de um jogo, a seção "Resultado da Auditoria" mostrava:
+
+```
+Confiança: 0%
+Validação:
+  Probabilidades  → UNKNOWN  → HTTP 404: {"detail":"Not Found"}
+  Lambdas         → UNKNOWN  → HTTP 404: {"detail":"Not Found"}
+  Expected Value  → UNKNOWN  → HTTP 404: {"detail":"Not Found"}
+```
+
+A Análise AI funcionava normalmente (75% confiança, resumo, pontos-chave). Apenas a auditoria/validação por jogo estava quebrada com HTTP 404.
+
+### Investigação detalhada
+
+**1. Fluxo completo rastreado (frontend → backend):**
+
+```
+Botão "Auditar" (MatchDetailCard.tsx)
+  → postMatchAudit() (lib/api.ts:279-306)
+    → POST /api/ai/match/{id}/audit  (body: {predictions, ai_summary})
+      → Next.js proxy (api/ai/match/[id]/audit/route.ts)
+        → fetchBackend(`/api/ai/match/${id}/audit`)
+          → Backend Lambda: /api/ai/match/{id}/audit  ← NÃO EXISTIA (404)
+```
+
+**2. Rotas existentes no backend:**
+
+| Path | Onde | Status |
+|------|------|--------|
+| `POST /ai/audit-match` | `main.py:1256` | Rota antiga, path INCOMPATÍVEL |
+| `GET /api/ai/match/{id}/analysis` | `ai_analysis.py` | OK |
+| `GET /api/ai/match/{id}/analysis/legacy` | `ai_analysis.py` | OK |
+| `POST /api/ai/match/{id}/analysis/regenerate` | `ai_analysis.py` | OK |
+| `GET /api/ai/batch-analysis` | `ai_analysis.py` | OK |
+| **`POST /api/ai/match/{id}/audit`** | **NENHUM** | **← 404** |
+| **`POST /api/ai/match/{id}/audit/apply`** | **NENHUM** | **← 404** |
+
+**3. Interfaces TypeScript esperadas pelo frontend:**
+
+```typescript
+// MatchDetailCard.tsx
+interface AuditResult {
+  validation: { probabilities, lambdas, ev }
+  audit_confidence: number
+  corrections?: AuditCorrection[]
+}
+interface AuditCorrection {
+  type: string; parameter: string
+  current_value: number; suggested_value: number
+  reason: string; confidence: number; impact: string
+}
+```
+
+**4. Backend audit disponível:**
+- `MistralAuditor.audit_match_calculation(match_data)` em `backend/ai/mistral_auditor.py` — aceita dict com `id`, `homeTeam`/`home_team`, `stats`, `odds`
+- `log_correction()` em `backend/audit.py` — persiste correções
 
 ### Causa raiz
 
 Durante a migração Mistral v3.0 (#072, #073):
 1. A rota orphan `POST /ai/audit-match` existia em `main.py:1256` com path `/ai/audit-match` (sem prefixo `/api/`)
 2. O novo router `ai_analysis.py` (prefixo `/api/ai`) foi criado com 4 endpoints (analysis, legacy, regenerate, batch) mas **nenhum endpoint de auditoria**
-3. O frontend (via `lib/api.ts:postMatchAudit`) chama `POST /api/ai/match/{id}/audit` que passa pelo Next.js proxy (`api/ai/match/[id]/audit/route.ts`) e chega ao backend como `/api/ai/match/{id}/audit`
-4. Path mismatch: frontend espera `/api/ai/match/{id}/audit`, backend só tinha `/ai/audit-match` → 404
+3. O frontend chama `POST /api/ai/match/{id}/audit` que passa pelo Next.js proxy (`api/ai/match/[id]/audit/route.ts`) e chega ao backend como `/api/ai/match/{id}/audit`
+4. **Path mismatch**: frontend espera `/api/ai/match/{id}/audit`, backend só tinha `/ai/audit-match` → HTTP 404
 
 ### Correções aplicadas
 
-**Camada 1 — Novos endpoints no router v3.0:**
-- `POST /match/{match_id}/audit` — busca dados reais via `_get_match_data()`, constrói input para `MistralAuditor.audit_match_calculation()`, retorna resultado de auditoria
-- `POST /match/{match_id}/audit/apply` — busca dados do jogo para identificar liga, chama `log_correction()` para persistir correção
+**Camada 1 — Novos endpoints no router v3.0 (`backend/routes/ai_analysis.py`):**
+
+```python
+# Pydantic models para request bodies
+class _AuditRequest(BaseModel):
+    predictions: Optional[list] = None
+    ai_summary: Optional[dict] = None
+
+class _CorrectionRequest(BaseModel):
+    correction_type: str
+    parameter_name: str
+    old_value: float
+    new_value: float
+    reason: str
+    audit_confidence: int = 0
+
+@router.post("/match/{match_id}/audit")
+async def audit_match(match_id: str, body: _AuditRequest = _AuditRequest()):
+    # 1. Busca dados reais do pipeline via _get_match_data()
+    # 2. Constrói auditor_input com ambos formatos de nome (home_team + homeTeam)
+    # 3. Chama MistralAuditor.audit_match_calculation() via asyncio.to_thread
+    # 4. Retorna {"status": "success", "audit": result}
+
+@router.post("/match/{match_id}/audit/apply")
+async def apply_audit_correction(match_id: str, body: _CorrectionRequest):
+    # 1. Busca match_data para identificar liga
+    # 2. Chama log_correction() com todos os campos
+    # 3. Retorna {"status": "success", "message": "Correcao aplicada para {match_id}"}
+```
 
 **Camada 2 — Compatibilidade de nomes:**
-- O dict `auditor_input` inclui ambos formatos (`home_team`/`homeTeam`, `away_team`/`awayTeam`) para compatibilidade com `MistralAuditor` que aceita ambos
+- O dict `auditor_input` inclui ambos formatos (`home_team`/`homeTeam`, `away_team`/`awayTeam`) porque `MistralAuditor` e `PromptTemplates.audit_calculation_prompt()` aceitam ambos formatos em pontos diferentes do código
 
 **Camada 3 — Validação e error handling:**
-- `ValueError` (match não encontrado, liga inválida) → HTTP 400
-- Erros gerais (Mistral API down, etc.) → HTTP 500 com log
+- `ValueError` (match não encontrado via `_get_match_data`, liga inválida via `_extract_league_id`) → HTTP 400
+- Erros gerais (Mistral API down, timeout, etc.) → HTTP 500 com log detalhado
 
 ### Verificação
 
-- Endpoint retorna HTTP 400 para match IDs inválidos (antes: HTTP 404)
-- Endpoint retorna HTTP 200 com resultado de auditoria para match IDs válidos
-- Total de rotas no router: 6 (era 4)
+```bash
+# Antes do fix:
+curl -X POST .../api/ai/match/test-id/audit → HTTP 404 {"detail":"Not Found"}
+
+# Depois do fix:
+curl -X POST .../api/ai/match/test-id/audit → HTTP 400 {"detail":"Liga nao identificada..."}
+curl -X POST .../api/ai/match/{real-id}/audit → HTTP 200 {"status":"success","audit":{...}}
+```
+
+- Total de rotas no router: 6 (era 4, +audit, +audit/apply)
+- Imports verificados: `from backend.ai.mistral_auditor import MistralAuditor` e `from backend.audit import log_correction` (deferred imports para evitar circular)
 
 ### Lição aprendida
 
-Ao migrar routers, verificar não apenas os endpoints de CRUD principal (analysis, regenerate, batch) mas também endpoints auxiliares (audit, validate, export) que dependem do mesmo serviço. O path do frontend proxy deve corresponder exatamente ao prefix+path do router backend.
+Ao migrar routers, verificar não apenas os endpoints de CRUD principal (analysis, regenerate, batch) mas **também endpoints auxiliares** (audit, validate, export) que dependem do mesmo serviço. O path do frontend proxy deve corresponder **exatamente** ao prefix+path do router backend. Manter uma tabela de endpoints (path, método, origem, destino) durante migrações para não perder rotas.
 
 ---
 
@@ -3889,48 +3978,208 @@ Ao migrar routers, verificar não apenas os endpoints de CRUD principal (analysi
 
 **Data:** 2026-03-24
 **Commit:** `e1858d5`
-**Arquivos afetados:** `backend/routes/fixtures.py`
-**Severidade:** Alta
+**Arquivos afetados:** `backend/routes/fixtures.py` (linhas 1343-1410 aprox.)
+**Severidade:** Crítica — bug silencioso, sem erro HTTP, dados simplesmente desaparecem
 **Status:** Corrigido
 
 ### Problema identificado
 
-O endpoint `/live-scores` retornava `{"matches": []}` mesmo com jogos ao vivo (Huracán vs Barracas Central, Argentina Primera División, 78', 0-0). O endpoint `/live` (API-Football direto) retornava 9 jogos corretamente.
+O endpoint `/live-scores` retornava `{"matches": [], "nextUpdate": 60}` com HTTP 200 (sem erro!) mesmo com 9 jogos ao vivo globalmente. O jogo Huracán vs Barracas Central (Argentina Primera División, 78', 0-0) era invisível no dashboard.
+
+**Sintomas enganosos que dificultaram a localização:**
+- HTTP 200 (não 404 nem 500) — parecia funcionar
+- Nenhum log de warning no CloudWatch — o código não logava nada quando retornava vazio
+- A duração do request era 5ms (cache hit do FootyStats) — parecia saudável
+- O endpoint `/live` (API-Football direto) retornava 9 jogos corretamente
+- O endpoint `/fixtures` processava o Huracán normalmente nos logs
+
+### Investigação detalhada — por que foi difícil localizar
+
+**Passo 1 — Verificação inicial:**
+```bash
+curl .../live-scores → {"matches":[],"nextUpdate":60}  # HTTP 200, sem erro
+```
+Sem erro HTTP, sem mensagem de erro. O endpoint simplesmente retorna lista vazia.
+
+**Passo 2 — Logs do CloudWatch:**
+```
+REQUEST 17f5e5e1 Duration: 4.87ms  # Nenhum log interno!
+```
+A request completou em 5ms sem gerar nenhum warning. Isso indicou cache hit do FootyStats — a chamada `footstats.get_live_scores()` retornou do cache SQLite instantaneamente.
+
+**Passo 3 — Verificação cruzada:**
+```bash
+curl .../live → 9 matches (Huracán, Aucas, etc.)  # API-Football direto funciona!
+```
+O `/live` endpoint (usa API-Football via `live.py`) retornava todos os jogos. O problema era exclusivo do `/live-scores` (em `fixtures.py`).
+
+**Passo 4 — Trace do fluxo no código:**
+
+```
+/live-scores (fixtures.py:976)
+│
+├─ footstats.get_live_scores() → success:true, data:[...5 items...]
+│   └─ FootyStats todays-matches retorna jogos de OUTRAS ligas
+│       (Costa Rica, México, etc.) com status="incomplete" ou "scheduled"
+│
+├─ raw_list = data["data"] → NÃO vazio (5 items)
+│
+├─ if not raw_list: ← FALSO! raw_list tem items
+│   └─ Fallback API-Football: NUNCA ATIVADO  ← BUG AQUI
+│
+├─ Loop raw_list (linha 1105):
+│   ├─ status_map("incomplete") → "scheduled"
+│   ├─ "scheduled" not in ("live", "finished") → SKIP
+│   ├─ status_map("scheduled") → "scheduled" → SKIP
+│   └─ ... todos os 5 items são SKIP
+│
+├─ result = []  ← VAZIO após filtragem
+│
+├─ API-Football enrichment (linha 1346):
+│   └─ for rec in result: ← result vazio, loop não executa
+│
+└─ return {"matches": [], "nextUpdate": 60}  ← RETORNA VAZIO
+```
+
+**O bug estava na condição da linha 1005:**
+```python
+if not raw_list and _afc.is_configured:  # Só ativa quando raw_list é COMPLETAMENTE vazio
+```
+
+Cenários reais não cobertos:
+- FootyStats retorna 5 jogos de ligas menores (scheduled/incomplete) → raw_list=[5 items]
+- Todos são filtrados → result=[]
+- API-Football tem 9 jogos ao vivo → NUNCA consultado
+- Dashboard mostra 0 jogos
 
 ### Causa raiz
 
-O fallback API-Football no `/live-scores` (linha 1005) era ativado APENAS quando `raw_list` (FootyStats `todays-matches`) estava completamente vazio:
+A arquitetura de fallback do `/live-scores` tinha **3 pontos onde API-Football é usado**:
 
-```python
-if not raw_list and _afc.is_configured:  # fallback
-```
+| Ponto | Condição | O que faz | Cobria o bug? |
+|-------|----------|-----------|---------------|
+| **Linha 1005** | `raw_list` vazio | API-Football como fonte primária | **NÃO** — raw_list não estava vazio |
+| **Linha 1086** | `raw_list` vazio (2a checagem) | Serve cache ou retorna vazio | **NÃO** — mesmo motivo |
+| **Linha 1346** | Enrich items em `result` | Overlay scores nos items do FootyStats | **NÃO** — result estava vazio, nada a enricher |
 
-Porém FootyStats retornava jogos de outras ligas (status "scheduled") — `raw_list` não estava vazio. Todos os items eram filtrados por `status not in ("live", "finished")` na linha 1138, resultando em `result = []`. O API-Football enrichment (linha 1346+) faz overlay apenas em items já existentes em `result` — com `result` vazio, nada era enriched.
+**Nenhum dos 3 pontos cobria o cenário: "FootyStats retorna dados, mas nenhum é live/finished".**
+
+Isso acontece frequentemente para ligas sul-americanas (Argentina, Colômbia, Equador) porque:
+1. FootyStats `todays-matches` é um endpoint global que retorna jogos de TODAS as ligas
+2. Jogos de ligas sem season_id ativo podem aparecer como "incomplete" ou "scheduled"
+3. API-Football `fixtures?live=all` retorna corretamente os jogos ao vivo de TODAS as ligas
+4. Mas o fallback só era acionado quando FootyStats retornava **zero** items
 
 ### Correções aplicadas
 
-**Camada única — Fallback API-Football post-filter:**
+**Camada 1 — Fallback API-Football pós-filtragem (`fixtures.py`, após linha 1344):**
 
-Após processar todos os jogos do FootyStats e obter `result` vazio (todos filtrados), aplicar API-Football como fonte primária (mesmo padrão do bloco existente na linha 1005-1082):
+Adicionado novo bloco entre a filtragem do FootyStats e o enrichment do API-Football:
 
 ```python
+# ── API-Football as PRIMARY when FootyStats had data but all filtered (#075) ──
+# FootyStats may return matches from other leagues (all "scheduled") while
+# the Argentine/Colombian league matches are only in API-Football.
+# In this case raw_list is non-empty but result is empty after filtering.
 if not result and _afc.is_configured:
-    # Same logic as existing empty-raw_list fallback
-    af_live = _afc.get_live_fixtures()
-    ...
+    try:
+        af_live = _afc.get_live_fixtures()
+        if af_live:
+            af_result = []
+            period_map = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
+            for fx in af_live:
+                ld = _afc.extract_live_data(fx)
+                # ... extrai teams, status, score, corners
+                # Corner extraction: inline data → fallback get_fixture_statistics()
+                entry = {
+                    "id": ld["fixture_id"],
+                    "homeTeam": home_name,
+                    "awayTeam": away_name,
+                    "status": _af_status,
+                    "score": score_entry,
+                    "period": period_map.get(fx_status),
+                    "minute": ld["minute"],
+                    "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                }
+                if current_corners is not None:
+                    entry["currentCorners"] = current_corners
+                af_result.append(entry)
+            if af_result:
+                logger.info(
+                    f"[live-scores] FootyStats filtered to 0 → API-Football primary: "
+                    f"{len(af_result)} matches"
+                )
+                result = af_result
+    except Exception as _af_err:
+        logger.warning(f"[live-scores] API-Football post-filter fallback failed: {_af_err}")
 ```
 
-Inclui extração de corners via `extract_live_data()` + fallback `get_fixture_statistics()`.
+**Lógica de extração de corners (3 camadas dentro do bloco):**
+1. Inline: `extract_live_data()` → `home_corners` + `away_corners` do `fixtures?live=all`
+2. Stats API: se inline é None → `get_fixture_statistics(fixture_id)` → `_extract_corners_from_stats()`
+3. Parsed: se extraction falha → `parse_fixture_statistics()` → `corner_kicks` key
 
-### Verificação
+**Onde o novo bloco se encaixa no fluxo:**
 
-- Antes: `/live-scores` → 0 matches
-- Depois: `/live-scores` → 9 matches (Huracán corners=9, Aucas corners=4)
-- `/live` endpoint (API-Football direto) retorna os mesmos jogos — confirmação de consistência
+```
+/live-scores
+├─ FootyStats todays-matches → raw_list (pode ter items)
+├─ if not raw_list → API-Football primary (bloco existente, linha 1005)
+├─ Loop raw_list → filter live/finished → result
+├─ if not result → API-Football primary (NOVO BLOCO #076) ← AQUI
+├─ API-Football enrichment → overlay nos items de result (existente, linha 1346)
+└─ return result
+```
+
+### Verificação em produção
+
+```bash
+# ANTES do fix:
+curl .../live-scores
+→ {"matches":[],"nextUpdate":60}
+
+# DEPOIS do fix:
+curl .../live-scores
+→ 9 matches:
+  Antigua GFC vs Marquense [live 1T 45'] corners=MISS
+  UMECIT vs Herrera [live 1T 25'] corners=MISS
+  Huracan vs Barracas Central [live 2T 82'] 0-0 corners=9   ← CORNERS FUNCIONANDO
+  Aucas vs Orense SC [live 2T 85'] 3-0 corners=4            ← CORNERS FUNCIONANDO
+  Corinthians W vs America Mineiro W [live 2T 90'] 4-0
+  Mount Pleasant Academy vs Portmore United [live 2T 62'] 2-0
+  Pitbulls Santa Barbara FC vs Escorpiones Belén [live HT 45'] 1-0
+  León W vs Atlas W [live HT 45'] 1-0
+  Lobos Upnfm vs Olancho [live HT 45'] 2-1
+```
+
+Corners=9 para Huracán confirma que a extração de corners via API-Football funciona no novo bloco.
+
+### Por que este bug era difícil de localizar
+
+1. **HTTP 200 sem erro** — não aparece em monitoramento de erros
+2. **Nenhum log de warning** — o código simplesmente retornava vazio sem alertar
+3. **Cache de 30s mascara** — duração de 5ms sugere "tudo OK"
+4. **Funciona para algumas ligas** — quando FootyStats cobre a liga (ex: Premier League), jogos aparecem normalmente
+5. **Endpoints vizinhos funcionam** — `/live` (API-Football direto) e `/fixtures` retornam dados
+6. **Condição sutil** — a diferença entre `raw_list` vazio e `result` vazio após filtragem é fácil de confundir
+7. **Intermitente** — só ocorre quando FootyStats retorna items de outras ligas (depende do horário e ligas ativas)
+
+### Ligas afetadas (não cobertas pelo FootyStats todays-matches)
+
+Baseado na observação, as seguintes ligas podem ser afetadas:
+- Argentina Primera División
+- Campeonato Colombiano
+- Liga Pro Ecuador
+- Liga Nacional Guatemala/Honduras
+- Liga Panameña
+- Cualquer liga não-europeia quando FootyStats retorna dados de ligas europeias primeiro
 
 ### Lição aprendida
 
-Fallbacks devem cobrir TODOS os cenários de "sem dados úteis", não apenas "sem dados brutos". Um `raw_list` não-vazio mas sem items relevantes é funcionalmente equivalente a vazio.
+1. **Fallbacks devem cobrir "sem dados úteis", não apenas "sem dados brutos"** — um `raw_list` com 5 items scheduled é funcionalmente equivalente a vazio para o propósito de live scores
+2. **Sempre logar quando retorna vazio em endpoints críticos** — se `/live-scores` retorna 0 matches, deveria logar warning com: `"[live-scores] 0 matches after filtering {len(raw_list)} raw items (statuses: {skipped_statuses})"`
+3. **Testar com ligas sul-americanas** — FootyStats tem cobertura inconsistente para ligas fora da Europa. Testes end-to-end devem incluir ao menos 1 liga SA
+4. **Validar consistência entre endpoints** — se `/live` retorna N jogos e `/live-scores` retorna 0, há um bug em uma das camadas
 
 ---
 
