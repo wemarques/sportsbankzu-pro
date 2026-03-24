@@ -33,7 +33,7 @@ ONE_X_TWO_DEFLATION_GRID = [0.90, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]
 CORNER_BRIER_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 CARDS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
-RHO_GRID = [-0.15, -0.12, -0.10, -0.08, -0.05, -0.03, 0.0]
+RHO_GRID = [round(-0.25 + i * 0.01, 2) for i in range(31)]  # -0.25 to 0.05
 
 
 def _brier(prob: float, outcome: int) -> float:
@@ -922,6 +922,20 @@ def calibrate_league(
                 best_rho = {"brier": combined, "rho": rho_val}
 
     optimal_rho = best_rho.get("rho", 0.0)
+
+    # Sanity guard: cap extreme ρ values (#078-validation)
+    if optimal_rho <= -0.20:
+        logger.warning(
+            f"[calibrator] {league_id}: ρ={optimal_rho} is extreme (< -0.20). "
+            f"Possible data/formula issue. Capping at -0.15."
+        )
+        optimal_rho = -0.15
+    if optimal_rho >= 0.03:
+        logger.warning(
+            f"[calibrator] {league_id}: ρ={optimal_rho} is positive (> 0.03). "
+            f"Unusual for football — check draw data for this league."
+        )
+
     logger.info(f"[calibrator] {league_id}: optimal ρ={optimal_rho} (brier={best_rho['brier']:.4f})")
 
     # ── Grid search 5: Corners deflation (Brier-based) ──
