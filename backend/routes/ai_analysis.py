@@ -118,6 +118,90 @@ async def get_batch_analysis(
 
 
 # =====================================================================
+# AUDIT / VALIDATION ENDPOINTS (#075)
+# =====================================================================
+
+from pydantic import BaseModel, Field as PydanticField
+from typing import List as _List
+
+
+class _AuditRequest(BaseModel):
+    predictions: Optional[list] = None
+    ai_summary: Optional[dict] = None
+
+
+class _CorrectionRequest(BaseModel):
+    correction_type: str
+    parameter_name: str
+    old_value: float
+    new_value: float
+    reason: str
+    audit_confidence: int = 0
+
+
+@router.post("/match/{match_id}/audit")
+async def audit_match(match_id: str, body: _AuditRequest = _AuditRequest()):
+    """Audit validation for a specific match — calls MistralAuditor."""
+    from backend.ai.mistral_auditor import MistralAuditor
+
+    try:
+        match_data = await _get_match_data(match_id)
+
+        # Build the dict the auditor expects (accepts both homeTeam and home_team)
+        auditor_input: Dict[str, Any] = {
+            "id": match_id,
+            "home_team": match_data["home_team"],
+            "away_team": match_data["away_team"],
+            "homeTeam": match_data["home_team"],
+            "awayTeam": match_data["away_team"],
+            "stats": match_data["stats"],
+            "odds": match_data["odds"],
+        }
+        if body.predictions:
+            auditor_input["predictions"] = body.predictions
+        if body.ai_summary:
+            auditor_input["ai_summary"] = body.ai_summary
+
+        auditor = MistralAuditor()
+        result = await asyncio.to_thread(auditor.audit_match_calculation, auditor_input)
+        return {"status": "success", "audit": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[ai_analysis] Audit error for {match_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/match/{match_id}/audit/apply")
+async def apply_audit_correction(match_id: str, body: _CorrectionRequest):
+    """Apply an audit correction for a match."""
+    from backend.audit import log_correction
+
+    try:
+        match_data = await _get_match_data(match_id)
+        league = match_data.get("league", "unknown")
+
+        log_correction(
+            match_id=match_id,
+            league=league,
+            correction_type=body.correction_type,
+            parameter_name=body.parameter_name,
+            old_value=body.old_value,
+            new_value=body.new_value,
+            suggested_by="mistral_audit",
+            applied_by="user_dashboard",
+            audit_confidence=body.audit_confidence,
+            reason=body.reason,
+        )
+        return {"status": "success", "message": f"Correcao aplicada para {match_id}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[ai_analysis] Apply correction error for {match_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================================
 # REAL DATA PIPELINE — replaces mock functions
 # =====================================================================
 
