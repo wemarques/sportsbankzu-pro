@@ -891,11 +891,13 @@ def calibrate_league(
         if b is not None and b < best_1x2_defl["brier"]:
             best_1x2_defl = {"brier": b, "deflation": defl_1x2}
 
-    # ── Grid search 4: Dixon-Coles ρ (combined 1X2 + O/U Brier) (#078) ──
+    # ── Grid search 4: Dixon-Coles ρ (draw-weighted Brier) (#078-v) ──
+    # τ(ρ) only affects scorelines (0,0),(1,0),(0,1),(1,1) — primarily draws.
+    # O/U is insensitive to ρ. Using draw Brier as primary objective with
+    # 1X2 avg as regularizer to prevent extreme ρ that hurts non-draws.
     best_rho = {"brier": 1.0, "rho": 0.0}
 
     for rho_val in RHO_GRID:
-        # Evaluate combined 1X2 + O/U Brier at this rho
         result_1x2 = _simulate_all_markets(
             matches,
             lambda_deflation_ou=best_ou_defl,
@@ -905,19 +907,11 @@ def calibrate_league(
             compute_only="1x2",
             rho=rho_val,
         )
-        result_ou = _simulate_all_markets(
-            matches,
-            lambda_deflation_ou=best_ou_defl,
-            lambda_weights=best_ou_weights,
-            lambda_deflation_btts=best_btts.get("deflation", 1.0),
-            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
-            compute_only="ou",
-            rho=rho_val,
-        )
-        b_1x2 = result_1x2.get("brier_1x2_avg")
-        b_ou = result_ou.get("brier_over_avg")
-        if b_1x2 is not None and b_ou is not None:
-            combined = (b_1x2 + b_ou) / 2.0
+        b_draw = result_1x2.get("brier_1x2_draw")
+        b_1x2_avg = result_1x2.get("brier_1x2_avg")
+        if b_draw is not None and b_1x2_avg is not None:
+            # 60% draw Brier + 40% full 1X2 Brier as regularizer
+            combined = 0.60 * b_draw + 0.40 * b_1x2_avg
             if combined < best_rho["brier"]:
                 best_rho = {"brier": combined, "rho": rho_val}
 
