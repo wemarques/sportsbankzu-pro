@@ -4188,7 +4188,7 @@ Baseado na observação, as seguintes ligas podem ser afetadas:
 ## 077 — Refinamento visual CornerProgressBar + Brier per-league persistente
 
 **Data:** 2026-03-24
-**Commit:** `[SHA]`
+**Commit:** `5fb001c`
 **Arquivos afetados:** `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/lib/api.ts`, `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/components/AuditReportCard.tsx`
 **Severidade:** Baixa (visual), Alta (Brier)
 **Status:** Corrigido
