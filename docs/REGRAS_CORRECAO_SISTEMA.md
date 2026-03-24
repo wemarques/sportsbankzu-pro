@@ -4249,6 +4249,7 @@ O fix #069 no backend (`cron_handler.py`) estava correto: `lg_brier = sum(lm["br
 **Arquivos afetados:** `backend/modeling/poisson_matrix.py`, `backend/modeling/lambda_calculator.py`, `backend/services/league_calibrator.py`, `tests/unit/test_dixon_coles.py`
 **Severidade:** Alta
 **Status:** Implementado
+**Relacionado:** #053 (forças relativas λ), #078v (MLE para ρ, bug de extração de gols, validação em 6 ligas)
 
 ### Problema identificado
 
@@ -4288,7 +4289,7 @@ REGRAS #053 implementou forças relativas Dixon-Coles (`λ = media_liga × ataqu
 - ρ salvo na corrections DB via `save_calibration()`
 
 **Camada 5 — Tests em `tests/unit/test_dixon_coles.py`:**
-- 8 testes cobrindo τ, matrix, γ, decay functions
+- 12 testes: τ (ρ=0, ρ<0, scorelines altos), matriz (soma≈1, backward compat, draw boost), γ (default e corrections), decay (half-life, peso recente, lista vazia), `half_life_to_weights`
 - Verifica backward compatibility (ρ=0 ≡ Poisson independente)
 
 ### Lição aprendida
@@ -4302,8 +4303,8 @@ REGRAS #053 implementou forças relativas Dixon-Coles (`λ = media_liga × ataqu
 ## 078v — Validação do parâmetro ρ (rho) de Dixon-Coles
 
 **Data:** 2026-03-24
-**Commit:** `d401ab4`
-**Arquivos afetados:** `backend/services/league_calibrator.py`
+**Commits:** `d401ab4` (fix extração `homeGoalCount`/`awayGoalCount` em `_extract_matches_from_season`), `ab451c4` (documentação REGRAS #078v + ajustes no texto do #078)
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `docs/REGRAS_CORRECAO_SISTEMA.md`
 **Severidade:** Crítica (bug afetava TODA a calibração, não só ρ)
 **Status:** Corrigido + Validado
 
@@ -4342,12 +4343,16 @@ para 1196 partidas da PL — ~50% dos jogos perdidos.
 Isso afetava não apenas ρ, mas TODA calibração (O/U, BTTS, 1X2, λ deflation)
 desde a implementação original de `_extract_matches_from_season`.
 
-**Correção:**
+**Correção:** o mesmo padrão aplica-se a **visitante** (`awayGoalCount` / `away_goals`).
+
 ```python
 # DEPOIS (correto):
 gh = m.get("homeGoalCount")
 if gh is None:
     gh = m.get("home_goals")
+ga = m.get("awayGoalCount")
+if ga is None:
+    ga = m.get("away_goals")
 ```
 
 ### Resultados da validação
@@ -4378,6 +4383,12 @@ Score counts agora realistas (exemplo PL):
 4. **Bug de extração de dados afeta TODA calibração** — não apenas o parâmetro sendo
    investigado. Todas as ligas previamente calibradas (#052-#056) foram treinadas com
    ~50% dos jogos faltando (todos os jogos com pelo menos um 0-0, 0-X, X-0).
+
+### Infra (conhecido em produção)
+
+Em ambiente Lambda, se `PutObject` no bucket S3 de calibrações estiver negado (IAM), os parâmetros calibrados (incluindo ρ) podem **não persistir** entre cold starts — a validação via CloudWatch (logs `rho-data`, `rho-LL`, `optimal rho`) confirma o comportamento do código; corrigir a política do role (`s3:PutObject` no prefixo de calibrações) para persistência durável.
+
+**Registo documentação:** entrada **#078v** (commits `d401ab4`, `ab451c4`, correção `ga`, nota S3); refinamentos no **#078** (relacionados, contagem de testes).
 
 ---
 
