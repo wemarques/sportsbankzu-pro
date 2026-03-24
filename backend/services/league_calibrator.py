@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 from backend.services.math_service import poisson_pmf
+from backend.modeling.poisson_matrix import dixon_coles_tau
 
 logger = logging.getLogger("sportsbankzu.league_calibrator")
 
@@ -32,6 +33,7 @@ ONE_X_TWO_DEFLATION_GRID = [0.90, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]
 CORNER_BRIER_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 CARDS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
+RHO_GRID = [-0.15, -0.12, -0.10, -0.08, -0.05, -0.03, 0.0]
 
 
 def _brier(prob: float, outcome: int) -> float:
@@ -49,6 +51,7 @@ def _simulate_all_markets(
     cards_deflation: float = 1.0,
     xg_blend_weight: float = 0.0,
     compute_only: str | None = None,
+    rho: float = 0.0,
 ) -> Dict[str, float]:
     """Simulate Brier scores for markets with per-market deflation.
 
@@ -117,14 +120,15 @@ def _simulate_all_markets(
         ga = m.get("goals_away", 0) or 0
         total = gh + ga
 
-        # ── O/U matrix (all lines) ──
+        # ── O/U matrix (all lines) — with Dixon-Coles τ (#078) ──
         if do_ou:
             prob_over = {1.5: 0.0, 2.5: 0.0, 3.5: 0.0, 4.5: 0.0}
             for h in range(9):
                 ph = poisson_pmf(h, lh_ou)
                 for a in range(9):
                     pa = poisson_pmf(a, la_ou)
-                    p = ph * pa
+                    tau = dixon_coles_tau(h, a, lh_ou, la_ou, rho)
+                    p = tau * ph * pa
                     t = h + a
                     for line in prob_over:
                         if t > line:
@@ -136,7 +140,7 @@ def _simulate_all_markets(
                 brier[f"over_{key_suffix}"].append(_brier(prob, actual))
                 brier[f"under_{key_suffix}"].append(_brier(1.0 - prob, 1 - actual))
 
-        # ── BTTS (use real btts boolean when available) ──
+        # ── BTTS (use real btts boolean when available) — with τ (#078) ──
         if do_btts:
             lh_btts = lh_raw * defl_btts
             la_btts = la_raw * defl_btts
@@ -144,13 +148,15 @@ def _simulate_all_markets(
             for h in range(9):
                 ph = poisson_pmf(h, lh_btts)
                 for a in range(9):
+                    pa = poisson_pmf(a, la_btts)
+                    tau = dixon_coles_tau(h, a, lh_btts, la_btts, rho)
                     if h >= 1 and a >= 1:
-                        prob_btts += ph * poisson_pmf(a, la_btts)
+                        prob_btts += tau * ph * pa
             btts_real = m.get("btts")
             actual_btts = (1 if btts_real else 0) if btts_real is not None else (1 if (gh > 0 and ga > 0) else 0)
             brier["btts"].append(_brier(prob_btts, actual_btts))
 
-        # ── 1X2 ──
+        # ── 1X2 — with Dixon-Coles τ (#078) ──
         if do_1x2:
             lh_1x2 = lh_raw * defl_1x2
             la_1x2 = la_raw * defl_1x2
@@ -160,7 +166,8 @@ def _simulate_all_markets(
                 ph = poisson_pmf(h, lh_1x2)
                 for a in range(9):
                     pa = poisson_pmf(a, la_1x2)
-                    p = ph * pa
+                    tau = dixon_coles_tau(h, a, lh_1x2, la_1x2, rho)
+                    p = tau * ph * pa
                     if h > a:
                         prob_home += p
                     elif h == a:
@@ -884,7 +891,40 @@ def calibrate_league(
         if b is not None and b < best_1x2_defl["brier"]:
             best_1x2_defl = {"brier": b, "deflation": defl_1x2}
 
-    # ── Grid search 4: Corners deflation (Brier-based) ──
+    # ── Grid search 4: Dixon-Coles ρ (combined 1X2 + O/U Brier) (#078) ──
+    best_rho = {"brier": 1.0, "rho": 0.0}
+
+    for rho_val in RHO_GRID:
+        # Evaluate combined 1X2 + O/U Brier at this rho
+        result_1x2 = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+            compute_only="1x2",
+            rho=rho_val,
+        )
+        result_ou = _simulate_all_markets(
+            matches,
+            lambda_deflation_ou=best_ou_defl,
+            lambda_weights=best_ou_weights,
+            lambda_deflation_btts=best_btts.get("deflation", 1.0),
+            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+            compute_only="ou",
+            rho=rho_val,
+        )
+        b_1x2 = result_1x2.get("brier_1x2_avg")
+        b_ou = result_ou.get("brier_over_avg")
+        if b_1x2 is not None and b_ou is not None:
+            combined = (b_1x2 + b_ou) / 2.0
+            if combined < best_rho["brier"]:
+                best_rho = {"brier": combined, "rho": rho_val}
+
+    optimal_rho = best_rho.get("rho", 0.0)
+    logger.info(f"[calibrator] {league_id}: optimal ρ={optimal_rho} (brier={best_rho['brier']:.4f})")
+
+    # ── Grid search 5: Corners deflation (Brier-based) ──
     best_corner = {"brier": 1.0}
 
     for c_defl in CORNER_BRIER_GRID:
@@ -896,6 +936,7 @@ def calibrate_league(
             lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
             corner_deflation=c_defl,
             compute_only="corners",
+            rho=optimal_rho,
         )
         b = result.get("brier_corners_avg")
         if b is not None and b < best_corner["brier"]:
@@ -922,7 +963,7 @@ def calibrate_league(
     else:
         corner_factor = best_corner.get("deflation", 1.0)
 
-    # ── Grid search 5: Cards deflation ──
+    # ── Grid search 6: Cards deflation ──
     best_cards = {"brier": 1.0}
 
     for c_defl in CARDS_DEFLATION_GRID:
@@ -935,6 +976,7 @@ def calibrate_league(
             corner_deflation=corner_factor,
             cards_deflation=c_defl,
             compute_only="cards",
+            rho=optimal_rho,
         )
         b = result.get("brier_cards_avg")
         if b is not None and b < best_cards["brier"]:
@@ -942,7 +984,7 @@ def calibrate_league(
 
     cards_factor = best_cards.get("deflation", 1.0)
 
-    # ── Grid search 6: xG blend weight ──
+    # ── Grid search 7: xG blend weight ──
     best_xg = {"brier": 1.0, "weight": 0.0}
 
     for xg_w in XG_BLEND_GRID:
@@ -956,6 +998,7 @@ def calibrate_league(
             cards_deflation=cards_factor,
             xg_blend_weight=xg_w,
             compute_only="ou",
+            rho=optimal_rho,
         )
         b = result.get("brier_over_avg")
         if b is not None and b < best_xg["brier"]:
@@ -1007,6 +1050,7 @@ def calibrate_league(
         corner_deflation=corner_factor,
         cards_deflation=cards_factor,
         xg_blend_weight=best_xg.get("weight", 0.0),
+        rho=optimal_rho,
     )
 
     # ── Threshold suggestions per market (Brier heuristic) ──
@@ -1046,10 +1090,12 @@ def calibrate_league(
         "lambda_weight_recent": best_ou.get("weight_recent", 0.40),
         "corner_factor": corner_factor,
         "safe_enabled": safe_enabled,
-        # New — per-market deflation
+        # Per-market deflation
         "lambda_deflation_1x2": best_1x2_defl.get("deflation", 1.0),
         "cards_factor": cards_factor,
         "xg_blend_weight": best_xg.get("weight", 0.0),
+        # Dixon-Coles ρ (#078)
+        "rho": optimal_rho,
         # New — BTTS fusion weights
         "btts_weight_footystats": suggested_btts_weights["footystats"],
         "btts_weight_poisson": suggested_btts_weights["poisson"],
@@ -1077,8 +1123,8 @@ def calibrate_league(
         f"ou={best_ou_defl}, btts={best_btts.get('deflation', 1.0)}, "
         f"1x2={best_1x2_defl.get('deflation', 1.0)}, "
         f"corners={corner_factor}, cards={cards_factor}, "
-        f"xg_w={best_xg.get('weight', 0.0)}, safe={safe_enabled}, "
-        f"brier_ou={optimal.get('brier_over_avg', '?')}"
+        f"xg_w={best_xg.get('weight', 0.0)}, ρ={optimal_rho}, "
+        f"safe={safe_enabled}, brier_ou={optimal.get('brier_over_avg', '?')}"
     )
 
     return {
@@ -1112,7 +1158,9 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
         "lambda_deflation_1x2": ("1x2_multiplier", "Calibrated 1X2 deflation"),
         "cards_factor": ("cards_multiplier", "Calibrated cards factor (Brier-based)"),
         "xg_blend_weight": ("xg_blend_weight", "Calibrated xG blend weight"),
-        # New — BTTS fusion weights
+        # Dixon-Coles rho (#078)
+        "rho": ("rho", "Calibrated Dixon-Coles rho (goal correlation)"),
+        # BTTS fusion weights
         "btts_weight_footystats": ("btts_weight_footystats", "Calibrated BTTS FootyStats weight"),
         "btts_weight_poisson": ("btts_weight_poisson", "Calibrated BTTS Poisson weight"),
         "btts_weight_team_avg": ("btts_weight_team_avg", "Calibrated BTTS team_avg weight"),

@@ -11,8 +11,9 @@ Ponderação adaptativa por regime:
 Correções por liga via audit DB (REGRAS #052).
 """
 
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,88 @@ PESOS_LAMBDA = {
 LAMBDA_MIN = 0.5  # #063: no real team scores < 0.5 goals/game on average
 LAMBDA_MAX = 4.5
 FATOR_DEFESA_MIN_HIPER = 0.90
+
+
+def _get_home_advantage_gamma(league_id: str) -> float:
+    """Get calibrated home advantage γ for a league from corrections DB.
+
+    γ is an adjustment factor on top of the implicit home advantage already
+    present in home-specific stats. Default 1.0 = no extra adjustment.
+
+    Returns float in [0.85, 1.25] range.
+    """
+    try:
+        corrections = get_lambda_corrections(league_id)
+        gamma_corr = corrections.get("home_advantage_gamma")
+        if gamma_corr:
+            val = float(gamma_corr.get("value", 1.0))
+            return max(0.85, min(1.25, val))
+    except Exception:
+        pass
+    return 1.0
+
+
+def weighted_average_with_decay(values: List[float], half_life_games: float = 20.0) -> float:
+    """Exponential decay weighted average (Dixon-Coles temporal weighting).
+
+    More recent values (later indices) get higher weight.
+    Utility for future use when per-game data becomes available (Bloco 2).
+
+    Args:
+        values: list of values (oldest first, most recent last)
+        half_life_games: half-life in games — after this many games, weight = 0.5
+
+    Returns:
+        Weighted average, or simple mean if values is empty or half_life is very large.
+    """
+    if not values:
+        return 0.0
+    n = len(values)
+    if half_life_games <= 0 or half_life_games > 1e6:
+        return sum(values) / n
+
+    phi = math.exp(-math.log(2) / half_life_games)
+    total_w = 0.0
+    total_v = 0.0
+    for i, v in enumerate(values):
+        # i=0 is oldest, i=n-1 is most recent
+        age = n - 1 - i
+        w = phi ** age
+        total_w += w
+        total_v += w * v
+
+    return total_v / total_w if total_w > 0 else sum(values) / n
+
+
+def half_life_to_weights(half_life_games: float, matches_played: int) -> Tuple[float, float]:
+    """Map a half-life parameter to (season_weight, recent_weight) split.
+
+    This provides a bridge between Dixon-Coles temporal decay and the
+    existing season/recent weight system used in calcular_lambda_dinamico.
+
+    Args:
+        half_life_games: half-life in number of games
+        matches_played: total matches played in the season so far
+
+    Returns:
+        (season_weight, recent_weight) tuple summing to 1.0.
+        Larger half-life → more season weight (data decays slowly).
+        Smaller half-life → more recent weight (recent data dominates).
+    """
+    if matches_played <= 0 or half_life_games <= 0:
+        return (0.50, 0.50)
+
+    # Ratio: what fraction of a full season does the half-life cover?
+    ratio = half_life_games / max(matches_played, 1)
+    # Clamp ratio to [0, 1] range
+    ratio = max(0.0, min(1.0, ratio))
+
+    # Map: ratio close to 1.0 → season_weight ≈ 0.70 (slow decay, trust full season)
+    #       ratio close to 0.0 → season_weight ≈ 0.30 (fast decay, trust recent)
+    season_weight = 0.30 + 0.40 * ratio
+    recent_weight = 1.0 - season_weight
+
+    return (round(season_weight, 2), round(recent_weight, 2))
 
 
 def calcular_lambda_dinamico(
@@ -189,6 +272,13 @@ def calcular_lambda_jogo(
         regime=regime,
         is_home=False
     )
+
+    # Apply home advantage γ (#078 — Dixon-Coles explicit home factor)
+    if league_id:
+        gamma = _get_home_advantage_gamma(league_id)
+        if gamma != 1.0:
+            lambda_home = max(LAMBDA_MIN, min(LAMBDA_MAX, lambda_home * gamma))
+            logger.info(f"[DC-γ] Home advantage γ={gamma:.3f} applied → λH={lambda_home:.3f}")
 
     # Apply audit corrections from DB (Gap 2)
     if league_id:

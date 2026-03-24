@@ -130,10 +130,10 @@ FootyStats API + API-Football v3
     │
     ▼
 build_records_from_matches (fixtures_service.py)
-    ├─► calcular_lambda_jogo (lambda_calculator.py) — com deflation 0.85 ATIVO (#043)
+    ├─► calcular_lambda_jogo (lambda_calculator.py) — com deflation 0.85 ATIVO (#043) + γ home (#078)
     ├─► xg_filter BIDIRECIONAL (#035-M3)
     ├─► chaos_detector com SAFE blocker (#035-M2)
-    ├─► Poisson matrix → todos mercados de gols (#028)
+    ├─► Poisson matrix + Dixon-Coles τ(ρ) → todos mercados de gols (#028, #078)
     ├─► BTTS fusion: FootyStats 40% + Poisson 30% + team_avg 30% — com deflation 0.80 (#043)
     ├─► Corners Engine v2 bidirecional 4.5-12.5 (#033) — com redução 20% (#043)
     ├─► 1X2: implied_probs(odds) [+ ML ensemble quando ativo]
@@ -173,6 +173,8 @@ API → Next.js 14 (Vercel) + Streamlit
 | xG blend | weight | Per-league | league_calibrator.py |
 | BTTS fusion | weights | Heuristic | league_calibrator.py |
 | Thresholds | safe_prob x 6 mercados | Per-league | league_calibrator.py |
+| Dixon-Coles ρ | rho | Per-league (#078) | league_calibrator.py |
+| Home advantage γ | gamma | Per-league (#078) | league_calibrator.py |
 | SAFE | enabled | Per-league | league_calibrator.py |
 
 ## Proibições

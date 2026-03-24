@@ -21,6 +21,56 @@ logger = logging.getLogger("sportsbankzu.poisson_matrix")
 # Maximum scoreline to consider (0..MAX_GOALS for each team)
 MAX_GOALS = 8
 
+# Default Dixon-Coles rho (negative = draws more likely than independent Poisson)
+_DEFAULT_RHO = -0.10
+
+
+def dixon_coles_tau(x: int, y: int, lambda_: float, mu: float, rho: float) -> float:
+    """Dixon-Coles τ correction for low-scoring results (1997, section 3).
+
+    Adjusts P(0-0), P(1-0), P(0-1), P(1-1) to account for correlation
+    between home and away goals that independent Poisson ignores.
+
+    Args:
+        x: home goals
+        y: away goals
+        lambda_: expected home goals (λ)
+        mu: expected away goals (μ)
+        rho: dependence parameter (typically -0.15 to 0)
+
+    Returns:
+        Multiplicative correction factor τ(x, y, λ, μ, ρ).
+        For scorelines other than (0,0), (1,0), (0,1), (1,1) returns 1.0.
+    """
+    if x == 0 and y == 0:
+        return 1 - lambda_ * mu * rho
+    elif x == 0 and y == 1:
+        return 1 + lambda_ * rho
+    elif x == 1 and y == 0:
+        return 1 + mu * rho
+    elif x == 1 and y == 1:
+        return 1 - rho
+    return 1.0
+
+
+def _get_rho(league_id: str | None) -> float:
+    """Get calibrated ρ for a league from the corrections DB.
+
+    Falls back to _DEFAULT_RHO if no calibration exists.
+    """
+    if not league_id:
+        return _DEFAULT_RHO
+    try:
+        from backend.modeling.lambda_calculator import get_lambda_corrections
+        corrections = get_lambda_corrections(league_id)
+        rho_corr = corrections.get("rho")
+        if rho_corr:
+            return float(rho_corr.get("value", _DEFAULT_RHO))
+    except Exception:
+        pass
+    return _DEFAULT_RHO
+
+
 # ─── Lambda Deflation — Per-League from Calibration DB (#052) ───
 # Uniform deflation (#043) replaced by per-league factors from calibration.
 # Default: 1.0 (no deflation) when no calibration exists for a league.
@@ -51,8 +101,18 @@ def _get_league_deflation(league_id: str | None) -> tuple[float, float, float]:
 def build_scoreline_matrix(
     lambda_home: float,
     lambda_away: float,
+    rho: float = 0.0,
 ) -> Dict[Tuple[int, int], float]:
     """Build a full scoreline probability matrix.
+
+    When rho != 0, applies Dixon-Coles τ correction to low-scoring results.
+    With rho=0.0 (default), τ=1.0 for all scorelines → identical to pure
+    independent Poisson (backward compatible).
+
+    Args:
+        lambda_home: expected home goals
+        lambda_away: expected away goals
+        rho: Dixon-Coles dependence parameter (typically -0.15 to 0)
 
     Returns dict mapping (home_goals, away_goals) -> probability.
     """
@@ -63,7 +123,8 @@ def build_scoreline_matrix(
         ph = poisson_pmf(h, lambda_home)
         for a in range(MAX_GOALS + 1):
             pa = poisson_pmf(a, lambda_away)
-            prob = ph * pa
+            tau = dixon_coles_tau(h, a, lambda_home, lambda_away, rho)
+            prob = tau * ph * pa
             matrix[(h, a)] = prob
             total += prob
 
@@ -153,24 +214,25 @@ def derive_all_markets(
     1X2 and Double Chance use original lambdas.
     """
     ou_defl, btts_defl, x1x2_defl = _get_league_deflation(league_id)
+    rho = _get_rho(league_id)
 
-    # 1X2 / Double Chance: per-league 1X2 deflation (#055)
+    # 1X2 / Double Chance: per-league 1X2 deflation (#055) + Dixon-Coles τ (#078)
     lh_1x2 = lambda_home * x1x2_defl
     la_1x2 = lambda_away * x1x2_defl
-    matrix_1x2 = build_scoreline_matrix(lh_1x2, la_1x2)
+    matrix_1x2 = build_scoreline_matrix(lh_1x2, la_1x2, rho=rho)
     x1x2 = derive_1x2(matrix_1x2)
     dc = derive_double_chance(x1x2)
 
-    # Over/Under: per-league deflated lambdas
+    # Over/Under: per-league deflated lambdas + Dixon-Coles τ (#078)
     lh_ou = lambda_home * ou_defl
     la_ou = lambda_away * ou_defl
-    matrix_ou = build_scoreline_matrix(lh_ou, la_ou)
+    matrix_ou = build_scoreline_matrix(lh_ou, la_ou, rho=rho)
     ou = derive_over_under(matrix_ou)
 
-    # BTTS: per-league deflation
+    # BTTS: per-league deflation + Dixon-Coles τ (#078)
     lh_btts = lambda_home * btts_defl
     la_btts = lambda_away * btts_defl
-    matrix_btts = build_scoreline_matrix(lh_btts, la_btts)
+    matrix_btts = build_scoreline_matrix(lh_btts, la_btts, rho=rho)
     btts = derive_btts(matrix_btts)
 
     result = {
@@ -202,7 +264,7 @@ def derive_all_markets(
     logger.debug(
         f"Poisson matrix derived: λH={lambda_home:.2f} λA={lambda_away:.2f} "
         f"(O/U={lh_ou:.2f}/{la_ou:.2f}, BTTS={lh_btts:.2f}/{la_btts:.2f}, "
-        f"1X2={lh_1x2:.2f}/{la_1x2:.2f}) → "
+        f"1X2={lh_1x2:.2f}/{la_1x2:.2f}, ρ={rho:.3f}) → "
         f"1X2=({x1x2['home']:.2f}/{x1x2['draw']:.2f}/{x1x2['away']:.2f}) "
         f"O2.5={ou['over_2.5']:.2f} BTTS={btts['btts_yes']:.2f}"
     )

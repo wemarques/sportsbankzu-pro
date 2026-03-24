@@ -4243,4 +4243,59 @@ O fix #069 no backend (`cron_handler.py`) estava correto: `lg_brier = sum(lm["br
 
 ---
 
+## 078 — Dixon-Coles Complete Model (τ, γ, ρ calibration)
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/modeling/poisson_matrix.py`, `backend/modeling/lambda_calculator.py`, `backend/services/league_calibrator.py`, `tests/unit/test_dixon_coles.py`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+
+O motor Poisson usado desde #028 assume independência completa entre gols marcados pelo mandante e visitante. O paper original de Dixon & Coles (1997) identifica 3 extensões fundamentais que melhoram a calibração:
+
+1. **τ(ρ) correction** — os resultados de baixa pontuação (0-0, 1-0, 0-1, 1-1) têm probabilidade diferente da prevista por Poisson independente, devido à correlação entre gols
+2. **Temporal decay** — jogos recentes devem ter mais peso que jogos antigos na estimativa de parâmetros
+3. **Home advantage γ** — fator explícito de vantagem de mando de campo sobre λ_home
+
+### Causa raiz
+
+REGRAS #053 implementou forças relativas Dixon-Coles (`λ = media_liga × ataque_rel × defesa_rel`), mas manteve a multiplicação independente P(h,a) = P(h) × P(a) na matriz de scorelines. Isso sistematicamente subestima empates e resultados de 0-0/1-1, prejudicando especialmente a calibração de 1X2 e Draw.
+
+### Correções aplicadas
+
+**Camada 1 — τ(ρ) em `poisson_matrix.py`:**
+- Nova função `dixon_coles_tau(x, y, λ, μ, ρ)` implementa a correção multiplicativa dos 4 scorelines baixos
+- `build_scoreline_matrix()` recebe parâmetro `rho=0.0` (backward compatible)
+- `_get_rho()` lê ρ calibrado da corrections DB (default -0.10)
+- `derive_all_markets()` passa ρ para todas as 3 matrizes (1X2, O/U, BTTS)
+
+**Camada 2 — γ em `lambda_calculator.py`:**
+- `_get_home_advantage_gamma()` lê fator γ da corrections DB (default 1.0 = sem ajuste extra)
+- Aplicado em `calcular_lambda_jogo()` após cálculo de ambos lambdas, antes das correções de auditoria
+- Home advantage implícito (stats home-specific) mantido — γ é fator ADICIONAL
+
+**Camada 3 — Decay utilities em `lambda_calculator.py`:**
+- `weighted_average_with_decay(values, half_life_games)` — média ponderada com decaimento exponencial
+- `half_life_to_weights(half_life_games, matches_played)` — bridge entre half-life e season/recent weights
+- Funções utilitárias para uso futuro quando dados per-game estiverem disponíveis (Bloco 2)
+
+**Camada 4 — ρ calibration em `league_calibrator.py`:**
+- `RHO_GRID = [-0.15, -0.12, -0.10, -0.08, -0.05, -0.03, 0.0]`
+- `_simulate_all_markets()` recebe `rho` e aplica τ em todos os loops internos (O/U, BTTS, 1X2)
+- Grid search #4 otimiza ρ por Brier combinado (1X2 + O/U)
+- ρ salvo na corrections DB via `save_calibration()`
+
+**Camada 5 — Tests em `tests/unit/test_dixon_coles.py`:**
+- 8 testes cobrindo τ, matrix, γ, decay functions
+- Verifica backward compatibility (ρ=0 ≡ Poisson independente)
+
+### Lição aprendida
+
+1. Extensões de modelo estatístico devem ser implementadas com backward compatibility (parâmetro default que reproduz o comportamento anterior). Isso permite deploy seguro sem recalibração imediata.
+2. ρ é calibrado por liga — ligas diferentes têm correlações diferentes entre gols de mandante e visitante.
+3. O grid search de ρ deve otimizar Brier COMBINADO (1X2 + O/U) pois τ afeta ambos os mercados.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
