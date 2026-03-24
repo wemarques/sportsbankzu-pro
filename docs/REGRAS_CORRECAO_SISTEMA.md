@@ -4392,4 +4392,98 @@ Em ambiente Lambda, se `PutObject` no bucket S3 de calibrações estiver negado 
 
 ---
 
+## 078r — Limpeza de ligas (37→22) + Recalibração completa
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/config/leagues_config.py`, `backend/config/league_dna.py`, `backend/main.py`, `backend/modeling/calibrator.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/hooks/useLeagueClassifications.ts`, `frontend/next/src/lib/mockMatches.ts`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+
+1. 15 ligas com dados insuficientes na FootyStats (< 100 jogos/temporada ou sem dados)
+   geravam calibrações instáveis ou INSUFFICIENT_DATA. Estas ligas inflavam o config
+   sem contribuir valor real ao sistema.
+
+2. S3 `AccessDenied` impedia persistência de calibrações — o IAM role do Lambda
+   (`sportsbank-pro-lambda-role`) tinha apenas `AmazonS3ReadOnlyAccess`, sem `s3:PutObject`.
+
+3. Todas as 22 ligas remanescentes precisavam recalibração limpa (dataset corrigido
+   pelo fix de 0-goal do #078v + grid expandido de ρ).
+
+### Causa raiz
+
+- **Config inflado**: Adição progressiva de ligas sem verificação de cobertura de dados.
+- **IAM incompleto**: Deploy inicial só configurou `S3ReadOnlyAccess` no role.
+- **Calibrações stale**: Bugs anteriores (#078v) invalidaram calibrações existentes.
+
+### Correções aplicadas
+
+**Camada 1 — Remoção de 15 ligas (37→22):**
+
+Removidas de TODOS os config files (backend + frontend):
+- j-league, k-league, eliteserien, allsvenskan (0 matches na FootyStats)
+- ligue-2, league-two, serie-b-czech, eerste-divisie, segunda-division (2ª divisão redundante)
+- copa-do-brasil (formato mata-mata, incompatível com calibração)
+- austrian-bundesliga, super-league, professional-league, super-league-greece, uae-pro-league (dados insuficientes)
+
+Arquivos editados:
+- `leagues_config.py`: LEAGUE_ID_ALIASES, LEAGUES_CONFIG, API_FOOTBALL_LEAGUE_IDS, CALENDAR_YEAR_LEAGUES
+- `league_dna.py`: LEAGUE_DNA_MATRIX (22 entradas)
+- `main.py`: mock teams, league_names, offensive_leagues, aliases_map
+- `leagues.ts`: AVAILABLE_LEAGUES (22 entries)
+- `useLeagueClassifications.ts`: RETRAIN_TO_FRONTEND_ID
+- `mockMatches.ts`: removed mock data for 4 deleted leagues
+- `calibrator.py`: _SEASON_STARTS (removed 3 deleted leagues)
+
+**Camada 2 — Fix IAM S3:**
+
+Adicionada inline policy `S3CalibrationWrite` ao role `sportsbank-pro-lambda-role`:
+```json
+{"Effect":"Allow","Action":["s3:PutObject","s3:DeleteObject"],"Resource":"arn:aws:s3:::meu-bucket-sportsbank/calibrations/*"}
+```
+
+**Camada 3 — Recalibração completa (22/22):**
+
+Resultados (ρ por liga via MLE com dataset corrigido):
+
+| Liga | ρ | defl_ou | defl_1x2 |
+|------|-----|---------|----------|
+| premier-league | -0.06 | 1.0 | 0.9 |
+| championship | -0.04 | 1.0 | 0.9 |
+| league-one | 0.0 | 1.0 | 0.9 |
+| la-liga | -0.07 | 1.0 | 0.9 |
+| serie-a | -0.06 | 1.0 | 0.9 |
+| serie-b | -0.14 | 1.0 | 0.9 |
+| bundesliga | -0.17 | 1.0 | 0.9 |
+| 2-bundesliga | -0.10 | 1.0 | 0.9 |
+| ligue-1 | -0.07 | 1.0 | 0.9 |
+| brasileirao-serie-a | -0.04 | 0.95 | 0.9 |
+| brasileirao-serie-b | -0.06 | 0.95 | 0.9 |
+| eredivisie | -0.09 | 1.0 | 0.9 |
+| primeira-liga | +0.01 | 1.0 | 0.97 |
+| super-lig | -0.12 | 0.95 | 0.9 |
+| pro-league | -0.06 | 1.0 | 0.9 |
+| premiership | -0.02 | 1.0 | 0.9 |
+| superliga | -0.11 | 1.0 | 0.9 |
+| primera-division | -0.13 | 0.95 | 0.9 |
+| a-league | +0.03 | 1.0 | 0.9 |
+| mls | -0.09 | 1.0 | 0.9 |
+| colombian-primera-a | -0.10 | 1.0 | 0.9 |
+| liga-mx | -0.09 | 1.0 | 0.9 |
+
+Distribuição ρ saudável: range [-0.17, +0.03], mediana ≈-0.07, sem hits de boundary.
+
+### Lição aprendida
+
+1. **Manter config enxuto** — ligas sem dados suficientes geram ruído de calibração.
+   Manter apenas ligas com 100+ jogos/temporada e cobertura estável na API.
+2. **IAM deve ser verificado no deploy** — policies de escrita (PutObject) são tão
+   críticas quanto as de leitura para persistência de estado em Lambda.
+3. **Calibrações concorrentes no Lambda geram race condition** — cada invocação Lambda
+   tem seu próprio /tmp e SQLite. `export_corrections_to_s3()` sobrescreve o arquivo
+   inteiro. Calibrar sequencialmente ou em invocação única.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
