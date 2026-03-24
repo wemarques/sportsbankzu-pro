@@ -678,10 +678,12 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     }
 
     // Brier score (over 2.5)
+    let matchBrier: number | undefined;
     const over25Prob = match.stats.over25Prob;
     if (over25Prob != null) {
       const actualOver25 = totalGoals > 2.5 ? 1 : 0;
-      brierScores.push((over25Prob / 100 - actualOver25) ** 2);
+      matchBrier = (over25Prob / 100 - actualOver25) ** 2;
+      brierScores.push(matchBrier);
     }
 
     matchResults.push({
@@ -693,6 +695,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
       picks: picksEval,
       picks_correct: matchCorrect,
       picks_total: matchTotal,
+      brier_score: matchBrier,
     });
   }
 
@@ -745,13 +748,14 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     matchResults.length,
   );
 
-  // League-level aggregation
-  const leagueMap = new Map<string, { correct: number; total: number; matches: number }>();
+  // League-level aggregation (includes per-league Brier — #077)
+  const leagueMap = new Map<string, { correct: number; total: number; matches: number; brierScores: number[] }>();
   for (const mr of matchResults) {
-    const ls = leagueMap.get(mr.league) || { correct: 0, total: 0, matches: 0 };
+    const ls = leagueMap.get(mr.league) || { correct: 0, total: 0, matches: 0, brierScores: [] };
     ls.matches++;
     ls.correct += mr.picks_correct;
     ls.total += mr.picks_total;
+    if (mr.brier_score != null) ls.brierScores.push(mr.brier_score);
     leagueMap.set(mr.league, ls);
   }
   const leagueAccuracy: LeagueAuditStats[] = Array.from(leagueMap.entries())
@@ -766,6 +770,9 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
       picks_correct: d.correct,
       picks_total: d.total,
       accuracy_pct: d.total > 0 ? Math.round((d.correct / d.total) * 1000) / 10 : 0,
+      brier_score: d.brierScores.length > 0
+        ? d.brierScores.reduce((a, b) => a + b, 0) / d.brierScores.length
+        : undefined,
     }));
 
   // Compute combinadas from scheduled/live matches with predictions

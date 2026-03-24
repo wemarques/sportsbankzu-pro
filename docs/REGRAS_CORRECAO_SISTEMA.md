@@ -4181,6 +4181,66 @@ Baseado na observação, as seguintes ligas podem ser afetadas:
 3. **Testar com ligas sul-americanas** — FootyStats tem cobertura inconsistente para ligas fora da Europa. Testes end-to-end devem incluir ao menos 1 liga SA
 4. **Validar consistência entre endpoints** — se `/live` retorna N jogos e `/live-scores` retorna 0, há um bug em uma das camadas
 
+**Registo documentação:** entrada **#076** alargada (diagramas de fluxo, investigação em 5 passos, tabela dos 3 pontos API-Football, 7 razões de dificuldade, ligas SA, lições); entrada **#075** alargada (tabela de rotas, fluxo frontend→Lambda, snippets Pydantic). Commit docs: `e0ea953`. *Nota:* a mensagem Git do fix em `fixtures.py` pode citar “(#075)”; neste documento a correção live-scores está numerada como **#076** para não colidir com **#075** (auditoria 404).
+
+---
+
+## 077 — Refinamento visual CornerProgressBar + Brier per-league persistente
+
+**Data:** 2026-03-24
+**Commit:** `[SHA]`
+**Arquivos afetados:** `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/lib/api.ts`, `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/components/AuditReportCard.tsx`
+**Severidade:** Baixa (visual), Alta (Brier)
+**Status:** Corrigido
+
+### Problema identificado
+
+1. **CornerProgressBar** mais larga que a barra de confiança — desproporcional no painel lateral. Track 18px era maior que os 6-8px da barra de confiança.
+2. **Brier Score idêntico** para todas as ligas no relatório de auditoria. O fix #069 adicionou `league_metrics` no backend `cron_handler.py`, mas a auditoria agora roda localmente no frontend (`localAudit.ts`) que NÃO tinha acumulação per-league de Brier.
+3. **Label "SAFE"** per-league contava todos os picks (SAFE + NEUTRO) mas mostrava o rótulo "SAFE", criando confusão quando circuit breaker #043 ativo (0 picks SAFE global, mas 80% "SAFE" per-league).
+
+### Causa raiz
+
+**Bug A (Brier idêntico):** O fluxo completo é:
+
+```
+localAudit.ts:runLocalAudit()
+  → calcula brierScores[] GLOBAL (linha 680-685)
+  → leagueMap NÃO acumulava Brier per-league (linhas 748-769)
+  → LeagueAuditStats NÃO tinha campo brier_score (api.ts:413-419)
+  → AuditReportCard.tsx linha 86: brierScore = r.avg_brier_score (GLOBAL para TODAS as ligas)
+```
+
+O fix #069 no backend (`cron_handler.py`) estava correto: `lg_brier = sum(lm["brier_scores"]) / len(lm["brier_scores"])`. Porém, a auditoria migrou para rodar localmente no browser via `localAudit.ts`, e esta migração NÃO portou a lógica per-league de Brier.
+
+**Bug B (label SAFE):** `lg.safeHits`/`lg.safeTotal` no AuditReportCard mapeavam `picks_correct`/`picks_total` (TODOS os picks), mas o label dizia "SAFE". Quando circuit breaker #043 ativo, global SAFE=0% mas per-league mostrava 80% "SAFE".
+
+**Visual:** `.cpb-track` tinha `height: 18px` e `.cpb-root` tinha `width: 100%` sem margens, dominando visualmente sobre a barra de confiança.
+
+### Correções aplicadas
+
+**Camada 1 — Frontend visual (CSS):**
+- `.cpb-root`: `margin: 0 8px` (recuada das bordas), `border-radius: 6px`
+- `.cpb-track`: `height: 4px` (vs 6-8px da confiança), `overflow: visible`, `border: 1px solid #222`
+- `.cpb-badge`: 20px circular com `border: 2px solid #141414` (recorte visual), `transform: translate(50%, -50%)`
+- `.cpb-fill`: cor normal via `:not(.cpb-fill--hit):not(.cpb-fill--danger)`, danger agora `#dc2626→#ef4444`
+- `.cpb-placeholder`: `border: 1px dashed #2a2a2a`, animação `cpb-pulse` sutil
+
+**Camada 2 — Per-league Brier (frontend):**
+- `api.ts`: adicionado `brier_score?: number` a `LeagueAuditStats` e `BatchAuditMatchResult`
+- `localAudit.ts`: captura `matchBrier` por jogo (linha 680), adiciona a `matchResults`, acumula `brierScores[]` no `leagueMap`, calcula média per-league no output
+- `AuditReportCard.tsx:86`: `brierScore: lg.brier_score ?? r.avg_brier_score` (usa per-league quando disponível, fallback global)
+
+**Camada 3 — Label SAFE→Acurácia:**
+- `AuditReportCard.tsx`: label per-league alterado de "SAFE" para "Acurácia" (reflete que conta TODOS os picks, não apenas SAFE)
+- Aplicado tanto no `formatReport()` (clipboard) quanto no render JSX
+
+### Lição aprendida
+
+1. O fix #069 corrigiu o backend (`cron_handler.py`), mas a auditoria migrou para rodar localmente no frontend (`localAudit.ts`) — e o frontend nunca implementou a mesma lógica per-league. Ao migrar funcionalidade entre camadas (backend→frontend), verificar que TODAS as sub-features são portadas.
+2. Labels devem refletir o que os dados realmente medem. "SAFE" per-league contava todos os picks → deveria ser "Acurácia".
+3. Elementos visuais complementares devem ser SUBORDINADOS ao principal. Track height, margin e tipografia menores comunicam hierarquia visual.
+
 ---
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

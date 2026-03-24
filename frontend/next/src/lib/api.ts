@@ -349,6 +349,7 @@ export interface BatchAuditMatchResult {
   picks: BatchAuditPickEval[];
   picks_correct: number;
   picks_total: number;
+  brier_score?: number;
 }
 
 export interface BatchAuditMarketAccuracy {
@@ -416,6 +417,7 @@ export interface LeagueAuditStats {
   picks_correct: number;
   picks_total: number;
   accuracy_pct: number;
+  brier_score?: number;
 }
 
 export interface MarketReferenceStats {

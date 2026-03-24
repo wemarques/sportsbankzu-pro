@@ -76,14 +76,14 @@ function fromBatchAudit(r: BatchAuditResult): AuditReportData {
     mistralAssessment === "CRITICO" ? "ALTA" :
     mistralAssessment === "NECESSITA_AJUSTE" ? "MEDIA" : "BAIXA";
 
-  // League breakdown
+  // League breakdown (#077: use per-league Brier, rename SAFE→Acurácia)
   const leagues = (r.league_accuracy ?? []).map((lg: LeagueAuditStats) => ({
     name: lg.league,
     flag: getFlag(lg.league),
     matches: lg.matches_audited,
     safeHits: lg.picks_correct,
     safeTotal: lg.picks_total,
-    brierScore: r.avg_brier_score, // per-league brier not always available
+    brierScore: lg.brier_score ?? r.avg_brier_score,
   }));
 
   // Market results
@@ -206,7 +206,7 @@ function formatReport(d: AuditReportData) {
   d.leagues.forEach((lg) => {
     const safePct = lg.safeTotal > 0 ? ((lg.safeHits / lg.safeTotal) * 100).toFixed(0) : "N/A";
     l.push("  " + lg.flag + " " + lg.name);
-    l.push("    Jogos: " + lg.matches + " | Brier: " + lg.brierScore.toFixed(4) + " | SAFE: " + safePct + "% (" + lg.safeHits + "/" + lg.safeTotal + ")");
+    l.push("    Jogos: " + lg.matches + " | Brier: " + lg.brierScore.toFixed(4) + " | Acuracia: " + safePct + "% (" + lg.safeHits + "/" + lg.safeTotal + ")");
   });
   l.push("");
   if (d.marketResults.length > 0) {
@@ -467,7 +467,7 @@ export default function AuditReportCard({ data }: Props) {
                       Brier: <span style={{ color: lgBrierC, fontWeight: 700, fontFamily: "'Courier New',monospace" }}>{lg.brierScore.toFixed(4)}</span>
                     </div>
                     <div style={{ fontSize: 12, color: "#888" }}>
-                      SAFE:{" "}
+                      Acur\u00e1cia:{" "}
                       <span style={{ color: lg.safeTotal > 0 ? lgSafeC : "#555", fontWeight: 700 }}>
                         {lg.safeTotal > 0 ? safePct.toFixed(0) + "%" : "N/A"}
                       </span>
