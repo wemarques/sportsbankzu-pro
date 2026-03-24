@@ -4281,9 +4281,10 @@ REGRAS #053 implementou forças relativas Dixon-Coles (`λ = media_liga × ataqu
 - Funções utilitárias para uso futuro quando dados per-game estiverem disponíveis (Bloco 2)
 
 **Camada 4 — ρ calibration em `league_calibrator.py`:**
-- `RHO_GRID = [-0.15, -0.12, -0.10, -0.08, -0.05, -0.03, 0.0]`
+- `RHO_GRID = [round(-0.25 + i * 0.01, 2) for i in range(31)]` — grid expandido [-0.25, 0.05]
 - `_simulate_all_markets()` recebe `rho` e aplica τ em todos os loops internos (O/U, BTTS, 1X2)
-- Grid search #4 otimiza ρ por Brier combinado (1X2 + O/U)
+- Grid search #4 otimiza ρ por **MLE (log-likelihood)** — Brier é insensível a ρ (#078v)
+- Sanity guard: cap ρ em -0.15 se grid retornar ≤ -0.20
 - ρ salvo na corrections DB via `save_calibration()`
 
 **Camada 5 — Tests em `tests/unit/test_dixon_coles.py`:**
@@ -4294,7 +4295,89 @@ REGRAS #053 implementou forças relativas Dixon-Coles (`λ = media_liga × ataqu
 
 1. Extensões de modelo estatístico devem ser implementadas com backward compatibility (parâmetro default que reproduz o comportamento anterior). Isso permite deploy seguro sem recalibração imediata.
 2. ρ é calibrado por liga — ligas diferentes têm correlações diferentes entre gols de mandante e visitante.
-3. O grid search de ρ deve otimizar Brier COMBINADO (1X2 + O/U) pois τ afeta ambos os mercados.
+3. O grid search de ρ deve otimizar por **MLE** (log-likelihood), não Brier — ver #078v para detalhes.
+
+---
+
+## 078v — Validação do parâmetro ρ (rho) de Dixon-Coles
+
+**Data:** 2026-03-24
+**Commit:** `d401ab4`
+**Arquivos afetados:** `backend/services/league_calibrator.py`
+**Severidade:** Crítica (bug afetava TODA a calibração, não só ρ)
+**Status:** Corrigido + Validado
+
+### Problema investigado
+
+Calibração da Premier League escolheu ρ = -0.15, que era o boundary do grid
+original [-0.15, 0.05]. Anti-pattern documentado no #053 (28 ligas no teto).
+Grid expandido para [-0.25, 0.05] — todas 6 ligas AINDA retornavam ρ = -0.15
+(ou -0.25 com MLE). Investigação revelou 2 bugs fundamentais.
+
+### Causa raiz
+
+**Bug 1 — Brier insensível a ρ:**
+O grid search #4 de ρ usava Brier score como objetivo. Análise sintética mostrou
+que o Brier varia apenas ~0.002 no 6º decimal ao longo de todo o range de ρ — essencialmente
+flat. O Brier mede a qualidade das probabilidades finais (que são uma mistura de muitos
+scorelines), não é sensível à redistribuição de probabilidade entre os 4 scorelines baixos
+que τ(ρ) afeta.
+
+**Correção:** Substituído por MLE (Maximum Likelihood Estimation):
+`LL(ρ) = Σ log[τ(x_i, y_i, λ_h_i, λ_a_i, ρ)]`, conforme Dixon & Coles (1997).
+
+**Bug 2 — Matches com 0 gols silenciosamente excluídos (CRÍTICO):**
+```python
+# ANTES (bugado):
+gh = m.get("homeGoalCount") or m.get("home_goals")
+```
+Python `or` trata `0` como falsy. Para um jogo 0-0: `homeGoalCount = 0` →
+`0 or m.get("home_goals")` → se `home_goals` não existe → `0 or None = None` →
+match dropped pelo `if gh is None: continue`.
+
+**Impacto:** TODA partida onde pelo menos um time marcou 0 gols era excluída
+do dataset de calibração. Diagnóstico mostrou `scores={0-0:0, 0-1:0, 1-0:0, 1-1:240}`
+para 1196 partidas da PL — ~50% dos jogos perdidos.
+
+Isso afetava não apenas ρ, mas TODA calibração (O/U, BTTS, 1X2, λ deflation)
+desde a implementação original de `_extract_matches_from_season`.
+
+**Correção:**
+```python
+# DEPOIS (correto):
+gh = m.get("homeGoalCount")
+if gh is None:
+    gh = m.get("home_goals")
+```
+
+### Resultados da validação
+
+| Liga | N matches | ρ calibrado | Boundary? | LL curve |
+|------|-----------|-------------|-----------|----------|
+| Premier League | ~2000 | -0.06 | Não | Concava, pico claro |
+| La Liga | 2190 | -0.07 | Não | Concava |
+| Bundesliga | 1773 | -0.17 | Não | Concava, explicável por λ alto |
+| Brasileirão Serie A | 1976 | -0.04 | Não | Concava |
+| Primera División (Arg) | 2715 | -0.13 | Não | Concava, liga defensiva |
+| Serie A (Italy) | 2201 | -0.06 | Não | Concava |
+
+Score counts agora realistas (exemplo PL):
+- Antes: `{0-0:0, 0-1:0, 1-0:0, 1-1:240, other:956}` (bug)
+- Depois: `{0-0:~150, 0-1:~160, 1-0:~250, 1-1:~280, other:~1160}` (correto)
+
+### Lição aprendida
+
+1. **Python `or` com valores numéricos é perigoso** — `0 or fallback` retorna o fallback
+   porque 0 é falsy. Usar `if x is None: x = fallback` explícito para campos numéricos.
+2. **Brier score é insensível a redistribuições internas** — quando τ(ρ) redistribui
+   probabilidade entre scorelines baixos mas o total para Over/Under/Draw não muda muito,
+   Brier não detecta a diferença. MLE é o objetivo correto para calibrar ρ.
+3. **Diagnóstico detalhado é essencial** — sem o logging de score_counts, o bug teria
+   permanecido invisível. O anti-pattern "todas as ligas no mesmo valor" foi o primeiro
+   sintoma que levou à investigação.
+4. **Bug de extração de dados afeta TODA calibração** — não apenas o parâmetro sendo
+   investigado. Todas as ligas previamente calibradas (#052-#056) foram treinadas com
+   ~50% dos jogos faltando (todos os jogos com pelo menos um 0-0, 0-X, X-0).
 
 ---
 
