@@ -9,6 +9,7 @@ Reference: REGRAS #052
 
 import logging
 import json
+import math
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
@@ -891,46 +892,66 @@ def calibrate_league(
         if b is not None and b < best_1x2_defl["brier"]:
             best_1x2_defl = {"brier": b, "deflation": defl_1x2}
 
-    # ── Grid search 4: Dixon-Coles ρ (draw-weighted Brier) (#078-v) ──
-    # τ(ρ) only affects scorelines (0,0),(1,0),(0,1),(1,1) — primarily draws.
-    # O/U is insensitive to ρ. Using draw Brier as primary objective with
-    # 1X2 avg as regularizer to prevent extreme ρ that hurts non-draws.
-    best_rho = {"brier": 1.0, "rho": 0.0}
+    # ── Grid search 4: Dixon-Coles ρ via MLE (#078-v2) ──
+    # Brier is ~flat over ρ (range ~0.002) — useless for calibrating ρ.
+    # MLE (log-likelihood of observed scorelines) is the correct objective
+    # per Dixon & Coles (1997). Since τ only affects (0,0),(0,1),(1,0),(1,1),
+    # LL(ρ) = Σ log[τ(x_i, y_i, λ_h_i, λ_a_i, ρ)] + const w.r.t. ρ.
+    # We only need τ at the observed score — no 9x9 matrix loop needed.
+    defl_1x2_for_rho = best_1x2_defl.get("deflation", 1.0)
+    w_s, w_r = best_ou_weights
+
+    best_rho = {"ll": -1e18, "rho": 0.0}
 
     for rho_val in RHO_GRID:
-        result_1x2 = _simulate_all_markets(
-            matches,
-            lambda_deflation_ou=best_ou_defl,
-            lambda_weights=best_ou_weights,
-            lambda_deflation_btts=best_btts.get("deflation", 1.0),
-            lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
-            compute_only="1x2",
-            rho=rho_val,
-        )
-        b_draw = result_1x2.get("brier_1x2_draw")
-        b_1x2_avg = result_1x2.get("brier_1x2_avg")
-        if b_draw is not None and b_1x2_avg is not None:
-            # 60% draw Brier + 40% full 1X2 Brier as regularizer
-            combined = 0.60 * b_draw + 0.40 * b_1x2_avg
-            if combined < best_rho["brier"]:
-                best_rho = {"brier": combined, "rho": rho_val}
+        log_lik = 0.0
+        n_affected = 0  # matches where τ != 1.0
+
+        for m in matches:
+            home_s = m.get("home_goals_scored_avg", 0) or 0
+            away_s = m.get("away_goals_scored_avg", 0) or 0
+            home_r = m.get("home_goals_scored_avg_recent", home_s) or home_s
+            away_r = m.get("away_goals_scored_avg_recent", away_s) or away_s
+            h_def = m.get("away_goals_conceded_factor", 1.0) or 1.0
+            a_def = m.get("home_goals_conceded_factor", 1.0) or 1.0
+
+            lh = max(0.2, min(4.5, (home_s * w_s + home_r * w_r) * h_def)) * defl_1x2_for_rho
+            la = max(0.2, min(4.5, (away_s * w_s + away_r * w_r) * a_def)) * defl_1x2_for_rho
+
+            gh = m.get("goals_home", 0) or 0
+            ga = m.get("goals_away", 0) or 0
+
+            tau = dixon_coles_tau(gh, ga, lh, la, rho_val)
+            if tau > 0:
+                log_lik += math.log(tau)
+            else:
+                log_lik += -50  # heavy penalty for τ <= 0 (invalid)
+
+            if gh <= 1 and ga <= 1:
+                n_affected += 1
+
+        if log_lik > best_rho["ll"]:
+            best_rho = {"ll": log_lik, "rho": rho_val, "n_affected": n_affected}
 
     optimal_rho = best_rho.get("rho", 0.0)
 
     # Sanity guard: cap extreme ρ values (#078-validation)
     if optimal_rho <= -0.20:
         logger.warning(
-            f"[calibrator] {league_id}: ρ={optimal_rho} is extreme (< -0.20). "
+            f"[calibrator] {league_id}: rho={optimal_rho} is extreme (< -0.20). "
             f"Possible data/formula issue. Capping at -0.15."
         )
         optimal_rho = -0.15
     if optimal_rho >= 0.03:
         logger.warning(
-            f"[calibrator] {league_id}: ρ={optimal_rho} is positive (> 0.03). "
+            f"[calibrator] {league_id}: rho={optimal_rho} is positive (> 0.03). "
             f"Unusual for football — check draw data for this league."
         )
 
-    logger.info(f"[calibrator] {league_id}: optimal ρ={optimal_rho} (brier={best_rho['brier']:.4f})")
+    logger.info(
+        f"[calibrator] {league_id}: optimal rho={optimal_rho} "
+        f"(LL={best_rho['ll']:.2f}, n_affected={best_rho.get('n_affected', '?')})"
+    )
 
     # ── Grid search 5: Corners deflation (Brier-based) ──
     best_corner = {"brier": 1.0}
