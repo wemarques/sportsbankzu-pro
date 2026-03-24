@@ -3840,4 +3840,49 @@ O `vercel.json` tinha apenas `{"framework": "nextjs"}` sem configuração de Flu
 
 ---
 
+## 075 — Endpoints de auditoria por jogo retornam HTTP 404
+
+**Data:** 2026-03-23
+**Commit:** `2ec107a`
+**Arquivos afetados:** `backend/routes/ai_analysis.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Botão "Auditar" no painel de jogo chama `POST /api/ai/match/{id}/audit` e `POST /api/ai/match/{id}/audit/apply`, mas ambos retornavam HTTP 404. A análise AI funcionava normalmente (75% confiança, resumo, pontos-chave), mas a seção "Resultado da Auditoria" mostrava 0% de confiança com todas as validações UNKNOWN.
+
+### Causa raiz
+
+Durante a migração Mistral v3.0 (#072, #073):
+1. A rota orphan `POST /ai/audit-match` existia em `main.py:1256` com path `/ai/audit-match` (sem prefixo `/api/`)
+2. O novo router `ai_analysis.py` (prefixo `/api/ai`) foi criado com 4 endpoints (analysis, legacy, regenerate, batch) mas **nenhum endpoint de auditoria**
+3. O frontend (via `lib/api.ts:postMatchAudit`) chama `POST /api/ai/match/{id}/audit` que passa pelo Next.js proxy (`api/ai/match/[id]/audit/route.ts`) e chega ao backend como `/api/ai/match/{id}/audit`
+4. Path mismatch: frontend espera `/api/ai/match/{id}/audit`, backend só tinha `/ai/audit-match` → 404
+
+### Correções aplicadas
+
+**Camada 1 — Novos endpoints no router v3.0:**
+- `POST /match/{match_id}/audit` — busca dados reais via `_get_match_data()`, constrói input para `MistralAuditor.audit_match_calculation()`, retorna resultado de auditoria
+- `POST /match/{match_id}/audit/apply` — busca dados do jogo para identificar liga, chama `log_correction()` para persistir correção
+
+**Camada 2 — Compatibilidade de nomes:**
+- O dict `auditor_input` inclui ambos formatos (`home_team`/`homeTeam`, `away_team`/`awayTeam`) para compatibilidade com `MistralAuditor` que aceita ambos
+
+**Camada 3 — Validação e error handling:**
+- `ValueError` (match não encontrado, liga inválida) → HTTP 400
+- Erros gerais (Mistral API down, etc.) → HTTP 500 com log
+
+### Verificação
+
+- Endpoint retorna HTTP 400 para match IDs inválidos (antes: HTTP 404)
+- Endpoint retorna HTTP 200 com resultado de auditoria para match IDs válidos
+- Total de rotas no router: 6 (era 4)
+
+### Lição aprendida
+
+Ao migrar routers, verificar não apenas os endpoints de CRUD principal (analysis, regenerate, batch) mas também endpoints auxiliares (audit, validate, export) que dependem do mesmo serviço. O path do frontend proxy deve corresponder exatamente ao prefix+path do router backend.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
