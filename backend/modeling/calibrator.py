@@ -70,8 +70,8 @@ _SEASON_STARTS: Dict[str, int] = {
     "premier-league": 8, "championship": 8, "la-liga": 8, "serie-a": 8,
     "bundesliga": 8, "ligue-1": 8, "eredivisie": 8, "primeira-liga": 8,
     "super-lig": 8, "jupiler-pro-league": 8, "scottish-premiership": 8,
-    "serie-b": 8, "segunda-division": 8, "2-bundesliga": 8, "ligue-2": 8,
-    "league-one": 8, "league-two": 8,
+    "serie-b": 8, "2-bundesliga": 8,
+    "league-one": 8,
     # South American — February
     "brasileirao": 4, "serie-b-brazil": 4, "copa-libertadores": 2,
     "copa-sudamericana": 2, "liga-profesional": 2,

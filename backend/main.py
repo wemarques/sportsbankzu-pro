@@ -252,14 +252,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             ("Lille", "Stade Rennais"), ("OGC Nice", "RC Lens"),
             ("RC Strasbourg", "Montpellier"),
         ],
-        "ligue-2": [
-            ("Saint-Étienne", "FC Metz"), ("SM Caen", "Paris FC"),
-            ("Bordeaux", "Amiens SC"),
-        ],
-        "france-ligue-2": [
-            ("Saint-Étienne", "FC Metz"), ("SM Caen", "Paris FC"),
-            ("Bordeaux", "Amiens SC"),
-        ],
         # BRASIL (temporada 2025/2026)
         "brasileirao-serie-a": [
             ("Flamengo", "Palmeiras"), ("Corinthians", "São Paulo"),
@@ -318,14 +310,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             ("Celtic", "Rangers"), ("Aberdeen", "Hearts"),
             ("Hibernian", "Dundee United"),
         ],
-        "austrian-bundesliga": [
-            ("Red Bull Salzburg", "Rapid Wien"), ("Sturm Graz", "LASK"),
-            ("Wolfsberger AC", "Austria Wien"),
-        ],
-        "austria-bundesliga": [
-            ("Red Bull Salzburg", "Rapid Wien"), ("Sturm Graz", "LASK"),
-            ("Wolfsberger AC", "Austria Wien"),
-        ],
         "superliga": [
             ("FC Copenhagen", "FC Midtjylland"), ("Brøndby IF", "Aarhus GF"),
             ("Nordsjælland", "Silkeborg IF"),
@@ -333,22 +317,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "denmark-superliga": [
             ("FC Copenhagen", "FC Midtjylland"), ("Brøndby IF", "Aarhus GF"),
             ("Nordsjælland", "Silkeborg IF"),
-        ],
-        "super-league": [
-            ("Young Boys", "FC Basel"), ("FC Zürich", "Servette"),
-            ("FC Lugano", "FC St. Gallen"),
-        ],
-        "switzerland-super-league": [
-            ("Young Boys", "FC Basel"), ("FC Zürich", "Servette"),
-            ("FC Lugano", "FC St. Gallen"),
-        ],
-        "super-league-greece": [
-            ("Olympiacos", "Panathinaikos"), ("PAOK", "AEK Athens"),
-            ("Aris Thessaloniki", "Asteras Tripolis"),
-        ],
-        "greece-super-league": [
-            ("Olympiacos", "Panathinaikos"), ("PAOK", "AEK Athens"),
-            ("Aris Thessaloniki", "Asteras Tripolis"),
         ],
         "colombian-primera-a": [
             ("Junior", "Alianza Petrolera"), ("Atlético Nacional", "Millonarios"),
@@ -367,14 +335,6 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
             ("Melbourne Victory", "Sydney FC"), ("Western Sydney Wanderers", "Melbourne City"),
             ("Adelaide United", "Brisbane Roar"),
         ],
-        "professional-league": [
-            ("Al-Hilal", "Al-Nassr"), ("Al-Ittihad", "Al-Ahli"),
-            ("Al-Shabab", "Al-Fateh"),
-        ],
-        "saudi-professional-league": [
-            ("Al-Hilal", "Al-Nassr"), ("Al-Ittihad", "Al-Ahli"),
-            ("Al-Shabab", "Al-Fateh"),
-        ],
     }
 
     # League display names
@@ -386,7 +346,7 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "bundesliga": "Bundesliga", "germany-bundesliga": "Bundesliga",
         "2-bundesliga": "2. Bundesliga", "germany-2-bundesliga": "2. Bundesliga",
         "ligue-1": "Ligue 1", "france-ligue-1": "Ligue 1",
-        "ligue-2": "Ligue 2", "france-ligue-2": "Ligue 2",
+
         "brasileirao-serie-a": "Brasileirão Série A", "brazil-serie-a": "Brasileirão Série A",
         "brasileirao-serie-b": "Brasileirão Série B", "brazil-serie-b": "Brasileirão Série B",
         "eredivisie": "Eredivisie", "netherlands-eredivisie": "Eredivisie",
@@ -394,19 +354,18 @@ def generate_mock_fixtures(league_id: str, date_filter: str) -> List[Dict[str, A
         "super-lig": "Süper Lig", "turkey-super-lig": "Süper Lig",
         "pro-league": "Pro League", "premiership": "Premiership",
         "scotland-premiership": "Premiership",
-        "austrian-bundesliga": "Bundesliga (Austria)", "austria-bundesliga": "Bundesliga (Austria)",
+
         "superliga": "Superliga", "denmark-superliga": "Superliga",
-        "super-league": "Super League", "switzerland-super-league": "Super League",
+
         "primera-division": "Primera División", "a-league": "A-League",
-        "professional-league": "Professional League",
-        "saudi-professional-league": "Professional League",
+
         "colombian-primera-a": "Campeonato Colombiano", "colombia-primera-a": "Campeonato Colombiano",
     }
 
     # Offensive leagues get HIPER-OFENSIVA regime
     offensive_leagues = {
         "bundesliga", "germany-bundesliga", "eredivisie", "netherlands-eredivisie",
-        "primera-division", "a-league", "professional-league", "saudi-professional-league",
+        "primera-division", "a-league",
     }
 
     teams = teams_by_league.get(league_id, [("Team A", "Team B"), ("Team C", "Team D")])
@@ -808,8 +767,7 @@ def get_league_aliases(league_id: str) -> List[str]:
         "ligue-1": ["france-ligue-1"],
         "portugal": ["liga-nos", "portugal-liga-nos"],
         "liganos": ["liga-nos", "portugal-liga-nos"],
-        "austria": ["austria-bundesliga"],
-        "austriabundesliga": ["austria-bundesliga"],
+
         "eredivise": ["eredivisie", "netherlands-eredivisie"],
         "eredivisie": ["netherlands-eredivisie"],
     }

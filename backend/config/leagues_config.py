@@ -1,6 +1,5 @@
-# Mapeamento das 34 Ligas monitoradas (País - Liga)
-# Este dicionário associa o nome amigável ao nome técnico da FootyStats para busca via API.
-# Expansão v3.5: 22 ligas originais + 11 novas ligas (Safe Bets Engine) + Liga MX
+# Mapeamento das 22 Ligas monitoradas (País - Liga)
+# Reduced from 37 to 22 in #078r — removed 15 with insufficient data.
 
 # Aliases: IDs do frontend -> IDs do backend (para FootyStats API)
 # Permite que o frontend use IDs como "spain-la-liga" e o backend resolva para a config correta
@@ -16,33 +15,17 @@ LEAGUE_ID_ALIASES = {
     "germany-bundesliga": "bundesliga",
     "germany-2-bundesliga": "2-bundesliga",
     "france-ligue-1": "ligue-1",
-    "france-ligue-2": "ligue-2",
     "brazil-serie-a": "brasileirao-serie-a",
     "brazil-serie-b": "brasileirao-serie-b",
     "netherlands-eredivisie": "eredivisie",
     "portugal-liga-nos": "primeira-liga",
-    "saudi-professional-league": "professional-league",
     "scotland-premiership": "premiership",
-    "austria-bundesliga": "austrian-bundesliga",
     "denmark-superliga": "superliga",
-    "switzerland-super-league": "super-league",
     "turkey-super-lig": "super-lig",
-    "spain-segunda-division": "segunda-division",
     "england-league-one": "league-one",
-    "england-league-two": "league-two",
-    # --- 11 new leagues (Safe Bets Engine v3.5) ---
-    "japan-j-league": "j-league",
-    "south-korea-k-league": "k-league",
-    "norway-eliteserien": "eliteserien",
-    "sweden-allsvenskan": "allsvenskan",
-    "uae-pro-league": "uae-pro-league",
-    "netherlands-eerste-divisie": "eerste-divisie",
-    "greece-super-league": "super-league-greece",
     "usa-mls": "mls",
-    "czech-first-league": "czech-first-league",
     "colombia-primera-a": "colombian-primera-a",
     "mexico-liga-mx": "liga-mx",
-    "brazil-copa-do-brasil": "copa-do-brasil",
 }
 
 LEAGUES_CONFIG = [
@@ -51,12 +34,9 @@ LEAGUES_CONFIG = [
     {"country": "England", "name": "Championship", "id": "championship"},
     {"country": "England", "name": "League One", "id": "league-one",
      "alt_names": ["efl league one", "sky bet league one"]},
-    {"country": "England", "name": "League Two", "id": "league-two",
-     "alt_names": ["efl league two", "sky bet league two"]},
 
     # ESPANHA
     {"country": "Spain", "name": "La Liga", "id": "la-liga"},
-    {"country": "Spain", "name": "Segunda División", "id": "segunda-division"},
 
     # ITÁLIA
     {"country": "Italy", "name": "Serie A", "id": "serie-a"},
@@ -68,14 +48,11 @@ LEAGUES_CONFIG = [
 
     # FRANÇA
     {"country": "France", "name": "Ligue 1", "id": "ligue-1"},
-    {"country": "France", "name": "Ligue 2", "id": "ligue-2"},
 
     # BRASIL
     {"country": "Brazil", "name": "Serie A", "id": "brasileirao-serie-a"},
     {"country": "Brazil", "name": "Serie B", "id": "brasileirao-serie-b",
      "alt_names": ["brasileirão série b", "campeonato brasileiro série b"]},
-    {"country": "Brazil", "name": "Copa do Brasil", "id": "copa-do-brasil",
-     "alt_names": ["copa do brasil", "brazil cup"]},
 
     # OUTROS EUROPA
     {"country": "Netherlands", "name": "Eredivisie", "id": "eredivisie"},
@@ -84,47 +61,15 @@ LEAGUES_CONFIG = [
     {"country": "Turkey", "name": "Süper Lig", "id": "super-lig"},
     {"country": "Belgium", "name": "Pro League", "id": "pro-league"},
     {"country": "Scotland", "name": "Premiership", "id": "premiership"},
-    {"country": "Austria", "name": "Bundesliga", "id": "austrian-bundesliga"},
     {"country": "Denmark", "name": "Superliga", "id": "superliga"},
-    {"country": "Switzerland", "name": "Super League", "id": "super-league"},
 
-    # RESTO DO MUNDO (existentes)
+    # AMÉRICAS
     {"country": "Argentina", "name": "Primera División", "id": "primera-division"},
     {"country": "Australia", "name": "A-League", "id": "a-league"},
-    {"country": "Saudi Arabia", "name": "Professional League", "id": "professional-league"},
-
-    # --- 11 NOVAS LIGAS (Safe Bets Engine v3.5) ---
-    # ÁSIA
-    {"country": "Japan", "name": "J1 League", "id": "j-league",
-     "alt_names": ["j1 league", "j-league", "meiji yasuda j1 league"]},
-    {"country": "South Korea", "name": "K-League", "id": "k-league",
-     "alt_names": ["k league 1", "hana 1 bank k league 1"]},
-
-    # NÓRDICAS
-    {"country": "Norway", "name": "Eliteserien", "id": "eliteserien",
-     "alt_names": ["toppserien", "norwegian premier league", "norway eliteserien"]},
-    {"country": "Sweden", "name": "Allsvenskan", "id": "allsvenskan",
-     "alt_names": ["swedish premier league", "sweden allsvenskan"]},
-
-    # ORIENTE MÉDIO
-    {"country": "UAE", "name": "Arabian Gulf League", "id": "uae-pro-league",
-     "alt_names": ["uae pro league", "adnoc pro league", "uae arabian gulf league"]},
-
-    # EUROPA (adicionais)
-    {"country": "Netherlands", "name": "Eerste Divisie", "id": "eerste-divisie",
-     "alt_names": ["dutch second division", "keuken kampioen divisie"]},
-    {"country": "Greece", "name": "Super League", "id": "super-league-greece",
-     "alt_names": ["super league 1", "greek super league", "greece super league"]},
-    {"country": "Czech Republic", "name": "Czech First League", "id": "czech-first-league",
-     "alt_names": ["chance liga", "fortuna liga", "first league", "czech republic first league"]},
-
-    # AMÉRICAS (adicionais)
     {"country": "USA", "name": "MLS", "id": "mls",
      "alt_names": ["major league soccer"]},
     {"country": "Colombia", "name": "Categoria Primera A", "id": "colombian-primera-a",
      "alt_names": ["liga betplay", "primera a", "categoría primera a", "colombia categoria primera a", "campeonato colombiano"]},
-
-    # MÉXICO
     {"country": "Mexico", "name": "Liga MX", "id": "liga-mx",
      "alt_names": ["liga bbva mx", "liga bbva bancomer", "primera division de mexico"]},
 ]
@@ -137,10 +82,8 @@ API_FOOTBALL_LEAGUE_IDS = {
     "premier-league": 39,
     "championship": 40,
     "league-one": 41,
-    "league-two": 42,
     # SPAIN
     "la-liga": 140,
-    "segunda-division": 141,
     # ITALY
     "serie-a": 135,
     "serie-b": 136,
@@ -149,14 +92,11 @@ API_FOOTBALL_LEAGUE_IDS = {
     "2-bundesliga": 79,
     # FRANCE
     "ligue-1": 61,
-    "ligue-2": 62,
     # BRAZIL
     "brasileirao-serie-a": 71,
     "brasileirao-serie-b": 72,
-    "copa-do-brasil": 73,
     # NETHERLANDS
     "eredivisie": 88,
-    "eerste-divisie": 89,
     # PORTUGAL
     "primeira-liga": 94,
     # TURKEY
@@ -165,32 +105,12 @@ API_FOOTBALL_LEAGUE_IDS = {
     "pro-league": 144,
     # SCOTLAND
     "premiership": 179,
-    # AUSTRIA
-    "austrian-bundesliga": 218,
     # DENMARK
     "superliga": 120,
-    # SWITZERLAND
-    "super-league": 207,
     # ARGENTINA
     "primera-division": 128,
     # AUSTRALIA
     "a-league": 188,
-    # SAUDI ARABIA
-    "professional-league": 307,
-    # JAPAN
-    "j-league": 98,
-    # SOUTH KOREA
-    "k-league": 292,
-    # NORWAY
-    "eliteserien": 103,
-    # SWEDEN
-    "allsvenskan": 113,
-    # UAE
-    "uae-pro-league": 305,
-    # GREECE
-    "super-league-greece": 197,
-    # CZECH REPUBLIC
-    "czech-first-league": 345,
     # USA
     "mls": 253,
     # COLOMBIA
@@ -212,17 +132,9 @@ def get_api_football_league_id(league_id: str) -> int | None:
 # European leagues (Premier League 2025/26) started Aug 2025, season param = 2025.
 CALENDAR_YEAR_LEAGUES = {
     # BRAZIL
-    "brasileirao-serie-a", "brasileirao-serie-b", "copa-do-brasil",
+    "brasileirao-serie-a", "brasileirao-serie-b",
     # ARGENTINA (Apertura/Clausura within calendar year)
     "primera-division",
-    # JAPAN
-    "j-league",
-    # SOUTH KOREA
-    "k-league",
-    # NORWAY (Mar-Nov)
-    "eliteserien",
-    # SWEDEN (Apr-Nov)
-    "allsvenskan",
     # USA (Feb-Dec)
     "mls",
     # COLOMBIA (Feb-Dec)
@@ -231,10 +143,6 @@ CALENDAR_YEAR_LEAGUES = {
     "a-league",
     # MEXICO (Apertura/Clausura, but API-Football uses calendar year)
     "liga-mx",
-    # SAUDI ARABIA (Aug-May, BUT API-Football uses the start year like European)
-    # NOT included — follows European convention
-    # UAE
-    "uae-pro-league",
 }
 
 

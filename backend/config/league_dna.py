@@ -1,8 +1,8 @@
 """
 League DNA — Consolidated Profile Matrix (Layer 1)
 
-Static categorization of all 34 monitored leagues based on historical averages.
-This defines which markets are eligible for each league BEFORE individual match analysis.
+Static categorization of all 22 monitored leagues based on historical averages.
+Reduced from 34 to 22 in #078r — removed 15 with insufficient data.
 
 Categories:
   - DEFENSIVE: seasonAVG < 2.2 — enables Under goals, BTTS No
@@ -32,34 +32,9 @@ class LeagueDNA:
     corners_disabled: bool = False
 
 
-# Static DNA matrix for all 34 leagues
+# Static DNA matrix for all 22 leagues
 LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
     # === DEFENSIVE LEAGUES (< 2.2 goals) — Under / BTTS No ===
-    "j-league": LeagueDNA(
-        league_id="j-league", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.08, avg_corners=9.8, avg_cards=3.1, btts_pct=42.0,
-    ),
-    "k-league": LeagueDNA(
-        league_id="k-league", category="DEFENSIVE", is_aggressive=True,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.05, avg_corners=9.5, avg_cards=3.8, btts_pct=40.0,
-    ),
-    "eliteserien": LeagueDNA(
-        league_id="eliteserien", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.18, avg_corners=9.4, avg_cards=3.2, btts_pct=43.0,
-    ),
-    "allsvenskan": LeagueDNA(
-        league_id="allsvenskan", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.15, avg_corners=9.6, avg_cards=3.0, btts_pct=41.0,
-    ),
-    "ligue-2": LeagueDNA(
-        league_id="ligue-2", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.10, avg_corners=9.2, avg_cards=3.4, btts_pct=39.0,
-    ),
     "serie-b": LeagueDNA(
         league_id="serie-b", category="DEFENSIVE", is_aggressive=True,
         markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
@@ -70,23 +45,8 @@ LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
         markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
         avg_goals=2.18, avg_corners=9.2, avg_cards=3.0, btts_pct=44.0,
     ),
-    "league-two": LeagueDNA(
-        league_id="league-two", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.15, avg_corners=9.0, avg_cards=2.8, btts_pct=43.0,
-    ),
-    "czech-first-league": LeagueDNA(
-        league_id="czech-first-league", category="DEFENSIVE", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "UNDER_25"],
-        avg_goals=2.18, avg_corners=9.5, avg_cards=3.3, btts_pct=42.0,
-    ),
 
     # === BALANCED LEAGUES (2.2 — 2.8 goals) ===
-    "eerste-divisie": LeagueDNA(
-        league_id="eerste-divisie", category="BALANCED", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
-        avg_goals=2.55, avg_corners=9.8, avg_cards=3.1, btts_pct=48.0,
-    ),
     "la-liga": LeagueDNA(
         league_id="la-liga", category="BALANCED", is_aggressive=True,
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS", "TIMING_2H"],
@@ -112,11 +72,6 @@ LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
         avg_goals=2.40, avg_corners=10.0, avg_cards=3.0, btts_pct=47.0,
     ),
-    "segunda-division": LeagueDNA(
-        league_id="segunda-division", category="BALANCED", is_aggressive=True,
-        markets_enabled=["UNDER_35", "BTTS_NO"],
-        avg_goals=2.25, avg_corners=9.5, avg_cards=4.2, btts_pct=43.0,
-    ),
     "2-bundesliga": LeagueDNA(
         league_id="2-bundesliga", category="BALANCED", is_aggressive=False,
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS", "TIMING_2H"],
@@ -137,40 +92,15 @@ LEAGUE_DNA_MATRIX: Dict[str, LeagueDNA] = {
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
         avg_goals=2.50, avg_corners=10.0, avg_cards=3.0, btts_pct=47.0,
     ),
-    "austrian-bundesliga": LeagueDNA(
-        league_id="austrian-bundesliga", category="BALANCED", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS", "TIMING_2H"],
-        avg_goals=2.70, avg_corners=10.0, avg_cards=3.3, btts_pct=50.0,
-    ),
     "superliga": LeagueDNA(
         league_id="superliga", category="BALANCED", is_aggressive=False,
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
         avg_goals=2.60, avg_corners=10.2, avg_cards=3.1, btts_pct=48.0,
     ),
-    "super-league": LeagueDNA(
-        league_id="super-league", category="BALANCED", is_aggressive=False,
-        markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS"],
-        avg_goals=2.55, avg_corners=10.0, avg_cards=3.2, btts_pct=47.0,
-    ),
     "a-league": LeagueDNA(
         league_id="a-league", category="BALANCED", is_aggressive=False,
         markets_enabled=["UNDER_35", "BTTS_NO", "SAFE_CORNERS", "TIMING_2H"],
         avg_goals=2.65, avg_corners=10.0, avg_cards=3.0, btts_pct=50.0,
-    ),
-    "professional-league": LeagueDNA(
-        league_id="professional-league", category="BALANCED", is_aggressive=False,
-        markets_enabled=["SAFE_CORNERS", "TIMING_2H"],
-        avg_goals=2.70, avg_corners=9.5, avg_cards=3.5, btts_pct=50.0,
-    ),
-    "uae-pro-league": LeagueDNA(
-        league_id="uae-pro-league", category="BALANCED", is_aggressive=False,
-        markets_enabled=["SAFE_CORNERS", "TIMING_2H"],
-        avg_goals=2.60, avg_corners=9.2, avg_cards=3.3, btts_pct=48.0,
-    ),
-    "super-league-greece": LeagueDNA(
-        league_id="super-league-greece", category="BALANCED", is_aggressive=True,
-        markets_enabled=["UNDER_35", "BTTS_NO"],
-        avg_goals=2.30, avg_corners=9.5, avg_cards=4.0, btts_pct=44.0,
     ),
     "mls": LeagueDNA(
         league_id="mls", category="BALANCED", is_aggressive=False,

@@ -17,10 +17,8 @@ export interface LeagueClassification {
 
 // Mapping from retrain pipeline league IDs (FootyStats slugs) to frontend league IDs
 const RETRAIN_TO_FRONTEND_ID: Record<string, string> = {
-  "professional-league": "saudi-professional-league",
   "primeira-liga": "portugal-liga-nos",
   "super-lig": "turkey-super-lig",
-  "super-league-greece": "greece-super-league",
   "la-liga": "spain-la-liga",
   "premiership": "scotland-premiership",
   "eredivisie": "netherlands-eredivisie",
@@ -28,21 +26,13 @@ const RETRAIN_TO_FRONTEND_ID: Record<string, string> = {
   "liga-mx": "mexico-liga-mx",
   "serie-a": "italy-serie-a",
   "brasileirao-serie-a": "brazil-serie-a",
-  "eliteserien": "norway-eliteserien",
   "bundesliga": "germany-bundesliga",
   "colombian-primera-a": "colombia-primera-a",
   "mls": "usa-mls",
-  "eerste-divisie": "netherlands-eerste-divisie",
-  "super-league": "switzerland-super-league",
   "superliga": "denmark-superliga",
-  "allsvenskan": "sweden-allsvenskan",
   "2-bundesliga": "germany-2-bundesliga",
-  "ligue-2": "france-ligue-2",
   "brasileirao-serie-b": "brazil-serie-b",
   "serie-b": "italy-serie-b",
-  "austrian-bundesliga": "austria-bundesliga",
-  "j-league": "japan-j-league",
-  "k-league": "south-korea-k-league",
 };
 
 export function useLeagueClassifications() {

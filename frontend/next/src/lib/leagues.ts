@@ -239,19 +239,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
-    id: "england-league-two",
-    name: "League Two",
-    country: "Inglaterra",
-    countryFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-    logo: "/logos/league-two.png",
-    season: "2025/26",
-    totalMatches: 552,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/england/league-two",
-    },
-  },
-  {
     id: "primera-division",
     name: "Primera Division",
     country: "Argentina",
@@ -275,19 +262,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/australia/a-league",
-    },
-  },
-  {
-    id: "austria-bundesliga",
-    name: "Bundesliga",
-    country: "Áustria",
-    countryFlag: "🇦🇹",
-    logo: "/logos/austria-bundesliga.png",
-    season: "2025/26",
-    totalMatches: 132,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/austria/bundesliga",
     },
   },
   {
@@ -330,19 +304,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
-    id: "brazil-copa-do-brasil",
-    name: "Copa do Brasil",
-    country: "Brasil",
-    countryFlag: "🇧🇷",
-    logo: "/logos/copa-do-brasil.png",
-    season: "2026",
-    totalMatches: 80,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/brazil/copa-do-brasil",
-    },
-  },
-  {
     id: "denmark-superliga",
     name: "Superliga",
     country: "Dinamarca",
@@ -366,19 +327,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/france/ligue-1",
-    },
-  },
-  {
-    id: "france-ligue-2",
-    name: "Ligue 2",
-    country: "França",
-    countryFlag: "🇫🇷",
-    logo: "/logos/ligue-2.png",
-    season: "2025/26",
-    totalMatches: 306,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/france/ligue-2",
     },
   },
   {
@@ -460,19 +408,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
-    id: "saudi-professional-league",
-    name: "Professional League",
-    country: "Arábia Saudita",
-    countryFlag: "🇸🇦",
-    logo: "/logos/saudi-pro-league.png",
-    season: "2025/26",
-    totalMatches: 306,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/saudi-arabia/professional-league",
-    },
-  },
-  {
     id: "scotland-premiership",
     name: "Premiership",
     country: "Escócia",
@@ -499,32 +434,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     },
   },
   {
-    id: "spain-segunda-division",
-    name: "Segunda División",
-    country: "Espanha",
-    countryFlag: "🇪🇸",
-    logo: "/logos/segunda-division.png",
-    season: "2025/26",
-    totalMatches: 462,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/spain/segunda-division",
-    },
-  },
-  {
-    id: "switzerland-super-league",
-    name: "Super League",
-    country: "Suíça",
-    countryFlag: "🇨🇭",
-    logo: "/logos/switzerland-super-league.png",
-    season: "2025/26",
-    totalMatches: 132,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/switzerland/super-league",
-    },
-  },
-  {
     id: "turkey-super-lig",
     name: "Süper Lig",
     country: "Turquia",
@@ -535,98 +444,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/turkey/super-lig",
-    },
-  },
-  // --- 11 NEW LEAGUES (Safe Bets Engine v3.5) ---
-  {
-    id: "japan-j-league",
-    name: "J-League",
-    country: "Japão",
-    countryFlag: "🇯🇵",
-    logo: "/logos/j-league.png",
-    season: "2026",
-    totalMatches: 306,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/japan/j1-league",
-    },
-  },
-  {
-    id: "south-korea-k-league",
-    name: "K-League",
-    country: "Coreia do Sul",
-    countryFlag: "🇰🇷",
-    logo: "/logos/k-league.png",
-    season: "2026",
-    totalMatches: 264,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/south-korea/k-league-1",
-    },
-  },
-  {
-    id: "norway-eliteserien",
-    name: "Eliteserien",
-    country: "Noruega",
-    countryFlag: "🇳🇴",
-    logo: "/logos/eliteserien.png",
-    season: "2026",
-    totalMatches: 240,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/norway/eliteserien",
-    },
-  },
-  {
-    id: "sweden-allsvenskan",
-    name: "Allsvenskan",
-    country: "Suécia",
-    countryFlag: "🇸🇪",
-    logo: "/logos/allsvenskan.png",
-    season: "2026",
-    totalMatches: 240,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/sweden/allsvenskan",
-    },
-  },
-  {
-    id: "uae-pro-league",
-    name: "UAE Pro League",
-    country: "Emirados Árabes",
-    countryFlag: "🇦🇪",
-    logo: "/logos/uae-pro-league.png",
-    season: "2025/26",
-    totalMatches: 182,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/uae/uae-pro-league",
-    },
-  },
-  {
-    id: "netherlands-eerste-divisie",
-    name: "Eerste Divisie",
-    country: "Holanda",
-    countryFlag: "🇳🇱",
-    logo: "/logos/eerste-divisie.png",
-    season: "2025/26",
-    totalMatches: 380,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/netherlands/eerste-divisie",
-    },
-  },
-  {
-    id: "greece-super-league",
-    name: "Super League",
-    country: "Grécia",
-    countryFlag: "🇬🇷",
-    logo: "/logos/greece-super-league.png",
-    season: "2025/26",
-    totalMatches: 182,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/greece/super-league-greece",
     },
   },
   {
@@ -640,19 +457,6 @@ export const AVAILABLE_LEAGUES: League[] = [
     matchesToday: 0,
     apiEndpoints: {
       footystats: "/usa/mls",
-    },
-  },
-  {
-    id: "czech-first-league",
-    name: "Czech First League",
-    country: "Rep. Tcheca",
-    countryFlag: "🇨🇿",
-    logo: "/logos/czech-first-league.png",
-    season: "2025/26",
-    totalMatches: 240,
-    matchesToday: 0,
-    apiEndpoints: {
-      footystats: "/czech-republic/czech-first-league",
     },
   },
   {

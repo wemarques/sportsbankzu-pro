@@ -436,32 +436,6 @@ const MOCK_DATA: Match[] = [
   },
 
   // ═══════════════════════════════════════════════
-  // Austria Bundesliga — 2 matches
-  // ═══════════════════════════════════════════════
-  {
-    id: "mock-ab-01", leagueId: "austria-bundesliga", leagueName: "Bundesliga",
-    homeTeam: { name: "Red Bull Salzburg", logo: "", form: ["W", "W", "W", "D", "W"], rating: 8.0 },
-    awayTeam: { name: "Rapid Wien", logo: "", form: ["D", "W", "L", "W", "D"], rating: 6.8 },
-    datetime: today(3), venue: "Red Bull Arena", status: "scheduled",
-    odds: { home: 1.50, draw: 4.0, away: 6.5, over25: 1.55, under25: 2.40, bttsYes: 1.72, bttsNo: 2.08 },
-    stats: { homeWinProb: 0.60, drawProb: 0.22, awayWinProb: 0.18, avgGoals: 3.0, bttsProb: 0.56, over25Prob: 0.68, regime: "HIPER-OFENSIVA" },
-    h2h: { totalMatches: 20, homeWins: 12, draws: 4, awayWins: 4, avgGoals: 2.9 },
-    predictions: [{ mercado: "Over 2.5 gols", status: "SAFE", prob_min: 70, prob_max: 72, odd_minima: 1.39 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-ab-02", leagueId: "austria-bundesliga", leagueName: "Bundesliga",
-    homeTeam: { name: "Sturm Graz", logo: "", form: ["W", "D", "W", "W", "L"], rating: 7.2 },
-    awayTeam: { name: "LASK", logo: "", form: ["D", "L", "W", "D", "W"], rating: 6.5 },
-    datetime: today(6), venue: "Merkur Arena", status: "scheduled",
-    odds: { home: 1.85, draw: 3.5, away: 4.2, over25: 1.80, under25: 2.00, bttsYes: 1.78, bttsNo: 2.02 },
-    stats: { homeWinProb: 0.47, drawProb: 0.26, awayWinProb: 0.27, avgGoals: 2.5, bttsProb: 0.52, over25Prob: 0.56, regime: "NORMAL" },
-    h2h: { totalMatches: 12, homeWins: 5, draws: 3, awayWins: 4, avgGoals: 2.4 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 66, prob_max: 68, odd_minima: 1.47 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-
-  // ═══════════════════════════════════════════════
   // Pro League (Belgium) — 2 matches
   // ═══════════════════════════════════════════════
   {
@@ -536,32 +510,6 @@ const MOCK_DATA: Match[] = [
     stats: { homeWinProb: 0.44, drawProb: 0.28, awayWinProb: 0.28, avgGoals: 2.5, bttsProb: 0.52, over25Prob: 0.56, regime: "NORMAL" },
     h2h: { totalMatches: 12, homeWins: 5, draws: 3, awayWins: 4, avgGoals: 2.4 },
     predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 66, prob_max: 68, odd_minima: 1.47 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-
-  // ═══════════════════════════════════════════════
-  // France Ligue 2 — 2 matches
-  // ═══════════════════════════════════════════════
-  {
-    id: "mock-l2-01", leagueId: "france-ligue-2", leagueName: "Ligue 2",
-    homeTeam: { name: "Lorient", logo: "", form: ["W", "D", "W", "W", "L"], rating: 6.8 },
-    awayTeam: { name: "Caen", logo: "", form: ["D", "L", "W", "D", "D"], rating: 6.2 },
-    datetime: today(4), venue: "Stade du Moustoir", status: "scheduled",
-    odds: { home: 1.90, draw: 3.3, away: 4.2, over25: 1.92, under25: 1.88, bttsYes: 1.88, bttsNo: 1.92 },
-    stats: { homeWinProb: 0.46, drawProb: 0.28, awayWinProb: 0.26, avgGoals: 2.3, bttsProb: 0.48, over25Prob: 0.52, regime: "NORMAL" },
-    h2h: { totalMatches: 10, homeWins: 4, draws: 3, awayWins: 3, avgGoals: 2.1 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 70, prob_max: 72, odd_minima: 1.39 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-l2-02", leagueId: "france-ligue-2", leagueName: "Ligue 2",
-    homeTeam: { name: "Bordeaux", logo: "", form: ["L", "D", "W", "L", "W"], rating: 6.0 },
-    awayTeam: { name: "Metz", logo: "", form: ["W", "W", "D", "W", "D"], rating: 6.7 },
-    datetime: today(7), venue: "Matmut Atlantique", status: "scheduled",
-    odds: { home: 2.60, draw: 3.2, away: 2.8, over25: 1.88, under25: 1.92, bttsYes: 1.82, bttsNo: 1.98 },
-    stats: { homeWinProb: 0.34, drawProb: 0.29, awayWinProb: 0.37, avgGoals: 2.2, bttsProb: 0.47, over25Prob: 0.49, regime: "NORMAL" },
-    h2h: { totalMatches: 8, homeWins: 3, draws: 2, awayWins: 3, avgGoals: 2.0 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 72, prob_max: 74, odd_minima: 1.35 }],
     source: "footystats", lastUpdated: new Date().toISOString(),
   },
 
@@ -675,32 +623,6 @@ const MOCK_DATA: Match[] = [
   },
 
   // ═══════════════════════════════════════════════
-  // Saudi Professional League — 2 matches
-  // ═══════════════════════════════════════════════
-  {
-    id: "mock-sa-pro-01", leagueId: "saudi-professional-league", leagueName: "Professional League",
-    homeTeam: { name: "Al Hilal", logo: "", form: ["W", "W", "W", "W", "D"], rating: 8.5 },
-    awayTeam: { name: "Al Nassr", logo: "", form: ["W", "D", "W", "W", "W"], rating: 8.2 },
-    datetime: today(3), venue: "Kingdom Arena", status: "scheduled",
-    odds: { home: 1.80, draw: 3.5, away: 4.5, over25: 1.65, under25: 2.20, bttsYes: 1.68, bttsNo: 2.12 },
-    stats: { homeWinProb: 0.49, drawProb: 0.26, awayWinProb: 0.25, avgGoals: 2.9, bttsProb: 0.57, over25Prob: 0.64, regime: "HIPER-OFENSIVA" },
-    h2h: { totalMatches: 20, homeWins: 9, draws: 5, awayWins: 6, avgGoals: 2.8 },
-    predictions: [{ mercado: "Over 2.5 gols", status: "SAFE", prob_min: 68, prob_max: 70, odd_minima: 1.43 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-sa-pro-02", leagueId: "saudi-professional-league", leagueName: "Professional League",
-    homeTeam: { name: "Al Ahli", logo: "", form: ["W", "D", "W", "L", "W"], rating: 7.5 },
-    awayTeam: { name: "Al Ittihad", logo: "", form: ["D", "W", "W", "D", "W"], rating: 7.8 },
-    datetime: today(6), venue: "King Abdullah Sports City", status: "scheduled",
-    odds: { home: 2.40, draw: 3.3, away: 2.9, over25: 1.72, under25: 2.08, bttsYes: 1.70, bttsNo: 2.10 },
-    stats: { homeWinProb: 0.36, drawProb: 0.28, awayWinProb: 0.36, avgGoals: 2.7, bttsProb: 0.56, over25Prob: 0.60, regime: "NORMAL" },
-    h2h: { totalMatches: 15, homeWins: 6, draws: 4, awayWins: 5, avgGoals: 2.6 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 63, prob_max: 65, odd_minima: 1.54 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-
-  // ═══════════════════════════════════════════════
   // Scotland Premiership — 2 matches
   // ═══════════════════════════════════════════════
   {
@@ -723,32 +645,6 @@ const MOCK_DATA: Match[] = [
     stats: { homeWinProb: 0.44, drawProb: 0.28, awayWinProb: 0.28, avgGoals: 2.5, bttsProb: 0.52, over25Prob: 0.56, regime: "NORMAL" },
     h2h: { totalMatches: 16, homeWins: 6, draws: 5, awayWins: 5, avgGoals: 2.4 },
     predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 66, prob_max: 68, odd_minima: 1.47 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-
-  // ═══════════════════════════════════════════════
-  // Switzerland Super League — 2 matches
-  // ═══════════════════════════════════════════════
-  {
-    id: "mock-ch-sl-01", leagueId: "switzerland-super-league", leagueName: "Super League",
-    homeTeam: { name: "Young Boys", logo: "", form: ["W", "W", "D", "W", "L"], rating: 7.5 },
-    awayTeam: { name: "FC Basel", logo: "", form: ["D", "W", "W", "D", "W"], rating: 7.2 },
-    datetime: today(4), venue: "Stade de Suisse", status: "scheduled",
-    odds: { home: 2.00, draw: 3.3, away: 3.8, over25: 1.78, under25: 2.02, bttsYes: 1.75, bttsNo: 2.05 },
-    stats: { homeWinProb: 0.44, drawProb: 0.28, awayWinProb: 0.28, avgGoals: 2.6, bttsProb: 0.54, over25Prob: 0.58, regime: "NORMAL" },
-    h2h: { totalMatches: 18, homeWins: 8, draws: 4, awayWins: 6, avgGoals: 2.5 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 65, prob_max: 67, odd_minima: 1.49 }],
-    source: "footystats", lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: "mock-ch-sl-02", leagueId: "switzerland-super-league", leagueName: "Super League",
-    homeTeam: { name: "FC Zurich", logo: "", form: ["L", "D", "W", "W", "D"], rating: 6.8 },
-    awayTeam: { name: "Servette", logo: "", form: ["W", "L", "D", "W", "L"], rating: 6.5 },
-    datetime: today(7), venue: "Letzigrund", status: "scheduled",
-    odds: { home: 2.10, draw: 3.2, away: 3.5, over25: 1.85, under25: 1.95, bttsYes: 1.80, bttsNo: 2.00 },
-    stats: { homeWinProb: 0.42, drawProb: 0.29, awayWinProb: 0.29, avgGoals: 2.4, bttsProb: 0.50, over25Prob: 0.54, regime: "NORMAL" },
-    h2h: { totalMatches: 10, homeWins: 4, draws: 3, awayWins: 3, avgGoals: 2.3 },
-    predictions: [{ mercado: "Under 3.5 gols", status: "SAFE", prob_min: 68, prob_max: 70, odd_minima: 1.43 }],
     source: "footystats", lastUpdated: new Date().toISOString(),
   },
 
