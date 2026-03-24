@@ -1343,6 +1343,79 @@ def live_scores() -> Dict[str, Any]:
         if skipped_statuses:
             logger.info(f"[live-scores] Skipped statuses: {skipped_statuses}")
 
+        # ── API-Football as PRIMARY when FootyStats had data but all filtered (#075) ──
+        # FootyStats may return matches from other leagues (all "scheduled") while
+        # the Argentine/Colombian league matches are only in API-Football.
+        # In this case raw_list is non-empty but result is empty after filtering.
+        if not result and _afc.is_configured:
+            try:
+                af_live = _afc.get_live_fixtures()
+                if af_live:
+                    af_result = []
+                    period_map = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
+                    for fx in af_live:
+                        ld = _afc.extract_live_data(fx)
+                        teams = fx.get("teams", {})
+                        home_name = teams.get("home", {}).get("name", "")
+                        away_name = teams.get("away", {}).get("name", "")
+                        if not home_name or not away_name:
+                            continue
+                        fx_status = ld["status"]
+                        live_statuses = {"1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"}
+                        finished_statuses = {"FT", "AET", "PEN"}
+                        if fx_status not in live_statuses and fx_status not in finished_statuses:
+                            continue
+                        _af_status = "live" if fx_status in live_statuses else "finished"
+                        score_entry: Dict[str, Any] = {
+                            "home": ld["goals_home"] if ld["goals_home"] is not None else 0,
+                            "away": ld["goals_away"] if ld["goals_away"] is not None else 0,
+                        }
+                        if ld["halftime_home"] is not None:
+                            score_entry["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
+                        current_corners: int | None = None
+                        if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
+                            current_corners = ld["home_corners"] + ld["away_corners"]
+                        elif ld.get("home_corners") is not None:
+                            current_corners = ld["home_corners"]
+                        elif ld.get("away_corners") is not None:
+                            current_corners = ld["away_corners"]
+                        if current_corners is None and ld.get("fixture_id") is not None:
+                            try:
+                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=2)
+                                if _raw_stats:
+                                    _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                    if _hc is not None and _ac is not None:
+                                        current_corners = int(_hc) + int(_ac)
+                                    else:
+                                        _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                        _hc = _parsed.get("home", {}).get("corner_kicks")
+                                        _ac = _parsed.get("away", {}).get("corner_kicks")
+                                        if _hc is not None and _ac is not None:
+                                            current_corners = int(_hc) + int(_ac)
+                            except Exception as _stat_err:
+                                logger.info(f"[live-scores] corners fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
+                        entry: Dict[str, Any] = {
+                            "id": ld["fixture_id"],
+                            "homeTeam": home_name,
+                            "awayTeam": away_name,
+                            "status": _af_status,
+                            "score": score_entry,
+                            "period": period_map.get(fx_status),
+                            "minute": ld["minute"],
+                            "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                        }
+                        if current_corners is not None:
+                            entry["currentCorners"] = current_corners
+                        af_result.append(entry)
+                    if af_result:
+                        logger.info(
+                            f"[live-scores] FootyStats filtered to 0 → API-Football primary: "
+                            f"{len(af_result)} matches"
+                        )
+                        result = af_result
+            except Exception as _af_err:
+                logger.warning(f"[live-scores] API-Football post-filter fallback failed: {_af_err}")
+
         # ── API-Football enrichment for live matches ──────────────────────
         # FootyStats often returns 0-0 for live matches even via the
         # individual /match endpoint.  API-Football provides reliable
