@@ -4604,6 +4604,7 @@ Os nomes de classificação foram criados como enum técnico do backend e propag
 
 ### Verificação
 
+
 - `pytest tests/unit/test_classifications_080.py -v -o addopts=` — 4 testes OK (sessão referida)
 - `npm run build` em `frontend/next` — build OK
 
@@ -4617,36 +4618,57 @@ Os nomes de classificação foram criados como enum técnico do backend e propag
 
 ---
 
-## 081 — Corners Engine v2 Enhancements
+## 081 — Corners Engine v2: melhorias cirúrgicas (NB2, barra 3 zonas, API)
 
 **Data:** 2026-03-24
-**Arquivos afetados:** `backend/modeling/corners/champion_selector.py`, `backend/services/fixtures_service.py`, `frontend/next/src/components/CornerProgressBar.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `tests/unit/test_corners_081.py` (NEW)
+**Commit:** `8104d99`
+**Arquivos afetados:** `backend/modeling/corners/champion_selector.py`, `backend/services/fixtures_service.py`, `frontend/next/src/components/CornerProgressBar.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `tests/unit/test_corners_081.py` (novo)
 **Severidade:** Média
 **Status:** Implementado
+**Relacionado:** #033 (Corners Engine v2 bidirecional); o motor v2 já estava ativo — #081 não “ativa” o framework, apenas refina selector, UI e payload da API.
 
 ### Problema identificado
 
-1. Champion selector não aproveitava a vantagem estatística do Negative Binomial (NB2) para dados de escanteios que exibem overdispersion (variância > média).
-2. CornerProgressBar exibia apenas 2 estados (verde/vermelho), sem feedback progressivo de proximidade à meta.
-3. Projeções do motor v2 (total FT, 1H, 2H, modelo, qualidade, governança) eram calculadas internamente mas não expostas na API.
+1. O champion selector não privilegiava o **Negative Binomial (NB2)** quando adequado estatisticamente (escanteios com overdispersion: variância > média).
+2. A **CornerProgressBar** era binária (verde/vermelho), sem zona intermédia de proximidade à meta.
+3. Projeções do motor v2 (total FT, 1H, 2H, modelo, qualidade, governança, recomendação) eram calculadas internamente mas **não serializadas** na resposta da API de fixtures.
 
 ### Causa raiz
 
-1. O champion selector usava composite score puro sem preferência estatística para NB2.
-2. Lógica binária `isGood` no CornerProgressBar não previa zona intermediária de aviso.
-3. `predict_corners()` era chamado apenas dentro de `evaluate_match_markets`, sem serialização no record da API.
+1. Tiebreaker do selector baseado só em composite score, sem preferência explícita a NB2 quando quase empatado com o melhor modelo.
+2. Lógica `isGood` binária no componente React da barra de escanteios.
+3. `predict_corners()` integrado no fluxo de mercados (`ev_classification` / pipeline) sem campo dedicado no `record` exposto ao cliente.
 
 ### Correções aplicadas
 
-1. **NB2 preference tiebreaker** (`champion_selector.py`): quando NB2 é elegível e seu score está dentro de 2% (`NB2_PREFERENCE_THRESHOLD`) do melhor modelo, o selector troca para NB2 com `selection_method = "composite_score_nb2_preference"`.
-2. **CornerProgressBar 3-zone** (`CornerProgressBar.tsx` + CSS): nova função `getBarState()` retorna 4 estados (hit/warning/normal/danger) baseados no ratio corrente/meta. CSS com gradientes teal (normal), amber (warning), green (hit), red (danger).
-3. **API cornerPredictions** (`fixtures_service.py`): após `record["mercados"]`, chama `predict_corners()` e serializa projeções FT/1H/2H, modelo, data quality tier, governança, recomendação de linha/side/edge no campo `record["cornerPredictions"]`.
-4. **Frontend types + display** (`leagues.ts` + `MatchDetailCard.tsx`): tipo `CornerPredictions`, card v2 no tab escanteios com projeção total em destaque, badge de qualidade colorido, recomendação com edge.
-5. **4 testes unitários** (`test_corners_081.py`): NB2 swap within threshold, gap too large, already champion, ineligible NB2.
+**Camada 1 — NB2 preference (`champion_selector.py`):**
+- Constante `NB2_PREFERENCE_THRESHOLD = 0.02`.
+- Após ordenar modelos elegíveis: se o campeão não é `negative_binomial`, NB2 é elegível e `(nb2_score - champion_score) / champion_score <= 0.02`, troca para NB2 e `selection_method = "composite_score_nb2_preference"`.
+
+**Camada 2 — Barra 3 zonas (`CornerProgressBar.tsx` + `match-detail-card.css`):**
+- `getBarState(direction, ratio)` → estados `hit` | `warning` | `normal` | `danger` (Over: ratio ≥1 hit, ≥0.85 warning; Under: ratio >1 danger, ≥0.85 warning).
+- Classes `.cpb-fill--normal` (teal), `.cpb-fill--warning` (amber), badges espelhados.
+
+**Camada 3 — API `cornerPredictions` (`fixtures_service.py`):**
+- Após `record["mercados"]`, `try/except` chama `predict_corners(...)` com os mesmos insumos do pipeline e preenche `record["cornerPredictions"]` com FT/1H/2H, `modelSource`, `dataQualityTier`, `governanceState`, linha/side/edge recomendados, `noBet`, `engineVersion`.
+
+**Camada 4 — Frontend (`leagues.ts` + `MatchDetailCard.tsx`):**
+- Tipo `CornerPredictions` e `cornerPredictions?` em `Match`.
+- Card “Motor v2 Escanteios” no separador escanteios (projeção FT em destaque, badge de tier, recomendação com edge quando aplicável).
+
+**Camada 5 — Testes (`test_corners_081.py`):**
+- 4 testes: NB2 preferido dentro do limiar; sem swap com gap grande; NB2 já campeão; NB2 inelegível (ex.: ECE alto).
+
+### Verificação
+
+- `pytest tests/unit/test_corners_081.py -v -o addopts=` — 4/4 OK.
+- `npm run build` em `frontend/next` — OK.
 
 ### Lição aprendida
 
-O framework corners v2 já estava ativo e funcional — a melhoria correta era cirúrgica (tiebreaker, visual, exposição de dados), não ativação de framework. Investigar antes de assumir que componentes estão "dormentes".
+O framework corners v2 já estava operacional; a evolução correta foi **cirúrgica** (tiebreaker, visual, exposição de dados), não assumir componentes “dormentes”. Investigar o código e o fluxo antes de reescrever.
+
+**Registo documentação:** entrada **#081**; commit **`8104d99`** em `main`.
 
 ---
 
