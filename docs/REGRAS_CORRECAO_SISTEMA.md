@@ -4725,60 +4725,127 @@ Feature flags servem para **transição**, não como destino final: após decidi
 
 ---
 
-## 083 — Post-Match Diagnostic Engine + Version Bump V3.7→V4.0
+## 083 — Post-Match Diagnostic Engine + version bump V3.7 → V4.0
 
 **Data:** 2026-03-24
-**Arquivos afetados:** `backend/services/post_match_diagnostic.py` (NOVO), `backend/config/version.py` (NOVO), `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/audit.py`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/package.json`, `tests/unit/test_diagnostic_083.py` (NOVO)
+**Commit:** `48e10d9`
+**Arquivos afetados:** `backend/services/post_match_diagnostic.py` (novo), `backend/config/version.py` (novo), `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/audit.py`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/package.json`, `tests/unit/test_diagnostic_083.py` (novo)
 **Severidade:** Alta
 **Status:** Implementado
-**Relacionado:** #079 (audit determinístico), #082 (Mistral narrative-only), #080 (classification rename)
+**Relacionado:** #079 (audit batch), #082 (Mistral só narrativa), #080 (rótulos de classificação), #081 (escanteios API/UI)
+**Roadmap:** **BLOCO 6** — motor de diagnóstico pós-jogo + alinhamento de versão e UX; commit `48e10d9`.
 
 ### Problema identificado
 
-1. O sistema avaliava picks pós-jogo (acertou/errou, Brier, lambda error) mas não analisava POR QUE errou. Sem decomposição de erros, padrões sistemáticos (lambda over/under, ρ insuficiente, overconfidence) ficavam invisíveis.
-2. A versão exibida ainda era "pro V3.7" apesar de 6 blocos de mudanças fundamentais (Dixon-Coles, calibração per-league, audit determinístico, NB2 corners, classificações renomeadas, Mistral narrative-only).
-3. Lista lateral do dashboard mostrava "SAFE" em vez de "ALTA CONFIANCA" — rename do #080 não aplicado em todos os pontos.
-4. CornerProgressBar mais estreita que o container pai.
-5. Análise AI mostrando "0% confiança" em vez de mensagem amigável quando Mistral indisponível.
+1. O sistema media acerto/Brier/erro de λ, mas **não decompunha** a causa dos erros nem agregava **padrões** (λ alto/baixo, ρ, overconfidence, cantos, etc.).
+2. A versão exposta continuava **V3.7** apesar da evolução acumulada (Dixon-Coles, calibração per-league, audit determinístico, corners v2, UI #080, contrato Mistral #082).
+3. **UI:** lateral e lista ainda mostravam `SAFE` em texto cru; barra de escanteios não ocupava a largura útil; tooltip podia ser cortado; ausência de mensagem clara quando a análise narrativa falha; tab de versão não refletia jogo ao vivo.
+
+### Causa raiz
+
+Faltava uma camada **analítica** entre métricas agregadas e ação humana; a versão e os rótulos estavam **dispersos** em ficheiros sem fonte única; alguns componentes não tinham sido atualizados no mesmo passo que o mapeamento `#080`.
 
 ### Correções aplicadas
 
-**Camada 1 — Diagnostic Engine (Python puro, 3 componentes):**
-- `decompose_error()` — identifica causa provável de cada erro (10 causas: LAMBDA_OVER/UNDER, RHO_INSUFFICIENT, ODDS_VALUE_TRAP, CALIBRATION_DRIFT, CORNER_MODEL_ERROR, EARLY_SEASON, LOW_SAMPLE, MARKET_MISMATCH, UNKNOWN)
-- `detect_patterns()` — detecta padrões recorrentes (6 tipos: SYSTEMATIC_LAMBDA_OVER/UNDER, DRAW_UNDERESTIMATION, OVERCONFIDENCE, CORNER_SYSTEMATIC_ERROR, HIGH_ODDS_VALUE_TRAP)
-- `generate_diagnostic_narrative()` — texto determinístico por default, Mistral enrichment opcional (#082 compliant)
-- `run_post_match_diagnostic()` — orquestra os 3 componentes
+**Camada 1 — `post_match_diagnostic.py` (Python, contrato #082):**
+- `decompose_error()` — causas prováveis por pick (ex.: LAMBDA_OVER/UNDER, RHO_INSUFFICIENT, ODDS_VALUE_TRAP, CALIBRATION_DRIFT, CORNER_MODEL_ERROR, EARLY_SEASON, LOW_SAMPLE, MARKET_MISMATCH, UNKNOWN).
+- `detect_patterns()` — padrões agregados (ex.: SYSTEMATIC_LAMBDA_OVER/UNDER, DRAW_UNDERESTIMATION, OVERCONFIDENCE, CORNER_SYSTEMATIC_ERROR, HIGH_ODDS_VALUE_TRAP).
+- `generate_diagnostic_narrative()` — base determinística; enriquecimento Mistral **opcional** e só como texto.
+- `run_post_match_diagnostic()` — orquestra os três blocos.
 
-**Camada 2 — Integração no cron_handler:**
-- Coleta `all_evaluated_picks` com lambda, prob, ev, odd por pick
-- Chama `run_post_match_diagnostic()` após avaliação
-- Resultado salvo no audit_results como campo "diagnostic"
+**Camada 2 — `cron_handler.py`:**
+- Acumula `all_evaluated_picks` no loop de mercados (match, liga, mercado, acerto, prob, ev, odd, λ, cantos projetados, etc.).
+- Após `model_evaluation`, chama `run_post_match_diagnostic(..., use_mistral_narrative=bool(MISTRAL_API_KEY))`.
+- Inclui `diagnostic` no dict guardado via `log_audit_result` / resultado do cron.
 
-**Camada 3 — Endpoint `/api/ai/diagnostic/latest`:**
-- Retorna último diagnóstico pós-jogo disponível
+**Camada 3 — API `GET /api/ai/diagnostic/latest` (`ai_analysis.py`):**
+- Lê o audit recente (ex.: 7 dias, limite 1) e devolve o campo `diagnostic` quando existir.
 
-**Camada 4 — Version Bump V3.7→V4.0:**
-- Constante centralizada em `backend/config/version.py` (APP_VERSION = "pro V4.0")
-- `backend/audit.py` importa de version.py
-- `backend/main.py` FastAPI version="4.0.0"
-- Frontend: VERSION_FALLBACK, MatchDetailCard default, package.json
+**Camada 4 — Versão V4.0:**
+- `backend/config/version.py`: `APP_VERSION = "pro V4.0"`.
+- `audit.py`: default de versão a partir de `version.py` (continua override por `SPORTSBANK_VERSION`).
+- `main.py`: `FastAPI(..., version="4.0.0")`.
+- Frontend: `VERSION_FALLBACK`, default do `MatchDetailCard`, `package.json` → `4.0.0`.
 
-**Camada 5 — Fixes visuais:**
-- CornerProgressBar: `width: 100%` + `box-sizing: border-box` (margin 0)
-- Lista lateral: badges agora usam `getClassificationDisplay()` (label + cor)
-- Match list: prediction badges usam display labels em vez de nomes internos
-- Análise AI: mensagem amigável quando Mistral indisponível (confidence=0 + "indisponivel")
-- Tooltip: `overflow: visible` no `.mdc-prognostico__list`
-- Tab PRO: mostra "Ao Vivo" em jogos live
+**Camada 5 — Ajustes visuais / UX:**
+- `dashboard/page.tsx`: badges da lista e da lateral com `getClassificationDisplay()` (cor + rótulo amigável).
+- `match-detail-card.css`: `.cpb-root` largura total; `overflow: visible` na lista de prognósticos (tooltips).
+- `MatchDetailCard.tsx`: aviso quando análise narrativa indisponível (`confidence === 0` + resumo com “indispon”); tab com indicador **Ao vivo** para `match.status === "live"` (em jogos não live mantém badge de versão).
 
-**Camada 6 — Testes:**
-- 7 testes em `test_diagnostic_083.py`: decomposition, patterns, narrative, orchestration
+**Camada 6 — Testes `test_diagnostic_083.py`:**
+- 7 testes (decomposição, padrões, narrativa, orquestração, conforme implementação).
+
+### Verificação
+
+- `pytest tests/unit/test_diagnostic_083.py -v -o addopts=` — 7/7 OK.
+- Regressão: `pytest tests/ -k "diagnostic or metrics_079 or classifications or corners_081 or mistral_contract" -o addopts= --ignore=tests/unit/test_util_service.py` — 29/29 OK (sessão referida; ignorar módulo com pandas quebrado).
+- `npm run build` em `frontend/next` — OK.
+- Imports: `ai_analysis`, `cron_handler`; `APP_VERSION` → `pro V4.0`.
 
 ### Lição aprendida
 
-1. Saber QUE errou (Brier, accuracy) é necessário mas insuficiente. Saber POR QUE errou (decomposição) permite ação corretiva dirigida.
-2. Padrões com N < 3 são ruído — thresholds mínimos evitam falsos positivos.
-3. Mistral como reescritor de texto (não gerador de conclusões) é o uso correto do LLM pós-#082.
-4. Versão deve ser centralizada numa constante única — evita divergência entre backend e frontend.
+1. Métricas sem **causa** não orientam calibração; padrões exigem **N mínimo** para não confundir ruído com regime.
+2. Após #082, LLM no diagnóstico só como **reformulador narrativo**, nunca como fonte de conclusões numéricas.
+3. **Uma constante** de versão evita drift backend/frontend.
+
+**Registo documentação:** entrada **#083** (**BLOCO 6**); commit **`48e10d9`** em `main`.
+
+---
+
+## 084 — Integrar métricas pendentes no cron loop + baseline de odds
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `backend/services/backtesting.py`, `backend/cron_handler.py`, `backend/services/deterministic_audit.py`, `backend/services/post_match_diagnostic.py`, `tests/unit/test_metrics_integration_084.py` (NOVO)
+**Severidade:** Alta (sem isso, métricas dos Blocos 1-6 ficam dormindo)
+**Status:** Implementado
+
+### Problema identificado
+
+4 funções de métricas criadas no #079 (compute_sharpe_ratio, compute_hit_rate_by_ev_band,
+compute_calibration_bins, compute_roi) existiam no backtesting.py mas NÃO eram chamadas
+no cron audit loop. Sem integração, os dados brutos acumulam mas as métricas derivadas
+não são computadas automaticamente.
+
+Adicionalmente, não existia baseline de comparação com as odds implícitas da casa.
+Sem esse baseline, é impossível saber se o modelo agrega valor sobre a casa de apostas.
+
+### Causa raiz
+
+Funções implementadas em #079 como standalone sem serem integradas no pipeline automático.
+Ausência de baseline de comparação (Brier do modelo vs Brier das odds implícitas).
+
+### Correções aplicadas
+
+**Camada 1 — Baseline de odds implícitas (`backtesting.py`):**
+- `compute_implied_odds_brier()` — compara Brier do modelo vs Brier das probs implícitas (1/odd)
+- `model_beats_house` flag — True quando modelo é mais preciso que a casa
+- `model_vs_house` — diferença direta (negativo = modelo melhor)
+
+**Camada 2 — Integração no cron_handler:**
+- Sharpe Ratio computado de all_evaluated_picks (odd + outcome)
+- Hit Rate by EV band computado de all_evaluated_picks (ev + outcome)
+- Calibration bins (ECE) computado de ou_predictions (prob + outcome), com MIN_N=30
+- ROI computado de all_evaluated_picks (odd + outcome)
+- Baseline de odds computado de all_evaluated_picks (odd + prob + outcome)
+- Todos incluídos no batch_summary antes do relatório determinístico
+
+**Camada 3 — Relatório determinístico expandido (`deterministic_audit.py`):**
+- overall_notes inclui Sharpe, ROI, ECE, baseline modelo vs casa, hit rate por EV
+
+**Camada 4 — Padrão MODEL_WORSE_THAN_HOUSE no diagnostic engine (`post_match_diagnostic.py`):**
+- `detect_patterns()` e `run_post_match_diagnostic()` aceitam `batch_summary` como parâmetro
+- Detectado quando Brier do modelo > Brier da casa + 0.01
+- Severidade HIGH — indica que o modelo não agrega valor
+
+**Camada 5 — Testes `test_metrics_integration_084.py`:**
+- 6 testes cobrindo baseline, sharpe, calibration, ROI, padrão MODEL_WORSE_THAN_HOUSE
+
+### Lição aprendida
+
+Criar funções sem integrá-las no fluxo automático é código morto funcional.
+As métricas do #079 ficaram 2 blocos sem serem chamadas. Checklists de integração
+devem ser parte do prompt de implementação.
+
+---
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

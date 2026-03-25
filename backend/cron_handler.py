@@ -459,6 +459,66 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     batch_log_loss = compute_log_loss(ou_predictions)
     batch_summary["log_loss"] = batch_log_loss
 
+    # #084: Compute all pending metrics (Sharpe, Hit Rate by EV, Calibration, ROI, Baseline)
+    from backend.services.backtesting import (
+        compute_sharpe_ratio,
+        compute_hit_rate_by_ev_band,
+        compute_calibration_bins,
+        compute_roi,
+        compute_implied_odds_brier,
+    )
+
+    # Sharpe Ratio
+    sharpe_picks = [
+        {"odd": p.get("odd"), "outcome": p.get("acertou"), "stake": 1.0}
+        for p in all_evaluated_picks
+        if p.get("odd") and p.get("odd") > 1
+    ]
+    batch_summary["sharpe_ratio"] = compute_sharpe_ratio(sharpe_picks)
+
+    # Hit Rate by EV band
+    ev_band_picks = [
+        {"ev_pct": p.get("ev", 0), "outcome": p.get("acertou", False)}
+        for p in all_evaluated_picks
+    ]
+    batch_summary["hit_rate_by_ev"] = compute_hit_rate_by_ev_band(ev_band_picks)
+
+    # Reliability Diagram (ECE/MCE) — compute_calibration_bins takes list[dict]
+    calibration_preds = [
+        {"prob": p["prob"], "outcome": p["outcome"]}
+        for p in ou_predictions
+        if p.get("prob") is not None and p.get("outcome") is not None
+    ]
+    if len(calibration_preds) >= 30:  # MIN_N_RELIABILITY
+        cal_bins = compute_calibration_bins(calibration_preds)
+        # Compute ECE from bins
+        total_count = sum(b["count"] for b in cal_bins) if cal_bins else 0
+        ece = sum(b["count"] * abs(b["predicted_avg"] - b["actual_avg"]) for b in cal_bins) / total_count if total_count > 0 else None
+        batch_summary["calibration"] = {"bins": cal_bins, "ece": round(ece, 4) if ece is not None else None, "n": total_count}
+    else:
+        batch_summary["calibration"] = {"bins": [], "ece": None, "n": len(calibration_preds),
+                                         "note": f"N={len(calibration_preds)} < 30 (insuficiente)"}
+
+    # ROI / Yield
+    roi_picks = [
+        {"odd": p.get("odd", 0), "outcome": p.get("acertou", False), "stake": 1.0}
+        for p in all_evaluated_picks
+        if p.get("odd") and p.get("odd") > 1
+    ]
+    batch_summary["roi"] = compute_roi(roi_picks)
+
+    # Baseline: model vs house odds (Brier comparison)
+    baseline_picks = [
+        {
+            "odd": p.get("odd", 0),
+            "prob": p.get("prob", 50) / 100.0 if p.get("prob", 0) > 1 else p.get("prob", 0.5),
+            "outcome": p.get("acertou", False),
+        }
+        for p in all_evaluated_picks
+        if p.get("odd") and p.get("odd") > 1
+    ]
+    batch_summary["odds_baseline"] = compute_implied_odds_brier(baseline_picks)
+
     # Model evaluation: deterministic rules (#079, #082)
     model_evaluation = None
     try:
@@ -476,6 +536,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             evaluated_picks=all_evaluated_picks,
             match_results=match_results,
             league_metrics=league_metrics,
+            batch_summary=batch_summary,
             use_mistral_narrative=bool(os.getenv("MISTRAL_API_KEY")),
         )
         _diag_summary = diagnostic_report.get("pattern_report", {}).get("summary", {})

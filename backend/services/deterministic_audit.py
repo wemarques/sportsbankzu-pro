@@ -110,6 +110,33 @@ def generate_deterministic_audit_report(
         if len(league_lines) > 5:
             notes_parts.append(f"... +{len(league_lines) - 5} ligas")
 
+    # #084: Additional metrics from batch_summary
+    sharpe_data = batch_summary.get("sharpe_ratio", {})
+    if sharpe_data.get("sharpe") is not None:
+        notes_parts.append(f"Sharpe Ratio: {sharpe_data['sharpe']:.3f} ({sharpe_data.get('n_bets', 0)} apostas)")
+
+    roi_data = batch_summary.get("roi", {})
+    if roi_data.get("roi_pct") is not None:
+        notes_parts.append(f"ROI: {roi_data['roi_pct']:.1f}%")
+
+    cal_data = batch_summary.get("calibration", {})
+    if cal_data.get("ece") is not None:
+        notes_parts.append(f"ECE: {cal_data['ece']:.4f} ({'bem calibrado' if cal_data['ece'] < 0.05 else 'recalibrar'})")
+
+    baseline = batch_summary.get("odds_baseline", {})
+    if baseline.get("model_vs_house") is not None:
+        direction = "MELHOR" if baseline["model_beats_house"] else "PIOR"
+        notes_parts.append(
+            f"Modelo vs Casa: {direction} (Brier modelo={baseline['brier_model']:.4f}, "
+            f"casa={baseline['brier_implied']:.4f}, diff={baseline['model_vs_house']:.4f})"
+        )
+
+    ev_data = batch_summary.get("hit_rate_by_ev", [])
+    if ev_data:
+        ev_summary = ", ".join(f"{b['band']}={b['accuracy']:.0%}" for b in ev_data if b.get("total", 0) >= 5)
+        if ev_summary:
+            notes_parts.append(f"Hit Rate por EV: {ev_summary}")
+
     # ── confidence ──────────────────────────────────────────────────
     confidence = _compute_confidence(total_audited)
 

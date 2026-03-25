@@ -177,24 +177,58 @@ def decompose_error(
 def detect_patterns(
     diagnostics: list[dict],
     league_metrics: dict | None = None,
+    batch_summary: dict | None = None,
 ) -> dict:
     """Detect recurring patterns in diagnosed errors.
 
     Args:
         diagnostics: list of decompose_error() results
         league_metrics: per-league metrics from cron_handler
+        batch_summary: batch summary with odds_baseline etc. (#084)
 
     Returns:
         {"patterns": [...], "summary": {...}}
     """
     if not diagnostics:
-        return {"patterns": [], "summary": {"total_errors": 0}}
+        # Still check batch_summary for baseline pattern even with no diagnostics
+        patterns = []
+        if batch_summary:
+            baseline = batch_summary.get("odds_baseline", {})
+            if baseline.get("model_vs_house") is not None and baseline["model_vs_house"] > 0.01:
+                patterns.append({
+                    "type": "MODEL_WORSE_THAN_HOUSE",
+                    "frequency": 1.0,
+                    "count": baseline.get("n", 0),
+                    "severity": "HIGH",
+                    "recommendation": (
+                        f"Brier do modelo ({baseline['brier_model']:.4f}) é PIOR que odds implícitas "
+                        f"({baseline['brier_implied']:.4f}). O modelo não agrega valor sobre a casa. "
+                        f"Verificar calibração e deflações."
+                    ),
+                })
+        return {"patterns": patterns, "summary": {"total_errors": 0}}
 
     errors = [d for d in diagnostics if d.get("cause") != "CORRECT"]
     total_errors = len(errors)
 
     if total_errors == 0:
-        return {"patterns": [], "summary": {"total_errors": 0, "all_correct": True}}
+        # Still check batch_summary for baseline pattern
+        patterns = []
+        if batch_summary:
+            baseline = batch_summary.get("odds_baseline", {})
+            if baseline.get("model_vs_house") is not None and baseline["model_vs_house"] > 0.01:
+                patterns.append({
+                    "type": "MODEL_WORSE_THAN_HOUSE",
+                    "frequency": 1.0,
+                    "count": baseline.get("n", 0),
+                    "severity": "HIGH",
+                    "recommendation": (
+                        f"Brier do modelo ({baseline['brier_model']:.4f}) é PIOR que odds implícitas "
+                        f"({baseline['brier_implied']:.4f}). O modelo não agrega valor sobre a casa. "
+                        f"Verificar calibração e deflações."
+                    ),
+                })
+        return {"patterns": patterns, "summary": {"total_errors": 0, "all_correct": True}}
 
     # Count by cause
     cause_counts: dict[str, int] = defaultdict(int)
@@ -287,6 +321,22 @@ def detect_patterns(
             "recommendation": "Picks com EV alto em odds > 5.0 falhando sistematicamente. "
                              "Considerar cap de odds maximo para classificacao ALTA CONFIANCA.",
         })
+
+    # Pattern 7: Model worse than house odds baseline (#084)
+    if batch_summary:
+        baseline = batch_summary.get("odds_baseline", {})
+        if baseline.get("model_vs_house") is not None and baseline["model_vs_house"] > 0.01:
+            patterns.append({
+                "type": "MODEL_WORSE_THAN_HOUSE",
+                "frequency": 1.0,
+                "count": baseline.get("n", 0),
+                "severity": "HIGH",
+                "recommendation": (
+                    f"Brier do modelo ({baseline['brier_model']:.4f}) é PIOR que odds implícitas "
+                    f"({baseline['brier_implied']:.4f}). O modelo não agrega valor sobre a casa. "
+                    f"Verificar calibração e deflações."
+                ),
+            })
 
     # Sort by severity
     severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -415,6 +465,7 @@ def run_post_match_diagnostic(
     evaluated_picks: list[dict],
     match_results: list[dict],
     league_metrics: dict | None = None,
+    batch_summary: dict | None = None,
     use_mistral_narrative: bool = False,
 ) -> dict:
     """Orchestrate all 3 diagnostic components.
@@ -425,6 +476,7 @@ def run_post_match_diagnostic(
         evaluated_picks: picks with acertou, prob, ev, etc.
         match_results: actual match results
         league_metrics: per-league metrics from cron_handler
+        batch_summary: batch summary with metrics (#084)
         use_mistral_narrative: if True, use Mistral to enrich text
 
     Returns:
@@ -461,7 +513,7 @@ def run_post_match_diagnostic(
         decompositions.append(diag)
 
     # Component 2: Pattern Detection
-    pattern_report = detect_patterns(decompositions, league_metrics)
+    pattern_report = detect_patterns(decompositions, league_metrics, batch_summary=batch_summary)
 
     # Component 3: Narrative
     narrative = generate_diagnostic_narrative(pattern_report, use_mistral=use_mistral_narrative)

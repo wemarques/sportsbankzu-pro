@@ -246,6 +246,59 @@ def compute_sharpe_ratio(picks: list[dict]) -> dict:
     }
 
 
+def compute_implied_odds_brier(picks: list[dict]) -> dict:
+    """Brier Score of implied odds probabilities vs model (baseline comparison).
+
+    picks: list of {"odd": float, "prob": float (0-1), "outcome": bool}
+    Implied probability = 1/odd (no overround normalization).
+
+    Returns:
+        {
+            "brier_implied": float|None,
+            "brier_model": float|None,
+            "model_vs_house": float|None,  # negative = model is better
+            "model_beats_house": bool,
+            "n": int,
+        }
+    """
+    if not picks:
+        return {"brier_implied": None, "brier_model": None, "model_vs_house": None, "model_beats_house": False, "n": 0}
+
+    brier_implied_scores = []
+    brier_model_scores = []
+
+    for pick in picks:
+        odd = pick.get("odd")
+        prob_model = pick.get("prob")
+        outcome = pick.get("outcome")
+
+        if odd is None or odd <= 1 or prob_model is None or outcome is None:
+            continue
+
+        prob_implied = 1.0 / odd
+        actual = 1.0 if outcome else 0.0
+
+        brier_implied_scores.append((prob_implied - actual) ** 2)
+
+        p_model = prob_model if prob_model <= 1.0 else prob_model / 100.0
+        brier_model_scores.append((p_model - actual) ** 2)
+
+    n = len(brier_implied_scores)
+    if n == 0:
+        return {"brier_implied": None, "brier_model": None, "model_vs_house": None, "model_beats_house": False, "n": 0}
+
+    brier_implied = sum(brier_implied_scores) / n
+    brier_model = sum(brier_model_scores) / n
+
+    return {
+        "brier_implied": round(brier_implied, 4),
+        "brier_model": round(brier_model, 4),
+        "model_vs_house": round(brier_model - brier_implied, 4),
+        "model_beats_house": brier_model < brier_implied,
+        "n": n,
+    }
+
+
 def compute_hit_rate_by_ev_band(
     picks: list[dict],
     bands: list[tuple] | None = None,
