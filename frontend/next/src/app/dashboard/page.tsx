@@ -20,6 +20,8 @@ import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
 import type { EmptyStateVariant } from "@/components/EmptyState";
+import Glossary from "@/components/Glossary";
+import { getClassificationDisplay } from "@/lib/classifications";
 import {
   Star,
   ChevronLeft,
@@ -95,7 +97,7 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: "0.65rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
-          <span style={{ fontSize: "0.65rem", fontWeight: 700, borderRadius: 4, padding: "2px 6px", background: st.badge.bg, color: st.badge.color }}>{c.status_combinada}</span>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, borderRadius: 4, padding: "2px 6px", background: st.badge.bg, color: st.badge.color }}>{c.status_combinada === "SAFE" ? "ALTA CONFIANCA" : c.status_combinada === "MISTA" ? "MISTA" : "INFORMATIVO"}</span>
         </div>
       </div>
       {([c.leg1, c.leg2] as CombinadaLeg[]).map((leg, i) => (
@@ -124,7 +126,7 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
 }
 const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBankZU Pro.";
 
-type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas";
+type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas" | "glossario";
 type ShareFeedbackTone = "success" | "error" | "info";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
@@ -1731,6 +1733,27 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </a>
+                  <div className="st-tool-card" onClick={() => setNavView("glossario")}>
+                    <div className="st-tool-card__icon" style={{ background: "rgba(74,158,255,0.1)" }}><Search size={20} style={{ color: "#4a9eff" }} /></div>
+                    <div className="st-tool-card__info">
+                      <span className="st-tool-card__name">Glossario</span>
+                      <span className="st-tool-card__desc">Termos, metricas e classificacoes explicados</span>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── GLOSSARIO VIEW ── */}
+            {navView === "glossario" && (
+              <div className="st-view-panel">
+                <div className="st-view-header">
+                  <button className="st-view-back" onClick={() => setNavView("ferramentas")}><ArrowLeft size={14} /> Voltar</button>
+                  <h2 className="st-view-title"><Search size={16} /> Glossario</h2>
+                </div>
+                <div className="st-view-content">
+                  <Glossary />
                 </div>
               </div>
             )}

@@ -17,6 +17,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
+import ClassificationBadge from "./ClassificationBadge";
+import { getClassificationDisplay } from "@/lib/classifications";
 import "../styles/match-detail-card.css";
 
 /* ── Reason Code visual mapping ── */
@@ -52,9 +54,9 @@ const GLOSSARY = [
   { term: "In\u00EDcio Temp.", description: "Dados de in\u00EDcio de temporada \u2014 calibra\u00E7\u00E3o usa fallback por amostra insuficiente de jogos" },
   { term: "Fair (Odd Justa)", description: "Cota\u00E7\u00E3o justa calculada pelo modelo \u2014 se a odd da casa for maior, h\u00E1 valor na aposta" },
   { term: "Odd (Cota\u00E7\u00E3o)", description: "Cota\u00E7\u00E3o oferecida pela casa de apostas \u2014 quanto voc\u00EA recebe por cada R$1 apostado" },
-  { term: "SAFE", description: "Classifica\u00E7\u00E3o m\u00E1xima \u2014 probabilidade alta, EV positivo, dados confi\u00E1veis, edge suficiente" },
-  { term: "NEUTRO-Q", description: "Neutro qualificado \u2014 eleg\u00EDvel para combinadas e duplas, tem EV positivo mas n\u00E3o atinge SAFE" },
-  { term: "NEUTRO", description: "Mercado identificado mas sem valor suficiente ou sem odds dispon\u00EDveis" },
+  { term: "ALTA CONFIANCA (SAFE)", description: "Classificacao maxima \u2014 probabilidade alta, EV positivo, dados confiaveis, edge suficiente" },
+  { term: "VALOR DETECTADO (NEUTRO-Q)", description: "Valor matematico detectado \u2014 elegivel para combinadas e duplas, tem EV positivo mas nao atinge Alta Confianca" },
+  { term: "INFORMATIVO (NEUTRO)", description: "Mercado identificado mas sem valor suficiente ou sem odds disponiveis" },
   { term: "RESTRITO", description: "Liga com dados limitados ou modelo ML n\u00E3o ativo \u2014 progn\u00F3sticos com cautela" },
   { term: "Overround", description: "Margem da casa de apostas \u2014 a soma das probabilidades impl\u00EDcitas excede 100% (tipicamente 5-6%)" },
   { term: "Lambda (\u03BB)", description: "M\u00E9dia de gols esperados por time \u2014 base do c\u00E1lculo Poisson para probabilidades de placares" },
@@ -693,9 +695,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             return (
                               <div key={idx}>
                                 <div className={`mdc-prognostico__item mdc-prognostico__item--${statusClass}`}>
-                                  <span className={`mdc-prognostico__status mdc-prognostico__status--${statusClass}`}>
-                                    {displayStatus === "NEUTRO_QUALIFICADO" ? "NEUTRO-Q" : displayStatus}
-                                  </span>
+                                  <ClassificationBadge status={displayStatus} />
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
                                   <span className="mdc-prognostico__market">{pred.mercado}</span>
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
@@ -772,7 +772,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                       }}
                                       title={pred.marketReferenceReason || "Sinal estrutural do mercado"}
                                     >
-                                      Ref: {pred.marketReferenceSignal}
+                                      Ref: {getClassificationDisplay(pred.marketReferenceSignal).label}
                                       {pred.wasCappedByMarketSignal && " (cap)"}
                                     </span>
                                   )}

@@ -4556,4 +4556,56 @@ Uso de LLM onde o produto precisa de **reprodutibilidade**, testes unitários e 
 
 ---
 
+## 080 — Rename Classifications + Tooltips + Glossary (frontend-only)
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `frontend/next/src/lib/classifications.ts` (NEW), `frontend/next/src/lib/glossary.ts` (NEW), `frontend/next/src/components/ClassificationBadge.tsx` (NEW), `frontend/next/src/components/Glossary.tsx` (NEW), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/app/dashboard/page.tsx`, `backend/services/deterministic_audit.py`, `tests/unit/test_classifications_080.py` (NEW)
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+
+Classification badges (SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET) usavam nomes tecnicos internos que nao comunicam valor ao usuario final.
+
+### Causa raiz
+
+Os nomes de classificacao foram criados como enum tecnico do backend e propagados diretamente para o frontend sem traducao para linguagem amigavel.
+
+### Correcoes aplicadas
+
+**Camada 1 — Mapeamento de display (`classifications.ts`):**
+- `CLASSIFICATION_DISPLAY` record: SAFE->"ALTA CONFIANCA", NEUTRO_QUALIFICADO->"VALOR DETECTADO", NEUTRO->"INFORMATIVO", NO_BET->"BLOQUEADO"
+- `getClassificationDisplay()` helper com fallback para NEUTRO
+- Cores atualizadas: VALOR DETECTADO usa gold (#ffd700), INFORMATIVO usa gray (#9ca3af)
+
+**Camada 2 — Badge com tooltip (`ClassificationBadge.tsx`):**
+- Componente reutilizavel com tooltip on hover (300ms delay)
+- Tooltip com nome + descricao completa da classificacao
+- CSS: `.classification-badge` + `.classification-tooltip` com fade-in animation
+
+**Camada 3 — MatchDetailCard atualizado:**
+- Badge de classificacao usa `<ClassificationBadge>` em vez de `<span>` manual
+- Market reference signal badge usa `getClassificationDisplay()` para texto
+- Glossario inline atualizado com novos nomes (ALTA CONFIANCA, VALOR DETECTADO, INFORMATIVO)
+
+**Camada 4 — Glossario completo (`glossary.ts` + `Glossary.tsx`):**
+- 20+ termos organizados em 4 categorias: Classificacoes, Metricas, Mercados, Modelo
+- Filtro por categoria + busca por texto
+- Acessivel via Ferramentas -> Glossario no dashboard
+
+**Camada 5 — Display names no audit (`deterministic_audit.py`):**
+- `DISPLAY_NAMES` dict + `_display_name()` helper
+- Strings de texto (notes) usam nomes amigaveis
+- Campos estruturais (safe_status, threshold params) mantem nomes internos
+
+**Backend enum, calibracao DB, cron_handler, e testes existentes NAO foram alterados.**
+
+### Licao aprendida
+
+1. Renaming de UI deve ser frontend-only — backend enum e DB params ficam intactos para evitar breaking changes em 80+ testes e logs.
+2. Mapeamento centralizado (`classifications.ts`) permite mudar nomes em um unico local.
+3. Tooltips explicam jargao tecnico sem poluir visualmente a interface.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

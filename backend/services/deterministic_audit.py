@@ -20,6 +20,19 @@ from backend.services.backtesting import (
 
 logger = logging.getLogger("sportsbankzu.deterministic_audit")
 
+# Display names for frontend-facing text strings (#080).
+# Structural fields (safe_status, threshold params) keep internal names.
+DISPLAY_NAMES: dict[str, str] = {
+    "SAFE": "ALTA CONFIANCA",
+    "NEUTRO_QUALIFICADO": "VALOR DETECTADO",
+    "NEUTRO": "INFORMATIVO",
+    "NO_BET": "BLOQUEADO",
+}
+
+
+def _display_name(internal: str) -> str:
+    return DISPLAY_NAMES.get(internal, internal)
+
 
 def generate_deterministic_audit_report(
     batch_summary: dict[str, Any],
@@ -176,9 +189,9 @@ def _compute_threshold_evaluation(safe_acc: float, neutro_acc: float) -> dict[st
 
     notes_parts = []
     if safe_status == "BAIXO":
-        notes_parts.append(f"SAFE accuracy {safe_acc:.1f}% abaixo do alvo 55%")
+        notes_parts.append(f"{_display_name('SAFE')} accuracy {safe_acc:.1f}% abaixo do alvo 55%")
     if neutro_status == "BAIXO":
-        notes_parts.append(f"NEUTRO accuracy {neutro_acc:.1f}% abaixo do alvo 45%")
+        notes_parts.append(f"{_display_name('NEUTRO')} accuracy {neutro_acc:.1f}% abaixo do alvo 45%")
     if not notes_parts:
         notes_parts.append("Thresholds dentro dos parametros aceitaveis")
 
@@ -271,7 +284,7 @@ def _compute_corrections(
             "parameter": "safe_prob_ou",
             "current_value": 0.65,
             "suggested_value": 0.70,
-            "reason": f"SAFE accuracy {safe_acc:.1f}% < 50%. Aumentar threshold SAFE.",
+            "reason": f"{_display_name('SAFE')} accuracy {safe_acc:.1f}% < 50%. Aumentar threshold.",
             "confidence": base_confidence,
             "impact": "HIGH",
         })
