@@ -22,9 +22,6 @@ from backend.services.util_service import team_name
 logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
 
-# #079: Use deterministic audit report instead of Mistral LLM
-USE_DETERMINISTIC_AUDIT = True
-
 
 def cron_handler(event, context):
     """
@@ -73,7 +70,6 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         _get_all_finished_matches,
         _evaluate_pick_deterministic,
     )
-    from backend.ai.mistral_auditor import MistralAuditor
     from backend import audit as audit_db
 
     label = f"date={date_filter}" + (f" before_brt={before_time_brt}" if before_time_brt else "")
@@ -447,17 +443,12 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     batch_log_loss = compute_log_loss(ou_predictions)
     batch_summary["log_loss"] = batch_log_loss
 
-    # Model evaluation: deterministic (#079) or Mistral (legacy)
+    # Model evaluation: deterministic rules (#079, #082)
     model_evaluation = None
     try:
-        if USE_DETERMINISTIC_AUDIT:
-            from backend.services.deterministic_audit import generate_deterministic_audit_report
-            model_evaluation = generate_deterministic_audit_report(batch_summary, league_metrics)
-            logger.info(f"Deterministic evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
-        else:
-            auditor = MistralAuditor()
-            model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
-            logger.info(f"Mistral evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
+        from backend.services.deterministic_audit import generate_deterministic_audit_report
+        model_evaluation = generate_deterministic_audit_report(batch_summary, league_metrics)
+        logger.info(f"Deterministic evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
     except Exception as e:
         logger.error(f"Batch evaluation failed in cron: {e}")
 

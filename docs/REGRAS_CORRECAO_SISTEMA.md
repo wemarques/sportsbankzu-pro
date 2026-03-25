@@ -4672,4 +4672,47 @@ O framework corners v2 já estava operacional; a evolução correta foi **cirúr
 
 ---
 
+## 082 — Mistral Redefinida: papel exclusivamente narrativo
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/ai/mistral_auditor.py` (DELETADO), `backend/ai/prompt_templates.py`, `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/services/fixtures_service.py`, `CLAUDE.md` (ambas cópias), `tests/unit/test_mistral_contract_082.py` (NOVO)
+**Severidade:** Alta
+**Status:** Implementado
+**Relacionado:** #079 (audit determinístico), #052-#078 (calibração per-league)
+
+### Problema identificado
+
+Após #079 substituir auditorias Mistral por regras determinísticas (flags `USE_DETERMINISTIC_AUDIT` / `USE_DETERMINISTIC_MATCH_AUDIT`), código morto permanecia atrás de feature flags. Adicionalmente, `_apply_confidence_adjustment()` em `fixtures_service.py` permitia à Mistral **modificar probabilidades 1X2** — violação do princípio de separação cálculo/narrativa. Dixon-Coles + calibração per-league (#052-#078) já trata probabilidades corretamente.
+
+### Causa raiz
+
+Remoção incompleta em #079: flags criadas mas código legado mantido. `_apply_confidence_adjustment()` pré-datava #079 e nunca foi identificada como código de cálculo da Mistral.
+
+### Correções aplicadas
+
+**Camada 1 — Remoção de código morto:**
+- Deletado `backend/ai/mistral_auditor.py` (280 linhas)
+- Removido flag `USE_DETERMINISTIC_AUDIT` + import + else branch do `cron_handler.py`
+- Removido flag `USE_DETERMINISTIC_MATCH_AUDIT` + else branch do `ai_analysis.py`
+- Removido import/instância `MistralAuditor` + endpoint `/ai/audit-match` do `main.py`
+
+**Camada 2 — Remoção de cálculo via Mistral:**
+- Removida função `_apply_confidence_adjustment()` de `fixtures_service.py` (modificava 1X2 probs)
+- Removido bloco `ContextAnalyzer` call que ativava o adjustment no pipeline
+
+**Camada 3 — Limpeza de prompts mortos:**
+- `prompt_templates.py` reduzido a apenas `report_generation_prompt()` (narrativa)
+- Removidos: `_build_feedback_block`, `context_analysis_prompt`, `audit_calculation_prompt`, `audit_post_match_prompt`, `batch_audit_model_evaluation_prompt`, `build_1x2_prompt`, `build_over_under_prompt`, `build_btts_prompt`, `build_corners_prompt`, `_format_market_reference_stats`
+
+**Camada 4 — Contrato documentado:**
+- Adicionada seção "CONTRATO DA MISTRAL AI" em ambos `CLAUDE.md`
+- Define explicitamente o que Mistral FAZ (narrativa) e NÃO FAZ (cálculo)
+
+**Camada 5 — Testes de contrato:**
+- 5 testes em `test_mistral_contract_082.py` garantem que código morto não retorne
+
+### Lição aprendida
+
+Feature flags são um mecanismo de transição, não permanente. Quando a decisão é tomada (determinístico > LLM para auditorias), o código legado deve ser removido — não deixado atrás de flags. Adicionalmente, funções que modificam probabilidades (como `_apply_confidence_adjustment`) são **cálculo**, independente de serem chamadas por um serviço de AI.
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

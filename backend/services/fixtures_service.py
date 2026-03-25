@@ -15,45 +15,6 @@ from backend.services.market_service import selecionar_mercados_v2
 logger = logging.getLogger("sportsbankzu")
 
 
-def _apply_confidence_adjustment(stats: dict, adjustment: dict) -> dict:
-    """Apply Mistral confidence_adjustment to 1X2 probabilities (Gap 3).
-
-    Probs in `stats` are on 0-100 scale. Adjustment shifts the favourite up or
-    compresses both sides down, then renormalises so homeWinProb + drawProb +
-    awayWinProb = 100.
-    """
-    recommendation = adjustment.get("recommendation", "MANTER")
-    if recommendation == "MANTER":
-        return stats
-
-    impact = float(adjustment.get("impact_percentage", 10)) / 100.0
-    impact = min(0.20, max(0.0, impact))
-
-    h = (stats.get("homeWinProb") or 0) / 100.0
-    d = (stats.get("drawProb") or 0) / 100.0
-    a = (stats.get("awayWinProb") or 0) / 100.0
-
-    if recommendation == "AUMENTAR":
-        if h >= a:
-            h = min(0.95, h * (1 + impact))
-        else:
-            a = min(0.95, a * (1 + impact))
-    elif recommendation == "REDUZIR":
-        h = max(0.05, h * (1 - impact))
-        a = max(0.05, a * (1 - impact))
-
-    total = h + d + a
-    if total > 0:
-        h /= total
-        d /= total
-        a /= total
-
-    stats["homeWinProb"] = round(h * 100.0, 1)
-    stats["drawProb"] = round(d * 100.0, 1)
-    stats["awayWinProb"] = round(a * 100.0, 1)
-    return stats
-
-
 def _safe_int(val: Any) -> Optional[int]:
     """Convert to int if possible, return None for missing/invalid values."""
     if val is None or val == -1:
@@ -1267,22 +1228,6 @@ def build_records_from_matches(
             # only — skip Mistral AI and calibration adjustments that cause instability
             # (e.g. Under 3.5 → Under 4.5 flip when recalculated post-match).
             if status != "finished":
-                # Apply Mistral confidence_adjustment (Gap 3 — contextual bridge)
-                # Only called when MISTRAL_API_KEY is set; CacheManager(6h) prevents re-calls.
-                if os.getenv("MISTRAL_API_KEY"):
-                    try:
-                        from backend.ai.context_analyzer import ContextAnalyzer
-                        ctx_result = ContextAnalyzer().analyze_match_context(home, away)
-                        _adj = ctx_result.get("confidence_adjustment", {})
-                        if _adj and _adj.get("recommendation", "MANTER") != "MANTER":
-                            record["stats"] = _apply_confidence_adjustment(record["stats"], _adj)
-                            logger.info(
-                                f"[Gap3] Confidence adjustment {_adj.get('recommendation')} "
-                                f"{_adj.get('impact_percentage', 10)}% applied to {home} vs {away}"
-                            )
-                    except Exception as _ctx_err:
-                        logger.debug(f"[Gap3] Context analysis skipped for {home} vs {away}: {_ctx_err}")
-
                 # Apply Isotonic Regression calibration (Gap 5)
                 try:
                     from backend.modeling.calibrator import calibrate_match_stats

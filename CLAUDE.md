@@ -177,6 +177,31 @@ API → Next.js 14 (Vercel) + Streamlit
 | Home advantage γ | gamma | Per-league (#078) | league_calibrator.py |
 | SAFE | enabled | Per-league | league_calibrator.py |
 
+## CONTRATO DA MISTRAL AI (#082)
+
+> **Princípio:** Mistral é EXCLUSIVAMENTE narrativa. Nunca calcula, nunca ajusta, nunca audita.
+
+### O que a Mistral FAZ (narrativa):
+- `summary` — resumo textual do jogo
+- `key_points` — fatores qualitativos relevantes
+- `recommendation` — sugestão narrativa (não vinculante)
+- `confidence` — auto-avaliação de confiança (informativa)
+- Corners review opcional (`mistral_review.py`)
+
+### O que a Mistral NÃO FAZ (cálculo):
+- Calcular ou modificar probabilidades (1X2, O/U, BTTS)
+- Validar ou auditar cálculos do pipeline
+- Gerar correções de parâmetros (lambda, thresholds, deflation)
+- Auditar picks ou classificações (SAFE/NEUTRO)
+- Ajustar lambdas, thresholds ou pesos de calibração
+
+### Arquivo principal:
+- `backend/services/mistral_analysis.py` (prompt v3.0, serviço `MistralAnalysisService`)
+
+### Fallback:
+- Se `MISTRAL_API_KEY` ausente ou Mistral indisponível: retorna análise default com `confidence=0`
+- Ausência da Mistral **NÃO afeta** probabilidades, classificações ou pipeline de cálculo
+
 ## Proibições
 
 1. **NÃO criar nomes de especificação fictícios** — Exemplo: "v5.5-ML" foi inventado por uma sessão anterior e propagado como se fosse real. Se não está no REGRAS, não existe.

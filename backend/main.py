@@ -25,7 +25,6 @@ from backend.modeling.chaos_detector import (
     detectar_caos_jogo,
 )
 from backend.ai.data_collector import FootballDataCollector
-from backend.ai.mistral_auditor import MistralAuditor
 from backend.ai.context_analyzer import ContextAnalyzer
 from backend.ai.report_generator import ReportGenerator
 try:
@@ -63,7 +62,6 @@ app.add_middleware(
 # ---------------------------------------
 
 data_collector = FootballDataCollector()
-mistral_auditor = MistralAuditor()
 # ... outros inicializadores ...
 try:
     from backend.routes import matches as _r_matches
@@ -1191,13 +1189,6 @@ def ml_predict(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 from pydantic import BaseModel
 
-class MatchAuditRequest(BaseModel):
-    id: str
-    homeTeam: str
-    awayTeam: str
-    stats: Dict[str, Any]
-    odds: Dict[str, Any]
-
 class ContextAnalysisRequest(BaseModel):
     home_team: str
     away_team: str
@@ -1210,14 +1201,6 @@ class ReportGenerationRequest(BaseModel):
     market: str
     classification: str
     probability: float
-
-@app.post("/ai/audit-match")
-async def audit_match(request: MatchAuditRequest):
-    try:
-        result = mistral_auditor.audit_match_calculation(request.dict())
-        return {"status": "success", "audit": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ai/analyze-context")
 async def analyze_context(request: ContextAnalysisRequest):

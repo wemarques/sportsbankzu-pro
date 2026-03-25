@@ -139,10 +139,6 @@ class _CorrectionRequest(BaseModel):
     audit_confidence: int = 0
 
 
-# #079: Deterministic match audit replaces MistralAuditor
-USE_DETERMINISTIC_MATCH_AUDIT = True
-
-
 def _validate_match_deterministic(match_data: Dict[str, Any]) -> Dict[str, Any]:
     """Deterministic match validation — replaces MistralAuditor.audit_match_calculation (#079).
 
@@ -227,30 +223,10 @@ def _safe_float(val) -> Optional[float]:
 
 @router.post("/match/{match_id}/audit")
 async def audit_match(match_id: str, body: _AuditRequest = _AuditRequest()):
-    """Audit validation for a specific match — deterministic (#079) or Mistral."""
+    """Deterministic audit validation for a specific match (#079, #082)."""
     try:
         match_data = await _get_match_data(match_id)
-
-        if USE_DETERMINISTIC_MATCH_AUDIT:
-            result = _validate_match_deterministic(match_data)
-        else:
-            from backend.ai.mistral_auditor import MistralAuditor
-            auditor_input: Dict[str, Any] = {
-                "id": match_id,
-                "home_team": match_data["home_team"],
-                "away_team": match_data["away_team"],
-                "homeTeam": match_data["home_team"],
-                "awayTeam": match_data["away_team"],
-                "stats": match_data["stats"],
-                "odds": match_data["odds"],
-            }
-            if body.predictions:
-                auditor_input["predictions"] = body.predictions
-            if body.ai_summary:
-                auditor_input["ai_summary"] = body.ai_summary
-            auditor = MistralAuditor()
-            result = await asyncio.to_thread(auditor.audit_match_calculation, auditor_input)
-
+        result = _validate_match_deterministic(match_data)
         return {"status": "success", "audit": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
