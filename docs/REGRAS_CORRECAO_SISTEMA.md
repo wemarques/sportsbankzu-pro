@@ -4853,67 +4853,150 @@ Implementação #079 ficou em biblioteca isolada; o cron só computava métricas
 
 ---
 
-## 085 — Ativacao de cartoes como mercado de picks + fix classificacao divergente
+## 085 — Ativação de cartões como mercado de picks + correção de divergência de classificação
 
 **Data:** 2026-03-25
-**Arquivos afetados:** `backend/modeling/cards_engine.py` (NOVO), `backend/services/ev_classification.py`, `backend/services/fixtures_service.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`, `tests/unit/test_cards_085.py` (NOVO)
-**Severidade:** Media (novo mercado sem impacto nos existentes) + Alta (fix classificacao)
+**Commit:** `fe553b1`
+**Arquivos afetados:** `backend/modeling/cards_engine.py` (novo), `backend/services/ev_classification.py`, `backend/services/fixtures_service.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`, `tests/unit/test_cards_085.py` (novo)
+**Severidade:** Média (novo mercado, isolado dos demais) + Alta (bug de UI: mesmo pick com rótulos diferentes)
 **Status:** Implementado
+**Relacionado:** #080 (campo `classification` vs `status` legacy / rótulos amigáveis), #056 (calibração de cartões per-league no `league_calibrator`), #084 (métricas no cron — picks de cartões passam a entrar no batch quando elegíveis)
+**Roadmap / prompt:** `PROMPT-ATIVAR-CARTOES-085.md` — ativar picks + alinhar consumo de `classification`; mensagem de commit: `feat: activate cards as pick market + fix classification divergence (#085)`.
 
 ### Problema identificado
 
-1. O sistema tinha dados de cartoes (FootyStats cardsAVG), cards_multiplier calibrado, e tab Cartoes no dashboard — mas NAO gerava picks de cartoes. Infraestrutura existia sem conexao.
-
-2. O MESMO pick aparecia com classificacoes diferentes na lista lateral (INFORMATIVO) vs MatchDetailCard (VALOR DETECTADO). Causa: `_legacy_status()` downmaps NEUTRO_QUALIFICADO para NEUTRO no campo `status`, mas `classification` mantem o valor real. Sidebar usava `pred.status` (legacy), MatchDetailCard usava `pred.classification || pred.status` (correto).
+1. **Cartões:** havia `cardsAVG` (FootyStats), `cards_multiplier` calibrado e separador **Cartões** no detalhe do jogo, mas **não** havia geração de mercados de cartão em `ev_classification` nem `cardsPredictions` na resposta da API — calibração e UI órfãs do pipeline de picks.
+2. **Classificação:** o mesmo pick mostrava rótulos distintos na lista lateral vs `MatchDetailCard` (ex.: INFORMATIVO vs VALOR DETECTADO). `_legacy_status()` rebaixa `NEUTRO_QUALIFICADO` → `NEUTRO` em `pred.status`; `pred.classification` conserva o valor canónico. O dashboard usava só `pred.status` em três pontos; o card de detalhe já usava `pred.classification || pred.status`.
 
 ### Causa raiz
 
-1. Cartoes: funcoes de projecao e evaluacao nunca foram criadas no `ev_classification.py`. Calibracao existia (league_calibrator) mas nao consumida.
+1. Motor Poisson de cartões e ligação a `classify_market` / odds nunca tinham sido implementados apesar da calibradora.
+2. Migração **parcial** de `status` → `classification`: `MatchDetailCard` atualizado, `dashboard/page.tsx` não.
 
-2. Classificacao: migracao incompleta do campo `status` (legacy) para `classification` (novo). Dashboard/page.tsx nao foi atualizado quando MatchDetailCard foi.
+### Correções aplicadas
 
-### Correcoes aplicadas
+**Camada 1 — `backend/modeling/cards_engine.py`:**
+- `predict_cards()`, `CARD_LINES` (2.5, 3.5, 4.5, 5.5), `DEFAULT_CARDS_LAMBDA`.
+- λ em cascata: média equipas → média liga → default (~4.0); `cards_multiplier` por liga aplicado ao λ.
+- Probabilidades Over/Under complementares por linha (Poisson).
 
-**Camada 1 — Cards Engine (`cards_engine.py`):**
-- `predict_cards()` — projecao Poisson com 4 linhas (2.5, 3.5, 4.5, 5.5)
-- Lambda de 3 camadas: team avg → league avg → default (4.0)
-- cards_multiplier calibrado por liga aplicado ao lambda
-- P(Over) + P(Under) = 1.0 para cada linha
+**Camada 2 — `ev_classification.py` (após bloco de cantos):**
+- Para cada linha: se `over_prob` / `under_prob` > 0.10, `calibrate_prob(...)` + `MarketOutput` (`market_type="Cards"`, `classify_market`).
+- Odds: `cards_over_{line}` / `cards_under_{line}` com fallback `over{X}Cards` / `under{X}Cards` (X sem ponto decimal).
+- `data_quality_score` ligeiramente reduzido (×0.85); `source_flags` inclui `cards_poisson`.
+- Falhas isoladas em `try/except` com log debug.
 
-**Camada 2 — Integracao no ev_classification:**
-- Card markets avaliados como MarketOutput com EV, edge, classification
-- Over E Under como candidatos (bidirecional)
-- market_type = "Cards", classificados por classify_market()
-
-**Camada 3 — API response (fixtures_service.py):**
-- `cardsPredictions` no record (projectedTotalCards, lambda, multiplier, linhas)
-- Picks de cartoes incluidos em mercados
+**Camada 3 — `fixtures_service.py`:**
+- Enriquecimento `record["cardsPredictions"]`: `projectedTotalCards`, `cardsLambda`, `cardsMultiplier`, `modelSource`, `lines` com `prob_pct` exposto como `prob` no JSON.
 
 **Camada 4 — Frontend:**
-- `CardsPredictions` type em leagues.ts e MatchDetailCard.tsx
-- Projecao visual na tab Cartoes (cor laranja #ff6b35)
-- Linhas Over com indicacao de probabilidade por cor
+- `CardsPredictions` em `leagues.ts` e no tipo local **`MatchDetailData`** em `MatchDetailCard.tsx` (o build falhou até o segundo existir — o card não usa só o tipo `Match` de `leagues.ts`).
+- Tab Cartões: bloco laranja `#ff6b35` com total projetado e Over 2.5–5.5 com cores por faixa de probabilidade.
 
-**Camada 5 — Fix classificacao divergente (dashboard/page.tsx):**
-- safePicks filter: `p.status === "SAFE"` → `(p.classification || p.status) === "SAFE"`
-- Sidebar badges: `getClassificationDisplay(p.status)` → `getClassificationDisplay(p.classification || p.status)`
-- Prediction list: `pred.status` → `pred.classification || pred.status`
-- Agora ambos (sidebar e MatchDetailCard) leem o campo `classification` como primario
+**Camada 5 — `dashboard/page.tsx` (três alinhamentos):**
+- `safePicks`: `(p.classification || p.status) === "SAFE"`.
+- Badges da sidebar: `getClassificationDisplay(p.classification || p.status)`.
+- Lista de prognósticos: classe CSS e rótulo a partir de `pred.classification || pred.status`.
 
-**Camada 6 — Testes `test_cards_085.py`:**
-- 7 testes (basico, complementaridade, fallback, multiplier, linhas, high/low lambda)
+**Camada 6 — `tests/unit/test_cards_085.py`:**
+- 7 testes (básico, complementaridade, fallback, multiplier, linhas, λ alto/baixo, etc., conforme ficheiro).
 
-### Verificacao
+### Verificação
 
 - `pytest tests/unit/test_cards_085.py -v -o addopts=` — **7/7** OK.
-- Regressao: 39/39 OK (cards + diagnostic + metrics + mistral_contract + classifications).
-- `npm run build` em `frontend/next` — OK.
+- Regressão: `pytest tests/ -k "cards or diagnostic or metrics or mistral_contract or classifications" -v -o addopts=` — **39/39** OK (sessão referida).
+- `npm run build` em `frontend/next` — OK (após tipo local em `MatchDetailCard`).
+- Imports: `cards_engine`, `ev_classification` — OK.
 
-### Licao aprendida
+### Lição aprendida
 
-1. Poisson e ponto de partida adequado para cartoes — padrão replicavel para novos mercados.
-2. Campos legacy (`status`) e novos (`classification`) devem ser migrados atomicamente em TODOS os consumidores. Deixar migracoes parciais cria divergencias invisiveis.
-3. Infraestrutura existente (calibracao, tab UI) deve ser conectada, nao recriada.
+1. Poisson é base razoável para cartões; o mesmo padrão (motor + `ev_classification` + API + tab) escala para novos mercados discretos.
+2. **`classification` e `status` legacy** devem ser consumidos com a **mesma regra** em todos os componentes: `classification || status`, senão a UI contradiz o pipeline.
+3. Tipos duplicados (`Match` global vs `MatchDetailData` local) exigem atualização **nos dois** quando novos campos chegam ao card.
+4. Calibração sem chamada no motor de mercados é infraestrutura morta até ser ligada.
+
+**Registo documentação:** entrada **#085**; commit **`fe553b1`** em `main` (`614fcc9..fe553b1`).
+
+---
+
+## 085b — Avaliação pós-jogo de cartões + NB2 engine v2 + deploy verification
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/routes/ai_analysis.py`,
+`backend/cron_handler.py`, `backend/services/ev_classification.py`,
+`backend/services/fixtures_service.py`, `frontend/next/src/lib/localAudit.ts`,
+`frontend/next/src/lib/leagues.ts`, `frontend/next/src/app/dashboard/page.tsx`,
+`frontend/next/src/components/MatchDetailCard.tsx`, `CLAUDE.md`
+**Severidade:** Crítica (sem isso, 100% dos picks de cartões = ERROU — padrão #006)
+**Status:** Implementado
+**Relacionado:** #006 (escanteios ERROU), #020 (normalizeMatch omitiu corners), #085 (cards engine v1)
+
+### Problema identificado
+
+O #085 ativou cartões como mercado de picks mas NÃO implementou:
+1. Avaliação pós-jogo (evaluatePick + cron audit) — padrão #006
+2. Funções `_evaluate_pick_deterministic` e `_get_all_finished_matches` importadas pelo cron_handler mas inexistentes em ai_analysis.py — cron audit QUEBRADO
+3. normalizeMatch não copiava campos de cartões reais (padrão #020)
+
+### Causa raiz
+
+As funções de avaliação determinística (`_evaluate_pick_deterministic`, `_get_all_finished_matches`) eram importadas pelo `cron_handler.py` de `backend.routes.ai_analysis` mas nunca foram implementadas. O cron audit falhava com ImportError.
+
+### Correções aplicadas
+
+**Camada 1 — Cards Engine v2 NB2 (`cards_engine.py`):**
+- Redesenho de Poisson simples (#085) para NB2 (sobredispersão via scipy.stats.nbinom)
+- Lambda split home/away (visitantes recebem ~55% dos cartões)
+- Ajuste por faltas/jogo (elasticidade +6% por falta acima da média)
+- Fator de árbitro quando disponível (API-Football)
+- Perfil disciplinar da liga (ratio vs média global)
+- Fallback puro Poisson quando scipy indisponível
+- Referência: Titman, Costain, Ridall & Gregory (2015), JRSS-A
+
+**Camada 2 — Funções de avaliação (`ai_analysis.py`):**
+- Criação de `_evaluate_pick_deterministic(pick, actual_result)` — suporta 1X2, Over/Under gols, BTTS, DC, Escanteios, Cartões
+- Criação de `_get_all_finished_matches(date_filter, before_time_brt)` — busca jogos finalizados em todas as ligas
+
+**Camada 3 — Backend cron (`cron_handler.py`):**
+- Extração de actual_cards: homeYellowCards + awayYellowCards + homeRedCards + awayRedCards
+- `total_cards` adicionado ao `actual_result` dict
+
+**Camada 4 — Frontend evaluatePick (`localAudit.ts`):**
+- Parâmetro `totalCards?` adicionado a `evaluatePick()`
+- Branch para CART/CARD antes do loop de gols
+- `MatchActualResult` inclui `totalCards`
+- Todas as chamadas a `evaluatePick` atualizadas com `totalCards`
+
+**Camada 5 — normalizeMatch (`dashboard/page.tsx`):**
+- Copia homeYellowCards, awayYellowCards, homeRedCards, awayRedCards
+
+**Camada 6 — Tipos TypeScript (`leagues.ts`, `MatchDetailCard.tsx`):**
+- Campos de cartões reais no tipo `Match.stats`
+- `CardsPredictions` expandido com NB2 fields (overdispersion, lambdaHome/Away, adjustments)
+
+**Camada 7 — ev_classification.py:**
+- `data_quality_score` adaptativo: NB2=`quality * 0.75`, Poisson fallback=`quality * 0.65`
+- `source_flags` inclui modelo usado e ajustes aplicados
+
+**Camada 8 — fixtures_service.py:**
+- `cardsPredictions` expandido com campos NB2 (overdispersion, lambdaHome/Away, adjustments)
+
+**Camada 9 — CLAUDE.md:**
+- Atualizado "Cards (0.5-5.5)" → "Cards Over/Under (2.5-5.5)"
+
+### Verificação
+
+- `pytest tests/unit/test_cards_085b.py -v` — 10/10 OK
+- `pytest tests/unit/test_cards_085.py -v` — 7/7 OK (backward compat)
+- `pytest tests/ -k "classifications or corners_081"` — 8/8 OK
+- `npm run build` em `frontend/next` — OK
+- Imports: `cards_engine`, `_evaluate_pick_deterministic`, `_get_all_finished_matches`, `cron_handler` — OK
+
+### Lição aprendida
+
+1. REGRAS #006 já documentava o padrão destrutivo. Ao adicionar mercado novo, SEMPRE atualizar: engine + ev_classification + fixtures_service + evaluatePick frontend + evaluatePick backend + normalizeMatch + tipos TS. Checklist de 7 pontos obrigatório.
+2. Funções importadas por cron_handler devem existir ANTES do merge — o import `from backend.routes.ai_analysis import _evaluate_pick_deterministic` falhava silenciosamente (só executado pelo EventBridge).
+3. Modelo NB2 com covariáveis (faltas, árbitro, perfil liga) é upgrade incremental factível sem infraestrutura nova; fallback Poisson mantém robustez quando scipy ausente.
 
 ---
 

@@ -117,6 +117,10 @@ export type Match = {
     cornerOver105Prob?: number;
     homeCornersCount?: number;
     awayCornersCount?: number;
+    homeYellowCards?: number;
+    awayYellowCards?: number;
+    homeRedCards?: number;
+    awayRedCards?: number;
     lambdaHome?: number;
     lambdaAway?: number;
     lambdaTotal?: number;
@@ -157,8 +161,16 @@ export type CornerPredictions = {
 export type CardsPredictions = {
   projectedTotalCards?: number | null;
   cardsLambda?: number | null;
+  cardsLambdaHome?: number | null;
+  cardsLambdaAway?: number | null;
   cardsMultiplier?: number | null;
+  overdispersion?: number | null;
   modelSource?: string;
+  adjustments?: {
+    foul_adjustment?: number;
+    referee_factor?: number;
+    league_discipline_factor?: number;
+  };
   lines?: Record<string, { prob: number }>;
 };
 

@@ -27,8 +27,20 @@ function evaluatePick(
   btts: boolean,
   result1x2: "1" | "X" | "2",
   totalCorners?: number,
+  totalCards?: number,
 ): boolean {
   const m = mercado.trim().toUpperCase();
+
+  // Card markets (#085b — pattern #006) — evaluate against totalCards
+  if (m.includes("CART") || m.includes("CARD")) {
+    const tc = totalCards ?? 0;
+    const match = m.match(/(\d+\.?\d*)/);
+    if (!match) return false;
+    const threshold = parseFloat(match[1]);
+    if (m.includes("OVER")) return tc > threshold;
+    if (m.includes("UNDER")) return tc < threshold;
+    return false;
+  }
 
   // Corner markets — evaluate against totalCorners
   if (m.includes("ESCANTEIO") || m.includes("CORNER")) {
@@ -447,6 +459,7 @@ interface MatchActualResult {
   btts: boolean;
   result1x2: "1" | "X" | "2";
   totalCorners: number;
+  totalCards: number;
 }
 
 /**
@@ -468,11 +481,16 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
     const tg = hg + ag;
     const hc = m.stats.homeCornersCount ?? 0;
     const ac = m.stats.awayCornersCount ?? 0;
+    const hy = (m.stats as any).homeYellowCards ?? 0;
+    const ay = (m.stats as any).awayYellowCards ?? 0;
+    const hr = (m.stats as any).homeRedCards ?? 0;
+    const ar = (m.stats as any).awayRedCards ?? 0;
     const actual: MatchActualResult = {
       totalGoals: tg,
       btts: hg > 0 && ag > 0,
       result1x2: hg > ag ? "1" : hg === ag ? "X" : "2",
       totalCorners: hc + ac,
+      totalCards: hy + ay + hr + ar,
     };
     // Index by homeTeam|awayTeam (lowercase) for leg matching
     const key = `${m.homeTeam.name.trim().toLowerCase()}|${m.awayTeam.name.trim().toLowerCase()}`;
@@ -488,8 +506,8 @@ function computeLocalCombinadas(matches: Match[]): AuditCombinadas {
     const a1 = _findActualForLeg(dupla.leg1);
     const a2 = dupla.tipo === "intra" ? a1 : _findActualForLeg(dupla.leg2);
     if (!a1 || !a2) return "PENDENTE";
-    const hit1 = evaluatePick(dupla.leg1.mercado, a1.totalGoals, a1.btts, a1.result1x2, a1.totalCorners);
-    const hit2 = evaluatePick(dupla.leg2.mercado, a2.totalGoals, a2.btts, a2.result1x2, a2.totalCorners);
+    const hit1 = evaluatePick(dupla.leg1.mercado, a1.totalGoals, a1.btts, a1.result1x2, a1.totalCorners, a1.totalCards);
+    const hit2 = evaluatePick(dupla.leg2.mercado, a2.totalGoals, a2.btts, a2.result1x2, a2.totalCorners, a2.totalCards);
     return hit1 && hit2 ? "ACERTOU" : "ERROU";
   }
 
@@ -619,6 +637,8 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     const result1x2: "1" | "X" | "2" =
       homeGoals > awayGoals ? "1" : homeGoals === awayGoals ? "X" : "2";
     const totalCorners = (match.stats.homeCornersCount ?? 0) + (match.stats.awayCornersCount ?? 0);
+    const totalCards = ((match.stats as any).homeYellowCards ?? 0) + ((match.stats as any).awayYellowCards ?? 0) +
+                       ((match.stats as any).homeRedCards ?? 0) + ((match.stats as any).awayRedCards ?? 0);
 
     const picks = match.predictions || [];
     let matchCorrect = 0;
@@ -626,7 +646,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     const picksEval: BatchAuditMatchResult["picks"] = [];
 
     for (const pick of picks) {
-      const isCorrect = evaluatePick(pick.mercado, totalGoals, btts, result1x2, totalCorners);
+      const isCorrect = evaluatePick(pick.mercado, totalGoals, btts, result1x2, totalCorners, totalCards);
 
       // Use finalClassification (post-capping) for accuracy, fallback to status
       const effectiveStatus = (pick as any).finalClassification || pick.status;

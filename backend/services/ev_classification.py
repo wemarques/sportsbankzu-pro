@@ -97,7 +97,7 @@ DEFAULT_THRESHOLDS = {
         "min_quality": 0.45,
     },
     "Cards": {
-        "safe_prob": 0.75,    "neutro_prob": 0.60,
+        "safe_prob": 0.78,    "neutro_prob": 0.60,  # Conservative until NB2 validated (#085b)
         "safe_ev": 0.08,      "neutro_ev": 0.02,
         "safe_edge": 0.06,    "neutro_edge": 0.02,
         "min_quality": 0.45,
@@ -774,7 +774,7 @@ def evaluate_match_markets(
         }
         markets.append(classified)
 
-    # ── Cards Markets (#085) — Poisson-based Over/Under 2.5-5.5 ──
+    # ── Cards Markets (#085, #085b) — NB2 + covariates Over/Under 2.5-5.5 ──
     try:
         from backend.modeling.cards_engine import predict_cards, CARD_LINES
 
@@ -784,6 +784,18 @@ def evaluate_match_markets(
             league_id=league_id,
             league_stats=league_stats if isinstance(league_stats, dict) else None,
         )
+
+        # Adaptive data_quality_score based on model source (#085b)
+        if cards_result.get("model_source") == "nb2":
+            _cards_quality = quality * 0.75  # NB2 present: better than Poisson
+        else:
+            _cards_quality = quality * 0.65  # Poisson fallback: conservative
+
+        _cards_flags = [*source_flags, f"cards_{cards_result.get('model_source', 'unknown')}"]
+        if cards_result.get("adjustments", {}).get("foul_adjustment", 1.0) != 1.0:
+            _cards_flags.append("foul_adjusted")
+        if cards_result.get("adjustments", {}).get("referee_factor", 1.0) != 1.0:
+            _cards_flags.append("referee_adjusted")
 
         for line in CARD_LINES:
             over_prob = cards_result["lines"].get(f"over_{line}", {}).get("prob", 0)
@@ -802,8 +814,8 @@ def evaluate_match_markets(
                     calibrated_probability=calibrated_over,
                     book_odd=over_odd,
                     odds_available=over_odd is not None,
-                    data_quality_score=quality * 0.85,  # slightly lower — Poisson only, no NB2
-                    source_flags=[*source_flags, "cards_poisson"],
+                    data_quality_score=_cards_quality,
+                    source_flags=_cards_flags,
                     display_label=f"Cartoes Over {line}",
                 )
                 markets.append(classify_market(mo, league_id=league_id))
@@ -821,8 +833,8 @@ def evaluate_match_markets(
                     calibrated_probability=calibrated_under,
                     book_odd=under_odd,
                     odds_available=under_odd is not None,
-                    data_quality_score=quality * 0.85,
-                    source_flags=[*source_flags, "cards_poisson"],
+                    data_quality_score=_cards_quality,
+                    source_flags=_cards_flags,
                     display_label=f"Cartoes Under {line}",
                 )
                 markets.append(classify_market(mo, league_id=league_id))

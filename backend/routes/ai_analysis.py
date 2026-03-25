@@ -461,3 +461,154 @@ async def _get_matches_by_league_and_date(league: str, date: str, limit: int) ->
     base = get_data_dir()
     records = await asyncio.to_thread(_process_single_league, league, date, base)
     return [_map_record_to_v3(r) for r in records[:limit]]
+
+
+# =====================================================================
+# CRON AUDIT HELPERS — used by cron_handler.py (#085b)
+# =====================================================================
+
+import re as _re
+from datetime import timedelta as _td
+
+
+def _get_all_finished_matches(
+    date_filter: str = "yesterday",
+    before_time_brt: str | None = None,
+) -> list[dict]:
+    """Fetch all finished matches across all leagues for a given date range.
+
+    Args:
+        date_filter: 'today' | 'yesterday' | 'week'
+        before_time_brt: Optional BRT cutoff time (e.g. '23:45')
+
+    Returns:
+        List of raw match records with status='finished'.
+    """
+    from backend.routes.fixtures import _process_single_league
+    from backend.main import get_data_dir
+    from backend.config.leagues_config import LEAGUES_CONFIG
+
+    base = get_data_dir()
+
+    # Determine date(s) to query
+    if date_filter == "yesterday":
+        dates = [(_dt.utcnow() - _td(days=1)).strftime("%Y-%m-%d")]
+    elif date_filter == "today":
+        dates = [_dt.utcnow().strftime("%Y-%m-%d")]
+    elif date_filter == "week":
+        dates = [
+            (_dt.utcnow() - _td(days=i)).strftime("%Y-%m-%d")
+            for i in range(7)
+        ]
+    else:
+        dates = [date_filter]
+
+    finished = []
+    for lg in LEAGUES_CONFIG:
+        lid = lg["id"]
+        for d in dates:
+            try:
+                records = _process_single_league(lid, d, base)
+                for r in records:
+                    if r.get("status") == "finished":
+                        # Apply BRT cutoff if specified
+                        if before_time_brt and r.get("datetime"):
+                            try:
+                                match_dt = _dt.fromisoformat(
+                                    str(r["datetime"]).replace("Z", "+00:00")
+                                )
+                                # BRT = UTC-3
+                                brt_hour = (match_dt.hour - 3) % 24
+                                cutoff_parts = before_time_brt.split(":")
+                                cutoff_h = int(cutoff_parts[0])
+                                cutoff_m = int(cutoff_parts[1]) if len(cutoff_parts) > 1 else 0
+                                if brt_hour > cutoff_h or (brt_hour == cutoff_h and match_dt.minute > cutoff_m):
+                                    continue
+                            except Exception:
+                                pass  # if we can't parse, include the match
+                        finished.append(r)
+            except Exception as e:
+                logger.debug(f"[cron] Error fetching {lid}/{d}: {e}")
+                continue
+
+    logger.info(f"[cron] Found {len(finished)} finished matches for {date_filter}")
+    return finished
+
+
+def _evaluate_pick_deterministic(pick: dict, actual_result: dict) -> bool:
+    """Evaluate if a single pick was correct based on actual match result.
+
+    Handles: 1X2, Over/Under goals, BTTS, Double Chance, Corners, Cards.
+
+    Args:
+        pick: dict with 'mercado' key (market name string)
+        actual_result: dict with total_goals, btts, result_1x2, total_corners, total_cards
+
+    Returns:
+        True if the pick was correct, False otherwise.
+    """
+    mercado = pick.get("mercado", "")
+    m = mercado.strip().upper()
+
+    total_goals = actual_result.get("total_goals", 0)
+    btts = actual_result.get("btts", False)
+    result_1x2 = actual_result.get("result_1x2", "X")
+    total_corners = actual_result.get("total_corners", 0)
+    total_cards = actual_result.get("total_cards", 0)
+
+    # ── Cards markets (#085b — pattern #006) ──
+    if "CART" in m or "CARD" in m:
+        match = _re.search(r"(\d+\.?\d*)", m)
+        if not match:
+            return False
+        threshold = float(match.group(1))
+        if "OVER" in m:
+            return total_cards > threshold
+        if "UNDER" in m:
+            return total_cards < threshold
+        return False
+
+    # ── Corner markets ──
+    if "ESCANTEIO" in m or "CORNER" in m:
+        match = _re.search(r"(\d+\.?\d*)", m)
+        if not match:
+            return False
+        threshold = float(match.group(1))
+        if "OVER" in m:
+            return total_corners > threshold
+        if "UNDER" in m:
+            return total_corners < threshold
+        return False
+
+    # ── Over/Under goals ──
+    for threshold in [0.5, 1.5, 2.5, 3.5, 4.5]:
+        ts = str(threshold)
+        if ts in m:
+            if "UNDER" in m or "MENOS" in m or "ABAIXO" in m:
+                return total_goals < threshold
+            if "OVER" in m or "MAIS" in m or "ACIMA" in m:
+                return total_goals > threshold
+
+    # ── BTTS ──
+    if "BTTS" in m or "AMBAS" in m:
+        if "NAO" in m or "NO" in m or "NÃO" in m:
+            return not btts
+        return btts
+
+    # ── Double Chance ──
+    if "DC 1X" in m or m.startswith("1X") or "CASA OU EMPATE" in m:
+        return result_1x2 in ("1", "X")
+    if "DC 12" in m or m.startswith("12") or "CASA OU FORA" in m:
+        return result_1x2 in ("1", "2")
+    if "DC X2" in m or m.startswith("X2") or "EMPATE OU FORA" in m:
+        return result_1x2 in ("X", "2")
+
+    # ── 1X2 ──
+    if m in ("1", "VITORIA CASA", "HOME WIN", "CASA"):
+        return result_1x2 == "1"
+    if m in ("X", "EMPATE", "DRAW"):
+        return result_1x2 == "X"
+    if m in ("2", "VITORIA FORA", "AWAY WIN", "FORA"):
+        return result_1x2 == "2"
+
+    return False

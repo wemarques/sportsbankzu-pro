@@ -1321,7 +1321,7 @@ def build_records_from_matches(
             except Exception as _corner_err:
                 logger.debug(f"[Corners] Prediction enrichment skipped for {home} vs {away}: {_corner_err}")
 
-            # Expose v2 card predictions in the API response (#085)
+            # Expose v2 card predictions in the API response (#085, #085b NB2)
             try:
                 from backend.modeling.cards_engine import predict_cards
                 _cards_result = predict_cards(
@@ -1333,8 +1333,12 @@ def build_records_from_matches(
                 record["cardsPredictions"] = {
                     "projectedTotalCards": _cards_result.get("projected_total_cards"),
                     "cardsLambda": _cards_result.get("cards_lambda"),
+                    "cardsLambdaHome": _cards_result.get("cards_lambda_home"),
+                    "cardsLambdaAway": _cards_result.get("cards_lambda_away"),
                     "cardsMultiplier": _cards_result.get("cards_multiplier"),
-                    "modelSource": _cards_result.get("model_source", "poisson"),
+                    "overdispersion": _cards_result.get("overdispersion"),
+                    "modelSource": _cards_result.get("model_source", "poisson_fallback"),
+                    "adjustments": _cards_result.get("adjustments"),
                     "lines": {
                         k: {"prob": v["prob_pct"]}
                         for k, v in _cards_result.get("lines", {}).items()

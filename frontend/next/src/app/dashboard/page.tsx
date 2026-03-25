@@ -370,7 +370,7 @@ function getHighlightReason(match: Match): string {
   const favName = homeProb >= awayProb ? match.homeTeam.name : match.awayTeam.name;
   const over25Pct = toPercent(match.stats?.over25Prob ?? 0);
   const bttsPct = toPercent(match.stats?.bttsProb ?? 0);
-  const safePreds = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
+  const safePreds = match.predictions?.filter((p) => (p.classification || p.status) === "SAFE") ?? [];
 
   if (maxProbPct >= 65) reasons.push(`Confiança alta: ${favName} (${maxProbPct.toFixed(0)}%)`);
   if (over25Pct >= 70) reasons.push(`Over 2.5 provável (${over25Pct.toFixed(0)}%)`);
@@ -517,6 +517,10 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       awayCornersAgainstPerMatch: item.stats?.awayCornersAgainstPerMatch ?? undefined,
       homeCornersCount: item.stats?.homeCornersCount ?? item.home_team_corner_count ?? undefined,
       awayCornersCount: item.stats?.awayCornersCount ?? item.away_team_corner_count ?? undefined,
+      homeYellowCards: item.stats?.homeYellowCards ?? item.home_team_yellow_cards ?? undefined,
+      awayYellowCards: item.stats?.awayYellowCards ?? item.away_team_yellow_cards ?? undefined,
+      homeRedCards: item.stats?.homeRedCards ?? item.home_team_red_cards ?? undefined,
+      awayRedCards: item.stats?.awayRedCards ?? item.away_team_red_cards ?? undefined,
       homeLeaguePosition: item.stats?.homeLeaguePosition ?? undefined,
       awayLeaguePosition: item.stats?.awayLeaguePosition ?? undefined,
       homeAvgTotalGoals: item.stats?.homeAvgTotalGoals ?? undefined,

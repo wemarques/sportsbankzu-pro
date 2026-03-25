@@ -273,8 +273,16 @@ export interface MatchDetailData {
   cardsPredictions?: {
     projectedTotalCards?: number | null;
     cardsLambda?: number | null;
+    cardsLambdaHome?: number | null;
+    cardsLambdaAway?: number | null;
     cardsMultiplier?: number | null;
+    overdispersion?: number | null;
     modelSource?: string;
+    adjustments?: {
+      foul_adjustment?: number;
+      referee_factor?: number;
+      league_discipline_factor?: number;
+    };
     lines?: Record<string, { prob: number }>;
   };
   predictions?: {

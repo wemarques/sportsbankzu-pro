@@ -105,7 +105,7 @@ Antes de propor ou implementar qualquer correção:
 
 - Language: Portuguese (pt-BR) for UI, English for code and comments
 - Supported leagues: 22+ European and South American leagues + Copa do Brasil
-- Prediction markets: 1X2, Over/Under (0.5-4.5), BTTS, Double Chance, Corners (4.5-12.5), Cards (0.5-5.5)
+- Prediction markets: 1X2, Over/Under (0.5-4.5), BTTS, Double Chance, Corners (4.5-12.5), Cards Over/Under (2.5-5.5)
 - Classification levels: SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET (see REGRAS #028)
 - Regimes: NORMAL, HIPER-OFENSIVA
 - Sempre que solicitado a realizar análises financeiras ou previsões esportivas, utilize as ferramentas mapeadas no Antigravity localizadas em `backend/services` e `backend/modeling`. Não tente simular a lógica de cálculo manualmente.

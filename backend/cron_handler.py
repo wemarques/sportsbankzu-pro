@@ -153,6 +153,35 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         if any("ESCANTEIO" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
             logger.info(f"[audit] {home} vs {away}: corners home={home_corners} away={away_corners} total={total_corners}")
 
+        # Extract total cards for card market evaluation (#085b — pattern #006)
+        # Use `is None` checks — NOT `or` — because 0 is a valid value (pattern #078v)
+        home_yellow = stats.get("homeYellowCards")
+        if home_yellow is None:
+            home_yellow = m.get("home_team_yellow_cards")
+        if home_yellow is None:
+            home_yellow = 0
+        away_yellow = stats.get("awayYellowCards")
+        if away_yellow is None:
+            away_yellow = m.get("away_team_yellow_cards")
+        if away_yellow is None:
+            away_yellow = 0
+        home_red = stats.get("homeRedCards")
+        if home_red is None:
+            home_red = m.get("home_team_red_cards")
+        if home_red is None:
+            home_red = 0
+        away_red = stats.get("awayRedCards")
+        if away_red is None:
+            away_red = m.get("away_team_red_cards")
+        if away_red is None:
+            away_red = 0
+        try:
+            total_cards = int(home_yellow) + int(away_yellow) + int(home_red) + int(away_red)
+        except (ValueError, TypeError):
+            total_cards = 0
+        if any("CART" in (mc.get("mercado", mc.get("market", "")).upper()) or "CARD" in (mc.get("mercado", mc.get("market", "")).upper()) for mc in mercados):
+            logger.info(f"[audit] {home} vs {away}: cards hy={home_yellow} ay={away_yellow} hr={home_red} ar={away_red} total={total_cards}")
+
         actual_result = {
             "home_goals": home_goals,
             "away_goals": away_goals,
@@ -160,6 +189,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             "btts": btts,
             "result_1x2": result_1x2,
             "total_corners": total_corners,
+            "total_cards": total_cards,
         }
 
         picks_eval = []
