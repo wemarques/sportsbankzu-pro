@@ -1,4 +1,4 @@
-"""Unit tests for Cards Engine v2 NB2 + evaluation (#085b)."""
+"""Unit tests for Cards Engine v3 Dixon-Coles + evaluation (#085b, #086)."""
 
 from backend.modeling.cards_engine import predict_cards, CARD_LINES, DEFAULT_CARDS_LAMBDA
 
@@ -13,41 +13,68 @@ def test_nb2_vs_poisson_different_probs():
     assert result["overdispersion"] > 1.0
 
 
-def test_split_lambda_away_higher():
-    """Lambda of visitor > lambda of home team (documented asymmetry)."""
+def test_relative_strength_lambda():
+    """Lambda uses relative strengths vs league avg (Dixon-Coles #053 pattern)."""
     result = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0},
-        away_stats={"cardsAVG_overall": 4.0},
+        home_stats={"homeCardsPerMatch": 4.0},
+        away_stats={"awayCardsPerMatch": 3.6},
+        league_stats={"cardsAVG_overall": 5.33},
     )
-    assert result["cards_lambda_away"] > result["cards_lambda_home"]
+    # Lambda NOT inflated: must be < 6.0 (was 11.4 before #086)
+    assert result["cards_lambda"] < 6.0, \
+        f"Lambda {result['cards_lambda']} is inflated (expected < 6.0 for league avg 5.33)"
 
 
-def test_foul_adjustment_increases_lambda():
-    """More fouls than average -> higher lambda."""
-    base = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0},
-        away_stats={"cardsAVG_overall": 4.0},
+def test_league_avg_bounds_lambda():
+    """Lambda final must stay within +/-50% of league average."""
+    result = predict_cards(
+        home_stats={"homeCardsPerMatch": 4.0},
+        away_stats={"awayCardsPerMatch": 3.6},
+        league_stats={"cardsAVG_overall": 5.33},
     )
-    adjusted = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0, "homeTeamFoulsPerMatch": 16.0},
-        away_stats={"cardsAVG_overall": 4.0, "awayTeamFoulsPerMatch": 16.0},
-        league_stats={"foulsAVG_overall": 20.0},
-    )
-    assert adjusted["cards_lambda"] >= base["cards_lambda"]
+    league_avg = 5.33
+    assert league_avg * 0.5 < result["cards_lambda"] < league_avg * 1.5, \
+        f"Lambda {result['cards_lambda']} outside +/-50% of avg {league_avg}"
 
 
-def test_referee_factor_strict_ref():
-    """Strict referee (avg > league) -> higher lambda."""
-    normal = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0},
-        away_stats={"cardsAVG_overall": 4.0},
+def test_no_foul_or_league_adjustment():
+    """No foul_adjustment or league_discipline_factor (removed #086)."""
+    result = predict_cards(
+        home_stats={"homeCardsPerMatch": 4.0, "homeFoulsPerMatch": 20.0},
+        away_stats={"awayCardsPerMatch": 3.6, "awayFoulsPerMatch": 15.0},
+        league_stats={"cardsAVG_overall": 5.33, "foulsAVG_overall": 22.0},
     )
-    strict = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0},
-        away_stats={"cardsAVG_overall": 4.0},
-        referee_avg_cards=6.0,  # above average ~4.0
+    adj = result.get("adjustments", {})
+    assert "foul_adjustment" not in adj, "foul_adjustment should have been removed"
+    assert "league_discipline_factor" not in adj, "league_discipline_factor should have been removed"
+
+
+def test_referee_is_only_external_adjustment():
+    """Referee is the ONLY legitimate external adjustment."""
+    without_ref = predict_cards(
+        home_stats={"homeCardsPerMatch": 4.0},
+        away_stats={"awayCardsPerMatch": 3.6},
+        league_stats={"cardsAVG_overall": 5.33},
     )
-    assert strict["cards_lambda"] > normal["cards_lambda"]
+    with_ref = predict_cards(
+        home_stats={"homeCardsPerMatch": 4.0},
+        away_stats={"awayCardsPerMatch": 3.6},
+        league_stats={"cardsAVG_overall": 5.33},
+        referee_avg_cards=7.0,  # strict referee
+    )
+    assert with_ref["cards_lambda"] > without_ref["cards_lambda"]
+    assert with_ref["adjustments"]["referee_factor"] > 1.0
+
+
+def test_average_team_produces_league_avg_lambda():
+    """Team with cardsPerMatch == leagueAvg produces lambda approx leagueAvg."""
+    result = predict_cards(
+        home_stats={"homeCardsPerMatch": 5.0},
+        away_stats={"awayCardsPerMatch": 5.0},
+        league_stats={"cardsAVG_overall": 5.0},
+    )
+    assert abs(result["cards_lambda"] - 5.0) < 0.5, \
+        f"Average team should produce lambda ~5.0, got {result['cards_lambda']}"
 
 
 def test_complement_nb2():
@@ -60,18 +87,6 @@ def test_complement_nb2():
         over = result["lines"][f"over_{line}"]["prob"]
         under = result["lines"][f"under_{line}"]["prob"]
         assert abs(over + under - 1.0) < 0.001, f"Line {line}: {over} + {under} != 1.0"
-
-
-def test_adjustments_in_result():
-    """Result includes adjustments dict."""
-    result = predict_cards(
-        home_stats={"cardsAVG_overall": 4.0},
-        away_stats={"cardsAVG_overall": 4.0},
-    )
-    assert "adjustments" in result
-    assert "foul_adjustment" in result["adjustments"]
-    assert "referee_factor" in result["adjustments"]
-    assert "league_discipline_factor" in result["adjustments"]
 
 
 def test_backward_compat_predict_cards():

@@ -69,6 +69,20 @@ MSYS_NO_PATHCONV=1 aws lambda get-function-configuration --function-name sportsb
 MSYS_NO_PATHCONV=1 aws lambda update-function-code --function-name sportsbank-pro-backend --s3-bucket meu-bucket-sportsbank --s3-key deploy/sportsbank_lambda.zip --region us-east-1
 ```
 
+**Lambda Layer (scipy):**
+O Lambda usa uma Layer separada (`scipy-numpy-layer`) com scipy para
+os modelos NB2 (cards e corners). A Layer é independente do ZIP de deploy.
+numpy já está no ZIP de deploy — a Layer contém apenas scipy.
+
+- **Se a versão Python do Lambda mudar** (ex: python3.11 → python3.12),
+  a Layer DEVE ser recriada — extensões C compiladas para 3.11 não carregam em 3.12.
+- Sem Layer compatível, cards NB2 cai silenciosamente para Poisson fallback.
+- Recriar: `pip install scipy -t layer/python/ --platform manylinux2014_x86_64 --only-binary=:all: --python-version 3.XX --no-deps`
+- ZIP: `cd layer && zip -r ../scipy-layer.zip python/ -x '*.pyc' '*__pycache__*' '*.dist-info/*' '*/tests/*'`
+- Publicar: `aws lambda publish-layer-version --layer-name scipy-numpy-layer --content S3Bucket=meu-bucket-sportsbank,S3Key=deploy/scipy-layer.zip --compatible-runtimes python3.XX --region us-east-1`
+- Atachar: `aws lambda update-function-configuration --function-name sportsbank-pro-backend --layers <LAYER_ARN> --region us-east-1`
+- Layer ARN atual: `arn:aws:lambda:us-east-1:838823110426:layer:scipy-numpy-layer:2`
+
 ## Context7 Usage
 
 Context7 MCP is configured for this project. Use it to fetch up-to-date documentation:

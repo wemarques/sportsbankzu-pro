@@ -5000,4 +5000,73 @@ As funções de avaliação determinística (`_evaluate_pick_deterministic`, `_g
 
 ---
 
+## 086 — Fix dupla contagem lambda cartões + Lambda Layer scipy
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/services/ev_classification.py`,
+`CLAUDE.md`, `tests/unit/test_cards_085b.py`
+**Severidade:** Crítica (lambda inflado +22% a +114% em produção)
+**Status:** Implementado
+**Relacionado:** #053 (double-counting gols), #085b (NB2 engine), #078v (bug or-com-zero)
+
+### Problema identificado
+
+1. Lambda de cartões inflado por dupla contagem: `homeCardsPerMatch` JÁ embute
+   perfil da liga e faltas do time. Aplicar `league_discipline_factor` e
+   `foul_adjustment` por cima multiplicava o efeito 2-3x.
+   Evidência: Argentina lambda=11.4 vs média=5.33 (+114%).
+
+2. scipy ausente no Lambda → NB2 inativo (modelSource=poisson_fallback).
+
+### Causa raiz
+
+Padrão idêntico ao #053 (double-counting do fator defensivo nos lambdas de gols).
+Dados observacionais (cardsPerMatch) já incorporam as condições que os fatores
+multiplicativos tentavam capturar.
+
+### Correções aplicadas
+
+**Camada 1 — Modelo Dixon-Coles para cartões (cards_engine.py v3):**
+- Lambda = league_avg/2 × home_relative + league_avg/2 × away_relative
+- home_relative = homeCardsPerMatch / leagueAvgCards
+- Removidos: `_compute_foul_adjustment`, `_compute_league_discipline_factor`,
+  `HOME_CARD_SHARE`, `AWAY_CARD_SHARE`, `FOUL_CARD_ELASTICITY`
+- Mantido: `referee_factor` (único ajuste externo legítimo)
+
+**Camada 2 — Lambda Layer scipy:**
+- Layer `scipy-numpy-layer:2` criada com scipy para Python 3.11
+- Atachada ao Lambda sportsbank-pro-backend
+- numpy excluído da Layer (já no ZIP de deploy)
+- NB2 ativo em produção: modelSource=nb2
+
+**Camada 3 — Testes atualizados (test_cards_085b.py):**
+- Removidos: `test_foul_adjustment_increases_lambda`, `test_split_lambda_away_higher`,
+  `test_adjustments_in_result` (referenciavam campos removidos)
+- Novos: `test_relative_strength_lambda`, `test_league_avg_bounds_lambda`,
+  `test_no_foul_or_league_adjustment`, `test_referee_is_only_external_adjustment`,
+  `test_average_team_produces_league_avg_lambda`
+
+**Camada 4 — Documentação:**
+- CLAUDE.md: Lambda Layer docs com instruções de recriação e ARN atual
+- ev_classification.py: removido flag `foul_adjusted` dos source_flags
+
+### Validação em produção
+
+- Argentina (Riestra vs San Lorenzo): lambda 11.4 → 3.8 (ratio 0.71 vs liga)
+- Colombia (América de Cali vs Llaneros): lambda 7.454 → 2.9 (ratio 0.47 vs liga)
+- modelSource=nb2 em ambos (scipy Layer funcional)
+
+### Lição aprendida
+
+1. Dados observacionais (cardsPerMatch, goalsPerMatch) JÁ incorporam as condições
+   do ambiente. Multiplicadores externos que medem as mesmas condições causam
+   inflação exponencial. REGRAS #053 já documentava isso para gols — o mesmo
+   princípio aplica para qualquer mercado.
+2. Lambda Layers são a solução correta para dependências pesadas (scipy ~30MB comprimido)
+   em Lambda: custo zero, separação limpa do código, reutilizável entre funções.
+3. numpy não deve ser duplicado na Layer se já está no ZIP de deploy — o limite
+   de 250MB uncompressed inclui Layer + código.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

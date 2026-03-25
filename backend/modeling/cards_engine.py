@@ -1,11 +1,14 @@
-"""Cards projection engine v2 — NB2 + covariates (#085b).
+"""Cards projection engine v3 — Dixon-Coles relative strengths (#086).
 
-Upgrade from Poisson (#085) to Negative Binomial (NB2) with:
-- Lambda split home/away (visitor asymmetry — away team receives more cards)
-- Foul/match adjustment (covariate with high card correlation)
-- League discipline profile (league avg cards as baseline)
-- Referee factor (when available via API-Football)
-- Overdispersion via NB2 (variance > mean, documented in Titman 2015)
+Fix double-counting from v2 (#085b): homeCardsPerMatch already embeds
+league discipline and foul profile. Applying league_discipline_factor
+and foul_adjustment on top counted the same effect 2-3x (pattern #053).
+
+Model: lambda = league_avg/2 * home_relative + league_avg/2 * away_relative
+where home_relative = homeCardsPerMatch / league_avg (ratio vs league baseline).
+
+Only legitimate external adjustment: referee_factor (not embedded in
+team cardsPerMatch stats).
 
 Reference: Titman, Costain, Ridall & Gregory (2015), JRSS-A.
 """
@@ -22,13 +25,6 @@ CARD_LINES = [2.5, 3.5, 4.5, 5.5]
 # Default cards lambda when data is unavailable
 DEFAULT_CARDS_LAMBDA = 4.0  # ~4 cards per match is typical
 DEFAULT_OVERDISPERSION = 1.3  # literature indicates 1.2-1.5 for cards
-
-# Home/away card share asymmetry: visitors receive ~10-15% more cards
-HOME_CARD_SHARE = 0.45
-AWAY_CARD_SHARE = 0.55
-
-# Foul elasticity: each foul/match above league average adjusts lambda
-FOUL_CARD_ELASTICITY = 0.06  # +6% lambda per foul/match above average
 
 # Try scipy for NB2; fall back to pure Poisson if unavailable
 try:
@@ -55,36 +51,35 @@ def predict_cards(
     league_stats: Optional[dict] = None,
     referee_avg_cards: Optional[float] = None,
 ) -> dict:
-    """Project total cards with NB2 + covariates.
+    """Project total cards with NB2 + Dixon-Coles relative strengths.
 
     Returns dict with projected_total_cards, lambda components,
     overdispersion, model_source, adjustments, and line probabilities.
     """
-    # Step 1: Estimate split lambda (home/away)
-    lambda_home, lambda_away = _estimate_split_lambda(
-        home_stats, away_stats, league_stats
+    # Step 1: League average as baseline
+    league_avg = _get_league_avg_cards(league_stats)
+
+    # Step 2: Relative strengths vs league (Dixon-Coles pattern #053)
+    lambda_home, lambda_away = _compute_relative_lambda(
+        home_stats, away_stats, league_avg
     )
     lambda_raw = lambda_home + lambda_away
 
-    # Step 2: Foul adjustment (covariate)
-    foul_adj = _compute_foul_adjustment(home_stats, away_stats, league_stats)
+    # Step 3: Referee factor — ONLY legitimate external adjustment
+    # Referee is NOT embedded in cardsPerMatch (which is team average)
+    referee_factor = _compute_referee_factor(referee_avg_cards, league_avg)
 
-    # Step 3: Referee factor
-    referee_factor = _compute_referee_factor(referee_avg_cards, league_stats)
-
-    # Step 4: League discipline profile
-    league_disc = _compute_league_discipline_factor(league_stats)
-
-    # Step 5: Per-league calibrated multiplier (#052-#056)
+    # Step 4: Per-league calibrated multiplier (#052-#056)
     cards_multiplier = _get_cards_multiplier(league_id)
 
-    # Final composed lambda
-    lambda_adjusted = lambda_raw * foul_adj * referee_factor * league_disc * cards_multiplier
+    # Final lambda — NO foul_adjustment, NO league_discipline_factor
+    # (both already embedded in cardsPerMatch and league_avg)
+    lambda_adjusted = lambda_raw * referee_factor * cards_multiplier
 
-    # Step 6: Estimate overdispersion
+    # Step 5: Estimate overdispersion
     overdispersion = _estimate_overdispersion(home_stats, away_stats, league_stats)
 
-    # Step 7: Compute probabilities per line (NB2 or Poisson fallback)
+    # Step 6: Compute probabilities per line (NB2 or Poisson fallback)
     lines = {}
     model_source = "nb2"
 
@@ -123,63 +118,20 @@ def predict_cards(
         "projected_total_cards": round(lambda_adjusted, 1),
         "cards_lambda": round(lambda_adjusted, 3),
         "cards_lambda_raw": round(lambda_raw, 3),
-        "cards_lambda_home": round(
-            lambda_home * foul_adj * referee_factor * league_disc * cards_multiplier, 3
-        ),
-        "cards_lambda_away": round(
-            lambda_away * foul_adj * referee_factor * league_disc * cards_multiplier, 3
-        ),
+        "cards_lambda_home": round(lambda_home * referee_factor * cards_multiplier, 3),
+        "cards_lambda_away": round(lambda_away * referee_factor * cards_multiplier, 3),
         "cards_multiplier": cards_multiplier,
         "overdispersion": round(overdispersion, 3),
         "model_source": model_source,
         "adjustments": {
-            "foul_adjustment": round(foul_adj, 3),
             "referee_factor": round(referee_factor, 3),
-            "league_discipline_factor": round(league_disc, 3),
         },
         "lines": lines,
     }
 
 
-def _estimate_split_lambda(
-    home_stats: dict, away_stats: dict, league_stats: Optional[dict]
-) -> Tuple[float, float]:
-    """Estimate cards lambda SPLIT for home and away.
-
-    Visitors receive ~10-15% more cards (documented asymmetry).
-    Uses same 3-layer strategy as v1 but with split.
-    """
-    # Try per-venue stats (best)
-    home_cards_home = _safe_float(home_stats.get("homeCardsPerMatch",
-                      home_stats.get("cardsAVG_home")))
-    away_cards_away = _safe_float(away_stats.get("awayCardsPerMatch",
-                      away_stats.get("cardsAVG_away")))
-
-    if home_cards_home is not None and away_cards_away is not None:
-        return home_cards_home, away_cards_away
-
-    # Fallback: use overall and apply split
-    total_lambda = _estimate_total_lambda(home_stats, away_stats, league_stats)
-    return total_lambda * HOME_CARD_SHARE, total_lambda * AWAY_CARD_SHARE
-
-
-def _estimate_total_lambda(
-    home_stats: dict, away_stats: dict, league_stats: Optional[dict]
-) -> float:
-    """Fallback: estimate total lambda (same logic as v1)."""
-    home_overall = _safe_float(home_stats.get("cardsPerMatch",
-                   home_stats.get("cardsAVG_overall")))
-    away_overall = _safe_float(away_stats.get("cardsPerMatch",
-                   away_stats.get("cardsAVG_overall")))
-
-    if home_overall is not None and away_overall is not None:
-        return (home_overall + away_overall) / 2
-    if home_overall is not None:
-        return home_overall
-    if away_overall is not None:
-        return away_overall
-
-    # League fallback
+def _get_league_avg_cards(league_stats: Optional[dict]) -> float:
+    """Extract league average cards per match (total, both teams)."""
     if league_stats:
         lg = _safe_float(league_stats.get("cardsAVG_overall",
              league_stats.get("league_cards_avg",
@@ -187,82 +139,66 @@ def _estimate_total_lambda(
              league_stats.get("average_cards_per_match")))))
         if lg is not None and lg > 0:
             return lg
-
     return DEFAULT_CARDS_LAMBDA
 
 
-def _compute_foul_adjustment(
-    home_stats: dict, away_stats: dict, league_stats: Optional[dict]
-) -> float:
-    """Adjustment based on fouls/match above league average.
+def _compute_relative_lambda(
+    home_stats: dict, away_stats: dict, league_avg: float
+) -> Tuple[float, float]:
+    """Compute lambda via Dixon-Coles relative strengths.
 
-    Foul-card correlation is strong (~0.6-0.7 in literature).
+    Each team's cardsPerMatch is compared to the league average.
+    The relative strength (ratio) is applied to half the league baseline.
+
+    This avoids double-counting: cardsPerMatch already embeds league
+    discipline and foul profile (#086, pattern #053).
     """
-    league_fouls = 22.0  # default ~22 fouls/match (global average)
-    if league_stats:
-        lf = _safe_float(league_stats.get("foulsAVG_overall",
-             league_stats.get("league_fouls_avg")))
-        if lf is not None and lf > 0:
-            league_fouls = lf
+    half_league = league_avg / 2.0
 
-    home_fouls = _safe_float(home_stats.get("homeTeamFoulsPerMatch",
-                 home_stats.get("homeFoulsPerMatch",
-                 home_stats.get("foulsPerMatch"))))
-    away_fouls = _safe_float(away_stats.get("awayTeamFoulsPerMatch",
-                 away_stats.get("awayFoulsPerMatch",
-                 away_stats.get("foulsPerMatch"))))
+    # Try per-venue stats first (most specific)
+    home_cards = _safe_float(home_stats.get("homeCardsPerMatch",
+                 home_stats.get("cardsAVG_home",
+                 home_stats.get("cardsPerMatch",
+                 home_stats.get("cardsAVG_overall")))))
 
-    if home_fouls is None and away_fouls is None:
-        return 1.0  # no data, no adjustment
+    away_cards = _safe_float(away_stats.get("awayCardsPerMatch",
+                 away_stats.get("cardsAVG_away",
+                 away_stats.get("cardsPerMatch",
+                 away_stats.get("cardsAVG_overall")))))
 
-    match_fouls = (home_fouls or league_fouls / 2) + (away_fouls or league_fouls / 2)
-    deviation = (match_fouls - league_fouls) / league_fouls if league_fouls > 0 else 0
+    # Relative strengths vs league avg
+    if home_cards is not None and league_avg > 0:
+        home_relative = home_cards / league_avg
+    else:
+        home_relative = 1.0  # no data → assume league average
 
-    # Cap: max +/-25% adjustment from fouls
-    adjustment = 1.0 + (deviation * FOUL_CARD_ELASTICITY * 10)
-    return max(0.75, min(1.25, adjustment))
+    if away_cards is not None and league_avg > 0:
+        away_relative = away_cards / league_avg
+    else:
+        away_relative = 1.0
+
+    lambda_home = half_league * home_relative
+    lambda_away = half_league * away_relative
+    return lambda_home, lambda_away
 
 
 def _compute_referee_factor(
-    referee_avg_cards: Optional[float], league_stats: Optional[dict]
+    referee_avg_cards: Optional[float], league_avg: float
 ) -> float:
-    """Referee adjustment factor.
+    """Referee adjustment factor — ONLY legitimate external adjustment.
 
-    If designated referee has known card average,
-    adjusts lambda proportionally vs league average.
+    Referee is NOT embedded in team cardsPerMatch (which is team average
+    across all referees). A strict referee shifts lambda proportionally.
     """
     if referee_avg_cards is None:
         return 1.0
 
-    league_avg = DEFAULT_CARDS_LAMBDA
-    if league_stats:
-        la = _safe_float(league_stats.get("cardsAVG_overall"))
-        if la is not None and la > 0:
-            league_avg = la
+    if league_avg <= 0:
+        league_avg = DEFAULT_CARDS_LAMBDA
 
     # Ratio referee vs league, capped +/-30%
-    ratio = referee_avg_cards / league_avg if league_avg > 0 else 1.0
+    ratio = referee_avg_cards / league_avg
     return max(0.70, min(1.30, ratio))
-
-
-def _compute_league_discipline_factor(league_stats: Optional[dict]) -> float:
-    """League discipline profile vs global average.
-
-    More disciplined leagues (e.g. J-League) have fewer cards.
-    More aggressive leagues (e.g. Argentina, Turkey) have more.
-    """
-    if not league_stats:
-        return 1.0
-
-    league_cards = _safe_float(league_stats.get("cardsAVG_overall",
-                   league_stats.get("league_cards_avg",
-                   league_stats.get("avg_cards"))))
-    if league_cards is None or league_cards <= 0:
-        return 1.0
-
-    # Ratio vs global average (~4.0 cards/match), cap +/-20%
-    ratio = league_cards / DEFAULT_CARDS_LAMBDA
-    return max(0.80, min(1.20, ratio))
 
 
 def _estimate_overdispersion(
@@ -293,7 +229,7 @@ def _estimate_overdispersion(
 
 
 def _get_cards_multiplier(league_id: str) -> float:
-    """Fetch calibrated cards_multiplier from corrections DB (kept from v1)."""
+    """Fetch calibrated cards_multiplier from corrections DB."""
     if not league_id:
         return 1.0
     try:

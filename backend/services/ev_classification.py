@@ -792,8 +792,6 @@ def evaluate_match_markets(
             _cards_quality = quality * 0.65  # Poisson fallback: conservative
 
         _cards_flags = [*source_flags, f"cards_{cards_result.get('model_source', 'unknown')}"]
-        if cards_result.get("adjustments", {}).get("foul_adjustment", 1.0) != 1.0:
-            _cards_flags.append("foul_adjusted")
         if cards_result.get("adjustments", {}).get("referee_factor", 1.0) != 1.0:
             _cards_flags.append("referee_adjusted")
 
