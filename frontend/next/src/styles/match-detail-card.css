@@ -2340,8 +2340,13 @@
   box-shadow: 0 0 6px rgba(0, 255, 136, 0.2);
 }
 
-.cpb-fill:not(.cpb-fill--hit):not(.cpb-fill--danger) {
+.cpb-fill--normal {
   background: linear-gradient(90deg, #0d9488cc, #14b8a6);
+}
+
+.cpb-fill--warning {
+  background: linear-gradient(90deg, #d97706, #f59e0b);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
 }
 
 .cpb-fill--hit {
@@ -2379,6 +2384,17 @@
 .cpb-badge--hit {
   background: #10b981;
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.cpb-badge--normal {
+  background: #14b8a6;
+  box-shadow: 0 0 6px rgba(20, 184, 166, 0.3);
+}
+
+.cpb-badge--warning {
+  background: #f59e0b;
+  color: #000;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
 }
 
 .cpb-badge--danger {

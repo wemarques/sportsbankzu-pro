@@ -26,14 +26,29 @@ interface CornerProgressBarProps {
   direction: "over" | "under";
 }
 
+function getBarState(
+  direction: "over" | "under",
+  ratio: number,
+): "hit" | "warning" | "normal" | "danger" {
+  if (direction === "over") {
+    if (ratio >= 1.0) return "hit";
+    if (ratio >= 0.85) return "warning";
+    return "normal";
+  }
+  // under
+  if (ratio > 1.0) return "danger";
+  if (ratio >= 0.85) return "warning";
+  return "normal";
+}
+
 export default function CornerProgressBar({
   currentCorners,
   targetCorners,
   direction,
 }: CornerProgressBarProps) {
   const pct = Math.min((currentCorners / targetCorners) * 100, 100);
-  const hit = currentCorners >= targetCorners;
-  const isGood = direction === "over" ? hit : !hit;
+  const ratio = targetCorners > 0 ? currentCorners / targetCorners : 0;
+  const state = getBarState(direction, ratio);
 
   return (
     <div className="cpb-root">
@@ -46,10 +61,10 @@ export default function CornerProgressBar({
 
       <div className="cpb-track">
         <div
-          className={`cpb-fill ${isGood ? "cpb-fill--hit" : hit ? "cpb-fill--danger" : ""}`}
+          className={`cpb-fill cpb-fill--${state}`}
           style={{ width: `${pct}%` }}
         >
-          <span className={`cpb-badge ${isGood ? "cpb-badge--hit" : hit ? "cpb-badge--danger" : ""}`}>
+          <span className={`cpb-badge cpb-badge--${state}`}>
             {currentCorners}
           </span>
         </div>

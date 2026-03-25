@@ -133,9 +133,24 @@ export type Match = {
     awayWins: number;
     avgGoals: number;
   };
+  cornerPredictions?: CornerPredictions;
   predictions?: MatchPrediction[];
   source: "footystats";
   lastUpdated: string;
+};
+
+export type CornerPredictions = {
+  projectedTotalFT?: number | null;
+  projectedTotal1H?: number | null;
+  projectedTotal2H?: number | null;
+  modelSource?: string;
+  dataQualityTier?: string;
+  governanceState?: string;
+  recommendedLine?: number | null;
+  recommendedSide?: string | null;
+  recommendedEdge?: number | null;
+  noBet?: boolean;
+  engineVersion?: string;
 };
 
 export type MarketClassification = "SAFE" | "NEUTRO_QUALIFICADO" | "NEUTRO" | "NO_BET";

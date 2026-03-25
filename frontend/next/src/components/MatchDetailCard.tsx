@@ -257,6 +257,19 @@ export interface MatchDetailData {
   round?: string;
   aiAnalysis?: AIAnalysis;
   currentCorners?: number | null;
+  cornerPredictions?: {
+    projectedTotalFT?: number | null;
+    projectedTotal1H?: number | null;
+    projectedTotal2H?: number | null;
+    modelSource?: string;
+    dataQualityTier?: string;
+    governanceState?: string;
+    recommendedLine?: number | null;
+    recommendedSide?: string | null;
+    recommendedEdge?: number | null;
+    noBet?: boolean;
+    engineVersion?: string;
+  };
   predictions?: {
     mercado: string;
     status: string;
@@ -1197,6 +1210,58 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
                             <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCorners?.toFixed(1) ?? "-"}</span></span>
                           </div>
+                          {/* V2 Corner Engine Projection */}
+                          {match.cornerPredictions?.projectedTotalFT != null && (
+                            <div style={{ marginTop: 12, padding: 12, background: "rgba(20,184,166,0.08)", borderRadius: 8, border: "1px solid rgba(20,184,166,0.15)" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                <span style={{ fontSize: "0.7rem", color: "#14b8a6", fontWeight: 600 }}>Motor v2 Escanteios</span>
+                                <span style={{
+                                  fontSize: "0.6rem",
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  background: match.cornerPredictions.dataQualityTier === "PREMIUM" ? "rgba(0,255,136,0.15)" : match.cornerPredictions.dataQualityTier === "STANDARD" ? "rgba(74,158,255,0.15)" : "rgba(255,107,53,0.15)",
+                                  color: match.cornerPredictions.dataQualityTier === "PREMIUM" ? "#00ff88" : match.cornerPredictions.dataQualityTier === "STANDARD" ? "#4a9eff" : "#ff6b35",
+                                }}>
+                                  {match.cornerPredictions.dataQualityTier}
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-around", textAlign: "center" }}>
+                                <div>
+                                  <div style={{ fontSize: "1.3rem", fontWeight: "bold", color: "#00ff88" }}>
+                                    {match.cornerPredictions.projectedTotalFT?.toFixed(1)}
+                                  </div>
+                                  <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>Total FT</div>
+                                </div>
+                                {match.cornerPredictions.projectedTotal1H != null && (
+                                  <div>
+                                    <div style={{ fontSize: "1rem", fontWeight: "bold", color: "#ccc" }}>
+                                      {match.cornerPredictions.projectedTotal1H?.toFixed(1)}
+                                    </div>
+                                    <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>1T</div>
+                                  </div>
+                                )}
+                                {match.cornerPredictions.projectedTotal2H != null && (
+                                  <div>
+                                    <div style={{ fontSize: "1rem", fontWeight: "bold", color: "#ccc" }}>
+                                      {match.cornerPredictions.projectedTotal2H?.toFixed(1)}
+                                    </div>
+                                    <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>2T</div>
+                                  </div>
+                                )}
+                              </div>
+                              {match.cornerPredictions.recommendedLine != null && match.cornerPredictions.recommendedSide && !match.cornerPredictions.noBet && (
+                                <div style={{ marginTop: 8, textAlign: "center", fontSize: "0.7rem" }}>
+                                  <span style={{ color: "#888" }}>Recomendado: </span>
+                                  <span style={{ color: "#14b8a6", fontWeight: 600 }}>
+                                    {match.cornerPredictions.recommendedSide} {match.cornerPredictions.recommendedLine}
+                                  </span>
+                                  {match.cornerPredictions.recommendedEdge != null && (
+                                    <span style={{ color: "#888" }}> (edge {(match.cornerPredictions.recommendedEdge * 100).toFixed(1)}%)</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {/* Corner predictions from FootyStats */}
                           {(match.matchStats.cornerOver85Prob != null || match.matchStats.cornerOver95Prob != null || match.matchStats.cornerOver105Prob != null) && (
                             <div style={{ marginTop: 12 }}>

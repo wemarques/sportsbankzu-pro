@@ -1346,6 +1346,36 @@ def build_records_from_matches(
             mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
             record["mercados"] = mercados
 
+            # Expose v2 corner predictions in the API response
+            try:
+                from backend.modeling.corners.predictor import predict_corners
+                _corner_result = predict_corners(
+                    home_stats=record["stats"],
+                    away_stats=record["stats"],
+                    league_id=league_id,
+                    league_stats=league_avgs if isinstance(league_avgs, dict) else None,
+                    footystats_probs=record["stats"],
+                    odds=record.get("odds"),
+                )
+                _proj = _corner_result.get("projection", {})
+                _dec = _corner_result.get("decision", {})
+                _dq = _corner_result.get("data_quality", {})
+                record["cornerPredictions"] = {
+                    "projectedTotalFT": _proj.get("expected_total_corners_ft"),
+                    "projectedTotal1H": _proj.get("expected_total_corners_1h"),
+                    "projectedTotal2H": _proj.get("expected_total_corners_2h"),
+                    "modelSource": _proj.get("model_source", "unknown"),
+                    "dataQualityTier": _dq.get("data_quality_tier", "UNKNOWN"),
+                    "governanceState": _dec.get("governance_state", "UNKNOWN"),
+                    "recommendedLine": _dec.get("line"),
+                    "recommendedSide": _dec.get("side"),
+                    "recommendedEdge": _dec.get("edge"),
+                    "noBet": _dec.get("no_bet", False),
+                    "engineVersion": _corner_result.get("engineVersion", "v2"),
+                }
+            except Exception as _corner_err:
+                logger.debug(f"[Corners] Prediction enrichment skipped for {home} vs {away}: {_corner_err}")
+
             # Build enriched context for Mistral match analysis
             record["_mistral_context"] = {
                 "home_form": record.get("homeForm"),

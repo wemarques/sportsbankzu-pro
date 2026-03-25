@@ -32,6 +32,11 @@ MAX_DRIFT_FOR_CHAMPION = 0.10  # Drift must be below this
 MIN_SAMPLE_SIZE = 30  # Minimum samples for model to be eligible
 MAX_STABILITY_CV = 0.40  # Stability coefficient of variation
 
+# NB2 preference: corners exhibit overdispersion (variance > mean),
+# making negative binomial the statistically appropriate distribution.
+# When NB2 composite score is within this threshold of best, prefer NB2.
+NB2_PREFERENCE_THRESHOLD = 0.02
+
 # Weight for composite score
 SELECTION_WEIGHTS = {
     "brier": 0.35,
@@ -173,6 +178,20 @@ def select_champion_for_line(
     sorted_eligible = sorted(eligible_models.items(), key=lambda x: x[1])
 
     champion_name, champion_score = sorted_eligible[0]
+
+    # NB2 preference tiebreaker: if NB2 is eligible and within 2% of best,
+    # prefer it due to statistical appropriateness for overdispersed corner data
+    if champion_name != "negative_binomial" and "negative_binomial" in eligible_models:
+        nb2_score = eligible_models["negative_binomial"]
+        if champion_score > 0 and (nb2_score - champion_score) / champion_score <= NB2_PREFERENCE_THRESHOLD:
+            logger.info(
+                f"NB2 preference applied for {league_id} over_{line}: "
+                f"gap={(nb2_score - champion_score) / champion_score:.4f} <= {NB2_PREFERENCE_THRESHOLD}"
+            )
+            champion_name = "negative_binomial"
+            champion_score = nb2_score
+            result["selection_method"] = "composite_score_nb2_preference"
+
     result["champion_model"] = champion_name
     result["champion_score"] = champion_score
 

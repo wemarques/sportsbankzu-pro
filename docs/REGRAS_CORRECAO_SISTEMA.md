@@ -4559,52 +4559,94 @@ Uso de LLM onde o produto precisa de **reprodutibilidade**, testes unitários e 
 ## 080 — Rename Classifications + Tooltips + Glossary (frontend-only)
 
 **Data:** 2026-03-24
+**Commit:** `fc9f00c`
 **Arquivos afetados:** `frontend/next/src/lib/classifications.ts` (NEW), `frontend/next/src/lib/glossary.ts` (NEW), `frontend/next/src/components/ClassificationBadge.tsx` (NEW), `frontend/next/src/components/Glossary.tsx` (NEW), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/app/dashboard/page.tsx`, `backend/services/deterministic_audit.py`, `tests/unit/test_classifications_080.py` (NEW)
-**Severidade:** Media
+**Severidade:** Média
+**Status:** Implementado
+**Relacionado:** #079 (textos amigáveis no `deterministic_audit` alinhados ao mapeamento de UI)
+**Roadmap:** **BLOCO 3** — rótulos de classificação para o utilizador, tooltips e glossário; consolidado no commit `fc9f00c` (nomenclatura interna do roadmap; o **BLOCO 2** de métricas/audit determinístico corresponde à REGRAS **#079**).
+
+### Problema identificado
+
+Classification badges (SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET) usavam nomes técnicos internos que não comunicam valor ao utilizador final.
+
+### Causa raiz
+
+Os nomes de classificação foram criados como enum técnico do backend e propagados diretamente para o frontend sem tradução para linguagem amigável.
+
+### Correções aplicadas
+
+**Camada 1 — Mapeamento de display (`classifications.ts`):**
+- `CLASSIFICATION_DISPLAY`: SAFE → ALTA CONFIANÇA, NEUTRO_QUALIFICADO → VALOR DETECTADO, NEUTRO → INFORMATIVO, NO_BET → BLOQUEADO
+- `getClassificationDisplay()` com fallback para NEUTRO
+- Cores: VALOR DETECTADO gold (#ffd700), INFORMATIVO cinza (#9ca3af)
+
+**Camada 2 — Badge com tooltip (`ClassificationBadge.tsx`):**
+- Componente reutilizável; tooltip ao hover (delay 300 ms)
+- Tooltip com rótulo + descrição da classificação
+- CSS: `.classification-badge`, `.classification-tooltip`, animação fade-in
+
+**Camada 3 — `MatchDetailCard.tsx`:**
+- Badge de classificação via `<ClassificationBadge>`
+- Sinal de referência de mercado com `getClassificationDisplay()` no texto
+- Glossário inline atualizado (ALTA CONFIANÇA, VALOR DETECTADO, INFORMATIVO)
+
+**Camada 4 — Glossário (`glossary.ts` + `Glossary.tsx`):**
+- 20+ termos em 4 categorias (classificações, métricas, mercados, modelo)
+- Filtro por categoria e busca textual
+- Acesso: Ferramentas → Glossário no dashboard
+
+**Camada 5 — Nomes amigáveis no audit (`deterministic_audit.py`):**
+- `DISPLAY_NAMES` + `_display_name()` para strings de notas (ex.: accuracy)
+- Campos estruturais (`safe_status`, parâmetros de threshold) mantêm nomes internos
+
+**Sem alteração:** enum do backend, parâmetros de calibração na DB, `cron_handler`, testes existentes (nomes internos preservados).
+
+### Verificação
+
+- `pytest tests/unit/test_classifications_080.py -v -o addopts=` — 4 testes OK (sessão referida)
+- `npm run build` em `frontend/next` — build OK
+
+### Lição aprendida
+
+1. Renomear UI deve ser **frontend-only** — enum e DB intactos evitam quebrar dezenas de testes e logs.
+2. Mapeamento centralizado (`classifications.ts`) permite ajustar rótulos num único sítio.
+3. Tooltips explicam jargão sem poluir o layout.
+
+**Registo documentação:** entrada **#080** (**BLOCO 3**); commit **`fc9f00c`** em `main`.
+
+---
+
+## 081 — Corners Engine v2 Enhancements
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/modeling/corners/champion_selector.py`, `backend/services/fixtures_service.py`, `frontend/next/src/components/CornerProgressBar.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `tests/unit/test_corners_081.py` (NEW)
+**Severidade:** Média
 **Status:** Implementado
 
 ### Problema identificado
 
-Classification badges (SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET) usavam nomes tecnicos internos que nao comunicam valor ao usuario final.
+1. Champion selector não aproveitava a vantagem estatística do Negative Binomial (NB2) para dados de escanteios que exibem overdispersion (variância > média).
+2. CornerProgressBar exibia apenas 2 estados (verde/vermelho), sem feedback progressivo de proximidade à meta.
+3. Projeções do motor v2 (total FT, 1H, 2H, modelo, qualidade, governança) eram calculadas internamente mas não expostas na API.
 
 ### Causa raiz
 
-Os nomes de classificacao foram criados como enum tecnico do backend e propagados diretamente para o frontend sem traducao para linguagem amigavel.
+1. O champion selector usava composite score puro sem preferência estatística para NB2.
+2. Lógica binária `isGood` no CornerProgressBar não previa zona intermediária de aviso.
+3. `predict_corners()` era chamado apenas dentro de `evaluate_match_markets`, sem serialização no record da API.
 
-### Correcoes aplicadas
+### Correções aplicadas
 
-**Camada 1 — Mapeamento de display (`classifications.ts`):**
-- `CLASSIFICATION_DISPLAY` record: SAFE->"ALTA CONFIANCA", NEUTRO_QUALIFICADO->"VALOR DETECTADO", NEUTRO->"INFORMATIVO", NO_BET->"BLOQUEADO"
-- `getClassificationDisplay()` helper com fallback para NEUTRO
-- Cores atualizadas: VALOR DETECTADO usa gold (#ffd700), INFORMATIVO usa gray (#9ca3af)
+1. **NB2 preference tiebreaker** (`champion_selector.py`): quando NB2 é elegível e seu score está dentro de 2% (`NB2_PREFERENCE_THRESHOLD`) do melhor modelo, o selector troca para NB2 com `selection_method = "composite_score_nb2_preference"`.
+2. **CornerProgressBar 3-zone** (`CornerProgressBar.tsx` + CSS): nova função `getBarState()` retorna 4 estados (hit/warning/normal/danger) baseados no ratio corrente/meta. CSS com gradientes teal (normal), amber (warning), green (hit), red (danger).
+3. **API cornerPredictions** (`fixtures_service.py`): após `record["mercados"]`, chama `predict_corners()` e serializa projeções FT/1H/2H, modelo, data quality tier, governança, recomendação de linha/side/edge no campo `record["cornerPredictions"]`.
+4. **Frontend types + display** (`leagues.ts` + `MatchDetailCard.tsx`): tipo `CornerPredictions`, card v2 no tab escanteios com projeção total em destaque, badge de qualidade colorido, recomendação com edge.
+5. **4 testes unitários** (`test_corners_081.py`): NB2 swap within threshold, gap too large, already champion, ineligible NB2.
 
-**Camada 2 — Badge com tooltip (`ClassificationBadge.tsx`):**
-- Componente reutilizavel com tooltip on hover (300ms delay)
-- Tooltip com nome + descricao completa da classificacao
-- CSS: `.classification-badge` + `.classification-tooltip` com fade-in animation
+### Lição aprendida
 
-**Camada 3 — MatchDetailCard atualizado:**
-- Badge de classificacao usa `<ClassificationBadge>` em vez de `<span>` manual
-- Market reference signal badge usa `getClassificationDisplay()` para texto
-- Glossario inline atualizado com novos nomes (ALTA CONFIANCA, VALOR DETECTADO, INFORMATIVO)
-
-**Camada 4 — Glossario completo (`glossary.ts` + `Glossary.tsx`):**
-- 20+ termos organizados em 4 categorias: Classificacoes, Metricas, Mercados, Modelo
-- Filtro por categoria + busca por texto
-- Acessivel via Ferramentas -> Glossario no dashboard
-
-**Camada 5 — Display names no audit (`deterministic_audit.py`):**
-- `DISPLAY_NAMES` dict + `_display_name()` helper
-- Strings de texto (notes) usam nomes amigaveis
-- Campos estruturais (safe_status, threshold params) mantem nomes internos
-
-**Backend enum, calibracao DB, cron_handler, e testes existentes NAO foram alterados.**
-
-### Licao aprendida
-
-1. Renaming de UI deve ser frontend-only — backend enum e DB params ficam intactos para evitar breaking changes em 80+ testes e logs.
-2. Mapeamento centralizado (`classifications.ts`) permite mudar nomes em um unico local.
-3. Tooltips explicam jargao tecnico sem poluir visualmente a interface.
+O framework corners v2 já estava ativo e funcional — a melhoria correta era cirúrgica (tiebreaker, visual, exposição de dados), não ativação de framework. Investigar antes de assumir que componentes estão "dormentes".
 
 ---
 
