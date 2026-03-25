@@ -43,7 +43,7 @@ except Exception:
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("sportsbankzu")
 
-app = FastAPI(title="SportsBankZU Pro Backend", version="3.7.0")
+app = FastAPI(title="SportsBankZU Pro Backend", version="4.0.0")
 
 # --- CONFIGURAÇÃO DE CORS (CORREÇÃO) ---
 origins = [

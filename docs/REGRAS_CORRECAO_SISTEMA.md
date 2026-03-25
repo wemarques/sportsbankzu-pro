@@ -4672,47 +4672,113 @@ O framework corners v2 já estava operacional; a evolução correta foi **cirúr
 
 ---
 
-## 082 — Mistral Redefinida: papel exclusivamente narrativo
+## 082 — Mistral redefinida: papel exclusivamente narrativo
 
 **Data:** 2026-03-24
-**Arquivos afetados:** `backend/ai/mistral_auditor.py` (DELETADO), `backend/ai/prompt_templates.py`, `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/services/fixtures_service.py`, `CLAUDE.md` (ambas cópias), `tests/unit/test_mistral_contract_082.py` (NOVO)
+**Commit:** `83365e0`
+**Arquivos afetados:** `backend/ai/mistral_auditor.py` (removido), `backend/ai/prompt_templates.py`, `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/services/fixtures_service.py`, `CLAUDE.md` (raiz + `sportsbankzu-pro/`), `tests/unit/test_mistral_contract_082.py` (novo)
 **Severidade:** Alta
 **Status:** Implementado
-**Relacionado:** #079 (audit determinístico), #052-#078 (calibração per-league)
+**Relacionado:** #079 (audit batch/jogo determinístico), #001–#002 (defesas anti-alucinação na análise narrativa), #052–#078 (calibração per-league e pipeline numérico)
 
 ### Problema identificado
 
-Após #079 substituir auditorias Mistral por regras determinísticas (flags `USE_DETERMINISTIC_AUDIT` / `USE_DETERMINISTIC_MATCH_AUDIT`), código morto permanecia atrás de feature flags. Adicionalmente, `_apply_confidence_adjustment()` em `fixtures_service.py` permitia à Mistral **modificar probabilidades 1X2** — violação do princípio de separação cálculo/narrativa. Dixon-Coles + calibração per-league (#052-#078) já trata probabilidades corretamente.
+Depois do #079, as auditorias passaram a ser determinísticas, mas **código morto** da Mistral (flags `USE_DETERMINISTIC_AUDIT` / `USE_DETERMINISTIC_MATCH_AUDIT` e ramos `else`) mantinha caminhos legados. Além disso, `_apply_confidence_adjustment()` em `fixtures_service.py` permitia **alterar probabilidades 1X2** com base em `ContextAnalyzer` / Mistral — violação da separação **cálculo vs narrativa**; o pipeline Dixon-Coles + calibração (#052–#078) é a fonte única de probabilidades.
 
 ### Causa raiz
 
-Remoção incompleta em #079: flags criadas mas código legado mantido. `_apply_confidence_adjustment()` pré-datava #079 e nunca foi identificada como código de cálculo da Mistral.
+Migração #079 incompleta: flags como ponte sem remoção do legado. O “Gap 3” (`confidence_adjustment`) era tratado como enriquecimento de contexto, mas na prática era **mutação numérica** de `stats`.
 
 ### Correções aplicadas
 
 **Camada 1 — Remoção de código morto:**
-- Deletado `backend/ai/mistral_auditor.py` (280 linhas)
-- Removido flag `USE_DETERMINISTIC_AUDIT` + import + else branch do `cron_handler.py`
-- Removido flag `USE_DETERMINISTIC_MATCH_AUDIT` + else branch do `ai_analysis.py`
-- Removido import/instância `MistralAuditor` + endpoint `/ai/audit-match` do `main.py`
+- Removido `backend/ai/mistral_auditor.py` (~280 linhas).
+- `cron_handler.py`: removidos import `MistralAuditor`, flag `USE_DETERMINISTIC_AUDIT` e ramo Mistral; avaliação do modelo é **sempre** `generate_deterministic_audit_report(...)`.
+- `ai_analysis.py`: removidos `USE_DETERMINISTIC_MATCH_AUDIT` e ramo Mistral; `POST .../audit` usa **sempre** `_validate_match_deterministic`.
+- `main.py`: removidos import/instância `MistralAuditor`, modelo `MatchAuditRequest` e rota `POST /ai/audit-match`.
 
-**Camada 2 — Remoção de cálculo via Mistral:**
-- Removida função `_apply_confidence_adjustment()` de `fixtures_service.py` (modificava 1X2 probs)
-- Removido bloco `ContextAnalyzer` call que ativava o adjustment no pipeline
+**Camada 2 — Fim de cálculo via Mistral no pipeline de fixtures:**
+- Removida `_apply_confidence_adjustment()` e o bloco que chamava `ContextAnalyzer().analyze_match_context` para aplicar ajuste às probs 1X2 (apenas em jogos não finalizados).
 
-**Camada 3 — Limpeza de prompts mortos:**
-- `prompt_templates.py` reduzido a apenas `report_generation_prompt()` (narrativa)
-- Removidos: `_build_feedback_block`, `context_analysis_prompt`, `audit_calculation_prompt`, `audit_post_match_prompt`, `batch_audit_model_evaluation_prompt`, `build_1x2_prompt`, `build_over_under_prompt`, `build_btts_prompt`, `build_corners_prompt`, `_format_market_reference_stats`
+**Camada 3 — Prompts mortos (`prompt_templates.py`):**
+- Ficheiro reduzido a `PromptTemplates.report_generation_prompt()` (relatório narrativo).
+- Removidos prompts de contexto, auditoria de cálculo, auditoria pós-jogo, batch evaluation, mercados 1X2/O-U/BTTS/corners, `_build_feedback_block`, `_format_market_reference_stats`.
 
-**Camada 4 — Contrato documentado:**
-- Adicionada seção "CONTRATO DA MISTRAL AI" em ambos `CLAUDE.md`
-- Define explicitamente o que Mistral FAZ (narrativa) e NÃO FAZ (cálculo)
+**Camada 4 — Contrato em documentação:**
+- Secção **CONTRATO DA MISTRAL AI (#082)** nos dois `CLAUDE.md`: Mistral só narrativa (`mistral_analysis.py` v3.0); não calcula, não audita, não corrige λ/thresholds; fallback sem API não altera o pipeline.
 
-**Camada 5 — Testes de contrato:**
-- 5 testes em `test_mistral_contract_082.py` garantem que código morto não retorne
+**Camada 5 — Testes (`test_mistral_contract_082.py`):**
+- 5 testes de contrato (ausência de `MistralAuditor`, imports limpos, `prompt_templates` só com relatório, etc., conforme implementação).
+
+### Verificação
+
+- `pytest tests/unit/test_mistral_contract_082.py -v -o addopts=` — 5/5 OK.
+- Regressão rápida: `pytest tests/ -k "classifications or metrics_079 or corners_081" -o addopts= --ignore=tests/unit/test_util_service.py` — 15/15 OK (ambiente com falha pré-existente em `test_util_service` / pandas pode ignorar esse módulo).
+- `npm run build` em `frontend/next` — OK.
+- Imports: `backend.routes.ai_analysis`, `cron_handler` carregam sem erro.
 
 ### Lição aprendida
 
-Feature flags são um mecanismo de transição, não permanente. Quando a decisão é tomada (determinístico > LLM para auditorias), o código legado deve ser removido — não deixado atrás de flags. Adicionalmente, funções que modificam probabilidades (como `_apply_confidence_adjustment`) são **cálculo**, independente de serem chamadas por um serviço de AI.
+Feature flags servem para **transição**, não como destino final: após decidir determinístico para auditoria, remover legado Mistral. Qualquer função que **renormalize ou desvie probabilidades** conta como camada de cálculo — não como “só contexto LLM”.
+
+**Registo documentação:** entrada **#082**; commit **`83365e0`** em `main`.
+
+---
+
+## 083 — Post-Match Diagnostic Engine + Version Bump V3.7→V4.0
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/services/post_match_diagnostic.py` (NOVO), `backend/config/version.py` (NOVO), `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `backend/main.py`, `backend/audit.py`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`, `frontend/next/package.json`, `tests/unit/test_diagnostic_083.py` (NOVO)
+**Severidade:** Alta
+**Status:** Implementado
+**Relacionado:** #079 (audit determinístico), #082 (Mistral narrative-only), #080 (classification rename)
+
+### Problema identificado
+
+1. O sistema avaliava picks pós-jogo (acertou/errou, Brier, lambda error) mas não analisava POR QUE errou. Sem decomposição de erros, padrões sistemáticos (lambda over/under, ρ insuficiente, overconfidence) ficavam invisíveis.
+2. A versão exibida ainda era "pro V3.7" apesar de 6 blocos de mudanças fundamentais (Dixon-Coles, calibração per-league, audit determinístico, NB2 corners, classificações renomeadas, Mistral narrative-only).
+3. Lista lateral do dashboard mostrava "SAFE" em vez de "ALTA CONFIANCA" — rename do #080 não aplicado em todos os pontos.
+4. CornerProgressBar mais estreita que o container pai.
+5. Análise AI mostrando "0% confiança" em vez de mensagem amigável quando Mistral indisponível.
+
+### Correções aplicadas
+
+**Camada 1 — Diagnostic Engine (Python puro, 3 componentes):**
+- `decompose_error()` — identifica causa provável de cada erro (10 causas: LAMBDA_OVER/UNDER, RHO_INSUFFICIENT, ODDS_VALUE_TRAP, CALIBRATION_DRIFT, CORNER_MODEL_ERROR, EARLY_SEASON, LOW_SAMPLE, MARKET_MISMATCH, UNKNOWN)
+- `detect_patterns()` — detecta padrões recorrentes (6 tipos: SYSTEMATIC_LAMBDA_OVER/UNDER, DRAW_UNDERESTIMATION, OVERCONFIDENCE, CORNER_SYSTEMATIC_ERROR, HIGH_ODDS_VALUE_TRAP)
+- `generate_diagnostic_narrative()` — texto determinístico por default, Mistral enrichment opcional (#082 compliant)
+- `run_post_match_diagnostic()` — orquestra os 3 componentes
+
+**Camada 2 — Integração no cron_handler:**
+- Coleta `all_evaluated_picks` com lambda, prob, ev, odd por pick
+- Chama `run_post_match_diagnostic()` após avaliação
+- Resultado salvo no audit_results como campo "diagnostic"
+
+**Camada 3 — Endpoint `/api/ai/diagnostic/latest`:**
+- Retorna último diagnóstico pós-jogo disponível
+
+**Camada 4 — Version Bump V3.7→V4.0:**
+- Constante centralizada em `backend/config/version.py` (APP_VERSION = "pro V4.0")
+- `backend/audit.py` importa de version.py
+- `backend/main.py` FastAPI version="4.0.0"
+- Frontend: VERSION_FALLBACK, MatchDetailCard default, package.json
+
+**Camada 5 — Fixes visuais:**
+- CornerProgressBar: `width: 100%` + `box-sizing: border-box` (margin 0)
+- Lista lateral: badges agora usam `getClassificationDisplay()` (label + cor)
+- Match list: prediction badges usam display labels em vez de nomes internos
+- Análise AI: mensagem amigável quando Mistral indisponível (confidence=0 + "indisponivel")
+- Tooltip: `overflow: visible` no `.mdc-prognostico__list`
+- Tab PRO: mostra "Ao Vivo" em jogos live
+
+**Camada 6 — Testes:**
+- 7 testes em `test_diagnostic_083.py`: decomposition, patterns, narrative, orchestration
+
+### Lição aprendida
+
+1. Saber QUE errou (Brier, accuracy) é necessário mas insuficiente. Saber POR QUE errou (decomposição) permite ação corretiva dirigida.
+2. Padrões com N < 3 são ruído — thresholds mínimos evitam falsos positivos.
+3. Mistral como reescritor de texto (não gerador de conclusões) é o uso correto do LLM pós-#082.
+4. Versão deve ser centralizada numa constante única — evita divergência entre backend e frontend.
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

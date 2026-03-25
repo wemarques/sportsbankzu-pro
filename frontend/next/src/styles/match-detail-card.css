@@ -405,6 +405,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: visible;
 }
 
 .mdc-prognostico__item {
@@ -2260,9 +2261,11 @@
 /* === CORNER PROGRESS BAR — refined v077: narrower, subordinate to confidence bar === */
 
 .cpb-root {
-  margin: 0 8px;
+  margin: 0;
   margin-top: 8px;
   padding: 10px 12px;
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--mdc-border);
   border-radius: 6px;

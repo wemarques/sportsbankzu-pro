@@ -55,7 +55,7 @@ import {
   Layers,
   RefreshCw,
 } from "lucide-react";
-const VERSION_FALLBACK = "pro V3.7";
+const VERSION_FALLBACK = "pro V4.0";
 
 /* ── Tipos de Combinadas (duplas) ── */
 interface CombinadaLeg {
@@ -1824,11 +1824,14 @@ export default function Dashboard() {
                           </div>
                           {safePicks.length > 0 && (
                             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
-                              {safePicks.slice(0, 3).map((p, i) => (
-                                <span key={i} style={{ fontSize: "0.65rem", background: "rgba(0,255,136,0.12)", color: "#00ff88", borderRadius: 4, padding: "2px 6px", border: "1px solid rgba(0,255,136,0.3)" }}>
-                                  SAFE: {p.mercado}
-                                </span>
-                              ))}
+                              {safePicks.slice(0, 3).map((p, i) => {
+                                const d = getClassificationDisplay(p.status);
+                                return (
+                                  <span key={i} style={{ fontSize: "0.65rem", background: d.bgColor, color: d.color, borderRadius: 4, padding: "2px 6px", border: `1px solid ${d.color}33` }}>
+                                    {d.label}: {p.mercado}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                           {match.odds?.home > 0 && (
@@ -2345,8 +2348,8 @@ export default function Dashboard() {
                             <div className="st-match-row__predictions">
                               {match.predictions.map((pred, pidx) => (
                                 <div key={pidx} className="st-prediction-badge">
-                                  <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`}>
-                                    {pred.status}
+                                  <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`} style={{ color: getClassificationDisplay(pred.status).color, backgroundColor: getClassificationDisplay(pred.status).bgColor }}>
+                                    {getClassificationDisplay(pred.status).label}
                                   </span>
                                   <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-market">{pred.mercado}</span>

@@ -101,6 +101,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     ev_values = []
     match_results = []
     ou_predictions = []  # #079: for Log-Loss computation
+    all_evaluated_picks = []  # #083: for diagnostic engine
     # Per-league tracking for BUG #069: Brier/SAFE/lambda were global-only
     league_metrics: dict[str, dict] = {}
 
@@ -207,6 +208,21 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             if odd_pick > 0 and prob_pick > 0:
                 ev_pick = (prob_pick * (odd_pick - 1)) - (1 - prob_pick)
                 ev_values.append(ev_pick)
+
+            # #083: collect for diagnostic engine
+            all_evaluated_picks.append({
+                "match_id": m.get("id", f"{home}-{away}"),
+                "league": league,
+                "mercado": merc_name,
+                "acertou": is_correct,
+                "prob": prob_pick * 100 if prob_pick else 50,
+                "ev": (ev_pick or 0) * 100 if ev_pick else 0,
+                "odd": odd_pick,
+                "lambda_home": stats.get("lambdaHome"),
+                "lambda_away": stats.get("lambdaAway"),
+                "draw_prob": stats.get("drawProb", 0),
+                "projected_corners": stats.get("projectedTotalCornersFT"),
+            })
 
             # Log individual pick to audit_results for calibrator training (Gap 3)
             try:
@@ -452,6 +468,24 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     except Exception as e:
         logger.error(f"Batch evaluation failed in cron: {e}")
 
+    # Post-Match Diagnostic Engine (#083)
+    diagnostic_report = None
+    try:
+        from backend.services.post_match_diagnostic import run_post_match_diagnostic
+        diagnostic_report = run_post_match_diagnostic(
+            evaluated_picks=all_evaluated_picks,
+            match_results=match_results,
+            league_metrics=league_metrics,
+            use_mistral_narrative=bool(os.getenv("MISTRAL_API_KEY")),
+        )
+        _diag_summary = diagnostic_report.get("pattern_report", {}).get("summary", {})
+        logger.info(
+            f"Diagnostic: {_diag_summary.get('total_errors', 0)} errors, "
+            f"{len(diagnostic_report.get('pattern_report', {}).get('patterns', []))} patterns detected"
+        )
+    except Exception as e:
+        logger.error(f"Post-match diagnostic failed: {e}")
+
     # Store result
     try:
         audit_db.log_audit_result(
@@ -560,6 +594,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "auto_corrections": auto_applied,
         "rejected_corrections": len(rejected),
         "calibrators_retrained": len(calibrator_results),
+        "diagnostic": diagnostic_report,
     }
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")

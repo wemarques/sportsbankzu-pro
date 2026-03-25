@@ -344,7 +344,7 @@ export default function MatchDetailCard(props: Props) {
   );
 }
 
-function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V3.7", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V4.0", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -580,9 +580,15 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
         <button className={`mdc-tab-btn ${activeTab === "odds" ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("odds")}>
           Cotacoes
         </button>
-        <button className="mdc-tab-btn">
-          <span className="mdc-badge-pro">{version}</span>
-        </button>
+        {match.status === "live" ? (
+          <button className={`mdc-tab-btn ${activeTab === "live" as string ? "mdc-tab-btn--active" : ""}`} onClick={() => setActiveTab("pre-game")}>
+            <span style={{ color: "#ff4444" }}>&#9679;</span> Ao Vivo
+          </button>
+        ) : (
+          <button className="mdc-tab-btn" disabled style={{ opacity: 0.5 }}>
+            <span className="mdc-badge-pro">{version}</span>
+          </button>
+        )}
       </div>
 
       {/* ODDS SECTION — só quando aba Cotacoes ativa */}
@@ -839,7 +845,17 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       </div>
                     )}
 
-                    {!aiLoading && match.aiAnalysis && (
+                    {!aiLoading && match.aiAnalysis && match.aiAnalysis.confidence === 0 && (match.aiAnalysis.summary ?? "").toLowerCase().includes("indispon") && (
+                      <div style={{ padding: 12, color: "#888", fontSize: "0.75rem", textAlign: "center" }}>
+                        <span style={{ color: "#ffd700" }}>&#9888;</span> Analise narrativa temporariamente indisponivel.
+                        <br />
+                        <span style={{ fontSize: "0.65rem" }}>
+                          Os prognosticos e probabilidades NAO sao afetados — sao calculados pelo motor Dixon-Coles.
+                        </span>
+                      </div>
+                    )}
+
+                    {!aiLoading && match.aiAnalysis && !(match.aiAnalysis.confidence === 0 && (match.aiAnalysis.summary ?? "").toLowerCase().includes("indispon")) && (
                       <>
                         {/* Confidence Bar */}
                         <div className="mdc-confidence">

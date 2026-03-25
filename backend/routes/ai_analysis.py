@@ -118,6 +118,27 @@ async def get_batch_analysis(
 
 
 # =====================================================================
+# DIAGNOSTIC ENDPOINT (#083)
+# =====================================================================
+
+@router.get("/diagnostic/latest")
+async def get_latest_diagnostic():
+    """Return the most recent post-match diagnostic report."""
+    try:
+        from backend.audit import get_recent_audit_results
+        results = get_recent_audit_results(days=7, limit=1)
+        if not results:
+            return {"status": "no_diagnostic", "message": "Nenhum diagnostico disponivel"}
+        data = results[0].get("data", {})
+        diagnostic = data.get("diagnostic") if isinstance(data, dict) else None
+        if not diagnostic:
+            return {"status": "no_diagnostic", "message": "Ultimo audit nao contem diagnostico"}
+        return {"status": "ok", "diagnostic": diagnostic}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================================
 # AUDIT / VALIDATION ENDPOINTS (#075)
 # =====================================================================
 
