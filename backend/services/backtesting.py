@@ -14,6 +14,15 @@ logger = logging.getLogger("sportsbankzu.backtesting")
 
 
 # ---------------------------------------------------------------------------
+# Minimum sample thresholds (#079)
+# ---------------------------------------------------------------------------
+MIN_N_BRIER = 20
+MIN_N_SHARPE = 50
+MIN_N_RELIABILITY = 30
+MIN_N_LOG_LOSS = 20
+
+
+# ---------------------------------------------------------------------------
 # 3.1 — Metric functions
 # ---------------------------------------------------------------------------
 
@@ -197,6 +206,85 @@ def compute_hit_rate(picks: list[dict]) -> dict:
         "by_market": by_market,
         "by_league": by_league,
     }
+
+
+def compute_sharpe_ratio(picks: list[dict]) -> dict:
+    """Sharpe Ratio: mean(returns) / std(returns). Target: > 0.5.
+
+    picks: list of {"prob": float, "odd": float, "outcome": bool, "stake": float}
+    Returns {"sharpe": float|None, "n_bets": int, "mean_return": float, "std_return": float}
+    """
+    returns = []
+    for pick in picks:
+        odd = pick.get("odd")
+        outcome = pick.get("outcome")
+        if odd is None or outcome is None:
+            continue
+        if bool(outcome):
+            ret = float(odd) - 1.0  # net return per unit staked
+        else:
+            ret = -1.0
+        returns.append(ret)
+
+    n = len(returns)
+    if n == 0:
+        return {"sharpe": None, "n_bets": 0, "mean_return": 0.0, "std_return": 0.0}
+
+    mean_ret = sum(returns) / n
+    variance = sum((r - mean_ret) ** 2 for r in returns) / n
+    std_ret = math.sqrt(variance) if variance > 0 else 0.0
+
+    sharpe = None
+    if n >= MIN_N_SHARPE and std_ret > 0:
+        sharpe = round(mean_ret / std_ret, 4)
+
+    return {
+        "sharpe": sharpe,
+        "n_bets": n,
+        "mean_return": round(mean_ret, 4),
+        "std_return": round(std_ret, 4),
+    }
+
+
+def compute_hit_rate_by_ev_band(
+    picks: list[dict],
+    bands: list[tuple] | None = None,
+) -> list[dict]:
+    """Hit rate segmented by EV bands.
+
+    picks: list of {"ev_pct": float, "outcome": bool}
+    bands: list of (low, high) tuples. Default: [(0,5), (5,10), (10,20), (20,100)]
+    Returns list of {"band": str, "total": int, "correct": int, "accuracy": float}
+    """
+    if bands is None:
+        bands = [(0, 5), (5, 10), (10, 20), (20, 100)]
+
+    band_data: dict[str, dict] = {}
+    for low, high in bands:
+        label = f"{low}-{high}%"
+        band_data[label] = {"total": 0, "correct": 0}
+
+    for pick in picks:
+        ev = pick.get("ev_pct")
+        outcome = pick.get("outcome")
+        if ev is None or outcome is None:
+            continue
+        ev_val = abs(float(ev))
+        for low, high in bands:
+            if low <= ev_val < high:
+                label = f"{low}-{high}%"
+                band_data[label]["total"] += 1
+                if bool(outcome):
+                    band_data[label]["correct"] += 1
+                break
+
+    result = []
+    for low, high in bands:
+        label = f"{low}-{high}%"
+        d = band_data[label]
+        acc = round(d["correct"] / d["total"], 4) if d["total"] > 0 else 0.0
+        result.append({"band": label, "total": d["total"], "correct": d["correct"], "accuracy": acc})
+    return result
 
 
 # ---------------------------------------------------------------------------

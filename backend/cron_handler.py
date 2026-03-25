@@ -22,6 +22,9 @@ from backend.services.util_service import team_name
 logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
 
+# #079: Use deterministic audit report instead of Mistral LLM
+USE_DETERMINISTIC_AUDIT = True
+
 
 def cron_handler(event, context):
     """
@@ -101,6 +104,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     brier_scores = []
     ev_values = []
     match_results = []
+    ou_predictions = []  # #079: for Log-Loss computation
     # Per-league tracking for BUG #069: Brier/SAFE/lambda were global-only
     league_metrics: dict[str, dict] = {}
 
@@ -263,6 +267,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             actual_over25 = 1 if total_goals > 2.5 else 0
             match_brier = (over25_prob / 100.0 - actual_over25) ** 2
             brier_scores.append(match_brier)
+            ou_predictions.append({"prob": over25_prob / 100.0, "outcome": actual_over25})  # #079
 
         match_results.append({
             "match_id": m.get("id", ""),
@@ -274,12 +279,13 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             "picks_total": match_total,
         })
 
-        # Accumulate per-league metrics (#069)
+        # Accumulate per-league metrics (#069, #079)
         if league:
             lm = league_metrics.setdefault(league, {
                 "correct": 0, "total": 0,
                 "safe_correct": 0, "safe_total": 0,
                 "brier_scores": [], "lambda_errors": [],
+                "ou_predictions": [],  # #079: for per-league Log-Loss
             })
             lm["correct"] += match_correct
             lm["total"] += match_total
@@ -287,6 +293,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                 lm["brier_scores"].append(match_brier)
             if match_lambda_err is not None:
                 lm["lambda_errors"].append(match_lambda_err)
+            if over25_prob is not None:
+                lm["ou_predictions"].append({"prob": over25_prob / 100.0, "outcome": actual_over25})
             # Per-league SAFE: count picks classified as SAFE for this match
             for merc in mercados:
                 ms = merc.get("status", merc.get("pick_type", "NEUTRO"))
@@ -434,14 +442,24 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "dupla_inter_accuracy_pct": inter_acc,
     }
 
-    # ONE Mistral call for model evaluation
+    # #079: Add new metrics to batch_summary
+    from backend.services.backtesting import compute_log_loss
+    batch_log_loss = compute_log_loss(ou_predictions)
+    batch_summary["log_loss"] = batch_log_loss
+
+    # Model evaluation: deterministic (#079) or Mistral (legacy)
     model_evaluation = None
     try:
-        auditor = MistralAuditor()
-        model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
-        logger.info(f"Model evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
+        if USE_DETERMINISTIC_AUDIT:
+            from backend.services.deterministic_audit import generate_deterministic_audit_report
+            model_evaluation = generate_deterministic_audit_report(batch_summary, league_metrics)
+            logger.info(f"Deterministic evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
+        else:
+            auditor = MistralAuditor()
+            model_evaluation = auditor.evaluate_model_from_batch(batch_summary)
+            logger.info(f"Mistral evaluation: {model_evaluation.get('overall_assessment', 'UNKNOWN')}")
     except Exception as e:
-        logger.error(f"Mistral batch evaluation failed in cron: {e}")
+        logger.error(f"Batch evaluation failed in cron: {e}")
 
     # Store result
     try:

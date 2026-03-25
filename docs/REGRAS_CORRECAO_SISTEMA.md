@@ -4486,4 +4486,74 @@ Distribuição ρ saudável: range [-0.17, +0.03], mediana ≈-0.07, sem hits de
 
 ---
 
+## 079 — BLOCO 2: Métricas determinísticas e audit sem LLM
+
+**Data:** 2026-03-24
+**Arquivos afetados:** `backend/services/backtesting.py`, `backend/services/deterministic_audit.py` (novo), `backend/cron_handler.py`, `backend/routes/ai_analysis.py`, `tests/unit/test_metrics_079.py` (novo)
+**Severidade:** Alta
+**Status:** Implementado
+**Relacionado:** #069 / #077 (Brier e métricas per-league no audit), #043 (circuit breaker SAFE), #075 (rotas de auditoria)
+
+### Problema identificado
+
+1. Batch audit usava `MistralAuditor.evaluate_model_from_batch()` — não-determinístico, custo de API, risco de alucinação em `recommended_corrections`.
+2. Audit por jogo usava `MistralAuditor.audit_match_calculation()` — mesmos problemas.
+3. Faltavam métricas **Sharpe** (retornos por pick) e **hit rate por banda de EV** no pacote de backtesting.
+4. `compute_log_loss` e `compute_calibration_bins` já existiam em `backtesting.py` mas o loop do **cron** não alimentava Log-Loss de forma explícita nem consolidava notas per-league no relatório.
+
+### Causa raiz
+
+Uso de LLM onde o produto precisa de **reprodutibilidade**, testes unitários e custo previsível (zero chamadas Mistral nestes dois fluxos quando os flags estão ativos).
+
+### Correções aplicadas
+
+**Camada 1 — Novas métricas (`backtesting.py`):**
+
+- Constantes: `MIN_N_BRIER=20`, `MIN_N_SHARPE=50`, `MIN_N_RELIABILITY=30`, `MIN_N_LOG_LOSS=20`.
+- `compute_sharpe_ratio(picks)`: retorno por unidade apostada — vitória `odd - 1`, derrota `-1`; `sharpe = mean/std` só se `n >= MIN_N_SHARPE` e `std > 0`.
+- `compute_hit_rate_by_ev_band(picks, bands)`: usa **`|ev_pct|`**; bandas default `[(0,5), (5,10), (10,20), (20,100)]` em %.
+
+**Camada 2 — Relatório batch (`deterministic_audit.py`):**
+
+- `generate_deterministic_audit_report(batch_summary, league_metrics)` devolve dict alinhado a **`BatchAuditModelEvaluation`** (Next: `api.ts`), incluindo `ai_self_evaluation` estático (“deterministico — sem LLM”) para não quebrar o painel.
+- **`overall_assessment`:** `CRITICO` se `avg_brier > 0.28` ou `safe_acc < 40` ou `avg_lambda_err > 1.5`; senão `NECESSITA_AJUSTE` se `avg_brier > 0.24` ou `safe_acc < 50` ou `avg_lambda_err > 1.0` ou `overall_acc < 45`; senão `SATISFATORIO`.
+- **`lambda_evaluation`:** status OK / ALTO / CRITICO por faixas de `avg_lambda_err`; `direction` OVER/UNDER só quando `league_metrics[*].lambda_errors_detail` existir (estrutura consumida por `deterministic_audit`; o cron atual popula `lambda_errors` escalar — até estender o payload, `direction` pode ficar `UNKNOWN`).
+- **`threshold_evaluation`:** SAFE OK se `>= 55%`, NEUTRO OK se `>= 45%`.
+- **`market_biases`:** parse de `market_accuracy_text` (linhas `- MERCADO: x/y (z%)`); bias se `N >= 5` e acurácia `< 40%`.
+- **`recommended_corrections` / `model_update_recommendation`:** regras determinísticas + confiança por tamanho de amostra (`overall_total`).
+- **Per-league em `overall_notes`:** Brier médio por liga; Log-Loss por liga com `ou_predictions` e `len >= MIN_N_LOG_LOSS`.
+
+**Camada 3 — Flag cron (`cron_handler.py`):**
+
+- `USE_DETERMINISTIC_AUDIT = True` → chama `generate_deterministic_audit_report`; `False` mantém Mistral.
+- Lista `ou_predictions` no loop (`prob` O/U 2.5, `outcome` 0/1); espelho em `league_metrics[][ou_predictions]`.
+- `batch_summary["log_loss"] = compute_log_loss(ou_predictions)` antes do relatório.
+
+**Camada 4 — Audit por jogo (`ai_analysis.py`):**
+
+- `USE_DETERMINISTIC_MATCH_AUDIT = True` → `_validate_match_deterministic(match_data)` sem Mistral.
+- **1X2:** soma prob ~100 — `WARN` se desvio `> 3`, `FAIL` se `> 5`.
+- **λ:** `FAIL` fora `[0.3, 4.5]`, `WARN` fora `[0.5, 4.0]`.
+- **Over 2.5 / BTTS:** `WARN` se fora `[5, 95]` (percentagem).
+- Resposta: `status` PASS/WARN/FAIL, `checks`, `corrections` (lista, pode vazia), `audit_confidence` fixo 90, `audit_type` deterministic.
+
+**Camada 5 — Testes (`tests/unit/test_metrics_079.py`):**
+
+- 7 testes: Sharpe (positivo com mix win/loss; insuficiente N), bandas EV, log loss, forma do relatório determinístico, caso CRITICO, validação prob sum.
+- Suíte unitária: 80 passando com `--ignore=tests/unit/test_util_service.py` (falha pré-existente de import pandas no ambiente).
+
+### Verificação pós-implantação
+
+- `python -m pytest tests/unit/test_metrics_079.py -v -o addopts=` (pytest.ini pode injetar `--cov` sem plugin instalado).
+- Build Next.js (`frontend/next`) sem alterações de contrato — mesmo shape do relatório.
+- Deploy Lambda `sportsbank-pro-backend` + `GET /health` → `{"status":"ok"}`.
+
+### Lição aprendida
+
+1. LLM não deve substituir validações numéricas reprodutíveis — regras + testes cobrem regressões e eliminam custo de API nestes caminhos.
+2. Flags `USE_DETERMINISTIC_AUDIT` e `USE_DETERMINISTIC_MATCH_AUDIT` permitem rollback imediato para Mistral.
+3. Antes de duplicar métricas, reutilizar `backtesting.py` (`compute_log_loss`, `compute_calibration_bins`, constantes MIN_N).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
