@@ -4795,56 +4795,125 @@ Faltava uma camada **analítica** entre métricas agregadas e ação humana; a v
 ## 084 — Integrar métricas pendentes no cron loop + baseline de odds
 
 **Data:** 2026-03-25
-**Arquivos afetados:** `backend/services/backtesting.py`, `backend/cron_handler.py`, `backend/services/deterministic_audit.py`, `backend/services/post_match_diagnostic.py`, `tests/unit/test_metrics_integration_084.py` (NOVO)
-**Severidade:** Alta (sem isso, métricas dos Blocos 1-6 ficam dormindo)
+**Commit:** `614fcc9`
+**Arquivos afetados:** `backend/services/backtesting.py`, `backend/cron_handler.py`, `backend/services/deterministic_audit.py`, `backend/services/post_match_diagnostic.py`, `tests/unit/test_metrics_integration_084.py` (novo)
+**Severidade:** Alta (sem integração, métricas derivadas do #079 não saem do `backtesting.py` para o audit em produção)
+**Status:** Implementado
+**Relacionado:** #079 (funções de métricas no `backtesting.py`), #083 (`batch_summary` → diagnóstico; passagem explícita para `run_post_match_diagnostic`)
+**Roadmap / prompt:** hotfix métricas no cron — integração pós-Blocos 1–6; mensagem de commit: `feat: integrate all metrics into cron loop + odds baseline comparison (#084)`.
+
+### Problema identificado
+
+1. Quatro funções já existentes no #079 (`compute_sharpe_ratio`, `compute_hit_rate_by_ev_band`, `compute_calibration_bins`, `compute_roi`) **não eram chamadas** no loop de audit do `cron_handler`: o batch acumulava picks mas **não** materializava Sharpe, faixas de EV, calibração agregada nem ROI no `batch_summary`.
+2. Faltava **baseline** explícito: Brier do modelo vs probabilidade implícita da casa (`1/odd`, sem normalização de overround na comparação implementada), para saber se o modelo **melhora** a casa em precisão probabilística.
+3. O diagnóstico (#083) precisava usar o mesmo `batch_summary` para sinalizar quando o modelo perde para a casa (padrão agregado, não só erro por pick).
+
+### Causa raiz
+
+Implementação #079 ficou em biblioteca isolada; o cron só computava métricas já ligadas ao fluxo (ex.: log-loss em O/U) e **não** encadeava o restante. Não havia contrato de “métricas do batch” unificado até o relatório determinístico e o motor de padrões.
+
+### Correções aplicadas
+
+**Camada 1 — `compute_implied_odds_brier()` (`backtesting.py`):**
+- Entrada: lista de `{"odd", "prob" (0–1 ou % tratado no cron), "outcome": bool}`.
+- Saída: `brier_implied`, `brier_model`, `model_vs_house` (positivo = modelo pior que implícita), `model_beats_house`, `n`.
+
+**Camada 2 — `cron_handler.py` (após `batch_summary["log_loss"]`):**
+- **Sharpe:** `all_evaluated_picks` → `{"odd", "outcome", "stake": 1.0}`.
+- **Hit rate por banda de EV:** `ev` + `acertou`.
+- **Calibração / ECE:** `compute_calibration_bins` recebe `list[dict]` com chaves `prob` e `outcome` (assinatura real do módulo — **não** duas listas paralelas). ECE derivado dos bins: média ponderada de `|predicted_avg - actual_avg|`. Se `n < 30`, `ece: null` e nota de amostra insuficiente.
+- **ROI:** `compute_roi` — usar **`roi_pct`** no relatório (o retorno não expõe campo `roi` simples).
+- **Baseline:** `odds_baseline` = `compute_implied_odds_brier(baseline_picks)` a partir de `all_evaluated_picks`.
+- `run_post_match_diagnostic(..., batch_summary=batch_summary)` para alimentar padrões agregados.
+
+**Camada 3 — `deterministic_audit.py`:**
+- `overall_notes` passa a incluir Sharpe (com `n_bets`), ROI (`roi_pct`), ECE + rótulo “bem calibrado / recalibrar”, linha modelo vs casa (Brier + diff), resumo de hit rate por EV (só bandas com `total >= 5`).
+
+**Camada 4 — `post_match_diagnostic.py`:**
+- `detect_patterns(..., batch_summary=...)` e `run_post_match_diagnostic(..., batch_summary=...)`.
+- Padrão **`MODEL_WORSE_THAN_HOUSE`**: `model_vs_house > 0.01`, severidade HIGH.
+- **Correção de fluxo:** nos early returns (`diagnostics` vazio ou **zero erros por pick**), o código **ainda** avalia `batch_summary.odds_baseline` — antes o padrão contra a casa nunca aparecia quando não havia decomposições de erro.
+
+**Camada 5 — Testes `test_metrics_integration_084.py`:**
+- 6 testes (baseline, sharpe, calibração, ROI, padrão `MODEL_WORSE_THAN_HOUSE` com `batch_summary`, etc.).
+
+### Verificação
+
+- `pytest tests/unit/test_metrics_integration_084.py -v -o addopts=` — **6/6** OK.
+- Regressão: `pytest tests/ -k "diagnostic or metrics_079 or metrics_integration or mistral_contract" -v -o addopts=` — **27/27** OK (sessão referida).
+- Imports: `cron_handler`, `backtesting`, `deterministic_audit`, diagnóstico — OK.
+
+### Lição aprendida
+
+1. Funções em `services/` sem chamada no **caminho feliz** do cron/deploy = métricas “fantasma”.
+2. Ao integrar, validar **assinaturas reais** (`compute_calibration_bins`, `compute_roi`) em vez de suposições do prompt.
+3. Padrões agregados (baseline) são **independentes** da lista de erros por pick: early return não pode saltar essa lógica.
+
+**Registo documentação:** entrada **#084**; commit **`614fcc9`** em `main` (`48e10d9..614fcc9`).
+
+---
+
+## 085 — Ativacao de cartoes como mercado de picks + fix classificacao divergente
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `backend/modeling/cards_engine.py` (NOVO), `backend/services/ev_classification.py`, `backend/services/fixtures_service.py`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`, `tests/unit/test_cards_085.py` (NOVO)
+**Severidade:** Media (novo mercado sem impacto nos existentes) + Alta (fix classificacao)
 **Status:** Implementado
 
 ### Problema identificado
 
-4 funções de métricas criadas no #079 (compute_sharpe_ratio, compute_hit_rate_by_ev_band,
-compute_calibration_bins, compute_roi) existiam no backtesting.py mas NÃO eram chamadas
-no cron audit loop. Sem integração, os dados brutos acumulam mas as métricas derivadas
-não são computadas automaticamente.
+1. O sistema tinha dados de cartoes (FootyStats cardsAVG), cards_multiplier calibrado, e tab Cartoes no dashboard — mas NAO gerava picks de cartoes. Infraestrutura existia sem conexao.
 
-Adicionalmente, não existia baseline de comparação com as odds implícitas da casa.
-Sem esse baseline, é impossível saber se o modelo agrega valor sobre a casa de apostas.
+2. O MESMO pick aparecia com classificacoes diferentes na lista lateral (INFORMATIVO) vs MatchDetailCard (VALOR DETECTADO). Causa: `_legacy_status()` downmaps NEUTRO_QUALIFICADO para NEUTRO no campo `status`, mas `classification` mantem o valor real. Sidebar usava `pred.status` (legacy), MatchDetailCard usava `pred.classification || pred.status` (correto).
 
 ### Causa raiz
 
-Funções implementadas em #079 como standalone sem serem integradas no pipeline automático.
-Ausência de baseline de comparação (Brier do modelo vs Brier das odds implícitas).
+1. Cartoes: funcoes de projecao e evaluacao nunca foram criadas no `ev_classification.py`. Calibracao existia (league_calibrator) mas nao consumida.
 
-### Correções aplicadas
+2. Classificacao: migracao incompleta do campo `status` (legacy) para `classification` (novo). Dashboard/page.tsx nao foi atualizado quando MatchDetailCard foi.
 
-**Camada 1 — Baseline de odds implícitas (`backtesting.py`):**
-- `compute_implied_odds_brier()` — compara Brier do modelo vs Brier das probs implícitas (1/odd)
-- `model_beats_house` flag — True quando modelo é mais preciso que a casa
-- `model_vs_house` — diferença direta (negativo = modelo melhor)
+### Correcoes aplicadas
 
-**Camada 2 — Integração no cron_handler:**
-- Sharpe Ratio computado de all_evaluated_picks (odd + outcome)
-- Hit Rate by EV band computado de all_evaluated_picks (ev + outcome)
-- Calibration bins (ECE) computado de ou_predictions (prob + outcome), com MIN_N=30
-- ROI computado de all_evaluated_picks (odd + outcome)
-- Baseline de odds computado de all_evaluated_picks (odd + prob + outcome)
-- Todos incluídos no batch_summary antes do relatório determinístico
+**Camada 1 — Cards Engine (`cards_engine.py`):**
+- `predict_cards()` — projecao Poisson com 4 linhas (2.5, 3.5, 4.5, 5.5)
+- Lambda de 3 camadas: team avg → league avg → default (4.0)
+- cards_multiplier calibrado por liga aplicado ao lambda
+- P(Over) + P(Under) = 1.0 para cada linha
 
-**Camada 3 — Relatório determinístico expandido (`deterministic_audit.py`):**
-- overall_notes inclui Sharpe, ROI, ECE, baseline modelo vs casa, hit rate por EV
+**Camada 2 — Integracao no ev_classification:**
+- Card markets avaliados como MarketOutput com EV, edge, classification
+- Over E Under como candidatos (bidirecional)
+- market_type = "Cards", classificados por classify_market()
 
-**Camada 4 — Padrão MODEL_WORSE_THAN_HOUSE no diagnostic engine (`post_match_diagnostic.py`):**
-- `detect_patterns()` e `run_post_match_diagnostic()` aceitam `batch_summary` como parâmetro
-- Detectado quando Brier do modelo > Brier da casa + 0.01
-- Severidade HIGH — indica que o modelo não agrega valor
+**Camada 3 — API response (fixtures_service.py):**
+- `cardsPredictions` no record (projectedTotalCards, lambda, multiplier, linhas)
+- Picks de cartoes incluidos em mercados
 
-**Camada 5 — Testes `test_metrics_integration_084.py`:**
-- 6 testes cobrindo baseline, sharpe, calibration, ROI, padrão MODEL_WORSE_THAN_HOUSE
+**Camada 4 — Frontend:**
+- `CardsPredictions` type em leagues.ts e MatchDetailCard.tsx
+- Projecao visual na tab Cartoes (cor laranja #ff6b35)
+- Linhas Over com indicacao de probabilidade por cor
 
-### Lição aprendida
+**Camada 5 — Fix classificacao divergente (dashboard/page.tsx):**
+- safePicks filter: `p.status === "SAFE"` → `(p.classification || p.status) === "SAFE"`
+- Sidebar badges: `getClassificationDisplay(p.status)` → `getClassificationDisplay(p.classification || p.status)`
+- Prediction list: `pred.status` → `pred.classification || pred.status`
+- Agora ambos (sidebar e MatchDetailCard) leem o campo `classification` como primario
 
-Criar funções sem integrá-las no fluxo automático é código morto funcional.
-As métricas do #079 ficaram 2 blocos sem serem chamadas. Checklists de integração
-devem ser parte do prompt de implementação.
+**Camada 6 — Testes `test_cards_085.py`:**
+- 7 testes (basico, complementaridade, fallback, multiplier, linhas, high/low lambda)
+
+### Verificacao
+
+- `pytest tests/unit/test_cards_085.py -v -o addopts=` — **7/7** OK.
+- Regressao: 39/39 OK (cards + diagnostic + metrics + mistral_contract + classifications).
+- `npm run build` em `frontend/next` — OK.
+
+### Licao aprendida
+
+1. Poisson e ponto de partida adequado para cartoes — padrão replicavel para novos mercados.
+2. Campos legacy (`status`) e novos (`classification`) devem ser migrados atomicamente em TODOS os consumidores. Deixar migracoes parciais cria divergencias invisiveis.
+3. Infraestrutura existente (calibracao, tab UI) deve ser conectada, nao recriada.
 
 ---
 

@@ -1789,7 +1789,7 @@ export default function Dashboard() {
                       const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
                       const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
                       const highlightReason = getHighlightReason(match);
-                      const safePicks = match.predictions?.filter((p) => p.status === "SAFE") ?? [];
+                      const safePicks = match.predictions?.filter((p) => (p.classification || p.status) === "SAFE") ?? [];
                       return (
                         <div
                           key={match.id}
@@ -1825,7 +1825,7 @@ export default function Dashboard() {
                           {safePicks.length > 0 && (
                             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
                               {safePicks.slice(0, 3).map((p, i) => {
-                                const d = getClassificationDisplay(p.status);
+                                const d = getClassificationDisplay(p.classification || p.status);
                                 return (
                                   <span key={i} style={{ fontSize: "0.65rem", background: d.bgColor, color: d.color, borderRadius: 4, padding: "2px 6px", border: `1px solid ${d.color}33` }}>
                                     {d.label}: {p.mercado}
@@ -2348,8 +2348,8 @@ export default function Dashboard() {
                             <div className="st-match-row__predictions">
                               {match.predictions.map((pred, pidx) => (
                                 <div key={pidx} className="st-prediction-badge">
-                                  <span className={`st-prediction-status st-prediction-status--${pred.status.toLowerCase().replace("*", "-star")}`} style={{ color: getClassificationDisplay(pred.status).color, backgroundColor: getClassificationDisplay(pred.status).bgColor }}>
-                                    {getClassificationDisplay(pred.status).label}
+                                  <span className={`st-prediction-status st-prediction-status--${(pred.classification || pred.status).toLowerCase().replace("*", "-star")}`} style={{ color: getClassificationDisplay(pred.classification || pred.status).color, backgroundColor: getClassificationDisplay(pred.classification || pred.status).bgColor }}>
+                                    {getClassificationDisplay(pred.classification || pred.status).label}
                                   </span>
                                   <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-market">{pred.mercado}</span>

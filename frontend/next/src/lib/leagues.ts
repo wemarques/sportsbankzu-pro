@@ -134,6 +134,7 @@ export type Match = {
     avgGoals: number;
   };
   cornerPredictions?: CornerPredictions;
+  cardsPredictions?: CardsPredictions;
   predictions?: MatchPrediction[];
   source: "footystats";
   lastUpdated: string;
@@ -151,6 +152,14 @@ export type CornerPredictions = {
   recommendedEdge?: number | null;
   noBet?: boolean;
   engineVersion?: string;
+};
+
+export type CardsPredictions = {
+  projectedTotalCards?: number | null;
+  cardsLambda?: number | null;
+  cardsMultiplier?: number | null;
+  modelSource?: string;
+  lines?: Record<string, { prob: number }>;
 };
 
 export type MarketClassification = "SAFE" | "NEUTRO_QUALIFICADO" | "NEUTRO" | "NO_BET";

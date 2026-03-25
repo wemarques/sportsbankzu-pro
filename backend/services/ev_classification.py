@@ -774,6 +774,62 @@ def evaluate_match_markets(
         }
         markets.append(classified)
 
+    # ── Cards Markets (#085) — Poisson-based Over/Under 2.5-5.5 ──
+    try:
+        from backend.modeling.cards_engine import predict_cards, CARD_LINES
+
+        cards_result = predict_cards(
+            home_stats=stats,
+            away_stats=stats,
+            league_id=league_id,
+            league_stats=league_stats if isinstance(league_stats, dict) else None,
+        )
+
+        for line in CARD_LINES:
+            over_prob = cards_result["lines"].get(f"over_{line}", {}).get("prob", 0)
+            under_prob = cards_result["lines"].get(f"under_{line}", {}).get("prob", 0)
+
+            # Over cards
+            if over_prob > 0.10:
+                calibrated_over = calibrate_prob(over_prob, f"Cartoes Over {line}", league_id, regime)
+                over_odd = odds.get(f"cards_over_{line}") or odds.get(f"over{str(line).replace('.', '')}Cards")
+                over_odd = float(over_odd) if over_odd and float(over_odd) > 1.0 else None
+
+                mo = MarketOutput(
+                    market_type="Cards",
+                    selection=f"Over {line}",
+                    raw_probability=over_prob,
+                    calibrated_probability=calibrated_over,
+                    book_odd=over_odd,
+                    odds_available=over_odd is not None,
+                    data_quality_score=quality * 0.85,  # slightly lower — Poisson only, no NB2
+                    source_flags=[*source_flags, "cards_poisson"],
+                    display_label=f"Cartoes Over {line}",
+                )
+                markets.append(classify_market(mo, league_id=league_id))
+
+            # Under cards
+            if under_prob > 0.10:
+                calibrated_under = calibrate_prob(under_prob, f"Cartoes Under {line}", league_id, regime)
+                under_odd = odds.get(f"cards_under_{line}") or odds.get(f"under{str(line).replace('.', '')}Cards")
+                under_odd = float(under_odd) if under_odd and float(under_odd) > 1.0 else None
+
+                mo = MarketOutput(
+                    market_type="Cards",
+                    selection=f"Under {line}",
+                    raw_probability=under_prob,
+                    calibrated_probability=calibrated_under,
+                    book_odd=under_odd,
+                    odds_available=under_odd is not None,
+                    data_quality_score=quality * 0.85,
+                    source_flags=[*source_flags, "cards_poisson"],
+                    display_label=f"Cartoes Under {line}",
+                )
+                markets.append(classify_market(mo, league_id=league_id))
+
+    except Exception as e:
+        logger.debug(f"[cards] Card market evaluation failed: {e}")
+
     # ─── Apply early season penalty ───
     if early_season:
         for m in markets:

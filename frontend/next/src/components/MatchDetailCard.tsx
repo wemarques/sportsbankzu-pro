@@ -270,6 +270,13 @@ export interface MatchDetailData {
     noBet?: boolean;
     engineVersion?: string;
   };
+  cardsPredictions?: {
+    projectedTotalCards?: number | null;
+    cardsLambda?: number | null;
+    cardsMultiplier?: number | null;
+    modelSource?: string;
+    lines?: Record<string, { prob: number }>;
+  };
   predictions?: {
     mercado: string;
     status: string;
@@ -1321,6 +1328,40 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
                             <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCards?.toFixed(1) ?? "-"}</span></span>
                           </div>
+                          {match.cardsPredictions?.projectedTotalCards != null && (
+                            <div style={{ marginTop: 12, padding: 12, background: "rgba(255,107,53,0.08)",
+                              borderRadius: 8, border: "1px solid rgba(255,107,53,0.15)" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                <span style={{ fontSize: "0.7rem", color: "#ff6b35", fontWeight: 600 }}>
+                                  Projecao Cartoes
+                                </span>
+                                <span style={{ fontSize: "0.6rem", padding: "2px 6px", borderRadius: 4,
+                                  background: "rgba(255,107,53,0.15)", color: "#ff6b35" }}>
+                                  {match.cardsPredictions.modelSource}
+                                </span>
+                              </div>
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: "1.3rem", fontWeight: "bold", color: "#ff6b35" }}>
+                                  {match.cardsPredictions.projectedTotalCards?.toFixed(1)}
+                                </div>
+                                <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>
+                                  Total Cartoes Projetados
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-around", marginTop: 8, fontSize: "0.65rem" }}>
+                                {[2.5, 3.5, 4.5, 5.5].map(line => {
+                                  const overProb = match.cardsPredictions?.lines?.[`over_${line}`]?.prob;
+                                  return overProb != null ? (
+                                    <div key={line} style={{ textAlign: "center" }}>
+                                      <div style={{ color: overProb > 55 ? "#00ff88" : overProb > 45 ? "#ffd700" : "#888" }}>
+                                        O{line}: {overProb.toFixed(0)}%
+                                      </div>
+                                    </div>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
                           {(!match.matchStats.homeCardsPerMatch && !match.matchStats.awayCardsPerMatch) && (
                             <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de cartoes nao disponiveis para este jogo.</div>
                           )}
