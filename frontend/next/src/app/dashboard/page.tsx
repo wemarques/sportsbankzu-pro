@@ -9,7 +9,7 @@ import MatchDetailCard, {
   type AuditResult,
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
-import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
+import { AVAILABLE_LEAGUES, type Match, type MatchPrediction } from "@/lib/leagues";
 import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
@@ -356,10 +356,42 @@ function minutesToKickoff(datetime: string): number | null {
   }
 }
 
-function getLowestOddIndex(home: number, draw: number, away: number): number {
-  const vals = [home, draw, away];
-  const min = Math.min(...vals.filter((v) => v > 0));
-  return vals.indexOf(min);
+/** Map pipeline predictions to highlighted odd positions for the active tab (#084). */
+function getHighlightedOddPositions(
+  predictions: MatchPrediction[] | undefined,
+  activeTab: OddsTab,
+): Set<string> {
+  const result = new Set<string>();
+  if (!predictions?.length) return result;
+
+  for (const pred of predictions) {
+    const m = (pred.mercado || "").toLowerCase();
+
+    switch (activeTab) {
+      case "1x2":
+        if (m === "1" || (m.includes("1x2") && (m.includes("home") || m.includes("casa")))) result.add("1");
+        else if (m === "x" || (m.includes("1x2") && (m.includes("draw") || m.includes("empate")))) result.add("X");
+        else if (m === "2" || (m.includes("1x2") && (m.includes("away") || m.includes("fora")))) result.add("2");
+        break;
+      case "double-chance":
+        if (m.includes("dc") && m.includes("1x")) result.add("1X");
+        else if (m.includes("dc") && m.includes("12")) result.add("12");
+        else if (m.includes("dc") && m.includes("x2")) result.add("X2");
+        break;
+      case "btts":
+        if (m.includes("btts") && (m.includes("sim") || m.includes("yes"))) result.add("Sim");
+        else if (m.includes("btts") && (m.includes("não") || m.includes("nao") || m.includes("no"))) result.add("Nao");
+        break;
+      case "goals": {
+        const gm = m.match(/(\d+\.?\d*)/);
+        if (!gm) break;
+        if ((m.includes("over") || m.includes("mais")) && m.includes("gol")) result.add(`O ${gm[1]}`);
+        break;
+      }
+      // cards and corners tabs show stats (Casa/Fora/Liga), not odds — skip
+    }
+  }
+  return result;
 }
 
 function getHighlightReason(match: Match): string {
@@ -2144,7 +2176,7 @@ export default function Dashboard() {
                       const h = safeOdd(match.odds?.home);
                       const d = safeOdd(match.odds?.draw);
                       const a = safeOdd(match.odds?.away);
-                      const lowestIdx = getLowestOddIndex(h, d, a);
+                      const hlSet = getHighlightedOddPositions(match.predictions, oddsTab);
                       const isSelected = match.id === selectedMatchId;
                       const liveInfo = computeLiveInfo(match);
                       const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
@@ -2240,15 +2272,15 @@ export default function Dashboard() {
                           ) : null}
                           {oddsTab === "1x2" && (
                             <div className="st-match-row__odds">
-                              <div className={`st-match-row__odd ${lowestIdx === 0 ? "st-match-row__odd--highlight" : ""}`}>
+                              <div className={`st-match-row__odd ${hlSet.has("1") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">1</span>
                                 <span className="st-match-row__odd-value">{h > 0 ? h.toFixed(2) : "\u2014"}</span>
                               </div>
-                              <div className={`st-match-row__odd ${lowestIdx === 1 ? "st-match-row__odd--highlight" : ""}`}>
+                              <div className={`st-match-row__odd ${hlSet.has("X") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">X</span>
                                 <span className="st-match-row__odd-value">{d > 0 ? d.toFixed(2) : "\u2014"}</span>
                               </div>
-                              <div className={`st-match-row__odd ${lowestIdx === 2 ? "st-match-row__odd--highlight" : ""}`}>
+                              <div className={`st-match-row__odd ${hlSet.has("2") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">2</span>
                                 <span className="st-match-row__odd-value">{a > 0 ? a.toFixed(2) : "\u2014"}</span>
                               </div>
@@ -2260,15 +2292,15 @@ export default function Dashboard() {
                             const dcx2 = d > 0 && a > 0 ? parseFloat((1 / (1 / d + 1 / a)).toFixed(2)) : 0;
                             return (
                               <div className="st-match-row__odds">
-                                <div className="st-match-row__odd">
+                                <div className={`st-match-row__odd ${hlSet.has("1X") ? "st-match-row__odd--highlight" : ""}`}>
                                   <span className="st-match-row__odd-label">1X</span>
                                   <span className="st-match-row__odd-value">{dc1x > 0 ? dc1x.toFixed(2) : "-"}</span>
                                 </div>
-                                <div className="st-match-row__odd">
+                                <div className={`st-match-row__odd ${hlSet.has("12") ? "st-match-row__odd--highlight" : ""}`}>
                                   <span className="st-match-row__odd-label">12</span>
                                   <span className="st-match-row__odd-value">{dc12 > 0 ? dc12.toFixed(2) : "-"}</span>
                                 </div>
-                                <div className="st-match-row__odd">
+                                <div className={`st-match-row__odd ${hlSet.has("X2") ? "st-match-row__odd--highlight" : ""}`}>
                                   <span className="st-match-row__odd-label">X2</span>
                                   <span className="st-match-row__odd-value">{dcx2 > 0 ? dcx2.toFixed(2) : "-"}</span>
                                 </div>
@@ -2277,11 +2309,11 @@ export default function Dashboard() {
                           })()}
                           {oddsTab === "btts" && (
                             <div className="st-match-row__odds">
-                              <div className="st-match-row__odd">
+                              <div className={`st-match-row__odd ${hlSet.has("Sim") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">Sim</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsYes) > 0 ? safeOdd(match.odds?.bttsYes).toFixed(2) : "-"}</span>
                               </div>
-                              <div className="st-match-row__odd">
+                              <div className={`st-match-row__odd ${hlSet.has("Nao") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">Nao</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsNo) > 0 ? safeOdd(match.odds?.bttsNo).toFixed(2) : "-"}</span>
                               </div>
@@ -2293,15 +2325,15 @@ export default function Dashboard() {
                           )}
                           {oddsTab === "goals" && (
                             <div className="st-match-row__odds">
-                              <div className="st-match-row__odd">
+                              <div className={`st-match-row__odd ${hlSet.has("O 1.5") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">O 1.5</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.over15) > 0 ? safeOdd(match.odds?.over15).toFixed(2) : "-"}</span>
                               </div>
-                              <div className="st-match-row__odd st-match-row__odd--highlight">
+                              <div className={`st-match-row__odd ${hlSet.has("O 2.5") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">O 2.5</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.over25) > 0 ? safeOdd(match.odds?.over25).toFixed(2) : "-"}</span>
                               </div>
-                              <div className="st-match-row__odd">
+                              <div className={`st-match-row__odd ${hlSet.has("O 3.5") ? "st-match-row__odd--highlight" : ""}`}>
                                 <span className="st-match-row__odd-label">O 3.5</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.over35) > 0 ? safeOdd(match.odds?.over35).toFixed(2) : "-"}</span>
                               </div>

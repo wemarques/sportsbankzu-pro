@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import ClassificationBadge from "./ClassificationBadge";
+import StandingsModal from "./StandingsModal";
 import { getClassificationDisplay } from "@/lib/classifications";
 import "../styles/match-detail-card.css";
 
@@ -367,8 +368,6 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
   const [comparativeTab, setComparativeTab] = useState<string>("gols");
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
   const [showStandings, setShowStandings] = useState(false);
-  const [standingsData, setStandingsData] = useState<any[]>([]);
-  const [standingsLoading, setStandingsLoading] = useState(false);
   const [aiTab, setAiTab] = useState<"resumo" | "pontos" | "glossario">("resumo");
   const [glossarySearch, setGlossarySearch] = useState("");
 
@@ -506,74 +505,21 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
           ) : null}
 
           {match.leagueId && (
-            <span
+            <button
               className="mdc-link-small"
-              style={{ cursor: "pointer", textDecoration: "underline", marginTop: 4, display: "inline-block" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (showStandings) {
-                  setShowStandings(false);
-                  return;
-                }
-                setStandingsLoading(true);
-                setShowStandings(true);
-                fetch(`/api/standings?league=${encodeURIComponent(match.leagueId!)}`)
-                  .then((r) => r.json())
-                  .then((data) => {
-                    const rows = data.standings ?? [];
-                    if (rows.length === 0) setShowStandings(false);
-                    else setStandingsData(rows);
-                  })
-                  .catch(() => setShowStandings(false))
-                  .finally(() => setStandingsLoading(false));
-              }}
-            >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
+              style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", marginTop: 4, display: "inline-block", color: "inherit", font: "inherit", padding: 0 }}
+              onClick={(e) => { e.stopPropagation(); setShowStandings(true); }}
+            >Ver classificacao</button>
           )}
 
-          {showStandings && (
-            <div className="mdc-standings" style={{ width: "100%", marginTop: 8, marginBottom: 8, maxHeight: 300, overflowY: "auto", fontSize: "0.75rem" }}>
-              {standingsLoading ? (
-                <div style={{ textAlign: "center", padding: 12 }}><Loader2 size={16} className="animate-spin" style={{ display: "inline-block" }} /> Carregando...</div>
-              ) : standingsData.length > 0 ? (
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-                      <th style={{ padding: "4px 6px", textAlign: "left" }}>#</th>
-                      <th style={{ padding: "4px 6px", textAlign: "left" }}>Time</th>
-                      <th style={{ padding: "4px 6px" }}>J</th>
-                      <th style={{ padding: "4px 6px" }}>V</th>
-                      <th style={{ padding: "4px 6px" }}>E</th>
-                      <th style={{ padding: "4px 6px" }}>D</th>
-                      <th style={{ padding: "4px 6px" }}>Pts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {standingsData.map((team: any, idx: number) => {
-                      const name = team.cleanName || team.name || team.team_name || `Time ${idx + 1}`;
-                      const isHighlighted = name === match.homeTeam || name === match.awayTeam;
-                      return (
-                        <tr key={idx} style={{
-                          borderBottom: "1px solid rgba(255,255,255,0.05)",
-                          background: isHighlighted ? "rgba(255,165,0,0.15)" : "transparent",
-                          fontWeight: isHighlighted ? 600 : 400,
-                        }}>
-                          <td style={{ padding: "3px 6px", textAlign: "left" }}>{team.position ?? idx + 1}</td>
-                          <td style={{ padding: "3px 6px", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{name}</td>
-                          <td style={{ padding: "3px 6px" }}>{team.played ?? team.matchesPlayed ?? "-"}</td>
-                          <td style={{ padding: "3px 6px" }}>{team.won ?? team.wins ?? "-"}</td>
-                          <td style={{ padding: "3px 6px" }}>{team.drawn ?? team.draws ?? "-"}</td>
-                          <td style={{ padding: "3px 6px" }}>{team.lost ?? team.losses ?? "-"}</td>
-                          <td style={{ padding: "3px 6px", fontWeight: 700 }}>{team.points ?? team.pts ?? "-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{ textAlign: "center", padding: 12, opacity: 0.6 }}>Classificacao indisponivel</div>
-              )}
-            </div>
-          )}
+          <StandingsModal
+            isOpen={showStandings}
+            onClose={() => setShowStandings(false)}
+            leagueName={match.league ?? ""}
+            leagueId={match.leagueId ?? ""}
+            homeTeam={match.homeTeam}
+            awayTeam={match.awayTeam}
+          />
 
           <h3 className="mdc-team-name">{match.awayTeam}</h3>
         </div>

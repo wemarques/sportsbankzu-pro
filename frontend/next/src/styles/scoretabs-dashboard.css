@@ -844,6 +844,19 @@
 .st-match-row__odd--highlight {
   background: var(--st-odd-highlight);
   border-color: rgba(0, 255, 136, 0.2);
+  position: relative;
+}
+
+.st-match-row__odd--highlight::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #00ff88;
+  box-shadow: 0 0 4px rgba(0, 255, 136, 0.5);
 }
 
 .st-match-row__favorite {

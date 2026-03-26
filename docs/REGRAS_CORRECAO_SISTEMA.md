@@ -4919,153 +4919,198 @@ Implementação #079 ficou em biblioteca isolada; o cron só computava métricas
 
 ---
 
-## 085b — Avaliação pós-jogo de cartões + NB2 engine v2 + deploy verification
+## 085b — Avaliação pós-jogo de cartões + motor NB2 (v2) + verificação de deploy
 
 **Data:** 2026-03-25
-**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/routes/ai_analysis.py`,
-`backend/cron_handler.py`, `backend/services/ev_classification.py`,
-`backend/services/fixtures_service.py`, `frontend/next/src/lib/localAudit.ts`,
-`frontend/next/src/lib/leagues.ts`, `frontend/next/src/app/dashboard/page.tsx`,
-`frontend/next/src/components/MatchDetailCard.tsx`, `CLAUDE.md`
-**Severidade:** Crítica (sem isso, 100% dos picks de cartões = ERROU — padrão #006)
+**Commit:** `2674c8e`
+**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/routes/ai_analysis.py`, `backend/cron_handler.py`, `backend/services/ev_classification.py`, `backend/services/fixtures_service.py`, `frontend/next/src/lib/localAudit.ts`, `frontend/next/src/lib/leagues.ts`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/components/MatchDetailCard.tsx`, `CLAUDE.md` (cópia em `sportsbankzu-pro/`)
+**Severidade:** Crítica (padrão #006: picks de cartão sem ramo de avaliação → feedback de auditoria destrutivo; cron com ImportError)
 **Status:** Implementado
-**Relacionado:** #006 (escanteios ERROU), #020 (normalizeMatch omitiu corners), #085 (cards engine v1)
+**Relacionado:** #006 (escanteios “ERROU” por falta de avaliação), #020 (`normalizeMatch` omitiu stats), #085 (cartões como mercado v1 Poisson)
+**Roadmap / prompt:** `PROMPT-DEPLOY-085B.md`; mensagem de commit: `feat: NB2 cards engine v2 + post-match eval + deploy hotfix (#085b)` (12 ficheiros no push referido).
 
 ### Problema identificado
 
-O #085 ativou cartões como mercado de picks mas NÃO implementou:
-1. Avaliação pós-jogo (evaluatePick + cron audit) — padrão #006
-2. Funções `_evaluate_pick_deterministic` e `_get_all_finished_matches` importadas pelo cron_handler mas inexistentes em ai_analysis.py — cron audit QUEBRADO
-3. normalizeMatch não copiava campos de cartões reais (padrão #020)
+1. **#085** ativou cartões como picks mas faltava **avaliação pós-jogo** em backend e frontend (equivalente ao que #006 documentou para cantos).
+2. `cron_handler` importava `_evaluate_pick_deterministic` e `_get_all_finished_matches` de `ai_analysis.py`, mas as funções **não existiam** → **ImportError** no audit por cron (só manifesto no EventBridge/Lambda).
+3. `normalizeMatch` não copiava amarelos/vermelhos reais para `stats` → audit local e UI sem `totalCards` fiável (eco do #020 para cantos).
+4. Quarto ponto de UI: `getHighlightReason` ainda filtrava `p.status === "SAFE"` em vez de `p.classification || p.status`.
 
 ### Causa raiz
 
-As funções de avaliação determinística (`_evaluate_pick_deterministic`, `_get_all_finished_matches`) eram importadas pelo `cron_handler.py` de `backend.routes.ai_analysis` mas nunca foram implementadas. O cron audit falhava com ImportError.
+Mercado novo sem checklist de “ponta a ponta”: engine + classificação + API + `evaluatePick` (TS) + avaliador determinístico (Python) + `normalizeMatch` + tipos. Imports do cron **não** são validados no CI se o módulo não for importado nos testes.
 
-### Correções aplicadas
+### Correções aplicadas (estado no commit `2674c8e`)
 
-**Camada 1 — Cards Engine v2 NB2 (`cards_engine.py`):**
-- Redesenho de Poisson simples (#085) para NB2 (sobredispersão via scipy.stats.nbinom)
-- Lambda split home/away (visitantes recebem ~55% dos cartões)
-- Ajuste por faltas/jogo (elasticidade +6% por falta acima da média)
-- Fator de árbitro quando disponível (API-Football)
-- Perfil disciplinar da liga (ratio vs média global)
-- Fallback puro Poisson quando scipy indisponível
-- Referência: Titman, Costain, Ridall & Gregory (2015), JRSS-A
+**Camada 1 — `cards_engine.py` NB2 (v2, pré-#086):**
+- Evolução Poisson (#085) → **NB2** (`scipy.stats.nbinom`) com sobredispersão quando há variância.
+- Split λ casa/fora, ajuste por faltas vs média da liga, fator de árbitro, fator de perfil disciplinar da liga; fallback Poisson se scipy indisponível.
+- **Nota:** em **#086** removeram-se `foul_adjustment` e `league_discipline_factor` do motor (dupla contagem com `cardsPerMatch`); ver entrada **#086** para o modelo v3 e Layer scipy.
 
-**Camada 2 — Funções de avaliação (`ai_analysis.py`):**
-- Criação de `_evaluate_pick_deterministic(pick, actual_result)` — suporta 1X2, Over/Under gols, BTTS, DC, Escanteios, Cartões
-- Criação de `_get_all_finished_matches(date_filter, before_time_brt)` — busca jogos finalizados em todas as ligas
+**Camada 2 — `ai_analysis.py`:**
+- `_evaluate_pick_deterministic(pick, actual_result)` — 1X2, O/U golos, BTTS, DC, escanteios, **cartões** (threshold no texto do mercado).
+- `_get_all_finished_matches(date_filter, before_time_brt)` — jogos finalizados por liga.
 
-**Camada 3 — Backend cron (`cron_handler.py`):**
-- Extração de actual_cards: homeYellowCards + awayYellowCards + homeRedCards + awayRedCards
-- `total_cards` adicionado ao `actual_result` dict
+**Camada 3 — `cron_handler.py`:**
+- `total_cards` = amarelos + vermelhos (stats ou aliases `home_team_yellow_cards`, etc.).
+- `actual_result["total_cards"]`; log `[audit] ... cards hy=...` quando existem mercados com `CART`/`CARD`.
 
-**Camada 4 — Frontend evaluatePick (`localAudit.ts`):**
-- Parâmetro `totalCards?` adicionado a `evaluatePick()`
-- Branch para CART/CARD antes do loop de gols
-- `MatchActualResult` inclui `totalCards`
-- Todas as chamadas a `evaluatePick` atualizadas com `totalCards`
+**Camada 4 — `localAudit.ts`:**
+- `evaluatePick(..., totalCards?)`; ramo CART/CARD (Over `total > threshold`, Under `total < threshold`).
+- `MatchActualResult.totalCards`; duplas e `runLocalAudit` passam `totalCards`.
 
-**Camada 5 — normalizeMatch (`dashboard/page.tsx`):**
-- Copia homeYellowCards, awayYellowCards, homeRedCards, awayRedCards
+**Camada 5 — `dashboard/page.tsx`:**
+- `normalizeMatch`: `homeYellowCards`, `awayYellowCards`, `homeRedCards`, `awayRedCards` (API/stats + aliases Footy).
+- **Highlight / SAFE:** `safePreds` com `(p.classification || p.status) === "SAFE"` (alinhado ao #085).
 
-**Camada 6 — Tipos TypeScript (`leagues.ts`, `MatchDetailCard.tsx`):**
-- Campos de cartões reais no tipo `Match.stats`
-- `CardsPredictions` expandido com NB2 fields (overdispersion, lambdaHome/Away, adjustments)
+**Camada 6 — Tipos (`leagues.ts`, `MatchDetailCard.tsx`):**
+- Stats reais de cartões; `CardsPredictions` com campos NB2 (`cardsLambdaHome/Away`, `overdispersion`, `adjustments`, …).
 
-**Camada 7 — ev_classification.py:**
-- `data_quality_score` adaptativo: NB2=`quality * 0.75`, Poisson fallback=`quality * 0.65`
-- `source_flags` inclui modelo usado e ajustes aplicados
+**Camada 7 — `ev_classification.py`:**
+- `data_quality_score` adaptativo: NB2 ×0.75, fallback Poisson ×0.65; `source_flags` com `cards_{model_source}` e (até #086) flags de ajuste.
 
-**Camada 8 — fixtures_service.py:**
-- `cardsPredictions` expandido com campos NB2 (overdispersion, lambdaHome/Away, adjustments)
+**Camada 8 — `fixtures_service.py`:**
+- `cardsPredictions` com campos NB2 adicionais.
 
-**Camada 9 — CLAUDE.md:**
-- Atualizado "Cards (0.5-5.5)" → "Cards Over/Under (2.5-5.5)"
+**Camada 9 — `CLAUDE.md`:**
+- Mercados: "Cards (0.5-5.5)" → **"Cards Over/Under (2.5-5.5)"**.
 
-### Verificação
+### Verificação (sessão pós-implementação #085b, antes de #086)
 
-- `pytest tests/unit/test_cards_085b.py -v` — 10/10 OK
-- `pytest tests/unit/test_cards_085.py -v` — 7/7 OK (backward compat)
-- `pytest tests/ -k "classifications or corners_081"` — 8/8 OK
-- `npm run build` em `frontend/next` — OK
-- Imports: `cards_engine`, `_evaluate_pick_deterministic`, `_get_all_finished_matches`, `cron_handler` — OK
+- `pytest tests/unit/test_cards_085b.py -v -o addopts=` — **10/10** OK.
+- `pytest tests/unit/test_cards_085.py` + `test_metrics_integration_084.py` — OK.
+- `pytest tests/ -k "classifications or corners_081" -o addopts=` — **8/8** OK (`--ignore` em módulos quebrados se necessário).
+- `npm run build` em `frontend/next` — OK.
+- Deploy checklist referido: bug “or com 0” nos quatro campos de cartões, `safe_prob` cartões, Lambda **Active** / **Successful**, `GET /health` → `{"status":"ok"}`.
 
 ### Lição aprendida
 
-1. REGRAS #006 já documentava o padrão destrutivo. Ao adicionar mercado novo, SEMPRE atualizar: engine + ev_classification + fixtures_service + evaluatePick frontend + evaluatePick backend + normalizeMatch + tipos TS. Checklist de 7 pontos obrigatório.
-2. Funções importadas por cron_handler devem existir ANTES do merge — o import `from backend.routes.ai_analysis import _evaluate_pick_deterministic` falhava silenciosamente (só executado pelo EventBridge).
-3. Modelo NB2 com covariáveis (faltas, árbitro, perfil liga) é upgrade incremental factível sem infraestrutura nova; fallback Poisson mantém robustez quando scipy ausente.
+1. Checklist #006 alargado: **backend determinístico + cron + normalizeMatch + localAudit + tipos** para cada mercado novo.
+2. Imports usados só no **cron/Lambda** devem ser cobertos por teste de import ou job de smoke.
+3. Covariáveis que duplicam sinal já presente em `cardsPerMatch` inflacionam λ — corrigido formalmente em **#086** (mesmo princípio do #053).
+
+**Registo documentação:** entrada **#085b**; commit **`2674c8e`** (`fe553b1..2674c8e`).
 
 ---
 
-## 086 — Fix dupla contagem lambda cartões + Lambda Layer scipy
+## 086 — Dupla contagem no λ de cartões (Dixon-Coles relativo) + Lambda Layer scipy
 
 **Data:** 2026-03-25
-**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/services/ev_classification.py`,
-`CLAUDE.md`, `tests/unit/test_cards_085b.py`
-**Severidade:** Crítica (lambda inflado +22% a +114% em produção)
+**Commit:** `a111c7f`
+**Arquivos afetados:** `backend/modeling/cards_engine.py`, `backend/services/ev_classification.py`, `CLAUDE.md` (`sportsbankzu-pro/` e, quando sincronizado, raiz do monorepo), `tests/unit/test_cards_085b.py`
+**Severidade:** Crítica (λ de cartões inflado ~+22% a +114% em produção; NB2 inoperante sem scipy no runtime)
 **Status:** Implementado
-**Relacionado:** #053 (double-counting gols), #085b (NB2 engine), #078v (bug or-com-zero)
+**Relacionado:** #053 (double-counting em λ de golos), #085b (NB2 v2 que introduziu multiplicadores redundantes), #078v (bug `or` com zero nos contadores de cartões no audit — corrigido no âmbito do deploy #085b)
 
 ### Problema identificado
 
-1. Lambda de cartões inflado por dupla contagem: `homeCardsPerMatch` JÁ embute
-   perfil da liga e faltas do time. Aplicar `league_discipline_factor` e
-   `foul_adjustment` por cima multiplicava o efeito 2-3x.
-   Evidência: Argentina lambda=11.4 vs média=5.33 (+114%).
-
-2. scipy ausente no Lambda → NB2 inativo (modelSource=poisson_fallback).
+1. **Dupla contagem:** `homeCardsPerMatch` / médias observadas já embutem contexto de liga e ritmo; `foul_adjustment` e `league_discipline_factor` em cima multiplicavam o efeito. Ex.: Argentina λ **11.4** vs média de liga **5.33** (~+114%).
+2. **scipy ausente no pacote Lambda** → NB2 caía em `poisson_fallback` (`modelSource` não nb2).
 
 ### Causa raiz
 
-Padrão idêntico ao #053 (double-counting do fator defensivo nos lambdas de gols).
-Dados observacionais (cardsPerMatch) já incorporam as condições que os fatores
-multiplicativos tentavam capturar.
+Mesmo padrão do #053: usar multiplicadores “explicativos” em cima de estatísticas que **já** condicionam o mesmo sinal.
 
 ### Correções aplicadas
 
-**Camada 1 — Modelo Dixon-Coles para cartões (cards_engine.py v3):**
-- Lambda = league_avg/2 × home_relative + league_avg/2 × away_relative
-- home_relative = homeCardsPerMatch / leagueAvgCards
-- Removidos: `_compute_foul_adjustment`, `_compute_league_discipline_factor`,
-  `HOME_CARD_SHARE`, `AWAY_CARD_SHARE`, `FOUL_CARD_ELASTICITY`
-- Mantido: `referee_factor` (único ajuste externo legítimo)
+**Camada 1 — `cards_engine.py` v3 (força relativa estilo Dixon-Coles):**
+- λ agregado a partir de `league_avg/2 × home_relative + league_avg/2 × away_relative` com `home_relative = homeCardsPerMatch / leagueAvgCards` (e análogo visitante).
+- Removidos: `_compute_foul_adjustment`, `_compute_league_discipline_factor`, `HOME_CARD_SHARE`, `AWAY_CARD_SHARE`, `FOUL_CARD_ELASTICITY`.
+- **Mantido:** `referee_factor` como único ajuste externo explícito legítimo.
 
-**Camada 2 — Lambda Layer scipy:**
-- Layer `scipy-numpy-layer:2` criada com scipy para Python 3.11
-- Atachada ao Lambda sportsbank-pro-backend
-- numpy excluído da Layer (já no ZIP de deploy)
-- NB2 ativo em produção: modelSource=nb2
+**Camada 2 — Lambda Layer (scipy):**
+- Layer publicada (ex.: `scipy-numpy-layer:2`, scipy para Python 3.11), anexada a `sportsbank-pro-backend`.
+- **numpy** fora da Layer quando já vai no ZIP de deploy (evitar duplicação e limite de 250 MB descomprimido).
+- Produção: `modelSource=nb2` com Layer ativa.
 
-**Camada 3 — Testes atualizados (test_cards_085b.py):**
-- Removidos: `test_foul_adjustment_increases_lambda`, `test_split_lambda_away_higher`,
-  `test_adjustments_in_result` (referenciavam campos removidos)
-- Novos: `test_relative_strength_lambda`, `test_league_avg_bounds_lambda`,
-  `test_no_foul_or_league_adjustment`, `test_referee_is_only_external_adjustment`,
-  `test_average_team_produces_league_avg_lambda`
+**Camada 3 — `ev_classification.py`:**
+- Remoção do `source_flags` `foul_adjusted` (ajuste de faltas deixou de existir no motor).
 
-**Camada 4 — Documentação:**
-- CLAUDE.md: Lambda Layer docs com instruções de recriação e ARN atual
-- ev_classification.py: removido flag `foul_adjusted` dos source_flags
+**Camada 4 — Testes `test_cards_085b.py`:**
+- Novos: `test_relative_strength_lambda`, `test_league_avg_bounds_lambda`, `test_no_foul_or_league_adjustment`, `test_referee_is_only_external_adjustment`, `test_average_team_produces_league_avg_lambda`.
+- Removidos/substituídos testes que dependiam de foul/split antigo ou de `adjustments` completos obsoletos.
 
-### Validação em produção
+**Camada 5 — Documentação `CLAUDE.md`:**
+- Secção da Layer scipy: ARN, recriação e notas de deploy.
 
-- Argentina (Riestra vs San Lorenzo): lambda 11.4 → 3.8 (ratio 0.71 vs liga)
-- Colombia (América de Cali vs Llaneros): lambda 7.454 → 2.9 (ratio 0.47 vs liga)
-- modelSource=nb2 em ambos (scipy Layer funcional)
+### Verificação
+
+- `pytest tests/unit/test_cards_085b.py -v -o addopts=` — **11/11** OK.
+- Regressão: `pytest tests/ -k "cards or diagnostic or metrics or classifications" -v -o addopts=` — **45/45** OK (sessão referida; ignorar módulos quebrados se aplicável).
+- `npm run build` em `frontend/next` — OK.
+- `scripts/deploy_lambda.py` — deploy OK; `aws lambda get-function-configuration` → **State=Active**, **LastUpdateStatus=Successful**.
+- `GET https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/health` → `{"status":"ok"}`.
+
+### Validação em produção (amostra)
+
+- **Argentina** (Riestra vs San Lorenzo): λ **11.4 → 3.8** (≈0,71× média liga 5.33); `modelSource=nb2`.
+- **Colômbia** (América de Cali vs Llaneros): λ **7,454 → 2,9** (≈0,47× média); `modelSource=nb2`.
+- `adjustments` sem `foul_adjustment` / `league_discipline_factor`; apenas `referee_factor` quando aplicável.
 
 ### Lição aprendida
 
-1. Dados observacionais (cardsPerMatch, goalsPerMatch) JÁ incorporam as condições
-   do ambiente. Multiplicadores externos que medem as mesmas condições causam
-   inflação exponencial. REGRAS #053 já documentava isso para gols — o mesmo
-   princípio aplica para qualquer mercado.
-2. Lambda Layers são a solução correta para dependências pesadas (scipy ~30MB comprimido)
-   em Lambda: custo zero, separação limpa do código, reutilizável entre funções.
-3. numpy não deve ser duplicado na Layer se já está no ZIP de deploy — o limite
-   de 250MB uncompressed inclui Layer + código.
+1. Dados observacionais por jogo (`cardsPerMatch`, golos, etc.) já “preçam” o ambiente; multiplicadores paralelos geram **inflação de λ** se não forem independentes.
+2. **Lambda Layers** para dependências pesadas (scipy ~tens MB) — separação do ZIP de aplicação e reutilização.
+3. Não duplicar **numpy** na Layer se já está no artefacto de deploy.
+
+**Registo documentação:** entrada **#086**; commit **`a111c7f`** (`2674c8e..a111c7f`).
+
+---
+
+## 087 — Modal "Ver classificacao" com tabela de standings
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `frontend/next/src/components/StandingsModal.tsx` (NOVO), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Baixa
+**Status:** Implementado
+
+### Problema identificado
+
+O link "Ver classificacao" no painel lateral direito renderizava uma tabela inline com colunas limitadas (sem GP, GC, SG), highlight laranja nos times, e sem comportamento de modal (sem overlay, sem fechar com Escape).
+
+### Correções aplicadas
+
+1. **StandingsModal.tsx** — Novo componente com overlay escuro, tabela completa (Pos, Time, P, V, E, D, GP, GC, SG, Pts), zone coloring (top 4 verde, rebaixamento vermelho), highlight verde nos times do jogo, fechamento com Escape/click overlay.
+2. **MatchDetailCard.tsx** — Substituiu rendering inline por `<StandingsModal>`, removeu states `standingsData` e `standingsLoading` (modal gerencia internamente).
+3. **match-detail-card.css** — Estilos do modal: overlay, header, tabela responsiva, zones, highlight.
+
+### Lição aprendida
+
+Componentes modais devem gerenciar seu próprio estado de loading/data internamente para manter o componente pai limpo.
+
+---
+
+## 088 — Highlight de odds vinculado ao prognostico do pipeline
+
+**Data:** 2026-03-25
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/styles/scoretabs-dashboard.css`
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+
+Na aba esquerda do dashboard, o highlight verde nas odds estava incorreto:
+- **1X2**: destacava a menor odd (favorito matematico), nao o prognostico do pipeline.
+- **Dupla Chance, BTTS, Gols**: nenhum highlight.
+- **Gols**: Over 2.5 hardcoded como highlight em todos os jogos.
+
+### Causa raiz
+
+Funcao `getLowestOddIndex()` usava logica de menor odd (favorito implicito), ignorando completamente os prognosticos do pipeline (`match.predictions`).
+
+### Correções aplicadas
+
+1. **Removida** `getLowestOddIndex()` e substituida por `getHighlightedOddPositions()` — retorna `Set<string>` com as posicoes a destacar baseadas em `match.predictions[].mercado`.
+2. **1X2**: highlight so quando predictions contem "1X2 Home/Draw/Away" ou "1"/"X"/"2".
+3. **Dupla Chance**: highlight em "1X"/"12"/"X2" quando predictions contem "DC 1X/12/X2".
+4. **BTTS**: highlight em "Sim"/"Nao" quando predictions contem "BTTS Sim/Nao".
+5. **Gols**: removido hardcoded Over 2.5; agora highlight so na linha do prediction (ex: "O 2.5" para "Over 2.5 gols").
+6. **Cards/Corners**: sem alteracao (mostram stats, nao odds).
+7. **CSS**: adicionado indicador verde (`::after` dot) na odd com prognostico.
+
+### Lição aprendida
+
+Highlight visual deve refletir a saida do pipeline, nao heuristicas simples (menor odd). Jogos sem prediction para o mercado ativo nao devem ter nenhuma odd destacada.
 
 ---
 

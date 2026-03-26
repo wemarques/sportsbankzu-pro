@@ -2615,3 +2615,159 @@
     padding: 3px 8px;
   }
 }
+
+/* === STANDINGS MODAL (#083) === */
+.standings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.standings-modal {
+  background: var(--mdc-bg-card, #141414);
+  border: 1px solid var(--mdc-border, #2a2a2a);
+  border-radius: var(--mdc-radius-lg, 12px);
+  max-width: 700px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.standings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--mdc-bg-secondary, #111111);
+  border-bottom: 1px solid var(--mdc-border, #2a2a2a);
+}
+
+.standings-header__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--mdc-text-primary, #f0f0f0);
+}
+
+.standings-header__close {
+  background: none;
+  border: none;
+  color: var(--mdc-text-secondary, #999);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+.standings-header__close:hover {
+  color: var(--mdc-text-primary, #f0f0f0);
+  background: rgba(255,255,255,0.08);
+}
+
+.standings-body {
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.standings-loading,
+.standings-error {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--mdc-text-secondary, #999);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.standings-table-wrap {
+  overflow-x: auto;
+}
+
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+.standings-th {
+  padding: 6px 8px;
+  color: var(--mdc-text-muted, #666);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--mdc-border, #2a2a2a);
+}
+.standings-th--left { text-align: left; }
+.standings-th--team { min-width: 100px; }
+.standings-th--pts { color: var(--mdc-gold, #ffd700); }
+
+.standings-row {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
+}
+.standings-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.standings-td {
+  padding: 5px 8px;
+  color: var(--mdc-text-primary, #f0f0f0);
+  font-variant-numeric: tabular-nums;
+}
+.standings-td--pos {
+  text-align: left;
+  color: var(--mdc-text-secondary, #999);
+  font-weight: 600;
+  width: 28px;
+}
+.standings-td--team {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+.standings-td--pts {
+  color: var(--mdc-gold, #ffd700);
+  font-weight: 700;
+}
+
+/* Zone coloring */
+.standings-row--champions .standings-td--pos {
+  color: #00cc66;
+}
+.standings-row--relegation .standings-td--pos {
+  color: #ff4444;
+}
+
+/* Match teams highlight */
+.standings-row--highlight {
+  border-left: 3px solid #00ff88;
+  background: rgba(0, 255, 136, 0.06);
+}
+.standings-row--highlight .standings-td--team {
+  color: #00ff88;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .standings-modal {
+    max-width: 95vw;
+    max-height: 85vh;
+  }
+  .standings-td, .standings-th {
+    padding: 4px 5px;
+    font-size: 0.72rem;
+  }
+  .standings-td--team {
+    max-width: 100px;
+  }
+}
