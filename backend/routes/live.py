@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from backend.services.api_football_client import APIFootballClient
-from backend.config.leagues_config import get_api_football_league_id
+from backend.config.leagues_config import get_api_football_league_id, get_season_for_league
 
 logger = logging.getLogger("sportsbankzu.live")
 router = APIRouter(prefix="/live", tags=["live"])
@@ -177,7 +177,7 @@ def live_standings(
     if af_league_id is None:
         return {"standings": [], "error": f"League '{league}' not mapped to API-Football"}
 
-    season_year = season or _current_season()
+    season_year = season or get_season_for_league(league)
 
     try:
         raw = _afc.get_standings(af_league_id, season_year)

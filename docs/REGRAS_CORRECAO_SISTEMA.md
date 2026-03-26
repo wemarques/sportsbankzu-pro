@@ -5057,26 +5057,36 @@ Mesmo padrão do #053: usar multiplicadores “explicativos” em cima de estat�
 
 ---
 
-## 087 — Modal "Ver classificacao" com tabela de standings
+## 087 — Standings indisponivel para ligas calendario-ano (Colombia, Argentina)
 
 **Data:** 2026-03-25
-**Arquivos afetados:** `frontend/next/src/components/StandingsModal.tsx` (NOVO), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/styles/match-detail-card.css`
-**Severidade:** Baixa
-**Status:** Implementado
+**Arquivos afetados:** `backend/routes/live.py`, `backend/routes/fixtures.py`, `frontend/next/src/app/api/standings/route.ts`
+**Severidade:** Alta
+**Status:** Corrigido
 
 ### Problema identificado
 
-O link "Ver classificacao" no painel lateral direito renderizava uma tabela inline com colunas limitadas (sem GP, GC, SG), highlight laranja nos times, e sem comportamento de modal (sem overlay, sem fechar com Escape).
+"Ver classificacao" mostrava "Classificacao indisponivel" para Campeonato Colombiano e Argentina Primera Division.
+
+### Causa raiz
+
+Duas falhas independentes:
+
+1. **Season errado no `/live/standings`**: `_current_season()` retornava `2025` para todas as ligas (regra europeia: mes < 7 → ano anterior). Ligas calendario-ano (Argentina, Colombia, Brasil) precisam de `2026` em marco 2026. A funcao `get_season_for_league()` em `leagues_config.py` ja tratava isso corretamente mas nao era usada.
+
+2. **Null safety no `/standings` (FootyStats)**: `data.get("league_table", [])` retornava `None` quando a API FootyStats retornava `league_table: null` (valor explicito), causando `'NoneType' object is not iterable`.
+
+3. **Frontend proxy errado**: `/api/standings/route.ts` chamava `/standings` (FootyStats, quebrado) em vez de `/live/standings` (API-Football, funcional).
 
 ### Correções aplicadas
 
-1. **StandingsModal.tsx** — Novo componente com overlay escuro, tabela completa (Pos, Time, P, V, E, D, GP, GC, SG, Pts), zone coloring (top 4 verde, rebaixamento vermelho), highlight verde nos times do jogo, fechamento com Escape/click overlay.
-2. **MatchDetailCard.tsx** — Substituiu rendering inline por `<StandingsModal>`, removeu states `standingsData` e `standingsLoading` (modal gerencia internamente).
-3. **match-detail-card.css** — Estilos do modal: overlay, header, tabela responsiva, zones, highlight.
+1. **live.py** — `season_year = season or get_season_for_league(league)` em vez de `_current_season()`. Agora usa CALENDAR_YEAR_LEAGUES para resolver a season correta.
+2. **fixtures.py** — `table = (raw.get("league_table") or [])` — guard contra `null` explicito da API.
+3. **standings/route.ts** — Proxy agora chama `/live/standings` como fonte primaria com normalizacao de campos (`rank→position`, `teamName→name`). Fallback para FootyStats `/standings`.
 
 ### Lição aprendida
 
-Componentes modais devem gerenciar seu próprio estado de loading/data internamente para manter o componente pai limpo.
+Funcoes de resolucao de season devem ser centralizadas (`get_season_for_league`) e nao reimplementadas em cada modulo. Ligas calendario-ano devem SEMPRE ser testadas separadamente de ligas europeias.
 
 ---
 

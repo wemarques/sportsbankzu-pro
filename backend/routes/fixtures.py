@@ -1631,7 +1631,7 @@ def standings(league: str = Query("")) -> Dict[str, Any]:
             return {"standings": [], "error": "Falha ao buscar classificação"}
         # FootyStats returns a dict with league_table, all_matches_table_*, etc.
         raw = data.get("data", {})
-        table = raw.get("league_table", []) if isinstance(raw, dict) else raw
+        table = (raw.get("league_table") or []) if isinstance(raw, dict) else (raw or [])
         # Normalize field names for the frontend
         standings_list = []
         for team in table:
