@@ -44,6 +44,14 @@ CORRELATION_MATRIX: Dict[frozenset, float] = {
     frozenset(["Over 2.5", "Corners Over 9.5"]): 0.15,
     frozenset(["BTTS Yes", "Corners Over 9.5"]): 0.15,
     frozenset(["Under 3.5", "Corners Over 9.5"]): 0.10,
+
+    # Cards — nested lines are highly correlated (#089)
+    frozenset(["Cartoes Under 2.5", "Cartoes Under 3.5"]): 0.92,
+    frozenset(["Cartoes Under 3.5", "Cartoes Under 4.5"]): 0.92,
+    frozenset(["Cartoes Under 4.5", "Cartoes Under 5.5"]): 0.92,
+    frozenset(["Cartoes Over 2.5", "Cartoes Over 3.5"]): 0.85,
+    frozenset(["Cartoes Over 3.5", "Cartoes Over 4.5"]): 0.85,
+    frozenset(["Cartoes Over 4.5", "Cartoes Over 5.5"]): 0.85,
 }
 
 # Explicitly redundant pairs — ALWAYS block together in multiples
@@ -57,6 +65,13 @@ REDUNDANT_PAIRS: Set[frozenset] = {
     frozenset(["1X2 Home", "DC X2"]),        # contradictory
     frozenset(["BTTS Yes", "BTTS No"]),      # contradictory
     frozenset(["Over 2.5", "Under 2.5"]),    # contradictory
+    # Cards — nested lines (#089)
+    frozenset(["Cartoes Under 2.5", "Cartoes Under 3.5"]),
+    frozenset(["Cartoes Under 3.5", "Cartoes Under 4.5"]),
+    frozenset(["Cartoes Under 4.5", "Cartoes Under 5.5"]),
+    frozenset(["Cartoes Over 2.5", "Cartoes Over 3.5"]),
+    frozenset(["Cartoes Over 3.5", "Cartoes Over 4.5"]),
+    frozenset(["Cartoes Over 4.5", "Cartoes Over 5.5"]),
 }
 
 # Maximum correlation allowed for 2 picks in same game

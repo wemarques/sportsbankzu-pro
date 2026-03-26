@@ -32,6 +32,9 @@ MERCADOS_VALIDOS: List[str] = [
     'Escanteios Under 4.5', 'Escanteios Under 5.5', 'Escanteios Under 6.5',
     'Escanteios Under 7.5', 'Escanteios Under 8.5', 'Escanteios Under 9.5',
     'Escanteios Under 10.5', 'Escanteios Under 11.5', 'Escanteios Under 12.5',
+    # Cards markets (#085, #089)
+    'Cartoes Over 2.5', 'Cartoes Over 3.5', 'Cartoes Over 4.5', 'Cartoes Over 5.5',
+    'Cartoes Under 2.5', 'Cartoes Under 3.5', 'Cartoes Under 4.5', 'Cartoes Under 5.5',
 ]
 
 

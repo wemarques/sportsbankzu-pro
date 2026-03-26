@@ -253,3 +253,42 @@ Toda alteração significativa DEVE ser registrada em `docs/REGRAS_CORRECAO_SIST
 ```
 
 Se a alteração não justifica uma entrada no REGRAS (ex: typo, formatação), não precisa de registro. Mas qualquer mudança em lógica de cálculo, thresholds, pesos, pipeline, prompt Mistral, ou infraestrutura DEVE ter entrada.
+
+## Regra de Finalização Obrigatória (Pós-Alteração)
+
+**TODA alteração no sistema DEVE seguir estes passos antes de ser considerada concluída:**
+
+### 1. Sincronizar arquivos espelhados
+```bash
+# REGRAS — manter cópia idêntica nos dois diretórios
+cp sportsbankzu-pro/docs/REGRAS_CORRECAO_SISTEMA.md docs/REGRAS_CORRECAO_SISTEMA.md
+
+# CLAUDE.md — manter cópia idêntica nos dois diretórios
+cp sportsbankzu-pro/CLAUDE.md CLAUDE.md
+```
+
+### 2. Commit no repositório local
+```bash
+cd sportsbankzu-pro
+git add -A
+git commit -m "feat/fix/refactor: descrição curta (#NNN)"
+```
+
+### 3. Push para GitHub
+```bash
+git push origin main
+```
+
+### 4. Deploy (se backend alterado)
+```bash
+python scripts/deploy_lambda.py
+```
+
+### 5. Validação pós-deploy
+```bash
+curl -s https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/health
+```
+
+**Atalho:** execute `bash scripts/finalize.sh` para rodar os passos 1-3 automaticamente.
+
+**Quando NÃO executar:** alterações exclusivamente em documentação local (ex: notas pessoais) que não afetam o sistema.

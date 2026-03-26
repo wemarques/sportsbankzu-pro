@@ -481,6 +481,15 @@ def date_range(filter_type: str) -> Tuple[datetime, datetime]:
         start_brt = (now_brt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
         return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
+    # Try to parse ISO date string (e.g. "2026-03-25") as a BRT calendar day
+    try:
+        parsed = datetime.strptime(filter_type, "%Y-%m-%d")
+        start_brt = parsed.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=BRT)
+        end_brt = start_brt + timedelta(days=1) - timedelta(milliseconds=1)
+        return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)
+    except ValueError:
+        pass
+    # Default: 7-day window from today
     start_brt = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     end_brt = start_brt + timedelta(days=7) - timedelta(milliseconds=1)
     return start_brt.astimezone(tz.utc), end_brt.astimezone(tz.utc)

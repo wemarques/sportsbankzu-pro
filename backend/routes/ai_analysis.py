@@ -490,14 +490,19 @@ def _get_all_finished_matches(
 
     base = get_data_dir()
 
-    # Determine date(s) to query
+    # Determine date(s) to query — use BRT calendar day, not UTC,
+    # so late-night BRT matches (21:00-23:59 BRT = 00:00-02:59 UTC+1)
+    # stay on the correct BRT date (#089).
+    from datetime import timezone as _tz_mod
+    _BRT = _tz_mod(_td(hours=-3))
+    _now_brt = _dt.now(_BRT)
     if date_filter == "yesterday":
-        dates = [(_dt.utcnow() - _td(days=1)).strftime("%Y-%m-%d")]
+        dates = [(_now_brt - _td(days=1)).strftime("%Y-%m-%d")]
     elif date_filter == "today":
-        dates = [_dt.utcnow().strftime("%Y-%m-%d")]
+        dates = [_now_brt.strftime("%Y-%m-%d")]
     elif date_filter == "week":
         dates = [
-            (_dt.utcnow() - _td(days=i)).strftime("%Y-%m-%d")
+            (_now_brt - _td(days=i)).strftime("%Y-%m-%d")
             for i in range(7)
         ]
     else:

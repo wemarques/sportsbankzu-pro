@@ -5124,4 +5124,110 @@ Highlight visual deve refletir a saida do pipeline, nao heuristicas simples (men
 
 ---
 
+## 089 — Cron auditava jogos da data errada + cartões rejeitados pelo validador
+
+**Data:** 2026-03-26
+**Arquivos afetados:** `backend/main.py`, `backend/routes/ai_analysis.py`, `backend/modeling/market_validator.py`, `tests/unit/test_cron_date_range_089.py` (novo)
+**Severidade:** Crítica (cron produzia diagnósticos sobre jogos errados — TODAS as ligas afetadas)
+**Status:** Corrigido
+**Relacionado:** #083 (diagnostic engine), #084 (métricas no cron), #085/#085b (cartões)
+
+### Problema identificado
+
+1. **Cron de diagnóstico pós-jogo auditava jogos da data errada.** Evidência do CloudWatch (2026-03-25T23:00 UTC): `audited_matches: 4`, `overall_accuracy: 0.0`, `model_assessment: "CRITICO"` — mas 0 erros no diagnóstico. Ligas Premier League e Championship retornavam `0 records for date '2026-03-24'`.
+2. **Mercados de cartões rejeitados como inválidos** por `MERCADOS_VALIDOS` em toda execução do cron: `Prognóstico INVÁLIDO: ['Cartoes Under 2.5', 'Cartoes Under 3.5', ...]`.
+3. **Regra EventBridge `today_audit` não criada** — handler em `cron_handler.py:42-44` suportava a ação mas nenhuma regra EventBridge existia para dispará-la. Jogos terminados 21:00-23:59 BRT nunca eram auditados.
+
+### Causa raiz
+
+**Bug 1 — `date_range()` não parseava datas ISO:**
+- `_get_all_finished_matches("yesterday")` computava `dates = ["2026-03-24"]` (data UTC)
+- Passava `"2026-03-24"` para `_process_single_league` → `build_records_from_matches(date_filter="2026-03-24")`
+- `date_range("2026-03-24")` NÃO reconhecia datas ISO → caía no default (janela 7 dias a partir de hoje)
+- Jogos de ontem ficavam FORA dessa janela → filtrados → 0 records para maioria das ligas
+- Ligas que retornavam records tinham jogos de temporadas novas caindo acidentalmente na janela errada
+
+**Bug 2 — `_get_all_finished_matches` usava UTC em vez de BRT:**
+- `_dt.utcnow() - 1 day` pode divergir do "ontem BRT" entre 21:00-23:59 BRT (00:00-02:59 UTC)
+- Exemplo: às 23:00 UTC March 25, `utcnow - 1 day` = March 24 UTC, mas "ontem BRT" = March 24 BRT (correto neste caso, mas diverge em edge cases perto da meia-noite UTC)
+
+**Bug 3 — Cartões não adicionados ao `MERCADOS_VALIDOS`:**
+- #085 ativou cartões em `ev_classification.py` gerando mercados `"Cartoes Over/Under X.5"`
+- Mas `market_validator.py:MERCADOS_VALIDOS` não foi atualizado → todos rejeitados pelo validador
+
+### Correções aplicadas
+
+**Camada 1 — `date_range()` em `main.py`:**
+- Adicionado parsing de datas ISO (`%Y-%m-%d`) antes do fallback 7-day
+- A data é interpretada como dia calendário BRT (00:00-23:59 BRT) convertido para UTC
+- Keywords "today", "yesterday", "tomorrow" continuam funcionando normalmente
+
+**Camada 2 — `_get_all_finished_matches()` em `ai_analysis.py`:**
+- Trocou `_dt.utcnow()` por `_dt.now(BRT)` para computar datas no calendário BRT
+- Garante que "yesterday" = ontem BRT, não ontem UTC
+
+**Camada 3 — `MERCADOS_VALIDOS` em `market_validator.py`:**
+- Adicionados 8 mercados de cartões: `Cartoes Over/Under 2.5/3.5/4.5/5.5`
+
+**Camada 4 — Regra EventBridge `today_audit`:**
+- Documentada a criação necessária: `cron(45 2 * * ? *)` = 02:45 UTC = 23:45 BRT
+- Input: `{"source": "eventbridge", "action": "today_audit"}`
+- Captura jogos que terminam 20:00-23:45 BRT no mesmo dia
+
+**Camada 5 — Testes (`test_cron_date_range_089.py`):**
+- 7 testes: parsing ISO, regressão "yesterday"/"today", fallback default, inclusão de jogo 22:00 BRT, exclusão de jogo 00:30 BRT (dia seguinte), cartões no validador
+
+### Verificação
+
+- `pytest tests/unit/test_cron_date_range_089.py -v` — 7/7 OK
+- Regressão: `pytest tests/ -k "diagnostic or metrics or cards or classifications or mistral_contract"` — 50/50 OK
+- CloudWatch: próxima execução do cron (23:00 UTC) deve retornar jogos corretos para o dia
+
+### Lição aprendida
+
+1. `date_range()` era usado em dois contextos com expectativas diferentes: frontend (keywords "today"/"yesterday") e cron (datas ISO computadas). O gap entre os dois nunca foi testado.
+2. Checklist #085 faltou atualizar `MERCADOS_VALIDOS` — mesmo padrão do #006 (mercado ativado sem checklist completo).
+3. Regras EventBridge documentadas em comentários de código (`cron(45 2 * * ? *)`) mas nunca criadas → precisam de checklist de infra separado.
+
+---
+
+## 089b — Dedup de linhas de cartões (4 linhas → 1 melhor)
+
+**Data:** 2026-03-26
+**Arquivos afetados:** `backend/services/market_service.py`, `backend/services/correlation_matrix.py`
+**Severidade:** Média (UI poluída com 4 linhas redundantes de cartões INFORMATIVO)
+**Status:** Corrigido
+**Relacionado:** #089 (cartões adicionados ao validador), #085 (cartões como mercado)
+
+### Problema identificado
+
+Após #089 adicionar cartões ao `MERCADOS_VALIDOS`, a UI passou a mostrar 4 linhas de cartões por jogo (Cartoes Under 2.5, 3.5, 4.5, 5.5 todas como INFORMATIVO), poluindo a lista de picks. Antes do #089, eram rejeitadas pelo validador e não apareciam.
+
+### Causa raiz
+
+`_dedup_market_groups()` em `market_service.py` deduplicava Over/Under gols (1 melhor) e Escanteios (1 melhor), mas **não incluía cartões** — caiam no bucket `others` sem dedup. Igualmente, `correlation_matrix.py` não tinha correlações para linhas aninhadas de cartões.
+
+### Correções aplicadas
+
+**Camada 1 — `_dedup_market_groups()` (`market_service.py`):**
+- Adicionados buckets `cards_over` e `cards_under`
+- Detecção: `"Cartoes Over"` e `"Cartoes Under"` no nome do mercado
+- `_pick_best()` seleciona 1 melhor por direção (mesma lógica de Escanteios e gols)
+
+**Camada 2 — `correlation_matrix.py`:**
+- Correlações altas (0.85-0.92) para linhas aninhadas de cartões Over e Under
+- Pares redundantes adicionados ao `REDUNDANT_PAIRS`
+
+### Verificação
+
+- Teste local: 5 picks (4 cartões + 1 Under gols) → 2 picks (1 cartão melhor + 1 Under gols)
+- Regressão: 51/51 testes OK
+- Deploy Lambda OK
+
+### Lição aprendida
+
+Checklist para mercado novo: engine + classificação + validador + **dedup** + correlações + avaliação + tipos frontend. #085 faltou validador (#089), e #089 faltou dedup (#089b).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

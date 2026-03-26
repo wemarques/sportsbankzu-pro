@@ -37,7 +37,7 @@ def _pick_best(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 
 def _dedup_market_groups(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keep only the single best market per group (goals-over, goals-under, corners).
+    """Keep only the single best market per group (goals-over, goals-under, corners, cards).
 
     The v2 pipeline generates all lines (e.g. Under 2.5 + 3.5 + 4.5, Over 8.5 + 9.5)
     but the frontend should show only the best line per group.
@@ -45,6 +45,8 @@ def _dedup_market_groups(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     corners = []
     goals_over = []
     goals_under = []
+    cards_over = []
+    cards_under = []
     others = []
 
     for m in mercados:
@@ -55,19 +57,23 @@ def _dedup_market_groups(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             goals_over.append(m)
         elif nome.startswith("Under") and "gols" in nome:
             goals_under.append(m)
+        elif "Cartoes Over" in nome or "Cartões Over" in nome:
+            cards_over.append(m)
+        elif "Cartoes Under" in nome or "Cartões Under" in nome:
+            cards_under.append(m)
         else:
             others.append(m)
 
     result = list(others)
-    best_corner = _pick_best(corners)
-    best_over = _pick_best(goals_over)
-    best_under = _pick_best(goals_under)
-    if best_corner:
-        result.append(best_corner)
-    if best_over:
-        result.append(best_over)
-    if best_under:
-        result.append(best_under)
+    for best in (
+        _pick_best(corners),
+        _pick_best(goals_over),
+        _pick_best(goals_under),
+        _pick_best(cards_over),
+        _pick_best(cards_under),
+    ):
+        if best:
+            result.append(best)
     return result
 
 
