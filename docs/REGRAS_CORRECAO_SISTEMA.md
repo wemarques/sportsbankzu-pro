@@ -5230,4 +5230,50 @@ Checklist para mercado novo: engine + classificação + validador + **dedup** + 
 
 ---
 
+## 090 — Fallback Mistral retornava HTTP 400 + standings highlight quebrado
+
+**Data:** 2026-03-26
+**Arquivos afetados:** `backend/routes/ai_analysis.py`, `backend/services/mistral_analysis.py`, `frontend/next/src/components/MatchDetailCard.tsx`
+**Severidade:** Média
+**Status:** Corrigido
+**Relacionado:** #082 (contrato Mistral narrativa-only), #083 (aviso "indispon" no frontend), #087 (standings revert)
+
+### Problema identificado
+
+1. **Aba Análise AI (Mistral)** mostrava erro na montagem do texto. Quando `MISTRAL_API_KEY` ausente no Lambda, `MistralAnalysisService.__init__` lançava `ValueError` → rota retornava HTTP 400 → frontend recebia erro → aba ficava vazia (nem fallback, nem conteúdo).
+2. **Standings "Ver Classificação"**: times do jogo não eram destacados. Comparação de nomes era case-sensitive (`===`) e falhava quando FootyStats/API-Football retornava nome com capitalização diferente (ex: "argentinos juniors" vs "Argentinos Juniors"). Além disso, cor era laranja em vez de cinza claro.
+
+### Causa raiz
+
+1. O endpoint `GET /api/ai/match/{id}/analysis` capturava `ValueError` como HTTP 400 (erro do cliente), mas a ausência de API key é um problema de infraestrutura — deveria retornar um fallback gracioso, não um erro.
+2. `_get_fallback_analysis()` era método de instância, mas sem instância disponível quando `__init__` falha. Não havia caminho para gerar fallback sem API key.
+3. Comparação de nomes no standings usava `===` (case-sensitive, sem fuzzy matching).
+
+### Correções aplicadas
+
+**Camada 1 — `ai_analysis.py`:**
+- `ValueError` e `Exception` agora retornam `_get_fallback_static()` em vez de HTTP 400/500.
+- Log: `logger.warning` para fallback, `logger.error` para exceções gerais.
+
+**Camada 2 — `mistral_analysis.py`:**
+- Novo `@staticmethod _get_fallback_static()` + `_build_fallback()` — gera AIAnalysisResponse com `confidence=0`, `resumo_analitico` contendo "indisponível" (para que frontend detecte corretamente), e 5 `key_points` informativos.
+- Fallback funciona sem instanciar o service (sem depender de API key).
+
+**Camada 3 — `MatchDetailCard.tsx` (standings):**
+- Comparação de nomes agora case-insensitive + fuzzy (`.toLowerCase()` + `.includes()` bidirecional).
+- Cor de highlight: `rgba(200,200,200,0.18)` (cinza claro) em vez de `rgba(255,165,0,0.15)` (laranja).
+
+### Verificação
+
+- Backend: `GET /api/ai/match/test-123/analysis/legacy` → `confidence=0, summary="Análise indisponível..."`, 5 key_points — OK
+- Frontend build: `npm run build` OK
+- Regressão: 51/51 testes OK
+
+### Lição aprendida
+
+1. Endpoints que dependem de serviços externos (API key, rede) devem SEMPRE retornar fallback, nunca HTTP 4xx/5xx para o frontend. O contrato #082 (Mistral só narrativa) implica que ausência de Mistral NÃO pode quebrar a UI.
+2. Comparação de nomes entre fontes diferentes (FootyStats, API-Football, frontend) deve ser case-insensitive + fuzzy, não exata.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

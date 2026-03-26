@@ -550,11 +550,17 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   <tbody>
                     {standingsData.map((team: any, idx: number) => {
                       const name = team.cleanName || team.name || team.team_name || `Time ${idx + 1}`;
-                      const isHighlighted = name === match.homeTeam || name === match.awayTeam;
+                      const nameLower = name.toLowerCase();
+                      const isHighlighted = nameLower === (match.homeTeam || "").toLowerCase()
+                        || nameLower === (match.awayTeam || "").toLowerCase()
+                        || (match.homeTeam || "").toLowerCase().includes(nameLower)
+                        || nameLower.includes((match.homeTeam || "").toLowerCase())
+                        || (match.awayTeam || "").toLowerCase().includes(nameLower)
+                        || nameLower.includes((match.awayTeam || "").toLowerCase());
                       return (
                         <tr key={idx} style={{
                           borderBottom: "1px solid rgba(255,255,255,0.05)",
-                          background: isHighlighted ? "rgba(255,165,0,0.15)" : "transparent",
+                          background: isHighlighted ? "rgba(200,200,200,0.18)" : "transparent",
                           fontWeight: isHighlighted ? 600 : 400,
                         }}>
                           <td style={{ padding: "3px 6px", textAlign: "left" }}>{team.position ?? idx + 1}</td>

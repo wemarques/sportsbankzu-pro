@@ -50,10 +50,15 @@ async def get_match_analysis(
         return analysis
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Dados invalidos: {e}")
+        # MISTRAL_API_KEY ausente ou liga nao identificada — retornar fallback
+        # em vez de HTTP 400, para que o frontend mostre mensagem amigável (#090)
+        logger.warning(f"[ai_analysis] Fallback para {match_id}: {e}")
+        from backend.services.mistral_analysis import MistralAnalysisService as _MAS
+        return _MAS._get_fallback_static()
     except Exception as e:
         logger.error(f"[ai_analysis] Erro analise match {match_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro analise: {e}")
+        from backend.services.mistral_analysis import MistralAnalysisService as _MAS
+        return _MAS._get_fallback_static()
 
 
 @router.get("/match/{match_id}/analysis/legacy")

@@ -579,6 +579,55 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
             last_updated=datetime.now().strftime('%d/%m/%Y às %H:%M')
         )
 
+    @staticmethod
+    def _get_fallback_static() -> AIAnalysisResponse:
+        """Fallback estático sem precisar instanciar o service (usado quando API key ausente)."""
+        return MistralAnalysisService._build_fallback()
+
+    @staticmethod
+    def _build_fallback() -> AIAnalysisResponse:
+        """Constrói resposta fallback padrão."""
+        return AIAnalysisResponse(
+            resumo_analitico=(
+                "Análise indisponível. "
+                "Tente novamente em alguns instantes."
+            ),
+            probabilidades=ProbabilidadesModel(
+                vitoria_casa=0.33, empate=0.34, vitoria_fora=0.33
+            ),
+            double_chance=DoubleChanceModel(
+                dc_1x=0.67, dc_12=0.66, dc_x2=0.67
+            ),
+            mercado_gols=MercadoGolsModel(
+                over_0_5=0.0, over_1_5=0.0, over_2_5=0.0,
+                over_3_5=0.0, over_4_5=0.0,
+                under_2_5=0.0, under_3_5=0.0, under_4_5=0.0,
+                btts_sim=0.0, btts_nao=0.0
+            ),
+            escanteios=EscanteiosModel(
+                over_8_5=0.0, over_9_5=0.0, over_10_5=0.0,
+                over_11_5=0.0, under_8_5=0.0, under_10_5=0.0,
+                under_11_5=0.0
+            ),
+            impacto_lesoes=ImpactoLesoes(
+                casa=[], fora=[],
+                avaliacao="Serviço indisponível"
+            ),
+            fator_decisivo="Serviço indisponível",
+            nivel_confianca="Baixo",
+            confidence=0,
+            alertas=["Serviço de análise AI temporariamente indisponível"],
+            recomendacao_principal="Aguarde restabelecimento do serviço.",
+            key_points=[
+                "Serviço de análise AI temporariamente indisponível",
+                "Recomendamos analisar as estatísticas manualmente",
+                "Verifique as probabilidades e odds apresentadas",
+                "Consulte o histórico de confrontos diretos",
+                "Considere a forma recente das equipes"
+            ],
+            last_updated=datetime.now().strftime('%d/%m/%Y às %H:%M')
+        )
+
     # -----------------------------------------------------------------
     # COMPATIBILIDADE LEGADO → MatchDetailCard.tsx
     # -----------------------------------------------------------------
