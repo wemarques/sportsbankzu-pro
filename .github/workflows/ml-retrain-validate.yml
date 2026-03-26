@@ -27,11 +27,6 @@ on:
         required: false
         default: true
         type: boolean
-      run_batch_audit:
-        description: "Run Mistral AI batch audit after training"
-        required: false
-        default: false
-        type: boolean
 
 # Prevent concurrent retrain runs from conflicting
 concurrency:
@@ -44,7 +39,6 @@ permissions:
 
 env:
   FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
-  MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
   DATA_ROOT: /tmp/ml_pipeline
 
 jobs:
@@ -145,26 +139,6 @@ jobs:
           print(f'  ML_ACTIVE={counts.get(\"ML_ACTIVE\",0)}, POISSON={counts.get(\"POISSON\",0)}, '
                 f'DEACTIVATED={counts.get(\"DEACTIVATED\",0)}, FAILED={n_failed}')
           "
-
-      - name: Run batch audit (optional)
-        if: ${{ github.event.inputs.run_batch_audit == 'true' }}
-        run: |
-          python -c "
-          import json, logging, os, sys
-          logging.basicConfig(level=logging.INFO)
-          os.environ.setdefault('DATA_ROOT', '/tmp/ml_pipeline')
-
-          try:
-              from backend.ai.auditor import batch_audit_leagues
-              results = batch_audit_leagues()
-              with open('/tmp/ml_pipeline/artifacts/batch_audit.json', 'w') as f:
-                  json.dump(results, f, indent=2, default=str)
-              print(f'Batch audit complete: {len(results)} leagues audited')
-          except Exception as e:
-              print(f'::warning::Batch audit failed: {e}')
-          "
-        env:
-          PYTHONPATH: ${{ github.workspace }}
 
       - name: Generate workflow summary
         if: always()
