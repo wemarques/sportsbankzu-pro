@@ -1078,6 +1078,17 @@ export default function Dashboard() {
       setAiAnalysis(null);
       setAiAnalysisMatchId(selectedMatch?.id ?? null);
       setAuditResult(null);
+      // Auto-fetch AI analysis when a new match is selected (#090)
+      if (selectedMatch) {
+        setAiLoading(true);
+        getAiMatchAnalysis(selectedMatch.id, selectedMatch.homeTeam.name, selectedMatch.awayTeam.name)
+          .then((analysis) => {
+            setAiAnalysis(analysis);
+            setAiAnalysisMatchId(selectedMatch.id);
+          })
+          .catch(() => { /* AI is optional */ })
+          .finally(() => setAiLoading(false));
+      }
     }
   }, [selectedMatch, aiAnalysisMatchId]);
 

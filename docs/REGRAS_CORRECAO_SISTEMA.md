@@ -5276,4 +5276,35 @@ Checklist para mercado novo: engine + classificação + validador + **dedup** + 
 
 ---
 
+## 090b — Análise AI Mistral não carregava automaticamente ao selecionar jogo
+
+**Data:** 2026-03-27
+**Arquivos afetados:** `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Média (funcionalidade existia mas exigia clique manual em "Regenerar")
+**Status:** Corrigido
+**Relacionado:** #082 (contrato Mistral narrativa-only), #083 (aviso indisponível), #090 (fallback gracioso)
+
+### Problema identificado
+
+Ao selecionar um jogo no dashboard, a aba "Análise AI" mostrava "Nenhuma análise AI gerada" ou "⚠ Analise narrativa temporariamente indisponivel." O backend Mistral funcionava corretamente (confirmado via curl: `confidence: 72` com análise completa), mas o frontend NÃO buscava automaticamente.
+
+### Causa raiz
+
+O `useEffect` que observa `selectedMatch` apenas resetava `aiAnalysis = null` ao trocar de jogo, mas NÃO disparava o fetch. O `handleGenerateAiAnalysis` só era chamado via clique manual no botão "Regenerar".
+
+### Correções aplicadas
+
+- `dashboard/page.tsx`: adicionado auto-fetch de `getAiMatchAnalysis()` no `useEffect` quando `selectedMatch` muda. A análise é buscada em background com `setAiLoading(true)` e trata erros silenciosamente (AI é opcional).
+
+### Verificação
+
+- `npm run build` OK
+- Endpoint real testado: `colombian-primera-a-Rionegro Águilas-Alianza Petrolera-1774645200.0` → confidence=72, 5 key_points, summary e recommendation corretos
+
+### Lição aprendida
+
+Funcionalidades on-demand (clique manual) degradam a experiência. Auto-fetch com fallback gracioso é preferível.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
