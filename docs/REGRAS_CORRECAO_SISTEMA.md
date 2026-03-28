@@ -5384,4 +5384,49 @@ Terceira ocorrência do bug UTC→BRT (#089, #091 parcial, #092). Toda conversã
 
 ---
 
+## 093 — Mistral recomendava mercados sem odd disponível
+
+**Data:** 2026-03-28
+**Arquivos afetados:** `backend/services/mistral_analysis.py`
+**Severidade:** Média (recomendação confusa para o usuário, não afeta pipeline de cálculo)
+**Status:** Corrigido
+**Relacionado:** #001, #002 (defesas anti-alucinação), #082 (contrato narrativo)
+
+### Problema identificado
+
+Mistral recomendou "Double Chance 1X (odd não disponível, mas probabilidade de 77.7%)" para Bucaramanga vs Santa Fe. Sem odd, não há como calcular EV. A recomendação contradiz o pipeline que selecionou Under 2.5 (EV +8.4%) como pick de valor.
+
+### Causa raiz
+
+Prompt v3.0 não restringia recomendação a mercados com odd real. A instrução dizia "Mercado com maior EV+" mas não proibia mercados sem odd. Sem validação pós-processamento para detectar "odd não disponível".
+
+### Correções aplicadas
+
+**Camada 1 — Instrução no prompt (preventiva):**
+- Adicionada REGRA DE RECOMENDAÇÃO: "DEVE ser de um mercado com odd REAL (NÃO N/A)"
+- "NUNCA diga 'odd não disponível mas probabilidade de X%'"
+- "Se nenhum mercado tem odd, escreva 'Sem recomendação — odds indisponíveis'"
+
+**Camada 2 — `_validate_recommendation()` (pós-processamento corretivo):**
+- Detecta padrões: "odd não disponível", "sem odd", "odd n/a", etc.
+- Substitui por mensagem que redireciona ao pipeline Dixon-Coles
+
+**Camada 3 — 4 camadas de defesa anti-alucinação mantidas (#001, #002):**
+- Prompt expandido com 12+ mercados (intacto)
+- Instrução "NAO invente odds" (intacto)
+- Validação de recomendação (NOVA — camada 5)
+- Sanitização de key_points (intacto)
+
+### Verificação
+
+- `pytest tests/unit/test_mistral_contract_082.py` — 5/5 OK
+- `_validate_recommendation("DC 1X (odd não disponível...")` → "Sem recomendação adicional..."
+- Deploy Lambda OK, `/health` → ok
+
+### Lição aprendida
+
+Alta probabilidade sem odd NÃO indica valor. Recomendações narrativas devem ser restritas a mercados com odd real para não confundir o usuário que segue o pipeline de valor.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

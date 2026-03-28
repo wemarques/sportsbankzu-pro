@@ -350,6 +350,13 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
   "recomendacao_principal": "Mercado com maior EV+ incluindo odd específica e justificativa."
 }
 
+# REGRA DE RECOMENDAÇÃO (#093):
+- A recomendacao_principal DEVE ser de um mercado que tenha odd REAL listada acima (NÃO "N/A").
+- Se um mercado tem probabilidade alta mas odd = N/A, NÃO recomende esse mercado.
+- Priorize mercados que tenham EV positivo (probabilidade > 1/odd).
+- Se nenhum mercado tem odd disponível, escreva: "Sem recomendação — odds indisponíveis para os mercados analisados."
+- NUNCA diga "odd não disponível mas probabilidade de X%" como recomendação.
+
 # VALIDAÇÕES OBRIGATÓRIAS:
 - probabilidades: vitoria_casa + empate + vitoria_fora = 1.0
 - double_chance: dc_1x = vitoria_casa + empate; dc_12 = vitoria_casa + vitoria_fora; dc_x2 = empate + vitoria_fora
@@ -520,8 +527,8 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
                 nivel_confianca=nivel,
                 confidence=min(max(int(confidence_raw), 0), 100),
                 alertas=data.get('alertas', []),
-                recomendacao_principal=data.get(
-                    'recomendacao_principal', ''
+                recomendacao_principal=self._validate_recommendation(
+                    data.get('recomendacao_principal', '')
                 ),
                 key_points=data.get('key_points', [])[:5],
                 last_updated=datetime.now().strftime('%d/%m/%Y às %H:%M')
@@ -531,6 +538,29 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
             print(f"[MistralV3] Erro parse: {e}")
             print(f"[MistralV3] Resposta bruta: {raw_response[:500]}")
             return self._get_fallback_analysis()
+
+    # -----------------------------------------------------------------
+    # VALIDATION (#093)
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def _validate_recommendation(recommendation: str) -> str:
+        """Reject recommendations mentioning markets without real odds (#093)."""
+        if not recommendation:
+            return recommendation
+        invalid_patterns = [
+            "odd não disponível", "odds não disponíveis", "odd indisponível",
+            "sem odd", "odd n/a", "odds indisponíveis", "não disponível, mas",
+        ]
+        rec_lower = recommendation.lower()
+        for pattern in invalid_patterns:
+            if pattern in rec_lower:
+                return (
+                    "Sem recomendação adicional — o mercado sugerido não possui "
+                    "odd disponível. Consulte os picks do pipeline (VALOR DETECTADO) "
+                    "que já possuem EV calculado."
+                )
+        return recommendation
 
     # -----------------------------------------------------------------
     # FALLBACK
