@@ -145,8 +145,11 @@ def _deduplicate_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any]]:
     """Process a single league: API fetch → build records. Thread-safe."""
     from backend.main import resolve_league_dir, generate_mock_fixtures
+    from backend.config.leagues_config import LEAGUE_ID_ALIASES
 
     league_config = get_league_config(lid)
+    # Resolve alias so match IDs always use the canonical league_id (#091)
+    lid = LEAGUE_ID_ALIASES.get(lid, lid)
     records: List[Dict[str, Any]] = []
     found_via_api = False
 

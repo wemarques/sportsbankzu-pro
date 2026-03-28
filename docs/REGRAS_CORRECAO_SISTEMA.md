@@ -5307,4 +5307,47 @@ Funcionalidades on-demand (clique manual) degradam a experiência. Auto-fetch co
 
 ---
 
+## 091 — Match ID com alias não-canônico impedia análise Mistral para 17 ligas
+
+**Data:** 2026-03-27
+**Arquivos afetados:** `backend/routes/fixtures.py`
+**Severidade:** Crítica (análise AI falhava silenciosamente para TODAS as ligas com alias frontend ≠ backend)
+**Status:** Corrigido
+**Relacionado:** #082 (contrato Mistral), #090 (fallback gracioso mascarou o erro real)
+
+### Problema identificado
+
+Análise AI Mistral retornava "indisponível" para o jogo Rionegro Águilas vs Alianza Petrolera (liga colombiana). Investigação revelou que o backend Lambda retorna `confidence=75` com análise completa — o proxy Vercel também funciona. O erro estava nos match IDs gerados com o league ID do frontend (`colombia-primera-a`) em vez do ID canônico do backend (`colombian-primera-a`).
+
+### Causa raiz
+
+**`_process_single_league()` em `fixtures.py`** resolvia o alias via `get_league_config(lid)` para buscar dados, mas passava o `lid` **original** (do frontend) para `build_records_from_matches(league_id=lid)`. O match ID gerado ficava `colombia-primera-a-Rionegro...` em vez de `colombian-primera-a-Rionegro...`.
+
+Quando o frontend chamava `/api/ai/match/{matchId}/analysis`, `_extract_league_id()` procurava o prefixo em `LEAGUES_CONFIG` — não encontrava `colombia-primera-a` (só `colombian-primera-a`) → ValueError → fallback `confidence=0`.
+
+**17 ligas afetadas** (todas com alias frontend ≠ backend): La Liga, Serie A/B, Bundesliga/2.Bundesliga, Ligue 1, Brasileirão A/B, Eredivisie, Primeira Liga, Premiership, Superliga, Super Lig, League One, MLS, Colombiana, Liga MX.
+
+### Evidência
+
+Logs Vercel: `/api/ai/match/colombia-primera-a-Rion...` (frontend) vs `/api/ai/match/colombian-primera-a-Rio...` (curl direto). Ambos retornavam 200 mas o primeiro com `confidence=0` (fallback) e o segundo com `confidence=75` (análise real).
+
+### Correções aplicadas
+
+**`fixtures.py` (`_process_single_league`):** resolve `LEAGUE_ID_ALIASES` ANTES de gerar match IDs. `lid = LEAGUE_ID_ALIASES.get(lid, lid)` logo após `get_league_config()`.
+
+### Verificação
+
+- `GET /fixtures?leagues=colombia-primera-a` → match ID agora `colombian-primera-a-Rionegro...`
+- `GET /api/ai/match/colombian-primera-a-Rionegro.../analysis` via proxy → `confidence=75`
+- Regressão: 51/51 testes OK
+- Deploy Lambda OK
+
+### Lição aprendida
+
+1. **#090 mascarou este bug:** ao trocar HTTP 400 por fallback gracioso, o match ID errado parou de gerar erro visível — passou a retornar `confidence=0` silenciosamente. Defesa em profundidade é necessária, mas NÃO como substituto de resolver a causa raiz.
+2. IDs gerados em caminhos com aliases devem SEMPRE usar o ID canônico. A resolução de alias deve ser o PRIMEIRO passo, não apenas no `get_league_config`.
+3. O padrão se repetia para 17 ligas — não testar apenas o caso reportado.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
