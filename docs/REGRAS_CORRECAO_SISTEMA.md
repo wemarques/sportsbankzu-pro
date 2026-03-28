@@ -5350,4 +5350,38 @@ Logs Vercel: `/api/ai/match/colombia-primera-a-Rion...` (frontend) vs `/api/ai/m
 
 ---
 
+## 092 — _extract_date_from_id usava UTC em vez de BRT (mesma classe de bug #089)
+
+**Data:** 2026-03-27
+**Arquivos afetados:** `backend/routes/ai_analysis.py`
+**Severidade:** Alta (jogos 21:00-23:59 BRT sem análise Mistral — timestamp cai no dia UTC seguinte)
+**Status:** Corrigido
+**Relacionado:** #089 (date_range UTC→BRT), #091 (alias no match ID)
+
+### Problema identificado
+
+Atlético Bucaramanga vs Santa Fe (22:10 BRT / 01:10 UTC) retornava fallback `confidence=0`. Rionegro Águilas (18:00 BRT / 21:00 UTC) funcionava normalmente com `confidence=75`.
+
+### Causa raiz
+
+`_extract_date_from_id()` usava `datetime.fromtimestamp(ts)` que no Lambda (UTC) retornava a data UTC. Um jogo às 22:10 BRT = 01:10 UTC dia seguinte → `date_str = "2026-03-28"`. Mas `date_range("2026-03-28")` espera calendário BRT (03:00 UTC - 02:59 UTC+1). O jogo às 01:10 UTC ficava ANTES do range → match not found → fallback.
+
+Mesma classe de bug do #089 (`_get_all_finished_matches` usava UTC em vez de BRT).
+
+### Correções aplicadas
+
+`_extract_date_from_id()`: `datetime.fromtimestamp(ts, tz=BRT)` em vez de `datetime.fromtimestamp(ts)`. A data extraída é agora o dia BRT, alinhado com `date_range()`.
+
+### Verificação
+
+- Backend `/analysis`: `confidence=75` para Bucaramanga (antes: fallback)
+- Proxy Vercel: `confidence=75`, `summary_len=269`
+- Deploy Lambda OK
+
+### Lição aprendida
+
+Terceira ocorrência do bug UTC→BRT (#089, #091 parcial, #092). Toda conversão `timestamp → date string` no backend deve usar BRT. Adicionar checklist: grep por `fromtimestamp` sem `tz=BRT` e `utcnow()` antes de cada deploy.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -314,13 +314,17 @@ def _extract_league_id(match_id: str) -> str:
 
 
 def _extract_date_from_id(match_id: str) -> str:
-    """Extract date (YYYY-MM-DD) from Unix timestamp at end of match_id."""
-    # ID format: "league-id-Home Team-Away Team-1711202400.0"
-    # The timestamp is a float after the last '-'
+    """Extract date (YYYY-MM-DD) from Unix timestamp at end of match_id.
+
+    Uses BRT timezone so the date matches date_range() calendar boundaries (#092).
+    A match at 01:10 UTC (22:10 BRT) belongs to the previous BRT calendar day.
+    """
+    from datetime import timezone as _tz_mod, timedelta as _td_mod
+    _BRT = _tz_mod(_td_mod(hours=-3))
     last_segment = match_id.rsplit("-", 1)[-1]
     try:
         ts = float(last_segment)
-        dt = _dt.fromtimestamp(ts)
+        dt = _dt.fromtimestamp(ts, tz=_BRT)
         return dt.strftime("%Y-%m-%d")
     except (ValueError, TypeError, OverflowError):
         logger.warning(
