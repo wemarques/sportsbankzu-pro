@@ -22,6 +22,31 @@ import ClassificationBadge from "./ClassificationBadge";
 import { getClassificationDisplay } from "@/lib/classifications";
 import "../styles/match-detail-card.css";
 
+/* ── Team name fuzzy matching for standings highlight (#097) ── */
+const _STATE_SUFFIXES = /\b(fc|sc|ec|ac|se|cr|cf|ca|cd|rc|rj|sp|mg|pr|ba|rs|ce|go|pe|pa|df|es|al|ma|mt|ms|to|pi|rn|pb|am|ap|ro|rr)\b/gi;
+function _normalizeTeamName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // remove accents
+    .replace(/[-_]/g, " ")
+    .replace(_STATE_SUFFIXES, "")
+    .replace(/\bred bull\b/g, "rb")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function _teamsMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = _normalizeTeamName(a);
+  const nb = _normalizeTeamName(b);
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  // Fallback: compare first significant word (≥3 chars)
+  const wa = na.split(" ").filter((w) => w.length >= 3);
+  const wb = nb.split(" ").filter((w) => w.length >= 3);
+  if (wa.length > 0 && wb.length > 0 && wa[0] === wb[0]) return true;
+  return false;
+}
+
 /* ── Reason Code visual mapping ── */
 const REASON_META: Record<string, { icon: string; label: string; color: string; type: "positive" | "info" | "warning" | "danger" | "neutral" }> = {
   POSITIVE_EV:          { icon: "\u2191", label: "EV+",           color: "#00ff88", type: "positive" },
@@ -552,13 +577,8 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   <tbody>
                     {standingsData.map((team: any, idx: number) => {
                       const name = team.cleanName || team.name || team.team_name || `Time ${idx + 1}`;
-                      const nameLower = name.toLowerCase();
-                      const isHighlighted = nameLower === (match.homeTeam || "").toLowerCase()
-                        || nameLower === (match.awayTeam || "").toLowerCase()
-                        || (match.homeTeam || "").toLowerCase().includes(nameLower)
-                        || nameLower.includes((match.homeTeam || "").toLowerCase())
-                        || (match.awayTeam || "").toLowerCase().includes(nameLower)
-                        || nameLower.includes((match.awayTeam || "").toLowerCase());
+                      const isHighlighted = _teamsMatch(name, match.homeTeam || "")
+                        || _teamsMatch(name, match.awayTeam || "");
                       return (
                         <tr key={idx} style={{
                           borderBottom: "1px solid rgba(255,255,255,0.05)",

@@ -5529,4 +5529,34 @@ Millonarios vs Fortaleza CEIF: pipeline selecionou Under 2.5 (prob 66%, EV +17.4
 
 ---
 
+## 097 — Standings highlight falhava para times com nome abreviado
+
+**Data:** 2026-03-29
+**Arquivos afetados:** `frontend/next/src/components/MatchDetailCard.tsx`
+**Severidade:** Média (UX — time não destacado na classificação)
+**Status:** Corrigido
+**Relacionado:** #090 (highlight case-insensitive + cinza), #087 (standings revert)
+
+### Problema identificado
+
+Atlético PR vs Botafogo: tabela "Ver Classificação" destacava apenas Botafogo. "Atlético PR" (nome do jogo) não casava com "Atletico Paranaense" (nome na tabela).
+
+### Causa raiz
+
+O fix #090 usava `.toLowerCase()` + `.includes()` bidirecional, que funciona para diferenças de capitalização mas NÃO para abreviações ("PR" vs "Paranaense"), hifens, acentos ou sufixos de estado/tipo.
+
+### Correções aplicadas
+
+`_normalizeTeamName()` + `_teamsMatch()`: remove acentos (NFD), hifens, sufixos de estado (PR, RJ, SP, MG...), sufixos de tipo (FC, SC, EC...), normaliza "Red Bull"→"RB", compara primeira palavra significativa (≥3 chars) como fallback.
+
+### Verificação
+
+8/8 testes: Atlético PR↔Atletico Paranaense, Chapecoense-sc↔Chapecoense, RB Bragantino↔Red Bull Bragantino, Atletico-MG↔Atlético Mineiro, Vasco DA Gama↔Vasco da Gama, Botafogo↔Botafogo — todos match. Santos↔Internacional, Flamengo↔Fluminense — corretamente não match.
+
+### Lição aprendida
+
+Nomes de times brasileiros são particularmente problemáticos — abreviações por estado, variações com/sem acento, hifens. Normalização robusta (accents + suffixes + first-word fallback) é essencial para qualquer comparação entre fontes diferentes.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
