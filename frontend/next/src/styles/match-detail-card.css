@@ -2616,61 +2616,79 @@
   }
 }
 
-/* === BANKROLL CARD (#094) === */
+/* === BANKROLL CARD (#094 — aligned with mockup) === */
 .bkr-card {
-  background: linear-gradient(135deg, rgba(10,15,26,0.95), rgba(13,21,32,0.95));
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  background: linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(16,185,129,0.04) 100%);
+  border: 1px solid rgba(34,197,94,0.25);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
 }
 .bkr-header { margin-bottom: 10px; }
-.bkr-title-row { display: flex; align-items: center; gap: 8px; }
-.bkr-title { font-size: 0.85rem; font-weight: 600; color: #f8fafc; }
+.bkr-title-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.bkr-title {
+  display: block; font-size: 0.65rem; font-weight: 600; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 1.5px;
+}
 .bkr-badge {
-  font-size: 0.6rem; font-weight: 700; color: #4ade80;
-  background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);
-  border-radius: 4px; padding: 2px 6px; letter-spacing: 0.5px;
+  font-size: 0.55rem; font-weight: 600; color: #4ade80;
+  background: rgba(34,197,94,0.12); padding: 3px 8px; border-radius: 4px;
 }
-.bkr-subtitle { font-size: 0.65rem; color: #64748b; margin-top: 2px; display: block; }
+.bkr-subtitle {
+  font-size: 0.63rem; color: #64748b; margin-top: 2px; display: block;
+}
 .bkr-input-row {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 7px; padding: 6px 10px; margin-bottom: 8px;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 10px;
+  transition: border 0.2s;
 }
-.bkr-currency { font-size: 0.8rem; font-weight: 600; color: #94a3b8; }
+.bkr-input-row:focus-within { border-color: #4ade80; }
+.bkr-currency { font-size: 1.3rem; font-weight: 700; color: #4ade80; }
 .bkr-input {
   flex: 1; background: transparent; border: none; outline: none;
-  color: #4ade80; font-size: 1.2rem; font-weight: 800;
-  font-family: inherit; width: 100%;
+  color: #f8fafc; font-size: 1.6rem; font-weight: 700;
+  font-family: inherit; width: 100%; text-align: right;
 }
 .bkr-input::-webkit-inner-spin-button,
 .bkr-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .bkr-input[type=number] { -moz-appearance: textfield; }
-.bkr-presets { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.bkr-presets { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .bkr-preset {
-  flex: 1; min-width: 48px; padding: 4px 0; border-radius: 5px;
+  flex: 1; min-width: 48px; padding: 5px 0; border-radius: 6px;
   font-size: 0.7rem; font-weight: 600; cursor: pointer;
   background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-  color: #94a3b8; transition: all 0.15s;
+  color: #94a3b8; transition: all 0.2s; font-family: inherit;
 }
 .bkr-preset:hover { background: rgba(255,255,255,0.08); color: #f8fafc; }
 .bkr-preset--active {
-  background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.3);
-  color: #4ade80;
+  background: rgba(34,197,94,0.2); border-color: #4ade80; color: #4ade80;
 }
-.bkr-summary {
-  display: flex; gap: 8px; margin-bottom: 8px;
-}
+.bkr-summary { display: flex; gap: 8px; margin-bottom: 10px; }
 .bkr-stat {
-  flex: 1; text-align: center;
-  background: rgba(0,0,0,0.2); border-radius: 6px; padding: 6px 4px;
+  flex: 1; text-align: center; border-radius: 8px; padding: 10px 12px;
 }
-.bkr-stat-label { display: block; font-size: 0.6rem; color: #64748b; margin-bottom: 2px; }
-.bkr-stat-value { font-size: 0.8rem; font-weight: 700; color: #f8fafc; }
+.bkr-stat--green {
+  background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.15);
+}
+.bkr-stat--yellow {
+  background: rgba(234,179,8,0.06); border: 1px solid rgba(234,179,8,0.12);
+}
+.bkr-stat-label {
+  display: block; font-size: 0.55rem; color: #64748b;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.bkr-stat-value {
+  display: block; font-size: 0.95rem; font-weight: 700; color: #f8fafc; margin-top: 2px;
+}
+.bkr-stat-value--green { color: #4ade80; }
+.bkr-stat-value--yellow { color: #eab308; }
+.bkr-stat-sub { display: block; font-size: 0.55rem; color: #94a3b8; }
 .bkr-disclaimer {
   font-size: 0.55rem; color: #475569; text-align: center;
-  padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.04);
+  padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04);
 }
 
 /* Stake suggestion in pick cards */
@@ -2683,7 +2701,10 @@
 .stake-label { display: flex; flex-direction: column; gap: 1px; }
 .stake-label-title { font-size: 0.65rem; font-weight: 600; color: #94a3b8; }
 .stake-label-detail { font-size: 0.55rem; color: #64748b; }
-.stake-value { font-size: 1.1rem; font-weight: 800; color: #4ade80; }
+.stake-value {
+  font-size: 1.25rem; font-weight: 800; color: #4ade80;
+  text-shadow: 0 0 20px rgba(34,197,94,0.2);
+}
 .stake-no-value {
   text-align: center; font-size: 0.6rem; color: #475569;
   padding: 6px 10px; background: rgba(0,0,0,0.15);

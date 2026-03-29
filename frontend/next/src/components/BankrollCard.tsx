@@ -47,10 +47,12 @@ export default function BankrollCard({
     <div className="bkr-card">
       <div className="bkr-header">
         <div className="bkr-title-row">
-          <span className="bkr-title">Bankroll Disponivel</span>
+          <div>
+            <span className="bkr-title">Bankroll Disponivel</span>
+            <span className="bkr-subtitle">Quarter Kelly &bull; Cap 5% por pick</span>
+          </div>
           <span className="bkr-badge">EDITAVEL</span>
         </div>
-        <span className="bkr-subtitle">Quarter Kelly &bull; Cap 5% por pick</span>
       </div>
 
       <div className="bkr-input-row">
@@ -75,28 +77,24 @@ export default function BankrollCard({
             className={`bkr-preset ${bankroll === p ? "bkr-preset--active" : ""}`}
             onClick={() => onBankrollChange(p)}
           >
-            {p}
+            {p >= 1000 ? `${p / 1000}k` : p}
           </button>
         ))}
       </div>
 
       {pickCount > 0 && (
         <div className="bkr-summary">
-          <div className="bkr-stat">
-            <span className="bkr-stat-label">Stake total</span>
-            <span className="bkr-stat-value">{fmtBRL(totalStake)}</span>
+          <div className="bkr-stat bkr-stat--green">
+            <span className="bkr-stat-label">Stake Total</span>
+            <span className="bkr-stat-value bkr-stat-value--green">{fmtBRL(totalStake)}</span>
+            <span className="bkr-stat-sub">{bankroll > 0 ? ((totalStake / bankroll) * 100).toFixed(1) : "0.0"}% do bankroll</span>
           </div>
-          <div className="bkr-stat">
-            <span className="bkr-stat-label">EV medio</span>
-            <span className="bkr-stat-value" style={{ color: avgEV >= 0 ? "#4ade80" : "#f87171" }}>
+          <div className="bkr-stat bkr-stat--yellow">
+            <span className="bkr-stat-label">EV Medio</span>
+            <span className="bkr-stat-value bkr-stat-value--yellow">
               {avgEV >= 0 ? "+" : ""}{avgEV.toFixed(1)}%
             </span>
-          </div>
-          <div className="bkr-stat">
-            <span className="bkr-stat-label">% comprometido</span>
-            <span className="bkr-stat-value">
-              {bankroll > 0 ? ((totalStake / bankroll) * 100).toFixed(1) : "0.0"}%
-            </span>
+            <span className="bkr-stat-sub">{pickCount} picks</span>
           </div>
         </div>
       )}
