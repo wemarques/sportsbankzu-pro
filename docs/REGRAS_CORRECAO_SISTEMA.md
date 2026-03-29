@@ -5457,6 +5457,28 @@ O pipeline v2 já retornava `ev`, `calibrated_probability`, `book_odd` por pick 
 
 ---
 
+## 095 — Integração de odds reais de cartões (API-Football v3)
+
+**Data:** 2026-03-29
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/services/fixtures_service.py`
+**Severidade:** Média (cartões passam a ter EV real quando odd disponível)
+**Status:** Implementado
+**Relacionado:** #056 (cards per-league), #085 (cards as pick market), #028 (ev_classification)
+
+### Funcionalidade adicionada
+
+1. `extract_best_odds()` agora extrai odds de cartões (Total Bookings Over/Under 2.5-5.5) com prioridade Bet365 > Pinnacle > 1xBet
+2. `fixtures_service.py` enriquece `odds_dict` com `cards_over_2.5`, `cards_under_2.5`, etc.
+3. `ev_classification` já buscava `cards_over_{line}` — agora encontra odds reais quando disponíveis
+4. Picks de cartões com odd real são classificados normalmente (VALOR_DETECTADO se EV > threshold)
+5. Sem odd real: mantém INFORMATIVO com Fair value (fallback intacto)
+
+### Lição aprendida
+
+Pick sem odd real do bookmaker NÃO deveria parecer apostável. Integrar odds reais de TODOS os mercados que o pipeline gera é pré-requisito para classificação correta.
+
+---
+
 ## 096 — Mistral recomendava mercado OPOSTO ao pick VALOR DETECTADO do pipeline
 
 **Data:** 2026-03-29

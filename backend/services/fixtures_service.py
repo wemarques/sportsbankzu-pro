@@ -1189,6 +1189,15 @@ def build_records_from_matches(
                             logger.info(f"[API-Football] Under 2.5 odd enriched: {best['under_25']}")
                         if not odds_dict.get("bttsNo") and best.get("btts_no"):
                             odds_dict["bttsNo"] = best["btts_no"]
+                        # Cards odds (#095)
+                        for line_sfx in ("25", "35", "45", "55"):
+                            ov_key = f"cards_over_{line_sfx}"
+                            un_key = f"cards_under_{line_sfx}"
+                            line_dot = f"{line_sfx[0]}.{line_sfx[1]}"
+                            if best.get(ov_key) and not odds_dict.get(f"cards_over_{line_dot}"):
+                                odds_dict[f"cards_over_{line_dot}"] = best[ov_key]
+                            if best.get(un_key) and not odds_dict.get(f"cards_under_{line_dot}"):
+                                odds_dict[f"cards_under_{line_dot}"] = best[un_key]
                         _current_record.setdefault("source_flags", []).append("api_football_odds")
                 except Exception as e:
                     logger.debug(f"[API-Football] Odds enrichment skipped: {e}")

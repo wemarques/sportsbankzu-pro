@@ -986,6 +986,20 @@ class APIFootballClient:
                             elif val == "no" and "btts_no" not in result:
                                 result["btts_no"] = odd
 
+                    # Cards / Bookings Over/Under (#095)
+                    elif "booking" in bet_name or "card" in bet_name:
+                        for v in values:
+                            val = str(v.get("value", "")).lower()
+                            odd = _safe_float(v.get("odd"))
+                            if not odd:
+                                continue
+                            for line in ("2.5", "3.5", "4.5", "5.5"):
+                                key_sfx = line.replace(".", "")  # "25", "35", ...
+                                if f"over {line}" in val and f"cards_over_{key_sfx}" not in result:
+                                    result[f"cards_over_{key_sfx}"] = odd
+                                elif f"under {line}" in val and f"cards_under_{key_sfx}" not in result:
+                                    result[f"cards_under_{key_sfx}"] = odd
+
                 # If we have at least 1X2 from a priority bookmaker, stop
                 if "home" in result:
                     break
