@@ -46,6 +46,7 @@ async def get_match_analysis(
             match_stats=match_data['stats'],
             odds=match_data['odds'],
             context=match_data.get('context') if include_context else None,
+            pipeline_picks=match_data.get('pipeline_picks', []),
         )
         return analysis
 
@@ -427,6 +428,19 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
     home_name = home_team_obj.get("name", "") if isinstance(home_team_obj, dict) else str(home_team_obj)
     away_name = away_team_obj.get("name", "") if isinstance(away_team_obj, dict) else str(away_team_obj)
 
+    # --- Pipeline picks (#096): pass to Mistral so it doesn't contradict ---
+    picks_for_prompt = []
+    for pred in record.get("predictions", []):
+        ev = pred.get("ev")
+        if ev is not None and ev > 0:
+            picks_for_prompt.append({
+                "market": pred.get("mercado", ""),
+                "classification": pred.get("classification", pred.get("status", "")),
+                "prob_pct": pred.get("prob_max", 0),
+                "odd": pred.get("book_odd") or pred.get("odd_minima"),
+                "ev_pct": round(ev * 100, 1),
+            })
+
     return {
         "id": record.get("id", ""),
         "home_team": home_name,
@@ -436,6 +450,7 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
         "stats": stats,
         "odds": odds,
         "context": context,
+        "pipeline_picks": picks_for_prompt,
     }
 
 

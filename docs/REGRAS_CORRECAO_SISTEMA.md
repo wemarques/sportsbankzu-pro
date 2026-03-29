@@ -5457,4 +5457,53 @@ O pipeline v2 já retornava `ev`, `calibrated_probability`, `book_odd` por pick 
 
 ---
 
+## 096 — Mistral recomendava mercado OPOSTO ao pick VALOR DETECTADO do pipeline
+
+**Data:** 2026-03-29
+**Arquivos afetados:** `backend/services/mistral_analysis.py`, `backend/routes/ai_analysis.py`
+**Severidade:** Crítica (recomendação contradiz pipeline — usuário pode apostar no mercado errado)
+**Status:** Corrigido
+**Relacionado:** #082 (contrato narrativo), #093 (recomendação sem odd), #001-#002 (anti-alucinação)
+
+### Problema identificado
+
+Millonarios vs Fortaleza CEIF: pipeline selecionou Under 2.5 (prob 66%, EV +17.4%), Mistral recomendou Over 2.5 (prob 58%, fonte FootyStats). Probabilidades somam 124% — impossível para mercados complementares.
+
+### Causa raiz
+
+1. **Mistral não recebia os picks do pipeline** — não sabia que Under 2.5 era VALOR DETECTADO
+2. **`prob_over_25` no prompt vinha do FootyStats** (`over_25_percentage_pre_match`, média da liga) quando disponível, não do Poisson/Dixon-Coles específico do jogo
+3. Sem picks de referência, a Mistral calculava sua própria recomendação com dados de fonte diferente
+
+### Correções aplicadas
+
+**Camada 1 — Picks do pipeline passados ao prompt (`ai_analysis.py`):**
+- `_map_record_to_v3()` extrai predictions com EV+ do record e inclui em `pipeline_picks`
+- `analyze_match()` recebe e propaga `pipeline_picks`
+
+**Camada 2 — Seção PICKS + REGRA DE ALINHAMENTO no prompt (`mistral_analysis.py`):**
+- Bloco "PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles)" listando mercado, prob, odd, EV, classificação
+- Instrução: "Sua recomendação DEVE ser UM DOS picks acima. NUNCA contradiga a direção Over/Under."
+
+**Camada 3 — `_validate_recommendation_vs_pipeline()` pós-processamento:**
+- Detecta se a recomendação contém a direção OPOSTA de um pick (Under→Over, Over→Under) com a mesma linha
+- Se contradiz, substitui por "Recomendação alinhada ao pipeline: {pick} (odd X, EV Y%)"
+
+### Verificação
+
+- Anti-contradição: Under 2.5 no pipeline + Over 2.5 na Mistral → BLOQUEADO
+- Mesmo sentido: Under 2.5 no pipeline + Under 2.5 na Mistral → MANTIDO
+- Escanteios: Under 8.5 no pipeline + Over 8.5 na Mistral → BLOQUEADO
+- Testes: 5/5 contrato Mistral + 18/18 regressão OK
+- Deploy Lambda OK, health OK
+
+### Lição aprendida
+
+1. A Mistral NUNCA deve usar probabilidades de fonte diferente do pipeline. O contrato #082 (narrativa-only) exige que as probabilidades venham do Dixon-Coles.
+2. Sem acesso aos picks, a Mistral não tem como saber o que o pipeline selecionou — fornecer os picks no prompt é a defesa primária.
+3. Validação pós-processamento é a defesa secundária — mesmo com instrução no prompt, LLMs podem ignorá-la.
+4. Agora são 6 camadas de defesa: #001 (prompt expandido), #002 (instrução anti-invenção), #093 (sem odd → bloqueado), #096 camada prompt (picks no prompt), #096 camada validação (anti-contradição).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

@@ -132,16 +132,23 @@ class MistralAnalysisService:
         league: str,
         match_stats: Dict,
         odds: Dict,
-        context: Optional[Dict] = None
+        context: Optional[Dict] = None,
+        pipeline_picks: Optional[list] = None,
     ) -> AIAnalysisResponse:
         """Gera análise completa v3.0 cobrindo 24 mercados."""
         prompt = self._build_prompt(
-            home_team, away_team, league, match_stats, odds, context
+            home_team, away_team, league, match_stats, odds, context,
+            pipeline_picks=pipeline_picks,
         )
 
         try:
             analysis = await self._call_mistral_api(prompt)
-            return self._parse_analysis(analysis)
+            result = self._parse_analysis(analysis)
+            # Camada 6 — anti-contradiction with pipeline (#096)
+            result.recomendacao_principal = self._validate_recommendation_vs_pipeline(
+                result.recomendacao_principal, pipeline_picks or []
+            )
+            return result
         except Exception as e:
             print(f"[MistralV3] Erro ao chamar API: {e}")
             return self._get_fallback_analysis()
@@ -157,7 +164,8 @@ class MistralAnalysisService:
         league: str,
         match_stats: Dict,
         odds: Dict,
-        context: Optional[Dict] = None
+        context: Optional[Dict] = None,
+        pipeline_picks: Optional[list] = None,
     ) -> str:
         """Constrói o prompt v3.0 para a MISTRAL AI"""
 
@@ -276,6 +284,26 @@ LESÕES/SUSPENSÕES DE TITULARES (apenas jogadores do 11 titular):
 - Casa: {context.get('home_injuries_starters', context.get('absences', 'Dado não disponível'))}
 - Fora: {context.get('away_injuries_starters', 'Dado não disponível')}
 NOTA: Considere APENAS os jogadores listados acima. São titulares confirmados ou prováveis. Reservas e jogadores do elenco secundário foram filtrados e NÃO devem aparecer na análise.
+"""
+
+        # ---- Picks do pipeline (#096) — Mistral DEVE alinhar recomendação ----
+        if pipeline_picks:
+            picks_text = "\n".join(
+                f"- {p['market']} | Prob: {p.get('prob_pct', '?')}% | "
+                f"Odd: {p.get('odd', 'N/A')} | EV: +{p.get('ev_pct', '?')}% | "
+                f"{p.get('classification', '')}"
+                for p in pipeline_picks
+            )
+            prompt += f"""
+PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles):
+{picks_text}
+
+REGRA DE ALINHAMENTO (#096):
+- Sua recomendacao_principal DEVE ser UM DOS picks listados acima ou um mercado complementar.
+- Se o pipeline selecionou Under 2.5, voce NAO pode recomendar Over 2.5 (sao opostos).
+- Se o pipeline selecionou Over 8.5 escanteios, voce NAO pode recomendar Under 8.5.
+- NUNCA contradiga a direcao (Over/Under) de um pick do pipeline.
+- Use APENAS as probabilidades listadas acima, NAO calcule probabilidades alternativas.
 """
 
         # ---- Schema de saída v3.0 ----
@@ -560,6 +588,44 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
                     "odd disponível. Consulte os picks do pipeline (VALOR DETECTADO) "
                     "que já possuem EV calculado."
                 )
+        return recommendation
+
+    @staticmethod
+    def _validate_recommendation_vs_pipeline(recommendation: str, picks: list) -> str:
+        """Reject recommendations that contradict pipeline picks (#096).
+
+        E.g. pipeline says Under 2.5, Mistral recommends Over 2.5 → blocked.
+        """
+        if not recommendation or not picks:
+            return recommendation
+
+        import re
+        rec_lower = recommendation.lower()
+
+        opposites = [
+            ("under", "over"),
+            ("over", "under"),
+        ]
+
+        for pick in picks:
+            market = (pick.get("market") or "").lower()
+            for direction, opposite in opposites:
+                if direction not in market:
+                    continue
+                # Extract the line number (e.g. "2.5" from "under 2.5 gols")
+                line_match = re.search(r"(\d+\.?\d*)", market)
+                if not line_match:
+                    continue
+                line = line_match.group(1)
+                # Check if recommendation contains the OPPOSITE direction with the same line
+                if opposite in rec_lower and line in rec_lower:
+                    best = pick
+                    return (
+                        f"Recomendação alinhada ao pipeline: {best['market']} "
+                        f"(odd {best.get('odd', 'N/A')}, EV +{best.get('ev_pct', '?')}%) — "
+                        f"pick com maior EV+ confirmado pelo modelo Dixon-Coles."
+                    )
+
         return recommendation
 
     # -----------------------------------------------------------------
