@@ -5494,13 +5494,14 @@ Millonarios vs Fortaleza CEIF: pipeline selecionou Under 2.5 (prob 66%, EV +17.4
 ### Causa raiz
 
 1. **Mistral não recebia os picks do pipeline** — não sabia que Under 2.5 era VALOR DETECTADO
-2. **`prob_over_25` no prompt vinha do FootyStats** (`over_25_percentage_pre_match`, média da liga) quando disponível, não do Poisson/Dixon-Coles específico do jogo
+2. **`prob_over_25` no prompt vinha do FootyStats** (`over_25_percentage_pre_match`, m��dia da liga) quando disponível, não do Poisson/Dixon-Coles específico do jogo
 3. Sem picks de referência, a Mistral calculava sua própria recomendação com dados de fonte diferente
+4. **Bug adicional (fix 2):** `_map_record_to_v3()` buscava `record.get("predictions")` mas os picks v2 estão em `record["mercados"]` — `pipeline_picks` era sempre lista vazia
 
 ### Correções aplicadas
 
 **Camada 1 — Picks do pipeline passados ao prompt (`ai_analysis.py`):**
-- `_map_record_to_v3()` extrai predictions com EV+ do record e inclui em `pipeline_picks`
+- `_map_record_to_v3()` extrai picks de `record["mercados"]` (não `predictions`) com EV+ e inclui em `pipeline_picks`
 - `analyze_match()` recebe e propaga `pipeline_picks`
 
 **Camada 2 — Seção PICKS + REGRA DE ALINHAMENTO no prompt (`mistral_analysis.py`):**

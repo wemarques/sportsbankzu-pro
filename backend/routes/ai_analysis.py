@@ -429,8 +429,9 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
     away_name = away_team_obj.get("name", "") if isinstance(away_team_obj, dict) else str(away_team_obj)
 
     # --- Pipeline picks (#096): pass to Mistral so it doesn't contradict ---
+    # Picks live in "mercados" (v2 pipeline), NOT "predictions" (frontend alias)
     picks_for_prompt = []
-    for pred in record.get("predictions", []):
+    for pred in record.get("mercados", record.get("predictions", [])):
         ev = pred.get("ev")
         if ev is not None and ev > 0:
             picks_for_prompt.append({
