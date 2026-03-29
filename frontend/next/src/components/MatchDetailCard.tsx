@@ -17,6 +17,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
+import { calcQuarterKelly } from "./BankrollCard";
 import ClassificationBadge from "./ClassificationBadge";
 import { getClassificationDisplay } from "@/lib/classifications";
 import "../styles/match-detail-card.css";
@@ -349,6 +350,7 @@ type Props = {
   showBackButton?: boolean;
   isFavorite?: boolean;
   onFavorite?: () => void;
+  bankroll?: number;
 };
 
 export default function MatchDetailCard(props: Props) {
@@ -359,7 +361,7 @@ export default function MatchDetailCard(props: Props) {
   );
 }
 
-function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V4.0", onBack, showBackButton = false, isFavorite = false, onFavorite }: Props) {
+function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApplyCorrection, auditResult, auditLoading, auditResultRef, version = "pro V4.0", onBack, showBackButton = false, isFavorite = false, onFavorite, bankroll = 100 }: Props) {
   const [activeTab, setActiveTab] = useState<"pre-game" | "odds" | "stats" | "h2h">("pre-game");
   const [activeSubTab, setActiveSubTab] = useState<"resumo" | "stats" | "h2h" | "ultimos">("resumo");
   const [isAIExpanded, setIsAIExpanded] = useState(true);
@@ -859,6 +861,29 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                     </div>
                                   )
                                 )}
+                                {/* Stake suggestion (#094) */}
+                                {(() => {
+                                  const prob = pred.calibrated_probability ?? (pred.prob_max ?? 50) / 100;
+                                  const odd = pred.book_odd ?? pred.odd_minima ?? 0;
+                                  const k = calcQuarterKelly(prob, odd, bankroll);
+                                  if (k.ev > 0 && k.stake > 0) {
+                                    return (
+                                      <div className="stake-suggestion">
+                                        <div className="stake-label">
+                                          <span className="stake-label-title">Stake Sugerido</span>
+                                          <span className="stake-label-detail">Quarter Kelly &bull; {(k.pct * 100).toFixed(2)}% do bankroll</span>
+                                        </div>
+                                        <div className="stake-value">
+                                          R$ {k.stake.toFixed(2)}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+                                  if ((pred.ev ?? 0) <= 0) {
+                                    return <div className="stake-no-value">Sem EV positivo — stake nao recomendado</div>;
+                                  }
+                                  return null;
+                                })()}
                               </div>
                             );
                           })}

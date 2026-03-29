@@ -5429,4 +5429,32 @@ Alta probabilidade sem odd NÃO indica valor. Recomendações narrativas devem s
 
 ---
 
+## 094 — Bankroll editável + Stake sugerido Quarter Kelly no dashboard
+
+**Data:** 2026-03-28
+**Arquivos afetados:** `frontend/next/src/components/BankrollCard.tsx` (novo), `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/styles/match-detail-card.css`
+**Severidade:** Baixa (feature nova, não altera pipeline de cálculo)
+**Status:** Implementado
+**Relacionado:** #028 (bankroll_engine Quarter Kelly original)
+
+### Funcionalidade adicionada
+
+1. **BankrollCard** acima do MatchDetailCard: campo R$ editável, presets (50/100/250/500/1000), resumo (stake total, EV médio, % comprometido), disclaimer.
+2. **Stake sugerido por pick**: bloco abaixo de cada prediction mostrando "Quarter Kelly • X.XX% do bankroll → R$ Y.YY". Picks sem EV positivo: "Sem EV positivo — stake não recomendado".
+3. **Persistência**: bankroll salvo em `localStorage` entre sessões.
+4. **Cálculo 100% client-side**: `calcQuarterKelly(prob, odd, bankroll)` usando `calibrated_probability` e `book_odd` que já vêm da API. Cap 5% por pick.
+
+### Implementação
+
+- `BankrollCard.tsx`: componente + função exportada `calcQuarterKelly`
+- `dashboard/page.tsx`: state `bankroll`, `handleBankrollChange` com localStorage, BankrollCard renderizado acima do MatchDetailCard, prop `bankroll` passada ao card
+- `MatchDetailCard.tsx`: prop `bankroll`, bloco de stake dentro do loop de predictions
+- `match-detail-card.css`: classes `.bkr-*` e `.stake-*`
+
+### Lição aprendida
+
+O pipeline v2 já retornava `ev`, `calibrated_probability`, `book_odd` por pick — o cálculo de stake não precisou de alteração no backend. Features de apresentação devem consumir dados existentes sempre que possível.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

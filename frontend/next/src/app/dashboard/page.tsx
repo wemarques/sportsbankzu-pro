@@ -16,6 +16,7 @@ import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/
 import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import LeagueConfidenceBadge, { ConfidenceLegend } from "@/components/LeagueConfidenceBadge";
+import BankrollCard, { calcQuarterKelly } from "@/components/BankrollCard";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
@@ -652,6 +653,13 @@ export default function Dashboard() {
   const [batchAuditLoading, setBatchAuditLoading] = useState(false);
   const [batchAuditOpen, setBatchAuditOpen] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [bankroll, setBankroll] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sportsbankzu-bankroll");
+      if (saved) { const v = parseFloat(saved); if (!isNaN(v) && v > 0) return v; }
+    }
+    return 100;
+  });
   const [isMockData, setIsMockData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -1137,6 +1145,12 @@ export default function Dashboard() {
       } catch { }
       return next;
     });
+  }, []);
+
+  // Persist bankroll to localStorage (#094)
+  const handleBankrollChange = useCallback((v: number) => {
+    setBankroll(v);
+    try { localStorage.setItem("sportsbankzu-bankroll", v.toString()); } catch {}
   }, []);
 
   const handleTopbarShareWhatsApp = useCallback(async () => {
@@ -2449,6 +2463,27 @@ export default function Dashboard() {
         {(!isMobile || selectedMatchId) && (
           <section ref={rightPanelRef} className="st-panel-right detail-card-section">
             {detailData ? (
+              <>
+              {/* Bankroll Card (#094) */}
+              {detailData.predictions && detailData.predictions.length > 0 && (() => {
+                const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && (p.book_odd ?? p.odd_minima ?? 0) > 1);
+                const stakes = evPicks.map((p) => calcQuarterKelly(
+                  (p.calibrated_probability ?? (p.prob_max ?? 50) / 100),
+                  p.book_odd ?? p.odd_minima ?? 2,
+                  bankroll,
+                ));
+                const totalStake = stakes.reduce((s, k) => s + k.stake, 0);
+                const avgEV = evPicks.length > 0 ? evPicks.reduce((s, p) => s + ((p.ev ?? 0) * 100), 0) / evPicks.length : 0;
+                return (
+                  <BankrollCard
+                    bankroll={bankroll}
+                    onBankrollChange={handleBankrollChange}
+                    totalStake={totalStake}
+                    avgEV={avgEV}
+                    pickCount={evPicks.length}
+                  />
+                );
+              })()}
               <MatchDetailCard
                 match={detailData}
                 version={appVersion}
@@ -2462,7 +2497,9 @@ export default function Dashboard() {
                 isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
                 onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
                 onRegenerate={handleGenerateAiAnalysis}
+                bankroll={bankroll}
               />
+              </>
             ) : (
               <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
             )}
