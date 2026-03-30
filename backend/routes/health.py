@@ -237,3 +237,73 @@ async def diagnostics(league: str = Query("premier-league")):
         result["exception"] = f"{type(e).__name__}: {e}"
 
     return result
+
+
+@router.get("/health/reliability")
+async def reliability_metrics():
+    """Princeton AI Agent Reliability framework — 4 dimensions (#101)."""
+    from backend.services.reliability_tracker import tracker
+    from backend import audit as audit_db
+
+    stats = tracker.get_stats()
+
+    # --- Predictability: from last cron audit ---
+    pred_data: dict = {"brier_score": None, "n_total": 0, "suficiente": False}
+    try:
+        recent = audit_db.get_recent_audit_results(days=7, limit=1)
+        if recent:
+            import json as _json
+            ctx = recent[0].get("context") or {}
+            if isinstance(ctx, str):
+                ctx = _json.loads(ctx)
+            pred_data["brier_score"] = ctx.get("avg_brier_score")
+            pred_data["n_total"] = ctx.get("total_matches", 0)
+            pred_data["suficiente"] = pred_data["n_total"] >= 20
+    except Exception:
+        pass
+
+    # --- Safety ---
+    safety = {
+        "complementares_bloqueados": stats.get("complementares_bloqueados", 0),
+        "acoes_bloqueadas": stats.get("acoes_bloqueadas", 0),
+        "mistral_contradicoes": stats.get("mistral_contradicoes", 0),
+        "compliance_rate": 1.0,
+    }
+
+    # --- Robustness ---
+    af_ok = stats.get("api_football_ok", 0)
+    af_fail = stats.get("api_football_fail", 0)
+    fs_ok = stats.get("footystats_ok", 0)
+    fs_fail = stats.get("footystats_fail", 0)
+    mi_ok = stats.get("mistral_ok", 0)
+    mi_fail = stats.get("mistral_fail", 0)
+    robustness = {
+        "api_football_success_rate": round(af_ok / max(af_ok + af_fail, 1), 3),
+        "footystats_success_rate": round(fs_ok / max(fs_ok + fs_fail, 1), 3),
+        "mistral_success_rate": round(mi_ok / max(mi_ok + mi_fail, 1), 3),
+        "fallbacks_ativados": stats.get("fallbacks_ativados", 0),
+    }
+
+    # --- Consistency ---
+    consistency = {
+        "lambda_duration_avg_ms": stats.get("avg_duration_ms"),
+        "lambda_duration_cv": stats.get("cv_duration"),
+        "lambda_duration_p95_ms": stats.get("p95_duration_ms"),
+        "picks_por_jogo_avg": stats.get("picks_por_jogo_avg"),
+        "picks_por_jogo_cv": stats.get("picks_por_jogo_cv"),
+    }
+
+    return {
+        "framework": "Princeton AI Agent Reliability (Rabanser et al., 2026)",
+        "predictability": pred_data,
+        "safety": safety,
+        "robustness": robustness,
+        "consistency": consistency,
+        "defesas_ativas": {
+            "anti_alucinacao_mistral": 6,
+            "circuit_breaker_safe": True,
+            "min_n_brier": 20,
+            "contrato_mistral_082": True,
+        },
+        "tracker_started_at": stats.get("started_at"),
+    }

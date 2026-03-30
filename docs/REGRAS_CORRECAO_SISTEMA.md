@@ -5645,4 +5645,31 @@ Brier Score global é insuficiente para diagnosticar calibração. ECE por faixa
 
 ---
 
+## 101 — Dashboard de Confiabilidade (Admin) — 4 dimensoes Princeton
+
+**Data:** 2026-03-30
+**Arquivos afetados:** `backend/routes/health.py`, `backend/services/reliability_tracker.py` (novo), `backend/services/safety_validation.py`, `frontend/next/src/app/admin/reliability/page.tsx` (novo), `frontend/next/src/app/api/admin/reliability/route.ts` (novo)
+**Severidade:** Baixa (feature informativa, diferencial competitivo)
+**Status:** Implementado
+**Relacionado:** #098 (safety complementares), #099 (filtro auditoria), #100 (ECE calibracao)
+
+### Funcionalidade adicionada
+
+1. **ReliabilityTracker** — singleton que conta eventos de safety/robustness em tempo real (reset no cold start)
+2. **`GET /health/reliability`** — endpoint que agrega metricas das 4 dimensoes Princeton
+3. **Pagina `/admin/reliability`** — dashboard visual com Previsibilidade, Seguranca, Robustez, Consistencia e Defesas Ativas
+4. Integracao com safety_validation.py para contar bloqueios (#098, #099)
+
+### Verificacao
+
+- Endpoint retorna JSON com 4 dimensoes + defesas_ativas
+- Frontend build OK com rota /admin/reliability
+- 28/28 regressao OK
+
+### Licao aprendida
+
+Metricas de confiabilidade devem ser visiveis e permanentes. Um dashboard dedicado incentiva monitoramento continuo.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
