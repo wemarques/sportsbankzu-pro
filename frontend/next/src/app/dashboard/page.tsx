@@ -17,6 +17,7 @@ import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import LeagueConfidenceBadge, { ConfidenceLegend } from "@/components/LeagueConfidenceBadge";
 import BankrollCard, { calcQuarterKelly } from "@/components/BankrollCard";
+import ReliabilityCard from "@/components/ReliabilityCard";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
@@ -652,6 +653,10 @@ export default function Dashboard() {
   const [batchAuditResult, setBatchAuditResult] = useState<BatchAuditResult | null>(null);
   const [batchAuditLoading, setBatchAuditLoading] = useState(false);
   const [batchAuditOpen, setBatchAuditOpen] = useState(false);
+  const [reliabilityOpen, setReliabilityOpen] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [reliabilityData, setReliabilityData] = useState<any>(null);
+  const [reliabilityLoading, setReliabilityLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [bankroll, setBankroll] = useState<number>(() => {
     if (typeof window !== "undefined") {
@@ -1293,6 +1298,21 @@ export default function Dashboard() {
   const finishedCount = useMemo(() => {
     return allMatches.filter((m) => m.status === "finished").length;
   }, [allMatches]);
+
+  const handleReliabilityClick = useCallback(async () => {
+    if (reliabilityOpen) { setReliabilityOpen(false); return; }
+    setReliabilityOpen(true);
+    setReliabilityLoading(true);
+    try {
+      const res = await fetch("/api/admin/reliability");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setReliabilityData(await res.json());
+    } catch {
+      setReliabilityData(null);
+    } finally {
+      setReliabilityLoading(false);
+    }
+  }, [reliabilityOpen]);
 
   const handleBatchAudit = useCallback(async () => {
     if (batchAuditLoading) return;
@@ -2055,6 +2075,16 @@ export default function Dashboard() {
                   </button>
                   <button
                     type="button"
+                    className={`st-filter-btn ${reliabilityOpen ? "st-filter-btn--active" : ""}`}
+                    onClick={handleReliabilityClick}
+                    title="Metricas de confiabilidade do sistema (Princeton framework)"
+                    style={reliabilityOpen ? { borderColor: "rgba(96,165,250,0.5)", color: "#60a5fa" } : undefined}
+                  >
+                    {reliabilityLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
+                    Confiabilidade
+                  </button>
+                  <button
+                    type="button"
                     className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
                     onClick={() => setSortOrder((v) => v === "asc" ? "desc" : "asc")}
                     title={sortOrder === "asc" ? "Ordenar: mais cedo primeiro" : "Ordenar: mais tarde primeiro"}
@@ -2506,6 +2536,28 @@ export default function Dashboard() {
           </section>
         )}
       </div>
+
+      {/* Reliability Panel (#101) */}
+      {reliabilityOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setReliabilityOpen(false); }}>
+          <div style={{ width: "100%", maxWidth: 560 }}>
+            {reliabilityLoading ? (
+              <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 40, textAlign: "center", color: "#64748b", border: "1px solid rgba(96,165,250,0.15)" }}>
+                <Loader2 size={20} className="st-spin-icon" style={{ marginBottom: 8 }} />
+                <div style={{ fontSize: "0.7rem" }}>Carregando metricas...</div>
+              </div>
+            ) : reliabilityData ? (
+              <ReliabilityCard data={reliabilityData} onClose={() => setReliabilityOpen(false)} />
+            ) : (
+              <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 30, textAlign: "center", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}>
+                <div style={{ fontSize: "0.7rem", marginBottom: 10 }}>Dados indisponiveis</div>
+                <button onClick={handleReliabilityClick} style={{ fontSize: "0.6rem", padding: "5px 14px", borderRadius: 6, border: "1px solid rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)", color: "#60a5fa", cursor: "pointer" }}>Tentar novamente</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Batch Audit Panel (modal overlay) */}
       {batchAuditOpen && batchAuditResult && (

@@ -2710,3 +2710,8 @@
   padding: 6px 10px; background: rgba(0,0,0,0.15);
   border-radius: 7px; margin-top: 6px;
 }
+
+/* Reliability dimensions grid (#101) */
+@media (min-width: 480px) {
+  .reliability-dimensions { grid-template-columns: 1fr 1fr; }
+}
