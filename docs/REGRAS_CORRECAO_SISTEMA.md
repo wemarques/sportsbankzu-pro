@@ -5585,4 +5585,38 @@ Validação de integridade matemática deve existir INDEPENDENTE de defesas no p
 
 ---
 
+## 099 — Safety: filtro de ações de auditoria por regras operacionais
+
+**Data:** 2026-03-30
+**Arquivos afetados:** `backend/services/safety_validation.py`, `backend/services/deterministic_audit.py`
+**Severidade:** Alta (previne recomendações que violam regras operacionais)
+**Status:** Implementado
+**Relacionado:** #082 (contrato Mistral), #079 (amostras mínimas), #042 (backtesting), #043 (circuit breaker)
+
+### Funcionalidade adicionada
+
+1. `filtrar_acoes_por_regras()` — filtra `recommended_actions` (strings) contra padrões proibidos
+2. `filtrar_corrections_por_regras()` — filtra `recommended_corrections` (objetos com parameter/reason)
+3. Integrado em `deterministic_audit.py` após `_compute_corrections()` e `_compute_model_recommendation()`
+4. Ações bloqueadas retornadas em `blocked_corrections` para transparência
+
+### Regras implementadas
+
+| Padrão | Regra | Motivo |
+|--------|-------|--------|
+| `lambda.*multiplier` | #082 | Mistral não ajusta parâmetros |
+| `calibration.*retrain` (N<20) | #079 | MIN_N_BRIER=20 jogos |
+| `ajustar.*threshold` | #042 | Requer backtesting |
+| `safe.*recalibr` | #043 | Circuit breaker ativo |
+
+### Verificação
+
+6/6 testes: lambda bloqueado, calibration N=6 bloqueado, calibration N=25 permitido, threshold bloqueado, ação genérica permitida, correction object bloqueado. 32/32 regressão OK.
+
+### Lição aprendida
+
+O sistema de auditoria deve respeitar suas próprias regras. Recomendar ações proibidas é violação de compliance — o filtro é a última camada de defesa entre o gerador de ações e o usuário.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

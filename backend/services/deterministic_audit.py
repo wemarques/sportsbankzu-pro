@@ -76,8 +76,28 @@ def generate_deterministic_audit_report(
         avg_brier, avg_lambda_err, safe_acc, batch_summary, league_metrics
     )
 
+    # ── Safety: filter corrections against operational rules (#099) ──
+    try:
+        from backend.services.safety_validation import filtrar_corrections_por_regras
+        _filter_result = filtrar_corrections_por_regras(corrections, n_jogos=total_audited)
+        corrections = _filter_result["acoes_validas"]
+        _blocked_corrections = _filter_result["acoes_bloqueadas"]
+    except Exception:
+        _blocked_corrections = []
+
     # ── model_update_recommendation ─────────────────────────────────
     model_rec = _compute_model_recommendation(assessment, corrections)
+
+    # Filter recommended_actions against rules (#099)
+    try:
+        from backend.services.safety_validation import filtrar_acoes_por_regras
+        _act_filter = filtrar_acoes_por_regras(
+            model_rec.get("recommended_actions", []), n_jogos=total_audited
+        )
+        model_rec["recommended_actions"] = _act_filter["acoes_validas"]
+        _blocked_corrections.extend(_act_filter["acoes_bloqueadas"])
+    except Exception:
+        pass
 
     # ── overall_notes with per-league summary ───────────────────────
     notes_parts = [
@@ -153,6 +173,7 @@ def generate_deterministic_audit_report(
             "notes": "Audit 100% deterministico — sem LLM (#079)",
         },
         "recommended_corrections": corrections,
+        "blocked_corrections": _blocked_corrections,  # #099
         "model_update_recommendation": model_rec,
         "audit_confidence": confidence,
         "timestamp": datetime.now().isoformat(),

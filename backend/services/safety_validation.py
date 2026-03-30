@@ -97,3 +97,107 @@ def validar_mercados_complementares(predictions: List[Dict]) -> List[Dict]:
         logger.warning(f"[SAFETY] {len(blocked)} pick(s) bloqueado(s) por inconsistência complementar")
 
     return [p for idx, p in enumerate(predictions) if idx not in blocked]
+
+
+# ─── Audit Action Filtering (#099) ───────────────────────────────────────────
+
+_ACOES_PROIBIDAS = [
+    {
+        "pattern": r"lambda.*multiplier|lambda.*ajust|lambda_home_mult|lambda_away_mult",
+        "regra": "#082",
+        "motivo": "Mistral é narrativa — não ajusta parâmetros do pipeline",
+    },
+    {
+        "pattern": r"calibration.*retrain|recalibr.*isotonic|isotonic.*recalibr",
+        "regra": "#079",
+        "motivo": "Requer MIN_N_BRIER=20 jogos para recalibração",
+        "min_jogos": 20,
+    },
+    {
+        "pattern": r"ajustar.*threshold|threshold.*ajust|recalibrar.*threshold|safe_prob.*ajust",
+        "regra": "#042",
+        "motivo": "Thresholds só podem ser alterados com backtesting documentado",
+    },
+    {
+        "pattern": r"safe.*recalibr|safe.*acur[aá]cia.*ajust|reativar.*safe",
+        "regra": "#043",
+        "motivo": "Circuit breaker ativo — requer 3 auditorias com accuracy >50%",
+    },
+]
+
+
+def filtrar_acoes_por_regras(
+    acoes: list, n_jogos: int = 0
+) -> Dict[str, list]:
+    """Filter audit recommended actions against operational rules (#099).
+
+    Returns {"acoes_validas": [...], "acoes_bloqueadas": [...]}.
+    """
+    validas: list = []
+    bloqueadas: list = []
+
+    for acao in acoes:
+        texto = acao if isinstance(acao, str) else str(acao.get("reason", acao.get("parameter", acao)))
+        texto_lower = texto.lower()
+
+        hit = False
+        for regra in _ACOES_PROIBIDAS:
+            if not re.search(regra["pattern"], texto_lower):
+                continue
+            # Check min_jogos condition
+            if "min_jogos" in regra and n_jogos >= regra["min_jogos"]:
+                continue  # enough data, allow
+            bloqueadas.append({
+                "acao_original": texto,
+                "regra_violada": regra["regra"],
+                "motivo": regra["motivo"],
+            })
+            hit = True
+            break
+
+        if not hit:
+            validas.append(acao)
+
+    if bloqueadas:
+        logger.warning(
+            f"[SAFETY] {len(bloqueadas)} ação(ões) de auditoria bloqueada(s) por regras operacionais"
+        )
+
+    return {"acoes_validas": validas, "acoes_bloqueadas": bloqueadas}
+
+
+def filtrar_corrections_por_regras(
+    corrections: list, n_jogos: int = 0
+) -> Dict[str, list]:
+    """Filter correction objects (with parameter/reason fields) against rules (#099)."""
+    validas: list = []
+    bloqueadas: list = []
+
+    for c in corrections:
+        param = str(c.get("parameter", "")).lower()
+        reason = str(c.get("reason", "")).lower()
+        combined = f"{param} {reason}"
+
+        hit = False
+        for regra in _ACOES_PROIBIDAS:
+            if not re.search(regra["pattern"], combined):
+                continue
+            if "min_jogos" in regra and n_jogos >= regra["min_jogos"]:
+                continue
+            bloqueadas.append({
+                "acao_original": f"{c.get('parameter','')}: {c.get('current_value','')} → {c.get('suggested_value','')}",
+                "regra_violada": regra["regra"],
+                "motivo": regra["motivo"],
+            })
+            hit = True
+            break
+
+        if not hit:
+            validas.append(c)
+
+    if bloqueadas:
+        logger.warning(
+            f"[SAFETY] {len(bloqueadas)} correção(ões) bloqueada(s) por regras operacionais"
+        )
+
+    return {"acoes_validas": validas, "acoes_bloqueadas": bloqueadas}
