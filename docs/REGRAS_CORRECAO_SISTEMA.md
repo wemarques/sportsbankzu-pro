@@ -5619,4 +5619,30 @@ O sistema de auditoria deve respeitar suas próprias regras. Recomendar ações 
 
 ---
 
+## 100 — Predictability: ECE (Expected Calibration Error) por faixa de probabilidade
+
+**Data:** 2026-03-30
+**Arquivos afetados:** `backend/services/backtesting.py`, `backend/cron_handler.py`
+**Severidade:** Baixa (feature informativa, não altera pipeline)
+**Status:** Implementado
+**Relacionado:** #079 (amostras mínimas), #084 (métricas no cron)
+
+### Funcionalidade adicionada
+
+`compute_ece()` em `backtesting.py` — divide picks em 5 faixas de probabilidade e compara prob prevista vs acurácia real. Retorna `ece_global` (0=perfeito), `faixas` com status (calibrado/overconfident/underconfident), `aviso` quando N<20.
+
+Integrado no `cron_handler.py` como `batch_summary["calibration"]["ece_faixas"]`, substituindo o cálculo inline anterior.
+
+### Verificação
+
+- Modelo calibrado (pred 65%, real 67%) → ECE 0.017, status "calibrado"
+- Modelo overconfident (pred 80%, real 33%) → ECE 0.467, status "overconfident"
+- 47/47 regressão OK
+
+### Lição aprendida
+
+Brier Score global é insuficiente para diagnosticar calibração. ECE por faixa revela se o modelo é overconfident em certas faixas e underconfident em outras.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

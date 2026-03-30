@@ -494,6 +494,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         compute_sharpe_ratio,
         compute_hit_rate_by_ev_band,
         compute_calibration_bins,
+        compute_ece,
         compute_roi,
         compute_implied_odds_brier,
     )
@@ -513,21 +514,20 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     ]
     batch_summary["hit_rate_by_ev"] = compute_hit_rate_by_ev_band(ev_band_picks)
 
-    # Reliability Diagram (ECE/MCE) — compute_calibration_bins takes list[dict]
+    # Reliability Diagram + ECE by band (#084, #100)
     calibration_preds = [
         {"prob": p["prob"], "outcome": p["outcome"]}
         for p in ou_predictions
         if p.get("prob") is not None and p.get("outcome") is not None
     ]
-    if len(calibration_preds) >= 30:  # MIN_N_RELIABILITY
-        cal_bins = compute_calibration_bins(calibration_preds)
-        # Compute ECE from bins
-        total_count = sum(b["count"] for b in cal_bins) if cal_bins else 0
-        ece = sum(b["count"] * abs(b["predicted_avg"] - b["actual_avg"]) for b in cal_bins) / total_count if total_count > 0 else None
-        batch_summary["calibration"] = {"bins": cal_bins, "ece": round(ece, 4) if ece is not None else None, "n": total_count}
-    else:
-        batch_summary["calibration"] = {"bins": [], "ece": None, "n": len(calibration_preds),
-                                         "note": f"N={len(calibration_preds)} < 30 (insuficiente)"}
+    ece_result = compute_ece(calibration_preds, n_bins=5)
+    batch_summary["calibration"] = {
+        "bins": compute_calibration_bins(calibration_preds) if len(calibration_preds) >= 30 else [],
+        "ece": ece_result.get("ece_global"),
+        "ece_faixas": ece_result.get("faixas", []),
+        "n": ece_result.get("n_total", 0),
+        "aviso": ece_result.get("aviso"),
+    }
 
     # ROI / Yield
     roi_picks = [

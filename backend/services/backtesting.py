@@ -100,6 +100,57 @@ def compute_calibration_bins(predictions: list[dict], n_bins: int = 10) -> list[
     return result
 
 
+def compute_ece(predictions: list[dict], n_bins: int = 5) -> dict:
+    """Expected Calibration Error by probability band (#100).
+
+    Uses compute_calibration_bins() and derives ECE + per-band diagnostics.
+    Input: list of {"prob": float 0-1, "outcome": bool|int}.
+    Returns: {"ece_global", "faixas": [...], "n_total", "aviso"}.
+    """
+    n_total = len(predictions) if predictions else 0
+    if n_total == 0:
+        return {"ece_global": None, "faixas": [], "n_total": 0, "aviso": "Sem dados históricos"}
+
+    bins = compute_calibration_bins(predictions, n_bins=n_bins)
+    faixas = []
+    ece_total = 0.0
+
+    for b in bins:
+        gap = abs(b["predicted_avg"] - b["actual_avg"])
+        weight = b["count"] / n_total
+        ece_total += weight * gap
+
+        if gap <= 0.05:
+            status = "calibrado"
+        elif b["predicted_avg"] > b["actual_avg"]:
+            status = "overconfident"
+        else:
+            status = "underconfident"
+
+        faixas.append({
+            "faixa": f"{int(b['bin_start']*100)}-{int(b['bin_end']*100)}%",
+            "prob_media": b["predicted_avg"],
+            "acuracia_real": b["actual_avg"],
+            "gap": round(gap, 4),
+            "n_picks": b["count"],
+            "status": status,
+            "significativo": b["count"] >= 10,
+        })
+
+    aviso = None
+    if n_total < 20:
+        aviso = f"Amostra insuficiente (N={n_total}, mínimo=20 por regra #079). ECE não confiável."
+    elif any(f["n_picks"] < 10 and f["n_picks"] > 0 for f in faixas):
+        aviso = "Algumas faixas têm menos de 10 picks — resultados podem não ser significativos."
+
+    return {
+        "ece_global": round(ece_total, 4),
+        "faixas": faixas,
+        "n_total": n_total,
+        "aviso": aviso,
+    }
+
+
 def compute_roi(picks: list[dict], initial_bankroll: float = 1000.0) -> dict:
     """Simulated ROI betting on picks with EV > 0. Target: > 3% per 1000 bets.
 
