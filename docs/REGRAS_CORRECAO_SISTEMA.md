@@ -5672,4 +5672,32 @@ Metricas de confiabilidade devem ser visiveis e permanentes. Um dashboard dedica
 
 ---
 
+## 102 — Persistir ReliabilityTracker no PostgreSQL + integrar API clients
+
+**Data:** 2026-03-30
+**Arquivos afetados:** `backend/services/reliability_tracker.py` (reescrito), `backend/services/api_football_client.py`, `backend/services/footstats_client.py`, `backend/services/mistral_analysis.py`, `backend/services/safety_validation.py`, `backend/routes/health.py`, `backend/cron_handler.py`, `backend/main.py`
+**Severidade:** Baixa (monitoramento, nao altera pipeline)
+**Status:** Implementado
+**Relacionado:** #101 (dashboard confiabilidade), #098 (safety), #099 (filtro auditoria)
+
+### Funcionalidade adicionada
+
+1. Tabela `reliability_events` no PostgreSQL (auto-criada via `_ensure_table`)
+2. `track_api_call()` integrado em API-Football (`_get_sync`), FootyStats (`_request`), Mistral (`_call_mistral_api`)
+3. `track_duration()` no handler Lambda principal (`main.py:handler`)
+4. `track_safety()` atualizado em `safety_validation.py`
+5. `get_stats(days=30)` le agregados do PostgreSQL (AVG, PERCENTILE_CONT, STDDEV)
+6. `cleanup_old_events(90d)` no cron diario
+7. Fallback: in-memory counters quando PostgreSQL indisponivel
+
+### Regra critica
+
+Monitoramento NUNCA bloqueia producao. Todo INSERT e leitura em try/except silencioso.
+
+### Verificacao
+
+47/47 testes regressao OK. Deploy Lambda OK. Endpoint retorna dados (acumulam com uso).
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

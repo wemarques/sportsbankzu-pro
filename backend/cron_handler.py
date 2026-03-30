@@ -689,6 +689,14 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     }
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")
+
+    # Cleanup old reliability events (#102)
+    try:
+        from backend.services.reliability_tracker import cleanup_old_events
+        cleanup_old_events(days=90)
+    except Exception:
+        pass
+
     return result
 
 

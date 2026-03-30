@@ -96,8 +96,8 @@ def validar_mercados_complementares(predictions: List[Dict]) -> List[Dict]:
     if blocked:
         logger.warning(f"[SAFETY] {len(blocked)} pick(s) bloqueado(s) por inconsistência complementar")
         try:
-            from backend.services.reliability_tracker import tracker
-            tracker.track("complementares_bloqueados", len(blocked))
+            from backend.services.reliability_tracker import track_safety
+            track_safety("complementares_bloqueados", len(blocked))
         except Exception:
             pass
 
@@ -168,8 +168,8 @@ def filtrar_acoes_por_regras(
             f"[SAFETY] {len(bloqueadas)} ação(ões) de auditoria bloqueada(s) por regras operacionais"
         )
         try:
-            from backend.services.reliability_tracker import tracker
-            tracker.track("acoes_bloqueadas", len(bloqueadas))
+            from backend.services.reliability_tracker import track_safety
+            track_safety("acoes_bloqueadas", len(bloqueadas))
         except Exception:
             pass
 

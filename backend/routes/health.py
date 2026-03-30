@@ -242,10 +242,10 @@ async def diagnostics(league: str = Query("premier-league")):
 @router.get("/health/reliability")
 async def reliability_metrics():
     """Princeton AI Agent Reliability framework — 4 dimensions (#101)."""
-    from backend.services.reliability_tracker import tracker
+    from backend.services.reliability_tracker import get_stats
     from backend import audit as audit_db
 
-    stats = tracker.get_stats()
+    stats = get_stats(days=30)
 
     # --- Predictability: from last cron audit ---
     pred_data: dict = {"brier_score": None, "n_total": 0, "suficiente": False}

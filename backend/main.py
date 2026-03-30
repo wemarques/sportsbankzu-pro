@@ -1241,10 +1241,19 @@ if Mangum is not None:
         Routes EventBridge scheduled events to cron_handler,
         and HTTP requests (API Gateway) to Mangum/FastAPI.
         """
+        import time as _t
+        _t0 = _t.time()
         # EventBridge events have a "source" field like "eventbridge" or "aws.events"
         source = event.get("source", "")
         if source in ("eventbridge", "aws.events") or event.get("action") == "batch_audit":
             from backend.cron_handler import cron_handler
             return cron_handler(event, context)
         # Default: HTTP request via API Gateway -> Mangum -> FastAPI
-        return _mangum_handler(event, context)
+        try:
+            return _mangum_handler(event, context)
+        finally:
+            try:
+                from backend.services.reliability_tracker import track_duration
+                track_duration((_t.time() - _t0) * 1000)
+            except Exception:
+                pass

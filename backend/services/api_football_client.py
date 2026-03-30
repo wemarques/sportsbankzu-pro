@@ -274,6 +274,11 @@ class APIFootballClient:
 
                 self._save_to_cache(cache_key, endpoint, params, data, ttl_minutes)
                 logger.info(f"[api-football/{endpoint}] OK ({elapsed_ms}ms, attempt {attempt})")
+                try:
+                    from backend.services.reliability_tracker import track_api_call
+                    track_api_call("api_football", True)
+                except Exception:
+                    pass
                 return data
 
             except Exception as e:
@@ -283,6 +288,11 @@ class APIFootballClient:
                     time.sleep(2)
 
         logger.error(f"[api-football/{endpoint}] Failed after {max_attempts} attempts: {last_error}")
+        try:
+            from backend.services.reliability_tracker import track_api_call
+            track_api_call("api_football", False)
+        except Exception:
+            pass
         return {"response": [], "errors": {"message": str(last_error)}}
 
     # ==================================================================

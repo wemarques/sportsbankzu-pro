@@ -151,6 +151,12 @@ class MistralAnalysisService:
             return result
         except Exception as e:
             print(f"[MistralV3] Erro ao chamar API: {e}")
+            try:
+                from backend.services.reliability_tracker import track_api_call, track_safety
+                track_api_call("mistral", False)
+                track_safety("fallbacks_ativados")
+            except Exception:
+                pass
             return self._get_fallback_analysis()
 
     # -----------------------------------------------------------------
@@ -427,6 +433,11 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
             )
             response.raise_for_status()
             data = response.json()
+            try:
+                from backend.services.reliability_tracker import track_api_call
+                track_api_call("mistral", True)
+            except Exception:
+                pass
             return data['choices'][0]['message']['content']
 
     # -----------------------------------------------------------------

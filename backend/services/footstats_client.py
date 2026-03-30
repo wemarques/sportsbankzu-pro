@@ -140,6 +140,11 @@ class FootyStatsClient:
                 if data.get("success"):
                     self._save_to_cache(cache_key, endpoint, params, data, ttl_minutes)
                     logger.info(f"[{endpoint}] OK ({elapsed_ms}ms, attempt {attempt})")
+                    try:
+                        from backend.services.reliability_tracker import track_api_call
+                        track_api_call("footystats", True)
+                    except Exception:
+                        pass
                     return data
                 else:
                     logger.warning(
@@ -170,6 +175,11 @@ class FootyStatsClient:
                 break
 
         logger.error(f"[{endpoint}] Failed after {max_attempts} attempts: {last_error}")
+        try:
+            from backend.services.reliability_tracker import track_api_call
+            track_api_call("footystats", False)
+        except Exception:
+            pass
         return {"success": False, "error": str(last_error)}
 
     def get_league_list(self, chosen_only: bool = True) -> Dict[str, Any]:
