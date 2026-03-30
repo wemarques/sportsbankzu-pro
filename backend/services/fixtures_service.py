@@ -1298,6 +1298,12 @@ def build_records_from_matches(
                     logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
 
             mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
+            # Safety hard constraint (#098): block complementary markets >105%
+            try:
+                from backend.services.safety_validation import validar_mercados_complementares
+                mercados = validar_mercados_complementares(mercados)
+            except Exception as _safety_err:
+                logger.debug(f"[Safety] Validation skipped: {_safety_err}")
             record["mercados"] = mercados
 
             # Expose v2 corner predictions in the API response

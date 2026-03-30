@@ -5559,4 +5559,30 @@ Nomes de times brasileiros são particularmente problemáticos — abreviações
 
 ---
 
+## 098 — Safety: validação de mercados complementares (hard constraint)
+
+**Data:** 2026-03-30
+**Arquivos afetados:** `backend/services/safety_validation.py` (novo), `backend/services/fixtures_service.py`
+**Severidade:** Crítica (previne exibição de probabilidades impossíveis)
+**Status:** Implementado
+**Relacionado:** #096 (Mistral contradiz pipeline)
+
+### Funcionalidade adicionada
+
+`validar_mercados_complementares()` em `safety_validation.py` — detecta pares complementares (Under/Over gols, escanteios, cartões + BTTS Sim/Não) com probabilidades somando >105% e bloqueia o pick com menor EV. Integrado em `fixtures_service.py` após `selecionar_mercados_v2()` e antes de `record["mercados"]`.
+
+### Detecção
+
+`_sao_complementares()` usa regex para detectar pares Over/Under na mesma linha (2.5, 3.5, etc.) e BTTS Sim/Não. Tolerância de 5% para arredondamentos (105% → OK, 106% → bloqueio).
+
+### Verificação
+
+5/5 testes: complementares 124% → bloqueado, complementares 100% → mantidos, tolerância 105% → mantidos, não-complementares → mantidos, detecção de pares → OK. 42/42 regressão OK.
+
+### Lição aprendida
+
+Validação de integridade matemática deve existir INDEPENDENTE de defesas no prompt da Mistral. É a última linha de defesa — mesmo que todas as 6 camadas anti-alucinação falhem, esta validação impede que dados impossíveis cheguem ao usuário.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
