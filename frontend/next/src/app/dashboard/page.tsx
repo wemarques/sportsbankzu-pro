@@ -2541,7 +2541,7 @@ export default function Dashboard() {
       {reliabilityOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
           onClick={(e) => { if (e.target === e.currentTarget) setReliabilityOpen(false); }}>
-          <div style={{ width: "100%", maxWidth: 560 }}>
+          <div style={{ width: "100%", maxWidth: 620 }}>
             {reliabilityLoading ? (
               <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 40, textAlign: "center", color: "#64748b", border: "1px solid rgba(96,165,250,0.15)" }}>
                 <Loader2 size={20} className="st-spin-icon" style={{ marginBottom: 8 }} />
