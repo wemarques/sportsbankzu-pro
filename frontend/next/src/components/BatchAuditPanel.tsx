@@ -796,6 +796,23 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                   </button>
                 </div>
               )}
+              {/* Blocked corrections (#099b) */}
+              {ev?.blocked_corrections && ev.blocked_corrections.length > 0 && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: "0.65rem", color: "#64748b", cursor: "pointer" }}>
+                    {ev.blocked_corrections.length} ação(ões) bloqueada(s) por regras operacionais
+                  </summary>
+                  <div style={{ fontSize: "0.6rem", color: "#475569", marginTop: 4, padding: "4px 8px" }}>
+                    {ev.blocked_corrections.map((b: { original: string; rule: string }, i: number) => (
+                      <div key={i} style={{ marginBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.03)", paddingBottom: 4 }}>
+                        <span style={{ textDecoration: "line-through", color: "#64748b" }}>{b.original}</span>
+                        <br />
+                        <span style={{ color: "#ef4444", fontSize: "0.55rem" }}>Bloqueada ({b.rule})</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </>
           )}
         </div>

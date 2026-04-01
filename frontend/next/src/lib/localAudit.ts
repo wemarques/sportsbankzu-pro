@@ -7,6 +7,44 @@
  */
 
 import type { Match } from "./leagues";
+
+// ── Safety: operational rules filter (#099b) ──
+const _BLOCKED_ACTION_PATTERNS = [
+  /lambda.*multiplier|lambda.*ajust/i,
+  /calibration.*retrain|recalibr.*isotonic/i,
+  /ajustar.*threshold|threshold.*ajust/i,
+  /safe.*recalibr|reativar.*safe|elevar.*threshold.*safe/i,
+];
+
+function _isBlockedAction(text: string): boolean {
+  return _BLOCKED_ACTION_PATTERNS.some((p) => p.test(text));
+}
+
+function filterActions(actions: string[]): string[] {
+  return actions.filter((a) => !_isBlockedAction(a));
+}
+
+function filterCorrections(corrections: BatchAuditCorrection[], nJogos: number): {
+  allowed: BatchAuditCorrection[];
+  blocked: Array<{ original: string; rule: string }>;
+} {
+  const allowed: BatchAuditCorrection[] = [];
+  const blocked: Array<{ original: string; rule: string }> = [];
+  for (const c of corrections) {
+    const text = `${c.parameter} ${c.reason}`;
+    if (/lambda.*multiplier/i.test(text)) {
+      blocked.push({ original: `${c.parameter}: ${c.current_value} → ${c.suggested_value}`, rule: "#082" });
+    } else if (/calibration.*retrain/i.test(text) && nJogos < 20) {
+      blocked.push({ original: `${c.parameter}: ${c.current_value} → ${c.suggested_value}`, rule: "#079 (N<20)" });
+    } else if (/safe.*threshold|threshold.*safe/i.test(text)) {
+      blocked.push({ original: `${c.parameter}: ${c.current_value} → ${c.suggested_value}`, rule: "#042" });
+    } else {
+      allowed.push(c);
+    }
+  }
+  return { allowed, blocked };
+}
+
 import type {
   BatchAuditResult,
   BatchAuditMatchResult,
@@ -205,7 +243,7 @@ function computeModelUpdateRecommendation(
     needs_update: needsUpdate,
     urgency,
     reasons,
-    recommended_actions: actions,
+    recommended_actions: filterActions(actions),  // #099b
     next_retrain_suggestion: nextRetrain,
   };
 }
@@ -387,7 +425,8 @@ function buildLocalModelEvaluation(
         : "Thresholds dentro dos parâmetros esperados",
     },
     market_biases: biases,
-    recommended_corrections: corrections,
+    recommended_corrections: filterCorrections(corrections, auditedMatches).allowed,  // #099b
+    blocked_corrections: filterCorrections(corrections, auditedMatches).blocked,  // #099b
     model_update_recommendation: modelUpdateRec,
     audit_confidence: Math.min(90, Math.max(30, auditedMatches * 8)),
   };

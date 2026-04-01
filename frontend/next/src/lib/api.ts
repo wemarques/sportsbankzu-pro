@@ -396,6 +396,7 @@ export interface BatchAuditModelEvaluation {
     notes: string;
   };
   recommended_corrections?: BatchAuditCorrection[];
+  blocked_corrections?: Array<{ original: string; rule: string }>;  // #099b
   model_update_recommendation?: ModelUpdateRecommendation;
   audit_confidence: number;
   timestamp?: string;
