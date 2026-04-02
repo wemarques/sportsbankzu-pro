@@ -754,8 +754,9 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             const cornerDirection = cornerInfo?.direction ?? "over";
                             const displayStatus = pred.classification || pred.status;
                             const statusClass = displayStatus.toLowerCase().replace("*", "-star").replace("_", "-");
+                            const hasRealOdd = pred.book_odd != null && pred.book_odd > 1;
                             return (
-                              <div key={idx}>
+                              <div key={idx} style={hasRealOdd ? undefined : { opacity: 0.55 }}>
                                 <div className={`mdc-prognostico__item mdc-prognostico__item--${statusClass}`}>
                                   <ClassificationBadge status={displayStatus} />
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
@@ -867,25 +868,20 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   </div>
                                 )}
                                 {targetCorners != null && match.status === "live" && (
-                                  match.currentCorners != null ? (
-                                    <CornerProgressBar
-                                      currentCorners={match.currentCorners}
-                                      targetCorners={targetCorners}
-                                      direction={cornerDirection}
-                                    />
-                                  ) : (
-                                    <div className="cpb-root cpb-placeholder">
-                                      <span className="cpb-label">Escanteios</span>
-                                      <span className="cpb-target">{cornerDirection === "over" ? "Meta" : "Limite"}: {targetCorners}</span>
-                                      <span className="cpb-loading">Aguardando dados...</span>
-                                    </div>
-                                  )
+                                  <CornerProgressBar
+                                    currentCorners={match.currentCorners ?? 0}
+                                    targetCorners={targetCorners}
+                                    direction={cornerDirection}
+                                  />
                                 )}
                                 {/* Stake suggestion (#094) */}
                                 {(() => {
+                                  const hasRealOdd = pred.book_odd != null && pred.book_odd > 1;
+                                  if (!hasRealOdd) {
+                                    return <div className="stake-no-value">Sem odd real — stake nao calculavel</div>;
+                                  }
                                   const prob = pred.calibrated_probability ?? (pred.prob_max ?? 50) / 100;
-                                  const odd = pred.book_odd ?? pred.odd_minima ?? 0;
-                                  const k = calcQuarterKelly(prob, odd, bankroll);
+                                  const k = calcQuarterKelly(prob, pred.book_odd!, bankroll);
                                   if (k.ev > 0 && k.stake > 0) {
                                     return (
                                       <div className="stake-suggestion">
@@ -893,16 +889,11 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                           <span className="stake-label-title">Stake Sugerido</span>
                                           <span className="stake-label-detail">Quarter Kelly &bull; {(k.pct * 100).toFixed(2)}% do bankroll</span>
                                         </div>
-                                        <div className="stake-value">
-                                          R$ {k.stake.toFixed(2)}
-                                        </div>
+                                        <div className="stake-value">R$ {k.stake.toFixed(2)}</div>
                                       </div>
                                     );
                                   }
-                                  if ((pred.ev ?? 0) <= 0) {
-                                    return <div className="stake-no-value">Sem EV positivo — stake nao recomendado</div>;
-                                  }
-                                  return null;
+                                  return <div className="stake-no-value">Sem EV positivo — stake nao recomendado</div>;
                                 })()}
                               </div>
                             );

@@ -5700,4 +5700,25 @@ Monitoramento NUNCA bloqueia producao. Todo INSERT e leitura em try/except silen
 
 ---
 
+## 103 — Fix: barra escanteios null + stake em picks sem odd + visual INFORMATIVO
+
+**Data:** 2026-04-01
+**Arquivos afetados:** `frontend/next/src/components/MatchDetailCard.tsx`, `frontend/next/src/app/dashboard/page.tsx`
+**Severidade:** Media (UX — stake falso pode induzir aposta errada)
+**Status:** Corrigido
+**Relacionado:** #094 (bankroll/stake), #095 (cards real odds), #068 (corners)
+
+### Correcoes
+
+1. **CornerProgressBar**: `currentCorners ?? 0` em vez de fallback "Aguardando dados" — mostra 0/9 no inicio do jogo live
+2. **Stake**: so calcula com `book_odd` real (>1). NÃO usa `odd_minima` (fair value) como fallback. Sem odd real → "Sem odd real — stake nao calculavel"
+3. **Visual**: picks sem `book_odd` com `opacity: 0.55` — visualmente subordinados aos VALOR DETECTADO
+4. **BankrollCard summary**: filtra picks sem `book_odd` do calculo de stake total
+
+### Licao aprendida
+
+Fair value (`odd_minima`) nunca deve substituir odd real (`book_odd`) no calculo de stake. Sao metricas diferentes: fair value e informativo, odd real e apostavel.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

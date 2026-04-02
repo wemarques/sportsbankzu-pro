@@ -2496,10 +2496,10 @@ export default function Dashboard() {
               <>
               {/* Bankroll Card (#094) */}
               {detailData.predictions && detailData.predictions.length > 0 && (() => {
-                const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && (p.book_odd ?? p.odd_minima ?? 0) > 1);
+                const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && p.book_odd != null && p.book_odd > 1);
                 const stakes = evPicks.map((p) => calcQuarterKelly(
                   (p.calibrated_probability ?? (p.prob_max ?? 50) / 100),
-                  p.book_odd ?? p.odd_minima ?? 2,
+                  p.book_odd!,
                   bankroll,
                 ));
                 const totalStake = stakes.reduce((s, k) => s + k.stake, 0);
