@@ -5721,4 +5721,48 @@ Fair value (`odd_minima`) nunca deve substituir odd real (`book_odd`) no calculo
 
 ---
 
+## 104 — Lambdas de escanteios subestimadas (V2 misturava escala per-team com per-match)
+
+**Data:** 2026-04-01
+**Arquivos afetados:** `backend/modeling/corners/predictor.py`
+**Severidade:** Critica (picks VALOR DETECTADO gerando prejuizo real — R$ 117,74)
+**Status:** Corrigido
+**Relacionado:** #033 (Corners Engine v2), #081 (NB2 preference)
+
+### Problema identificado
+
+Under escanteios >=10.5 classificados como VALOR DETECTADO com 68-70% prob, mas acumulado historico de 33% (Under 11.5) e 50% (Under 10.5). Millonarios vs Fortaleza CEIF: modelo previa lambda ~5.75 quando media real da liga era 8.93.
+
+### Causa raiz
+
+`_project_expected_corners()` no motor V2 misturava valores **per-team** (~4.5 corners por equipe) com valores **per-match total** (~9.0 corners por jogo) nos mesmos pesos:
+
+```
+OLD: raw = 0.10*9.0 + 0.20*4.5 + 0.15*4.3 + 0.20*4.3 + 0.15*4.5 + 0.10*9.0 + 0.10*8.8 = 5.75
+```
+
+Componentes `home_attack` (4.5) e `away_attack` (4.3) sao per-team, mas recebiam 20% de peso cada. Isso arrastava o `raw` 3+ escanteios abaixo da media real.
+
+### Correcao
+
+Substituidos os pesos per-team por componentes **total-scale** (`direct_estimate` = home_for + away_for, `cross_estimate`):
+
+```
+NEW: raw = 0.15*9.0 + 0.35*8.8 + 0.25*8.8 + 0.10*9.0 + 0.15*9.0 = 8.85
+```
+
+Diferenca: OLD 5.75 (3.18 abaixo) → NEW 8.85 (0.08 abaixo). Under 10.5 cai de 96.7% (falso) para 72.3% (realista).
+
+### Verificacao
+
+- 64/64 testes regressao OK (corners + classifications + metrics)
+- Deploy Lambda OK, health OK
+- Calculo simulado: lambda OLD 5.75 → NEW 8.85 ≈ league avg 8.93
+
+### Licao aprendida
+
+Quando um modelo usa weighted components, TODOS os componentes devem estar na mesma escala. Misturar per-team (~4.5) com per-match (~9.0) gera subestimacao sistematica.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->

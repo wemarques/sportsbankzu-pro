@@ -59,14 +59,13 @@ from backend.modeling.corners_engine import (
 logger = logging.getLogger("sportsbankzu.corners.predictor")
 
 # ─── Projection weights (configurable, versioned) ───
+# Weights for TOTAL-scale components (direct, cross, league, pressure) — #104
 WEIGHTS = {
-    "league_prior": 0.10,
-    "home_attack": 0.20,
-    "away_defense_allowed": 0.15,
-    "away_attack": 0.20,
-    "home_defense_allowed": 0.15,
+    "league_prior": 0.15,
+    "direct_estimate": 0.35,
+    "cross_estimate": 0.25,
     "pressure_index": 0.10,
-    "cross_estimate": 0.10,
+    "league_prior_2": 0.15,  # second league anchor for stability
 }
 
 # Shrinkage bounds
@@ -223,27 +222,20 @@ def _project_expected_corners(
     """
     league_prior = features.get("league_corner_mean_ft", 10.0)
 
-    # Component contributions
+    # Component contributions — ALL at match-total scale (#104)
     home_attack = features.get("home_corners_for_pm", 0)
-    away_defense_allowed = features.get("away_corners_against_pm", 0)
     away_attack = features.get("away_corners_for_pm", 0)
-    home_defense_allowed = features.get("home_corners_against_pm", 0)
-    pressure = features.get("matchup_pressure_index", 0)
+    direct = features.get("direct_estimate_ft", home_attack + away_attack)
     cross = features.get("cross_estimate_ft", 0)
+    pressure = features.get("matchup_pressure_index", 0)
 
-    # Raw projection from features (when available)
-    has_against = features.get("_has_against", False)
-
-    if home_attack > 0 and away_attack > 0:
-        # Weighted raw estimate
+    if direct > 0:
         raw = (
             WEIGHTS["league_prior"] * league_prior
-            + WEIGHTS["home_attack"] * home_attack
-            + WEIGHTS["away_defense_allowed"] * (away_defense_allowed if away_defense_allowed > 0 else league_prior * 0.5)
-            + WEIGHTS["away_attack"] * away_attack
-            + WEIGHTS["home_defense_allowed"] * (home_defense_allowed if home_defense_allowed > 0 else league_prior * 0.5)
+            + WEIGHTS["direct_estimate"] * direct
+            + WEIGHTS["cross_estimate"] * (cross if cross > 0 else direct)
             + WEIGHTS["pressure_index"] * (league_prior + pressure * 1.5)
-            + WEIGHTS["cross_estimate"] * (cross if cross > 0 else (home_attack + away_attack))
+            + WEIGHTS["league_prior_2"] * league_prior
         )
     else:
         raw = league_prior
