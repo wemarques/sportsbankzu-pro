@@ -128,7 +128,9 @@ Antes de propor ou implementar qualquer correção:
 
 Antes de qualquer alteração no sistema, LEIA:
 
-1. **`docs/REGRAS_CORRECAO_SISTEMA.md`** — Registro completo de todas as correções e decisões do sistema (49 entradas). Contém causa raiz, correções aplicadas e lições aprendidas de cada mudança. Se a regra já existe, NÃO reimplemente.
+1. **`docs/REGRAS_ATIVAS.md`** — Regras permanentes que afetam decisoes futuras (~20 regras). LEIA SEMPRE antes de propor correcoes.
+   - **`docs/INDICE_REGRAS.md`** — Indice rapido de todas as 104+ regras (uma linha cada).
+   - **`docs/REGISTRO_CORRECOES.md`** — Historico completo de todos os fixes e correcoes. Consultar quando precisar de contexto.
 2. **Este arquivo (CLAUDE.md)** — Especialmente as seções "Estado Atual do Pipeline" e "Proibições".
 
 Se o arquivo REGRAS tiver uma entrada sobre o problema que você está investigando, leia-a inteira antes de propor qualquer correção.
@@ -224,12 +226,12 @@ API → Next.js 14 (Vercel) + Streamlit
 4. **NÃO remover deflations de lambda** sem lambda error < 0.5 por 3 rodadas (#043).
 5. **NÃO duplicar funções** — `main.py` tinha cópia de `selecionar_mercados_jogo` (deprecated em #035-M4). Verificar se a função já existe em services/ ou modeling/ antes de criar.
 6. **NÃO alterar o prompt Mistral** sem manter as 4 camadas de defesa anti-alucinação (#001, #002).
-7. **NÃO mergear PRs** sem registrar a alteração no `docs/REGRAS_CORRECAO_SISTEMA.md`.
+7. **NÃO mergear PRs** sem registrar a alteração no `docs/REGISTRO_CORRECOES.md` (e `REGRAS_ATIVAS.md` se for regra permanente).
 8. **NÃO assumir causa raiz** — Seguir as 7 regras de investigação obrigatória acima.
 
 ## Registro de Alterações
 
-Toda alteração significativa DEVE ser registrada em `docs/REGRAS_CORRECAO_SISTEMA.md` seguindo o formato:
+Toda alteração significativa DEVE ser registrada em `docs/REGISTRO_CORRECOES.md` seguindo o formato (e em `docs/REGRAS_ATIVAS.md` se for regra permanente):
 
 ```
 ## NNN — Título descritivo
@@ -261,7 +263,9 @@ Se a alteração não justifica uma entrada no REGRAS (ex: typo, formatação), 
 ### 1. Sincronizar arquivos espelhados
 ```bash
 # REGRAS — manter cópia idêntica nos dois diretórios
-cp sportsbankzu-pro/docs/REGRAS_CORRECAO_SISTEMA.md docs/REGRAS_CORRECAO_SISTEMA.md
+cp sportsbankzu-pro/docs/REGISTRO_CORRECOES.md docs/REGISTRO_CORRECOES.md
+cp sportsbankzu-pro/docs/REGRAS_ATIVAS.md docs/REGRAS_ATIVAS.md
+cp sportsbankzu-pro/docs/INDICE_REGRAS.md docs/INDICE_REGRAS.md
 
 # CLAUDE.md — manter cópia idêntica nos dois diretórios
 cp sportsbankzu-pro/CLAUDE.md CLAUDE.md
