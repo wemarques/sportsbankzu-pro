@@ -85,6 +85,41 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
   const def = data?.defesas_ativas ?? {};
 
   const hasAnyData = pred.n_total > 0 || (rob.api_football_success_rate ?? 0) > 0 || con.lambda_duration_avg_ms != null;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyReport = () => {
+    const p = (v: number | null | undefined) => v != null ? (v * 100).toFixed(1) + "%" : "N/A";
+    const lines = [
+      "\u2550\u2550\u2550\u2550\u2550 CONFIABILIDADE \u2014 SportsBankZu Pro \u2550\u2550\u2550\u2550\u2550",
+      "",
+      "\ud83d\udcc8 PREVISIBILIDADE",
+      `  Brier Score: ${pred.brier_score?.toFixed(4) ?? "N/A"} (target < 0.22)`,
+      `  Amostra (N): ${pred.n_total ?? 0} (min: 20)`,
+      "",
+      "\ud83d\udee1\ufe0f SEGURANCA",
+      `  Compliance: ${p(saf.compliance_rate ?? 1)}`,
+      `  Complementares bloqueados: ${saf.complementares_bloqueados ?? 0}`,
+      `  Contradicoes Mistral: ${saf.mistral_contradicoes ?? 0}`,
+      `  Acoes auditoria filtradas: ${saf.acoes_bloqueadas ?? 0}`,
+      "",
+      "\u26a1 ROBUSTEZ",
+      `  API-Football: ${p(rob.api_football_success_rate)}`,
+      `  FootyStats: ${p(rob.footystats_success_rate)}`,
+      `  Mistral AI: ${p(rob.mistral_success_rate)}`,
+      `  Fallbacks: ${rob.fallbacks_ativados ?? 0}`,
+      "",
+      "\ud83d\udd04 CONSISTENCIA",
+      `  Lambda avg: ${con.lambda_duration_avg_ms != null ? (con.lambda_duration_avg_ms / 1000).toFixed(1) + "s" : "N/A"}`,
+      `  Lambda p95: ${con.lambda_duration_p95_ms != null ? (con.lambda_duration_p95_ms / 1000).toFixed(1) + "s" : "N/A"}`,
+      `  CV: ${con.lambda_duration_cv?.toFixed(2) ?? "N/A"}`,
+      "",
+      `Gerado: ${new Date().toLocaleDateString("pt-BR")}, ${new Date().toLocaleTimeString("pt-BR")}`,
+    ];
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div className="reliability-card" style={{
@@ -98,7 +133,15 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#f8fafc" }}>Confiabilidade do Sistema</span>
           <span style={{ fontSize: "0.62rem", color: "#64748b", display: "block", marginTop: 2 }}>Princeton AI Agent Reliability Framework</span>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.2rem", padding: 4 }}>{"\u2715"}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={handleCopyReport} style={{
+            fontSize: "0.65rem", fontWeight: 600, padding: "5px 12px", borderRadius: 6,
+            border: copied ? "1px solid rgba(34,197,94,0.5)" : "1px solid rgba(96,165,250,0.3)",
+            background: copied ? "rgba(34,197,94,0.15)" : "rgba(96,165,250,0.1)",
+            color: copied ? "#4ade80" : "#60a5fa", cursor: "pointer", transition: "all 0.2s",
+          }}>{copied ? "\u2705 Copiado!" : "\ud83d\udccb Copiar"}</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.2rem", padding: 4 }}>{"\u2715"}</button>
+        </div>
       </div>
 
       {/* Banner explicativo quando sem dados */}

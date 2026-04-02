@@ -253,7 +253,7 @@ async def reliability_metrics():
         recent = audit_db.get_recent_audit_results(days=7, limit=1)
         if recent:
             import json as _json
-            ctx = recent[0].get("context") or {}
+            ctx = recent[0].get("data") or recent[0].get("context") or {}
             if isinstance(ctx, str):
                 ctx = _json.loads(ctx)
             pred_data["brier_score"] = ctx.get("avg_brier_score")

@@ -62,6 +62,27 @@ app.add_middleware(
 # ---------------------------------------
 
 data_collector = FootballDataCollector()
+
+# Duration tracking middleware (#102)
+import time as _time_mod
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as _StarletteRequest
+
+class _DurationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: _StarletteRequest, call_next):
+        t0 = _time_mod.time()
+        response = await call_next(request)
+        try:
+            from backend.services.reliability_tracker import track_duration
+            track_duration((_time_mod.time() - t0) * 1000)
+        except Exception:
+            pass
+        return response
+
+try:
+    app.add_middleware(_DurationMiddleware)
+except Exception:
+    pass
 # ... outros inicializadores ...
 try:
     from backend.routes import matches as _r_matches

@@ -165,6 +165,29 @@ def get_stats(days: int = 30) -> dict:
             "cv_duration": cv,
             "duration_count": n_d,
         }
+
+        # Picks per match
+        try:
+            conn2 = _get_conn()
+            if conn2:
+                cur2 = conn2.cursor()
+                cur2.execute(
+                    "SELECT AVG(event_value), STDDEV(event_value) FROM reliability_events "
+                    "WHERE event_name = 'picks_per_match' AND created_at >= %s",
+                    (since,),
+                )
+                ppm = cur2.fetchone()
+                cur2.close()
+                conn2.close()
+                if ppm and ppm[0]:
+                    result["picks_por_jogo_avg"] = round(ppm[0], 1)
+                    if ppm[1] and ppm[0] > 0:
+                        result["picks_por_jogo_cv"] = round(ppm[1] / ppm[0], 3)
+        except Exception:
+            pass
+
+        return result
+
     except Exception as e:
         logger.debug(f"[ReliabilityTracker] get_stats failed: {e}")
         try:

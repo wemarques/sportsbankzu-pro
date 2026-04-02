@@ -1306,6 +1306,13 @@ def build_records_from_matches(
                 logger.debug(f"[Safety] Validation skipped: {_safety_err}")
             record["mercados"] = mercados
 
+            # Track picks per match (#102)
+            try:
+                from backend.services.reliability_tracker import track_event
+                track_event("consistency", "picks_per_match", float(len(mercados)))
+            except Exception:
+                pass
+
             # Expose v2 corner predictions in the API response
             try:
                 from backend.modeling.corners.predictor import predict_corners
