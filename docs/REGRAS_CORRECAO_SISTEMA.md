@@ -5765,4 +5765,29 @@ Quando um modelo usa weighted components, TODOS os componentes devem estar na me
 
 ---
 
+## 102b — Configurar DATABASE_URL + PGHOST no Lambda (infraestrutura)
+
+**Data:** 2026-04-02
+**Arquivos afetados:** Configuracao Lambda (variaveis de ambiente)
+**Severidade:** Critica (sem DATABASE_URL, #102 e #101 ficam inoperantes)
+**Status:** Configurado
+**Relacionado:** #102 (tracker PostgreSQL), #101 (dashboard confiabilidade)
+
+### Problema identificado
+
+O #102 implementou persistencia no PostgreSQL, mas DATABASE_URL nunca foi adicionada ao Lambda. Codigo caia no fallback silencioso (SQLite /tmp), perdendo dados no cold start.
+
+### Correcao
+
+- Senha do RDS resetada (caracteres especiais `@` nao sao permitidos pelo RDS)
+- Variaveis configuradas: `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGPORT`, `DATABASE_URL` (com `?sslmode=require`)
+- Conectividade confirmada: `health/db` → `status: ok, backend: postgresql`
+- Tracker funcionando: AF=100%, FS=100%, Lambda avg=4733ms
+
+### Regra permanente
+
+Toda nova variavel de ambiente adicionada ao codigo DEVE ser verificada no Lambda ANTES de considerar deploy concluido. Deploy de codigo sem deploy de infra e deploy incompleto.
+
+---
+
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
