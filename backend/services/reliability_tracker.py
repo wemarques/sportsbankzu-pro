@@ -144,12 +144,20 @@ def get_stats(days: int = 30) -> dict:
         avg_d, p95_d, std_d, n_d = row if row else (None, None, None, 0)
         n_d = n_d or 0
 
+        # Picks per match (same connection)
+        cur.execute(
+            "SELECT AVG(event_value), STDDEV(event_value) FROM reliability_events "
+            "WHERE event_name = 'picks_per_match' AND created_at >= %s",
+            (since,),
+        )
+        ppm = cur.fetchone()
+
         cur.close()
         conn.close()
 
         cv = round(std_d / avg_d, 3) if avg_d and std_d and avg_d > 0 else None
 
-        return {
+        result = {
             "api_football_ok": api_counts.get("api_football_ok", 0),
             "api_football_fail": api_counts.get("api_football_fail", 0),
             "footystats_ok": api_counts.get("footystats_ok", 0),
@@ -165,26 +173,10 @@ def get_stats(days: int = 30) -> dict:
             "cv_duration": cv,
             "duration_count": n_d,
         }
-
-        # Picks per match
-        try:
-            conn2 = _get_conn()
-            if conn2:
-                cur2 = conn2.cursor()
-                cur2.execute(
-                    "SELECT AVG(event_value), STDDEV(event_value) FROM reliability_events "
-                    "WHERE event_name = 'picks_per_match' AND created_at >= %s",
-                    (since,),
-                )
-                ppm = cur2.fetchone()
-                cur2.close()
-                conn2.close()
-                if ppm and ppm[0]:
-                    result["picks_por_jogo_avg"] = round(ppm[0], 1)
-                    if ppm[1] and ppm[0] > 0:
-                        result["picks_por_jogo_cv"] = round(ppm[1] / ppm[0], 3)
-        except Exception:
-            pass
+        if ppm and ppm[0]:
+            result["picks_por_jogo_avg"] = round(ppm[0], 1)
+            if ppm[1] and ppm[0] > 0:
+                result["picks_por_jogo_cv"] = round(ppm[1] / ppm[0], 3)
 
         return result
 
