@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
 
 /** Allow up to 60 s on Vercel for Lambda cold starts + multi-league fetches. */
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const isDev = process.env.NODE_ENV === "development";
 
