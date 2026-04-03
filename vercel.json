@@ -4,7 +4,7 @@
   "fluid": true,
   "functions": {
     "app/api/matches/fetch/route.ts": {
-      "maxDuration": 60,
+      "maxDuration": 120,
       "memory": 1024
     },
     "app/api/matches/live/route.ts": {
@@ -12,7 +12,7 @@
       "memory": 1024
     },
     "app/api/fixtures/**/*.ts": {
-      "maxDuration": 60,
+      "maxDuration": 120,
       "memory": 1024
     },
     "app/api/ai/*/route.ts": {
