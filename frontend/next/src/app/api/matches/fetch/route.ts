@@ -31,7 +31,21 @@ export async function GET(req: NextRequest) {
       timeoutMs: BATCH_TIMEOUT_MS,
     });
 
-    // Auto-retry DISABLED — Vercel free plan 60s limit (#112)
+    // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
+    if (
+      !result.ok &&
+      result.error &&
+      (result.error.kind === "TIMEOUT" ||
+        result.error.kind === "CONNECTION_ERROR" ||
+        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
+    ) {
+      console.log(
+        `[fetch/route] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying (Lambda cold start)...`,
+      );
+      result = await fetchBackend(`/fixtures?${qs.toString()}`, {
+        timeoutMs: BATCH_TIMEOUT_MS,
+      });
+    }
 
     if (result.ok) {
       const matches = (result.data as Record<string, unknown>)?.matches;
