@@ -192,3 +192,11 @@ Classificacao = confianca do modelo. EV = calibracao para apostas.
 Half-life: NORMAL=5, HIPER=3. Fallback: 60/40 se EMA falhar. NAO alterar half_life sem revalidacao Brier.
 
 **Verificacao:** `grep -n "ema_from_averages" backend/modeling/lambda_calculator.py`
+
+### #108c — EMA real + clamp
+
+**Tipo:** Pipeline
+`extract_team_goals()` do DataFrame league-matches. Clamp: floor 70%, cap 130% season_avg.
+Fallback: `ema_from_averages()` se sem dados. NAO remover clamp sem Brier.
+
+**Verificacao:** `grep -n "extract_team_goals\|clamp_to_season" backend/modeling/ema_weights.py`

@@ -5897,3 +5897,26 @@ Time estavel: diff < 1%. Time em alta: EMA +19% (captura momentum). Time em baix
 
 ---
 
+
+## 108c — EMA real jogo-a-jogo + clamp safety net
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/modeling/ema_weights.py`, `backend/modeling/lambda_calculator.py`, `backend/main.py`, `backend/services/fixtures_service.py`
+**Status:** Implementado
+**Relacionado:** #108, #108b
+
+### Correcao
+
+1. `extract_team_goals()`: extrai gols reais do DataFrame league-matches
+2. `clamp_to_season()`: floor 70%, cap 130% do season_avg
+3. `ema_lambda()` + `ema_from_averages()` agora com clamp
+4. `calcular_lambda_dinamico()` aceita `recent_goals` (lista real)
+5. `fixtures_service.py` extrai e passa lista real para lambda
+6. Cadeia: fixtures_service → expected_goals_v2 → calcular_lambda_jogo → calcular_lambda_dinamico
+
+### Impacto
+
+Clamp previne overcorrection: time em baixa max -30% (antes -43%), time em alta max +30% (antes +19%).
+
+---
+

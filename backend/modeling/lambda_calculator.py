@@ -122,7 +122,8 @@ def calcular_lambda_dinamico(
     opponent_data: Dict[str, Any],
     league_data: Dict[str, Any],
     regime: str,
-    is_home: bool
+    is_home: bool,
+    recent_goals: list = None,
 ) -> float:
     """
     Calcula λ (lambda) usando modelo de forças relativas (Dixon-Coles).
@@ -165,25 +166,20 @@ def calcular_lambda_dinamico(
     if gols_temp <= 0 and gols_ult5 <= 0:
         return max(LAMBDA_MIN, min(LAMBDA_MAX, media_liga_per_team))
 
-    # 3. Ataque ponderado — EMA (#108) replaces hardcoded 60/40
-    # HIPER-OFENSIVA: shorter half-life (3) = more weight on recent form
-    # NORMAL: standard half-life (5)
+    # 3. Ataque ponderado — EMA real (#108c) or synthetic (#108)
+    _hl = 3.0 if regime == "HIPER-OFENSIVA" else 5.0
     try:
-        from backend.modeling.ema_weights import ema_from_averages
-        _hl = 3.0 if regime == "HIPER-OFENSIVA" else 5.0
-        ataque_ponderado = ema_from_averages(
-            season_avg=gols_temp,
-            last_n_avg=gols_ult5,
-            n_recent=5,
-            n_season=15,
-            half_life=_hl,
-        )
-        # Safety log: warn if diff > 15% vs old method
-        _old = gols_temp * peso_temp + gols_ult5 * peso_recente
-        if _old > 0 and abs(ataque_ponderado - _old) / _old > 0.15:
-            logger.warning(
-                f"[EMA] diff>15%: old={_old:.3f}, ema={ataque_ponderado:.3f}, "
-                f"gols_temp={gols_temp:.2f}, gols_ult5={gols_ult5:.2f}"
+        from backend.modeling.ema_weights import ema_lambda, ema_from_averages
+        if recent_goals and len(recent_goals) >= 3:
+            ataque_ponderado = ema_lambda(
+                match_goals=recent_goals, season_avg=gols_temp,
+                league_avg=media_liga_per_team, half_life=_hl,
+                min_matches=3, clamp=True,
+            )
+        else:
+            ataque_ponderado = ema_from_averages(
+                season_avg=gols_temp, last_n_avg=gols_ult5,
+                n_recent=5, n_season=15, half_life=_hl, clamp=True,
             )
     except Exception:
         ataque_ponderado = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
@@ -247,6 +243,8 @@ def calcular_lambda_jogo(
     league_data: Dict[str, Any],
     regime: str,
     league_id: str = "",
+    recent_goals_home: list = None,
+    recent_goals_away: list = None,
 ) -> Tuple[float, float]:
     """
     Calcula lambda para ambos os times em um jogo.
@@ -281,7 +279,8 @@ def calcular_lambda_jogo(
         opponent_data=away_team_data,
         league_data=league_data,
         regime=regime,
-        is_home=True
+        is_home=True,
+        recent_goals=recent_goals_home,
     )
 
     # Lambda do time visitante
@@ -290,7 +289,8 @@ def calcular_lambda_jogo(
         opponent_data=home_team_data,
         league_data=league_data,
         regime=regime,
-        is_home=False
+        is_home=False,
+        recent_goals=recent_goals_away,
     )
 
     # Apply home advantage γ (#078 — Dixon-Coles explicit home factor)

@@ -904,6 +904,16 @@ def build_records_from_matches(
             "league_name": league_name,
             "average_goals_per_match": league_goal_avg,
         }
+        # Extract real per-match goals for EMA (#108c)
+        _home_recent = None
+        _away_recent = None
+        try:
+            from backend.modeling.ema_weights import extract_team_goals
+            _home_recent = extract_team_goals(matches, home, is_home=True, max_matches=20)
+            _away_recent = extract_team_goals(matches, away, is_home=False, max_matches=20)
+        except Exception:
+            pass
+
         lam_home, lam_away = expected_goals_v2(
             home_team_data=home_team_data,
             away_team_data=away_team_data,
@@ -912,6 +922,8 @@ def build_records_from_matches(
             xg_home=xg_home_team,
             xg_away=xg_away_team,
             league_id=league_id,
+            recent_goals_home=_home_recent,
+            recent_goals_away=_away_recent,
         )
         lam_home, lam_away, xg_metadata = aplicar_filtro_completo(
             lambda_home=lam_home,

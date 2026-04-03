@@ -525,6 +525,8 @@ def expected_goals_v2(
     xg_home: Optional[float] = None,
     xg_away: Optional[float] = None,
     league_id: Optional[str] = None,
+    recent_goals_home: list = None,
+    recent_goals_away: list = None,
 ) -> Tuple[float, float]:
     """
     Calcula lambda usando modelo de forças relativas (Dixon-Coles) com blend xG.
@@ -535,6 +537,8 @@ def expected_goals_v2(
         away_team_data=away_team_data,
         league_data=league_data,
         regime=regime,
+        recent_goals_home=recent_goals_home,
+        recent_goals_away=recent_goals_away,
     )
 
     # Read calibrated xG blend weight per league (#055)
