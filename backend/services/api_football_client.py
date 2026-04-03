@@ -996,6 +996,20 @@ class APIFootballClient:
                             elif val == "no" and "btts_no" not in result:
                                 result["btts_no"] = odd
 
+                    # Double Chance (#111)
+                    elif "double chance" in bet_name or "dupla chance" in bet_name:
+                        for v in values:
+                            val = str(v.get("value", "")).lower()
+                            odd = _safe_float(v.get("odd"))
+                            if not odd:
+                                continue
+                            if "home/draw" in val or "1x" in val:
+                                result.setdefault("dc_1x", odd)
+                            elif "home/away" in val or "12" in val:
+                                result.setdefault("dc_12", odd)
+                            elif "draw/away" in val or "x2" in val:
+                                result.setdefault("dc_x2", odd)
+
                     # Cards / Bookings Over/Under (#095)
                     elif "booking" in bet_name or "card" in bet_name:
                         for v in values:

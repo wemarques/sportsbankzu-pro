@@ -648,16 +648,20 @@ def evaluate_match_markets(
     if home_prob is not None and draw_prob is not None:
         dc_1x = home_prob + draw_prob
         calibrated = _calibrate_and_deflate(dc_1x, "Double Chance 1X", league_id, regime)
-        # DC odds: derive from 1X2 odds if available
+        # DC odds: prefer real from API-Football (#111), fallback to derived
         dc_odd = None
-        h_odd = odds.get("home")
-        d_odd = odds.get("draw")
-        if h_odd and d_odd and float(h_odd) > 1.0 and float(d_odd) > 1.0:
-            implied_h = 1.0 / float(h_odd)
-            implied_d = 1.0 / float(d_odd)
-            dc_implied = implied_h + implied_d
-            if dc_implied > 0 and dc_implied < 1.0:
-                dc_odd = round(1.0 / dc_implied, 2)
+        _real_dc = odds.get("dc_1x")
+        if _real_dc and float(_real_dc) > 1.0:
+            dc_odd = float(_real_dc)
+        else:
+            h_odd = odds.get("home")
+            d_odd = odds.get("draw")
+            if h_odd and d_odd and float(h_odd) > 1.0 and float(d_odd) > 1.0:
+                implied_h = 1.0 / float(h_odd)
+                implied_d = 1.0 / float(d_odd)
+                dc_implied = implied_h + implied_d
+                if dc_implied > 0 and dc_implied < 1.0:
+                    dc_odd = round(1.0 / dc_implied, 2)
 
         home_label = home_team[:3].upper() if home_team else "CAS"
         mo = MarketOutput(
@@ -670,6 +674,52 @@ def evaluate_match_markets(
             data_quality_score=quality,
             source_flags=source_flags,
             display_label=f"DC 1X ({home_label}/EMP)",
+        )
+        markets.append(classify_market(mo, league_id=league_id))
+
+    # DC 12 (Home or Away = 1 - Draw) (#111)
+    if home_prob is not None and away_prob is not None:
+        dc_12 = home_prob + away_prob
+        cal_12 = _calibrate_and_deflate(dc_12, "Double Chance 12", league_id, regime)
+        dc_12_odd = None
+        _real_12 = odds.get("dc_12")
+        if _real_12 and float(_real_12) > 1.0:
+            dc_12_odd = float(_real_12)
+        elif odds.get("home") and odds.get("away"):
+            imp_h = 1.0 / float(odds["home"])
+            imp_a = 1.0 / float(odds["away"])
+            imp_12 = imp_h + imp_a
+            if 0 < imp_12 < 1.0:
+                dc_12_odd = round(1.0 / imp_12, 2)
+        mo = MarketOutput(
+            market_type="Double Chance", selection="DC 12",
+            raw_probability=dc_12, calibrated_probability=cal_12,
+            book_odd=dc_12_odd, odds_available=dc_12_odd is not None,
+            data_quality_score=quality, source_flags=source_flags,
+            display_label=f"DC 12 ({home_team[:3].upper() if home_team else 'CAS'}/{away_team[:3].upper() if away_team else 'FOR'})",
+        )
+        markets.append(classify_market(mo, league_id=league_id))
+
+    # DC X2 (Draw or Away) (#111)
+    if draw_prob is not None and away_prob is not None:
+        dc_x2 = draw_prob + away_prob
+        cal_x2 = _calibrate_and_deflate(dc_x2, "Double Chance X2", league_id, regime)
+        dc_x2_odd = None
+        _real_x2 = odds.get("dc_x2")
+        if _real_x2 and float(_real_x2) > 1.0:
+            dc_x2_odd = float(_real_x2)
+        elif odds.get("draw") and odds.get("away"):
+            imp_d = 1.0 / float(odds["draw"])
+            imp_a = 1.0 / float(odds["away"])
+            imp_x2 = imp_d + imp_a
+            if 0 < imp_x2 < 1.0:
+                dc_x2_odd = round(1.0 / imp_x2, 2)
+        mo = MarketOutput(
+            market_type="Double Chance", selection="DC X2",
+            raw_probability=dc_x2, calibrated_probability=cal_x2,
+            book_odd=dc_x2_odd, odds_available=dc_x2_odd is not None,
+            data_quality_score=quality, source_flags=source_flags,
+            display_label=f"DC X2 (EMP/{away_team[:3].upper() if away_team else 'FOR'})",
         )
         markets.append(classify_market(mo, league_id=league_id))
 

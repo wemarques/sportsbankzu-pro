@@ -1210,6 +1210,10 @@ def build_records_from_matches(
                                 odds_dict[f"cards_over_{line_dot}"] = best[ov_key]
                             if best.get(un_key) and not odds_dict.get(f"cards_under_{line_dot}"):
                                 odds_dict[f"cards_under_{line_dot}"] = best[un_key]
+                        # Double Chance odds (#111)
+                        for dc_key in ("dc_1x", "dc_12", "dc_x2"):
+                            if best.get(dc_key) and not odds_dict.get(dc_key):
+                                odds_dict[dc_key] = best[dc_key]
                         _current_record.setdefault("source_flags", []).append("api_football_odds")
                 except Exception as e:
                     logger.debug(f"[API-Football] Odds enrichment skipped: {e}")

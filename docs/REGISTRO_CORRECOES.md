@@ -5965,3 +5965,29 @@ Mais linhas avaliadas = mais oportunidades de valor. Under 1.5 e Over 5.5 gols a
 
 ---
 
+
+## 111 — Diagnostico + fix 1X2/DC sem picks
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/services/api_football_client.py`, `backend/services/fixtures_service.py`
+**Status:** Implementado
+**Relacionado:** #006, #110
+
+### Diagnostico
+
+1X2: EV negativo em TODOS os cenarios (-8% raw, -17% deflacionado). Mercado eficiente.
+DC: odds derivadas de 1X2 preservam margem → EV sempre negativo.
+DC 12 e DC X2 NAO eram criados no pipeline (so DC 1X existia).
+
+### Correcoes
+
+1. `extract_best_odds()`: extrai odds DC reais (Home/Draw, Home/Away, Draw/Away) de API-Football
+2. `fixtures_service.py`: propaga dc_1x, dc_12, dc_x2 no odds enrichment
+3. `ev_classification.py`: DC 1X usa odd real quando disponivel (fallback derivada). DC 12 e DC X2 adicionados como mercados.
+
+### Impacto
+
+DC com odds REAIS de bookmaker pode ter EV diferente de odds derivadas. 1X2 continuara sem picks (mercado eficiente).
+
+---
+
