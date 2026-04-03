@@ -5796,3 +5796,33 @@ Toda nova variavel de ambiente adicionada ao codigo DEVE ser verificada no Lambd
 ---
 
 <!-- Novas correções devem ser adicionadas abaixo, seguindo o mesmo formato -->
+
+## 105 — Deflacao progressiva por banda + per-league
+
+**Data:** 2026-04-02
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Alta (calibracao baseada em 379 picks reais)
+**Status:** Implementado
+**Relacionado:** #042, #043, #079, Brier #104
+
+### Problema
+
+Deflacao uniforme 15% (#043) insuficiente para probs altas (70-80%: gap +0.058, 80%+: gap +0.081). Brasil Serie A com Delta Brier = -0.075 (modelo pior que casa).
+
+### Correcoes
+
+1. `apply_probability_deflation()`: <50%->10%, 50-60%->12%, 60-70%->15%, 70-80%->20%, 80%+->25%
+2. `_LEAGUE_DEFLATION`: brasileirao-serie-a=0.90, league-two=0.95
+3. `_calibrate_and_deflate()` substitui `calibrate_prob()` em todos os mercados
+4. Floor 5%, fator per-league minimo 0.85
+
+### Verificacao
+
+5/5 testes deflacao OK. 91/91 regressao OK. Deploy Lambda OK.
+
+### Licao aprendida
+
+Calibracao baseada em dados reais (379 picks) > heuristicas uniformes (#043).
+
+---
+

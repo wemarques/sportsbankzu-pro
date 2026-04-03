@@ -23,6 +23,56 @@ from backend.models.market_output import (
 from backend.modeling.poisson_matrix import derive_all_markets
 from backend.modeling.corners_engine import derive_corner_probabilities
 from backend.modeling.calibrator import calibrate_prob
+
+
+# ── Probability deflation by band + per-league (#105) ──────────────────
+# Based on Brier #104 (379 picks): model overconfident at 70%+ bands.
+# Replaces uniform 15% concept (#043) with progressive deflation.
+
+_LEAGUE_DEFLATION = {
+    "brasileirao-serie-a": 0.90,  # Δ=-0.075, Acc=46% (N=24)
+    "league-two": 0.95,           # Δ=-0.013, Acc=48% (N=23)
+}
+
+
+def _band_deflation(prob: float) -> float:
+    """Progressive deflation by probability band."""
+    if prob >= 0.80:
+        return 0.25
+    if prob >= 0.70:
+        return 0.20
+    if prob >= 0.60:
+        return 0.15
+    if prob >= 0.50:
+        return 0.12
+    return 0.10
+
+
+def apply_probability_deflation(prob: float, league_id: str = "") -> float:
+    """Apply progressive band deflation + per-league factor (#105).
+
+    Args:
+        prob: Model probability (0-1)
+        league_id: League slug for per-league adjustment
+
+    Returns:
+        Deflated probability, floored at 0.05.
+    """
+    deflation = _band_deflation(prob)
+    deflated = prob * (1.0 - deflation)
+
+    # Per-league factor (never below 0.85)
+    if league_id:
+        factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+        deflated *= max(factor, 0.85)
+
+    return max(deflated, 0.05)
+
+
+def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
+    """Calibrate via Isotonic model then apply band+league deflation (#105)."""
+    calibrated = calibrate_prob(raw, market, league_id, regime)
+    return apply_probability_deflation(calibrated, league_id)
 from backend.modeling.corners.predictor import predict_corners, get_corner_governance_info
 from backend.modeling.corners.operational_states import CornerOperationalState
 from backend.services.data_governance import (
@@ -468,7 +518,7 @@ def evaluate_match_markets(
         raw = _prob(stat_key) if _1x2_has_odds else _prob(stat_key, derived_key)
         if raw is None:
             continue
-        calibrated = calibrate_prob(raw, f"1X2_{selection.lower()}", league_id, regime)
+        calibrated = _calibrate_and_deflate(raw, f"1X2_{selection.lower()}", league_id, regime)
         book_odd = odds.get(odd_key)
         if book_odd:
             book_odd = float(book_odd) if float(book_odd) > 1.0 else None
@@ -513,7 +563,7 @@ def evaluate_match_markets(
         # Over
         raw_over = _prob(stat_over, f"over{threshold.replace('.', '')}Prob")
         if raw_over is not None:
-            calibrated = calibrate_prob(raw_over, f"Over {threshold}", league_id, regime)
+            calibrated = _calibrate_and_deflate(raw_over, f"Over {threshold}", league_id, regime)
             book_odd = odds.get(odd_key)
             book_odd = float(book_odd) if book_odd and float(book_odd) > 1.0 else None
             mo = MarketOutput(
@@ -534,7 +584,7 @@ def evaluate_match_markets(
         if raw_under is None and raw_over is not None:
             raw_under = 1.0 - raw_over
         if raw_under is not None:
-            calibrated = calibrate_prob(raw_under, f"Under {threshold}", league_id, regime)
+            calibrated = _calibrate_and_deflate(raw_under, f"Under {threshold}", league_id, regime)
             # Under odds: prefer real odds, fallback to derived with overround discount
             under_key = f"under{threshold.replace('.', '')}"  # "under25", "under35", "under45"
             under_odd = odds.get(under_key)
@@ -563,7 +613,7 @@ def evaluate_match_markets(
     # BTTS
     raw_btts = _prob("bttsProb", "bttsProb")
     if raw_btts is not None:
-        calibrated = calibrate_prob(raw_btts, "BTTS", league_id, regime)
+        calibrated = _calibrate_and_deflate(raw_btts, "BTTS", league_id, regime)
         btts_odd = odds.get("bttsYes")
         btts_odd = float(btts_odd) if btts_odd and float(btts_odd) > 1.0 else None
         mo = MarketOutput(
@@ -591,7 +641,7 @@ def evaluate_match_markets(
 
     if home_prob is not None and draw_prob is not None:
         dc_1x = home_prob + draw_prob
-        calibrated = calibrate_prob(dc_1x, "Double Chance 1X", league_id, regime)
+        calibrated = _calibrate_and_deflate(dc_1x, "Double Chance 1X", league_id, regime)
         # DC odds: derive from 1X2 odds if available
         dc_odd = None
         h_odd = odds.get("home")
@@ -664,7 +714,7 @@ def evaluate_match_markets(
             f"v2={gov_line.get('probability')} legacy={corner_probs.get(line_key)}"
         )
 
-        calibrated = calibrate_prob(raw, f"Escanteios {threshold_label}", league_id, regime)
+        calibrated = _calibrate_and_deflate(raw, f"Escanteios {threshold_label}", league_id, regime)
 
         # Odds: try v2 book_odd_over, then FootyStats odds key
         corner_odd = gov_line.get("book_odd_over")
@@ -728,7 +778,7 @@ def evaluate_match_markets(
                 continue
 
         threshold_label = f"Under {line_val}"
-        calibrated = calibrate_prob(p_under, f"Escanteios {threshold_label}", league_id, regime)
+        calibrated = _calibrate_and_deflate(p_under, f"Escanteios {threshold_label}", league_id, regime)
 
         # Under odds: try v2 book_odd_under, then explicit key, else derive from Over
         under_odd = gov_line.get("book_odd_under")
@@ -801,7 +851,7 @@ def evaluate_match_markets(
 
             # Over cards
             if over_prob > 0.10:
-                calibrated_over = calibrate_prob(over_prob, f"Cartoes Over {line}", league_id, regime)
+                calibrated_over = _calibrate_and_deflate(over_prob, f"Cartoes Over {line}", league_id, regime)
                 over_odd = odds.get(f"cards_over_{line}") or odds.get(f"over{str(line).replace('.', '')}Cards")
                 over_odd = float(over_odd) if over_odd and float(over_odd) > 1.0 else None
 
@@ -820,7 +870,7 @@ def evaluate_match_markets(
 
             # Under cards
             if under_prob > 0.10:
-                calibrated_under = calibrate_prob(under_prob, f"Cartoes Under {line}", league_id, regime)
+                calibrated_under = _calibrate_and_deflate(under_prob, f"Cartoes Under {line}", league_id, regime)
                 under_odd = odds.get(f"cards_under_{line}") or odds.get(f"under{str(line).replace('.', '')}Cards")
                 under_odd = float(under_odd) if under_odd and float(under_odd) > 1.0 else None
 

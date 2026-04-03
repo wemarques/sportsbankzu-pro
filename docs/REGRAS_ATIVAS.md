@@ -162,3 +162,15 @@ Toda alteracao no sistema DEVE:
 4. Health check pos-deploy
 5. Novas correcoes: registrar no `REGISTRO_CORRECOES.md`
 6. Novas regras permanentes: adicionar ao `REGRAS_ATIVAS.md`
+
+### #105 — Deflacao progressiva por banda + per-league
+
+**Tipo:** Pipeline (calibracao)
+**Relacionado:** #042, #043, #079
+
+Bandas: <50%->10%, 50-60%->12%, 60-70%->15%, 70-80%->20%, 80%+->25%.
+Per-league: brasileirao-serie-a=0.90, league-two=0.95.
+Floor: 5% minimo. Fator per-league nunca abaixo de 0.85.
+Atualizar fatores quando acumular 50+ picks por liga.
+
+**Verificacao:** `grep -n "apply_probability_deflation\|_LEAGUE_DEFLATION" backend/services/ev_classification.py`
