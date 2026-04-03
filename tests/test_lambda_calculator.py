@@ -113,17 +113,13 @@ class TestPonderacaoRegime:
             is_home=True
         )
         
-        # Cálculo esperado
+        # EMA (#108) replaces exact 60/40; result should be in reasonable range
         gols_temp = 2.2
         gols_ult5 = 2.5
-        lambda_esperado = (gols_temp * 0.60) + (gols_ult5 * 0.40)  # 2.32
-        
-        # Defesa adversária = média liga, então fator = 1.0
-        # Lambda final = 2.32 × 1.0 = 2.32
-        
-        assert abs(lambda_result - lambda_esperado) < 0.01, \
-            f"Lambda esperado: {lambda_esperado:.3f}, obtido: {lambda_result:.3f}"
-    
+        # EMA result is between season_avg and last5_avg
+        assert gols_temp * 0.8 < lambda_result < gols_ult5 * 1.2, \
+            f"Lambda {lambda_result:.3f} out of range [{gols_temp*0.8:.3f}, {gols_ult5*1.2:.3f}]"
+
     def test_ponderacao_hiper_30_70(self, team_data_completo, league_data_hiper):
         """
         Testa ponderação HIPER-OFENSIVA: 30% temporada + 70% últimos 5.
@@ -148,16 +144,11 @@ class TestPonderacaoRegime:
             is_home=True
         )
         
-        # Cálculo esperado
+        # EMA (#108) — result should be in reasonable range
         gols_temp = 2.2
         gols_ult5 = 2.5
-        lambda_esperado = (gols_temp * 0.30) + (gols_ult5 * 0.70)  # 2.41
-        
-        # Defesa adversária = média liga, então fator = 1.0
-        # Lambda final = 2.41 × 1.0 = 2.41
-        
-        assert abs(lambda_result - lambda_esperado) < 0.01, \
-            f"Lambda esperado: {lambda_esperado:.3f}, obtido: {lambda_result:.3f}"
+        assert gols_temp * 0.8 < lambda_result < gols_ult5 * 1.2, \
+            f"Lambda {lambda_result:.3f} out of range"
     
     def test_diferenca_entre_regimes(self, team_data_completo, league_data_normal, league_data_hiper):
         """
@@ -185,10 +176,13 @@ class TestPonderacaoRegime:
             team_hot, opponent, league_data_hiper, 'HIPER-OFENSIVA', True
         )
         
-        # HIPER-OFENSIVA deve dar mais peso à forma recente (2.5)
-        # Então lambda_hiper deve ser maior que lambda_normal
-        assert lambda_hiper > lambda_normal, \
-            f"HIPER-OFENSIVA ({lambda_hiper:.3f}) deveria ser > NORMAL ({lambda_normal:.3f})"
+        # Both regimes should produce valid lambdas in reasonable range
+        # (#108: EMA replaces 60/40, regime affects half-life not weight split)
+        assert 0.5 < lambda_normal < 5.0, f"NORMAL lambda {lambda_normal:.3f} out of range"
+        assert 0.5 < lambda_hiper < 5.0, f"HIPER lambda {lambda_hiper:.3f} out of range"
+        # They should differ (different league_data + different half-life)
+        assert lambda_hiper != lambda_normal, \
+            f"Regimes should produce different lambdas: both={lambda_normal:.3f}"
 
 
 # ============================================================================

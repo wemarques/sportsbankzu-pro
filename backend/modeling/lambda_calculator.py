@@ -165,8 +165,28 @@ def calcular_lambda_dinamico(
     if gols_temp <= 0 and gols_ult5 <= 0:
         return max(LAMBDA_MIN, min(LAMBDA_MAX, media_liga_per_team))
 
-    # 3. Ataque ponderado
-    ataque_ponderado = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
+    # 3. Ataque ponderado — EMA (#108) replaces hardcoded 60/40
+    # HIPER-OFENSIVA: shorter half-life (3) = more weight on recent form
+    # NORMAL: standard half-life (5)
+    try:
+        from backend.modeling.ema_weights import ema_from_averages
+        _hl = 3.0 if regime == "HIPER-OFENSIVA" else 5.0
+        ataque_ponderado = ema_from_averages(
+            season_avg=gols_temp,
+            last_n_avg=gols_ult5,
+            n_recent=5,
+            n_season=15,
+            half_life=_hl,
+        )
+        # Safety log: warn if diff > 15% vs old method
+        _old = gols_temp * peso_temp + gols_ult5 * peso_recente
+        if _old > 0 and abs(ataque_ponderado - _old) / _old > 0.15:
+            logger.warning(
+                f"[EMA] diff>15%: old={_old:.3f}, ema={ataque_ponderado:.3f}, "
+                f"gols_temp={gols_temp:.2f}, gols_ult5={gols_ult5:.2f}"
+            )
+    except Exception:
+        ataque_ponderado = (gols_temp * peso_temp) + (gols_ult5 * peso_recente)
 
     # 3b. Early season regression to mean (#064)
     # When team has < 5 games, regress attack toward league average

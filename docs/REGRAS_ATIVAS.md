@@ -185,3 +185,10 @@ EV calculado com `calibrated_probability` (COM deflacao #105).
 Classificacao = confianca do modelo. EV = calibracao para apostas.
 
 **Verificacao:** `grep -n "prob_for_class" backend/services/ev_classification.py`
+
+### #108 — EMA no lambda_calculator
+
+**Tipo:** Pipeline
+Half-life: NORMAL=5, HIPER=3. Fallback: 60/40 se EMA falhar. NAO alterar half_life sem revalidacao Brier.
+
+**Verificacao:** `grep -n "ema_from_averages" backend/modeling/lambda_calculator.py`

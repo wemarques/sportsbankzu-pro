@@ -5875,3 +5875,25 @@ classify_market() usava `calibrated_probability` (pos-deflacao) tanto para thres
 
 ---
 
+
+## 108 — Exponential Moving Average no lambda_calculator
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/modeling/ema_weights.py` (novo), `backend/modeling/lambda_calculator.py`, `tests/test_lambda_calculator.py`
+**Status:** Implementado
+**Relacionado:** #053, #107e
+
+### Correcao
+
+- `ema_from_averages()` substitui 60/40 hardcoded no `calcular_lambda_dinamico()`
+- NORMAL: half-life=5, HIPER-OFENSIVA: half-life=3 (mais peso em recentes)
+- Safety log: warning quando diff EMA vs 60/40 > 15%
+- Fallback: se EMA falhar, usa 60/40 antigo
+- 11 testes unitarios + 113 regressao OK
+
+### Impacto
+
+Time estavel: diff < 1%. Time em alta: EMA +19% (captura momentum). Time em baixa: EMA -43% (reage rapido).
+
+---
+
