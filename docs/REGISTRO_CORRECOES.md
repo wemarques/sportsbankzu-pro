@@ -5920,3 +5920,25 @@ Clamp previne overcorrection: time em baixa max -30% (antes -43%), time em alta 
 
 ---
 
+
+## 109 — Automacao completa: Audit -> Brier -> Dashboard
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/services/brier_service.py` (novo), `backend/routes/health.py`, `backend/cron_handler.py`, `frontend/next/src/app/api/metrics/brier/route.ts` (novo)
+**Status:** Implementado
+**Relacionado:** #079, #102, #104
+
+### Funcionalidade
+
+1. `brier_service.py`: calculo segmentado (global, por liga, mercado, banda, classificacao)
+2. Tabela `brier_history` no PostgreSQL (snapshots automaticos)
+3. Endpoints: GET /metrics/brier (on demand), GET /metrics/brier/history
+4. Integrado no cron: run_after_audit() chamado apos _run_batch_audit()
+5. Proxy Next.js /api/metrics/brier
+
+### Verificacao
+
+397 picks, Brier=0.2218, model_beats_house=TRUE, accuracy=66.0%. Endpoint funciona em producao.
+
+---
+

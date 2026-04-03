@@ -307,3 +307,27 @@ async def reliability_metrics():
         },
         "tracker_started_at": stats.get("started_at"),
     }
+
+
+@router.get("/metrics/brier")
+async def get_brier_metrics():
+    """Current Brier snapshot — calculates on demand."""
+    try:
+        from backend.services.brier_service import calculate_snapshot
+        snap = calculate_snapshot()
+        if not snap:
+            return {"error": "No data", "total_picks": 0}
+        return snap
+    except Exception as e:
+        return {"error": str(e), "total_picks": 0}
+
+
+@router.get("/metrics/brier/history")
+async def get_brier_history(limit: int = 30):
+    """Brier trend over time."""
+    try:
+        from backend.services.brier_service import get_history
+        h = get_history(limit)
+        return {"history": h, "count": len(h)}
+    except Exception as e:
+        return {"history": [], "count": 0, "error": str(e)}

@@ -200,3 +200,11 @@ Half-life: NORMAL=5, HIPER=3. Fallback: 60/40 se EMA falhar. NAO alterar half_li
 Fallback: `ema_from_averages()` se sem dados. NAO remover clamp sem Brier.
 
 **Verificacao:** `grep -n "extract_team_goals\|clamp_to_season" backend/modeling/ema_weights.py`
+
+### #109 — Automacao Brier
+
+**Tipo:** Pipeline (automacao)
+Tabela: brier_history. Endpoints: /metrics/brier, /metrics/brier/history.
+Cron: run_after_audit() pos-batch. MIN_N=20 por segmento.
+
+**Verificacao:** `curl -s .../metrics/brier | python -c "import sys,json; print(json.load(sys.stdin).get('model_beats_house'))"`

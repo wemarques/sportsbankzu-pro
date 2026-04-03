@@ -712,6 +712,21 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     except Exception:
         pass
 
+    # Calculate and persist Brier snapshot (#109)
+    try:
+        from backend.services.brier_service import run_after_audit
+        n_eval = len(all_evaluated_picks) if "all_evaluated_picks" in dir() else 0
+        brier_snap = run_after_audit(new_picks=n_eval, audit_date=date_filter)
+        if brier_snap:
+            result["brier_snapshot"] = {
+                "total_picks": brier_snap["total_picks"],
+                "brier_model": brier_snap.get("brier_model"),
+                "model_beats_house": brier_snap.get("model_beats_house"),
+                "accuracy": brier_snap.get("accuracy"),
+            }
+    except Exception:
+        pass
+
     return result
 
 
