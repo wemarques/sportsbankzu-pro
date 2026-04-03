@@ -6011,3 +6011,24 @@ API-Football rate limit esgotado → enrichment tenta e falha para cada jogo (15
 
 ---
 
+
+## 112b — Lambda 1024MB + cache warm fix para Championship
+
+**Data:** 2026-04-03
+**Arquivos afetados:** Lambda config (memory 512->1024MB)
+**Status:** Implementado
+**Relacionado:** #112
+
+### Correcao
+
+1. Lambda memory 512->1024MB (mais CPU proporcional)
+2. API Gateway HTTP API hard limit 30s (nao pode aumentar)
+3. Com cache warm (segunda chamada): Championship 11 matches em 25.5s (OK)
+4. Cold start + API calls: pode exceder 30s (aceito — retry do Vercel cobre)
+
+### Nota
+
+O Vercel proxy faz retry automatico. Se a primeira chamada falha (cold start 30s+), a segunda (warm) retorna em <30s.
+
+---
+
