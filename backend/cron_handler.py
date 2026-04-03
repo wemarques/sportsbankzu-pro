@@ -697,6 +697,21 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     except Exception:
         pass
 
+    # Update ELO ratings for finished matches (#107d)
+    try:
+        from backend.services.elo_service import update_elo_after_match
+        for mr in match_results:
+            score = mr.get("score", "0x0")
+            parts = score.split("x") if "x" in str(score) else ["0", "0"]
+            hg = int(parts[0]) if parts[0].isdigit() else 0
+            ag = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            update_elo_after_match(
+                mr.get("home_team", ""), mr.get("away_team", ""),
+                mr.get("league", ""), hg, ag,
+            )
+    except Exception:
+        pass
+
     return result
 
 

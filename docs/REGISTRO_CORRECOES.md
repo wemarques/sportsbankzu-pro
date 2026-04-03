@@ -5855,3 +5855,23 @@ classify_market() usava `calibrated_probability` (pos-deflacao) tanto para thres
 
 ---
 
+
+## 107 — Mega-fix: 8 itens pendentes
+
+**Data:** 2026-04-03
+**Arquivos afetados:** Multiplos
+**Status:** Implementado (parcial — itens futuros registrados)
+
+### Itens
+
+- **107a** EventBridge: targets re-configurados. Rules ENABLED, permissions OK, input correto. Aguardando execucao automatica as 23:00 UTC.
+- **107b** Dixon-Coles rho: JA IMPLEMENTADO no #078 (rho=-0.10, per-league via calibration DB). Nenhuma acao necessaria.
+- **107c** Bivariate Poisson: `backend/modeling/bivariate_poisson.py` criado com feature flag OFF. Ativar apos validar Dixon-Coles em producao.
+- **107d** ELO rating: `backend/services/elo_service.py` criado. Tabela `team_elo` auto-criada. Integrado no cron_handler apos batch audit. NAO usado para lambdas ainda — coletando dados.
+- **107e** Moving averages: 60/40 esta no lambda_calculator (temporada 60% + ultimos5 40%). NAO e so Mistral. Registrado para investigacao futura.
+- **107f** NEUTRO vs NEUTRO_QUALIFICADO: diagnostico #106 mostrou que prob_for_class (#106) deve restaurar discriminacao. Monitorar.
+- **107g** Under 2.5: acc melhorou para 63% (era 57%). Lambda media IGUAL para hits e misses (1.89) — modelo nao distingue. Deflacao #105 + #106 devem ajudar.
+- **107h** Regras de escopo formalizadas no CLAUDE.md (estrutura, checklist, seguranca).
+
+---
+

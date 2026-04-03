@@ -296,3 +296,29 @@ curl -s https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/health
 **Atalho:** execute `bash scripts/finalize.sh` para rodar os passos 1-3 automaticamente.
 
 **Quando NÃO executar:** alterações exclusivamente em documentação local (ex: notas pessoais) que não afetam o sistema.
+
+## Regras de Escopo do Projeto (#107h)
+
+### Estrutura de diretorios
+- Rotas: `backend/routes/`
+- Servicos: `backend/services/`
+- Modelos estatisticos: `backend/modeling/`
+- AI/Mistral: `backend/services/mistral_analysis.py`
+- Frontend: `frontend/next/src/`
+
+### Checklist novo mercado (REGRAS #006)
+1. Engine (`backend/modeling/`)
+2. ev_classification (`backend/services/ev_classification.py`)
+3. market_validator (`backend/modeling/market_validator.py`)
+4. dedup (`backend/services/market_service.py`)
+5. correlation_matrix (`backend/services/correlation_matrix.py`)
+6. evaluatePick frontend (`frontend/next/src/lib/localAudit.ts`)
+7. evaluatePick backend (`backend/routes/ai_analysis.py`)
+
+### Regras de seguranca
+- Threshold changes > 15% BLOQUEADOS sem dados
+- MIN_N_BRIER = 20 (#079)
+- Mistral: temperature 0.15, EXCLUSIVAMENTE narrativo (#082)
+- Complementares > 105% BLOQUEADOS (#098)
+- Deflacao progressiva por banda (#105) — NAO reverter para uniforme
+- Classificacao usa prob raw, EV usa prob deflacionada (#106)
