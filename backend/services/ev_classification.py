@@ -504,7 +504,7 @@ def evaluate_match_markets(
         and float(odds.get("home", 0)) > 1.0
     )
     # Diagnostic: trace 1X2 source (#064)
-    logger.warning(
+    logger.debug(
         f"[prob-trace][1X2] {home_team} vs {away_team} | "
         f"has_odds={_1x2_has_odds} "
         f"stats[homeWinProb]={stats.get('homeWinProb')} "
@@ -544,7 +544,7 @@ def evaluate_match_markets(
     # Over/Under markets — diagnostic: trace Poisson vs FootyStats source (#061)
     _d_val = derived.get("over25Prob")
     _s_val = stats.get("over25Prob")
-    logger.warning(
+    logger.debug(
         f"[ev][prob-source] {home_team} vs {away_team} | "
         f"derived[over25Prob]={_d_val} stats[over25Prob]={_s_val} "
         f"derived_keys={len(derived)} lamH={lambda_home} lamA={lambda_away}"
@@ -561,7 +561,7 @@ def evaluate_match_markets(
         # Diagnostic: trace which source _prob() uses (#063)
         _dk = f"over{threshold.replace('.', '')}Prob"
         _dk_alt = _dk.replace("Prob", "")
-        logger.warning(
+        logger.debug(
             f"[prob-trace] {home_team} vs {away_team} | {stat_over}: "
             f"stats={stats.get(stat_over)} derived={derived.get(_dk)} "
             f"derived_alt={derived.get(_dk_alt)} lamH={lambda_home} lamA={lambda_away}"
@@ -764,7 +764,7 @@ def evaluate_match_markets(
         threshold_label = f"Over {line_val}"
 
         # Diagnostic: trace corner probability source (#064)
-        logger.warning(
+        logger.debug(
             f"[prob-trace][corners] {home_team} vs {away_team} | "
             f"line={line_val} source={_corner_source} raw={raw:.3f} "
             f"v2={gov_line.get('probability')} legacy={corner_probs.get(line_key)}"
