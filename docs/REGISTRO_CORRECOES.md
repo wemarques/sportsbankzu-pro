@@ -5826,3 +5826,32 @@ Calibracao baseada em dados reais (379 picks) > heuristicas uniformes (#043).
 
 ---
 
+
+## 106 — Classificacao usa prob raw, EV usa prob deflacionada (Opcao B)
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Alta (classificacao SAFE/NEUTRO_QUALIFICADO restaurada)
+**Status:** Implementado
+**Relacionado:** #105 (deflacao progressiva), #042 (thresholds), #043 (circuit breaker)
+
+### Problema
+
+Apos #105, deflacao progressiva reduzia probs abaixo dos thresholds SAFE (ex: O/U safe_prob=0.75, mas prob 0.78 deflacionada 20% = 0.624 < 0.75). Nenhum pick era classificado como SAFE.
+
+### Causa raiz
+
+classify_market() usava `calibrated_probability` (pos-deflacao) tanto para thresholds quanto para EV. Com deflacao, thresholds nunca eram atingidos.
+
+### Correcao (Opcao B)
+
+- `prob_for_class` = calibrate_prob(raw) — SEM deflacao — para comparar com thresholds
+- `prob` (calibrated_probability) = com deflacao — para calculo de EV
+- Classificacao reflete confianca do modelo; EV reflete calibracao para apostas
+
+### Verificacao
+
+91/91 testes OK. Deploy Lambda OK.
+
+---
+

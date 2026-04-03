@@ -224,7 +224,17 @@ def classify_market(
     """Classify a single market output as SAFE / NEUTRO_QUALIFICADO / NEUTRO / NO_BET.
 
     Mutates the output in-place and returns it.
+
+    Classification uses raw_probability (pre-deflation) for threshold comparison (#106).
+    EV uses calibrated_probability (post-deflation) for realistic bet sizing (#105).
     """
+    # prob_for_class: raw model confidence (before deflation) — for SAFE/NEUTRO thresholds
+    # prob_for_ev: deflated probability — for EV calculation (already in calibrated_probability)
+    prob_for_class = calibrate_prob(
+        output.raw_probability or 0.0,
+        _market_category(output.market_type),
+        league_id, "",
+    ) if output.raw_probability else (output.calibrated_probability or 0.0)
     prob = output.calibrated_probability or output.raw_probability or 0.0
     market_cat = _market_category(output.market_type)
     th = thresholds or _get_thresholds(market_cat, league_id=league_id)
@@ -280,49 +290,42 @@ def classify_market(
         elif output.edge >= th.get("safe_edge", 0.04):
             reason_codes.append(ReasonCode.STRONG_EDGE)
 
-    if prob >= th.get("safe_prob", 0.60):
+    if prob_for_class >= th.get("safe_prob", 0.60):
         reason_codes.append(ReasonCode.HIGH_CALIBRATED_PROB)
 
-    # ─── Classification logic ───
+    # ─── Classification logic (#106: use prob_for_class for thresholds) ───
     classification = MarketClassification.NO_BET
 
     # SAFE: high prob + positive EV + sufficient edge + good data
-    # BLOCK SAFE if EV is suspiciously high (prob/odds mismatch)
-    if (prob >= th.get("safe_prob", 0.60) and
+    if (prob_for_class >= th.get("safe_prob", 0.60) and
         output.data_quality_score >= th.get("min_quality", 0.3)):
         if ReasonCode.SUSPICIOUS_EV in reason_codes:
             classification = MarketClassification.NEUTRO
         elif (output.odds_available and
               output.ev is not None and output.ev >= th.get("safe_ev", 0.05) and
               output.edge is not None and output.edge >= th.get("safe_edge", 0.04)):
-            # All conditions met: high prob + real EV + real edge
             classification = MarketClassification.SAFE
         elif output.odds_available and output.ev is not None and output.ev >= 0:
-            # High prob, positive EV but insufficient edge — NEUTRO, not SAFE
             classification = MarketClassification.NEUTRO
         elif not output.odds_available:
-            # High prob but no odds — NEUTRO (can show prob/fair_odd but no stake)
             classification = MarketClassification.NEUTRO
 
     # NEUTRO: moderate prob
-    elif (prob >= th.get("neutro_prob", 0.50) and
+    elif (prob_for_class >= th.get("neutro_prob", 0.50) and
           output.data_quality_score >= th.get("min_quality", 0.3) * 0.8):
         if output.odds_available and output.ev is not None and output.ev >= th.get("neutro_ev", 0.0):
             classification = MarketClassification.NEUTRO
         elif not output.odds_available:
-            # No odds — show as NEUTRO with fair odd only
             classification = MarketClassification.NEUTRO
-        # else: EV negative with odds → stays NO_BET (don't force NEUTRO)
 
-    # NEUTRO qualificado: upgrade NEUTRO if it meets additional criteria
-    # BUT NOT if EV is suspicious
+    # NEUTRO qualificado: upgrade if meets criteria
     if classification == MarketClassification.NEUTRO:
-        if _is_neutro_qualificado(output, prob) and ReasonCode.SUSPICIOUS_EV not in reason_codes:
+        if _is_neutro_qualificado(output, prob_for_class) and ReasonCode.SUSPICIOUS_EV not in reason_codes:
             classification = MarketClassification.NEUTRO_QUALIFICADO
 
-    # Force NO_BET on negative EV with odds (when prob is too low)
+    # Force NO_BET on negative EV with low prob
     if (output.odds_available and output.ev is not None and
-        output.ev < -0.05 and prob < th.get("neutro_prob", 0.50)):
+        output.ev < -0.05 and prob_for_class < th.get("neutro_prob", 0.50)):
         classification = MarketClassification.NO_BET
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)

@@ -174,3 +174,14 @@ Floor: 5% minimo. Fator per-league nunca abaixo de 0.85.
 Atualizar fatores quando acumular 50+ picks por liga.
 
 **Verificacao:** `grep -n "apply_probability_deflation\|_LEAGUE_DEFLATION" backend/services/ev_classification.py`
+
+### #106 — Classificacao usa prob raw, EV usa prob deflacionada
+
+**Tipo:** Pipeline (classificacao)
+**Relacionado:** #105
+
+classify_market() usa `prob_for_class` (calibrate_prob SEM deflacao) para thresholds SAFE/NEUTRO.
+EV calculado com `calibrated_probability` (COM deflacao #105).
+Classificacao = confianca do modelo. EV = calibracao para apostas.
+
+**Verificacao:** `grep -n "prob_for_class" backend/services/ev_classification.py`
