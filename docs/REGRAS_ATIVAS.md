@@ -208,3 +208,11 @@ Tabela: brier_history. Endpoints: /metrics/brier, /metrics/brier/history.
 Cron: run_after_audit() pos-batch. MIN_N=20 por segmento.
 
 **Verificacao:** `curl -s .../metrics/brier | python -c "import sys,json; print(json.load(sys.stdin).get('model_beats_house'))"`
+
+### #110 — Scanner de valor (linhas expandidas)
+
+**Tipo:** Pipeline
+Gols: 0.5-5.5 (6 linhas Over + 6 Under). Cartoes: 1.5-6.5. Escanteios: 4.5-12.5 (ja abrangente).
+Dedup mantido: 1 melhor por direcao (Over/Under) por mercado.
+
+**Verificacao:** `grep -c "threshold.*stat_over" backend/services/ev_classification.py` (deve ser 6)

@@ -5942,3 +5942,26 @@ Clamp previne overcorrection: time em baixa max -30% (antes -43%), time em alta 
 
 ---
 
+
+## 110 — Scanner de valor: linhas expandidas por mercado
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/modeling/poisson_matrix.py`, `backend/modeling/cards_engine.py`, `backend/modeling/market_validator.py`, `tests/unit/test_cards_085.py`
+**Status:** Implementado
+**Relacionado:** #006, #105, #106
+
+### Correcao
+
+1. Gols: expandido de [2.5, 3.5, 4.5] para [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+2. Poisson matrix: derivacao para 5.5 adicionada
+3. Cartoes: expandido de [2.5, 3.5, 4.5, 5.5] para [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]
+4. Escanteios: ja abrangente (4.5-12.5, 9 linhas)
+5. MERCADOS_VALIDOS atualizado com novas linhas
+6. Dedup existente funciona genericamente para novas linhas
+
+### Impacto
+
+Mais linhas avaliadas = mais oportunidades de valor. Under 1.5 e Over 5.5 gols agora sao avaliados. Cartoes 1.5 e 6.5 tambem.
+
+---
+

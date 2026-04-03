@@ -20,7 +20,7 @@ from typing import Optional, Tuple
 logger = logging.getLogger("sportsbankzu.cards_engine")
 
 # Card lines for betting markets
-CARD_LINES = [2.5, 3.5, 4.5, 5.5]
+CARD_LINES = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]  # #110: expanded
 
 # Default cards lambda when data is unavailable
 DEFAULT_CARDS_LAMBDA = 4.0  # ~4 cards per match is typical

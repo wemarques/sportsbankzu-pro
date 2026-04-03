@@ -49,8 +49,8 @@ def test_predict_cards_multiplier():
 
 
 def test_card_lines_correct():
-    """Card lines are 2.5, 3.5, 4.5, 5.5."""
-    assert CARD_LINES == [2.5, 3.5, 4.5, 5.5]
+    """Card lines expanded 1.5-6.5 (#110)."""
+    assert CARD_LINES == [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]
 
 
 def test_high_lambda_favors_over():

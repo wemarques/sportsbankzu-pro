@@ -551,9 +551,12 @@ def evaluate_match_markets(
     )
 
     for threshold, stat_over, stat_under, odd_key in [
+        ("0.5", "over05Prob", "under05Prob", "over05"),
+        ("1.5", "over15Prob", "under15Prob", "over15"),
         ("2.5", "over25Prob", "under25Prob", "over25"),
         ("3.5", "over35Prob", "under35Prob", "over35"),
         ("4.5", "over45Prob", "under45Prob", "over45"),
+        ("5.5", "over55Prob", "under55Prob", "over55"),
     ]:
         # Diagnostic: trace which source _prob() uses (#063)
         _dk = f"over{threshold.replace('.', '')}Prob"

@@ -21,20 +21,24 @@ MERCADOS_PROIBIDOS: Dict[str, List[str]] = {
 
 # Todos os mercados possíveis
 MERCADOS_VALIDOS: List[str] = [
-    'Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Over 4.5',
-    'Under 0.5', 'Under 1.5', 'Under 2.5', 'Under 3.5', 'Under 4.5',
+    # Goals (#110: expanded 0.5-5.5)
+    'Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Over 4.5', 'Over 5.5',
+    'Under 0.5', 'Under 1.5', 'Under 2.5', 'Under 3.5', 'Under 4.5', 'Under 5.5',
     'BTTS', 'BTTS No',
     '1X2 Home', '1X2 Draw', '1X2 Away',
     'Double Chance 1X', 'Double Chance 12', 'Double Chance X2',
+    # Corners (4.5-12.5)
     'Escanteios Over 4.5', 'Escanteios Over 5.5', 'Escanteios Over 6.5',
     'Escanteios Over 7.5', 'Escanteios Over 8.5', 'Escanteios Over 9.5',
     'Escanteios Over 10.5', 'Escanteios Over 11.5', 'Escanteios Over 12.5',
     'Escanteios Under 4.5', 'Escanteios Under 5.5', 'Escanteios Under 6.5',
     'Escanteios Under 7.5', 'Escanteios Under 8.5', 'Escanteios Under 9.5',
     'Escanteios Under 10.5', 'Escanteios Under 11.5', 'Escanteios Under 12.5',
-    # Cards markets (#085, #089)
-    'Cartoes Over 2.5', 'Cartoes Over 3.5', 'Cartoes Over 4.5', 'Cartoes Over 5.5',
-    'Cartoes Under 2.5', 'Cartoes Under 3.5', 'Cartoes Under 4.5', 'Cartoes Under 5.5',
+    # Cards (#110: expanded 1.5-6.5)
+    'Cartoes Over 1.5', 'Cartoes Over 2.5', 'Cartoes Over 3.5',
+    'Cartoes Over 4.5', 'Cartoes Over 5.5', 'Cartoes Over 6.5',
+    'Cartoes Under 1.5', 'Cartoes Under 2.5', 'Cartoes Under 3.5',
+    'Cartoes Under 4.5', 'Cartoes Under 5.5', 'Cartoes Under 6.5',
 ]
 
 

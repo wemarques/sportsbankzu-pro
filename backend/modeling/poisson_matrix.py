@@ -161,7 +161,7 @@ def derive_over_under(matrix: Dict[Tuple[int, int], float]) -> Dict[str, float]:
 
     Returns {"over_1.5": p, "under_1.5": p, "over_2.5": p, ...} in 0-1 scale.
     """
-    thresholds = [0.5, 1.5, 2.5, 3.5, 4.5]
+    thresholds = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]  # #110: expanded
     result = {}
 
     for threshold in thresholds:
