@@ -53,6 +53,14 @@ def build_records_from_matches(
     rows = filter_rows(start, end)
     # No automatic fallback — return only matches for the requested period
     records: List[Dict[str, Any]] = []
+    # Build EMA goals cache ONCE before the loop (#112 — O(N) instead of O(N×M))
+    _goals_cache = {}
+    try:
+        from backend.modeling.ema_weights import build_team_goals_cache
+        _goals_cache = build_team_goals_cache(matches)
+    except Exception:
+        pass
+
     for r in rows:
       try:
         dt = row_date(r)
@@ -904,13 +912,13 @@ def build_records_from_matches(
             "league_name": league_name,
             "average_goals_per_match": league_goal_avg,
         }
-        # Extract real per-match goals for EMA (#108c)
+        # Extract real per-match goals for EMA (#108c, optimized #112)
         _home_recent = None
         _away_recent = None
         try:
-            from backend.modeling.ema_weights import extract_team_goals
-            _home_recent = extract_team_goals(matches, home, is_home=True, max_matches=20)
-            _away_recent = extract_team_goals(matches, away, is_home=False, max_matches=20)
+            from backend.modeling.ema_weights import get_team_goals_from_cache
+            _home_recent = get_team_goals_from_cache(_goals_cache, home, is_home=True) or None
+            _away_recent = get_team_goals_from_cache(_goals_cache, away, is_home=False) or None
         except Exception:
             pass
 

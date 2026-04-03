@@ -81,7 +81,57 @@ def ema_from_averages(
     return result
 
 
-# ── Extract team goals from matches (#108c) ──────────────────────────
+# ── Cached team goals extraction (#112 — replaces O(N×M) iterrows) ───
+
+def build_team_goals_cache(matches_df, max_matches: int = 20) -> Dict[str, List[Tuple[int, float, bool]]]:
+    """Build cache of per-team goals from DataFrame in ONE pass. O(N)."""
+    if matches_df is None or len(matches_df) == 0:
+        return {}
+    cache: Dict[str, list] = {}
+    for _, row in matches_df.iterrows():
+        status = str(row.get("status", "")).lower()
+        if status in ("scheduled", "incomplete", "live", "postponed", "cancelled"):
+            continue
+        hg = row.get("homeGoalCount") or row.get("home_goals") or row.get("homeGoals")
+        ag = row.get("awayGoalCount") or row.get("away_goals") or row.get("awayGoals")
+        if hg is None or ag is None:
+            continue
+        try:
+            hg, ag = int(hg), int(ag)
+        except (ValueError, TypeError):
+            continue
+        date_val = int(row.get("date_unix", 0) or 0)
+        home = str(row.get("home_team") or row.get("home_team_name") or row.get("homeTeam") or row.get("home_name") or "").lower().strip()
+        away = str(row.get("away_team") or row.get("away_team_name") or row.get("awayTeam") or row.get("away_name") or "").lower().strip()
+        if home:
+            cache.setdefault(home, []).append((date_val, float(hg), True))
+        if away:
+            cache.setdefault(away, []).append((date_val, float(ag), False))
+    for team in cache:
+        cache[team].sort(key=lambda x: x[0], reverse=True)
+        cache[team] = cache[team][:max_matches]
+    return cache
+
+
+def get_team_goals_from_cache(cache: dict, team_name: str, is_home: Optional[bool] = None) -> List[float]:
+    """O(1) lookup from pre-built cache. Fallback: substring match (#062)."""
+    if not cache or not team_name:
+        return []
+    key = team_name.lower().strip()
+    entries = cache.get(key)
+    if not entries:
+        for k in cache:
+            if key in k or k in key:
+                entries = cache[k]
+                break
+    if not entries:
+        return []
+    if is_home is None:
+        return [g for _, g, _ in entries]
+    return [g for _, g, h in entries if h == is_home]
+
+
+# ── Extract team goals from matches (#108c — kept for backward compat) ──
 
 def extract_team_goals(
     matches_df,

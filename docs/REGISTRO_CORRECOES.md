@@ -5991,3 +5991,23 @@ DC com odds REAIS de bookmaker pode ter EV diferente de odds derivadas. 1X2 cont
 
 ---
 
+
+## 112 — Fix timeout Championship/League One
+
+**Data:** 2026-04-03
+**Arquivos afetados:** `backend/modeling/ema_weights.py`, `backend/services/fixtures_service.py`, `backend/services/api_football_client.py`
+**Status:** Implementado
+**Relacionado:** #108c, #110, #111
+
+### Causa raiz
+
+API-Football rate limit esgotado → enrichment tenta e falha para cada jogo (15s timeout × 2 retries × 12 jogos = 360s, cortado em 30s pelo API Gateway).
+
+### Correcoes
+
+1. `build_team_goals_cache()`: UMA passada O(N) no DataFrame (antes: O(N×M) iterrows)
+2. `get_team_goals_from_cache()`: lookup O(1) por time
+3. `_rate_limited` circuit breaker: apos 1 rate limit, skip TODAS as chamadas API-Football subsequentes
+
+---
+

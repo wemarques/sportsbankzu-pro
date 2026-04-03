@@ -209,10 +209,14 @@ class APIFootballClient:
     # ------------------------------------------------------------------
     # HTTP: sync (requests) — used from ThreadPoolExecutor in fixtures
     # ------------------------------------------------------------------
+    _rate_limited = False  # Circuit breaker: skip all calls after rate limit (#112)
+
     def _get_sync(self, endpoint: str, params: Dict, ttl_minutes: int = 60) -> Dict:
         """Execute a sync GET with cache + retry (same pattern as FootyStatsClient)."""
         if not self.api_key:
             return {"response": [], "errors": {"message": "API_FOOTBALL_KEY not configured"}}
+        if self.__class__._rate_limited:
+            return {"response": [], "errors": {"message": "Rate limited — skipping"}}
 
         cache_key = self._cache_key(endpoint, params)
         cached = self._get_from_cache(cache_key, max_age_minutes=ttl_minutes)
@@ -259,7 +263,13 @@ class APIFootballClient:
 
                 errors = data.get("errors")
                 if errors and ((isinstance(errors, dict) and errors) or (isinstance(errors, list) and errors)):
-                    logger.error(f"[api-football/{endpoint}] API error: {errors}")
+                    # Rate limit circuit breaker (#112)
+                    err_msg = str(errors)
+                    if "request limit" in err_msg.lower() or "rate limit" in err_msg.lower():
+                        self.__class__._rate_limited = True
+                        logger.warning(f"[api-football] RATE LIMITED — circuit breaker ON, skipping all future calls")
+                    else:
+                        logger.error(f"[api-football/{endpoint}] API error: {errors}")
                     return data
 
                 # Warn if response is paginated and caller isn't handling it
