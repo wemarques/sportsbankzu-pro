@@ -25,27 +25,13 @@ export async function GET(req: NextRequest) {
     // With fan-out each batch has â‰¤5 leagues (parallel backend processing).
     // Cold start (~10-20s) + 5 leagues parallel (~8-15s) = ~18-35s.
     // Timeout 35s + 1 retry = meets 60s maxDuration.
-    const BATCH_TIMEOUT_MS = 35_000;
+    const BATCH_TIMEOUT_MS = 55_000;
 
     let result = await fetchBackend(`/fixtures?${qs.toString()}`, {
       timeoutMs: BATCH_TIMEOUT_MS,
     });
 
-    // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
-    if (
-      !result.ok &&
-      result.error &&
-      (result.error.kind === "TIMEOUT" ||
-        result.error.kind === "CONNECTION_ERROR" ||
-        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
-    ) {
-      console.log(
-        `[fetch/route] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying (Lambda cold start)...`,
-      );
-      result = await fetchBackend(`/fixtures?${qs.toString()}`, {
-        timeoutMs: BATCH_TIMEOUT_MS,
-      });
-    }
+    // Auto-retry DISABLED — Vercel free plan 60s limit (#112)
 
     if (result.ok) {
       const matches = (result.data as Record<string, unknown>)?.matches;
