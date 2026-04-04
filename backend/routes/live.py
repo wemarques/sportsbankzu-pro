@@ -105,7 +105,7 @@ def live_fixture_detail(fixture_id: int = Path(..., description="API-Football fi
 
     # Fetch statistics, events, and lineups in sequence (sync calls with cache)
     try:
-        stats_raw = _afc.get_fixture_statistics(fixture_id, ttl_minutes=2)
+        stats_raw = _afc.get_fixture_statistics(fixture_id, ttl_minutes=5)
         if stats_raw:
             parsed_stats: Dict[str, Dict[str, Any]] = {}
             for team_stats in stats_raw:

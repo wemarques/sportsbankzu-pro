@@ -1237,8 +1237,9 @@ def build_records_from_matches(
             "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
-        # --- API-Football enrichment (odds, injuries, lineups) ---
-        # Fills gaps in FootyStats data; degrades silently if unavailable.
+        # --- API-Football enrichment (injuries, lineups) ---
+        # Odds enrichment moved to fixtures.py:_enrich_odds_from_api_football (#120)
+        # — requires apiFootballFixtureId which is set AFTER build_records.
         _afc = None
         try:
             from backend.services.api_football_client import APIFootballClient
@@ -1246,34 +1247,6 @@ def build_records_from_matches(
             _current_record = records[-1]
             footystats_id = r.get("id")
             if footystats_id and _afc:
-                # 2.1 — Enrich odds from API-Football (fill missing only)
-                try:
-                    af_odds = _afc.get_odds(int(footystats_id), ttl_minutes=180)
-                    if af_odds:
-                        best = _afc.extract_best_odds(af_odds)
-                        odds_dict = _current_record["odds"]
-                        if not odds_dict.get("under25") and best.get("under_25"):
-                            odds_dict["under25"] = best["under_25"]
-                            logger.info(f"[API-Football] Under 2.5 odd enriched: {best['under_25']}")
-                        if not odds_dict.get("bttsNo") and best.get("btts_no"):
-                            odds_dict["bttsNo"] = best["btts_no"]
-                        # Cards odds (#095)
-                        for line_sfx in ("25", "35", "45", "55"):
-                            ov_key = f"cards_over_{line_sfx}"
-                            un_key = f"cards_under_{line_sfx}"
-                            line_dot = f"{line_sfx[0]}.{line_sfx[1]}"
-                            if best.get(ov_key) and not odds_dict.get(f"cards_over_{line_dot}"):
-                                odds_dict[f"cards_over_{line_dot}"] = best[ov_key]
-                            if best.get(un_key) and not odds_dict.get(f"cards_under_{line_dot}"):
-                                odds_dict[f"cards_under_{line_dot}"] = best[un_key]
-                        # Double Chance odds (#111)
-                        for dc_key in ("dc_1x", "dc_12", "dc_x2"):
-                            if best.get(dc_key) and not odds_dict.get(dc_key):
-                                odds_dict[dc_key] = best[dc_key]
-                        _current_record.setdefault("source_flags", []).append("api_football_odds")
-                except Exception as e:
-                    logger.debug(f"[API-Football] Odds enrichment skipped: {e}")
-
                 # 2.2 — Enrich with pre-match injuries
                 try:
                     injuries = _afc.get_injuries_sync(int(footystats_id), ttl_minutes=240)

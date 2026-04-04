@@ -369,7 +369,7 @@ class APIFootballClient:
         params: Dict[str, str] = {"live": "all"}
         if league_id:
             params["league"] = str(league_id)
-        data = self._get_sync("fixtures", params, ttl_minutes=1)
+        data = self._get_sync("fixtures", params, ttl_minutes=2)
         return data.get("response", [])
 
     @staticmethod
@@ -990,12 +990,17 @@ class APIFootballClient:
 
                     elif "over/under" in bet_name or "goals" in bet_name:
                         for v in values:
-                            val = str(v.get("value", ""))
+                            val = str(v.get("value", "")).lower()
                             odd = _safe_float(v.get("odd"))
-                            if "over 2.5" in val.lower() and "over_25" not in result:
-                                result["over_25"] = odd
-                            elif "under 2.5" in val.lower() and "under_25" not in result:
-                                result["under_25"] = odd
+                            if not odd:
+                                continue
+                            # Extract all O/U goal lines (#120)
+                            for line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5"):
+                                key_sfx = line.replace(".", "")
+                                if f"over {line}" in val and f"over_{key_sfx}" not in result:
+                                    result[f"over_{key_sfx}"] = odd
+                                elif f"under {line}" in val and f"under_{key_sfx}" not in result:
+                                    result[f"under_{key_sfx}"] = odd
 
                     elif "both teams" in bet_name or "btts" in bet_name:
                         for v in values:
@@ -1027,8 +1032,8 @@ class APIFootballClient:
                             odd = _safe_float(v.get("odd"))
                             if not odd:
                                 continue
-                            for line in ("2.5", "3.5", "4.5", "5.5"):
-                                key_sfx = line.replace(".", "")  # "25", "35", ...
+                            for line in ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"):
+                                key_sfx = line.replace(".", "")  # "15", "25", ...
                                 if f"over {line}" in val and f"cards_over_{key_sfx}" not in result:
                                     result[f"cards_over_{key_sfx}"] = odd
                                 elif f"under {line}" in val and f"cards_under_{key_sfx}" not in result:

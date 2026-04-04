@@ -6201,3 +6201,64 @@ Bundesliga Freiburg: hy=3 ay=3 hr=0 ar=0 total=6 (antes: 0)
 
 ---
 
+## 120 — Odds enrichment: correct fixture ID + expand O/U lines
+
+**Data:** 2026-04-04
+**Arquivos:** `backend/routes/fixtures.py`, `backend/services/fixtures_service.py`,
+`backend/services/api_football_client.py`
+**Status:** Implementado (parcial — depende de API-Football fixture matching upstream)
+**Relacionado:** #095 (cards odds), #111 (DC odds), #118 (cards counts)
+
+### Problema
+
+Enrichment de odds da API-Football falhava silenciosamente porque usava o
+FootyStats match ID em vez do API-Football fixture ID. O bloco de odds
+rodava ANTES de `_enrich_with_api_football()` que e quem define o
+`apiFootballFixtureId`.
+
+### Correcao
+
+1. Movido odds enrichment de `fixtures_service.py` (loop interno) para
+   `fixtures.py` (pos-processing), rodando APOS `_enrich_with_api_football()`
+2. Nova funcao `_enrich_odds_from_api_football()` usa `apiFootballFixtureId`
+3. Expandido `extract_best_odds()` para cobrir O/U 0.5-5.5 (era so 2.5)
+4. Expandido cards para linhas 1.5-6.5 (era 2.5-5.5)
+5. Preenche APENAS odds faltantes (never overwrites FootyStats)
+
+### Nota
+
+O enrichment depende de `apiFootballFixtureId` ser populado por
+`_enrich_with_api_football()`, que por sua vez depende do team name
+matching entre FootyStats e API-Football. Em alguns casos esse matching
+nao encontra correspondencia e o ID fica None.
+
+---
+
+## 121 — API-Football cache TTLs otimizados — 8500 to ~3000 req/dia
+
+**Data:** 2026-04-04
+**Arquivos:** `backend/routes/fixtures.py`, `backend/routes/live.py`,
+`backend/services/api_football_client.py`
+**Status:** Corrigido
+**Relacionado:** #120 (odds enrichment), #112 (circuit breaker)
+
+### Problema
+
+Plano PRO da API-Football (7500 req/dia) esgotado. TTLs muito curtos
+combinados com cold starts do Lambda (cache in-memory resetado) geravam
+~8500 requests/dia.
+
+### Correcao
+
+| Endpoint | TTL antes | TTL depois |
+|----------|-----------|-----------|
+| get_fixtures_by_date | 2-5 min | 30 min |
+| get_fixture_statistics | 2 min | 5 min |
+| get_live_fixtures | 1 min | 2 min |
+
+### Economia estimada
+
+~8500 → ~3000 req/dia (redução de ~65%).
+
+---
+

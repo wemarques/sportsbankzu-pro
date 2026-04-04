@@ -347,6 +347,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     # API-Football enrichment: overlay live scores + fallback data source
     records = _enrich_with_api_football(lid, records, found_via_api, date)
 
+    # API-Football odds enrichment (#120) — runs AFTER _enrich_with_api_football
+    # so that apiFootballFixtureId is available on each record.
+    _enrich_odds_from_api_football(records)
+
     # Final deduplication: remove duplicate matches that slipped through
     # team-name matching (e.g. "Wolves" vs "Wolverhampton Wanderers")
     records = _deduplicate_records(records)
@@ -402,6 +406,79 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     return records
 
 
+def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
+    """Enrich fixture records with odds from API-Football (#120).
+
+    Runs AFTER _enrich_with_api_football() so apiFootballFixtureId is available.
+    Only fills odds that are None/missing — never overwrites FootyStats odds.
+    """
+    if not _afc.is_configured:
+        return
+    enriched_count = 0
+    for rec in records:
+        af_id = rec.get("apiFootballFixtureId")
+        if not af_id:
+            continue
+        odds_dict = rec.get("odds")
+        if not isinstance(odds_dict, dict):
+            continue
+        try:
+            af_odds = _afc.get_odds(int(af_id), ttl_minutes=180)
+            if not af_odds:
+                continue
+            best = _afc.extract_best_odds(af_odds)
+            if not best:
+                continue
+            filled = []
+            # O/U goals: all lines (#120)
+            ou_map = {
+                "over_05": "over05", "over_15": "over15", "over_25": "over25",
+                "over_35": "over35", "over_45": "over45", "over_55": "over55",
+                "under_05": "under05", "under_15": "under15", "under_25": "under25",
+                "under_35": "under35", "under_45": "under45", "under_55": "under55",
+            }
+            for af_key, odds_key in ou_map.items():
+                if best.get(af_key) and not odds_dict.get(odds_key):
+                    odds_dict[odds_key] = best[af_key]
+                    filled.append(odds_key)
+            # 1X2
+            for sel in ("home", "draw", "away"):
+                if best.get(sel) and not odds_dict.get(sel):
+                    odds_dict[sel] = best[sel]
+                    filled.append(sel)
+            # BTTS
+            if best.get("btts_yes") and not odds_dict.get("bttsYes"):
+                odds_dict["bttsYes"] = best["btts_yes"]
+                filled.append("bttsYes")
+            if best.get("btts_no") and not odds_dict.get("bttsNo"):
+                odds_dict["bttsNo"] = best["btts_no"]
+                filled.append("bttsNo")
+            # Double Chance
+            for dc_key in ("dc_1x", "dc_12", "dc_x2"):
+                if best.get(dc_key) and not odds_dict.get(dc_key):
+                    odds_dict[dc_key] = best[dc_key]
+                    filled.append(dc_key)
+            # Cards
+            for line_sfx in ("15", "25", "35", "45", "55", "65"):
+                for side in ("over", "under"):
+                    af_key = f"cards_{side}_{line_sfx}"
+                    line_dot = f"{line_sfx[0]}.{line_sfx[1]}"
+                    odds_key = f"cards_{side}_{line_dot}"
+                    if best.get(af_key) and not odds_dict.get(odds_key):
+                        odds_dict[odds_key] = best[af_key]
+                        filled.append(odds_key)
+            if filled:
+                rec.setdefault("source_flags", []).append("api_football_odds")
+                enriched_count += 1
+                _ht = rec.get("homeTeam")
+                home = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
+                logger.info(f"[odds-enrich] {home}: +{len(filled)} odds from API-Football ({', '.join(filled[:5])}{'...' if len(filled) > 5 else ''})")
+        except Exception as e:
+            logger.debug(f"[odds-enrich] af_id={af_id} skipped: {e}")
+    if enriched_count:
+        logger.info(f"[odds-enrich] Enriched {enriched_count}/{len(records)} records with API-Football odds")
+
+
 def _current_season() -> int:
     """Infer the current football season year."""
     from datetime import timezone as _tz
@@ -442,13 +519,13 @@ def _enrich_with_api_football(
             else:
                 af_date = date_str
 
-            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=2)
+            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=30)
             if not af_fixtures:
                 # Season fallback: try season+1 or season-1 in case our convention is wrong.
                 # Handles leagues where API-Football season param differs from our calculation
                 # (e.g., some Middle Eastern leagues may use calendar year instead of start year).
                 alt_season = season + 1
-                af_fixtures = _afc.get_fixtures_by_date(af_league_id, alt_season, af_date, ttl_minutes=2)
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, alt_season, af_date, ttl_minutes=30)
                 if af_fixtures:
                     logger.warning(
                         f"[fixtures] {lid}: season={season} returned 0, but season={alt_season} "
@@ -562,10 +639,10 @@ def _enrich_with_api_football(
             else:
                 af_date = date_str
 
-            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=5)
+            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=30)
             if not af_fixtures:
                 # Season fallback
-                af_fixtures = _afc.get_fixtures_by_date(af_league_id, season + 1, af_date, ttl_minutes=5)
+                af_fixtures = _afc.get_fixtures_by_date(af_league_id, season + 1, af_date, ttl_minutes=30)
             if af_fixtures:
                 records = _afc.fixtures_to_records(af_fixtures, lid)
                 logger.info(f"[fixtures] {lid}: API-Football fallback provided {len(records)} records")
@@ -1041,7 +1118,7 @@ def live_scores() -> Dict[str, Any]:
                         # Fallback: inline stats may be missing for some leagues (e.g. Brazilian Serie A)
                         if current_corners is None and ld.get("fixture_id") is not None:
                             try:
-                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=2)
+                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=5)
                                 if _raw_stats:
                                     _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
                                     if _hc is not None and _ac is not None:
@@ -1384,7 +1461,7 @@ def live_scores() -> Dict[str, Any]:
                             current_corners = ld["away_corners"]
                         if current_corners is None and ld.get("fixture_id") is not None:
                             try:
-                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=2)
+                                _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=5)
                                 if _raw_stats:
                                     _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
                                     if _hc is not None and _ac is not None:
@@ -1548,7 +1625,7 @@ def live_scores() -> Dict[str, Any]:
                             _fx_id = matched_fx.get("fixture", {}).get("id")
                             if _fx_id is not None:
                                 try:
-                                    _raw_stats = _afc.get_fixture_statistics(int(_fx_id), ttl_minutes=2)
+                                    _raw_stats = _afc.get_fixture_statistics(int(_fx_id), ttl_minutes=5)
                                     if _raw_stats:
                                         _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
                                         if _hc is not None and _ac is not None:
