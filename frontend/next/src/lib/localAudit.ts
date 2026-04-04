@@ -452,8 +452,9 @@ function _isIncompatible(a: string, b: string): boolean {
 type Prediction = NonNullable<Match["predictions"]>[number];
 
 function _validMercado(p: Prediction): boolean {
-  const s = (p.status || "").toUpperCase();
-  if (s !== "SAFE" && s !== "NEUTRO") return false;
+  const cls = ((p as any).classification || p.status || "").toUpperCase();
+  // Only SAFE and NEUTRO_QUALIFICADO eligible for multiples (#113)
+  if (cls !== "SAFE" && cls !== "NEUTRO_QUALIFICADO") return false;
   return (p.odd_minima ?? 0) >= 1.01;
 }
 

@@ -6032,3 +6032,21 @@ O Vercel proxy faz retry automatico. Se a primeira chamada falha (cold start 30s
 
 ---
 
+
+## 113 — 5 correcoes: cron + corredor cartoes + duplas + Under 2.5 + Cards Over
+
+**Data:** 2026-04-03
+**Arquivos:** `backend/services/ev_classification.py`, `frontend/next/src/lib/localAudit.ts`
+**Status:** Implementado
+**Relacionado:** #037, #028, #105, #079
+
+### Correcoes
+
+1. Cron: JA filtrava status=="finished" — problema era timing da API (jogos 83-90' marcados finished prematuramente)
+2. Corredor: `_filter_corridor_bets()` expandido de 3 pares gols para gols+corners+cards (Over X.5 + Under X+1.5)
+3. Duplas: `_validMercado()` agora aceita so SAFE + NEUTRO_QUALIFICADO (era SAFE + NEUTRO)
+4. Under 2.5: deflacao extra 10% em `_calibrate_and_deflate()` (Brier #104 delta=-0.03)
+5. Cards Over <=2.5: odd minima 1.50 (linha facil sem valor)
+
+---
+

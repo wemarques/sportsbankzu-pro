@@ -70,9 +70,13 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
-    """Calibrate via Isotonic model then apply band+league deflation (#105)."""
+    """Calibrate via Isotonic model then apply band+league deflation (#105, #113)."""
     calibrated = calibrate_prob(raw, market, league_id, regime)
-    return apply_probability_deflation(calibrated, league_id)
+    result = apply_probability_deflation(calibrated, league_id)
+    # Under 2.5 extra deflation — worst market in Brier #104 (Δ=-0.03, acc=57%) (#113)
+    if "under" in market.lower() and "2.5" in market:
+        result *= 0.90
+    return result
 from backend.modeling.corners.predictor import predict_corners, get_corner_governance_info
 from backend.modeling.corners.operational_states import CornerOperationalState
 from backend.services.data_governance import (
@@ -910,6 +914,9 @@ def evaluate_match_markets(
                 calibrated_over = _calibrate_and_deflate(over_prob, f"Cartoes Over {line}", league_id, regime)
                 over_odd = odds.get(f"cards_over_{line}") or odds.get(f"over{str(line).replace('.', '')}Cards")
                 over_odd = float(over_odd) if over_odd and float(over_odd) > 1.0 else None
+                # Cards Over <=2.5: skip low odds (easy line, no value) (#113)
+                if line <= 2.5 and over_odd and over_odd < 1.50:
+                    over_odd = None  # force NO_BET by removing odd
 
                 mo = MarketOutput(
                     market_type="Cards",
@@ -1063,17 +1070,23 @@ def _filter_corridor_bets(markets: List[MarketOutput]) -> List[MarketOutput]:
     - Over 2.5 + Under 3.5 → corridor of exactly 3 goals
     - Over 3.5 + Under 4.5 → corridor of exactly 4 goals
     """
-    CORRIDOR_PAIRS = [
-        ("Over 1.5", "Under 2.5"),
-        ("Over 2.5", "Under 3.5"),
-        ("Over 3.5", "Under 4.5"),
-    ]
+    # Corridor pairs for goals, corners, and cards (#113 expanded from #037)
+    CORRIDOR_PAIRS = []
+    # Goals
+    for line in [0.5, 1.5, 2.5, 3.5, 4.5]:
+        CORRIDOR_PAIRS.append(("Over/Under", f"Over {line}", f"Under {line + 1.0}"))
+    # Corners
+    for line in [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]:
+        CORRIDOR_PAIRS.append(("Corners", f"Corners Over {line}", f"Corners Under {line + 1.0}"))
+    # Cards
+    for line in [1.5, 2.5, 3.5, 4.5, 5.5]:
+        CORRIDOR_PAIRS.append(("Cards", f"Over {line}", f"Under {line + 1.0}"))
 
     remove_set = set()
 
-    for over_sel, under_sel in CORRIDOR_PAIRS:
-        over_markets = [m for m in markets if m.selection == over_sel and m.market_type == "Over/Under"]
-        under_markets = [m for m in markets if m.selection == under_sel and m.market_type == "Over/Under"]
+    for mtype, over_sel, under_sel in CORRIDOR_PAIRS:
+        over_markets = [m for m in markets if m.selection == over_sel and (m.market_type == mtype or mtype in (m.market_type or ""))]
+        under_markets = [m for m in markets if m.selection == under_sel and (m.market_type == mtype or mtype in (m.market_type or ""))]
 
         if over_markets and under_markets:
             over_m = over_markets[0]
