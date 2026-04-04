@@ -135,3 +135,4 @@
 | 118 | Corrigido | Fix | Cards Over 0% accuracy — totalCards=0 (campos nao populados) |
 | 120 | Corrigido | Fix | Odds enrichment: correct fixture ID + expand O/U lines |
 | 121 | Corrigido | Perf | API-Football cache TTLs otimizados — 8500 to ~3000 req/dia |
+| 122 | Corrigido | Fix | Auto-finish incorreto quando /live-scores retorna vazio |

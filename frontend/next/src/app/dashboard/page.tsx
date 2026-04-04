@@ -850,23 +850,10 @@ export default function Dashboard() {
       const data = await res.json();
       const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
 
-      // Camada 2 (#071): when liveList is empty but we have "live" matches in state,
-      // check elapsed time — game probably ended and left the live feed
+      // Camada 2 (#071, #122): when liveList is empty, do NOT auto-finish.
+      // Empty list may be caused by API rate limit, not actual match completion.
+      // Auto-finish only triggers below when liveList has data but a match is missing.
       if (liveList.length === 0) {
-        setAllMatches((prev) => {
-          let changed = false;
-          const updated = prev.map((m) => {
-            if (m.status !== "live") return m;
-            const elapsed = elapsedMinutes(m.datetime);
-            if (elapsed !== null && elapsed > 100) {
-              console.log(`[live-scores] Auto-finish: ${m.homeTeam.name} vs ${m.awayTeam.name} (elapsed=${elapsed}min, gone from live feed)`);
-              changed = true;
-              return { ...m, status: "finished" as const };
-            }
-            return m;
-          });
-          return changed ? updated : prev;
-        });
         return;
       }
 
@@ -875,6 +862,35 @@ export default function Dashboard() {
         console.log(`[live-scores] Overlay: ${liveList.length} matches`, liveList.map((lm) => `${lm.homeTeam} ${lm.score?.home}-${lm.score?.away} ${lm.awayTeam} (id=${lm.id})`));
       }
       mergeLiveOverlay(liveList);
+
+      // Camada 2b (#122): auto-finish matches missing from a NON-EMPTY live list.
+      // If live-scores returned data for some matches but NOT this one, and
+      // elapsed > 100min, the match likely ended and left the live feed.
+      setAllMatches((prev) => {
+        let changed = false;
+        const updated = prev.map((m) => {
+          if (m.status !== "live") return m;
+          const elapsed = elapsedMinutes(m.datetime);
+          if (elapsed === null || elapsed <= 100) return m;
+          // Check if this match was in the live list
+          const inLiveList = liveList.some((lm) => {
+            if (m.footystatsId != null && lm.id != null && Number(m.footystatsId) === Number(lm.id)) return true;
+            const mH = resolveTeamAlias(m.homeTeam.name);
+            const lH = resolveTeamAlias(lm.homeTeam);
+            const mA = resolveTeamAlias(m.awayTeam.name);
+            const lA = resolveTeamAlias(lm.awayTeam);
+            return (mH === lH || (mH && lH && (mH.includes(lH) || lH.includes(mH)))) &&
+                   (mA === lA || (mA && lA && (mA.includes(lA) || lA.includes(mA))));
+          });
+          if (!inLiveList) {
+            console.log(`[live-scores] Auto-finish: ${m.homeTeam.name} vs ${m.awayTeam.name} (elapsed=${elapsed}min, absent from ${liveList.length} live matches)`);
+            changed = true;
+            return { ...m, status: "finished" as const };
+          }
+          return m;
+        });
+        return changed ? updated : prev;
+      });
     } catch (err) {
       // Camada 3 (#071): log the error instead of silencing
       console.warn("[live-scores] fetch error:", err instanceof Error ? err.message : err);

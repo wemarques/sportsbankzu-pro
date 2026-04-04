@@ -6262,3 +6262,26 @@ combinados com cold starts do Lambda (cache in-memory resetado) geravam
 
 ---
 
+## 122 — Auto-finish incorreto quando /live-scores retorna vazio
+
+**Data:** 2026-04-04
+**Arquivos:** `frontend/next/src/app/dashboard/page.tsx`
+**Status:** Corrigido
+**Relacionado:** #071 (live scores stuck), #121 (TTL cache)
+
+### Problema
+
+Jogo Independiente vs Racing aos 80min (AO VIVO) mostrado como "FT" no dashboard.
+Frontend forca status="finished" quando /live-scores retorna 0 matches E elapsed > 100min.
+Mas /live-scores retornava vazio por rate limit da API-Football (#120c), nao porque
+os jogos acabaram.
+
+### Correcao
+
+1. Quando liveList.length === 0: NAO auto-finalizar (pode ser erro de API)
+2. Quando liveList.length > 0 E jogo NAO esta na lista E elapsed > 100min:
+   auto-finalizar (jogo realmente saiu do feed ao vivo)
+3. Safety timeout de 120min (Camada 1, #071) mantido como ultima defesa
+
+---
+
