@@ -130,3 +130,4 @@
 | 113 | **ATIVA** | Fix | Cron live + corredor cartoes + duplas + Under 2.5 |
 | 114 | Corrigido | Infra | Lambda Function URL (elimina timeout 30s) |
 | 115 | Corrigido | Perf | ThreadPoolExecutor paralleliza jogos em batches |
+| 116 | Corrigido | Fix | EV fixo +40.0% em escanteios — null EV when suspicious |

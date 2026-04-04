@@ -256,29 +256,21 @@ def classify_market(
     if not output.odds_available:
         reason_codes.append(ReasonCode.NO_ODDS_AVAILABLE)
 
-    # ─── EV sanity cap (#064) ───
+    # ─── EV sanity cap (#064, #116) ───
     # EV > 40% is almost certainly a data issue (prob/odds mismatch).
-    # Previously this only flagged — now it actively caps probability to prevent
-    # absurd EVs (+67%, +195%) from reaching the UI as NEUTRO.
+    # #116: Instead of capping to exactly 40% (which shows misleading "+40.0%"),
+    # null out EV/edge so the market is treated as informational only.
     MAX_CREDIBLE_EV = 0.40
     if output.ev is not None and output.ev > MAX_CREDIBLE_EV and output.book_odd and output.book_odd > 1.0:
-        # Cap probability to the level that produces MAX_CREDIBLE_EV
-        max_prob = (1.0 + MAX_CREDIBLE_EV) / output.book_odd
         original_prob = prob
         original_ev = output.ev
-        if output.calibrated_probability and output.calibrated_probability > max_prob:
-            output.calibrated_probability = round(max_prob, 4)
-        if output.raw_probability and output.raw_probability > max_prob:
-            output.raw_probability = round(max_prob, 4)
-        # Recompute EV, edge, and display with capped probability
-        output.compute_ev()
-        output.compute_display()
-        prob = output.calibrated_probability or output.raw_probability or 0.0
         reason_codes.append(ReasonCode.SUSPICIOUS_EV)
+        # Null out EV — don't show a misleading capped value (#116)
+        output.ev = None
+        output.edge = None
         logger.warning(
-            f"[EV Cap] {output.display_label}: prob capped {original_prob:.1%}→{prob:.1%}, "
-            f"EV capped {original_ev:.1%}→{output.ev:.1%} (max={MAX_CREDIBLE_EV:.0%}). "
-            f"Odd={output.book_odd}."
+            f"[EV Cap] {output.display_label}: EV={original_ev:.1%} > {MAX_CREDIBLE_EV:.0%} "
+            f"(suspicious). EV nulled. prob={original_prob:.1%}, odd={output.book_odd}."
         )
 
     # ─── EV checks ───

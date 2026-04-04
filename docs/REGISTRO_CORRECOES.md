@@ -6106,3 +6106,41 @@ Mesmo com Function URL (60s limit), 24s e lento para UX.
 
 ---
 
+## 116 — Fix EV fixo +40.0% em Escanteios Over 11.5
+
+**Data:** 2026-04-04
+**Arquivos:** `backend/services/ev_classification.py`
+**Status:** Corrigido
+**Relacionado:** #064 (EV cap), #104 (corners engine), #110 (linhas expandidas)
+
+### Problema
+
+Escanteios Over 11.5 em 4 jogos de ligas diferentes (Nautico, Atletico Madrid,
+NY Red Bulls, SJ Earthquakes) todos com EV exatamente +40.0%.
+Probs diferentes (38-56%) produziam EV identico — impossivel estatisticamente.
+
+### Causa raiz
+
+`MAX_CREDIBLE_EV = 0.40` (#064) capava a probabilidade para que
+`prob_capped * book_odd - 1 = 0.40` exatamente. Corners Over 11.5 tem odds
+altas (2.5-5.0, evento raro) e probs moderadas do modelo, resultando em
+EV raw > 40% que era sempre capado para exatamente 40%.
+
+O cap transformava um flag de "dados suspeitos" em um valor que parecia
+um edge real de +40%, enganando o usuario.
+
+### Correcao
+
+Em vez de capar o EV para 40%, agora o EV e edge sao anulados (None)
+quando SUSPICIOUS_EV e detectado. O mercado recebe classificacao NEUTRO
+(informativo) sem mostrar um EV falso. O `SUSPICIOUS_EV` reason code
+continua bloqueando upgrade para SAFE ou NEUTRO_QUALIFICADO.
+
+### Resultado
+
+- 0 mercados com EV=+40.0% (antes: 4)
+- Corners com odds reais e EV credivel continuam mostrando EV real
+- Corners com EV suspeito (>40%) mostram EV=None, class=NEUTRO
+
+---
+
