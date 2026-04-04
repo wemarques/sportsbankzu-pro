@@ -118,3 +118,15 @@
 | 102b | **ATIVA** | Infra | Checklist variaveis ambiente Lambda |
 | 103 | **ATIVA** | Fix + Regra | book_odd obrigatorio para stake (nao odd_minima) |
 | 104 | **ATIVA** | Fix + Regra | Corner lambda escala total (nao per-team) |
+| 105 | **ATIVA** | Calibracao | Deflacao progressiva por banda + per-league |
+| 106 | **ATIVA** | Fix + Regra | Raw prob para classificacao, deflated para EV |
+| 107 | Corrigido | Feature | ELO service (coleta, sem integracao lambda) |
+| 108 | **ATIVA** | Feature | EMA half-life=5 no lambda calculator |
+| 109 | **ATIVA** | Feature | Brier Score automatico + persistencia |
+| 110 | **ATIVA** | Feature | Scanner expandido 0.5-5.5 gols, 1.5-6.5 cards |
+| 111 | Corrigido | Feature | 1X2/DC markets scanner |
+| 112 | Corrigido | Perf | Cache EMA goals O(N) single pass |
+| 112b | Corrigido | Infra | Lambda 1024MB + cache warm fix |
+| 113 | **ATIVA** | Fix | Cron live + corredor cartoes + duplas + Under 2.5 |
+| 114 | Corrigido | Infra | Lambda Function URL (elimina timeout 30s) |
+| 115 | Corrigido | Perf | ThreadPoolExecutor paralleliza jogos em batches |

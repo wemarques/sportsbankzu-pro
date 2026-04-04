@@ -1,7 +1,9 @@
 from typing import Dict, Any, List, Optional, Tuple
 import os
+import math
 import logging
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 try:
     import pandas as pd  # type: ignore
 except Exception:
@@ -34,6 +36,8 @@ def build_records_from_matches(
     league_df: Optional["pd.DataFrame"] = None,
     players: Optional["pd.DataFrame"] = None,
     date_filter: str = "today",
+    _rows_override: Optional[List] = None,
+    _goals_cache_override: Optional[Dict] = None,
 ) -> List[Dict[str, Any]]:
     from backend.main import date_range, aggregate_team_xg, expected_goals_v2
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
@@ -50,16 +54,55 @@ def build_records_from_matches(
             items.append(r)
         return items
     start, end = date_range(date_filter)
-    rows = filter_rows(start, end)
+    rows = _rows_override if _rows_override is not None else filter_rows(start, end)
     # No automatic fallback — return only matches for the requested period
     records: List[Dict[str, Any]] = []
     # Build EMA goals cache ONCE before the loop (#112 — O(N) instead of O(N×M))
-    _goals_cache = {}
-    try:
-        from backend.modeling.ema_weights import build_team_goals_cache
-        _goals_cache = build_team_goals_cache(matches)
-    except Exception:
-        pass
+    if _goals_cache_override is not None:
+        _goals_cache = _goals_cache_override
+    else:
+        _goals_cache = {}
+        try:
+            from backend.modeling.ema_weights import build_team_goals_cache
+            _goals_cache = build_team_goals_cache(matches)
+        except Exception:
+            pass
+
+    # ── Parallel batch processing (#115) ─────────────────────────────
+    _PARALLEL_THRESHOLD = 4
+    _MAX_WORKERS = 3
+    if _rows_override is None and len(rows) >= _PARALLEL_THRESHOLD:
+        batch_size = math.ceil(len(rows) / _MAX_WORKERS)
+        batches = [rows[i:i + batch_size] for i in range(0, len(rows), batch_size)]
+        logger.warning(
+            f"[fixtures] #{league_id}: parallelizing {len(rows)} matches "
+            f"in {len(batches)} batches of ~{batch_size}"
+        )
+        all_records: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=len(batches)) as executor:
+            futures = [
+                executor.submit(
+                    build_records_from_matches,
+                    league_id=league_id,
+                    matches=matches,
+                    teams=teams,
+                    teams2=teams2,
+                    league_df=league_df,
+                    players=players,
+                    date_filter=date_filter,
+                    _rows_override=batch,
+                    _goals_cache_override=_goals_cache,
+                )
+                for batch in batches
+            ]
+            for f in futures:
+                try:
+                    all_records.extend(f.result(timeout=50))
+                except Exception as e:
+                    logger.warning(f"[fixtures] Parallel batch failed for {league_id}: {e}")
+        all_records.sort(key=lambda r: r.get("date_unix", 0))
+        return all_records
+    # ── End parallel (#115) ──────────────────────────────────────────
 
     for r in rows:
       try:

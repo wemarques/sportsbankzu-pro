@@ -6077,3 +6077,32 @@ PY_BACKEND_URL no Vercel atualizado.
 
 ---
 
+## 115 — Paralelizar processamento de jogos (ThreadPoolExecutor)
+
+**Data:** 2026-04-04
+**Arquivos:** `backend/services/fixtures_service.py`
+**Status:** Implementado
+**Relacionado:** #112 (cache EMA), #112b (Lambda 1024MB), #114 (Function URL)
+
+### Problema
+
+Championship 12 jogos x 50 mercados = 600 operacoes sequenciais = 24s.
+Mesmo com Function URL (60s limit), 24s e lento para UX.
+
+### Solucao
+
+1. Parametro `_rows_override` e `_goals_cache_override` em `build_records_from_matches()`
+2. Se >= 4 jogos e chamada top-level, divide rows em 3 batches
+3. ThreadPoolExecutor(max_workers=3) processa batches em paralelo
+4. Funcao chama a si mesma recursivamente com `_rows_override` por batch
+5. `_goals_cache` construido UMA VEZ e compartilhado (read-only, thread-safe)
+6. Resultados merged e reordenados por `date_unix`
+7. Fallback sequencial para <= 3 jogos
+
+### Resultado
+
+- Bundesliga 7 jogos: ~10s warm (antes: ~14s estimado)
+- Paralelizacao confirmada via CloudWatch: "parallelizing 7 matches in 3 batches of ~3"
+
+---
+
