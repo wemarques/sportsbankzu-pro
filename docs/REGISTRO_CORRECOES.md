@@ -6050,3 +6050,30 @@ O Vercel proxy faz retry automatico. Se a primeira chamada falha (cold start 30s
 
 ---
 
+
+## 114 — Lambda Function URL (elimina timeout 30s do API Gateway)
+
+**Data:** 2026-04-04
+**Arquivos:** Config AWS (Function URL), Vercel env (PY_BACKEND_URL)
+**Status:** Implementado
+**Relacionado:** #112, #112b
+
+### Problema
+
+API Gateway HTTP API v2 hard limit 30s. Championship cold start 35s → timeout.
+
+### Solucao
+
+Lambda Function URL: invocacao direta sem API Gateway. Timeout respeita Lambda config (60s).
+URL: `https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/`
+Auth: NONE, CORS: *, criada via Console AWS.
+PY_BACKEND_URL no Vercel atualizado.
+
+### Resultado
+
+- Championship: 12 matches em 23.8s (antes: timeout 503)
+- League One: 10 matches em 18.4s (antes: timeout 503)
+- API Gateway mantido como fallback
+
+---
+
