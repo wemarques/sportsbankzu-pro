@@ -6169,3 +6169,35 @@ Novo componente `DestaquesDoDia` com duas secoes:
 
 ---
 
+## 118 — Cards Over 0% accuracy — totalCards=0 (campos nao populados)
+
+**Data:** 2026-04-04
+**Arquivos:** `backend/services/fixtures_service.py`
+**Status:** Corrigido
+**Relacionado:** #085b (cards como mercado), #006 (checklist)
+
+### Problema
+
+Cartoes Over 1.5 com 0% accuracy (0/12). Cartoes Under 2.5 com 100% (10/10).
+Discrepancia impossivel — indica totalCards=0 para todos os jogos.
+
+### Causa raiz
+
+O pipeline (`fixtures_service.py`) nao incluia campos de contagem real de cartoes
+(`homeYellowCards`, `awayYellowCards`, `homeRedCards`, `awayRedCards`) no dict `stats`
+do registro. O cron handler procurava `stats.get("homeYellowCards")` → None → fallback
+`m.get("home_team_yellow_cards")` → tambem None → totalCards=0.
+Com totalCards=0: Over 1.5 (0>1.5=false=0%), Under 2.5 (0<2.5=true=100%).
+
+### Correcao
+
+Adicionados 4 campos de contagem de cartoes ao dict stats em fixtures_service.py:
+`homeYellowCards`, `awayYellowCards`, `homeRedCards`, `awayRedCards` extraidos da
+row bruta via `_safe_int(r.get("home_team_yellow_cards"))`.
+
+### Resultado
+
+Bundesliga Freiburg: hy=3 ay=3 hr=0 ar=0 total=6 (antes: 0)
+
+---
+

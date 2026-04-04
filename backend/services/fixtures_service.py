@@ -1216,6 +1216,11 @@ def build_records_from_matches(
                 # Actual match corner counts (for audit evaluation)
                 "homeCornersCount": _safe_int(r.get("home_team_corner_count")),
                 "awayCornersCount": _safe_int(r.get("away_team_corner_count")),
+                # Actual match card counts (for audit evaluation #118)
+                "homeYellowCards": _safe_int(r.get("home_team_yellow_cards")),
+                "awayYellowCards": _safe_int(r.get("away_team_yellow_cards")),
+                "homeRedCards": _safe_int(r.get("home_team_red_cards")),
+                "awayRedCards": _safe_int(r.get("away_team_red_cards")),
             },
             "h2h": {
                 "totalMatches": totalMatches,
