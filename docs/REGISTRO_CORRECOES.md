@@ -6144,3 +6144,28 @@ continua bloqueando upgrade para SAFE ou NEUTRO_QUALIFICADO.
 
 ---
 
+## 117 — Redesign aba Destaques — Valor Detectado + Apenas Analise
+
+**Data:** 2026-04-04
+**Arquivos:** `frontend/next/src/components/DestaquesDoDia.tsx` (novo),
+`frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/styles/scoretabs-dashboard.css`
+**Status:** Implementado
+
+### Problema
+
+Aba Destaques nao diferenciava picks com valor real (EV+) de picks informativos.
+Todos apareciam como "destaques" sem hierarquia clara.
+
+### Solucao
+
+Novo componente `DestaquesDoDia` com duas secoes:
+1. **Secao Verde** ("Aposte aqui — valor detectado"): picks SAFE/NEUTRO_QUALIFICADO
+   com EV positivo, stake por mercado via Quarter Kelly, bankroll editavel
+2. **Secao Cinza** ("Apenas analise"): jogos com alta confianca do modelo
+   mas sem edge sobre a casa, badge "Sem Edge" sempre visivel
+3. Bankroll editavel com presets que ADICIONAM ao valor atual
+4. Guia de Leitura Profissional colapsavel (persiste no localStorage)
+5. Disclaimer de gestao de risco
+
+---
+

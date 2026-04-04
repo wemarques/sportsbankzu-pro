@@ -1456,6 +1456,42 @@
 }
 
 /* ──────────────────────────────────────────────── */
+/* DESTAQUES DO DIA (#117)                          */
+/* ──────────────────────────────────────────────── */
+.destaques-value-card:hover {
+  border-color: rgba(16,185,129,0.4) !important;
+}
+.destaques-analysis-item:hover {
+  background: #181818 !important;
+}
+.destaques-analysis-item:hover .destaques-chevron {
+  color: #10b981 !important;
+  transform: translateX(4px);
+  transition: all 0.2s;
+}
+.destaques-bankroll-input:focus-within {
+  border-color: rgba(16,185,129,0.5) !important;
+}
+/* Hide number input spinners */
+.destaques-bankroll-input input[type=number]::-webkit-inner-spin-button,
+.destaques-bankroll-input input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.destaques-bankroll-input input[type=number] {
+  -moz-appearance: textfield;
+}
+@media (min-width: 768px) {
+  .destaques-guide-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ──────────────────────────────────────────────── */
 /* PREDICTION BADGES (Prognosticos)                 */
 /* ──────────────────────────────────────────────── */
 

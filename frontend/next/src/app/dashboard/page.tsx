@@ -23,6 +23,7 @@ import AuditBanner from "@/components/AuditBanner";
 import EmptyState, { MockDataBanner } from "@/components/EmptyState";
 import type { EmptyStateVariant } from "@/components/EmptyState";
 import Glossary from "@/components/Glossary";
+import DestaquesDoDia from "@/components/DestaquesDoDia";
 import { getClassificationDisplay } from "@/lib/classifications";
 import {
   Star,
@@ -1839,94 +1840,18 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* ── RECOMENDADAS VIEW ── */}
+            {/* ── RECOMENDADAS VIEW (#117) ── */}
             {navView === "recomendadas" && (
-              <div className="st-view-panel">
-                <div className="st-view-header">
-                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
-                  <h2 className="st-view-title"><Sparkles size={16} /> Destaques do Dia</h2>
-                </div>
-                <div className="st-view-subtitle">Jogos com maior potencial — saiba por que cada jogo está em destaque</div>
-                <div className="st-view-content">
-                  {allMatches.length === 0 && (
-                    <div className="st-empty">
-                      <div className="st-empty__icon">&#9917;</div>
-                      Carregando jogos para analise...
-                    </div>
-                  )}
-                  {allMatches
-                    .filter((m) => m.status === "scheduled")
-                    .sort((a, b) => {
-                      // Score: higher homeWinProb or awayWinProb + high over25 + btts data
-                      const scoreA = Math.max(a.stats?.homeWinProb ?? 0, a.stats?.awayWinProb ?? 0) + (a.stats?.over25Prob ?? 0) * 0.5;
-                      const scoreB = Math.max(b.stats?.homeWinProb ?? 0, b.stats?.awayWinProb ?? 0) + (b.stats?.over25Prob ?? 0) * 0.5;
-                      return scoreB - scoreA;
-                    })
-                    .slice(0, 15)
-                    .map((match) => {
-                      const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
-                      const maxProb = Math.max(match.stats?.homeWinProb ?? 0, match.stats?.awayWinProb ?? 0);
-                      const maxProbPct = toPercent(maxProb);
-                      const probLabel = maxProb === (match.stats?.homeWinProb ?? 0) ? `${match.homeTeam.name} (${formatProb(maxProb)})` : `${match.awayTeam.name} (${formatProb(maxProb)})`;
-                      const confidenceColor = maxProbPct >= 55 ? "#00ff88" : maxProbPct >= 40 ? "#ffbb33" : "#ff4444";
-                      const highlightReason = getHighlightReason(match);
-                      const safePicks = match.predictions?.filter((p) => (p.classification || p.status) === "SAFE") ?? [];
-                      return (
-                        <div
-                          key={match.id}
-                          className="st-rec-card"
-                          onClick={() => { setSelectedMatchId(match.id); setNavView("matches"); }}
-                        >
-                          <div className="st-rec-card__header">
-                            <span className="st-rec-card__league">{league?.countryFlag} {league?.name ?? match.leagueId}</span>
-                            <span className="st-rec-card__time">{formatTime(match.datetime)}</span>
-                          </div>
-                          <div className="st-rec-card__teams">
-                            <span className="st-rec-card__team">{match.homeTeam.name}</span>
-                            <span className="st-rec-card__vs">vs</span>
-                            <span className="st-rec-card__team">{match.awayTeam.name}</span>
-                          </div>
-                          <div style={{ fontSize: "0.68rem", color: "#ffbb33", padding: "4px 0 2px", fontStyle: "italic" }}>
-                            ★ {highlightReason}
-                          </div>
-                          <div className="st-rec-card__stats">
-                            <div className="st-rec-card__stat">
-                              <span className="st-rec-card__stat-label">Favorito</span>
-                              <span className="st-rec-card__stat-value" style={{ color: confidenceColor }}>{probLabel}</span>
-                            </div>
-                            <div className="st-rec-card__stat">
-                              <span className="st-rec-card__stat-label">Over 2.5</span>
-                              <span className="st-rec-card__stat-value">{formatProb(match.stats?.over25Prob)}</span>
-                            </div>
-                            <div className="st-rec-card__stat">
-                              <span className="st-rec-card__stat-label">BTTS</span>
-                              <span className="st-rec-card__stat-value">{formatProb(match.stats?.bttsProb)}</span>
-                            </div>
-                          </div>
-                          {safePicks.length > 0 && (
-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
-                              {safePicks.slice(0, 3).map((p, i) => {
-                                const d = getClassificationDisplay(p.classification || p.status);
-                                return (
-                                  <span key={i} style={{ fontSize: "0.65rem", background: d.bgColor, color: d.color, borderRadius: 4, padding: "2px 6px", border: `1px solid ${d.color}33` }}>
-                                    {d.label}: {p.mercado}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {match.odds?.home > 0 && (
-                            <div className="st-rec-card__odds">
-                              <span className="st-rec-card__odd">1: {match.odds.home.toFixed(2)}</span>
-                              <span className="st-rec-card__odd">X: {match.odds.draw.toFixed(2)}</span>
-                              <span className="st-rec-card__odd">2: {match.odds.away.toFixed(2)}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
+              <DestaquesDoDia
+                matches={allMatches}
+                bankroll={bankroll}
+                onBankrollChange={(v) => {
+                  setBankroll(v);
+                  if (typeof window !== "undefined") localStorage.setItem("sportsbankzu-bankroll", v.toString());
+                }}
+                onBack={() => setNavView("matches")}
+                onSelectMatch={(id) => { setSelectedMatchId(id); setNavView("matches"); }}
+              />
             )}
 
             {/* ── DUPLAS VIEW ── */}

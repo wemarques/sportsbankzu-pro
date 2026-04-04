@@ -131,3 +131,4 @@
 | 114 | Corrigido | Infra | Lambda Function URL (elimina timeout 30s) |
 | 115 | Corrigido | Perf | ThreadPoolExecutor paralleliza jogos em batches |
 | 116 | Corrigido | Fix | EV fixo +40.0% em escanteios — null EV when suspicious |
+| 117 | Corrigido | Feature | Redesign aba Destaques — Valor Detectado + Apenas Analise |
