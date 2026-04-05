@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  TrendingUp,
   Info,
   ChevronRight,
   Zap,
@@ -67,7 +66,6 @@ function classifyMatches(
     if (m.status !== "scheduled") continue;
     const preds = m.predictions ?? [];
 
-    // Value bets: picks with positive EV and eligible classification
     const valuePicks = preds.filter((p) => {
       const cls = p.classification || p.finalClassification || p.status || "";
       const isEligible =
@@ -85,13 +83,12 @@ function classifyMatches(
             label: p.mercado,
             odd: typeof odd === "number" ? odd : 1,
             evPct: (p.ev ?? 0) * 100,
-            kellyPct: 0, // computed with bankroll in render
+            kellyPct: 0,
             prob,
           };
         }),
       });
     } else {
-      // Analysis only: pick the best market by model probability
       const bestPred = preds
         .filter((p) => p.prob_max > 0 || (p.calibrated_probability ?? 0) > 0)
         .sort((a, b) => {
@@ -115,14 +112,12 @@ function classifyMatches(
     }
   }
 
-  // Sort value bets by total EV descending
   valueBets.sort((a, b) => {
     const evA = a.markets.reduce((s, mk) => s + mk.evPct, 0);
     const evB = b.markets.reduce((s, mk) => s + mk.evPct, 0);
     return evB - evA;
   });
 
-  // Sort analysis by model probability descending
   analysisOnly.sort((a, b) => b.modelProb - a.modelProb);
 
   return { valueBets, analysisOnly: analysisOnly.slice(0, 10) };
@@ -177,14 +172,7 @@ export default function DestaquesDoDia({
       </div>
 
       {/* Bankroll Editor */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          padding: "12px 0",
-        }}
-      >
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 0" }}>
         <div
           style={{
             display: "flex",
@@ -199,9 +187,7 @@ export default function DestaquesDoDia({
           className="destaques-bankroll-input"
         >
           <Wallet size={14} style={{ color: "#10b981", flexShrink: 0 }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" }}>
-            R$
-          </span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" }}>R$</span>
           <input
             type="number"
             value={bankroll}
@@ -274,10 +260,10 @@ export default function DestaquesDoDia({
             <p
               style={{
                 color: "#6b7280",
-                fontSize: 10,
+                fontSize: 9,
                 textTransform: "uppercase",
                 fontWeight: 700,
-                letterSpacing: "0.15em",
+                letterSpacing: "0.25em",
                 paddingLeft: 18,
                 margin: "2px 0 0",
               }}
@@ -332,18 +318,12 @@ export default function DestaquesDoDia({
       {analysisOnly.length > 0 && (
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#374151",
-              }}
-            />
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#374151" }} />
             <h2
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 700,
+                fontStyle: "italic",
                 textTransform: "uppercase",
                 letterSpacing: "-0.02em",
                 color: "#6b7280",
@@ -370,7 +350,7 @@ export default function DestaquesDoDia({
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  padding: "14px 16px",
+                  padding: "10px 14px",
                   cursor: "pointer",
                   borderTop: idx > 0 ? "1px solid rgba(31,41,55,0.4)" : undefined,
                   transition: "background 0.2s",
@@ -379,23 +359,23 @@ export default function DestaquesDoDia({
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, color: "#9ca3af", fontSize: 14 }}>
+                    <span style={{ fontWeight: 700, color: "#9ca3af", fontSize: 12 }}>
                       {item.match.homeTeam.name} vs {item.match.awayTeam.name}
                     </span>
                     <span style={{ color: "#374151" }}>•</span>
-                    <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
+                    <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "-0.02em" }}>
                       {item.bestMarket} • Odd {item.odd > 0 ? item.odd.toFixed(2) : "N/A"}
                     </span>
                   </div>
                   <p
                     style={{
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: 700,
                       textTransform: "uppercase",
                       letterSpacing: "0.12em",
-                      margin: "4px 0 0",
+                      margin: "3px 0 0",
                       display: "flex",
-                      gap: 12,
+                      gap: 8,
                     }}
                   >
                     <span style={{ color: "#9ca3af" }}>
@@ -413,25 +393,25 @@ export default function DestaquesDoDia({
                     </span>
                   </p>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, marginLeft: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: 12 }}>
                   <span
                     style={{
-                      fontSize: 9,
+                      fontSize: 8,
                       color: "#6b7280",
                       background: "#030712",
                       border: "1px solid #1f2937",
-                      padding: "5px 12px",
+                      padding: "4px 8px",
                       borderRadius: 9999,
                       fontWeight: 900,
                       textTransform: "uppercase",
                       letterSpacing: "0.1em",
-                      minWidth: 75,
+                      minWidth: 70,
                       textAlign: "center",
                     }}
                   >
                     Sem Edge
                   </span>
-                  <ChevronRight size={16} style={{ color: "#1f2937" }} className="destaques-chevron" />
+                  <ChevronRight size={14} style={{ color: "#1f2937" }} className="destaques-chevron" />
                 </div>
               </div>
             ))}
@@ -455,20 +435,20 @@ export default function DestaquesDoDia({
           <div
             style={{
               background: "linear-gradient(135deg, #111, #0a0a0a)",
-              borderRadius: 16,
+              borderRadius: 12,
               border: "1px solid rgba(31,41,55,0.6)",
-              padding: "24px",
+              padding: "20px 24px",
               position: "relative",
               overflow: "hidden",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h3
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                  fontSize: 14,
+                  gap: 10,
+                  fontSize: 13,
                   fontWeight: 900,
                   color: "#9ca3af",
                   textTransform: "uppercase",
@@ -476,73 +456,66 @@ export default function DestaquesDoDia({
                   margin: 0,
                 }}
               >
-                <Info size={18} style={{ color: "#10b981" }} />
-                Guia de Leitura Profissional
+                <Info size={16} style={{ color: "#10b981" }} />
+                Guia Profissional
               </h3>
               <button
                 onClick={() => setShowGuide(false)}
                 style={{
-                  fontSize: 10,
+                  fontSize: 9,
                   textTransform: "uppercase",
                   fontWeight: 900,
                   color: "#4b5563",
                   border: "1px solid #1f2937",
                   background: "transparent",
-                  padding: "4px 12px",
+                  padding: "3px 8px",
                   borderRadius: 4,
                   cursor: "pointer",
                 }}
               >
-                Ocultar Guia
+                Fechar
               </button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }} className="destaques-guide-grid">
-              <div style={{ padding: 16, borderRadius: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }} className="destaques-guide-grid">
+              <div style={{ padding: 12, borderRadius: 10 }}>
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 900,
                     color: "#10b981",
                     textTransform: "uppercase",
-                    letterSpacing: "0.3em",
+                    letterSpacing: "0.2em",
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
                   }}
                 >
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
                   Valor Detectado
                 </span>
-                <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, marginTop: 8 }}>
-                  A odd <span style={{ color: "#d9a834", fontWeight: 700 }}>dourada</span> e o preco do
-                  mercado. O valor <span style={{ color: "#34d399", fontWeight: 700 }}>verde</span> e a sua
-                  margem de lucro (EV). A{" "}
-                  <span style={{ color: "#fff", fontWeight: 700, textDecoration: "underline", textDecorationColor: "rgba(16,185,129,0.3)", textUnderlineOffset: 4 }}>
-                    Stake
-                  </span>{" "}
-                  e calculada individualmente via Quarter Kelly para cada mercado.
+                <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.6, marginTop: 6 }}>
+                  Odd <span style={{ color: "#d9a834", fontWeight: 700 }}>dourada</span> superior ao risco.
+                  Stake calculada via <span style={{ color: "#fff", fontWeight: 700 }}>Quarter Kelly</span> individual.
                 </p>
               </div>
-              <div style={{ padding: 16, borderRadius: 12 }}>
+              <div style={{ padding: 12, borderRadius: 10 }}>
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 900,
                     color: "#6b7280",
                     textTransform: "uppercase",
-                    letterSpacing: "0.3em",
+                    letterSpacing: "0.2em",
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
                   }}
                 >
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#374151" }} />
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#374151" }} />
                   Apenas Analise
                 </span>
-                <p style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.6, marginTop: 8 }}>
-                  O modelo concorda com a casa. O badge{" "}
-                  <span style={{ color: "#9ca3af", fontWeight: 700 }}>Sem Edge</span> indica que nao existe
-                  vantagem matematica a longo prazo para apostar nestes eventos, servindo apenas para contexto.
+                <p style={{ fontSize: 12, color: "#4b5563", lineHeight: 1.6, marginTop: 6 }}>
+                  O modelo concorda com a casa. Sem vantagem matematica para aposta.
                 </p>
               </div>
             </div>
@@ -556,7 +529,7 @@ export default function DestaquesDoDia({
           style={{
             width: "100%",
             marginTop: 24,
-            padding: 16,
+            padding: 12,
             border: "1px dashed #1f2937",
             borderRadius: 12,
             background: "transparent",
@@ -567,7 +540,7 @@ export default function DestaquesDoDia({
             cursor: "pointer",
           }}
         >
-          Mostrar Guia de Leitura
+          Mostrar Guia
         </button>
       )}
     </div>
@@ -601,23 +574,23 @@ function ValueBetCard({
       className="destaques-value-card"
       onClick={onSelect}
     >
-      <div style={{ padding: "16px 20px" }}>
+      <div style={{ padding: "12px 16px" }}>
         {/* Header */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 12,
-            paddingBottom: 12,
+            marginBottom: 8,
+            paddingBottom: 8,
             borderBottom: "1px solid rgba(31,41,55,0.4)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Zap size={12} style={{ color: "#10b981" }} />
+            <Zap size={10} style={{ color: "#10b981" }} />
             <span
               style={{
-                fontSize: 10,
+                fontSize: 9,
                 color: "#6b7280",
                 fontWeight: 700,
                 textTransform: "uppercase",
@@ -627,12 +600,9 @@ function ValueBetCard({
               {league} • {time}
             </span>
           </div>
-          <div
+          <span
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 9,
+              fontSize: 8,
               color: "#34d399",
               fontWeight: 900,
               background: "rgba(52,211,153,0.05)",
@@ -643,16 +613,15 @@ function ValueBetCard({
               letterSpacing: "-0.02em",
             }}
           >
-            <TrendingUp size={10} />
             VALOR DETECTADO
-          </div>
+          </span>
         </div>
 
         {/* Teams */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 8 }}>
           <h3
             style={{
-              fontSize: 20,
+              fontSize: 16,
               fontWeight: 900,
               letterSpacing: "-0.02em",
               color: "#f3f4f6",
@@ -660,7 +629,7 @@ function ValueBetCard({
             }}
           >
             {bet.match.homeTeam.name}
-            <span style={{ color: "#9ca3af", fontWeight: 700, margin: "0 8px", fontSize: 13, textTransform: "uppercase" }}>
+            <span style={{ color: "#6b7280", fontWeight: 700, margin: "0 4px", fontSize: 10, textTransform: "uppercase" }}>
               vs
             </span>
             {bet.match.awayTeam.name}
@@ -672,7 +641,7 @@ function ValueBetCard({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 10,
+            gap: 8,
           }}
         >
           {bet.markets.map((mk, idx) => {
@@ -683,7 +652,8 @@ function ValueBetCard({
                 style={{
                   background: "#1c1c1c",
                   border: "1px solid rgba(31,41,55,0.5)",
-                  padding: "10px 14px",
+                  borderLeft: "2px solid rgba(16,185,129,0.1)",
+                  padding: "6px 12px",
                   borderRadius: 8,
                 }}
               >
@@ -691,7 +661,7 @@ function ValueBetCard({
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: 900,
                       color: "#9ca3af",
                       textTransform: "uppercase",
@@ -700,10 +670,10 @@ function ValueBetCard({
                   >
                     {mk.label}
                   </span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                       style={{
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: 900,
                         color: "#d9a834",
                         filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))",
@@ -713,11 +683,11 @@ function ValueBetCard({
                     </span>
                     <span
                       style={{
-                        fontSize: 9,
+                        fontSize: 8,
                         fontWeight: 900,
                         color: "#34d399",
                         background: "rgba(16,185,129,0.1)",
-                        padding: "2px 6px",
+                        padding: "2px 4px",
                         borderRadius: 4,
                         border: "1px solid rgba(16,185,129,0.2)",
                       }}
@@ -733,13 +703,13 @@ function ValueBetCard({
                     justifyContent: "flex-end",
                     alignItems: "center",
                     gap: 4,
-                    marginTop: 6,
-                    fontSize: 9,
+                    marginTop: 2,
+                    fontSize: 8,
                     fontWeight: 700,
                     color: "#6b7280",
                   }}
                 >
-                  <Calculator size={10} style={{ color: "rgba(16,185,129,0.3)" }} />
+                  <Calculator size={9} style={{ color: "rgba(16,185,129,0.3)" }} />
                   <span>
                     Stake:{" "}
                     <span style={{ color: "#d1d5db" }}>{(kelly.pct * 100).toFixed(1)}%</span>{" "}

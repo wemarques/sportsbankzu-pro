@@ -664,7 +664,7 @@ export default function Dashboard() {
       const saved = localStorage.getItem("sportsbankzu-bankroll");
       if (saved) { const v = parseFloat(saved); if (!isNaN(v) && v > 0) return v; }
     }
-    return 100;
+    return 250;
   });
   const [isMockData, setIsMockData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
