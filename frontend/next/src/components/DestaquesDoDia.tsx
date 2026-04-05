@@ -224,7 +224,7 @@ export default function DestaquesDoDia({
           {BANK_PRESETS.map((amt) => (
             <button
               key={amt}
-              onClick={() => onBankrollChange(bankroll + amt)}
+              onClick={() => onBankrollChange(amt)}
               style={{
                 background: "#111827",
                 border: "1px solid #1f2937",
@@ -236,7 +236,7 @@ export default function DestaquesDoDia({
                 cursor: "pointer",
               }}
             >
-              +{amt}
+              {amt}
             </button>
           ))}
         </div>
