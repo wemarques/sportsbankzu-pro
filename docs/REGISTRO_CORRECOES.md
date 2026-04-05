@@ -6285,3 +6285,25 @@ os jogos acabaram.
 
 ---
 
+## 119 — Correcao consolidada duplas inter e intra-jogo
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/combinadas_service.py`
+**Status:** Implementado
+**Relacionado:** #028 (elegibilidade), #037 (corredor gols), #113 (tentativa anterior)
+
+### Correcoes
+
+1. Elegibilidade: so SAFE + NEUTRO_QUALIFICADO geram duplas (regra #028 enforced)
+2. Intra-jogo: bloqueio de mercados correlacionados cross-market (gols x escanteios, gols x btts, gols x 1x2/dc)
+3. Corredor: _is_corridor_bet() expandido para cartoes e escanteios (era so gols)
+4. Cap de aparicoes: pick aparece em no maximo 3 duplas inter-jogo
+5. Diversidade de mercado: maximo 2 duplas com mesmo par de tipos de mercado
+6. Pick principal (ancora): campo is_anchor no JSON para frontend futuro
+
+### Pipeline de filtros
+
+eligible → combinacoes → corredor → correlacao intra → sort prob → cap → diversidade → ancora → limit
+
+---
+

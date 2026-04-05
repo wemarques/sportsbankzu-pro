@@ -137,3 +137,4 @@
 | 121 | Corrigido | Perf | API-Football cache TTLs otimizados — 8500 to ~3000 req/dia |
 | 122 | Corrigido | Fix | Auto-finish incorreto quando /live-scores retorna vazio |
 | 117b | Corrigido | Fix | DestaquesDoDia presets definem valor (nao somam) |
+| 119 | **ATIVA** | Fix + Regra | Duplas: elegibilidade + correlacao + corredor + cap + diversidade |
