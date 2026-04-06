@@ -46,18 +46,17 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
 }
 
 /**
- * Max leagues per batch — keeps each Lambda call under timeout.
- * Reduced from 5→3 to stay well under API Gateway 30s hard limit.
- * 3 leagues/batch ≈ 1 wave of parallel work ≈ 8-15s on warm cache.
+ * Max leagues per batch — aligns with Lambda ThreadPoolExecutor (4 workers)
+ * so each request can fill internal parallelism (#119c).
+ * Vercel proxy timeout (fetch/route ~55s) still allows 5 warm leagues.
  */
-const LEAGUES_PER_BATCH = 3;
+const LEAGUES_PER_BATCH = 5;
 
 /**
- * Max concurrent batch requests — avoids overwhelming Lambda with
- * too many simultaneous cold starts.
- * With 37 leagues / 3 per batch = 13 batches, 4 concurrent ≈ 4 waves.
+ * Max concurrent batch requests — fewer simultaneous Lambda cold starts /
+ * less SQLite contention in FootyStats client (#119c).
  */
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 2;
 
 /**
  * Run async tasks with a concurrency limit (semaphore pattern).
@@ -92,13 +91,21 @@ async function parallelWithLimit<T>(
  * Lambda invocation handles only a few leagues and responds within timeout.
  * Uses concurrency limiting to avoid overwhelming Lambda with cold starts.
  * Merges results client-side into a single MatchesResponse.
+ *
+ * @param onBatchReady — optional; invoked after each batch completes (#119a progressive loading).
  */
-export async function getMatchesByLeague(leagues: string, date?: string): Promise<MatchesResponse> {
+export async function getMatchesByLeague(
+  leagues: string,
+  date?: string,
+  onBatchReady?: (batch: MatchesResponse) => void,
+): Promise<MatchesResponse> {
   const leagueIds = leagues.split(",").map((s) => s.trim()).filter(Boolean);
 
   // Single or few leagues: direct call (no fan-out overhead)
   if (leagueIds.length <= LEAGUES_PER_BATCH) {
-    return _fetchMatchesBatch(leagues, date);
+    const res = await _fetchMatchesBatch(leagues, date);
+    onBatchReady?.(res);
+    return res;
   }
 
   // Split into batches and fetch in parallel (concurrency-limited)
@@ -115,6 +122,7 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
   const results = await parallelWithLimit(
     batches.map((batch, idx) => async () => {
       const res = await _fetchMatchesBatch(batch.join(","), date);
+      onBatchReady?.(res);
       const ok = res.matches.length > 0 || res._dataSource === "backend-empty";
       console.log(`[api]   batch ${idx + 1} ${ok ? "OK" : "FAIL"}: ${res.matches.length} matches, src=${res._dataSource}${res._error ? `, err=${res._error.kind}` : ""}`);
       return res;
@@ -163,6 +171,7 @@ export async function getMatchesByLeague(leagues: string, date?: string): Promis
           _latencyMs: Math.max(...batchRetries.map((r) => r._latencyMs ?? 0)),
         };
         results[batchIdx] = { status: "fulfilled", value: merged };
+        onBatchReady?.(merged);
       }
     }
   }

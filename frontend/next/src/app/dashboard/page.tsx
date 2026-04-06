@@ -631,6 +631,8 @@ export default function Dashboard() {
   const [aiAnalysisMatchId, setAiAnalysisMatchId] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** #119a — avoid duplicate live overlay fetch on first progressive batch */
+  const livePollAfterBatchRef = useRef(false);
   const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
@@ -975,6 +977,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
+      livePollAfterBatchRef.current = false;
       setHasError(false);
       setIsMockData(false);
       setErrorMessage(null);
@@ -991,15 +994,33 @@ export default function Dashboard() {
         return mode;
       }
 
+      /** #119a — merge each fan-out batch as it arrives */
+      const onBatchReady = (batch: MatchesResponse) => {
+        const raw = batch.matches ?? [];
+        if (raw.length === 0) return;
+        const normalized = raw.map((item: any, idx: number) => {
+          const lid = item.leagueId ?? item.league ?? "unknown";
+          return normalizeMatch(item, lid, idx);
+        });
+        setAllMatches((prev) => deduplicateMatches([...prev, ...normalized]));
+        setDataSource((prev) => batch._dataSource ?? prev);
+        setIsMockData((m) => m || !!batch._isMockData);
+        setSelectedMatchId((prev) => prev ?? normalized[0].id);
+        if (!livePollAfterBatchRef.current) {
+          livePollAfterBatchRef.current = true;
+          queueMicrotask(() => fetchLiveScores());
+        }
+      };
+
       try {
-        let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
+        let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode), onBatchReady);
         let raw = res?.matches ?? [];
 
         // Auto-retry once on transient errors (Lambda cold start, network blip, etc.)
         const retryKinds = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR", "UNKNOWN"]);
         if (raw.length === 0 && res._error && retryKinds.has(res._error.kind)) {
           console.log(`[dashboard] ${res._error.kind} on first attempt, retrying (Lambda cold start)...`);
-          res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode));
+          res = await getMatchesByLeague(allLeagueIds, dateParamFor(dateMode), onBatchReady);
           raw = res?.matches ?? [];
         }
 
@@ -1015,7 +1036,9 @@ export default function Dashboard() {
 
         // Auto-fallback: if today returns empty (and no error), try week
         if (raw.length === 0 && dateMode === "today" && !res._error) {
-          res = await getMatchesByLeague(allLeagueIds, "week");
+          setAllMatches([]);
+          livePollAfterBatchRef.current = false;
+          res = await getMatchesByLeague(allLeagueIds, "week", onBatchReady);
           raw = res?.matches ?? [];
           if (raw.length > 0) {
             setDateMode("week");
@@ -1402,6 +1425,7 @@ export default function Dashboard() {
 
   const handleRetry = useCallback(async () => {
     setLoading(true);
+    livePollAfterBatchRef.current = false;
     setHasError(false);
     setErrorMessage(null);
     setErrorCode(null);
@@ -1409,15 +1433,32 @@ export default function Dashboard() {
     setAllMatches([]);
     const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
 
+    const onBatchReady = (batch: MatchesResponse) => {
+      const raw = batch.matches ?? [];
+      if (raw.length === 0) return;
+      const normalized = raw.map((item: any, idx: number) => {
+        const lid = item.leagueId ?? item.league ?? "unknown";
+        return normalizeMatch(item, lid, idx);
+      });
+      setAllMatches((prev) => deduplicateMatches([...prev, ...normalized]));
+      setDataSource((prev) => batch._dataSource ?? prev);
+      setIsMockData((m) => m || !!batch._isMockData);
+      setSelectedMatchId((prev) => prev ?? normalized[0].id);
+      if (!livePollAfterBatchRef.current) {
+        livePollAfterBatchRef.current = true;
+        queueMicrotask(() => fetchLiveScores());
+      }
+    };
+
     try {
-      let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateMode);
+      let res: MatchesResponse = await getMatchesByLeague(allLeagueIds, dateMode, onBatchReady);
       let raw = res?.matches ?? [];
 
       // Auto-retry once on transient errors (Lambda cold start, network blip, etc.)
       const retryKinds = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR", "UNKNOWN"]);
       if (raw.length === 0 && res._error && retryKinds.has(res._error.kind)) {
         console.log(`[dashboard:retry] ${res._error.kind} on first attempt, retrying...`);
-        res = await getMatchesByLeague(allLeagueIds, dateMode);
+        res = await getMatchesByLeague(allLeagueIds, dateMode, onBatchReady);
         raw = res?.matches ?? [];
       }
 
@@ -1432,7 +1473,9 @@ export default function Dashboard() {
 
       // Auto-fallback: if today returns empty (and no error), try week
       if (raw.length === 0 && dateMode === "today" && !res._error) {
-        res = await getMatchesByLeague(allLeagueIds, "week");
+        setAllMatches([]);
+        livePollAfterBatchRef.current = false;
+        res = await getMatchesByLeague(allLeagueIds, "week", onBatchReady);
         raw = res?.matches ?? [];
         if (raw.length > 0) {
           setDateMode("week");
@@ -1474,7 +1517,8 @@ export default function Dashboard() {
 
   /** Determine which empty state variant to show */
   const emptyVariant = useMemo<EmptyStateVariant | null>(() => {
-    if (loading) return null;
+    /* #119a: allow partial list while still loading more batches */
+    if (loading && allMatches.length === 0) return null;
     if (hasError && dataSource === "mock-dev") return "mock-dev";
     if (hasError) return dataSource === "client-error" ? "client-error" : "backend-offline";
     if (allMatches.length === 0 && !hasError) return "no-games-date";
@@ -2078,6 +2122,26 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* #119a — partial data visible while more batches load */}
+              {loading && allMatches.length > 0 && (
+                <div
+                  role="status"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 14px",
+                    fontSize: "0.68rem",
+                    color: "#88aaff",
+                    background: "rgba(96,165,250,0.08)",
+                    borderBottom: "1px solid rgba(96,165,250,0.15)",
+                  }}
+                >
+                  <Loader2 size={14} className="st-spin-icon" aria-hidden />
+                  Carregando mais ligas...
+                </div>
+              )}
+
               {selectedLeague && (
                 <div style={{ padding: "8px 12px" }}>
                   <button
@@ -2105,6 +2169,14 @@ export default function Dashboard() {
                 <MockDataBanner />
               )}
 
+              {/* #119a — initial fetch before first batch arrives */}
+              {loading && allMatches.length === 0 && !hasError && (
+                <div style={{ textAlign: "center", padding: "48px 24px", color: "#666" }}>
+                  <Loader2 size={28} className="st-spin-icon" style={{ display: "inline-block", marginBottom: 10 }} />
+                  <div style={{ fontSize: "0.78rem" }}>Carregando jogos...</div>
+                </div>
+              )}
+
               {/* Empty state / Error state */}
               {!loading && leagueGroups.length === 0 && emptyVariant && (
                 <EmptyState
@@ -2117,9 +2189,9 @@ export default function Dashboard() {
                 />
               )}
 
-              {!loading && leagueGroups.length > 0 && <ConfidenceLegend />}
+              {leagueGroups.length > 0 && <ConfidenceLegend />}
 
-              {!loading && leagueGroups.map((group, groupIdx) => {
+              {leagueGroups.length > 0 && leagueGroups.map((group, groupIdx) => {
                 const isCaptureTarget = group.leagueId === leagueIdForCapture;
                 const isBrazilian = group.leagueId === "brazil-serie-a" || group.leagueId === "brazil-serie-b";
                 const prevGroup = groupIdx > 0 ? leagueGroups[groupIdx - 1] : null;
