@@ -973,6 +973,9 @@ def evaluate_match_markets(
     # ─── Filter corridor bets (Over X.5 + Under (X+1).5) ───
     active_markets = _filter_corridor_bets(active_markets)
 
+    # ─── Line safety margin (#120) — downgrade borderline Over lines ───
+    _apply_line_safety_margin(active_markets)
+
     # ─── Build bundle ───
     bundle = MatchMarketBundle(
         match_id=match_id,
@@ -1100,3 +1103,66 @@ def _filter_corridor_bets(markets: List[MarketOutput]) -> List[MarketOutput]:
                 )
 
     return [m for m in markets if id(m) not in remove_set]
+
+
+# ── Line safety margin (#120) ─────────────────────────────────────
+LINE_SAFETY_MARGIN = 0.05  # 5% — corners and goals only, NOT cards
+
+
+def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]:
+    """Downgrade borderline Over lines to NEUTRO (#120).
+
+    When a high Over line has probability barely above the NEUTRO threshold,
+    downgrade it if a lower line also qualifies. Prevents consistently
+    selecting 1 line above the correct one.
+
+    Only affects Over lines for Corners and Over/Under (goals). Cards excluded.
+    """
+    import re
+    _line_re = re.compile(r"(\d+\.?\d*)")
+
+    families: Dict[str, List[MarketOutput]] = {}
+    for m in markets:
+        if "over" not in (m.selection or "").lower():
+            continue
+        if m.market_type == "Corners":
+            families.setdefault("Corners", []).append(m)
+        elif m.market_type == "Over/Under":
+            families.setdefault("Goals", []).append(m)
+
+    for family, over_list in families.items():
+        if len(over_list) <= 1:
+            continue
+
+        def _line_val(mo: MarketOutput) -> float:
+            match = _line_re.search(mo.selection or "")
+            return float(match.group(1)) if match else 0
+
+        over_list.sort(key=_line_val)
+
+        cat = "Corners" if family == "Corners" else "Over/Under"
+        th = _get_thresholds(cat)
+        neutro_prob = th.get("neutro_prob", 0.50)
+
+        for i, mo in enumerate(over_list):
+            if mo.classification not in (MarketClassification.SAFE, MarketClassification.NEUTRO_QUALIFICADO):
+                continue
+            prob = mo.calibrated_probability or mo.raw_probability or 0
+            if prob <= 0:
+                continue
+            gap = prob - neutro_prob
+            if gap >= LINE_SAFETY_MARGIN:
+                continue
+            lower_exists = any(
+                (prev.calibrated_probability or prev.raw_probability or 0) > neutro_prob
+                for prev in over_list[:i]
+            )
+            if not lower_exists:
+                continue
+            old_cls = mo.classification
+            mo.classification = MarketClassification.NEUTRO
+            mo.reason_codes.append(ReasonCode.BORDERLINE_LINE_MARGIN)
+            logger.info(
+                f"[line-margin] {mo.display_label}: {old_cls.value}->NEUTRO "
+                f"(prob {prob:.3f}, gap {gap:.3f} < margin {LINE_SAFETY_MARGIN})"
+            )

@@ -146,3 +146,4 @@
 | 119f | Corrigido | Fix | Backtest window 14→30 dias (N=15→437) |
 | 119g | Corrigido | Perf | CORNER_BRIER_GRID granularidade fina 0.83-0.97 |
 | 119h | Corrigido | Perf | CARDS_DEFLATION_GRID inclui inflacao >1.0 |
+| 120 | **ATIVA** | Fix + Regra | Margem seguranca 5% selecao linha escanteios+gols |
