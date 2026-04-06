@@ -6381,3 +6381,109 @@ Usuario ve primeiros jogos em ~6-8s em vez de esperar 20-30s.
 
 ---
 
+## #119e — Lambda error formula: soma → media per-team
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/cron_handler.py`
+**Commit:** 1009885
+**Status:** Implementado
+
+### Correcao
+Formula alterada de `|lh-gh| + |la-ga|` para `(|lh-gh| + |la-ga|) / 2`.
+Limite 0.5 mantido, agora compativel com erro medio per-team.
+Erro esperado cai de ~1.45 para ~0.72.
+
+---
+
+## #119f — Backtest window 14→30 dias (N=15→437)
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/backtesting.py`, `backend/routes/health.py`
+**Commit:** 1009885
+**Status:** Implementado
+
+### Correcao
+Janela de backtest expandida de 14 para 30 dias em evaluate_safe_reactivation()
+e no endpoint /health/safe-status. N subiu de 15 para 437 picks, acima do
+MIN_N_BRIER=20 (REGRA #079).
+
+---
+
+## #119g — CORNER_BRIER_GRID granularidade fina
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/league_calibrator.py`
+**Commit:** 1009885
+**Status:** Implementado
+
+### Correcao
+Grid expandido de [0.80-1.20] (9 pontos) para [0.75-1.10] (13 pontos).
+Pontos finos adicionados: 0.83, 0.88, 0.92, 0.97 na faixa critica.
+
+---
+
+## #119h — CARDS_DEFLATION_GRID inclui inflacao >1.0
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/league_calibrator.py`
+**Commit:** 1009885
+**Status:** Implementado
+
+### Correcao
+Grid alterado de [0.80-1.20] para [0.85-1.30]. Inclui valores de inflacao
+(1.25, 1.30) para corrigir subestimativa do modelo NB2 de cartoes.
+
+---
+
+## #120 — Margem seguranca 5% selecao linha escanteios+gols
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/ev_classification.py`, `backend/models/market_output.py`
+**Commit:** 3e2d8f4
+**Status:** Implementado
+**Relacionado:** #119g, #121
+
+### Correcao
+Funcao `_apply_line_safety_margin()` downgrade Over borderline de SAFE/NEUTRO_Q
+para NEUTRO quando prob esta a menos de 5% do neutro_prob threshold e existe
+linha inferior que tambem qualifica. ReasonCode BORDERLINE_LINE_MARGIN adicionado.
+Aplicada a Corners e Over/Under gols. Cards excluido.
+
+---
+
+## #120b — Frontend: remover check VALOR_DETECTADO morto
+
+**Data:** 2026-04-05
+**Arquivos:** `frontend/next/src/components/DestaquesDoDia.tsx`
+**Commit:** ac2677e
+**Status:** Implementado
+
+### Correcao
+Removido check `cls === "VALOR_DETECTADO"` do filtro de value bets no DestaquesDoDia.
+Backend nunca envia esse valor — e label de display, nao classificacao.
+Filtro correto: apenas SAFE + NEUTRO_QUALIFICADO.
+
+---
+
+## #121 — Enforce monotonicidade probs corners
+
+**Data:** 2026-04-06
+**Arquivos:** `backend/services/ev_classification.py`
+**Commit:** 86d0f1f
+**Status:** Implementado
+**Relacionado:** #120, #104
+
+### Causa raiz
+P(Over 11.5) = 63% > P(Over 10.5) = 50% no jogo Corinthians x Internacional.
+Fontes diferentes (FootyStats para 10.5, v2 engine para 11.5) produziam
+probabilidades que violavam monotonicidade matematica.
+
+### Correcao
+Two-pass no bloco de corners Over em ev_classification.py:
+1. Coletar raw probs de todas as linhas via waterfall (v2 → legacy → FootyStats)
+2. Enforce: P(Over N+1) capped em P(Over N) com cascata
+3. Construir MarketOutputs com probabilidades corrigidas
+Gols nao afetado (Poisson inherentemente monotonico).
+
+---
+
