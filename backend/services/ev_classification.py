@@ -737,12 +737,13 @@ def evaluate_match_markets(
 
     # Iterate ALL v2 lines (4.5-12.5) for Over markets
     from backend.modeling.corners import CORNER_LINES
+
+    # Pass 1: collect raw probs per line from waterfall sources
+    _corner_raw: Dict[float, Tuple[float, str, dict]] = {}  # line_val → (raw, source, gov_line)
     for line_val in CORNER_LINES:
         line_key = f"over_{line_val}"
         gov_line = v2_lines.get(line_key, {})
         raw = gov_line.get("probability")
-
-        # Fallback to legacy corner_probs or FootyStats stat
         _corner_source = "v2_governed" if raw is not None else None
         if raw is None:
             raw = corner_probs.get(line_key)
@@ -754,12 +755,32 @@ def evaluate_match_markets(
                 raw = _prob(stat_key)
                 if raw is not None:
                     _corner_source = "footystats_raw"
-        if raw is None:
-            continue
+        if raw is not None:
+            _corner_raw[line_val] = (raw, _corner_source or "", gov_line)
 
+    # Enforce monotonicity (#121): P(Over N+1) <= P(Over N)
+    sorted_corner_lines = sorted(_corner_raw.keys())
+    for i in range(1, len(sorted_corner_lines)):
+        prev_line = sorted_corner_lines[i - 1]
+        curr_line = sorted_corner_lines[i]
+        prev_raw = _corner_raw[prev_line][0]
+        curr_raw, curr_src, curr_gov = _corner_raw[curr_line]
+        if curr_raw > prev_raw:
+            logger.info(
+                f"[monotonicity-corners] {home_team} vs {away_team}: "
+                f"Over {curr_line} capped {curr_raw:.4f} -> {prev_raw:.4f} "
+                f"(was > Over {prev_line}={prev_raw:.4f}, source={curr_src})"
+            )
+            _corner_raw[curr_line] = (prev_raw, curr_src, curr_gov)
+
+    # Pass 2: build MarketOutputs with corrected probs
+    for line_val in CORNER_LINES:
+        if line_val not in _corner_raw:
+            continue
+        raw, _corner_source, gov_line = _corner_raw[line_val]
+        line_key = f"over_{line_val}"
         threshold_label = f"Over {line_val}"
 
-        # Diagnostic: trace corner probability source (#064)
         logger.debug(
             f"[prob-trace][corners] {home_team} vs {away_team} | "
             f"line={line_val} source={_corner_source} raw={raw:.3f} "
