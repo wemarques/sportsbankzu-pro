@@ -164,7 +164,18 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
             season_id = _season_ids[0][0] if _season_ids else None
             prev_season_id = _season_ids[1][0] if len(_season_ids) > 1 else None
             if season_id:
-                matches_data = footstats.get_league_matches(season_id)
+                # #119b — Fetch matches, season-stats, and teams in parallel
+                from concurrent.futures import ThreadPoolExecutor as _TPE
+                with _TPE(max_workers=3) as _pool:
+                    _f_matches = _pool.submit(footstats.get_league_matches, season_id)
+                    _f_stats = _pool.submit(footstats.get_league_season_stats, season_id)
+                    _f_teams = _pool.submit(footstats.get_league_teams, season_id)
+
+                    try:
+                        matches_data = _f_matches.result(timeout=30)
+                    except Exception as e:
+                        logger.error(f"[fixtures] {lid}: get_league_matches failed: {e}")
+                        matches_data = {"success": False}
 
                 if matches_data.get("success"):
                     raw_list = matches_data.get("data", [])
@@ -184,7 +195,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     teams_df = None
                     league_season_data = None
                     try:
-                        season_stats = footstats.get_league_season_stats(season_id)
+                        season_stats = _f_stats.result(timeout=5)
                         if season_stats.get("success"):
                             season_data = season_stats.get("data", {})
                             if isinstance(season_data, dict):
@@ -193,7 +204,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         logger.warning(f"[fixtures] {lid}: failed to load season-stats: {e}")
 
                     try:
-                        teams_data = footstats.get_league_teams(season_id)
+                        teams_data = _f_teams.result(timeout=5)
                         if teams_data.get("success"):
                             raw_teams = teams_data.get("data", [])
                             if raw_teams:
