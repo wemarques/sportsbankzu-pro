@@ -103,10 +103,17 @@ class APIFootballClient:
             self.db_path = "api_cache.db"
         self._init_db()
 
+    def _open_db(self) -> "sqlite3.Connection":
+        """Open SQLite connection with WAL mode and busy timeout (#119d)."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
     def _init_db(self):
         """Initialize the cache table for API-Football responses."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS api_football_cache (
@@ -132,7 +139,7 @@ class APIFootballClient:
     def _get_from_cache(self, key: str, max_age_minutes: Optional[int] = None) -> Optional[Dict]:
         """Fetch a cached response if still valid."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             now = datetime.now()
             if max_age_minutes is not None:
@@ -159,7 +166,7 @@ class APIFootballClient:
         try:
             now = datetime.now()
             expires = now + timedelta(minutes=ttl_minutes)
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT OR REPLACE INTO api_football_cache

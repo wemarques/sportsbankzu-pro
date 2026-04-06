@@ -27,10 +27,17 @@ class FootyStatsClient:
         
         self._init_db()
 
+    def _open_db(self) -> sqlite3.Connection:
+        """Open SQLite connection with WAL mode and busy timeout (#119d)."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
     def _init_db(self):
         """Inicializa o banco de dados de cache SQLite."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS api_cache (
@@ -62,7 +69,7 @@ class FootyStatsClient:
                              (mesmo que expires_at ainda não tenha passado).
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             if max_age_minutes is not None:
                 # Respeita o TTL solicitado pelo chamador, não apenas o TTL original
@@ -89,7 +96,7 @@ class FootyStatsClient:
         try:
             now = datetime.now()
             expires = now + timedelta(minutes=ttl_minutes)
-            conn = sqlite3.connect(self.db_path)
+            conn = self._open_db()
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO api_cache (cache_key, endpoint, params, response, created_at, expires_at)
