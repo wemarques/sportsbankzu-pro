@@ -32,8 +32,8 @@ LAMBDA_WEIGHT_GRID = [
 BTTS_DEFLATION_GRID = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30]
 CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 ONE_X_TWO_DEFLATION_GRID = [0.90, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]
-CORNER_BRIER_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
-CARDS_DEFLATION_GRID = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
+CORNER_BRIER_GRID = [0.75, 0.80, 0.83, 0.85, 0.88, 0.90, 0.92, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]  # #119a finer granularity
+CARDS_DEFLATION_GRID = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30]  # #119b includes inflation >1.0
 XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
 RHO_GRID = [round(-0.25 + i * 0.01, 2) for i in range(31)]  # -0.25 to 0.05
 

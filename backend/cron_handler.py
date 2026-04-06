@@ -292,13 +292,13 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             except Exception as _log_err:
                 logger.debug(f"[Gap3] Could not log pick {merc_name}: {_log_err}")
 
-        # Lambda error: per-team deltas (BUG #069 fix — was |λ_total - total_goals|)
+        # Lambda error: average per-team delta (#119c — was sum, now mean)
         lh = stats.get("lambdaHome")
         la = stats.get("lambdaAway")
         match_lambda_err = None
         if lh is not None and la is not None:
             try:
-                match_lambda_err = abs(float(lh) - home_goals) + abs(float(la) - away_goals)
+                match_lambda_err = (abs(float(lh) - home_goals) + abs(float(la) - away_goals)) / 2
                 lambda_errors.append(match_lambda_err)
             except (ValueError, TypeError):
                 pass

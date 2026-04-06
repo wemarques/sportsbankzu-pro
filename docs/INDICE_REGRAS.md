@@ -142,3 +142,7 @@
 | 119b | Corrigido | Perf | Paralelizar FootyStats dentro da liga (ThreadPoolExecutor 3 workers) |
 | 119c | Corrigido | Perf | Fan-out tuning (LEAGUES_PER_BATCH 3→5, MAX_CONCURRENT 4→2) |
 | 119d | Corrigido | Perf | SQLite WAL mode cache FootyStats + API-Football |
+| 119e | Corrigido | Fix | Lambda error /2 (media per-team, nao soma) |
+| 119f | Corrigido | Fix | Backtest window 14→30 dias (N=15→437) |
+| 119g | Corrigido | Perf | CORNER_BRIER_GRID granularidade fina 0.83-0.97 |
+| 119h | Corrigido | Perf | CARDS_DEFLATION_GRID inclui inflacao >1.0 |

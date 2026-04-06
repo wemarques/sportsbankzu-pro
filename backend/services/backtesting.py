@@ -529,7 +529,7 @@ def evaluate_safe_reactivation() -> dict:
     - Brier Score < 0.25
     - Lambda error < 0.5
     """
-    recent = run_backtest(days=14)
+    recent = run_backtest(days=30)  # #119d — expanded from 14 to accumulate N > MIN_N_BRIER(20)
 
     brier = recent.get("brier")
     lambda_err = (recent.get("lambda_error") or {}).get("mean_error")

@@ -124,7 +124,7 @@ async def safe_status():
 
     try:
         reactivation = evaluate_safe_reactivation()
-        recent = run_backtest(days=7)
+        recent = run_backtest(days=30)  # #119d — expanded from 7 to match SAFE reactivation window
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}", "circuit_breaker_enabled": True}
 
@@ -136,7 +136,7 @@ async def safe_status():
             "lambda_error": (recent.get("lambda_error") or {}).get("mean_error"),
             "hit_rate": (recent.get("hit_rate") or {}).get("overall"),
             "n_picks": recent.get("n_picks", 0),
-            "period_days": 7,
+            "period_days": 30,
         },
         "deflation_mode": "per_league",
         "note": "Deflation is now per-league from calibration DB (#052). Use GET /api/backtesting/calibration-status for details.",
