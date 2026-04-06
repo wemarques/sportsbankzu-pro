@@ -138,3 +138,7 @@
 | 122 | Corrigido | Fix | Auto-finish incorreto quando /live-scores retorna vazio |
 | 117b | Corrigido | Fix | DestaquesDoDia presets definem valor (nao somam) |
 | 119 | **ATIVA** | Fix + Regra | Duplas: elegibilidade + correlacao + corredor + cap + diversidade |
+| 119a | Corrigido | Perf | Loading progressivo frontend (onBatchReady, merge incremental) |
+| 119b | Corrigido | Perf | Paralelizar FootyStats dentro da liga (ThreadPoolExecutor 3 workers) |
+| 119c | Corrigido | Perf | Fan-out tuning (LEAGUES_PER_BATCH 3→5, MAX_CONCURRENT 4→2) |
+| 119d | Corrigido | Perf | SQLite WAL mode cache FootyStats + API-Football |

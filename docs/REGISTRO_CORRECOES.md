@@ -6307,3 +6307,77 @@ eligible → combinacoes → corredor → correlacao intra → sort prob → cap
 
 ---
 
+## #119d — SQLite WAL mode no cache FootyStats + API-Football
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/services/footstats_client.py`, `backend/services/api_football_client.py`
+**Commit:** b045888
+**Status:** Implementado
+**Relacionado:** #119b, #115
+
+### Causa raiz
+SQLite cache com journal_mode=DELETE (padrao) bloqueia readers quando um writer esta ativo. Com ThreadPoolExecutor processando ligas e jogos em paralelo, contencao no lock degrada performance.
+
+### Correcao
+1. Metodo `_open_db()` centralizado em ambos os clients
+2. `PRAGMA journal_mode=WAL` — readers nao bloqueiam em writes
+3. `PRAGMA busy_timeout=5000` — espera 5s em vez de erro imediato
+4. `check_same_thread=False` — seguro para ThreadPoolExecutor
+
+---
+
+## #119b — Paralelizar chamadas FootyStats dentro de cada liga
+
+**Data:** 2026-04-05
+**Arquivos:** `backend/routes/fixtures.py`
+**Commit:** 50a31ca
+**Status:** Implementado
+**Relacionado:** #119d, #115
+
+### Causa raiz
+4 chamadas FootyStats sequenciais por liga: resolve_season_ids → get_league_matches → get_league_season_stats → get_league_teams. Somava ~4-8s de latencia de rede por liga.
+
+### Correcao
+1. Apos resolve_season_ids, as 3 chamadas restantes rodam em paralelo via ThreadPoolExecutor(max_workers=3)
+2. Timeout de 30s para matches, 5s para stats/teams
+3. Se matches falha, retorna early (stats/teams descartados)
+
+### Impacto
+La Liga warm: ~7.5s → 6.5s (4 jogos).
+
+---
+
+## #119c — Ajustar fan-out do frontend (LEAGUES_PER_BATCH + MAX_CONCURRENT)
+
+**Data:** 2026-04-05
+**Arquivos:** `frontend/next/src/lib/api.ts`
+**Status:** Implementado
+**Relacionado:** #119a, #119b, #115
+
+### Correcao
+1. LEAGUES_PER_BATCH: 3 → 5 (melhor uso do ThreadPoolExecutor interno)
+2. MAX_CONCURRENT: 4 → 2 (menos cold starts simultaneos)
+
+---
+
+## #119a — Loading progressivo no frontend
+
+**Data:** 2026-04-05
+**Arquivos:** `frontend/next/src/lib/api.ts`, `frontend/next/src/app/dashboard/page.tsx`
+**Commit:** ef225e1
+**Status:** Implementado
+**Relacionado:** #119c, #119b, #115
+
+### Causa raiz
+Frontend usava Promise.all e esperava TODAS as 22 ligas terminarem antes de renderizar.
+
+### Correcao
+1. Callback `onBatchReady` em `getMatchesByLeague` — atualiza UI a cada batch
+2. Merge incremental com deduplicateMatches
+3. Loading states: skeleton (sem dados) vs badge "Carregando mais ligas..." (dados parciais)
+
+### Impacto
+Usuario ve primeiros jogos em ~6-8s em vez de esperar 20-30s.
+
+---
+
