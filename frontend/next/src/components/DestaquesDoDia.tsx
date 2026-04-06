@@ -68,8 +68,7 @@ function classifyMatches(
 
     const valuePicks = preds.filter((p) => {
       const cls = p.classification || p.finalClassification || p.status || "";
-      const isEligible =
-        cls === "SAFE" || cls === "NEUTRO_QUALIFICADO" || cls === "VALOR_DETECTADO";
+      const isEligible = cls === "SAFE" || cls === "NEUTRO_QUALIFICADO";
       return isEligible && p.ev != null && p.ev > 0 && p.book_odd != null && p.book_odd > 1;
     });
 
