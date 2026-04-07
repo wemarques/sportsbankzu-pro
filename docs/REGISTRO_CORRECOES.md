@@ -6487,6 +6487,36 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 126 — Classificação por direção natural para todos os mercados com linhas
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/models/market_output.py`
+**Severidade:** Critica
+**Status:** Corrigido
+
+### Problema identificado
+
+95%+ dos picks classificados como INFORMATIVO (NEUTRO). Deflacao por banda (#105) reduz probabilidades em 15-25%, tornando EV negativo para raw < 0.75. classify_market exige EV >= 5% para NEUTRO_QUALIFICADO — impossivel apos deflacao.
+
+### Causa raiz
+
+Split-brain design: prob_for_class usa raw (sem deflacao) para threshold — passa. Mas EV usa calibrated (com deflacao) — reprova. Resultado: pick passa o threshold de probabilidade mas nao o de EV.
+
+### Correcoes aplicadas
+
+1. **VIA 2 de classificacao:** Picks na direcao natural do modelo promovidos de NEUTRO para NEUTRO_QUALIFICADO, sem exigir EV >= 5%
+2. **Condicoes VIA 2:** prob_raw > neutro_prob E direcao natural (proj > linha para Over, proj < linha para Under) E odd >= 1.50
+3. **Contra direcao → NO_BET:** Picks contra a direcao do modelo rebaixados para NO_BET
+4. **Projecoes passadas:** lambda_total (gols), projFT (corners), cards_lambda (cards) para cada classify_market
+5. **ReasonCode:** DIRECTION_NATURAL_MATCH para picks promovidos pela VIA 2
+6. **Mercados sem linha nao afetados:** 1X2, BTTS, Dupla Chance continuam com VIA 1 (EV) apenas
+
+### Licao aprendida
+
+Classificacao por EV e fragil quando a deflacao e agressiva. Direcao natural do modelo (projecao vs linha) e um sinal mais robusto que EV para mercados com linhas Over/Under.
+
+---
+
 ## 124b — xG blend conectado no pipeline de gols
 
 **Data:** 2026-04-07

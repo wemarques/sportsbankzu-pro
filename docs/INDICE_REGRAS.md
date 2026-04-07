@@ -152,3 +152,4 @@
 | 123 | **ATIVA** | Fix + Regra | Direcao natural projFT + risk penalty + shrinkage assimetrico corners |
 | 124 | **ATIVA** | Fix | Extrair cornersAgainst + cardsAgainst do FootyStats + fallback historico |
 | 124b | Corrigido | Fix | xG blend conectado no pipeline de gols (calibrador → lambda) |
+| 126 | **ATIVA** | Fix + Regra | Classificacao por direcao natural — gols, corners, cards (VIA 2) |

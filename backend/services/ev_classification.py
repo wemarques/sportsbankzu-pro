@@ -224,6 +224,7 @@ def classify_market(
     output: MarketOutput,
     thresholds: Optional[Dict[str, float]] = None,
     league_id: str = "",
+    projection: Optional[float] = None,  # #126: model projection for direction-based classification
 ) -> MarketOutput:
     """Classify a single market output as SAFE / NEUTRO_QUALIFICADO / NEUTRO / NO_BET.
 
@@ -231,6 +232,7 @@ def classify_market(
 
     Classification uses raw_probability (pre-deflation) for threshold comparison (#106).
     EV uses calibrated_probability (post-deflation) for realistic bet sizing (#105).
+    VIA 2 (#126): picks in the model's natural direction promoted to NEUTRO_QUALIFICADO.
     """
     # prob_for_class: raw model confidence (before deflation) — for SAFE/NEUTRO thresholds
     # prob_for_ev: deflated probability — for EV calculation (already in calibrated_probability)
@@ -337,6 +339,46 @@ def classify_market(
             f"forcing NO_BET"
         )
 
+    # ─── VIA 2 — Direction-based classification (#126) ───
+    # If classify resulted in NEUTRO but pick follows model's natural direction,
+    # promote to NEUTRO_QUALIFICADO. Picks AGAINST direction → NO_BET.
+    _DIRECTION_MIN_ODD = 1.50
+    _DIRECTION_NEUTRAL_ZONE = 0.5
+
+    if projection is not None and projection > 0:
+        import re as _re
+        _line_match = _re.search(r"(\d+\.?\d*)", output.selection or "")
+        if _line_match:
+            _line = float(_line_match.group(1))
+            _diff = projection - _line
+            _is_over = "over" in (output.selection or "").lower()
+            _is_under = "under" in (output.selection or "").lower()
+            _odd_ok = output.book_odd is not None and output.book_odd >= _DIRECTION_MIN_ODD
+
+            if abs(_diff) > _DIRECTION_NEUTRAL_ZONE and (_is_over or _is_under):
+                # Direction is clear (not neutral zone)
+                _natural = (_diff > 0 and _is_over) or (_diff < 0 and _is_under)
+                _against = (_diff > 0 and _is_under) or (_diff < 0 and _is_over)
+
+                if _natural and _odd_ok and classification == MarketClassification.NEUTRO:
+                    if prob_for_class >= th.get("neutro_prob", 0.50):
+                        classification = MarketClassification.NEUTRO_QUALIFICADO
+                        reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
+                        logger.info(
+                            f"[direction-via2] {output.display_label}: NEUTRO->NQ "
+                            f"(proj={projection:.1f} vs line={_line}, diff={_diff:+.1f})"
+                        )
+
+                elif _against and classification in (
+                    MarketClassification.NEUTRO, MarketClassification.NEUTRO_QUALIFICADO
+                ):
+                    classification = MarketClassification.NO_BET
+                    reason_codes.append(ReasonCode.DIRECTION_AGAINST_PROJFT)
+                    logger.info(
+                        f"[direction-via2] {output.display_label}: ->NO_BET "
+                        f"(against direction, proj={projection:.1f} vs line={_line})"
+                    )
+
     # ─── SAFE Circuit Breaker — per-league (#052) ───
     # Downgrade SAFE → NEUTRO_QUALIFICADO when SAFE not enabled for this league
     if classification == MarketClassification.SAFE and not _is_safe_enabled(league_id):
@@ -410,8 +452,10 @@ def evaluate_match_markets(
     lambda_away = stats.get("lambdaAway")
 
     derived = {}
+    _goals_projection = None  # #126: total goals projection for direction classification
     if lambda_home and lambda_away and float(lambda_home) > 0 and float(lambda_away) > 0:
         derived = derive_all_markets(float(lambda_home), float(lambda_away), league_id=league_id)
+        _goals_projection = float(lambda_home) + float(lambda_away)
 
     # Lambda floor detection (#064): when both lambdas are clamped to LAMBDA_MIN,
     # it means team lookup failed — Poisson output is pure noise from league averages.
@@ -579,7 +623,7 @@ def evaluate_match_markets(
                 source_flags=source_flags,
                 display_label=f"Over {threshold} gols",
             )
-            markets.append(classify_market(mo, league_id=league_id))
+            markets.append(classify_market(mo, league_id=league_id, projection=_goals_projection))
 
         # Under
         raw_under = _prob(stat_under, f"under{threshold.replace('.', '')}Prob")
@@ -610,7 +654,7 @@ def evaluate_match_markets(
                 source_flags=source_flags,
                 display_label=f"Under {threshold} gols",
             )
-            markets.append(classify_market(mo, league_id=league_id))
+            markets.append(classify_market(mo, league_id=league_id, projection=_goals_projection))
 
     # BTTS
     raw_btts = _prob("bttsProb", "bttsProb")
@@ -722,6 +766,7 @@ def evaluate_match_markets(
     # Corner markets (governed framework v2 — bidirectional Over + Under)
     corner_governance = get_corner_governance_info(league_id)
     v2_projection = governed_corners.get("projection", {})
+    _corners_projection = v2_projection.get("expected_total_corners_ft") if v2_projection else None  # #126
     v2_engine_version = governed_corners.get("engine_version", governed_corners.get("engineVersion", "1.0.0"))
     v2_lines = governed_corners.get("lines", {})
 
@@ -815,7 +860,7 @@ def evaluate_match_markets(
             display_label=f"Escanteios {threshold_label}",
         )
 
-        classified = classify_market(mo, league_id=league_id)
+        classified = classify_market(mo, league_id=league_id, projection=_corners_projection)
         classified.corner_governance = {
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,
@@ -884,7 +929,7 @@ def evaluate_match_markets(
             display_label=f"Escanteios {threshold_label}",
         )
 
-        classified = classify_market(mo, league_id=league_id)
+        classified = classify_market(mo, league_id=league_id, projection=_corners_projection)
         classified.corner_governance = {
             "marketFamily": "corners",
             "engineVersion": v2_engine_version,
@@ -914,6 +959,7 @@ def evaluate_match_markets(
         else:
             _cards_quality = quality * 0.65  # Poisson fallback: conservative
 
+        _cards_projection = cards_result.get("cards_lambda")  # #126
         _cards_flags = [*source_flags, f"cards_{cards_result.get('model_source', 'unknown')}"]
         if cards_result.get("adjustments", {}).get("referee_factor", 1.0) != 1.0:
             _cards_flags.append("referee_adjusted")
@@ -942,7 +988,7 @@ def evaluate_match_markets(
                     source_flags=_cards_flags,
                     display_label=f"Cartoes Over {line}",
                 )
-                markets.append(classify_market(mo, league_id=league_id))
+                markets.append(classify_market(mo, league_id=league_id, projection=_cards_projection))
 
             # Under cards
             if under_prob > 0.10:
@@ -961,7 +1007,7 @@ def evaluate_match_markets(
                     source_flags=_cards_flags,
                     display_label=f"Cartoes Under {line}",
                 )
-                markets.append(classify_market(mo, league_id=league_id))
+                markets.append(classify_market(mo, league_id=league_id, projection=_cards_projection))
 
     except Exception as e:
         logger.debug(f"[cards] Card market evaluation failed: {e}")
