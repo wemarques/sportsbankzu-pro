@@ -154,3 +154,4 @@
 | 124b | Corrigido | Fix | xG blend conectado no pipeline de gols (calibrador → lambda) |
 | 126 | **ATIVA** | Fix + Regra | Classificacao por direcao natural — gols, corners, cards (VIA 2) |
 | 127 | **ATIVA** | Fix + Regra | VIA 2 antes do NO_BET + zona neutra proporcional + filtro Over 0.5 |
+| 128 | Corrigido | Fix | Corner/card percentages mapeados + xG fallback None + calibrador extrai xG |

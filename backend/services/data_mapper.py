@@ -203,8 +203,8 @@ class DataMapper:
             "away_team_offsides": _s(api_match.get("team_b_offsides", -1)),
             "home_team_shots_off_target": _s(api_match.get("team_a_shotsOffTarget", -1)),
             "away_team_shots_off_target": _s(api_match.get("team_b_shotsOffTarget", -1)),
-            "home_team_xg": api_match.get("team_a_xg", 0.0),
-            "away_team_xg": api_match.get("team_b_xg", 0.0),
+            "home_team_xg": api_match.get("team_a_xg") or None,  # #128c: None not 0.0
+            "away_team_xg": api_match.get("team_b_xg") or None,  # #128c: None not 0.0
             "btts_percentage_pre_match": api_match.get("btts_potential") or None,
             "over_15_percentage_pre_match": api_match.get("o15_potential") or None,
             "over_25_percentage_pre_match": api_match.get("o25_potential") or None,
@@ -393,6 +393,16 @@ class DataMapper:
             "over105_corners_percentage": _pick(
                 ["over105CornersPercentage_overall", "over105_corners_percentage_overall"], default=None,
             ),
+            # #128a: additional corner percentage thresholds (features.py reads 65/115/145)
+            "over65_corners_percentage": _pick(
+                ["over65CornersPercentage_overall", "over65_corners_percentage_overall"], default=None,
+            ),
+            "over115_corners_percentage": _pick(
+                ["over115CornersPercentage_overall", "over115_corners_percentage_overall"], default=None,
+            ),
+            "over145_corners_percentage": _pick(
+                ["over145CornersPercentage_overall", "over145_corners_percentage_overall"], default=None,
+            ),
             # --- Cards (Team CSV: 186 + Pt.2: 442) ---
             "cards_per_match": _pick(
                 ["cardsAVG_overall", "cards_per_match_overall"],
@@ -418,6 +428,16 @@ class DataMapper:
             ),
             "cards_variance": _pick(
                 ["cardsVariance_overall", "cards_variance_overall"], default=None,
+            ),
+            # #128b: card over-percentages (for calibrator + features)
+            "over25_cards_percentage": _pick(
+                ["over25CardsPercentage_overall", "over25_cards_percentage_overall"], default=None,
+            ),
+            "over35_cards_percentage": _pick(
+                ["over35CardsPercentage_overall", "over35_cards_percentage_overall"], default=None,
+            ),
+            "over45_cards_percentage": _pick(
+                ["over45CardsPercentage_overall", "over45_cards_percentage_overall"], default=None,
             ),
             # --- Shots (Team CSV: 186 + Pt.2: 442) ---
             "shots_per_match": _pick(

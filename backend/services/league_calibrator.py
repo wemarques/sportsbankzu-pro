@@ -329,6 +329,12 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
         if btts_actual is None:
             btts_actual = (gh > 0 and ga > 0)
 
+        # #128c: Extract xG for xG blend grid search
+        _home_xg_raw = m.get("team_a_xg")
+        _away_xg_raw = m.get("team_b_xg")
+        _home_xg = float(_home_xg_raw) if _home_xg_raw and float(_home_xg_raw) > 0 else None
+        _away_xg = float(_away_xg_raw) if _away_xg_raw and float(_away_xg_raw) > 0 else None
+
         raw_matches.append({
             "goals_home": gh,
             "goals_away": ga,
@@ -343,6 +349,8 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
             "btts": bool(btts_actual),
             "cards_potential": _sanitize(m.get("cards_potential")),
             "corners_potential": _sanitize(m.get("corners_potential")),
+            "home_xg": _home_xg,   # #128c
+            "away_xg": _away_xg,   # #128c
         })
 
     if not raw_matches:
@@ -414,6 +422,8 @@ def _extract_matches_from_season(raw_data: Dict) -> List[Dict]:
             "btts": rm.get("btts", False),
             "cards_potential": rm.get("cards_potential", 0),
             "corners_potential": rm.get("corners_potential", 0),
+            "home_xg": rm.get("home_xg"),   # #128c: pass through for xG blend
+            "away_xg": rm.get("away_xg"),   # #128c
         })
 
     return matches

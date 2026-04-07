@@ -6487,6 +6487,33 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 128 — Gaps de dados FootyStats: corner/card percentages + xG fallback
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/league_calibrator.py`
+**Severidade:** Media
+**Status:** Corrigido
+
+### Problema identificado
+
+1. features.py tenta ler over65/115/145CornersPercentage mas data_mapper nao os extraia → sempre 0
+2. Card percentages (over25/35/45) documentados na API mas nao mapeados
+3. xG match-level usava fallback 0.0 (indistinguivel de "sem dados")
+4. Calibrador nao extraia xG dos matches → xg_blend_weight sempre convergiu para 0
+
+### Correcoes aplicadas
+
+1. **#128a:** over65/115/145CornersPercentage mapeados no data_mapper
+2. **#128b:** over25/35/45CardsPercentage mapeados no data_mapper
+3. **#128c:** xG match-level fallback 0.0 → None (distingue ausencia de dado zero)
+4. **#128c:** Calibrador extrai home_xg/away_xg de team_a_xg/team_b_xg e passa ao grid search
+
+### Licao aprendida
+
+Fallback 0 em campos estatisticos e perigoso — zero e dado valido (time com 0 gols), None e ausencia. O calibrador nao pode otimizar um parametro se o dado nunca chega na simulacao.
+
+---
+
 ## 127 — VIA 2 antes do NO_BET + zona neutra proporcional + filtro Over 0.5
 
 **Data:** 2026-04-07
