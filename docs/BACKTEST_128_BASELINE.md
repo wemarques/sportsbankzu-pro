@@ -133,7 +133,42 @@ Recalibracao NAO mudou Brier de corners (0.2381) nem cards (0.1987). Confirmado:
 
 Corners Brier pos-recalib: **0.2381 (inalterado)**. #129 e necessario para investigar o modelo de corners.
 
+## Metricas de Produto (extraidas 2026-04-07)
+
+### 1. Brier BTTS
+**NAO DISPONIVEL** — O calibrador calcula brier_btts internamente (league_calibrator.py:194) mas NAO o salva no DB (ausente do param_map nas linhas 1320-1340). O campo e computado, descartado, e nao exposto na API de calibration-status. Para extrair, seria necessario adicionar "brier_btts" ao param_map e recalibrar.
+
+### 2. Lambda Erro Medio
+**NAO DISPONIVEL** — O cron_handler.py calcula avg_lambda_error (linha 429) durante auditorias pos-jogo, mas o endpoint /api/health/safe-status retorna 404. O valor de 1.45 gols reportado no audit #119 veio de uma execucao manual do cron. Nao ha endpoint exposto para consultar o valor atual.
+
+| Referencia | Valor |
+|------------|:-----:|
+| Audit #119 | 1.45 gols |
+| Limite aceitavel | 0.50 gols |
+| Atual | NAO DISPONIVEL (endpoint /safe-status 404) |
+
+### 3. Distribuicao de Classificacoes (06/04/2026, 12 ligas, 49 jogos)
+
+| Classificacao | Frontend | Count | % |
+|---------------|----------|:-----:|:-:|
+| SAFE | ALTA CONFIANCA | 0 | 0.0% |
+| NEUTRO_QUALIFICADO | VALOR DETECTADO | 34 | 30.1% |
+| NEUTRO | INFORMATIVO | 79 | 69.9% |
+| NO_BET | BLOQUEADO | 0* | 0.0%* |
+| **Total** | | **113** | **100%** |
+
+*NO_BET picks sao filtrados antes do response da API (nao aparecem em `mercados`). O total real de picks gerados (incluindo NO_BET) e desconhecido sem logs do Lambda.
+
+**VIA 2 (direcao natural):** 37 picks promovidos de NEUTRO para NQ pela VIA 2. Sem VIA 2, NQ seria ~0% como antes do fix #127.
+
+### 4. SAFE Acuracia
+**N/A** — 0 picks SAFE gerados. O circuit breaker (#043/#052) desativa SAFE para ligas sem 3 auditorias consecutivas com accuracy > 50%. Nenhuma liga atingiu esse criterio. Acuracia de SAFE nao pode ser medida com N=0.
+
+### 5. N de Jogos por Mercado
+**NAO DISPONIVEL** — O calibrador armazena `n_matches` nos params (linha 909) mas NAO o expoe na API de calibration-status (ausente do response). Cada liga processa 3 temporadas de historico (~300-600 jogos por liga, ~6.600-13.200 total estimado para 22 ligas). Para extrair N exato, seria necessario adicionar ao endpoint ou rodar o calibrador com logging.
+
 ## Notas
 - xG blend era codigo morto desde #052 — fix #128c + recalibracao ativou em 20 ligas
 - Maior impacto: Ligue 1 (-0.0055), Super Lig (-0.0061), Pro League (-0.0051)
 - Championship e League One nao recalibraram (timeout — issue #112 conhecida)
+- Brier e validacao sao IN-SAMPLE (overlap 100% treino/avaliacao) — ganhos podem ser overfitting
