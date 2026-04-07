@@ -997,6 +997,11 @@ def evaluate_match_markets(
     # ─── Line safety margin (#120) — downgrade borderline Over lines ───
     _apply_line_safety_margin(active_markets)
 
+    # ─── Corner direction filter (#123) — downgrade picks against projFT direction ───
+    proj_ft = v2_projection.get("expected_total_corners_ft") if v2_projection else None
+    if proj_ft and proj_ft > 0:
+        _apply_corner_direction_filter(active_markets, proj_ft)
+
     # ─── Build bundle ───
     bundle = MatchMarketBundle(
         match_id=match_id,
@@ -1187,3 +1192,56 @@ def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]
                 f"[line-margin] {mo.display_label}: {old_cls.value}->NEUTRO "
                 f"(prob {prob:.3f}, gap {gap:.3f} < margin {LINE_SAFETY_MARGIN})"
             )
+
+
+# ── Corner direction filter (#123) ─────────────────────────────────
+CORNER_DIRECTION_NEUTRAL_ZONE = 0.5  # |projFT - line| < 0.5 → both sides OK
+
+
+def _apply_corner_direction_filter(markets: List[MarketOutput], proj_ft: float) -> None:
+    """Downgrade corner picks that go against the projFT direction (#123).
+
+    If projFT > line + 0.5, the natural direction is Over → Under is downgraded.
+    If projFT < line - 0.5, the natural direction is Under → Over is downgraded.
+    Within the neutral zone (|diff| < 0.5), both sides are allowed.
+    """
+    import re
+    _line_re = re.compile(r"(\d+\.?\d*)")
+
+    for m in markets:
+        if m.market_type != "Corners":
+            continue
+        sel = (m.selection or "").lower()
+        is_over = "over" in sel
+        is_under = "under" in sel
+        if not is_over and not is_under:
+            continue
+
+        match = _line_re.search(m.selection or "")
+        if not match:
+            continue
+        line = float(match.group(1))
+
+        diff = proj_ft - line  # positive = projFT above line
+
+        if is_under and diff > CORNER_DIRECTION_NEUTRAL_ZONE:
+            # projFT ABOVE line → Under goes against direction
+            old_cls = m.classification
+            if old_cls in (MarketClassification.SAFE, MarketClassification.NEUTRO_QUALIFICADO):
+                m.classification = MarketClassification.NEUTRO
+                m.reason_codes.append(ReasonCode.DIRECTION_AGAINST_PROJFT)
+                logger.info(
+                    f"[corner-direction] {m.display_label}: {old_cls.value}->NEUTRO "
+                    f"(projFT={proj_ft:.1f} > line {line}, diff={diff:+.1f})"
+                )
+
+        elif is_over and diff < -CORNER_DIRECTION_NEUTRAL_ZONE:
+            # projFT BELOW line → Over goes against direction
+            old_cls = m.classification
+            if old_cls in (MarketClassification.SAFE, MarketClassification.NEUTRO_QUALIFICADO):
+                m.classification = MarketClassification.NEUTRO
+                m.reason_codes.append(ReasonCode.DIRECTION_AGAINST_PROJFT)
+                logger.info(
+                    f"[corner-direction] {m.display_label}: {old_cls.value}->NEUTRO "
+                    f"(projFT={proj_ft:.1f} < line {line}, diff={diff:+.1f})"
+                )

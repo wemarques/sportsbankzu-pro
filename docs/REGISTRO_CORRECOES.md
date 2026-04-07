@@ -6487,6 +6487,37 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 123 — Direção natural projFT + risk penalty + shrinkage assimétrico corners
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/modeling/corners/predictor.py`, `backend/modeling/corners/features.py`, `backend/models/market_output.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Rodada 06/04: 11 picks escanteios, 5/11 (45.5%). Under 8.5 acertou 0/3. projFT subestimado em +1.5 corners (media). 5 de 6 erros sao Under com corners reais 2-5 acima da linha. Sistema selecionava Under contra a direcao do proprio projFT.
+
+### Causa raiz
+
+1. cornersAgainstPerMatch NULL em 100% dos jogos → cross estimate desativado
+2. Risk penalty de -0.15 quando against NULL → agrava subestimacao
+3. Shrinkage simetrico puxa projFT para baixo quando direct > league avg
+4. Sem regra de direcao: sistema permitia picks Under mesmo quando projFT indicava Over
+
+### Correcoes aplicadas
+
+1. **Fix 1 (Critico):** Regra de direcao natural — picks contra direcao do projFT downgraded para NEUTRO. Zona neutra de 0.5 corners. ReasonCode DIRECTION_AGAINST_PROJFT.
+2. **Fix 2 (Alta):** Risk penalty reduzido de 0.15 para 0.05 quando cornersAgainst NULL.
+3. **Fix 3 (Media):** Shrinkage assimetrico — 40% menos shrinkage quando direct > league avg.
+4. **Fix 4 (Baixa):** Proxy cornersAgainst (league_avg - corners_for) ativa cross estimate. Blend 70/30 com cornersPotential do FootyStats.
+
+### Licao aprendida
+
+Modelo nao deve selecionar picks em direcao oposta a sua propria projecao. Se projFT=9.77, nao selecionar Under 8.5. Regra de direcao e uma camada de seguranca que impede inconsistencia interna.
+
+---
+
 ## 122 — Calibrador cards usa NB2 + Brier bilateral + override condicional
 
 **Data:** 2026-04-07

@@ -240,8 +240,14 @@ def _project_expected_corners(
     else:
         raw = league_prior
 
-    # ── Dynamic shrinkage ──
+    # ── Dynamic shrinkage (asymmetric #123) ──
     shrinkage = _compute_dynamic_shrinkage(features, data_quality)
+
+    # #123: When direct is ABOVE league avg, reduce shrinkage by 40%.
+    # Teams with high direct tend to produce high-corner games;
+    # symmetric shrinkage pulls projFT down unnecessarily.
+    if raw > league_prior and direct > 0:
+        shrinkage = shrinkage * 0.6
 
     expected_ft = shrinkage * league_prior + (1.0 - shrinkage) * raw
 
@@ -271,6 +277,12 @@ def _project_expected_corners(
 
     # Apply per-league corner factor from calibration (#052)
     expected_ft = expected_ft * _get_corner_factor(league_id)
+
+    # #123: Blend with FootyStats cornersPotential when available.
+    # cornersPotential is FootyStats' own pre-match projection — independent signal.
+    corners_potential = features.get("footystats_corners_potential", 0)
+    if corners_potential > 0:
+        expected_ft = 0.70 * expected_ft + 0.30 * corners_potential
 
     expected_ft = max(4.0, min(18.0, expected_ft))
 
@@ -341,8 +353,10 @@ def _compute_context_risk_penalty(
         penalty += 0.5
 
     # No corners-against data (less reliable projection)
+    # #123: reduced from 0.15 to 0.05 — nearly all games lack against data,
+    # the old penalty systematically underestimated projFT by ~0.15
     if not features.get("_has_against", False):
-        penalty += 0.15
+        penalty += 0.05
 
     return min(1.0, penalty)
 

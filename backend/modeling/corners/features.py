@@ -549,19 +549,40 @@ def build_v2_match_features(
 
     # ── Derived / composite features ──
     f["direct_estimate_ft"] = f["home_corners_for_pm"] + f["away_corners_for_pm"]
+
+    # #123: Proxy cornersAgainst when NULL — estimate from league avg
+    league_avg = f.get("league_corner_mean_ft", 10.0)
+    home_against = f["home_corners_against_pm"]
+    away_against = f["away_corners_against_pm"]
+    _against_estimated = False
+
+    if home_against <= 0 and f["home_corners_for_pm"] > 0 and league_avg > 0:
+        home_against = max(2.0, league_avg - f["home_corners_for_pm"])
+        _against_estimated = True
+    if away_against <= 0 and f["away_corners_for_pm"] > 0 and league_avg > 0:
+        away_against = max(2.0, league_avg - f["away_corners_for_pm"])
+        _against_estimated = True
+
     f["cross_estimate_ft"] = 0.0
-    if f["home_corners_against_pm"] > 0 and f["away_corners_against_pm"] > 0:
+    if home_against > 0 and away_against > 0:
         f["cross_estimate_ft"] = (
-            f["home_corners_for_pm"] + f["away_corners_against_pm"]
-            + f["away_corners_for_pm"] + f["home_corners_against_pm"]
+            f["home_corners_for_pm"] + away_against
+            + f["away_corners_for_pm"] + home_against
         ) / 2.0
+
+    # #123: FootyStats cornersPotential as independent projection anchor
+    f["footystats_corners_potential"] = _safe_float(
+        home_stats.get("cornersPotential",
+        home_stats.get("corners_potential", 0))
+    )
 
     f["combined_fh"] = f["home_corners_fh_pm"] + f["away_corners_fh_pm"]
     f["combined_2h"] = f["home_corners_2h_pm"] + f["away_corners_2h_pm"]
 
     # ── Feature availability flags ──
     f["_has_timing"] = f["combined_fh"] > 0 and f["combined_2h"] > 0
-    f["_has_against"] = f["home_corners_against_pm"] > 0 and f["away_corners_against_pm"] > 0
+    f["_has_against"] = f["home_corners_against_pm"] > 0 and f["away_corners_against_pm"] > 0 and not _against_estimated
+    f["_has_against_estimated"] = _against_estimated  # #123: proxy active
     f["_has_pressure"] = f["home_shots_pm"] > 0 and f["away_shots_pm"] > 0
     f["_has_xg"] = f["home_xg_for"] > 0 and f["away_xg_for"] > 0
 

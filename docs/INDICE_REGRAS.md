@@ -149,3 +149,4 @@
 | 120 | **ATIVA** | Fix + Regra | Margem seguranca 5% selecao linha escanteios+gols |
 | 121 | **ATIVA** | Fix + Regra | Enforce monotonicidade probs corners (P(Over N+1) <= P(Over N)) |
 | 122 | **ATIVA** | Fix + Regra | Calibrador cards NB2 + Brier bilateral + override condicional + linhas expandidas |
+| 123 | **ATIVA** | Fix + Regra | Direcao natural projFT + risk penalty + shrinkage assimetrico corners |
