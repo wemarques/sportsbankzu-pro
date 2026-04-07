@@ -93,9 +93,47 @@
 
 **Resumo:** CornersAgainst e CardsAgainst estao >= 75% em TODAS as ligas testadas. Fallback por match history (#124) funciona.
 
+## Pos-Recalibracao (2026-04-07)
+
+### xG Blend Ativado — Impacto no Brier O/U
+
+Recalibracao ativou xG blend em **20 de 22 ligas** (Championship e League One timeout).
+Brier O/U **melhorou em TODAS as 20 ligas**. Reducao media: **-0.0036**.
+
+| Liga | xG Weight | Brier PRE | Brier POS | Delta |
+|------|:---------:|:---------:|:---------:|:-----:|
+| premier-league | 0.4 | 0.1785 | 0.1748 | -0.0037 |
+| la-liga | 0.4 | 0.1696 | 0.1658 | -0.0038 |
+| serie-a | 0.4 | 0.1698 | 0.1672 | -0.0026 |
+| serie-b | 0.3 | 0.1684 | 0.1646 | -0.0038 |
+| bundesliga | 0.4 | 0.1770 | 0.1731 | -0.0039 |
+| 2-bundesliga | 0.4 | 0.1757 | 0.1715 | -0.0042 |
+| ligue-1 | 0.5 | 0.1767 | 0.1712 | -0.0055 |
+| brasileirao-serie-a | 0.3 | 0.1635 | 0.1605 | -0.0030 |
+| brasileirao-serie-b | 0.2 | 0.1511 | 0.1502 | -0.0009 |
+| eredivisie | 0.4 | 0.1760 | 0.1724 | -0.0036 |
+| primeira-liga | 0.3 | 0.1682 | 0.1654 | -0.0028 |
+| super-lig | 0.5 | 0.1781 | 0.1720 | -0.0061 |
+| pro-league | 0.5 | 0.1761 | 0.1710 | -0.0051 |
+| premiership | 0.4 | 0.1728 | 0.1679 | -0.0049 |
+| superliga | 0.3 | 0.1772 | 0.1743 | -0.0029 |
+| primera-division | 0.3 | 0.1553 | 0.1518 | -0.0035 |
+| a-league | 0.3 | 0.1739 | 0.1714 | -0.0025 |
+| mls | 0.4 | 0.1774 | 0.1725 | -0.0049 |
+| colombian-primera-a | 0.3 | 0.1643 | 0.1622 | -0.0021 |
+| liga-mx | 0.3 | 0.1754 | 0.1724 | -0.0030 |
+
+**Brier O/U medio:** 0.1713 → **0.1678** (-0.0035)
+
+### Corners e Cards: Sem mudanca
+
+Recalibracao NAO mudou Brier de corners (0.2381) nem cards (0.1987). Confirmado: problema de corners e estrutural no modelo, nao nos dados.
+
+### Decisao #129
+
+Corners Brier pos-recalib: **0.2381 (inalterado)**. #129 e necessario para investigar o modelo de corners.
+
 ## Notas
-- Baseline NAO tem pre-128 para comparacao
-- Brier de Corners (0.2381) e o mais alto — perto de random (0.25)
-- Melhor Brier de O/U: brasileirao-serie-b (0.1511) e primera-division (0.1553)
-- Pior Brier de Cards: premier-league (0.2230) e superliga (0.2217)
-- Campos novos #128a/#128b (corner 65/115/145, card 25/35/45 percentages) nao puderam ser verificados via API — precisam de recalibracao para popular
+- xG blend era codigo morto desde #052 — fix #128c + recalibracao ativou em 20 ligas
+- Maior impacto: Ligue 1 (-0.0055), Super Lig (-0.0061), Pro League (-0.0051)
+- Championship e League One nao recalibraram (timeout — issue #112 conhecida)

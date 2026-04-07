@@ -6487,6 +6487,31 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 128h — Recalibracao pos-mapeamento: xG blend ativado em 20 ligas
+
+**Data:** 2026-04-07
+**Arquivos afetados:** Calibracao DB (22 ligas recalibradas)
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Resultado da recalibracao
+
+xG blend ativado em **20 de 22 ligas** (Championship/League One timeout). Brier O/U melhorou em TODAS as 20 ligas. Reducao media: **-0.0036** (de 0.1713 para 0.1678).
+
+Maior impacto: Super Lig -0.0061, Ligue 1 -0.0055, Pro League -0.0051.
+
+Corners e Cards: Brier **inalterado** (0.2381 e 0.1987). Problema de corners e estrutural.
+
+### Causa raiz resolvida
+
+Fix #128c extraiu xG dos matches do calibrador. Antes, o campo `home_xg`/`away_xg` nunca era passado ao grid search → weight sempre convergia para 0. Agora o calibrador ve os dados e encontra weight otimo (0.2-0.5 dependendo da liga).
+
+### Licao aprendida
+
+Recalibracao e obrigatoria apos adicionar campos ao pipeline. Sem recalibracao, campos novos sao "codigo dormindo".
+
+---
+
 ## 128f complemento — Baseline completo com N, IC, cobertura xG e campos por liga
 
 **Data:** 2026-04-07
