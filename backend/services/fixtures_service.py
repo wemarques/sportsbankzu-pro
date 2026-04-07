@@ -511,6 +511,21 @@ def build_records_from_matches(
         if away_corners_pm is None:
             away_corners_pm = _avg_from_history("away_team_corner_count", away, False)
 
+        # #124: Corners-against fallback from match history
+        # When team plays at home, opponent corners = away_team_corner_count
+        if home_corners_against is None:
+            home_corners_against = _avg_from_history("away_team_corner_count", home, True)
+        if away_corners_against is None:
+            away_corners_against = _avg_from_history("home_team_corner_count", away, False)
+
+        # #124: Cards-against extraction + fallback
+        home_cards_against = _team_stat(home, "cards_against_per_match")
+        away_cards_against = _team_stat(away, "cards_against_per_match")
+        if home_cards_against is None:
+            home_cards_against = _avg_from_history("away_team_yellow_cards", home, True)
+        if away_cards_against is None:
+            away_cards_against = _avg_from_history("home_team_yellow_cards", away, False)
+
         # Cards fallback from match history (yellow_cards mapped from API)
         if home_cards_pm is None:
             home_cards_pm = _avg_from_history("home_team_yellow_cards", home, True)
@@ -1204,6 +1219,8 @@ def build_records_from_matches(
                 "awayXgAgainstAvg": away_xg_against,
                 "homeCornersAgainstPerMatch": home_corners_against,
                 "awayCornersAgainstPerMatch": away_corners_against,
+                "homeCardsAgainstPerMatch": home_cards_against,  # #124
+                "awayCardsAgainstPerMatch": away_cards_against,  # #124
                 "homeLeaguePosition": home_league_pos,
                 "awayLeaguePosition": away_league_pos,
                 "homeAvgTotalGoals": home_avg_total_goals,

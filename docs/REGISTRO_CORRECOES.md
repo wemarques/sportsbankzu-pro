@@ -6487,6 +6487,39 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 124 — Extrair dados Against do FootyStats + fallback por histórico
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/fixtures_service.py`, `backend/modeling/cards_engine.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+cornersAgainstPerMatch e cardsAgainstPerMatch sempre NULL. Mapper tentava extrair com nomes de campo errados. Sem fallback por historico de partidas para campos against.
+
+### Causa raiz
+
+1. data_mapper.py tentava `cornersAgainstAVG_overall` mas FootyStats usa `seasonCornersAgainst_overall` no endpoint `/team`
+2. cardsAgainst nao tinha mapping nenhum
+3. Sem fallback: quando API nao retorna, campo fica NULL permanentemente
+4. Sem dados against, corners predictor e cards engine usavam apenas dados FOR
+
+### Correcoes aplicadas
+
+1. **Mapper corners against:** adicionados nomes alternativos `seasonCornersAgainst_overall/home/away` e `seasonCornersAgainstAVG_*`
+2. **Mapper cards against:** campos `cards_against_per_match`, `cards_against_per_match_home/away`, `cards_variance` adicionados
+3. **Fallback historico corners against:** quando API nao retorna, computa media de `away_team_corner_count` dos jogos em casa do time (e vice-versa)
+4. **Fallback historico cards against:** mesmo padrao com `away_team_yellow_cards`
+5. **Cards engine cross estimate:** quando cardsAgainst disponivel, blend 60% direct + 40% cross
+6. **Documentacao FootyStats:** copiada para `docs/footystats-api/`
+
+### Licao aprendida
+
+Nomes de campo entre endpoints FootyStats sao inconsistentes. Mapper deve tentar multiplas variantes. Fallback por historico de partidas e a fonte mais confiavel quando API de season stats nao retorna o campo.
+
+---
+
 ## 123 — Direção natural projFT + risk penalty + shrinkage assimétrico corners
 
 **Data:** 2026-04-07

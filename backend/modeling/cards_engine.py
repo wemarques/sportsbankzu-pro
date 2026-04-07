@@ -65,6 +65,20 @@ def predict_cards(
     )
     lambda_raw = lambda_home + lambda_away
 
+    # #124: Cross-estimate with cardsAgainst (opponent cards drawn)
+    home_cards_against = _safe_float(home_stats.get("homeCardsAgainstPerMatch",
+                         home_stats.get("cardsAgainstAVG_home",
+                         home_stats.get("cards_against_per_match"))))
+    away_cards_against = _safe_float(away_stats.get("awayCardsAgainstPerMatch",
+                         away_stats.get("cardsAgainstAVG_away",
+                         away_stats.get("cards_against_per_match"))))
+    if home_cards_against is not None and away_cards_against is not None:
+        # Cross: home_for + away_against + away_for + home_against / 2
+        home_for = lambda_home
+        away_for = lambda_away
+        cross = (home_for + away_cards_against / 2 + away_for + home_cards_against / 2) / 2
+        lambda_raw = 0.6 * lambda_raw + 0.4 * cross
+
     # Step 3: Referee factor — ONLY legitimate external adjustment
     # Referee is NOT embedded in cardsPerMatch (which is team average)
     referee_factor = _compute_referee_factor(referee_avg_cards, league_avg)

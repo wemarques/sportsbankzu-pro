@@ -367,12 +367,22 @@ class DataMapper:
             "corners_per_match_home": _pick(["cornersAVG_home", "corners_per_match_home"], default=None),
             "corners_per_match_away": _pick(["cornersAVG_away", "corners_per_match_away"], default=None),
             "corners_total": _pick(["cornersTotal_overall", "corners_total_overall"], default=None),
-            # Pt.2: corners against (opponent corners)
+            # Pt.2: corners against (opponent corners) — #124: added season* keys
             "corners_against_per_match": _pick(
-                ["cornersAgainstAVG_overall", "corners_against_per_match_overall"], default=None,
+                ["cornersAgainstAVG_overall", "corners_against_per_match_overall",
+                 "seasonCornersAgainst_overall", "seasonCornersAgainstAVG_overall"],
+                default=None,
             ),
-            "corners_against_per_match_home": _pick(["cornersAgainstAVG_home", "corners_against_per_match_home"], default=None),
-            "corners_against_per_match_away": _pick(["cornersAgainstAVG_away", "corners_against_per_match_away"], default=None),
+            "corners_against_per_match_home": _pick(
+                ["cornersAgainstAVG_home", "corners_against_per_match_home",
+                 "seasonCornersAgainst_home", "seasonCornersAgainstAVG_home"],
+                default=None,
+            ),
+            "corners_against_per_match_away": _pick(
+                ["cornersAgainstAVG_away", "corners_against_per_match_away",
+                 "seasonCornersAgainst_away", "seasonCornersAgainstAVG_away"],
+                default=None,
+            ),
             # Pt.2: corner over percentages (for corner markets)
             "over85_corners_percentage": _pick(
                 ["over85CornersPercentage_overall", "over85_corners_percentage_overall"], default=None,
@@ -392,6 +402,23 @@ class DataMapper:
             "cards_per_match_home": _pick(["cardsAVG_home", "cards_per_match_home"], default=None),
             "cards_per_match_away": _pick(["cardsAVG_away", "cards_per_match_away"], default=None),
             "cards_total": _pick(["cardsTotal_overall", "cards_total_overall"], default=None),
+            # #124: cards against (opponent cards) + variance for NB2
+            "cards_against_per_match": _pick(
+                ["cardsAgainstAVG_overall", "cards_against_avg_overall",
+                 "seasonCardsAgainst_overall", "seasonCardsAgainstAVG_overall"],
+                default=None,
+            ),
+            "cards_against_per_match_home": _pick(
+                ["cardsAgainstAVG_home", "cards_against_avg_home",
+                 "seasonCardsAgainst_home"], default=None,
+            ),
+            "cards_against_per_match_away": _pick(
+                ["cardsAgainstAVG_away", "cards_against_avg_away",
+                 "seasonCardsAgainst_away"], default=None,
+            ),
+            "cards_variance": _pick(
+                ["cardsVariance_overall", "cards_variance_overall"], default=None,
+            ),
             # --- Shots (Team CSV: 186 + Pt.2: 442) ---
             "shots_per_match": _pick(
                 ["shotsAVG_overall", "shots_per_match_overall"],
