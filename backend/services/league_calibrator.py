@@ -19,6 +19,41 @@ from backend.modeling.poisson_matrix import dixon_coles_tau
 logger = logging.getLogger("sportsbankzu.league_calibrator")
 logger.setLevel(logging.INFO)
 
+# ── NB2 for cards calibration (#122) ──────────────────────────────
+# Must match the model used by cards_engine.py (NB2 with overdispersion).
+# Default overdispersion from cards_engine: 1.3 (literature: 1.2-1.5).
+_CARDS_DEFAULT_OVERDISPERSION = 1.3
+
+try:
+    from scipy.stats import nbinom as _nbinom_cal
+    _CAL_HAS_SCIPY = True
+except ImportError:
+    _CAL_HAS_SCIPY = False
+
+
+def _nb2_cdf(k: int, lam: float, overdispersion: float = _CARDS_DEFAULT_OVERDISPERSION) -> float:
+    """NB2 CDF: P(X <= k). Mirrors cards_engine.py NB2 parametrization.
+
+    NB2: var = lam * overdispersion
+    scipy nbinom: n = lam^2 / (var - lam), p = lam / var
+    Falls back to Poisson if scipy unavailable or overdispersion <= 1.01.
+    """
+    if overdispersion <= 1.01 or not _CAL_HAS_SCIPY:
+        # Poisson fallback (same as cards_engine when overdispersion ~ 1)
+        return sum(poisson_pmf(i, lam) for i in range(k + 1))
+    var = lam * overdispersion
+    if var <= lam:
+        return sum(poisson_pmf(i, lam) for i in range(k + 1))
+    n_param = (lam ** 2) / (var - lam)
+    p_param = lam / var
+    n_param = max(n_param, 0.5)
+    return float(_nbinom_cal.cdf(k, n_param, p_param))
+
+
+def _nb2_prob_over(lam: float, line: float, overdispersion: float = _CARDS_DEFAULT_OVERDISPERSION) -> float:
+    """P(X > line) using NB2. Used for cards calibration (#122)."""
+    return 1.0 - _nb2_cdf(int(line), lam, overdispersion)
+
 # Temporal decay weights for 6 seasons (T-1 most recent)
 SEASON_WEIGHTS = [0.50, 0.25, 0.13, 0.07, 0.03, 0.02]
 
@@ -195,14 +230,14 @@ def _simulate_all_markets(
                     prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
                     brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
 
-        # ── Cards (use league average as lambda, real total as outcome) ──
+        # ── Cards (NB2 — same model as cards_engine.py) (#122) ──
         if do_cards:
             total_cards = m.get("total_cards")
             if total_cards is not None and total_cards > 0:
                 cards_lambda = avg_cards_league * cards_deflation
                 cards_lambda = max(1.0, min(12.0, cards_lambda))
                 for line, key in [(2.5, "cards_o25"), (3.5, "cards_o35"), (4.5, "cards_o45")]:
-                    prob_over_cards = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
+                    prob_over_cards = _nb2_prob_over(cards_lambda, line)
                     brier[key].append(_brier(prob_over_cards, 1 if total_cards > line else 0))
 
     # Aggregate
@@ -741,8 +776,19 @@ def _calibrate_btts_from_season(season_stats: List[Dict], lambda_weights) -> Dic
 
 
 def _calibrate_cards_from_season(season_stats: List[Dict]) -> Dict:
-    """Calibrate cards deflation against real Over X Cards percentages."""
-    lines = [("over25_cards_pct", 2.5), ("over35_cards_pct", 3.5), ("over45_cards_pct", 4.5)]
+    """Calibrate cards deflation against real Over X Cards percentages.
+
+    #122 fixes:
+    - Uses NB2 (same model as cards_engine.py) instead of Poisson
+    - Bilateral Brier: evaluates both Over AND Under per line
+    - Expanded lines: 2.5, 3.5, 4.5, 5.5 (all available from FootyStats)
+    """
+    lines = [
+        ("over25_cards_pct", 2.5),
+        ("over35_cards_pct", 3.5),
+        ("over45_cards_pct", 4.5),
+        ("over55_cards_pct", 5.5),  # #122 Fix 4: expanded
+    ]
     best = {"brier": 1.0, "deflation": 1.0}
 
     for defl in CARDS_DEFLATION_GRID:
@@ -759,8 +805,18 @@ def _calibrate_cards_from_season(season_stats: List[Dict]) -> Dict:
                 actual_pct = ss.get(pct_key)
                 if actual_pct is None:
                     continue
-                prob = sum(poisson_pmf(k, cards_lambda) for k in range(int(line) + 1, 20))
-                total_brier += ((prob - actual_pct / 100.0) ** 2) * weight
+                # #122 Fix 1: NB2 instead of Poisson
+                prob_over = _nb2_prob_over(cards_lambda, line)
+                prob_under = 1.0 - prob_over
+                actual_over = actual_pct / 100.0
+                actual_under = 1.0 - actual_over
+
+                # #122 Fix 3: Bilateral Brier (Over + Under)
+                brier_over = (prob_over - actual_over) ** 2
+                brier_under = (prob_under - actual_under) ** 2
+                brier_bilateral = (brier_over + brier_under) / 2.0
+
+                total_brier += brier_bilateral * weight
                 n += weight
 
         if n > 0 and (total_brier / n) < best["brier"]:
@@ -1081,11 +1137,17 @@ def calibrate_league(
                 logger.info(f"[calibrator] {league_id}: BTTS from season stats = {best_btts['deflation']} "
                            f"(brier {best_btts['brier']:.4f})")
 
-        # Cards: calibrate against real cardsAVG + over%
+        # Cards: calibrate against real cardsAVG + over% (#122: conditional override)
         cards_season = _calibrate_cards_from_season(season_stats)
         if cards_season.get("brier") is not None:
-            cards_factor = cards_season["deflation"]
-            logger.info(f"[calibrator] {league_id}: cards from season stats = {cards_factor}")
+            cards_match_brier = best_cards.get("brier", 1.0)
+            if cards_season["brier"] < cards_match_brier:
+                cards_factor = cards_season["deflation"]
+                logger.info(f"[calibrator] {league_id}: cards from season stats = {cards_factor} "
+                           f"(season brier {cards_season['brier']:.4f} < match {cards_match_brier:.4f})")
+            else:
+                logger.info(f"[calibrator] {league_id}: cards keeping match-based = {cards_factor} "
+                           f"(match brier {cards_match_brier:.4f} <= season {cards_season['brier']:.4f})")
 
         # Corners: compare with season stats
         corners_season = _calibrate_corners_from_season(season_stats)

@@ -6487,3 +6487,41 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 122 — Calibrador cards usa NB2 + Brier bilateral + override condicional
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/league_calibrator.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Auditoria mostrava Cards Under 2.5 com 26-31% acuracia — modelo subestima cartoes. Porem o calibrador convergiu para DEFLACAO (0.90-0.95) em 4 ligas, contradizendo a evidencia.
+
+### Causa raiz
+
+Descompasso de modelo entre calibrador e pipeline:
+- Calibrador usava **Poisson** (variancia = media) para otimizar cards_factor
+- Pipeline usa **NB2** (variancia > media, overdispersion ~1.3)
+- Poisson P(Over 2.5|λ=4) = 76.2%, NB2 P(Over 2.5|λ=4) = 72.3%
+- Calibrador via Poisson achava que superestimava Over → deflacionava
+- Deflacao aplicada ao NB2 (ja mais conservador) → dupla deflacao → prob Under inflada → picks Under errados
+
+Agravantes:
+1. Season override incondicional (cards sempre usava season, sem comparar Brier)
+2. Brier avaliava apenas Over (deflacao melhorava Over mas piorava Under sem ser detectado)
+3. Calibrador avaliava 3 linhas (2.5-4.5) mas pipeline usava 6 (1.5-6.5)
+
+### Correcoes aplicadas
+
+1. **Fix 1 (Critico):** Calibrador usa NB2 com overdispersion 1.3 (identico ao cards_engine.py). Funcoes `_nb2_cdf` e `_nb2_prob_over` adicionadas. Aplicado em `_simulate_all_markets` (match-based) e `_calibrate_cards_from_season` (season-based).
+2. **Fix 2 (Alta):** Season override agora e condicional — so sobrescreve se `brier_season < brier_match` (como corners ja fazia).
+3. **Fix 3 (Media):** Brier bilateral — avalia Over E Under por linha. `brier = (brier_over + brier_under) / 2`. Evita otimizar um lado as custas do outro.
+4. **Fix 4 (Baixa):** Linhas expandidas de 3 (2.5, 3.5, 4.5) para 4 (+ 5.5). FootyStats fornece `over55CardsPercentage_overall`.
+
+### Licao aprendida
+
+Calibrador DEVE usar o mesmo modelo que o pipeline de predicao. Descompasso Poisson→NB2 causa direcao oposta na correcao. Validar que funcao de calibracao e funcao de predicao compartilham a mesma distribuicao estatistica.
+
+---
+
