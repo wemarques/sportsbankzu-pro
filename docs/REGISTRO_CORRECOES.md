@@ -6487,6 +6487,35 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 127 — VIA 2 antes do NO_BET + zona neutra proporcional + filtro Over 0.5
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/ev_classification.py`
+**Severidade:** Critica
+**Status:** Corrigido
+
+### Problema identificado
+
+Fix #126 implementou VIA 2 mas ela so atuava DEPOIS do NO_BET. Picks com raw 0.50-0.59 eram descartados como NO_BET antes da VIA 2 ver. Zona neutra fixa de 0.5 era larga demais para gols (20% da media). Over 0.5 gols sem odds era ruido.
+
+### Causa raiz
+
+Ordem de execucao: classify_market decidia NO_BET por prob < neutro_prob (0.60) ANTES da VIA 2 ter chance de resgatar. A VIA 2 so via picks que ja eram NEUTRO.
+
+### Correcoes aplicadas
+
+1. **Direction rescue:** Picks com raw 0.50-0.59 resgatados de NO_BET para NEUTRO quando direcao confirma e odd >= 1.50
+2. **Zona neutra proporcional:** gols 0.3 (era 0.5), corners 0.5 (manteve), cards 0.3 (era 0.5)
+3. **Filtro Over 0.5:** Over 0.5 gols sem odds ou odd < 1.30 filtrado (ruido)
+4. **VIA 2 integrada no fluxo:** Direcao computada ANTES da classificacao, usada em todas as vias
+5. **Force NO_BET threshold rebaixado:** prob < 0.50 (era 0.60) para permitir rescue
+
+### Licao aprendida
+
+Classificacao deve ser una — nao separar em "primeiro classifica por EV, depois tenta resgatar por direcao". A direcao deve ser parte integral da decisao desde o inicio.
+
+---
+
 ## 126 — Classificação por direção natural para todos os mercados com linhas
 
 **Data:** 2026-04-07

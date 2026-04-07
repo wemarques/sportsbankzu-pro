@@ -294,6 +294,29 @@ def classify_market(
     # ─── Classification logic (#106: use prob_for_class for thresholds) ───
     classification = MarketClassification.NO_BET
 
+    # #127: Pre-compute direction info for VIA 2 (used throughout classification)
+    _DIRECTION_MIN_ODD = 1.50
+    _DIRECTION_RESCUE_PROB = 0.50  # #127: floor for direction rescue
+    _dir_natural = False
+    _dir_against = False
+    _dir_nz = 0.5
+    _dir_diff = 0.0
+
+    if projection is not None and projection > 0:
+        import re as _re
+        _lm = _re.search(r"(\d+\.?\d*)", output.selection or "")
+        if _lm:
+            _dir_line = float(_lm.group(1))
+            _dir_diff = projection - _dir_line
+            _dir_nz = _get_direction_neutral_zone(output.market_type)  # #127: proportional
+            _is_over = "over" in (output.selection or "").lower()
+            _is_under = "under" in (output.selection or "").lower()
+            _dir_odd_ok = output.book_odd is not None and output.book_odd >= _DIRECTION_MIN_ODD
+
+            if abs(_dir_diff) > _dir_nz and (_is_over or _is_under) and _dir_odd_ok:
+                _dir_natural = (_dir_diff > 0 and _is_over) or (_dir_diff < 0 and _is_under)
+                _dir_against = (_dir_diff > 0 and _is_under) or (_dir_diff < 0 and _is_over)
+
     # SAFE: high prob + positive EV + sufficient edge + good data
     if (prob_for_class >= th.get("safe_prob", 0.60) and
         output.data_quality_score >= th.get("min_quality", 0.3)):
@@ -315,22 +338,60 @@ def classify_market(
             classification = MarketClassification.NEUTRO
         elif not output.odds_available:
             classification = MarketClassification.NEUTRO
+        # #127: VIA 2 rescue — NEUTRO even with negative EV if direction confirms
+        elif _dir_natural and output.odds_available:
+            classification = MarketClassification.NEUTRO
+            reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
+            logger.info(
+                f"[direction-rescue] {output.display_label}: rescued to NEUTRO "
+                f"(ev={output.ev}, but dir confirms, proj diff={_dir_diff:+.1f})"
+            )
 
-    # NEUTRO qualificado: upgrade if meets criteria
+    # #127: VIA 2 rescue for prob below neutro_prob (0.50-0.59 range)
+    elif (prob_for_class >= _DIRECTION_RESCUE_PROB and _dir_natural and
+          output.data_quality_score >= th.get("min_quality", 0.3) * 0.8):
+        classification = MarketClassification.NEUTRO
+        reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
+        logger.info(
+            f"[direction-rescue] {output.display_label}: NO_BET->NEUTRO "
+            f"(raw={prob_for_class:.3f} < neutro but > rescue {_DIRECTION_RESCUE_PROB}, "
+            f"proj diff={_dir_diff:+.1f})"
+        )
+
+    # NEUTRO qualificado: upgrade if meets criteria (VIA 1 — EV based)
     if classification == MarketClassification.NEUTRO:
         if _is_neutro_qualificado(output, prob_for_class) and ReasonCode.SUSPICIOUS_EV not in reason_codes:
             classification = MarketClassification.NEUTRO_QUALIFICADO
+        # #126/#127: VIA 2 — direction-based upgrade to NQ
+        elif (_dir_natural and prob_for_class >= th.get("neutro_prob", 0.50)
+              and ReasonCode.SUSPICIOUS_EV not in reason_codes):
+            classification = MarketClassification.NEUTRO_QUALIFICADO
+            if ReasonCode.DIRECTION_NATURAL_MATCH not in reason_codes:
+                reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
+            logger.info(
+                f"[direction-via2] {output.display_label}: NEUTRO->NQ "
+                f"(proj diff={_dir_diff:+.1f})"
+            )
 
-    # Force NO_BET on negative EV with low prob
+    # #126: Direction AGAINST → force NO_BET
+    if _dir_against and classification in (
+        MarketClassification.NEUTRO, MarketClassification.NEUTRO_QUALIFICADO
+    ):
+        classification = MarketClassification.NO_BET
+        reason_codes.append(ReasonCode.DIRECTION_AGAINST_PROJFT)
+        logger.info(
+            f"[direction-via2] {output.display_label}: ->NO_BET "
+            f"(against direction, proj diff={_dir_diff:+.1f})"
+        )
+
+    # Force NO_BET on negative EV with very low prob (below rescue threshold)
     if (output.odds_available and output.ev is not None and
-        output.ev < -0.05 and prob_for_class < th.get("neutro_prob", 0.50)):
+        output.ev < -0.05 and prob_for_class < _DIRECTION_RESCUE_PROB):
         classification = MarketClassification.NO_BET
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)
 
     # ─── Force NO_BET on absurdly high EV (#064) ───
-    # After the cap above, if EV STILL exceeds 100% it's clearly broken data.
-    # This catches edge cases where cap didn't fully apply (e.g. missing book_odd).
     if (ReasonCode.SUSPICIOUS_EV in reason_codes and
             output.ev is not None and output.ev > 1.0):
         classification = MarketClassification.NO_BET
@@ -338,46 +399,6 @@ def classify_market(
             f"[EV Force NO_BET] {output.display_label}: EV={output.ev:.1%} still >100% after cap, "
             f"forcing NO_BET"
         )
-
-    # ─── VIA 2 — Direction-based classification (#126) ───
-    # If classify resulted in NEUTRO but pick follows model's natural direction,
-    # promote to NEUTRO_QUALIFICADO. Picks AGAINST direction → NO_BET.
-    _DIRECTION_MIN_ODD = 1.50
-    _DIRECTION_NEUTRAL_ZONE = 0.5
-
-    if projection is not None and projection > 0:
-        import re as _re
-        _line_match = _re.search(r"(\d+\.?\d*)", output.selection or "")
-        if _line_match:
-            _line = float(_line_match.group(1))
-            _diff = projection - _line
-            _is_over = "over" in (output.selection or "").lower()
-            _is_under = "under" in (output.selection or "").lower()
-            _odd_ok = output.book_odd is not None and output.book_odd >= _DIRECTION_MIN_ODD
-
-            if abs(_diff) > _DIRECTION_NEUTRAL_ZONE and (_is_over or _is_under):
-                # Direction is clear (not neutral zone)
-                _natural = (_diff > 0 and _is_over) or (_diff < 0 and _is_under)
-                _against = (_diff > 0 and _is_under) or (_diff < 0 and _is_over)
-
-                if _natural and _odd_ok and classification == MarketClassification.NEUTRO:
-                    if prob_for_class >= th.get("neutro_prob", 0.50):
-                        classification = MarketClassification.NEUTRO_QUALIFICADO
-                        reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
-                        logger.info(
-                            f"[direction-via2] {output.display_label}: NEUTRO->NQ "
-                            f"(proj={projection:.1f} vs line={_line}, diff={_diff:+.1f})"
-                        )
-
-                elif _against and classification in (
-                    MarketClassification.NEUTRO, MarketClassification.NEUTRO_QUALIFICADO
-                ):
-                    classification = MarketClassification.NO_BET
-                    reason_codes.append(ReasonCode.DIRECTION_AGAINST_PROJFT)
-                    logger.info(
-                        f"[direction-via2] {output.display_label}: ->NO_BET "
-                        f"(against direction, proj={projection:.1f} vs line={_line})"
-                    )
 
     # ─── SAFE Circuit Breaker — per-league (#052) ───
     # Downgrade SAFE → NEUTRO_QUALIFICADO when SAFE not enabled for this league
@@ -612,6 +633,9 @@ def evaluate_match_markets(
             calibrated = _calibrate_and_deflate(raw_over, f"Over {threshold}", league_id, regime)
             book_odd = odds.get(odd_key)
             book_odd = float(book_odd) if book_odd and float(book_odd) > 1.0 else None
+            # #127: skip Over 0.5 without odds or with very low odds (noise)
+            if threshold == "0.5" and (book_odd is None or book_odd < 1.30):
+                continue
             mo = MarketOutput(
                 market_type="Over/Under",
                 selection=f"Over {threshold}",
@@ -1238,6 +1262,19 @@ def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]
                 f"[line-margin] {mo.display_label}: {old_cls.value}->NEUTRO "
                 f"(prob {prob:.3f}, gap {gap:.3f} < margin {LINE_SAFETY_MARGIN})"
             )
+
+
+# ── Direction neutral zones (#127) ──────────────────────────────────
+def _get_direction_neutral_zone(market_type: str) -> float:
+    """Proportional neutral zone by market scale (#127).
+
+    Goals: avg ~2.5/game → zone 0.3 (~12%)
+    Corners: avg ~10/game → zone 0.5 (~5%)
+    Cards: avg ~4/game → zone 0.3 (~7.5%)
+    """
+    if market_type == "Corners":
+        return 0.5
+    return 0.3  # Goals (Over/Under) and Cards
 
 
 # ── Corner direction filter (#123) ─────────────────────────────────
