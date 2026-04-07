@@ -1008,6 +1008,7 @@ def build_records_from_matches(
         _corner_multiplier = None
         _ou_deflation = 1.0
         _1x2_deflation = 1.0
+        _lc = {}
         try:
             from backend.modeling.lambda_calculator import get_lambda_corrections, LAMBDA_MIN, LAMBDA_MAX
             _lc = get_lambda_corrections(league_id)
@@ -1029,6 +1030,27 @@ def build_records_from_matches(
                 _1x2_deflation = float(_corr.get("value", 1.0))
         except Exception as _e:
             logger.debug(f"[Gap2] Lambda corrections skipped for {league_id}: {_e}")
+
+        # #124b: xG blend — apply calibrated xg_blend_weight to lambda
+        _xg_w = 0.0
+        try:
+            _xg_corr = _lc.get("xg_blend_weight", {})
+            if isinstance(_xg_corr, dict):
+                _xg_w = float(_xg_corr.get("value", 0.0))
+            elif _xg_corr:
+                _xg_w = float(_xg_corr)
+        except Exception:
+            _xg_w = 0.0
+        if _xg_w > 0 and home_xg_for and away_xg_against and away_xg_for and home_xg_against:
+            _lh_xg = (float(home_xg_for) + float(away_xg_against)) / 2.0
+            _la_xg = (float(away_xg_for) + float(home_xg_against)) / 2.0
+            if _lh_xg > 0 and _la_xg > 0:
+                lam_home = (1.0 - _xg_w) * lam_home + _xg_w * _lh_xg
+                lam_away = (1.0 - _xg_w) * lam_away + _xg_w * _la_xg
+                logger.debug(
+                    f"[xg-blend] {home} vs {away}: w={_xg_w:.2f} "
+                    f"lh_xg={_lh_xg:.3f} la_xg={_la_xg:.3f}"
+                )
 
         # Apply O/U deflation to lambdas for Poisson (#058)
         lam_home_ou = lam_home * _ou_deflation

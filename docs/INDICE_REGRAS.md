@@ -151,3 +151,4 @@
 | 122 | **ATIVA** | Fix + Regra | Calibrador cards NB2 + Brier bilateral + override condicional + linhas expandidas |
 | 123 | **ATIVA** | Fix + Regra | Direcao natural projFT + risk penalty + shrinkage assimetrico corners |
 | 124 | **ATIVA** | Fix | Extrair cornersAgainst + cardsAgainst do FootyStats + fallback historico |
+| 124b | Corrigido | Fix | xG blend conectado no pipeline de gols (calibrador → lambda) |

@@ -6487,6 +6487,38 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 124b — xG blend conectado no pipeline de gols
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/fixtures_service.py`
+**Severidade:** Media
+**Status:** Corrigido
+
+### Problema identificado
+
+Calibrador otimizava `xg_blend_weight` per-league (grid 0.0-0.50) e salvava no DB, mas o pipeline de gols NUNCA lia o valor. xG era extraido do FootyStats e passado ao frontend, mas ignorado no calculo de lambda.
+
+### Causa raiz
+
+Desconexao entre calibrador e pipeline. O calibrador armazena `xg_blend_weight` nas corrections, mas `fixtures_service.py` nao tinha codigo para le-lo e aplica-lo.
+
+### Correcoes aplicadas
+
+1. **xG blend conectado:** Le `xg_blend_weight` do corrections DB e blenda lambda com xG: `lambda = (1-w) * lambda_poisson + w * lambda_xg`
+2. **Lambda xG:** `lambda_home_xg = (home_xg_for + away_xg_against) / 2` (ataque home vs defesa away)
+3. **Condicional:** So aplica se `xg_blend_weight > 0` E todos 4 campos xG disponiveis
+
+### Status de lastx e arbitro
+
+- **Lastx momentum:** Adiado — sem `team_id` do FootyStats mapeado nos matches, sem metodo `/lastx` no client
+- **Fator arbitro:** Adiado — `predict_cards()` ja tem `referee_factor` implementado mas ninguem passa `referee_avg_cards`. Sem endpoint de referees no client
+
+### Licao aprendida
+
+Calibrador e pipeline devem ser verificados em conjunto. Um parametro calibrado mas nao lido e codigo morto.
+
+---
+
 ## 124 — Extrair dados Against do FootyStats + fallback por histórico
 
 **Data:** 2026-04-07
