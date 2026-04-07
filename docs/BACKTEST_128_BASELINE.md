@@ -1,18 +1,20 @@
-# BACKTEST POS-FIX #128 — BASELINE
+# BACKTEST POS-FIX #128 — BASELINE COMPLETO
 **Data:** 2026-04-07
-**Commit:** 81b1b7a (dados) + d9c3f56 (#127 VIA2) + 385f652 (#126 direcao)
+**Commit:** 89be30f (#128e-g)
 **Periodo avaliado:** Temporadas calibradas (3 seasons por liga)
 **N ligas:** 22
 
-## Brier Scores Medios (menor = melhor, random = 0.25)
+## Brier Scores por Mercado (com IC 95%)
 
-| Mercado | Brier Medio | N ligas |
-|---------|:-----------:|:-------:|
-| Over/Under (gols) | **0.1713** | 22 |
-| 1X2 | **0.1912** | 22 |
-| Corners | **0.2381** | 22 |
-| Cards | **0.1987** | 22 |
-| **Geral** | **0.1998** | 22 |
+| Mercado | Brier | N ligas | IC 95% |
+|---------|:-----:|:-------:|:------:|
+| Over/Under (gols) | **0.1713** | 22 | +-0.0031 |
+| 1X2 | **0.1912** | 22 | +-0.0034 |
+| Corners | **0.2381** | 22 | +-0.0016 |
+| Cards | **0.1987** | 22 | +-0.0098 |
+| **Geral** | **0.1998** | 88 | +-0.0058 |
+
+**Nota:** N=22 ligas (nao jogos individuais). Cada liga agrega centenas de jogos no calibrador. Brier de Corners (0.2381) e o mais proximo de random (0.25) — precisa investigacao dedicada.
 
 ## Brier Score por Liga
 
@@ -41,22 +43,59 @@
 | colombian-primera-a | 0.1643 | 0.1993 | 0.2369 | 0.1452 |
 | liga-mx | 0.1754 | 0.1931 | 0.2403 | 0.1910 |
 
-## Cobertura de Campos Novos (#128) — Validacao Multi-Liga
+## Cobertura xG — TODAS as 22 Ligas
 
-| Liga | Corners For | Corners Against | Cards For | Cards Against | xG Home | xG Away |
-|------|:-----------:|:---------------:|:---------:|:-------------:|:-------:|:-------:|
-| Championship (12j) | 92% | 92% | 92% | 92% | **0%** | **0%** |
-| La Liga (1j) | 100% | 100% | 100% | 100% | 100% | **0%** |
-| A-League (1j) | 100% | 100% | 100% | 100% | 100% | **0%** |
+| Liga | N jogos | xG Home | xG Away | xG-Ag Home | xG-Ag Away | Guarda #128e |
+|------|:-------:|:-------:|:-------:|:----------:|:----------:|:------------:|
+| premier-league | 0 | N/A | N/A | N/A | N/A | N/A |
+| championship | 12 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| league-one | 11 | 9% | 0% | 9% | 0% | BLOQUEADA |
+| la-liga | 1 | 100% | 0% | 100% | 0% | BLOQUEADA |
+| serie-a | 4 | 0% | 25% | 0% | 25% | BLOQUEADA |
+| serie-b | 8 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| bundesliga | 0 | N/A | N/A | N/A | N/A | N/A |
+| 2-bundesliga | 0 | N/A | N/A | N/A | N/A | N/A |
+| ligue-1 | 0 | N/A | N/A | N/A | N/A | N/A |
+| brasileirao-serie-a | 0 | N/A | N/A | N/A | N/A | N/A |
+| brasileirao-serie-b | 1 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| eredivisie | 0 | N/A | N/A | N/A | N/A | N/A |
+| primeira-liga | 2 | 50% | 50% | 50% | 50% | BLOQUEADA |
+| super-lig | 1 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| pro-league | 3 | 67% | 33% | 67% | 33% | BLOQUEADA |
+| premiership | 0 | N/A | N/A | N/A | N/A | N/A |
+| superliga | 4 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| primera-division | 2 | 50% | 0% | 50% | 0% | BLOQUEADA |
+| a-league | 1 | 100% | 0% | 100% | 0% | BLOQUEADA |
+| mls | 0 | N/A | N/A | N/A | N/A | N/A |
+| colombian-primera-a | 2 | 0% | 0% | 0% | 0% | BLOQUEADA |
+| liga-mx | 1 | 0% | 0% | 0% | 0% | BLOQUEADA |
 
-### xG: Padrao assimetrico confirmado
-- Home xG disponivel em La Liga e A-League (100%)
-- Away xG **sempre NULL** em todas as ligas testadas
-- Championship: 0% para ambos os lados
-- **Guarda #128e implementada:** xG blend so ativa com cobertura >= 80% home E away
+**Resumo xG:** 0 de 22 ligas passam na guarda #128e (cobertura >= 80% home E away). xG blend permanece inativo globalmente. Cobertura assimetrica confirmada (home parcial, away quase zero).
+
+## Cobertura Corners/Cards Against (fallback #124)
+
+| Liga | N | CornersAgainst | CardsAgainst |
+|------|:-:|:--------------:|:------------:|
+| championship | 12 | 92% | 92% |
+| league-one | 11 | 100% | 100% |
+| la-liga | 1 | 100% | 100% |
+| serie-a | 4 | 100% | 100% |
+| serie-b | 8 | 100% | 100% |
+| brasileirao-serie-b | 1 | 100% | 100% |
+| primeira-liga | 2 | 100% | 100% |
+| super-lig | 1 | 100% | 100% |
+| pro-league | 3 | 100% | 100% |
+| superliga | 4 | 75% | 75% |
+| primera-division | 2 | 100% | 100% |
+| a-league | 1 | 100% | 100% |
+| colombian-primera-a | 2 | 100% | 100% |
+| liga-mx | 1 | 100% | 100% |
+
+**Resumo:** CornersAgainst e CardsAgainst estao >= 75% em TODAS as ligas testadas. Fallback por match history (#124) funciona.
 
 ## Notas
-- Este baseline NAO tem pre-128 para comparacao (deploy foi feito sem baseline)
-- Serve como referencia para fixes futuros a partir de agora
-- Brier de Corners (0.2381) e o mais alto — mais proximo do random (0.25)
-- Brier de O/U (0.1713) e o melhor — modelo tem boa calibracao para gols
+- Baseline NAO tem pre-128 para comparacao
+- Brier de Corners (0.2381) e o mais alto — perto de random (0.25)
+- Melhor Brier de O/U: brasileirao-serie-b (0.1511) e primera-division (0.1553)
+- Pior Brier de Cards: premier-league (0.2230) e superliga (0.2217)
+- Campos novos #128a/#128b (corner 65/115/145, card 25/35/45 percentages) nao puderam ser verificados via API — precisam de recalibracao para popular

@@ -6487,6 +6487,21 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 128f complemento — Baseline completo com N, IC, cobertura xG e campos por liga
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `docs/BACKTEST_128_BASELINE.md`
+**Severidade:** Baixa (documentacao)
+**Status:** Corrigido
+
+### Dados extraidos
+
+1. **xG por liga:** 0 de 22 ligas passam na guarda #128e. xG away e 0% em 13 de 14 ligas testadas. Cobertura assimetrica (home parcial, away zero).
+2. **Brier com IC 95%:** O/U 0.1713 +-0.0031, Corners 0.2381 +-0.0016, Cards 0.1987 +-0.0098.
+3. **CornersAgainst/CardsAgainst:** >= 75% em todas as 14 ligas testadas. Fallback #124 funciona.
+
+---
+
 ## 128e-g — Guarda xG cobertura 80% + backtest baseline + validação multi-liga
 
 **Data:** 2026-04-07
