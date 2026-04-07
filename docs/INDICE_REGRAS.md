@@ -155,3 +155,4 @@
 | 126 | **ATIVA** | Fix + Regra | Classificacao por direcao natural — gols, corners, cards (VIA 2) |
 | 127 | **ATIVA** | Fix + Regra | VIA 2 antes do NO_BET + zona neutra proporcional + filtro Over 0.5 |
 | 128 | Corrigido | Fix | Corner/card percentages mapeados + xG fallback None + calibrador extrai xG |
+| 128e | **ATIVA** | Regra | xG blend so ativa com cobertura >= 80% home E away |

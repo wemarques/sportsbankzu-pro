@@ -1116,7 +1116,22 @@ def calibrate_league(
     # ── Grid search 7: xG blend weight ──
     best_xg = {"brier": 1.0, "weight": 0.0}
 
-    for xg_w in XG_BLEND_GRID:
+    # #128e: xG blend only if coverage >= 80% for BOTH sides
+    _MIN_XG_COVERAGE = 0.80
+    _xg_home_count = sum(1 for m in matches if m.get("home_xg") is not None)
+    _xg_away_count = sum(1 for m in matches if m.get("away_xg") is not None)
+    _xg_total = len(matches) or 1
+    _xg_home_cov = _xg_home_count / _xg_total
+    _xg_away_cov = _xg_away_count / _xg_total
+    _xg_enabled = _xg_home_cov >= _MIN_XG_COVERAGE and _xg_away_cov >= _MIN_XG_COVERAGE
+
+    if not _xg_enabled:
+        logger.info(
+            f"[calibrator] {league_id}: xG blend DISABLED "
+            f"(coverage home={_xg_home_cov:.0%}, away={_xg_away_cov:.0%}, min={_MIN_XG_COVERAGE:.0%})"
+        )
+
+    for xg_w in (XG_BLEND_GRID if _xg_enabled else [0.0]):
         result = _simulate_all_markets(
             matches,
             lambda_deflation_ou=best_ou_defl,

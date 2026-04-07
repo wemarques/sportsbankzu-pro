@@ -6487,6 +6487,29 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 128e-g — Guarda xG cobertura 80% + backtest baseline + validação multi-liga
+
+**Data:** 2026-04-07
+**Arquivos afetados:** `backend/services/league_calibrator.py`, `docs/BACKTEST_128_BASELINE.md`
+**Severidade:** Media
+**Status:** Corrigido
+
+### Problema identificado
+
+xG blend sempre convergia para weight=0 porque: (1) calibrador nao extraia xG (#128c corrigiu), (2) cobertura assimetrica — away xG e NULL em todas as ligas testadas. Sem guarda, calibrador poderia convergir para weight>0 usando apenas home xG, gerando vies pro-casa.
+
+### Correcoes aplicadas
+
+1. **#128e REGRA:** xG blend so ativa com cobertura >= 80% home E away. Se abaixo, xg_blend_weight forcado a 0.
+2. **#128f:** Backtest baseline registrado em `docs/BACKTEST_128_BASELINE.md` com Brier por mercado e liga.
+3. **#128g:** NULL rates validados em Championship (12j), La Liga (1j), A-League (1j). Corners/cards 92-100% OK. xG away 0% em todas.
+
+### Licao aprendida
+
+Cobertura assimetrica de dados (home OK, away NULL) pode gerar vies sistematico. Guarda de cobertura minima bilateral e necessaria.
+
+---
+
 ## 128 — Gaps de dados FootyStats: corner/card percentages + xG fallback
 
 **Data:** 2026-04-07
