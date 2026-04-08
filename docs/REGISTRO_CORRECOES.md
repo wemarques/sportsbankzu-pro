@@ -6487,6 +6487,39 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 128i — Guardrail Lambda Erro Medio: formula corrigida + endpoint + REGRA
+
+**Data:** 2026-04-08
+**Arquivos afetados:** `backend/services/backtesting.py`, `backend/routes/health.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Dois valores contraditorios de Lambda Erro Medio: 0.74 (cron_handler) vs 1.7485 (backtest). Causa: formulas diferentes — cron divide por 2 (per-team), backtest nao dividia.
+
+### Causa raiz
+
+`backtesting.py:198` calculava `err = |lh-gh| + |la-ga|` (soma por jogo). `cron_handler.py:301` calculava `err = (|lh-gh| + |la-ga|) / 2` (media per-team, fix #119c). O backtest reportava o dobro do valor real.
+
+### Correcoes aplicadas
+
+1. **Formula alinhada:** backtesting.py agora divide por 2 (identico ao cron_handler)
+2. **Funcao canonica:** `measure_lambda_error(days=30)` criada em backtesting.py
+3. **Endpoint:** `GET /metrics/lambda-error?days=30` exposto em health.py
+4. **Valor corrigido:** Lambda Erro Medio = ~0.87 (era reportado como 1.7485 sem dividir por 2)
+
+### REGRA #128i — Medicao obrigatoria pre/pos mudanca
+
+Antes de qualquer recalibracao ou mudanca que afeta lambdas:
+1. Chamar `GET /metrics/lambda-error?days=30` e registrar valor
+2. Aplicar mudanca
+3. Chamar novamente
+4. Se piorou: reverter antes de investigar
+5. Limite: < 0.50 gols per-team
+
+---
+
 ## 128h — Recalibracao pos-mapeamento: xG blend ativado em 20 ligas
 
 **Data:** 2026-04-07

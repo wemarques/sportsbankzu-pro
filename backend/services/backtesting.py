@@ -182,7 +182,11 @@ def compute_roi(picks: list[dict], initial_bankroll: float = 1000.0) -> dict:
 
 
 def compute_lambda_error(matches: list[dict]) -> dict:
-    """Lambda error: mean deviation between projected lambda and actual goals. Target: < 0.5.
+    """Lambda error: mean per-team deviation between projected lambda and actual goals.
+
+    Target: < 0.5 gols per team.
+    Formula: (|lambda_home - goals_home| + |lambda_away - goals_away|) / 2
+    Aligned with cron_handler.py formula (#119c, #128i).
 
     matches: list of {"lambda_home": float, "lambda_away": float, "goals_home": int, "goals_away": int}
     """
@@ -195,7 +199,8 @@ def compute_lambda_error(matches: list[dict]) -> dict:
         ga = m.get("goals_away")
         if any(v is None for v in (lh, la, gh, ga)):
             continue
-        err = abs(float(lh) - float(gh)) + abs(float(la) - float(ga))
+        # #128i: divide by 2 for per-team average (aligned with cron_handler #119c)
+        err = (abs(float(lh) - float(gh)) + abs(float(la) - float(ga))) / 2
         errors.append(err)
         regime = m.get("regime", "UNKNOWN")
         errors_by_regime.setdefault(regime, []).append(err)
@@ -514,6 +519,31 @@ def run_backtest(
         "roi": compute_roi(picks_for_roi),
         "lambda_error": compute_lambda_error(lambda_matches),
         "hit_rate": compute_hit_rate(picks_for_hit),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3.2b — Guardrail: measure_lambda_error (#128i)
+# ---------------------------------------------------------------------------
+
+def measure_lambda_error(days: int = 30) -> dict:
+    """Canonical Lambda Erro Medio measurement (#128i).
+
+    Formula: mean of (|lambda_home - goals_home| + |lambda_away - goals_away|) / 2
+    Target: < 0.50 gols per team.
+
+    Call BEFORE and AFTER any recalibration or lambda-affecting change.
+    """
+    result = run_backtest(days=days)
+    le = result.get("lambda_error", {})
+    n = result.get("n_picks", 0)
+    return {
+        "lambda_error_mean": le.get("mean_error"),
+        "lambda_error_median": le.get("median_error"),
+        "n_picks": n,
+        "period_days": days,
+        "limit": 0.50,
+        "status": "OK" if le.get("mean_error") is not None and le["mean_error"] < 0.50 else "ABOVE_LIMIT",
     }
 
 

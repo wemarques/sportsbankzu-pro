@@ -309,6 +309,16 @@ async def reliability_metrics():
     }
 
 
+@router.get("/metrics/lambda-error")
+async def get_lambda_error(days: int = Query(30)):
+    """Lambda Erro Medio — canonical measurement (#128i)."""
+    try:
+        from backend.services.backtesting import measure_lambda_error
+        return measure_lambda_error(days=days)
+    except Exception as e:
+        return {"error": str(e), "lambda_error_mean": None}
+
+
 @router.get("/metrics/brier")
 async def get_brier_metrics():
     """Current Brier snapshot — calculates on demand."""
