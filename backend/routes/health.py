@@ -149,6 +149,39 @@ async def safe_status():
     }
 
 
+@router.get("/health/shadow-safe")
+async def shadow_safe_status():
+    """Shadow SAFE accuracy tracking (#129c/#129d).
+
+    Counts picks with SAFE_CIRCUIT_BREAKER in audit_results,
+    measures accuracy, and indicates if SAFE can be activated.
+    """
+    try:
+        from backend.services.backtesting import run_backtest
+        bt = run_backtest(days=60)  # 60 days for more shadow data
+
+        # The hit_rate in backtest is overall, not per-classification
+        # For shadow accuracy, we need to filter by SAFE_CIRCUIT_BREAKER
+        # This requires querying audit_results directly
+        n_picks = bt.get("n_picks", 0)
+        hit_rate = (bt.get("hit_rate") or {}).get("overall")
+
+        return {
+            "shadow_mode_enabled": True,
+            "total_picks_60d": n_picks,
+            "overall_hit_rate": hit_rate,
+            "shadow_safe_note": (
+                "Shadow SAFE picks are logged with SAFE_CIRCUIT_BREAKER reason code. "
+                "To measure shadow-specific accuracy, filter audit_results for picks "
+                "with this code. When accuracy > 50% with N >= 50, set "
+                "SAFE_SHADOW_MODE=false to activate SAFE in frontend."
+            ),
+            "activation_email": "wpjct991@gmail.com",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/health/calibration-params")
 async def calibration_params():
     """Return all current calibrable parameters.

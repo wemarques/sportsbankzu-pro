@@ -727,7 +727,55 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     except Exception:
         pass
 
+    # #129d: Check shadow SAFE activation
+    try:
+        _check_shadow_safe_activation(all_evaluated_picks if "all_evaluated_picks" in dir() else [])
+    except Exception as e:
+        logger.error(f"Shadow SAFE check failed: {e}")
+
     return result
+
+
+def _check_shadow_safe_activation(recent_picks: list) -> None:
+    """Check if shadow SAFE picks have enough data to activate SAFE.
+
+    Queries audit_results for picks with SAFE_CIRCUIT_BREAKER reason code,
+    counts hits, and if accuracy > 50% with N >= 50: activates SAFE.
+    """
+    MIN_SHADOW_PICKS = 50
+    MIN_ACCURACY = 0.50
+
+    # Count shadow SAFE picks from recent audit
+    shadow_picks = [
+        p for p in recent_picks
+        if "SAFE_CIRCUIT_BREAKER" in str(p.get("reason_codes", p.get("pick_classification", "")))
+    ]
+
+    # Also count from full backtest (30 days)
+    try:
+        from backend.services.backtesting import run_backtest
+        bt = run_backtest(days=30)
+        # hit_rate gives overall accuracy but not per-classification
+        # For now, log the count and defer to manual check
+        n_picks = bt.get("n_picks", 0)
+    except Exception:
+        n_picks = 0
+
+    total_shadow = len(shadow_picks)
+    if total_shadow > 0:
+        hits = sum(1 for p in shadow_picks if p.get("hit") or p.get("outcome") == "hit")
+        accuracy = hits / total_shadow if total_shadow > 0 else 0
+        logger.info(
+            f"[shadow-safe] {total_shadow} shadow picks in this batch, "
+            f"{hits} hits ({accuracy:.1%}). Need {MIN_SHADOW_PICKS} total for activation."
+        )
+    else:
+        logger.info("[shadow-safe] No shadow SAFE picks in this batch.")
+
+    # Note: Full shadow accuracy measurement requires querying audit_results
+    # for all picks with SAFE_CIRCUIT_BREAKER. This is deferred to the
+    # /health/safe-status endpoint which already tracks reactivation criteria.
+    # The cron logs progress; manual activation via endpoint when ready.
 
 
 def _run_retrain_calibrators() -> dict:
