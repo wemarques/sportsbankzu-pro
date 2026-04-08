@@ -6,9 +6,10 @@ import os
 import pytest
 
 _secrets_path = os.path.join(os.path.dirname(__file__), "..", ".streamlit", "secrets.toml")
-_skip = not os.path.exists(_secrets_path)
+_config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+_skip = not os.path.exists(_secrets_path) or not os.path.exists(_config_path)
 
-pytestmark = pytest.mark.skipif(_skip, reason="Requer .streamlit/secrets.toml (indisponivel no CI)")
+pytestmark = pytest.mark.skipif(_skip, reason="Requer .streamlit/secrets.toml + config.yaml (indisponivel no CI)")
 
 from streamlit.testing.v1 import AppTest
 
