@@ -280,7 +280,28 @@ async def run_calibration(
             save_calibration(league, result["params"])
         return result
     else:
-        return calibrate_all_leagues(n_seasons=n_seasons)
+        # #128i: Guardrail for calibrate-all
+        _pre_lambda = None
+        try:
+            from backend.services.backtesting import measure_lambda_error
+            _pre = measure_lambda_error(days=30)
+            _pre_lambda = _pre.get("lambda_error_mean")
+        except Exception:
+            pass
+        all_result = calibrate_all_leagues(n_seasons=n_seasons)
+        try:
+            _post = measure_lambda_error(days=30)
+            _post_lambda = _post.get("lambda_error_mean")
+            if _pre_lambda and _post_lambda:
+                _delta = _post_lambda - _pre_lambda
+                all_result["guardrail"] = {
+                    "pre": _pre_lambda, "post": _post_lambda,
+                    "delta": round(_delta, 4),
+                    "alert": _delta > 0.05,
+                }
+        except Exception:
+            pass
+        return all_result
 
 
 @router.post("/backtesting/recalibrate-all")
@@ -294,10 +315,23 @@ async def recalibrate_all(
     grid boundary), which indicates a systematic formula issue rather than
     per-league variation.
 
-    Reference: REGRAS #053
+    Guardrail #128i: measures Lambda Erro pre/post and alerts on degradation.
+
+    Reference: REGRAS #052, #053, #128i
     """
     from backend.services.league_calibrator import calibrate_league, save_calibration
     from backend.config.leagues_config import LEAGUES_CONFIG
+
+    # #128i: Guardrail — measure Lambda Erro BEFORE recalibration
+    _MAX_DEGRADATION = 0.05
+    _pre_lambda = None
+    try:
+        from backend.services.backtesting import measure_lambda_error
+        _pre = measure_lambda_error(days=30)
+        _pre_lambda = _pre.get("lambda_error_mean")
+        logger.info(f"[guardrail] Lambda Erro PRE-recalib: {_pre_lambda}")
+    except Exception as e:
+        logger.warning(f"[guardrail] Could not measure pre-recalib lambda: {e}")
 
     if clear_previous:
         try:
@@ -355,6 +389,26 @@ async def recalibrate_all(
                     "recommendation": "Lambda formula may overestimate. Consider grid expansion or formula adjustment.",
                 }
 
+    # #128i: Guardrail — measure Lambda Erro AFTER recalibration
+    _guardrail = {"pre": _pre_lambda, "post": None, "delta": None, "alert": False}
+    try:
+        _post = measure_lambda_error(days=30)
+        _post_lambda = _post.get("lambda_error_mean")
+        _guardrail["post"] = _post_lambda
+        if _pre_lambda is not None and _post_lambda is not None:
+            _delta = _post_lambda - _pre_lambda
+            _guardrail["delta"] = round(_delta, 4)
+            _guardrail["alert"] = _delta > _MAX_DEGRADATION
+            if _guardrail["alert"]:
+                logger.warning(
+                    f"[guardrail] ALERT: Lambda Erro DEGRADED {_delta:+.4f} "
+                    f"(pre={_pre_lambda:.4f} post={_post_lambda:.4f} limit=+{_MAX_DEGRADATION})"
+                )
+            else:
+                logger.info(f"[guardrail] OK: Lambda Erro delta={_delta:+.4f}")
+    except Exception as e:
+        logger.warning(f"[guardrail] Could not measure post-recalib lambda: {e}")
+
     return {
         "total_leagues": len(results),
         "calibrated": n_calibrated,
@@ -362,6 +416,7 @@ async def recalibrate_all(
         "errors": sum(1 for r in results.values() if r.get("status") == "ERROR"),
         "bias_report": bias_report,
         "grid_range": {"min": min(DEFLATION_GRID), "max": max(DEFLATION_GRID)},
+        "guardrail": _guardrail,  # #128i
         "results": results,
     }
 
