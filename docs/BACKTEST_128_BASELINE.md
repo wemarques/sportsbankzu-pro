@@ -139,13 +139,17 @@ Corners Brier pos-recalib: **0.2381 (inalterado)**. #129 e necessario para inves
 **NAO DISPONIVEL** — O calibrador calcula brier_btts internamente (league_calibrator.py:194) mas NAO o salva no DB (ausente do param_map nas linhas 1320-1340). O campo e computado, descartado, e nao exposto na API de calibration-status. Para extrair, seria necessario adicionar "brier_btts" ao param_map e recalibrar.
 
 ### 2. Lambda Erro Medio
-**NAO DISPONIVEL** — O cron_handler.py calcula avg_lambda_error (linha 429) durante auditorias pos-jogo, mas o endpoint /api/health/safe-status retorna 404. O valor de 1.45 gols reportado no audit #119 veio de uma execucao manual do cron. Nao ha endpoint exposto para consultar o valor atual.
+Endpoint: `GET /metrics/lambda-error?days=30` (fix #128i)
+Formula canonica: `(|lambda_home - goals_home| + |lambda_away - goals_away|) / 2` (per-team)
 
-| Referencia | Valor |
-|------------|:-----:|
-| Audit #119 | 1.45 gols |
-| Limite aceitavel | 0.50 gols |
-| Atual | NAO DISPONIVEL (endpoint /safe-status 404) |
+| Referencia | Formula | Reportado | Real (com /2) |
+|------------|---------|:---------:|:-------------:|
+| Audit #119 | SEM /2 (soma) | 1.45 | **0.725** |
+| Atual (30d) | COM /2 (per-team) | 0.87 | **0.87** |
+| **Delta** | | | **+0.145 (+20% pior)** |
+| Limite | | | 0.50 |
+
+**Sistema PIOROU 20% desde #119.** Audit #119 usava formula sem /2, valor real era 0.725. Atual e 0.87.
 
 ### 3. Distribuicao de Classificacoes (06/04/2026, 12 ligas, 49 jogos)
 
