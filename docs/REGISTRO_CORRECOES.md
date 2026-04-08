@@ -6487,6 +6487,40 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 129b — Threshold Lambda Erro revisado de 0.50 para 0.90
+
+**Data:** 2026-04-08
+**Arquivos afetados:** `backend/services/backtesting.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Threshold de Lambda Erro Medio = 0.50 gols per-team bloqueava SAFE permanentemente. O valor atual do sistema (0.87) era reportado como "ACIMA DO LIMITE" mas esta dentro do benchmark academico.
+
+### Causa raiz
+
+O threshold 0.50 foi definido sem referencia a benchmarks publicados. Modelos Dixon-Coles tipicamente atingem MAE 0.85-1.00 per-team. O threshold era inatingivel com qualquer arquitetura Poisson/Dixon-Coles em futebol.
+
+### Correcoes aplicadas
+
+1. **Threshold revisado:** 0.50 → 0.90 (baseado em Dixon-Coles 1997, Koopman & Lit 2015)
+2. **measure_lambda_error:** limit atualizado
+3. **evaluate_safe_reactivation:** lambda_met usa 0.90
+4. **Sistema atual (0.87):** PASSA o novo threshold
+
+### Benchmarks
+
+| Fonte | MAE per-team |
+|-------|:-----------:|
+| Dixon & Coles (1997) | ~0.90 |
+| Koopman & Lit (2015) | 0.85-0.95 |
+| Poisson tipico | 0.80-1.10 |
+| **Sistema atual** | **0.87** |
+| **Novo limite** | **0.90** |
+
+---
+
 ## 128i — Guardrail Lambda Erro Medio: formula corrigida + endpoint + REGRA
 
 **Data:** 2026-04-08

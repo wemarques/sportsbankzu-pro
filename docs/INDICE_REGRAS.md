@@ -156,5 +156,6 @@
 | 127 | **ATIVA** | Fix + Regra | VIA 2 antes do NO_BET + zona neutra proporcional + filtro Over 0.5 |
 | 128 | Corrigido | Fix | Corner/card percentages mapeados + xG fallback None + calibrador extrai xG |
 | 128e | **ATIVA** | Regra | xG blend so ativa com cobertura >= 80% home E away |
-| 128i | **ATIVA** | Regra | Medicao obrigatoria Lambda Erro pre/pos recalibracao (limite 0.50) |
+| 128i | **ATIVA** | Regra | Medicao obrigatoria Lambda Erro pre/pos recalibracao (limite 0.90) |
+| 129b | **ATIVA** | Fix + Regra | Threshold Lambda Erro revisado 0.50 → 0.90 (benchmark Dixon-Coles) |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |

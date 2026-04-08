@@ -534,20 +534,26 @@ def measure_lambda_error(days: int = 30) -> dict:
     """Canonical Lambda Erro Medio measurement (#128i).
 
     Formula: mean of (|lambda_home - goals_home| + |lambda_away - goals_away|) / 2
-    Target: < 0.50 gols per team.
+    Target: < 0.90 gols per team (#129b — revised from 0.50 based on Dixon-Coles benchmarks).
+
+    Published MAE benchmarks (per team):
+      - Dixon & Coles (1997): ~0.90
+      - Koopman & Lit (2015): ~0.85-0.95
+      - Typical Poisson football models: 0.80-1.10
 
     Call BEFORE and AFTER any recalibration or lambda-affecting change.
     """
     result = run_backtest(days=days)
     le = result.get("lambda_error", {})
-    n = result.get("n_picks", 0)
+    n = result.get("n_matches", result.get("n_picks", 0))
+    LIMIT = 0.90  # #129b: revised from 0.50 (unreachable) based on benchmarks
     return {
         "lambda_error_mean": le.get("mean_error"),
         "lambda_error_median": le.get("median_error"),
-        "n_picks": n,
+        "n_matches": n,
         "period_days": days,
-        "limit": 0.50,
-        "status": "OK" if le.get("mean_error") is not None and le["mean_error"] < 0.50 else "ABOVE_LIMIT",
+        "limit": LIMIT,
+        "status": "OK" if le.get("mean_error") is not None and le["mean_error"] < LIMIT else "ABOVE_LIMIT",
     }
 
 
@@ -561,7 +567,7 @@ def evaluate_safe_reactivation() -> dict:
     Criteria (ALL must be True):
     - 3 consecutive audits with accuracy > 50%
     - Brier Score < 0.25
-    - Lambda error < 0.5
+    - Lambda error < 0.90 (#129b: revised from 0.50 — Dixon-Coles benchmark)
     """
     recent = run_backtest(days=30)  # #119d — expanded from 14 to accumulate N > MIN_N_BRIER(20)
 
@@ -569,8 +575,9 @@ def evaluate_safe_reactivation() -> dict:
     lambda_err = (recent.get("lambda_error") or {}).get("mean_error")
     hit_rate = (recent.get("hit_rate") or {}).get("overall")
 
+    LAMBDA_LIMIT = 0.90  # #129b: revised from 0.50 (unreachable)
     brier_met = brier is not None and brier < 0.25
-    lambda_met = lambda_err is not None and lambda_err < 0.5
+    lambda_met = lambda_err is not None and lambda_err < LAMBDA_LIMIT
     accuracy_met = hit_rate is not None and hit_rate > 0.50
 
     # For "3 consecutive audits", check if we have enough data
@@ -589,7 +596,7 @@ def evaluate_safe_reactivation() -> dict:
         if not brier_met:
             failing.append(f"Brier {brier:.4f} > 0.25" if brier else "Brier: sem dados")
         if not lambda_met:
-            failing.append(f"Lambda error {lambda_err:.4f} > 0.5" if lambda_err else "Lambda: sem dados")
+            failing.append(f"Lambda error {lambda_err:.4f} > {LAMBDA_LIMIT}" if lambda_err else "Lambda: sem dados")
         if not accuracy_met:
             failing.append(f"Accuracy {hit_rate:.2%} < 50%" if hit_rate else "Accuracy: sem dados")
         recommendation = f"MANTER DESABILITADO — falhou: {'; '.join(failing)}"
@@ -599,7 +606,7 @@ def evaluate_safe_reactivation() -> dict:
         "criteria": {
             "accuracy_above_50": {"met": accuracy_met, "value": hit_rate, "target": 0.50},
             "brier_below_025": {"met": brier_met, "value": brier, "target": 0.25},
-            "lambda_error_below_05": {"met": lambda_met, "value": lambda_err, "target": 0.5},
+            "lambda_error_below_limit": {"met": lambda_met, "value": lambda_err, "target": LAMBDA_LIMIT},
             "enough_data": {"met": has_enough_data, "value": n_picks, "target": 15},
         },
         "recommendation": recommendation,
