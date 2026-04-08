@@ -487,6 +487,19 @@ def build_records_from_matches(
         away_xg_against = _team_stat(away, "xg_against_avg")
         home_corners_against = _team_stat(home, "corners_against_per_match")
         away_corners_against = _team_stat(away, "corners_against_per_match")
+        # #129: Corner over-percentages from teams DF → stats dict (features.py needs these)
+        home_over65_corners_pct = _team_stat(home, "over65_corners_percentage")
+        home_over85_corners_pct = _team_stat(home, "over85_corners_percentage")
+        home_over95_corners_pct = _team_stat(home, "over95_corners_percentage")
+        home_over105_corners_pct = _team_stat(home, "over105_corners_percentage")
+        home_over115_corners_pct = _team_stat(home, "over115_corners_percentage")
+        home_over145_corners_pct = _team_stat(home, "over145_corners_percentage")
+        away_over65_corners_pct = _team_stat(away, "over65_corners_percentage")
+        away_over85_corners_pct = _team_stat(away, "over85_corners_percentage")
+        away_over95_corners_pct = _team_stat(away, "over95_corners_percentage")
+        away_over105_corners_pct = _team_stat(away, "over105_corners_percentage")
+        away_over115_corners_pct = _team_stat(away, "over115_corners_percentage")
+        away_over145_corners_pct = _team_stat(away, "over145_corners_percentage")
         home_league_pos = _team_stat(home, "league_position")
         away_league_pos = _team_stat(away, "league_position")
         home_avg_total_goals = _team_stat(home, "average_total_goals_per_match")
@@ -1241,6 +1254,19 @@ def build_records_from_matches(
                 "awayXgAgainstAvg": away_xg_against,
                 "homeCornersAgainstPerMatch": home_corners_against,
                 "awayCornersAgainstPerMatch": away_corners_against,
+                # #129: Corner over-percentages for features.py
+                "over65_corners_percentage": home_over65_corners_pct,
+                "over85_corners_percentage": home_over85_corners_pct,
+                "over95_corners_percentage": home_over95_corners_pct,
+                "over105_corners_percentage": home_over105_corners_pct,
+                "over115_corners_percentage": home_over115_corners_pct,
+                "over145_corners_percentage": home_over145_corners_pct,
+                "away_over65_corners_percentage": away_over65_corners_pct,
+                "away_over85_corners_percentage": away_over85_corners_pct,
+                "away_over95_corners_percentage": away_over95_corners_pct,
+                "away_over105_corners_percentage": away_over105_corners_pct,
+                "away_over115_corners_percentage": away_over115_corners_pct,
+                "away_over145_corners_percentage": away_over145_corners_pct,
                 "homeCardsAgainstPerMatch": home_cards_against,  # #124
                 "awayCardsAgainstPerMatch": away_cards_against,  # #124
                 "homeLeaguePosition": home_league_pos,

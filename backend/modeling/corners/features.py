@@ -528,13 +528,15 @@ def build_v2_match_features(
         away_stats.get("xgAgainstAVG_away", 0))
     )
 
-    # ── Over-percentage features ──
+    # ── Over-percentage features (#129: prefixed keys for home/away) ──
     for threshold in ["65", "85", "95", "105", "115", "145"]:
         f[f"home_over{threshold}_corners_pct"] = _safe_float(
-            home_stats.get(f"over{threshold}_corners_percentage", 0)
+            home_stats.get(f"over{threshold}_corners_percentage",
+            home_stats.get(f"home_over{threshold}_corners_pct", 0))
         ) / 100.0
         f[f"away_over{threshold}_corners_pct"] = _safe_float(
-            away_stats.get(f"over{threshold}_corners_percentage", 0)
+            away_stats.get(f"away_over{threshold}_corners_percentage",
+            away_stats.get(f"away_over{threshold}_corners_pct", 0))
         ) / 100.0
 
     # ── PPG (form proxy) ──
