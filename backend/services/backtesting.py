@@ -415,6 +415,7 @@ def run_backtest(
     predictions = []
     picks_for_roi = []
     lambda_matches = []
+    _lambda_seen: set = set()  # deduplicate lambda errors by match_id
     picks_for_hit = []
 
     try:
@@ -491,19 +492,21 @@ def run_backtest(
                     "outcome": outcome_bool,
                 })
 
-            # Lambda data
+            # Lambda data — deduplicate by match_id (one error per game, not per pick)
             lh = ctx.get("lambda_home") or ctx.get("lambdaHome")
             la = ctx.get("lambda_away") or ctx.get("lambdaAway")
             gh = ctx.get("goals_home")
             ga = ctx.get("goals_away")
             if lh is not None and la is not None and gh is not None and ga is not None:
-                lambda_matches.append({
-                    "lambda_home": float(lh),
-                    "lambda_away": float(la),
-                    "goals_home": int(gh),
-                    "goals_away": int(ga),
-                    "regime": ctx.get("regime", "UNKNOWN"),
-                })
+                if match_id not in _lambda_seen:
+                    _lambda_seen.add(match_id)
+                    lambda_matches.append({
+                        "lambda_home": float(lh),
+                        "lambda_away": float(la),
+                        "goals_home": int(gh),
+                        "goals_away": int(ga),
+                        "regime": ctx.get("regime", "UNKNOWN"),
+                    })
 
     except Exception as e:
         logger.error(f"Backtesting DB error: {e}")
@@ -511,6 +514,7 @@ def run_backtest(
 
     return {
         "n_picks": len(predictions),
+        "n_matches": len(lambda_matches),  # unique matches for lambda error
         "period_days": days,
         "filters": {"league": league, "market": market},
         "brier": compute_brier_score(predictions),
