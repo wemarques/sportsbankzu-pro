@@ -6487,6 +6487,33 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 129c — Shadow Mode para SAFE
+
+**Data:** 2026-04-08
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/routes/health.py`
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+
+Deadlock: SAFE precisa de 3 auditorias com accuracy > 50% para reativar, mas SAFE nunca e gerado → nunca e auditado → nunca desbloqueia.
+
+### Correcoes aplicadas
+
+1. **Shadow mode:** SAFE computado internamente, logado como SHADOW_SAFE, exibido como NQ
+2. **source_flags:** picks shadow marcados com `shadow_safe` para rastreamento no cron
+3. **Variavel de ambiente:** SAFE_SHADOW_MODE=true (default). Setar false para reativar SAFE no frontend
+4. **Endpoint /health/safe-status:** inclui info de shadow mode
+
+### Como reativar SAFE
+
+1. Aguardar 50+ picks shadow com resultado avaliado
+2. Filtrar picks com `shadow_safe` nos audit_results
+3. Se accuracy > 50%: setar SAFE_SHADOW_MODE=false no Lambda
+4. Redeploy
+
+---
+
 ## 129b — Threshold Lambda Erro revisado de 0.50 para 0.90
 
 **Data:** 2026-04-08

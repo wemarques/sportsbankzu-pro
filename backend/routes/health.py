@@ -139,8 +139,13 @@ async def safe_status():
             "period_days": 30,
         },
         "deflation_mode": "per_league",
+        "shadow_mode": {
+            "enabled": True,  # #129c
+            "description": "SAFE computed internally but displayed as NQ. Logged for accuracy tracking.",
+            "reactivation": "Set SAFE_SHADOW_MODE=false when shadow accuracy > 50% (N >= 50)",
+        },
         "note": "Deflation is now per-league from calibration DB (#052). Use GET /api/backtesting/calibration-status for details.",
-        "reference": "REGRAS #052 (replaced #043 uniform deflation)",
+        "reference": "REGRAS #052, #129c (shadow mode)",
     }
 
 

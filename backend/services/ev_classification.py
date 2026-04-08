@@ -92,6 +92,14 @@ logger = logging.getLogger("sportsbankzu.ev_classification")
 # When False, per-league SAFE status from calibration DB is used (#052)
 SAFE_CIRCUIT_BREAKER_ENABLED = False
 
+# ─── Shadow Mode (#129c) ───
+# When True: SAFE is computed internally but displayed as NQ.
+# Shadow picks are logged for accuracy measurement.
+# When accuracy > 50% (N >= 50), set to False to show SAFE to users.
+import os
+SAFE_SHADOW_MODE = os.getenv("SAFE_SHADOW_MODE", "true").lower() == "true"
+_shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
+
 
 def _is_safe_enabled(league_id: str | None) -> bool:
     """Check if SAFE classification is enabled for this league.
@@ -400,18 +408,28 @@ def classify_market(
             f"forcing NO_BET"
         )
 
-    # ─── SAFE Circuit Breaker — per-league (#052) ───
-    # Downgrade SAFE → NEUTRO_QUALIFICADO when SAFE not enabled for this league
+    # ─── SAFE Circuit Breaker — per-league (#052) + Shadow Mode (#129c) ───
     if classification == MarketClassification.SAFE and not _is_safe_enabled(league_id):
+        # #129c: Log shadow SAFE for accuracy tracking
+        if SAFE_SHADOW_MODE:
+            _shadow_logger.info(
+                f"SHADOW_SAFE|{output.display_label}|league={league_id}|"
+                f"raw={output.raw_probability}|calib={output.calibrated_probability}|"
+                f"odd={output.book_odd}|ev={output.ev}"
+            )
         classification = MarketClassification.NEUTRO_QUALIFICADO
         reason_codes.append(ReasonCode.SAFE_CIRCUIT_BREAKER)
         logger.info(
             f"[Circuit Breaker] {output.display_label}: SAFE → NEUTRO_QUALIFICADO "
-            f"(SAFE not enabled for league '{league_id}')"
+            f"(SAFE not enabled for league '{league_id}'"
+            f"{', shadow=ON' if SAFE_SHADOW_MODE else ''})"
         )
 
     output.classification = classification
     output.reason_codes = reason_codes
+    # #129c: mark shadow SAFE picks for audit tracking
+    if ReasonCode.SAFE_CIRCUIT_BREAKER in reason_codes and SAFE_SHADOW_MODE:
+        output.source_flags = list(output.source_flags or []) + ["shadow_safe"]
     return output
 
 
