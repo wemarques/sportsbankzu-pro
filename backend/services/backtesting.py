@@ -192,6 +192,7 @@ def compute_lambda_error(matches: list[dict]) -> dict:
     """
     errors = []
     errors_by_regime: dict[str, list] = {}
+    errors_by_league: dict[str, list] = {}
     for m in matches:
         lh = m.get("lambda_home")
         la = m.get("lambda_away")
@@ -204,9 +205,11 @@ def compute_lambda_error(matches: list[dict]) -> dict:
         errors.append(err)
         regime = m.get("regime", "UNKNOWN")
         errors_by_regime.setdefault(regime, []).append(err)
+        league = m.get("league", "unknown")
+        errors_by_league.setdefault(league, []).append(err)
 
     if not errors:
-        return {"mean_error": None, "median_error": None, "by_regime": {}}
+        return {"mean_error": None, "median_error": None, "by_regime": {}, "by_league": {}}
 
     sorted_errors = sorted(errors)
     mid = len(sorted_errors) // 2
@@ -216,10 +219,15 @@ def compute_lambda_error(matches: list[dict]) -> dict:
     for regime, errs in errors_by_regime.items():
         by_regime[regime] = round(sum(errs) / len(errs), 4)
 
+    by_league = {}
+    for league, errs in errors_by_league.items():
+        by_league[league] = {"lambda_error": round(sum(errs) / len(errs), 4), "n_matches": len(errs)}
+
     return {
         "mean_error": round(sum(errors) / len(errors), 4),
         "median_error": round(median, 4),
         "by_regime": by_regime,
+        "by_league": by_league,
     }
 
 
@@ -506,6 +514,7 @@ def run_backtest(
                         "goals_home": int(gh),
                         "goals_away": int(ga),
                         "regime": ctx.get("regime", "UNKNOWN"),
+                        "league": lg or "unknown",
                     })
 
     except Exception as e:

@@ -310,11 +310,34 @@ async def reliability_metrics():
 
 
 @router.get("/metrics/lambda-error")
-async def get_lambda_error(days: int = Query(30)):
-    """Lambda Erro Medio — canonical measurement (#128i)."""
+async def get_lambda_error(days: int = Query(30), group_by: str = Query("")):
+    """Lambda Erro Medio — canonical measurement (#128i).
+
+    Args:
+        group_by: "" for global only, "league" to include per-league breakdown with xg_blend_weight.
+    """
     try:
         from backend.services.backtesting import measure_lambda_error
-        return measure_lambda_error(days=days)
+        result = measure_lambda_error(days=days)
+
+        if group_by == "league" and result.get("lambda_error_mean") is not None:
+            # Enrich by_league with xg_blend_weight from calibration DB
+            from backend.services.backtesting import run_backtest
+            bt = run_backtest(days=days)
+            by_league = (bt.get("lambda_error") or {}).get("by_league", {})
+
+            try:
+                from backend.modeling.lambda_calculator import get_lambda_corrections
+                for league_id, info in by_league.items():
+                    corr = get_lambda_corrections(league_id)
+                    xg_w = corr.get("xg_blend_weight", {})
+                    info["xg_blend_weight"] = float(xg_w.get("value", 0)) if isinstance(xg_w, dict) else float(xg_w or 0)
+            except Exception:
+                pass
+
+            result["by_league"] = by_league
+
+        return result
     except Exception as e:
         return {"error": str(e), "lambda_error_mean": None}
 
