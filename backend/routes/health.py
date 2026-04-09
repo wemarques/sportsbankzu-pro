@@ -153,33 +153,68 @@ async def safe_status():
 async def shadow_safe_status():
     """Shadow SAFE accuracy tracking (#129c/#129d).
 
-    Counts picks with SAFE_CIRCUIT_BREAKER in audit_results,
-    measures accuracy, and indicates if SAFE can be activated.
+    Queries audit_results for picks with SAFE_CIRCUIT_BREAKER in context.reason_codes.
+    Returns shadow-specific accuracy, not overall stats.
     """
-    try:
-        from backend.services.backtesting import run_backtest
-        bt = run_backtest(days=60)  # 60 days for more shadow data
+    import json as _json
+    from datetime import datetime, timedelta, timezone
 
-        # The hit_rate in backtest is overall, not per-classification
-        # For shadow accuracy, we need to filter by SAFE_CIRCUIT_BREAKER
-        # This requires querying audit_results directly
-        n_picks = bt.get("n_picks", 0)
-        hit_rate = (bt.get("hit_rate") or {}).get("overall")
+    MIN_SHADOW = 50
+    MIN_ACCURACY = 0.50
+
+    try:
+        from backend.audit import _use_postgres, _pg_connect, _db_path
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+        rows = []
+
+        if _use_postgres():
+            conn = _pg_connect()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT actual_result, context FROM audit_results WHERE timestamp >= %s AND context LIKE %s",
+                [cutoff, "%SAFE_CIRCUIT_BREAKER%"],
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+        else:
+            import sqlite3
+            conn_s = sqlite3.connect(_db_path())
+            cur_s = conn_s.cursor()
+            cur_s.execute(
+                "SELECT actual_result, context FROM audit_results WHERE timestamp >= ? AND context LIKE ?",
+                [cutoff, "%SAFE_CIRCUIT_BREAKER%"],
+            )
+            rows = cur_s.fetchall()
+            cur_s.close()
+            conn_s.close()
+
+        total_shadow = len(rows)
+        evaluated = 0
+        hits = 0
+        for actual, ctx_raw in rows:
+            if actual is not None:
+                evaluated += 1
+                if str(actual).lower() in ("true", "1", "yes", "win", "hit"):
+                    hits += 1
+
+        accuracy = round(hits / evaluated, 4) if evaluated > 0 else None
+        ready = evaluated >= MIN_SHADOW and accuracy is not None and accuracy > MIN_ACCURACY
 
         return {
             "shadow_mode_enabled": True,
-            "total_picks_60d": n_picks,
-            "overall_hit_rate": hit_rate,
-            "shadow_safe_note": (
-                "Shadow SAFE picks are logged with SAFE_CIRCUIT_BREAKER reason code. "
-                "To measure shadow-specific accuracy, filter audit_results for picks "
-                "with this code. When accuracy > 50% with N >= 50, set "
-                "SAFE_SHADOW_MODE=false to activate SAFE in frontend."
-            ),
-            "activation_email": "wpjct991@gmail.com",
+            "total_shadow_picks": total_shadow,
+            "evaluated": evaluated,
+            "hits": hits,
+            "accuracy": accuracy,
+            "ready_to_activate": ready,
+            "threshold": {"min_picks": MIN_SHADOW, "min_accuracy": MIN_ACCURACY},
+            "activation": "Set SAFE_SHADOW_MODE=false when ready_to_activate=true",
+            "email": "wpjct991@gmail.com",
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "total_shadow_picks": None}
 
 
 @router.get("/health/calibration-params")

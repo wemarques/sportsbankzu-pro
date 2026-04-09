@@ -285,6 +285,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                         "total_corners": total_corners,
                         # Classification metadata
                         "pick_classification": merc.get("classification", merc_status),
+                        "reason_codes": merc.get("reason_codes", []),  # #129d: for shadow SAFE tracking
                         "data_quality": merc.get("data_quality_score"),
                     },
                     actual_result=actual_outcome,
