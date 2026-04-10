@@ -759,6 +759,10 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                               <div key={idx} style={hasRealOdd ? undefined : { opacity: 0.55 }}>
                                 <div className={`mdc-prognostico__item mdc-prognostico__item--${statusClass}`}>
                                   <ClassificationBadge status={displayStatus} />
+                                  {/* #130b: Sub-badge for direction-natural picks without EV */}
+                                  {pred.reason_codes?.includes("DIRECTION_NATURAL_NO_EV") && (
+                                    <span style={{ fontSize: "0.6em", color: "#60a5fa", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", borderRadius: 4, padding: "1px 5px", marginLeft: 3, whiteSpace: "nowrap" as const, fontWeight: 500 }} title="O modelo aponta nesta direção, mas sem valor de aposta (EV negativo)">↗ Direção</span>
+                                  )}
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
                                   <span className="mdc-prognostico__market">{pred.mercado}</span>
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>

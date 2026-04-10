@@ -193,7 +193,12 @@ export type ReasonCode =
   | "STABLE_MARKET"
   | "VOLATILE_MARKET"
   | "COVERAGE_INSUFFICIENT"
-  | "SUSPICIOUS_EV";
+  | "SUSPICIOUS_EV"
+  | "SAFE_CIRCUIT_BREAKER"
+  | "BORDERLINE_LINE_MARGIN"
+  | "DIRECTION_AGAINST_PROJFT"
+  | "DIRECTION_NATURAL_MATCH"
+  | "DIRECTION_NATURAL_NO_EV";
 
 export type MatchPrediction = {
   mercado: string;
