@@ -6487,6 +6487,27 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 134 — Legacy corners engine + cornersTotalAVG (terceira estimativa)
+
+**Data:** 2026-04-10
+**Arquivos afetados:** `backend/modeling/corners_engine.py`
+**Severidade:** Media
+**Status:** Corrigido
+
+### Problema identificado
+
+Legacy engine calculava lambda com 2 estimativas (direct + cross) + liga. cornersTotalAVG existia no stats dict (#131) mas legacy nao usava. O legacy continua sendo fallback para ligas onde v2 nao e usado.
+
+### Correcoes aplicadas
+
+estimate_corners_lambda() agora usa 3 estimativas:
+- **Cenario completo:** 0.35 direct + 0.30 cross + 0.20 total_avg + 0.15 league
+- **Sem cross:** 0.45 direct + 0.30 total_avg + 0.25 league
+- **Sem total:** pesos originais mantidos (0.60/0.30/0.10)
+- **Sem cross+total:** fallback original (0.75/0.25)
+
+---
+
 ## 133 — Desbloquear V2 corners predictor (matchesPlayed no stats dict)
 
 **Data:** 2026-04-10

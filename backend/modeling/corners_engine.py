@@ -58,20 +58,43 @@ def estimate_corners_lambda(
         league_avg = _safe_float(league_stats.get("cornersAVG_overall",
                      league_stats.get("leagueAvgCorners", 10.0)))
 
-    # If we have both corners for and against, use them
+    # #134: Third estimate — cornersTotalAVG (empirical total corners per game)
+    home_total_avg = _safe_float(home_stats.get("homeCornersTotalAvg",
+                      home_stats.get("corners_total_avg_home",
+                      home_stats.get("cornersTotalAVG_home", 0))))
+    away_total_avg = _safe_float(away_stats.get("awayCornersTotalAvg",
+                      away_stats.get("corners_total_avg_away",
+                      away_stats.get("cornersTotalAVG_away", 0))))
+    total_avg_estimate = None
+    if home_total_avg > 0 and away_total_avg > 0:
+        total_avg_estimate = (home_total_avg + away_total_avg) / 2
+
+    # Weighted combination of estimates
     if home_corners_for > 0 and away_corners_for > 0:
         direct_estimate = home_corners_for + away_corners_for
 
-        # If we also have corners against, blend
         if home_corners_against > 0 and away_corners_against > 0:
             cross_estimate = (home_corners_for + away_corners_against +
                             away_corners_for + home_corners_against) / 2
-            # Weight: 60% direct, 30% cross, 10% league
-            total_corners = (direct_estimate * 0.60 +
-                           cross_estimate * 0.30 +
-                           league_avg * 0.10)
+
+            if total_avg_estimate is not None:
+                # #134: Full scenario — 3 estimates + league
+                total_corners = (direct_estimate * 0.35 +
+                               cross_estimate * 0.30 +
+                               total_avg_estimate * 0.20 +
+                               league_avg * 0.15)
+            else:
+                # Original: 60% direct, 30% cross, 10% league
+                total_corners = (direct_estimate * 0.60 +
+                               cross_estimate * 0.30 +
+                               league_avg * 0.10)
+        elif total_avg_estimate is not None:
+            # No cross but have total_avg
+            total_corners = (direct_estimate * 0.45 +
+                           total_avg_estimate * 0.30 +
+                           league_avg * 0.25)
         else:
-            # Weight: 75% direct, 25% league
+            # Fallback: 75% direct, 25% league
             total_corners = direct_estimate * 0.75 + league_avg * 0.25
     elif league_avg > 0:
         total_corners = league_avg

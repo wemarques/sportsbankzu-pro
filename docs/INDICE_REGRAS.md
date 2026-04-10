@@ -163,4 +163,5 @@
 | 130 | **ATIVA** | Fix + Regra | VIA 2 exige EV >= 0 para promocao a NEUTRO_QUALIFICADO |
 | 131 | **ATIVA** | Fix + Dados | cornersTotalAVG + projFT ponderado (cross 35% + direct 30% + total 20% + league 15%) |
 | 133 | Corrigido | Fix | V2 corners desbloqueado (matchesPlayed passado ao stats dict) |
+| 134 | Corrigido | Fix | Legacy corners engine + cornersTotalAVG (terceira estimativa) |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |
