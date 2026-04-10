@@ -503,11 +503,6 @@ def build_records_from_matches(
         # #131: Corner TOTAL averages (per-team historical average of total corners in their games)
         home_corners_total_avg = _team_stat(home, "corners_total_avg_home") or _team_stat(home, "corners_total_avg_overall")
         away_corners_total_avg = _team_stat(away, "corners_total_avg_away") or _team_stat(away, "corners_total_avg_overall")
-        # #134b: Derive TOTAL from FOR + AGAINST when API doesn't provide it
-        if home_corners_total_avg is None and home_corners_pm and home_corners_against:
-            home_corners_total_avg = round(home_corners_pm + home_corners_against, 1)
-        if away_corners_total_avg is None and away_corners_pm and away_corners_against:
-            away_corners_total_avg = round(away_corners_pm + away_corners_against, 1)
         home_league_pos = _team_stat(home, "league_position")
         away_league_pos = _team_stat(away, "league_position")
         home_avg_total_goals = _team_stat(home, "average_total_goals_per_match")
@@ -576,6 +571,12 @@ def build_records_from_matches(
             home_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
         if away_corners_pm is None and league_avgs["avg_corners"]:
             away_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+
+        # #134b: Derive TOTAL from FOR + AGAINST (after all fallbacks resolved)
+        if home_corners_total_avg is None and home_corners_pm and home_corners_against:
+            home_corners_total_avg = round(home_corners_pm + home_corners_against, 1)
+        if away_corners_total_avg is None and away_corners_pm and away_corners_against:
+            away_corners_total_avg = round(away_corners_pm + away_corners_against, 1)
         if home_cards_pm is None and league_avgs["avg_cards"]:
             home_cards_pm = round(league_avgs["avg_cards"] / 2, 1)
         if away_cards_pm is None and league_avgs["avg_cards"]:
