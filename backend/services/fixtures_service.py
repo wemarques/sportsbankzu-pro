@@ -1260,6 +1260,10 @@ def build_records_from_matches(
                 # #131: Total game corners (for + against) per team historical average
                 "homeCornersTotalAvg": home_corners_total_avg,
                 "awayCornersTotalAvg": away_corners_total_avg,
+                # #133: matchesPlayed for data_quality sample_adequacy
+                "matchesPlayed_home": home_games_played,
+                "matchesPlayed_away": away_games_played,
+                "matchesPlayed_overall": home_games_played,  # v2 reads this key
                 # #129: Corner over-percentages for features.py
                 "over65_corners_percentage": home_over65_corners_pct,
                 "over85_corners_percentage": home_over85_corners_pct,

@@ -6487,6 +6487,30 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 133 — Desbloquear V2 corners predictor (matchesPlayed no stats dict)
+
+**Data:** 2026-04-10
+**Arquivos afetados:** `backend/services/fixtures_service.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+V2 corners predictor (NB2, projFT #131, ML regression) era 100% dead code. compute_corners_data_quality() marcava INSUFFICIENT para todas as ligas. Waterfall caia para legacy engine com blend 40/60.
+
+### Causa raiz
+
+`matchesPlayed_home`/`matchesPlayed_away` nao eram passados no stats dict. O data_quality lia esses campos → recebia 0 → min_sample=0 → coverage=0.1 → sample_adequacy=0.0 → INSUFFICIENT.
+
+Com matchesPlayed=18: coverage_score sobe de 0.15 para 0.74, sample_adequacy de 0.0 para 1.0, tier sobe de INSUFFICIENT para MEDIUM.
+
+### Correcoes aplicadas
+
+1. **matchesPlayed_home/away/overall** adicionados ao stats dict do match
+2. V2 predictor agora produz probabilidades para ligas com dados suficientes
+
+---
+
 ## 131 — Dados completos de corners (cornersTotalAVG + projFT ponderado)
 
 **Data:** 2026-04-10
