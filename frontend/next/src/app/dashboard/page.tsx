@@ -199,7 +199,9 @@ function deduplicateMatches(matches: Match[]): Match[] {
   const result: Match[] = [];
 
   for (const m of matches) {
-    const key = `${resolveTeamAlias(m.homeTeam.name)}||${resolveTeamAlias(m.awayTeam.name)}`;
+    // #135: Include date in key to avoid collision when same teams play on different dates
+    const dateStr = m.datetime ? m.datetime.slice(0, 10) : "";
+    const key = `${resolveTeamAlias(m.homeTeam.name)}||${resolveTeamAlias(m.awayTeam.name)}||${dateStr}`;
     const rich = matchRichness(m);
     const prev = seen.get(key);
 
@@ -907,6 +909,12 @@ export default function Dashboard() {
       let unmatched = 0;
       const updated = prev.map((m) => {
         const live = liveList.find((lm) => {
+          // #135: Skip if match is scheduled for a different day (prevents stale score from old game)
+          if (m.status === "scheduled" && m.datetime) {
+            const matchDate = m.datetime.slice(0, 10);
+            const today = new Date().toISOString().slice(0, 10);
+            if (matchDate !== today) return false;
+          }
           // Match by FootyStats ID (coerce to number for safe comparison)
           if (m.footystatsId != null && lm.id != null) {
             if (Number(m.footystatsId) === Number(lm.id)) return true;
