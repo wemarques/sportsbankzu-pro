@@ -1261,9 +1261,10 @@ def build_records_from_matches(
                 "homeCornersTotalAvg": home_corners_total_avg,
                 "awayCornersTotalAvg": away_corners_total_avg,
                 # #133: matchesPlayed for data_quality sample_adequacy
-                "matchesPlayed_home": home_games_played,
-                "matchesPlayed_away": away_games_played,
-                "matchesPlayed_overall": home_games_played,  # v2 reads this key
+                "matchesPlayed_home": _team_stat(home, "matches_played") or home_games_played,
+                "matchesPlayed_away": _team_stat(away, "matches_played") or away_games_played,
+                "matchesPlayed_overall": _team_stat(home, "matches_played") or home_games_played,
+                "corners_recorded_matches_num": _team_stat(home, "corners_recorded_matches_overall"),
                 # #129: Corner over-percentages for features.py
                 "over65_corners_percentage": home_over65_corners_pct,
                 "over85_corners_percentage": home_over85_corners_pct,
