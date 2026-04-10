@@ -6487,6 +6487,37 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 131 — Dados completos de corners (cornersTotalAVG + projFT ponderado)
+
+**Data:** 2026-04-10
+**Arquivos afetados:** `data_mapper.py`, `fixtures_service.py`, `corners/features.py`, `corners/predictor.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+Sistema usava ~10% dos dados de corners disponiveis na API FootyStats. Faltava extracao de `cornersTotalAVG` (corners totais do jogo). projFT calculado apenas com `direct + cross` sem usar a media historica de totais — subestimacao sistematica.
+
+### Caso real
+
+Rizespor 4-1 Samsunspor (09/04/2026): Under 10.5 errou. Jogo teve mais de 10.5 corners, mas projFT estava ~9.5-10.0.
+
+### Correcoes aplicadas
+
+1. **data_mapper.py:** Extrai `corners_total_avg_overall/home/away` e `corners_recorded_matches_overall`
+2. **fixtures_service.py:** Passa `homeCornersTotalAvg`/`awayCornersTotalAvg` ao stats dict
+3. **corners/features.py:** Adiciona feature `total_game_avg = (home_total + away_total) / 2`
+4. **corners/predictor.py:** Refatora projFT com 3 estimativas:
+   - **Cenario completo (cross + total disponiveis):** 0.35×cross + 0.30×direct + 0.20×total + 0.15×league
+   - **Sem cross:** 0.40×direct + 0.30×total + 0.30×league
+   - **Sem total:** mantem formula original (#123)
+
+### Licao aprendida
+
+Tres estimativas independentes (direct, cross, total) reduzem variancia e aumentam confianca. cornersTotalAVG e dado empirico direto do total do jogo, complementando direct/cross que sao calculados.
+
+---
+
 ## 130 — VIA 2 exige EV >= 0 para promocao a NEUTRO_QUALIFICADO
 
 **Data:** 2026-04-09

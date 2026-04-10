@@ -578,6 +578,14 @@ def build_v2_match_features(
         home_stats.get("corners_potential", 0))
     )
 
+    # #131: Total game corners avg (third independent estimate)
+    _home_total = _safe_float(home_stats.get("homeCornersTotalAvg", 0))
+    _away_total = _safe_float(away_stats.get("awayCornersTotalAvg", 0))
+    if _home_total > 0 and _away_total > 0:
+        f["total_game_avg"] = (_home_total + _away_total) / 2.0
+    else:
+        f["total_game_avg"] = 0
+
     f["combined_fh"] = f["home_corners_fh_pm"] + f["away_corners_fh_pm"]
     f["combined_2h"] = f["home_corners_2h_pm"] + f["away_corners_2h_pm"]
 

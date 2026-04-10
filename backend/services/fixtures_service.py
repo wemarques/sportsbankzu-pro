@@ -500,6 +500,9 @@ def build_records_from_matches(
         away_over105_corners_pct = _team_stat(away, "over105_corners_percentage")
         away_over115_corners_pct = _team_stat(away, "over115_corners_percentage")
         away_over145_corners_pct = _team_stat(away, "over145_corners_percentage")
+        # #131: Corner TOTAL averages (per-team historical average of total corners in their games)
+        home_corners_total_avg = _team_stat(home, "corners_total_avg_home") or _team_stat(home, "corners_total_avg_overall")
+        away_corners_total_avg = _team_stat(away, "corners_total_avg_away") or _team_stat(away, "corners_total_avg_overall")
         home_league_pos = _team_stat(home, "league_position")
         away_league_pos = _team_stat(away, "league_position")
         home_avg_total_goals = _team_stat(home, "average_total_goals_per_match")
@@ -1254,6 +1257,9 @@ def build_records_from_matches(
                 "awayXgAgainstAvg": away_xg_against,
                 "homeCornersAgainstPerMatch": home_corners_against,
                 "awayCornersAgainstPerMatch": away_corners_against,
+                # #131: Total game corners (for + against) per team historical average
+                "homeCornersTotalAvg": home_corners_total_avg,
+                "awayCornersTotalAvg": away_corners_total_avg,
                 # #129: Corner over-percentages for features.py
                 "over65_corners_percentage": home_over65_corners_pct,
                 "over85_corners_percentage": home_over85_corners_pct,

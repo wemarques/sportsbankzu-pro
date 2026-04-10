@@ -228,15 +228,37 @@ def _project_expected_corners(
     direct = features.get("direct_estimate_ft", home_attack + away_attack)
     cross = features.get("cross_estimate_ft", 0)
     pressure = features.get("matchup_pressure_index", 0)
+    # #131: Third independent estimate from cornersTotalAVG (per-team historical totals)
+    total_game_avg = features.get("total_game_avg", 0)
 
     if direct > 0:
-        raw = (
-            WEIGHTS["league_prior"] * league_prior
-            + WEIGHTS["direct_estimate"] * direct
-            + WEIGHTS["cross_estimate"] * (cross if cross > 0 else direct)
-            + WEIGHTS["pressure_index"] * (league_prior + pressure * 1.5)
-            + WEIGHTS["league_prior_2"] * league_prior
-        )
+        # #131: When total_game_avg is available, blend it as a third estimate
+        if total_game_avg > 0 and cross > 0:
+            # Full scenario: 4 estimates (cross 35% + direct 30% + total 20% + league 15%)
+            raw = (
+                0.35 * cross
+                + 0.30 * direct
+                + 0.20 * total_game_avg
+                + 0.15 * league_prior
+                + WEIGHTS["pressure_index"] * (pressure * 1.5)  # pressure as additional adjustment
+            )
+        elif total_game_avg > 0:
+            # Without cross: direct + total + league
+            raw = (
+                0.40 * direct
+                + 0.30 * total_game_avg
+                + 0.30 * league_prior
+                + WEIGHTS["pressure_index"] * (pressure * 1.5)
+            )
+        else:
+            # Original formula (no total_game_avg available)
+            raw = (
+                WEIGHTS["league_prior"] * league_prior
+                + WEIGHTS["direct_estimate"] * direct
+                + WEIGHTS["cross_estimate"] * (cross if cross > 0 else direct)
+                + WEIGHTS["pressure_index"] * (league_prior + pressure * 1.5)
+                + WEIGHTS["league_prior_2"] * league_prior
+            )
     else:
         raw = league_prior
 

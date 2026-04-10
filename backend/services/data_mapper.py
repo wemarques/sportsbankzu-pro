@@ -383,6 +383,20 @@ class DataMapper:
                  "seasonCornersAgainst_away", "seasonCornersAgainstAVG_away"],
                 default=None,
             ),
+            # #131: Corner TOTAL averages (corners totais do jogo = for + against)
+            "corners_total_avg_overall": _pick(
+                ["cornersTotalAVG_overall", "corners_total_avg_overall"], default=None,
+            ),
+            "corners_total_avg_home": _pick(
+                ["cornersTotalAVG_home", "corners_total_avg_home"], default=None,
+            ),
+            "corners_total_avg_away": _pick(
+                ["cornersTotalAVG_away", "corners_total_avg_away"], default=None,
+            ),
+            # #131: Corners recorded matches (sample size for confidence)
+            "corners_recorded_matches_overall": _pick(
+                ["cornersRecorded_matches_overall", "corners_recorded_matches_overall"], default=None,
+            ),
             # Pt.2: corner over percentages (for corner markets)
             "over85_corners_percentage": _pick(
                 ["over85CornersPercentage_overall", "over85_corners_percentage_overall"], default=None,
