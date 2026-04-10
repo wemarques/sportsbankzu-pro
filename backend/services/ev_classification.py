@@ -371,15 +371,25 @@ def classify_market(
         if _is_neutro_qualificado(output, prob_for_class) and ReasonCode.SUSPICIOUS_EV not in reason_codes:
             classification = MarketClassification.NEUTRO_QUALIFICADO
         # #126/#127: VIA 2 — direction-based upgrade to NQ
+        # #130: REQUIRE EV >= 0 — VIA 2 cannot promote with negative EV
         elif (_dir_natural and prob_for_class >= th.get("neutro_prob", 0.50)
               and ReasonCode.SUSPICIOUS_EV not in reason_codes):
-            classification = MarketClassification.NEUTRO_QUALIFICADO
-            if ReasonCode.DIRECTION_NATURAL_MATCH not in reason_codes:
-                reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
-            logger.info(
-                f"[direction-via2] {output.display_label}: NEUTRO->NQ "
-                f"(proj diff={_dir_diff:+.1f})"
-            )
+            if output.ev is not None and output.ev >= 0:
+                classification = MarketClassification.NEUTRO_QUALIFICADO
+                if ReasonCode.DIRECTION_NATURAL_MATCH not in reason_codes:
+                    reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
+                logger.info(
+                    f"[direction-via2] {output.display_label}: NEUTRO->NQ "
+                    f"(proj diff={_dir_diff:+.1f}, ev={output.ev:+.1%})"
+                )
+            else:
+                # #130: Direction natural OK but EV < 0 → keep NEUTRO with informative reason
+                if ReasonCode.DIRECTION_NATURAL_NO_EV not in reason_codes:
+                    reason_codes.append(ReasonCode.DIRECTION_NATURAL_NO_EV)
+                logger.info(
+                    f"[via2-blocked] {output.display_label}: direction OK but EV={output.ev} < 0. "
+                    f"Kept NEUTRO (not promoted to NQ)."
+                )
 
     # #126: Direction AGAINST → force NO_BET
     if _dir_against and classification in (

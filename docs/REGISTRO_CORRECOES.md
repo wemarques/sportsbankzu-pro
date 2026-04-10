@@ -6487,6 +6487,40 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 130 — VIA 2 exige EV >= 0 para promocao a NEUTRO_QUALIFICADO
+
+**Data:** 2026-04-09
+**Arquivos afetados:** `backend/services/ev_classification.py`, `backend/models/market_output.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+VIA 2 (#126) promovia picks para NEUTRO_QUALIFICADO (VALOR DETECTADO) baseando-se apenas em direcao natural, sem exigir EV positivo. Resultado: picks "VALOR DETECTADO" com EV de -15% a -21%.
+
+### Caso real
+
+Rizespor 4-1 Samsunspor (09/04/2026):
+- VALOR DETECTADO: Escanteios Under 10.5, EV -20.9% → ERROU (jogo teve mais de 10.5 corners)
+- INFORMATIVO: Cartoes Over 1.5 → ACERTOU
+- INFORMATIVO: Cartoes Under 3.5 → ACERTOU
+
+### Causa raiz
+
+Linha 374-382 do ev_classification.py promovia VIA 2 sem checar EV. "Direcao favoravel" virou "VALOR DETECTADO" mesmo com EV negativo, mentindo sobre valor de aposta.
+
+### Correcoes aplicadas
+
+1. **Constraint EV:** VIA 2 so promove para NQ se `output.ev is not None and output.ev >= 0`
+2. **ReasonCode novo:** `DIRECTION_NATURAL_NO_EV` para picks com direcao OK mas EV < 0 (mantem NEUTRO)
+3. **Log informativo:** Diferencia promovido (`[direction-via2]`) de bloqueado (`[via2-blocked]`)
+
+### Licao aprendida
+
+Direcao do modelo != valor de aposta. EV negativo significa que, mesmo acertando com frequencia, o apostador perde dinheiro a longo prazo. "VALOR DETECTADO" exige EV positivo, sempre.
+
+---
+
 ## 129e — Notificacao Pipedream para shadow SAFE confirmada
 
 **Data:** 2026-04-09
