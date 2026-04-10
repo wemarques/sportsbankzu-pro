@@ -6487,6 +6487,30 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 129e — Notificacao Pipedream para shadow SAFE confirmada
+
+**Data:** 2026-04-09
+**Arquivos afetados:** N/A (configuracao externa)
+**Severidade:** Baixa (infra)
+**Status:** Implantado e validado
+
+### Implantacao
+
+Pipedream webhook implantado para receber notificacoes do cron de shadow SAFE. Recebido email de confirmacao da execucao do cron em 2026-04-09 as 23:11.
+
+### Validacao
+
+- Cron rodou normalmente as 23:00 UTC
+- Pipedream recebeu webhook do cron handler
+- Email de ativacao entregue as 23:11 (delay de ~11 min do cron, esperado)
+- Notificacao automatica de shadow SAFE agora funciona
+
+### Proximo passo
+
+Aguardar 50 picks shadow avaliados (cron acumula). Quando ready_to_activate=true em /health/shadow-safe, email confirmara ativacao.
+
+---
+
 ## 129c — Shadow Mode para SAFE
 
 **Data:** 2026-04-08

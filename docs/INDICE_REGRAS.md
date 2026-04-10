@@ -159,4 +159,5 @@
 | 128i | **ATIVA** | Regra | Medicao obrigatoria Lambda Erro pre/pos recalibracao (limite 0.90) |
 | 129b | **ATIVA** | Fix + Regra | Threshold Lambda Erro revisado 0.50 → 0.90 (benchmark Dixon-Coles) |
 | 129c | **ATIVA** | Feature | Shadow Mode SAFE: computa internamente, exibe como NQ, loga para auditoria |
+| 129e | Implantado | Infra | Pipedream webhook para notificacao shadow SAFE — email validado 09/04 23:11 |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |
