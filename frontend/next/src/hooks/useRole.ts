@@ -5,8 +5,10 @@ export type UserRole = "free" | "plus" | "admin";
 
 export function useRole() {
   const { data: session, status } = useSession();
-  const role = ((session?.user as any)?.role || "free") as UserRole;
-  const isAuthenticated = status === "authenticated";
+  // TODO #136: reativar quando RDS aceitar conexão do Vercel
+  // Bypass temporário — sem login, tratar como admin para mostrar tudo
+  const role = ((session?.user as any)?.role || "admin") as UserRole;
+  const isAuthenticated = status === "authenticated" || true;
 
   return {
     role,

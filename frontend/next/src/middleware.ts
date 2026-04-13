@@ -6,6 +6,11 @@ const PUBLIC_ROUTES = ["/login", "/register", "/api/auth"];
 const ADMIN_ROUTES = ["/admin", "/audit", "/tools"];
 
 export async function middleware(req: NextRequest) {
+  // TODO #136: reativar quando RDS aceitar conexão do Vercel
+  // Bypass temporário — todas as rotas públicas
+  return NextResponse.next();
+
+  /* Original auth logic (reativar acima):
   const path = req.nextUrl.pathname;
 
   if (PUBLIC_ROUTES.some((r) => path.startsWith(r))) return NextResponse.next();
@@ -24,6 +29,7 @@ export async function middleware(req: NextRequest) {
   }
 
   return NextResponse.next();
+  */
 }
 
 export const config = {
