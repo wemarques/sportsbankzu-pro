@@ -6487,6 +6487,85 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 137 — cards_engine: denominador do Dixon-Coles dividia por league_avg total (lambda sub-estimada ~50%)
+
+**Data:** 2026-04-13
+**Arquivos afetados:** `backend/modeling/cards_engine.py`, `tests/unit/test_cards_085.py`, `tests/unit/test_cards_085b.py`
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+
+`cardsPredictions.cardsLambda` estava sistematicamente ~50% do real em todas as 22 ligas. Exemplo Manchester United vs Leeds (Premier League):
+
+- `homeCardsPerMatch: 1.6`, `awayCardsPerMatch: 1.7`, `leagueAvgCards: 3.96`
+- `cardsLambda` retornado: **1.71** (esperado: ~3.3-3.4)
+- `cardsLambdaHome: 0.80`, `cardsLambdaAway: 0.85` (esperado: ~1.6 e ~1.7)
+
+Consequencias:
+- Modelo classificava Under como "HIGH_CALIBRATED_PROB" em jogos onde a expectativa real era normal/over
+- Brier cards elevado (~0.22 vs ideal ~0.10-0.15) em todas as ligas
+- Picks de Under disparavam como falso positivo; Over quase nunca aparecia
+- `modelSource` caia para `poisson_fallback` pois a variancia estimada nao excedia o threshold de overdispersion
+
+### Causa raiz
+
+`_compute_relative_lambda` (L183-192) dividia a estatistica do time (half-scale: cartoes recebidos por um time por jogo) pela media total da liga (full-scale: cartoes totais do jogo).
+
+```python
+# ANTES (errado):
+home_relative = home_cards / league_avg     # 1.6 / 3.96 = 0.404
+lambda_home = half_league * home_relative    # 1.98 * 0.404 = 0.80
+# Algebra equivalente: lambda_home = home_cards / 2
+# Resultado: lambda total = (home_cards + away_cards) / 2 -- metade do esperado
+```
+
+A semantica dos dados estava correta em todo o pipeline (FootyStats team stats sao half-scale, league stats sao full-scale), e o proprio `fixtures_service.py:580-581` ja usa `league_avg / 2` como fallback quando falta dado de time. Mas o engine, introduzido em #086 para corrigir um double-counting anterior, compensou demais e virou half-counting.
+
+### Correcoes aplicadas
+
+1. **`cards_engine.py:183-192`** — denominador trocado de `league_avg` para `half_league` (que ja existia como `league_avg / 2.0` na L170):
+   ```python
+   home_relative = home_cards / half_league     # 1.6 / 1.98 = 0.808
+   lambda_home = half_league * home_relative     # 1.98 * 0.808 = 1.60
+   ```
+   Resultado: `lambda_home` agora reflete diretamente `home_cards`, e soma com `lambda_away` produz o total correto.
+
+2. **`tests/unit/test_cards_085b.py`** — 2 testes atualizados para fixtures half-scale:
+   - `test_relative_strength_lambda`: home/away 2.0/1.8 (em vez de 4.0/3.6)
+   - `test_average_team_produces_league_avg_lambda`: home/away 2.5/2.5 com league 5.0
+
+3. **`tests/unit/test_cards_085.py`** — `test_low_lambda_favors_under`: home/away 1.0/1.0 + `league_stats={"cardsAVG_overall": 4.0}` para produzir lambda ~2.
+
+### Validacao pos-deploy (Manchester United vs Leeds)
+
+| Metrica | Antes | Depois |
+|---|---|---|
+| `cardsLambdaHome` | 0.80 | 1.60 |
+| `cardsLambdaAway` | 0.85 | 1.70 |
+| `cardsLambda` | 1.71 | 3.03 |
+| `projectedTotalCards` | 1.7 | 3.0 |
+| `modelSource` | poisson_fallback | nb2 |
+| Pick anomalo | "Cartoes Under 2.5 HIGH_CALIBRATED_PROB" | desapareceu |
+
+### Diagnostico lateral
+
+- `cards_multiplier` per-liga no `corrections DB` esta em `{1.0: 18 ligas, 0.95: 4 ligas}`. Nenhuma compensacao ativa >1.0. Confirma que o bug nao estava sendo mascarado pelo calibrador — ele era silencioso.
+- `league_calibrator.py:237` usa formula diferente (`avg_cards_league * cards_deflation`, sem chamar o engine), entao o Brier-fit do calibrador nao cancelava o erro do engine. Os dois modelos estavam desconectados, cada um otimizado para algo diferente.
+- **Proximo passo recomendado:** re-executar calibracao per-league apos esta correcao — o Brier cards deve cair significativamente agora que a lambda do engine esta no mesmo sistema de referencia que o `avg_cards_league` usado pelo calibrador.
+
+### Licao aprendida
+
+Introducao #086 afirmava que seu objetivo era *"Fix double-counting from v2 (#085b)"*. O comentario do modulo e a docstring de `_compute_relative_lambda` descrevem a intencao correta (cardsPerMatch ja embute discipline/foul, nao aplicar de novo). Mas na implementacao o denominador errou a escala — trocou double-counting por half-counting.
+
+Licoes:
+1. **Test fixtures sao contratos ambiguos.** Os testes existentes (#085b) usavam `homeCardsPerMatch=4.0` contra `league_avg=5.33`, ou seja, tratavam time e liga na mesma escala. Isso escondeu o bug — o teste nao quebrou porque tambem estava errado sobre a escala.
+2. **Validar com dado real da API antes de escrever teste.** Se o teste tivesse usado `homeCardsPerMatch=1.6` com `league_avg=3.96` (valores reais de Premier League), o erro de escala apareceria imediatamente.
+3. **Investigar compensacoes antes de aplicar fix.** Antes do deploy, verifiquei se `cards_multiplier` per-liga estava compensando o bug (estaria ~2.0 para anular o half-scale). Estava em 1.0-0.95, confirmando que o calibrador nao tinha detectado — porque a formula do calibrador e diferente. Se tivesse compensado, o fix do engine precisaria vir acompanhado de recalibracao, caso contrario o erro dobraria.
+4. **Modelo em dois lugares = risco.** Ter a formula de cards tanto em `cards_engine.py` (produto) quanto em `league_calibrator.py` (calibracao offline) cria descompasso silencioso. #122 ja tinha corrigido esse descompasso para NB2 vs Poisson — mas a formula base ainda divergia (engine usa Dixon-Coles relativo, calibrador usa league_avg direto).
+
+---
+
 ## 134 — Legacy corners engine + cornersTotalAVG (terceira estimativa)
 
 **Data:** 2026-04-10
