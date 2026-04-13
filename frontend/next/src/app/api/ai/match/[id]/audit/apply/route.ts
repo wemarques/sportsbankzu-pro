@@ -5,9 +5,9 @@ export const maxDuration = 30;
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const matchId = params.id;
+  const { id: matchId } = await params;
   try {
     const body = await req.json().catch(() => ({}));
     const result = await fetchBackend(

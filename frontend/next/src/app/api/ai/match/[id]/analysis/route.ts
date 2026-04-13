@@ -15,9 +15,9 @@ function fallbackResponse(message: string) {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const matchId = params.id;
+  const { id: matchId } = await params;
   if (matchId.startsWith("mock-") || matchId.includes("-mock-")) {
     return fallbackResponse(
       "Analise AI disponivel apenas para jogos com dados reais. Selecione um jogo da lista principal.",
@@ -49,9 +49,9 @@ export async function GET(
 
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const matchId = params.id;
+  const { id: matchId } = await params;
   const result = await fetchBackend(
     `/api/ai/match/${encodeURIComponent(matchId)}/analysis/regenerate`,
     { method: "POST", timeoutMs: 28_000 },
