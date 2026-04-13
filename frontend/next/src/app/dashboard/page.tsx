@@ -25,6 +25,7 @@ import type { EmptyStateVariant } from "@/components/EmptyState";
 import Glossary from "@/components/Glossary";
 import DestaquesDoDia from "@/components/DestaquesDoDia";
 import { getClassificationDisplay } from "@/lib/classifications";
+import { useRole } from "@/hooks/useRole";
 import {
   Star,
   ChevronLeft,
@@ -626,6 +627,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
 /* ── COMPONENT ── */
 
 export default function Dashboard() {
+  const { canSeeAudit, canSeeReasonCodes, canRegenMistral, canSeeFerramentas, canSeeConfiabilidade } = useRole();
   const [mounted, setMounted] = useState(false);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -1743,10 +1745,12 @@ export default function Dashboard() {
             <Trophy size={14} />
             Campeonatos
           </button>
+          {canSeeFerramentas && (
           <button className={`st-nav__link ${navView === "ferramentas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "ferramentas" ? "matches" : "ferramentas")}>
             <Wrench size={14} />
             Ferramentas
           </button>
+          )}
           <button className={`st-nav__link ${navView === "recomendadas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "recomendadas" ? "matches" : "recomendadas")}>
             <Sparkles size={14} />
             Destaques do Dia
@@ -2056,6 +2060,7 @@ export default function Dashboard() {
                     {shareBusy === "whatsapp" ? <Loader2 size={12} className="st-spin-icon" /> : <MessageCircle size={12} />}
                     WhatsApp
                   </button>
+                  {canSeeAudit && (
                   <button
                     type="button"
                     className={`st-filter-btn st-filter-btn--audit ${batchAuditLoading ? "st-filter-btn--active" : ""}`}
@@ -2066,6 +2071,8 @@ export default function Dashboard() {
                     {batchAuditLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
                     {batchAuditLoading ? "Auditando..." : "Auditar Rodada"}
                   </button>
+                  )}
+                  {canSeeConfiabilidade && (
                   <button
                     type="button"
                     className={`st-filter-btn ${reliabilityOpen ? "st-filter-btn--active" : ""}`}
@@ -2076,6 +2083,7 @@ export default function Dashboard() {
                     {reliabilityLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
                     Confiabilidade
                   </button>
+                  )}
                   <button
                     type="button"
                     className={`st-filter-btn st-filter-btn--mobile-hidden ${sortOrder === "desc" ? "st-filter-btn--active" : ""}`}
