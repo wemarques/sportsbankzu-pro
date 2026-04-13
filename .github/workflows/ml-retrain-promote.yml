@@ -58,6 +58,8 @@ env:
 
 jobs:
   promote:
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Environment with manual approval required.

@@ -43,6 +43,8 @@ env:
 
 jobs:
   retrain-validate:
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

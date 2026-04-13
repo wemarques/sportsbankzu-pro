@@ -9,6 +9,8 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,6 +35,9 @@ jobs:
     env:
       CI: true
       PY_BACKEND_URL: "http://localhost:8000"
+      NEXTAUTH_SECRET: "test-secret-for-ci-only"
+      NEXTAUTH_URL: "http://localhost:3000"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 
