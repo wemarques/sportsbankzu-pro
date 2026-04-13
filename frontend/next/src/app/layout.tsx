@@ -3,6 +3,7 @@ import "@/styles/scoretabs-dashboard.css";
 import "@/styles/match-detail-card.css";
 import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { SessionProvider } from "../components/SessionProvider";
 
 export const metadata = {
   title: "SportsBankZU Pro",
@@ -19,10 +20,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}>
-        <ThemeProvider>
-          <ThemeToggle />
-          {children}
-        </ThemeProvider>
+        <SessionProvider>
+          <ThemeProvider>
+            <ThemeToggle />
+            {children}
+          </ThemeProvider>
+        </SessionProvider>
       </body>
     </html>
   );
