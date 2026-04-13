@@ -165,4 +165,5 @@
 | 133 | Corrigido | Fix | V2 corners desbloqueado (matchesPlayed passado ao stats dict) |
 | 134 | Corrigido | Fix | Legacy corners engine + cornersTotalAVG (terceira estimativa) |
 | 137 | Corrigido | Fix | cards_engine denominador: league_avg → half_league (lambda era ~50% do real) |
+| 138 | Investigado | Diagnose | Gaps silenciosos team_stats: exact name match + season prefix no data_mapper (escopo fix-133) |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |

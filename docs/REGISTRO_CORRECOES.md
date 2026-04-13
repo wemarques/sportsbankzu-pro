@@ -6487,6 +6487,162 @@ Gols nao afetado (Poisson inherentemente monotonico).
 
 ---
 
+## 138 — Investigacao: gaps silenciosos de extracao team_stats (team name mismatch + season prefix no data_mapper)
+
+**Data:** 2026-04-13
+**Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/fixtures_service.py` (nao corrigidos — investigacao)
+**Severidade:** Alta (efeito silencioso, camuflado por fallbacks)
+**Status:** Investigado — correcao adiada para skill `fix-133`
+
+### Contexto
+
+Apos deploy do #137, investiguei por que V2 corners predictor aparecia como `dataQualityTier: INSUFFICIENT` em Manchester United vs Leeds (Premier League 2025/26). Esperava que fosse pre-temporada sem dados. Descobri que **a temporada esta ativa, a FootyStats tem os dados, mas o pipeline falha silenciosamente em extrair**.
+
+### Achados empiricos
+
+**1. Season_id correto esta sendo resolvido**
+
+`FootyStats league-list` lista Premier League com a ultima season disponivel em `id=15050, year=20252026`. A chamada `/league-teams?season_id=15050&include=stats` retorna 20 times completos, incluindo ManU. O `footstats_client.resolve_season_ids` usa `seasons[-n_seasons:]` + `.reverse()` e resolve corretamente `15050` como current.
+
+**2. FootyStats retorna os dados que precisamos**
+
+Resposta da API para ManU (season 15050) em `stats.*`:
+- `seasonMatchesPlayed_overall: 31` (31 jogos jogados — dentro do esperado para abril 2026)
+- `seasonMatchesPlayed_home: 15`, `seasonMatchesPlayed_away: 16`
+- `seasonWinsNum_overall: 15`, `seasonDrawsNum_overall: 10`, `seasonLossesNum_overall: 6`
+- `seasonPPG_overall: 1.77`, `seasonGoalDifference_overall: 13`
+- `seasonAVG_overall: 3.19`, `seasonScoredAVG_overall: 1.81`, `seasonConcededAVG_overall: 1.39`
+- `cardsAVG_overall: 1.61`, `cornersAVG_overall: 4.58`, `cornersRecorded_matches_overall: 31`
+- Top-level: `name: "Manchester United FC"`, `cleanName: "Manchester United"`, `table_position: 3`
+
+**3. Live payload em producao mostra valores PARCIAIS**
+
+```
+matchesPlayed_home: None
+matchesPlayed_away: None
+matchesPlayed_overall: None
+corners_recorded_matches_num: None
+homeCardsPerMatch: 1.6      ← plausivel (real 1.61)
+homeCornersPerMatch: 4.8    ← plausivel (real 4.58)
+```
+
+Alguns campos funcionam, outros nao. Por que?
+
+### Causa raiz — duas camadas sobrepostas
+
+**Camada 1: Team name mismatch (mais critica)**
+
+`_team_stat` em `fixtures_service.py:389-406` usa **exact match** na coluna `team_name`:
+```python
+row = teams[teams[name_col] == name]
+```
+
+Mas FootyStats retorna `name="Manchester United FC"` e o pipeline busca por `name="Manchester United"` (vindo do fixture). Exact match falha → row vazia → funcao retorna None.
+
+**Evidencia viva nos logs do batch_audit:**
+```
+[lambda-diag] Exact match failed for 'Manchester United',
+  fuzzy matched 'Manchester United FC' (substring) in col=team_name
+```
+
+O `lambda_calculator.py` (via `lambda-diag`) tem fuzzy fallback (substring match), mas o `_team_stat` e o `team_cards_per_match` (L328 de fixtures_service) **nao tem**. Resultado: **TODOS** os campos extraidos via `_team_stat` retornam None para times cuja API tem suffixo `FC`, `AFC`, `Hove Albion`, etc.
+
+**Camada 2: Season prefix omitido no data_mapper**
+
+`data_mapper.py:map_team_to_internal` usa chaves `X_overall` onde o schema real da FootyStats tem `seasonX_overall`. Resultado do cross-reference empirico (todos os `NO` sao silenciosamente None):
+
+| Mapper procura | FootyStats retorna | Valor real (ManU) | Status |
+|---|---|---|---|
+| `matchesPlayed_overall` | `seasonMatchesPlayed_overall` | 31 | NO |
+| `wins_overall` | `seasonWinsNum_overall` | 15 | NO |
+| `draws_overall` | `seasonDrawsNum_overall` | 10 | NO |
+| `losses_overall` | `seasonLossesNum_overall` | 6 | NO |
+| `pointsPerGame_overall` | `seasonPPG_overall` | 1.77 | NO |
+| `goalDifference_overall` | `seasonGoalDifference_overall` | 13 | NO |
+| `averageTotalGoalsPerMatch_overall` | `seasonAVG_overall` | 3.19 | NO |
+| `minutesPerGoalScored_overall` | `seasonScoredMin_overall` | 50 | NO |
+| `winPercentage_overall` | `winPercentage_overall` | 48 | YES |
+| `drawPercentage_overall` | `drawPercentage_overall` | 32 | YES |
+| `seasonScoredAVG_overall` | `seasonScoredAVG_overall` | 1.81 | YES |
+| `seasonConcededAVG_overall` | `seasonConcededAVG_overall` | 1.39 | YES |
+| `cardsAVG_overall` | `cardsAVG_overall` | 1.61 | YES |
+| `cornersAVG_overall` | `cornersAVG_overall` | 4.58 | YES |
+| `cornersRecorded_matches_overall` | `cornersRecorded_matches_overall` | 31 | YES |
+
+O mapper e inconsistente — alguns campos dropam o prefixo `season`, outros mantem.
+
+**Camada 3: `_avg_from_history` disfarca parcialmente o estrago**
+
+Para cards, corners, goals: `fixtures_service` ja tem fallback via `_avg_from_history`, que agrega `home_team_yellow_cards` / `home_team_corner_count` do CSV de matches historicos. Como os CSVs de matches usam os nomes SEM suffix `FC`, o fuzzy problem nao afeta esse path. Resultado: o valor `homeCardsPerMatch: 1.6` em producao vem desse fallback, nao do team stats direto.
+
+Para `matches_played`, `wins`, `draws`, `losses`, `PPG`, `goal_difference`: nao ha fallback equivalente. Esses campos ficam **permanentemente None** no record, e qualquer feature downstream que dependa deles (principalmente V2 corners predictor's `data_quality.py` que checa `corners_recorded_matches_num`) falha silenciosamente ou bail para `INSUFFICIENT`.
+
+### Impacto sistemico estimado
+
+1. **V2 corners predictor em TODAS as ligas ativas**: `dataQualityTier: INSUFFICIENT` → cai em legacy engine. Conhecido via skill `fix-133`.
+2. **Features de forma e record do time**: W/D/L, PPG, goal difference — todas None → features downstream (momentum, streak, table-based) degradam silenciosamente.
+3. **Calibradores per-league**: os parametros em `corrections DB` (brier_cards=0.22, cards_multiplier=0.95-1.0, etc) foram otimizados contra pipeline operando com esses gaps. Corrigir os gaps vai **mover os alvos** do Brier optimizer — varios parametros vao precisar recalibrar.
+4. **Narrativa Mistral (`#082`)**: o contexto passado ao LLM inclui team stats. Se metade esta None, a Mistral opera com menos informacao — degradacao da qualidade do summary mas nao afeta matematica.
+
+### Por que o #137 (cards denominator) foi seguro mesmo com esses gaps
+
+O bug #137 era matematico na formula `_compute_relative_lambda` do `cards_engine`, operando sobre **o valor que chegava ao engine**. Esse valor (`homeCardsPerMatch: 1.6`) ja vinha (corretamente) via `_avg_from_history` fallback, no schema half-scale esperado. A correcao do denominador funcionou porque o fallback produzia dados corretos em escala correta — o bug era puramente na matematica.
+
+Com o #137 aplicado, a lambda final de cards esta agora no sistema de referencia certo. Quando os gaps desta investigacao forem fechados (fix-133), os valores de `homeCardsPerMatch` vao mudar de origem (`_avg_from_history` → `team_stats` direto) mas devem ficar proximos dos atuais, ja que ambas as fontes tracam a mesma realidade. O risco de regressao em cards e baixo.
+
+### Correcao recomendada — skill `fix-133`
+
+**Nao aplicar fix pontual nesta sessao.** O escopo transborda #137 e tem ramificacoes em calibracao. Plano:
+
+1. **Fix 1: `_team_stat` fuzzy match**
+   ```python
+   # Antes:
+   row = teams[teams[name_col] == name]
+   # Depois:
+   row = teams[teams[name_col].str.contains(name, case=False, na=False) | (teams[name_col] == name)]
+   ```
+   Ou usar a helper do `lambda_calculator` que ja tem fuzzy.
+
+2. **Fix 2: padronizar team name resolution**
+   - Usar `cleanName` como chave primaria no `data_mapper.py:269`, ou
+   - Normalizar removendo suffixos comuns (`FC`, `AFC`, ` FC`) antes de matchar
+
+3. **Fix 3: completar mapeamento season\***
+   ```python
+   "matches_played": _pick(
+       ["seasonMatchesPlayed_overall", "matchesPlayed_overall"],
+       ["matchesPlayed", "matches_played"], None),
+   "wins": _pick(["seasonWinsNum_overall", "wins_overall"], ["wins"], None),
+   "draws": _pick(["seasonDrawsNum_overall", "draws_overall"], ["draws"], None),
+   "losses": _pick(["seasonLossesNum_overall", "losses_overall"], ["losses"], None),
+   "points_per_game_overall": _pick(["seasonPPG_overall", "pointsPerGame_overall"], ["pointsPerGame", "ppg"], 0.0),
+   "goal_difference": _pick(["seasonGoalDifference_overall", "goalDifference_overall"], ["goal_difference"], None),
+   "average_total_goals_per_match": _pick(["seasonAVG_overall", "averageTotalGoalsPerMatch_overall"], default=None),
+   "minutes_per_goal_scored": _pick(["seasonScoredMin_overall", "minutesPerGoalScored_overall"], default=None),
+   ```
+
+4. **Fix 4 (consequencial): recalibrar per-league**
+   Apos fechar gaps, rodar `POST /api/backtesting/calibrate?league=<X>` em todas as 22 ligas. Monitorar:
+   - `brier_cards` (esperado: melhorar de ~0.22 para ~0.15)
+   - `brier_corners` (esperado: melhorar quando V2 engine voltar a ter dados)
+   - `cards_multiplier` (pode mudar — nao assumir que continua em 1.0)
+   - `safe_prob_cards` (thresholds foram calibrados contra pipeline atual — podem precisar reajuste)
+
+5. **Fix 5 (validacao): V2 corners predictor**
+   Verificar que `dataQualityTier` sai de `INSUFFICIENT` para `MEDIUM+` em jogos de ligas ativas.
+
+### Licao aprendida
+
+1. **Fallbacks silenciosos mascaram bugs de extracao.** O pipeline parecia funcional (`homeCardsPerMatch: 1.6` esta dentro do range esperado), mas o dado primario nunca chegava — era reconstruido via agregacao historica. Logs de `_team_stat` deveriam emitir `logger.debug` quando retornam None, para visibilidade.
+
+2. **Exact match em nomes de time e fragil.** FootyStats usa `name` com suffixo oficial (FC, AFC) e `cleanName` sem. Outros endpoints do projeto usam outras convencoes. Toda funcao de lookup por nome deveria normalizar ou usar fuzzy.
+
+3. **Inconsistencia no mapper e dificil de auditar.** Metade dos `_pick` tem prefixo `season`, metade nao. Sem teste que cruza mapper-esperado vs API-real, erros ficam invisiveis. Sugestao: criar `test_data_mapper_api_compat.py` que faz 1 chamada real a FootyStats e valida que cada chave do mapper encontra algum valor.
+
+4. **Calibradores podem estar compensando gaps de dados.** Antes de fixar extracao, checar se parametros per-league estao "tapando buraco". Neste caso, os valores sao neutros (1.0, 0.95) — minha analise do #137 mostrou isso. Mas para futuros fixes de schema, essa validacao e obrigatoria.
+
+---
+
 ## 137 — cards_engine: denominador do Dixon-Coles dividia por league_avg total (lambda sub-estimada ~50%)
 
 **Data:** 2026-04-13
