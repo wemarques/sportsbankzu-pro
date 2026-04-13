@@ -14,10 +14,14 @@ def test_nb2_vs_poisson_different_probs():
 
 
 def test_relative_strength_lambda():
-    """Lambda uses relative strengths vs league avg (Dixon-Coles #053 pattern)."""
+    """Lambda uses relative strengths vs league avg (Dixon-Coles #053 pattern).
+
+    Team stats are half-scale (cards shown TO one team per match).
+    League stats are full-scale (total cards per match).
+    """
     result = predict_cards(
-        home_stats={"homeCardsPerMatch": 4.0},
-        away_stats={"awayCardsPerMatch": 3.6},
+        home_stats={"homeCardsPerMatch": 2.0},
+        away_stats={"awayCardsPerMatch": 1.8},
         league_stats={"cardsAVG_overall": 5.33},
     )
     # Lambda NOT inflated: must be < 6.0 (was 11.4 before #086)
@@ -67,10 +71,13 @@ def test_referee_is_only_external_adjustment():
 
 
 def test_average_team_produces_league_avg_lambda():
-    """Team with cardsPerMatch == leagueAvg produces lambda approx leagueAvg."""
+    """Teams at league-avg per-team cards produce lambda approx leagueAvg.
+
+    Team cardsPerMatch is half-scale: 2.5 per team → 5.0 total (matches league).
+    """
     result = predict_cards(
-        home_stats={"homeCardsPerMatch": 5.0},
-        away_stats={"awayCardsPerMatch": 5.0},
+        home_stats={"homeCardsPerMatch": 2.5},
+        away_stats={"awayCardsPerMatch": 2.5},
         league_stats={"cardsAVG_overall": 5.0},
     )
     assert abs(result["cards_lambda"] - 5.0) < 0.5, \

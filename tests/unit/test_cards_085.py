@@ -64,10 +64,14 @@ def test_high_lambda_favors_over():
 
 
 def test_low_lambda_favors_under():
-    """Low lambda → Under more probable."""
+    """Low lambda → Under more probable.
+
+    Half-scale: 1.0 per team × 2 teams → lambda ≈ 2.0 total.
+    """
     result = predict_cards(
-        home_stats={"cardsAVG_overall": 2.0},
-        away_stats={"cardsAVG_overall": 2.0},
+        home_stats={"cardsAVG_overall": 1.0},
+        away_stats={"cardsAVG_overall": 1.0},
+        league_stats={"cardsAVG_overall": 4.0},
     )
     # With lambda ~2, Under 3.5 should have prob > 70%
     assert result["lines"]["under_3.5"]["prob"] > 0.70

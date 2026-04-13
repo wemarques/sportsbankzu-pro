@@ -180,14 +180,14 @@ def _compute_relative_lambda(
                  away_stats.get("cardsPerMatch",
                  away_stats.get("cardsAVG_overall")))))
 
-    # Relative strengths vs league avg
-    if home_cards is not None and league_avg > 0:
-        home_relative = home_cards / league_avg
+    # Relative strengths vs league avg per team (half of total)
+    if home_cards is not None and half_league > 0:
+        home_relative = home_cards / half_league
     else:
         home_relative = 1.0  # no data → assume league average
 
-    if away_cards is not None and league_avg > 0:
-        away_relative = away_cards / league_avg
+    if away_cards is not None and half_league > 0:
+        away_relative = away_cards / half_league
     else:
         away_relative = 1.0
 
