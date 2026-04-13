@@ -1,14 +1,24 @@
 "use client";
 import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 
 export type UserRole = "free" | "plus" | "admin";
 
+const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_TOKEN || "SPORTSBANKZU_ADM_2026";
+
 export function useRole() {
-  const { data: session, status } = useSession();
-  // TODO #136: reativar quando RDS aceitar conexão do Vercel
-  // Bypass temporário — sem login, tratar como admin para mostrar tudo
-  const role = ((session?.user as any)?.role || "admin") as UserRole;
-  const isAuthenticated = status === "authenticated" || true;
+  const { data: session } = useSession();
+  const [deviceAdmin, setDeviceAdmin] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("sbz_admin_token");
+    setDeviceAdmin(token === ADMIN_TOKEN);
+  }, []);
+
+  // Priority: session role > device token > default "plus"
+  const sessionRole = (session?.user as any)?.role as UserRole | undefined;
+  const role: UserRole = sessionRole || (deviceAdmin ? "admin" : "plus");
+  const isAuthenticated = true; // TODO #136: usar session real quando RDS funcionar
 
   return {
     role,
