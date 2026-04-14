@@ -2549,35 +2549,17 @@ export default function Dashboard() {
                   />
                 );
               })()}
-              {process.env.NEXT_PUBLIC_USE_NEW_ANALYSIS === "1" ? (
-                (() => {
-                  const mapped = mapToMatchAnalysis(detailData);
-                  return (
-                    <MatchAnalysis
-                      match={mapped.match}
-                      picks={mapped.picks}
-                      analysis={mapped.analysis}
-                      bankroll={bankroll}
-                    />
-                  );
-                })()
-              ) : (
-                <MatchDetailCard
-                  match={detailData}
-                  version={appVersion}
-                  onAudit={handleAudit}
-                  onApplyCorrection={handleApplyCorrection}
-                  auditResult={auditResult}
-                  auditLoading={auditLoading}
-                  auditResultRef={auditResultRef}
-                  onBack={() => setSelectedMatchId(null)}
-                  showBackButton={isMobile}
-                  isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
-                  onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
-                  onRegenerate={handleGenerateAiAnalysis}
-                  bankroll={bankroll}
-                />
-              )}
+              {(() => {
+                const mapped = mapToMatchAnalysis(detailData);
+                return (
+                  <MatchAnalysis
+                    match={mapped.match}
+                    picks={mapped.picks}
+                    analysis={mapped.analysis}
+                    bankroll={bankroll}
+                  />
+                );
+              })()}
               </>
             ) : (
               <div className="muted">Selecione um jogo para visualizar os detalhes.</div>
@@ -2601,21 +2583,4 @@ export default function Dashboard() {
             ) : (
               <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 30, textAlign: "center", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}>
                 <div style={{ fontSize: "0.7rem", marginBottom: 10 }}>Dados indisponiveis</div>
-                <button onClick={handleReliabilityClick} style={{ fontSize: "0.6rem", padding: "5px 14px", borderRadius: 6, border: "1px solid rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)", color: "#60a5fa", cursor: "pointer" }}>Tentar novamente</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Batch Audit Panel (modal overlay) */}
-      {batchAuditOpen && batchAuditResult && (
-        <BatchAuditPanel
-          result={batchAuditResult}
-          onClose={() => setBatchAuditOpen(false)}
-          onApplyCorrections={handleBatchApplyCorrections}
-        />
-      )}
-    </div>
-  );
-}
+    
