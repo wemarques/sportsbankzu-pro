@@ -216,3 +216,24 @@ Gols: 0.5-5.5 (6 linhas Over + 6 Under). Cartoes: 1.5-6.5. Escanteios: 4.5-12.5 
 Dedup mantido: 1 melhor por direcao (Over/Under) por mercado.
 
 **Verificacao:** `grep -c "threshold.*stat_over" backend/services/ev_classification.py` (deve ser 6)
+
+### #146 — EV obrigatorio no prompt Mistral
+
+**Tipo:** Safety
+**Relacionado:** #082, #096, #093
+
+Mistral NUNCA deve afirmar "EV positivo" sem verificar: prob x odd > 1.0.
+Formula explicita e exemplo numerico incluidos no prompt. Mercados com EV negativo
+devem separar "chance de acerto" de "valor de longo prazo".
+
+**Verificacao:** `grep -n "REGRA DE EV" backend/services/mistral_analysis.py` (deve retornar 1+ hit)
+
+### #146b — Corredores no prompt Mistral
+
+**Tipo:** Safety
+**Relacionado:** #146, #113
+
+Over X + Under Y do mesmo mercado devem ser apresentados como CORREDOR com faixa esperada.
+Nunca listar como picks independentes.
+
+**Verificacao:** `grep -n "REGRA DE CORREDORES" backend/services/mistral_analysis.py` (deve retornar 1+ hit)

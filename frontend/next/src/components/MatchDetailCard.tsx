@@ -82,7 +82,7 @@ const GLOSSARY = [
   { term: "Odd (Cota\u00E7\u00E3o)", description: "Cota\u00E7\u00E3o oferecida pela casa de apostas \u2014 quanto voc\u00EA recebe por cada R$1 apostado" },
   { term: "ALTA CONFIANCA (SAFE)", description: "Classificacao maxima \u2014 probabilidade alta, EV positivo, dados confiaveis, edge suficiente" },
   { term: "VALOR DETECTADO (NEUTRO-Q)", description: "Valor matematico detectado \u2014 elegivel para combinadas e duplas, tem EV positivo mas nao atinge Alta Confianca" },
-  { term: "INFORMATIVO (NEUTRO)", description: "Mercado identificado mas sem valor suficiente ou sem odds disponiveis" },
+  { term: "VIÁVEL (NEUTRO)", description: "Mercado com chance real de acerto no jogo, sem valor matematico (EV+) para aposta sistematica" },
   { term: "RESTRITO", description: "Liga com dados limitados ou modelo ML n\u00E3o ativo \u2014 progn\u00F3sticos com cautela" },
   { term: "Overround", description: "Margem da casa de apostas \u2014 a soma das probabilidades impl\u00EDcitas excede 100% (tipicamente 5-6%)" },
   { term: "Lambda (\u03BB)", description: "M\u00E9dia de gols esperados por time \u2014 base do c\u00E1lculo Poisson para probabilidades de placares" },

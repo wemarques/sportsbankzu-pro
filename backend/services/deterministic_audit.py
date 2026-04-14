@@ -25,7 +25,7 @@ logger = logging.getLogger("sportsbankzu.deterministic_audit")
 DISPLAY_NAMES: dict[str, str] = {
     "SAFE": "ALTA CONFIANCA",
     "NEUTRO_QUALIFICADO": "VALOR DETECTADO",
-    "NEUTRO": "INFORMATIVO",
+    "NEUTRO": "VIÁVEL",
     "NO_BET": "BLOQUEADO",
 }
 

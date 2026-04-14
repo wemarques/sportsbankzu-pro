@@ -7564,3 +7564,87 @@ Cadeia de propagacao:
 
 ---
 
+## 146 — Regra de EV obrigatorio no prompt Mistral
+
+**Data:** 2026-04-14
+**Arquivos afetados:** backend/services/mistral_analysis.py
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+Mistral afirmou "EV positivo" para DC X2 (odd 1.25, prob 72%) quando o EV real e -10%.
+Calculo incorreto: "72% > 1/1.25 = 80% → EV positivo" (errado, 72% < 80%).
+
+### Causa raiz
+Prompt Mistral nao tinha regra explicita de verificacao de EV. O LLM calculou incorretamente.
+
+### Correcoes aplicadas
+1. Adicionada REGRA DE EV (#146) ao prompt com formula explicita e exemplos correto/incorreto
+2. Regra obriga separar "chance de acerto no jogo" vs "valor de longo prazo"
+
+### Licao aprendida
+LLMs nao devem calcular EV — mas quando descrevem, precisam de regra explicita com exemplo numerico.
+
+---
+
+## 146b — Apresentacao de corredores no prompt Mistral
+
+**Data:** 2026-04-14
+**Arquivos afetados:** backend/services/mistral_analysis.py
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+Mistral apresentava Over 2.5 e Under 4.5 do mesmo mercado como picks independentes sem explicar que formam um corredor.
+
+### Causa raiz
+Prompt nao instruia agrupamento de linhas complementares do mesmo mercado.
+
+### Correcoes aplicadas
+1. Adicionada REGRA DE CORREDORES (#146b) ao prompt
+2. Atualizada regra de Coerencia Over/Under para cobrir gols + cartoes + escanteios
+
+### Licao aprendida
+Corredores precisam ser apresentados como unidade, nao como picks separados.
+
+---
+
+## 147 — Redesign Match Analysis + Rename VIAVEL + Glossario
+
+**Data:** 2026-04-14
+**Arquivos afetados:**
+- frontend/next/src/lib/classifications.ts (rename label NEUTRO → VIAVEL)
+- frontend/next/src/lib/glossary.ts (rename termo → VIAVEL)
+- frontend/next/src/components/MatchAnalysis/ (NOVO — 9 arquivos)
+- frontend/next/src/lib/matchDataMapper.ts (NOVO)
+- frontend/next/src/components/MatchDetailCard.tsx (fallback — nao deletado)
+- frontend/next/src/app/dashboard/page.tsx (feature flag NEXT_PUBLIC_USE_NEW_ANALYSIS)
+- backend/services/deterministic_audit.py (DISPLAY_NAMES["NEUTRO"] = "VIAVEL")
+- tests/unit/test_classifications_080.py
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+1. Label "INFORMATIVO" nao atrativo para apostadores
+2. Termos tecnicos ("Lambda", "λ") confundem usuario comum
+3. Card de analise AI nao tinha glossario
+4. Picks do mesmo mercado (Over + Under) nao eram agrupados visualmente como corredor
+5. Sem tracking ao vivo de escanteios/cartoes no card de analise
+
+### Correcoes aplicadas
+1. Rename INFORMATIVO → VIAVEL (azul #60a5fa) — frontend + backend + tests
+2. Novo componente MatchAnalysis (9 arquivos) substituindo MatchDetailCard via feature flag
+3. AICard com 3 abas: Resumo, Pontos-Chave, Glossario (importado de lib/glossary.ts)
+4. CorridorCard com barra visual de range + live progress
+5. LiveTracker integrado (grid escanteios + cartoes ao vivo)
+6. Box educativo de EV negativo na aba Resumo
+7. EVHelp expansivel ("O que significa EV?")
+8. matchDataMapper: detecta corredores automaticamente (Over X + Under Y mesmo mercado)
+9. Feature flag NEXT_PUBLIC_USE_NEW_ANALYSIS=1 para rollout gradual; MatchDetailCard mantido como fallback
+
+### Licao aprendida
+Terminologia tecnica deve ser traduzida para o usuario final. Apostadores querem saber
+"chance de acerto neste jogo" e "valor de longo prazo", nao parametros do modelo.
+
+---
+

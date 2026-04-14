@@ -9,6 +9,8 @@ import MatchDetailCard, {
   type AuditResult,
   type AuditCorrection,
 } from "@/components/MatchDetailCard";
+import { MatchAnalysis } from "@/components/MatchAnalysis";
+import { mapToMatchAnalysis } from "@/lib/matchDataMapper";
 import { AVAILABLE_LEAGUES, type Match, type MatchPrediction } from "@/lib/leagues";
 import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
@@ -101,7 +103,7 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: "0.65rem", color: "#666" }}>{c.prob_combinada_min}–{c.prob_combinada_max}%</span>
-          <span style={{ fontSize: "0.65rem", fontWeight: 700, borderRadius: 4, padding: "2px 6px", background: st.badge.bg, color: st.badge.color }}>{c.status_combinada === "SAFE" ? "ALTA CONFIANCA" : c.status_combinada === "MISTA" ? "MISTA" : "INFORMATIVO"}</span>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, borderRadius: 4, padding: "2px 6px", background: st.badge.bg, color: st.badge.color }}>{c.status_combinada === "SAFE" ? "ALTA CONFIANCA" : c.status_combinada === "MISTA" ? "MISTA" : "VIÁVEL"}</span>
         </div>
       </div>
       {([c.leg1, c.leg2] as CombinadaLeg[]).map((leg, i) => (
@@ -2547,21 +2549,34 @@ export default function Dashboard() {
                   />
                 );
               })()}
-              <MatchDetailCard
-                match={detailData}
-                version={appVersion}
-                onAudit={handleAudit}
-                onApplyCorrection={handleApplyCorrection}
-                auditResult={auditResult}
-                auditLoading={auditLoading}
-                auditResultRef={auditResultRef}
-                onBack={() => setSelectedMatchId(null)}
-                showBackButton={isMobile}
-                isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
-                onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
-                onRegenerate={handleGenerateAiAnalysis}
-                bankroll={bankroll}
-              />
+              {process.env.NEXT_PUBLIC_USE_NEW_ANALYSIS === "1" ? (
+                (() => {
+                  const mapped = mapToMatchAnalysis(detailData);
+                  return (
+                    <MatchAnalysis
+                      match={mapped.match}
+                      picks={mapped.picks}
+                      analysis={mapped.analysis}
+                    />
+                  );
+                })()
+              ) : (
+                <MatchDetailCard
+                  match={detailData}
+                  version={appVersion}
+                  onAudit={handleAudit}
+                  onApplyCorrection={handleApplyCorrection}
+                  auditResult={auditResult}
+                  auditLoading={auditLoading}
+                  auditResultRef={auditResultRef}
+                  onBack={() => setSelectedMatchId(null)}
+                  showBackButton={isMobile}
+                  isFavorite={selectedMatchId ? favoriteIds.has(selectedMatchId) : false}
+                  onFavorite={selectedMatchId ? () => toggleFavorite(selectedMatchId) : undefined}
+                  onRegenerate={handleGenerateAiAnalysis}
+                  bankroll={bankroll}
+                />
+              )}
               </>
             ) : (
               <div className="muted">Selecione um jogo para visualizar os detalhes.</div>

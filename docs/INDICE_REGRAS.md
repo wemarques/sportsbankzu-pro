@@ -174,3 +174,6 @@
 | 143 | Implementado | Feature | API-Football /fixtures/players: per-player cards/fouls para auditoria pos-jogo |
 | 144 | Implementado | Feature | extract_best_odds: Corners O/U 4.5-12.5 desbloqueando scanner #110 |
 | 145 | **ATIVA** | Fix + Regra | cornersRecorded_matches é match count, não média — projeção inflada 16→10.6 |
+| 146 | **ATIVA** | Safety | Regra de EV obrigatório no prompt Mistral — NUNCA afirmar EV+ sem verificar prob × odd > 1 |
+| 146b | **ATIVA** | Safety | Corredores devem ser apresentados como unidade (Over + Under = faixa esperada) |
+| 147 | Implementado | Feature | Redesign Match Analysis + Rename VIÁVEL + Glossário + LiveTracker + CorridorCard |

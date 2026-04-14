@@ -29,12 +29,12 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
       "O modelo detectou valor matematico (EV+), mas nem todos os criterios de alta confianca foram atingidos. Elegivel para duplas e combinadas.",
   },
   NEUTRO: {
-    label: "INFORMATIVO",
-    color: "#9ca3af",
-    bgColor: "rgba(156,163,175,0.15)",
-    description: "Mercado identificado mas sem valor suficiente ou sem odds disponiveis",
+    label: "VIÁVEL",
+    color: "#60a5fa",
+    bgColor: "rgba(96,165,250,0.12)",
+    description: "Mercado com chance real de acerto neste jogo, mas sem valor matematico de longo prazo",
     tooltip:
-      "Mercado mapeado pelo modelo, porem sem valor matematico suficiente para recomendacao. Pode ser usado como referencia informativa.",
+      "O modelo identifica probabilidade razoavel para este jogo especifico. Nao atinge criterios de EV+ para recomendacao de aposta sistematica, mas e viavel como pick pontual.",
   },
   NO_BET: {
     label: "BLOQUEADO",

@@ -26,10 +26,10 @@ export const GLOSSARY: GlossaryEntry[] = [
     example: "BTTS Sim com prob 58%, EV +4.2%",
   },
   {
-    term: "INFORMATIVO",
+    term: "VIÁVEL",
     category: "classificacao",
     definition:
-      "Mercado identificado pelo modelo, mas sem valor suficiente para recomendacao. Sem odds disponiveis ou EV negativo.",
+      "Mercado com chance real de acerto neste jogo especifico, mas sem valor matematico (EV+) para aposta sistematica. Viavel como pick pontual.",
   },
   {
     term: "BLOQUEADO",

@@ -195,7 +195,7 @@ Analise os dados fornecidos seguindo rigorosamente estas diretrizes:
 - **Justificativa Numérica:** Toda conclusão deve ter dado numérico (ex: "lambda_home de 1.45 indica média de 1.45 gols esperados").
 - **Seja Específico:** Nos key_points, cite lambdas, probabilidades, odds, %. Nunca genérico.
 - **Escanteios obrigatórios:** Se dados de escanteios existirem, DEVE haver pelo menos 1 key_point sobre corners.
-- **Coerência Over/Under:** Se recomendar Over 2.5 e Under 3.5 simultaneamente, explicar que indica corredor de exatamente 3 gols.
+- **Coerência Over/Under (Corredores):** Se recomendar Over X e Under Y do MESMO mercado (gols, cartoes ou escanteios), explicar como CORREDOR com a faixa esperada. Ex: "Corredor de gols: 3 gols (Over 2.5 + Under 3.5)", "Corredor de cartoes: 3-4 cartoes (Over 2.5 + Under 4.5)", "Corredor de escanteios: 9-12 (Over 8.5 + Under 12.5)".
 
 # Dados do Confronto
 
@@ -390,6 +390,20 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
 - Priorize mercados que tenham EV positivo (probabilidade > 1/odd).
 - Se nenhum mercado tem odd disponível, escreva: "Sem recomendação — odds indisponíveis para os mercados analisados."
 - NUNCA diga "odd não disponível mas probabilidade de X%" como recomendação.
+
+# REGRA DE EV — CÁLCULO OBRIGATÓRIO (#146):
+- EV = (probabilidade × odd) - 1. Se resultado < 0, o EV é NEGATIVO.
+- NUNCA afirme "EV positivo" sem verificar: prob × odd > 1.0.
+- Exemplo CORRETO: prob 72% (0.72) × odd 1.25 = 0.90 → EV = -10% (NEGATIVO).
+- Exemplo INCORRETO: "72% > 80% (1/1.25) logo EV positivo" — ERRADO, 72% < 80%.
+- Se prob < (1/odd), o mercado tem EV NEGATIVO. Diga claramente "EV negativo" na recomendacao.
+- Mercados com EV negativo PODEM ter alta chance de acerto no jogo especifico (ex: DC X2 a 72%) mas NAO geram lucro no longo prazo. Separe as duas informacoes.
+
+# REGRA DE CORREDORES (#146b):
+- Quando recomendar Over X e Under Y do mesmo mercado (ex: Cards Over 2.5 + Under 4.5), explique como CORREDOR:
+  "Corredor de Cartoes: entre 3 e 4 cartoes (Over 2.5 + Under 4.5)".
+- NAO apresente Over e Under como picks independentes sem mencionar que formam um corredor.
+- Indique a faixa esperada (ex: "3-4 cartoes", "9-12 escanteios") em vez de listar linhas separadas.
 
 # VALIDAÇÕES OBRIGATÓRIAS:
 - probabilidades: vitoria_casa + empate + vitoria_fora = 1.0
