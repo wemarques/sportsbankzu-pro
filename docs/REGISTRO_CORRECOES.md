@@ -7515,3 +7515,52 @@ Branches elif de parsing de odds devem ser ordenadas do mais especifico para o m
 
 ---
 
+## 145 — cornersRecorded_matches é contagem de partidas, não média de escanteios
+
+**Data:** 2026-04-14
+**Arquivos afetados:** backend/services/data_mapper.py, backend/services/fixtures_service.py, backend/modeling/corners/features.py, backend/modeling/corners_engine.py
+**Severidade:** Critica
+**Status:** Corrigido
+
+### Problema identificado
+Todas as projecoes de escanteios estavam sistematicamente infladas (~16 corners projetados quando a media da liga e ~10). Isso gerava falsos "VALOR DETECTADO" com EV +35% em linhas altas como Over 11.5. Afeta TODAS as ligas, nao apenas Championship.
+
+### Causa raiz
+O campo `cornersRecorded_matches_overall` do FootyStats contem o NUMERO DE PARTIDAS com dados de corners (ex: 41), nao a media de escanteios por partida (~5). O `data_mapper.py` usava este campo como chave primaria para `corners_per_match`, propagando o valor 41 como se fosse a media do time.
+
+Cadeia de propagacao:
+1. `data_mapper.py` → `corners_per_match = cornersRecorded_matches_overall = 41`
+2. `fixtures_service.py` → `homeCornersPerMatch: 41.0`
+3. `corners/features.py` → `home_corners_for_pm = 41.0`
+4. `predictor.py` → `direct = 41 + 40 = 81`, `raw ≈ 33`, `cap(18.0)`
+5. Blend com cornersPotential: `0.70 × 18.0 + 0.30 × 11.6 = 16.08` (exato)
+
+### Correcoes aplicadas
+
+**Camada 1 — data_mapper.py (causa raiz):**
+- Removido `cornersRecorded_matches_overall` da lista primaria de `corners_per_match`
+- Campo ja estava corretamente mapeado como `corners_recorded_matches_overall` (sample size)
+- `corners_per_match_home` e `_away`: removido `cornersRecorded_matches_home/away`
+
+**Camada 2 — fixtures_service.py (derivacao):**
+- Novo fallback: `corners_per_match = corners_total_avg - corners_against_per_match`
+- Ex: `10.5 - 4.85 = 5.65` (valor correto para Portsmouth)
+- Sanity cap: qualquer `corners_pm > 12` substituido por `league_avg / 2`
+
+**Camada 3 — corners/features.py + corners_engine.py (defesa em profundidade):**
+- Cap `_MAX_TEAM_CORNERS_PM = 12.0` em ambos v1 e v2 feature builders
+- Valores acima de 12 indicam poluicao de dados (match count como media)
+
+**Resultado:**
+- Portsmouth vs Ipswich: projectedTotalFT caiu de **16.08 → ~10.64**
+- Alinhado com liga (10.29) e cornersPotential FootyStats (11.6)
+- Over 11.5 prob: de ~54% (falso) para ~35-40% (realista)
+
+### Licao aprendida
+1. O nome do campo FootyStats `cornersRecorded_matches_*` e enganoso — parece "escanteios registrados por partida" mas e "partidas com escanteios registrados". Sempre validar com dados reais.
+2. A formula de projecao cap(18.0) mascarava a gravidade do bug — sem o cap, a projecao seria ~33.
+3. Defesa em profundidade: guards numericos (cap 12.0) sao essenciais como ultima barreira contra dados poluidos.
+4. cornersRecorded_matches_overall JA existia corretamente mapeado como sample size (linha 619), duplicando o mapeamento errado na linha 572.
+
+---
+

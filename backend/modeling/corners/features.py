@@ -297,12 +297,14 @@ def build_match_corner_features(
     features = {}
 
     # Direct corner averages from API data
-    home_corners_for = _safe_float(home_stats.get("cornersAVG_home",
+    # #145: Cap at 12.0 — values above indicate data pollution (match count as average)
+    _MAX_V1 = 12.0
+    home_corners_for = min(_safe_float(home_stats.get("cornersAVG_home",
                         home_stats.get("homeCornersPerMatch",
-                        home_stats.get("cornersAVG_overall", 0))))
-    away_corners_for = _safe_float(away_stats.get("cornersAVG_away",
+                        home_stats.get("cornersAVG_overall", 0)))), _MAX_V1)
+    away_corners_for = min(_safe_float(away_stats.get("cornersAVG_away",
                         away_stats.get("awayCornersPerMatch",
-                        away_stats.get("cornersAVG_overall", 0))))
+                        away_stats.get("cornersAVG_overall", 0)))), _MAX_V1)
     home_corners_against = _safe_float(home_stats.get("homeCornersAgainstPerMatch",
                             home_stats.get("cornersAgainstAVG_home", 0)))
     away_corners_against = _safe_float(away_stats.get("awayCornersAgainstPerMatch",
@@ -419,12 +421,16 @@ def build_v2_match_features(
     f["league_matches_completed"] = _safe_float(ls.get("matches_completed", 0))
 
     # ── Home team corner stats ──
-    f["home_corners_for_pm"] = _safe_float(
+    # #145: Cap per-team corners at 12.0 — no team averages more than ~8 corners/match.
+    # Values above 12 indicate data pollution (e.g. match count mapped as average).
+    _MAX_TEAM_CORNERS_PM = 12.0
+    _raw_home_for = _safe_float(
         home_stats.get("corners_total_per_match",
         home_stats.get("cornersAVG_home",
         home_stats.get("homeCornersPerMatch",
         home_stats.get("corners_per_match", 0))))
     )
+    f["home_corners_for_pm"] = min(_raw_home_for, _MAX_TEAM_CORNERS_PM) if _raw_home_for > 0 else 0
     f["home_corners_against_pm"] = _safe_float(
         home_stats.get("corners_against_per_match",
         home_stats.get("cornersAgainstAVG_home",
@@ -436,12 +442,13 @@ def build_v2_match_features(
     )
 
     # ── Away team corner stats ──
-    f["away_corners_for_pm"] = _safe_float(
+    _raw_away_for = _safe_float(
         away_stats.get("corners_total_per_match",
         away_stats.get("cornersAVG_away",
         away_stats.get("awayCornersPerMatch",
         away_stats.get("corners_per_match", 0))))
     )
+    f["away_corners_for_pm"] = min(_raw_away_for, _MAX_TEAM_CORNERS_PM) if _raw_away_for > 0 else 0
     f["away_corners_against_pm"] = _safe_float(
         away_stats.get("corners_against_per_match",
         away_stats.get("cornersAgainstAVG_away",

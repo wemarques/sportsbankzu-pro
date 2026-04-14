@@ -1084,11 +1084,31 @@ def build_records_from_matches(
         if away_fouls_pm is None:
             away_fouls_pm = _avg_from_history("away_team_fouls", away, False)
 
+        # --- #145: Derive corners FOR from TOTAL - AGAINST (preferred over league avg) ---
+        if home_corners_pm is None and home_corners_total_avg and home_corners_against:
+            try:
+                _derived = float(home_corners_total_avg) - float(home_corners_against)
+                if 1.0 <= _derived <= 12.0:
+                    home_corners_pm = round(_derived, 1)
+            except (TypeError, ValueError):
+                pass
+        if away_corners_pm is None and away_corners_total_avg and away_corners_against:
+            try:
+                _derived = float(away_corners_total_avg) - float(away_corners_against)
+                if 1.0 <= _derived <= 12.0:
+                    away_corners_pm = round(_derived, 1)
+            except (TypeError, ValueError):
+                pass
         # --- Final fallback: league average / 2 ---
         if home_corners_pm is None and league_avgs["avg_corners"]:
             home_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
         if away_corners_pm is None and league_avgs["avg_corners"]:
             away_corners_pm = round(league_avgs["avg_corners"] / 2, 1)
+        # #145: Sanity cap — no team averages >12 corners/match
+        if home_corners_pm is not None and home_corners_pm > 12.0:
+            home_corners_pm = round(league_avgs.get("avg_corners", 10.0) / 2, 1)
+        if away_corners_pm is not None and away_corners_pm > 12.0:
+            away_corners_pm = round(league_avgs.get("avg_corners", 10.0) / 2, 1)
 
         # #134b: Derive TOTAL from FOR + AGAINST (after all fallbacks resolved)
         if home_corners_total_avg is None and home_corners_pm and home_corners_against:

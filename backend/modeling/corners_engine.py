@@ -38,13 +38,15 @@ def estimate_corners_lambda(
     - League average as fallback
     """
     # Home team corners (when playing at home)
-    home_corners_for = _safe_float(home_stats.get("cornersAVG_home",
+    # #145: Cap at 12.0 — values above indicate data pollution (match count as average)
+    _MAX_CPM = 12.0
+    home_corners_for = min(_safe_float(home_stats.get("cornersAVG_home",
                         home_stats.get("homeCornersPerMatch",
-                        home_stats.get("cornersAVG_overall", 0))))
+                        home_stats.get("cornersAVG_overall", 0)))), _MAX_CPM)
     # Away team corners (when playing away)
-    away_corners_for = _safe_float(away_stats.get("cornersAVG_away",
+    away_corners_for = min(_safe_float(away_stats.get("cornersAVG_away",
                         away_stats.get("awayCornersPerMatch",
-                        away_stats.get("cornersAVG_overall", 0))))
+                        away_stats.get("cornersAVG_overall", 0)))), _MAX_CPM)
 
     # Corners conceded
     home_corners_against = _safe_float(home_stats.get("homeCornersAgainstPerMatch",

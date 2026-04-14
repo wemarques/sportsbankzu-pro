@@ -565,24 +565,24 @@ class DataMapper:
                 ["possessionAVG_away"], ["average_possession_away"], None,
             ),
             # --- Corners ---
-            # Doc /league-teams: cornersRecorded_matches_overall e' a "Media de
-            # escanteios por partida". NAO existe cornersAVG_overall em team-level
-            # (esse vive em /league-season league-level apenas).
+            # #145: cornersRecorded_matches_* is the NUMBER OF MATCHES with
+            # corner data, NOT the average corners per match.  Previous mapping
+            # used it as primary key for corners_per_match which inflated the
+            # corners engine projection (e.g. 41 instead of ~5).
+            # Correct source: cornersAVG_overall (league-season level) or
+            # derive from corners_total_avg - corners_against_per_match.
             "corners_per_match": _pick(
-                ["cornersRecorded_matches_overall"],
                 ["cornersAVG_overall", "corners_per_match_overall",
                  "cornersAVG", "corners_per_match"],
-                None,
+                default=None,
             ),
             "corners_per_match_home": _pick(
-                ["cornersRecorded_matches_home"],
                 ["cornersAVG_home", "corners_per_match_home"],
-                None,
+                default=None,
             ),
             "corners_per_match_away": _pick(
-                ["cornersRecorded_matches_away"],
                 ["cornersAVG_away", "corners_per_match_away"],
-                None,
+                default=None,
             ),
             "corners_total": _pick(
                 ["cornersTotal_overall", "corners_total_overall"], default=None,
