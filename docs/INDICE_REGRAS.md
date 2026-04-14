@@ -165,6 +165,7 @@
 | 133 | Corrigido | Fix | V2 corners desbloqueado (matchesPlayed passado ao stats dict) |
 | 134 | Corrigido | Fix | Legacy corners engine + cornersTotalAVG (terceira estimativa) |
 | 137 | Corrigido | Fix | cards_engine denominador: league_avg → half_league (lambda era ~50% do real) |
-| 138 | Parcial (#139) | Diagnose | Gaps silenciosos team_stats: camada season-prefix corrigida; team-name-mismatch ainda em fix-133 |
+| 138 | Corrigido (#139+#140) | Diagnose | Gaps silenciosos team_stats: ambas as camadas fechadas (mapper + resolver) |
 | 139 | Corrigido | Fix | data_mapper canonical FootyStats field names: ~30+ campos com primary key season* + novos home/away splits |
+| 140 | Corrigido | Fix | fix-133: 8 helpers de team_stat extraction roteados via _find_team_in_df (5-strategy fuzzy) |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |

@@ -7338,3 +7338,83 @@ A solucao desse fix exige decisao adicional sobre normalizacao (cleanName vs str
 
 ---
 
+## 140 — fix-133: team name fuzzy match nos extratores de stats (fecha camada 1 do #138)
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/fixtures_service.py`
+**Severidade:** Alta (efeito silencioso, complementa #139)
+**Status:** Corrigido
+
+### Problema identificado
+
+Apos o #139 corrigir as primary keys do `data_mapper`, a auditoria mostrou que os extratores de stats em `fixtures_service.build_records_from_matches` ainda retornavam None para times com suffixo oficial (`Manchester United FC`, `Brighton & Hove Albion`, `Sao Paulo FC`, `AS Roma`, etc.). Esses times sao a maioria das ligas EU/SA. O #139 sozinho nao bastava — o pipeline extraia tudo corretamente do JSON da FootyStats mas no momento de buscar pelo nome do fixture o exact match falhava.
+
+### Causa raiz
+
+Oito helpers nested em `build_records_from_matches` usavam exact match inline:
+
+```python
+row = teams[teams[name_col] == name]   # ou
+row = teams[teams.get("team_name", "") == name]
+```
+
+Funcoes afetadas: `team_rating`, `team_possession`, `team_corners_per_match`, `team_cards_per_match`, `team_shots_on_target`, `team_fouls_per_match`, `team_shots_per_match`, `_team_stat`.
+
+Enquanto isso, a mesma funcao **ja tinha** dois fuzzy resolvers maduros:
+- `_find_team_in_df(name, df)` (linha ~713) — usado em previous-season blending
+- `get_team_row(name)` (linha ~783) — usado em `lambda-diag` com logging verboso
+
+Ambos com 5-strategy fallback (exact -> alias -> substring -> normalized -> token -> prefix). Os 8 extratores de stat foram escritos antes desses helpers e nunca foram migrados.
+
+A entrada #138 documentou esse gap como "camada 1" e adiou para `fix-133`. O #140 fecha exatamente essa camada.
+
+### Correcoes aplicadas
+
+Refatorados os 8 helpers para usar `_find_team_in_df(name, teams)` no lugar de exact match inline. Mantida a logica de validacao de tipo/range de cada helper. Forward reference para `_find_team_in_df` (definida ~370 linhas abaixo na mesma closure) eh segura porque os helpers so sao invocados depois que todo o def da funcao terminou.
+
+Cabecalho explicativo adicionado antes do bloco com referencia cruzada para #138 / #139 / #140.
+
+### Validacao
+
+Smoke test isolado da logica de resolucao com DataFrame fake contendo nomes FootyStats-style. Casos validados:
+
+| Input | DataFrame | Strategy | Resultado |
+|---|---|---|---|
+| `Manchester United` | `Manchester United FC` | substring | OK |
+| `Brighton` | `Brighton & Hove Albion` | substring | OK |
+| `Sao Paulo` | `Sao Paulo FC` | substring | OK |
+| `Roma` | `AS Roma` | substring | OK |
+| `Manchester United FC` | `Manchester United FC` | exact | OK (preservado) |
+
+Sintaxe Python validada via `ast.parse`.
+
+### Backward compatibility
+
+- Nenhuma assinatura publica alterada — todos os helpers mantem `(name) -> Optional[float]`.
+- Times que ja matchavam exato continuam matchando exato (eh o primeiro passo de `_find_team_in_df`).
+- Times que falhavam silenciosamente agora resolvem via uma das 4 estrategias de fallback.
+- O `_avg_from_history` fallback continua intacto — segue sendo usado quando o team-row nao tem o campo desejado.
+
+### Impacto esperado (combinado #139 + #140)
+
+Para times com suffixo oficial (~10–15% da base, principalmente EU):
+- **Antes do #139**: gaps silenciosos por chave nao-canonica (matchesPlayed_overall buscado, seasonMatchesPlayed_overall retornado).
+- **Apos #139, antes do #140**: mapper extrai correto, mas helpers nao acham o time pelo nome do fixture sem suffixo. Continuam None.
+- **Apos #139 + #140**: cadeia completa funciona. matches_played, wins, draws, losses, PPG, BTTS%, CS%, FTS%, Over/Under% chegam ao record.
+
+V2 corners predictor (`data_quality.py`) verifica `corners_recorded_matches_num` — esse campo agora vai ter valor nao-nulo, tirando os jogos do `dataQualityTier: INSUFFICIENT` que cai em legacy engine.
+
+Calibradores per-league podem mostrar drift no proximo `POST /api/backtesting/calibrate`. Esperar:
+- `brier_cards`: melhora projetada de ~0.22 para ~0.15
+- `brier_corners`: melhora quando V2 engine sair de INSUFFICIENT
+- `cards_multiplier` e `corners_multiplier`: podem afastar do neutro 1.0 — monitorar
+
+### Licao aprendida
+
+1. **DRY tambem se aplica a helpers de resolucao de nome.** Quando um modulo tem 3 implementacoes paralelas (`_find_team_in_df`, `get_team_row`, e o codigo inline), a ultima e a que sempre fica desatualizada. Extrair UMA helper canonica e roteia tudo.
+2. **Forward references em closures sao seguras quando todos os helpers sao chamados depois do def completo.** Util quando refatorar a ordem das funcoes nao e desejavel.
+3. **Smoke test isolado vale mais que mock complexo.** O teste de 8 linhas em DataFrame fake validou as 4 estrategias de fallback sem precisar subir o backend.
+4. **Defesa em profundidade do CLAUDE.md provou seu valor.** O bug do #138 vinha de DUAS camadas distintas (mapper + resolver). Cada uma com sua propria correcao (#139 + #140). Tratar como bug unico teria deixado metade do problema aberto.
+
+---
+

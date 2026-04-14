@@ -298,105 +298,122 @@ def build_records_from_matches(
             avgGoals = tsum / totalMatches if totalMatches > 0 else 0.0
         homeForm = compute_form(matches, home, 5)
         awayForm = compute_form(matches, away, 5)
+        # ----------------------------------------------------------------
+        # Team stat extractors — fix-133 / #140
+        # ----------------------------------------------------------------
+        # Estes helpers usavam exact match em `team_name`, falhando para
+        # times com suffixo (`Manchester United` vs `Manchester United FC`)
+        # e camuflando todo o trabalho do data_mapper (#138/#139).
+        #
+        # Solucao: roteia tudo via _find_team_in_df (5-strategy fuzzy:
+        # exact -> alias -> substring -> normalized -> token -> prefix),
+        # ja existente e usado para previous-season blending.
+        #
+        # Forward reference para _find_team_in_df eh seguro: estes helpers
+        # so sao invocados apos o def de _find_team_in_df rodar.
+        # ----------------------------------------------------------------
         def team_rating(name: str) -> float:
             if teams is not None:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    ppg = float(row.iloc[0].get("points_per_game", row.iloc[0].get("points_per_game_overall", 1.5)) or 1.5)
+                team_row = _find_team_in_df(name, teams)
+                if team_row is not None:
+                    ppg = float(
+                        team_row.get("points_per_game",
+                                     team_row.get("points_per_game_overall", 1.5)) or 1.5
+                    )
                     return max(0.0, min(10.0, ppg * 4.0))
             return 6.5
         def team_possession(name: str) -> Optional[float]:
             if teams is not None and "average_possession" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("average_possession", None)
+                team_row = _find_team_in_df(name, teams)
+                if team_row is not None:
+                    val = team_row.get("average_possession", None)
                     try:
                         return float(val)
-                    except Exception:
+                    except (TypeError, ValueError):
                         return None
             return None
         def team_corners_per_match(name: str) -> Optional[float]:
             if teams is not None and "corners_per_match" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("corners_per_match", None)
+                team_row = _find_team_in_df(name, teams)
+                if team_row is not None:
+                    val = team_row.get("corners_per_match", None)
                     try:
                         return float(val)
-                    except Exception:
+                    except (TypeError, ValueError):
                         return None
             return None
         def team_cards_per_match(name: str) -> Optional[float]:
             if teams is not None and "cards_per_match" in teams.columns:
-                row = teams[teams.get("team_name", "") == name]
-                if len(row) > 0:
-                    val = row.iloc[0].get("cards_per_match", None)
+                team_row = _find_team_in_df(name, teams)
+                if team_row is not None:
+                    val = team_row.get("cards_per_match", None)
                     try:
                         return float(val)
-                    except Exception:
+                    except (TypeError, ValueError):
                         return None
             return None
         def team_shots_on_target(name: str) -> Optional[float]:
             if teams is None:
                 return None
+            team_row = _find_team_in_df(name, teams)
+            if team_row is None:
+                return None
             for col in ["shots_on_target_per_match", "shots_on_target_per_game", "shotsOnTarget_per_match", "shots_on_target_avg"]:
                 if col in teams.columns:
-                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-                    if not name_col:
-                        return None
-                    row = teams[teams[name_col] == name]
-                    if len(row) > 0:
-                        val = row.iloc[0].get(col, None)
-                        try:
-                            v = float(val)
-                            return v if v > 0 else None
-                        except Exception:
-                            return None
+                    val = team_row.get(col, None)
+                    try:
+                        v = float(val)
+                        if v > 0:
+                            return v
+                    except (TypeError, ValueError):
+                        continue
             return None
         def team_fouls_per_match(name: str) -> Optional[float]:
             if teams is None:
                 return None
+            team_row = _find_team_in_df(name, teams)
+            if team_row is None:
+                return None
             for col in ["fouls_per_match", "fouls_per_game", "foulsPerMatch", "fouls_avg"]:
                 if col in teams.columns:
-                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-                    if not name_col:
-                        return None
-                    row = teams[teams[name_col] == name]
-                    if len(row) > 0:
-                        val = row.iloc[0].get(col, None)
-                        try:
-                            v = float(val)
-                            return v if v > 0 else None
-                        except Exception:
-                            return None
+                    val = team_row.get(col, None)
+                    try:
+                        v = float(val)
+                        if v > 0:
+                            return v
+                    except (TypeError, ValueError):
+                        continue
             return None
         def team_shots_per_match(name: str) -> Optional[float]:
             if teams is None:
                 return None
+            team_row = _find_team_in_df(name, teams)
+            if team_row is None:
+                return None
             for col in ["shots_per_match", "shots_per_game", "shotsPerMatch", "shots_avg"]:
                 if col in teams.columns:
-                    name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-                    if not name_col:
-                        return None
-                    row = teams[teams[name_col] == name]
-                    if len(row) > 0:
-                        val = row.iloc[0].get(col, None)
-                        try:
-                            v = float(val)
-                            return v if v > 0 else None
-                        except Exception:
-                            return None
+                    val = team_row.get(col, None)
+                    try:
+                        v = float(val)
+                        if v > 0:
+                            return v
+                    except (TypeError, ValueError):
+                        continue
             return None
         def _team_stat(name: str, col: str) -> Optional[float]:
-            """Generic helper: extract a single float stat from teams_df for a team."""
+            """Generic helper: extract a single float stat from teams_df for a team.
+
+            Usa _find_team_in_df (5-strategy fuzzy matcher) para resolver o
+            nome do time. Fecha o gap "Manchester United" vs "Manchester United FC"
+            do #138 (fix-133 / #140). Forward ref para _find_team_in_df eh
+            segura: esta funcao so e invocada depois que o def rodou.
+            """
             if teams is None or col not in teams.columns:
                 return None
-            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-            if not name_col:
+            team_row = _find_team_in_df(name, teams)
+            if team_row is None:
                 return None
-            row = teams[teams[name_col] == name]
-            if len(row) == 0:
-                return None
-            val = row.iloc[0].get(col, None)
+            val = team_row.get(col, None)
             if val is None:
                 return None
             try:
