@@ -369,22 +369,25 @@ class DataMapper:
                 ["seasonGoals", "goals_scored"],
                 0,
             ),
+            # #145b: seasonGoals_home/away are ARRAYS of goal-minute timings
+            # (e.g. ["54","87","8",...]), NOT integers. Removed from fallbacks.
             "goals_scored_home": _pick(
-                ["seasonScoredNum_home"], ["seasonGoals_home"], None,
+                ["seasonScoredNum_home"], default=None,
             ),
             "goals_scored_away": _pick(
-                ["seasonScoredNum_away"], ["seasonGoals_away"], None,
+                ["seasonScoredNum_away"], default=None,
             ),
             "goals_conceded": _pick(
                 ["seasonConceded_overall", "seasonConcededNum_overall"],
                 ["seasonConceded", "goals_conceded"],
                 0,
             ),
+            # #145b: seasonConceded_home/away are ARRAYS of goal-minute timings.
             "goals_conceded_home": _pick(
-                ["seasonConcededNum_home"], ["seasonConceded_home"], None,
+                ["seasonConcededNum_home"], default=None,
             ),
             "goals_conceded_away": _pick(
-                ["seasonConcededNum_away"], ["seasonConceded_away"], None,
+                ["seasonConcededNum_away"], default=None,
             ),
             "goal_difference": _pick(
                 ["seasonGoalDifference_overall"],
