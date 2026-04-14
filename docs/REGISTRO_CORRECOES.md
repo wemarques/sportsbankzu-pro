@@ -6492,7 +6492,7 @@ Gols nao afetado (Poisson inherentemente monotonico).
 **Data:** 2026-04-13
 **Arquivos afetados:** `backend/services/data_mapper.py`, `backend/services/fixtures_service.py` (nao corrigidos — investigacao)
 **Severidade:** Alta (efeito silencioso, camuflado por fallbacks)
-**Status:** Investigado — correcao adiada para skill `fix-133`
+**Status:** Corrigido pelo #139 (camada season-prefix do mapper). Camada team-name-mismatch ainda pendente para `fix-133`.
 
 ### Contexto
 
@@ -7230,6 +7230,111 @@ Agravantes:
 ### Licao aprendida
 
 Calibrador DEVE usar o mesmo modelo que o pipeline de predicao. Descompasso Poisson→NB2 causa direcao oposta na correcao. Validar que funcao de calibracao e funcao de predicao compartilham a mesma distribuicao estatistica.
+
+---
+
+## 139 — Fix sistemico: data_mapper canonical FootyStats field names (closes camada 2 do #138)
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/data_mapper.py`
+**Severidade:** Alta (fecha gaps silenciosos de extracao em ~30+ campos)
+**Status:** Corrigido
+
+### Problema identificado
+
+A entrada #138 documentou que o `data_mapper.map_team_to_internal()` procurava `matchesPlayed_overall` quando a FootyStats devolve `seasonMatchesPlayed_overall`. Apos leitura integral da documentacao oficial (`/league-teams`, `/team`, `/lastx`), confirmou-se que o problema era muito mais amplo: **mais de 30 campos** usavam chaves nao-canonicas como primary lookup, com fallbacks errados ou ausentes.
+
+A convencao real da FootyStats para metricas de time e o **prefixo `season*`** em quase todos os agregados de temporada (gols, vitorias, empates, derrotas, PPG, BTTS, CS, FTS, Over/Under, etc.). O mapper estava inconsistente — alguns campos ja usavam `season*` corretamente, outros buscavam variantes nao-existentes primeiro (matchesPlayed_overall, wins_overall, draws_overall, pointsPerGame_overall, btts_overall, etc.), e quando falhavam o fallback caia em chaves igualmente erradas.
+
+### Causa raiz
+
+O mapper foi escrito iterativamente, ao longo de varias sessoes, sem cross-reference contra a documentacao oficial. Cada campo foi adicionado conforme a necessidade, com nomes inferidos por convencao informal. O resultado era uma colcha de retalhos: chaves canonicas corretas para alguns campos (`seasonScoredAVG_overall`, `cornersAVG_overall`), incorretas para outros (`matchesPlayed_overall`, `wins_overall`), e silenciosamente None para metade dos consumidores.
+
+O fallback do `_pick(primary, fallback, default)` mascarou parcialmente o problema: alguns campos retornavam valores plausiveis via fallback, outros viravam None silencioso.
+
+### Correcoes aplicadas
+
+Reescrita completa do return dict de `map_team_to_internal()` aplicando o principio:
+
+> **Para CADA campo: primary = chave canonica oficial da FootyStats, fallbacks = chaves alternativas / endpoints secundarios / legados. NUNCA inverter a ordem sem revalidar contra a doc.**
+
+**Campos com primary key corrigida (>30 fields):**
+
+| Campo interno | Antes (primary) | Depois (primary) |
+|---|---|---|
+| `matches_played` | `matchesPlayed_overall` | `seasonMatchesPlayed_overall` |
+| `wins` | `wins_overall` | `seasonWinsNum_overall` |
+| `draws` | `draws_overall` | `seasonDrawsNum_overall` |
+| `losses` | `losses_overall` | `seasonLossesNum_overall` |
+| `loss_percentage` | `lossPercentage_overall` | `losePercentage_overall` (note: `lose`) |
+| `points_per_game_overall` | `pointsPerGame_overall` | `seasonPPG_overall` |
+| `goals_scored` (root) | `goals_scored` (api_team root) | `seasonGoals_overall` (stats block) |
+| `goals_conceded` (root) | `goals_conceded` (api_team root) | `seasonConceded_overall` (stats block) |
+| `goal_difference` | `goalDifference_overall` | `seasonGoalDifference_overall` |
+| `average_total_goals_per_match` | `averageTotalGoalsPerMatch_overall` | `seasonAVG_overall` |
+| `clean_sheets` | `cleanSheet_overall` | `seasonCS_overall` |
+| `clean_sheet_percentage` | `cleanSheetPercentage_overall` | `seasonCSPercentage_overall` |
+| `btts_count` | `btts_overall` | `seasonBTTS_overall` |
+| `btts_percentage` | `bttsPercentage_overall` | `seasonBTTSPercentage_overall` |
+| `fts_count` | `fts_overall` | `seasonFTS_overall` |
+| `fts_percentage` | `ftsPercentage_overall` | `seasonFTSPercentage_overall` |
+| `over15_percentage` ... `over45_percentage` | `over*Percentage_overall` | `seasonOver*Percentage_overall` |
+| `under15_percentage` ... `under45_percentage` | `under*Percentage_overall` | `seasonUnder*Percentage_overall` |
+| `corners_per_match*` | `cornersAVG_*` (preserved as fallback) | `cornersRecorded_matches_*` first (canonical for /league-teams), `cornersAVG_*` fallback |
+| `prediction_risk` | `predictionRisk_overall` | `risk` |
+| `home_advantage_percentage` | (only this) | (legacy) + new `home_advantage_overall/attack/defence` from `homeOverallAdvantage/homeAttackAdvantage/homeDefenceAdvantage` |
+
+**Novos campos adicionados (expostos pela doc, nao extraidos antes):**
+
+- `matches_played_home`, `matches_played_away`
+- `wins_home`, `wins_away`, `draws_home`, `draws_away`, `losses_home`, `losses_away`
+- `points_per_game_home`, `points_per_game_away`
+- `goals_scored_home/away`, `goals_conceded_home/away`
+- `goal_difference_home/away`
+- `ht_scored_overall`, `ht_conceded_overall`, `ht_scored_avg`, `ht_conceded_avg`
+- `clean_sheets_home/away`, `clean_sheet_percentage_home/away`
+- `btts_count_home/away`, `btts_percentage_home/away`
+- `fts_count_home/away`, `fts_percentage_home/away`
+- `over55_percentage`, `under05/35/45_percentage`
+- `over75/125/135_corners_percentage`
+- `over05/15/55/65/75/85_cards_percentage`
+- `home_advantage_overall`, `home_advantage_attack`, `home_advantage_defence`
+
+**Gaps documentados (campos NAO disponiveis em /league-teams team-level):**
+
+Confirmados via doc oficial — esses campos NAO existem em team-level, apenas em endpoints league-level (`/league-season`):
+- `cards_per_match*` (so league-level: `cardsAVG_overall`)
+- `shots_per_match*`, `fouls_per_match*`, `offsides_per_match*`
+- `xg_for_avg`, `xg_against_avg` (premium plan)
+- `goal_timings` por intervalo de minuto
+
+Esses campos seguem sendo populados via `_avg_from_history` no `fixtures_service.py` (path historico que ja funciona para times com nome FC/AFC, ja que CSVs de matches usam outra convencao).
+
+### Backward compatibility
+
+- Todos os internal column names sao preservados (`matches_played`, `btts_percentage`, `clean_sheet_percentage`, etc).
+- Nenhum consumidor em `fixtures_service._team_stat()` quebra — sao apenas additive lookups com primary key corrigida + novos campos.
+- Fallback chain garante que respostas legadas (sem prefixo `season`) ainda funcionem caso o endpoint mude.
+- Smoke test de sintaxe: `python -c "import ast; ast.parse(...)"` → OK.
+
+### O que o #139 NAO resolve (reservado para `fix-133`)
+
+A **camada 1 do #138** (team name mismatch — `Manchester United` vs `Manchester United FC`) ainda esta pendente. O `_team_stat` em `fixtures_service.py:389` continua usando exact match. Sem o fix de fuzzy matching, mesmo com o data_mapper agora extraindo TUDO corretamente, alguns times com suffixo oficial ainda terao record vazio quando o pipeline buscar pelo nome do fixture sem suffixo.
+
+A solucao desse fix exige decisao adicional sobre normalizacao (cleanName vs strip suffix vs fuzzy) — fica para sessao futura.
+
+### Impacto esperado
+
+- Para times **sem** mismatch de nome (maioria das ligas SA + grande parte das EU): a partir do proximo refresh do `team_stats_cache`, todos os campos de record (W/D/L, PPG, goal_difference, BTTS%, CS%, FTS%, Over/Under%, etc.) passarao a ter valores reais ao inves de None silencioso.
+- Features downstream que dependem desses campos (momentum, streak, calibracao Mistral, narrativa) recebem informacao mais rica.
+- Calibradores per-league podem mostrar drift apos o proximo `POST /api/backtesting/calibrate` — esperar pequenos ajustes em `safe_prob_*` e `*_multiplier`. Monitorar Brier por liga.
+
+### Licao aprendida
+
+1. **Cross-reference contra doc oficial e mandatorio em qualquer mapper de API externa.** Inconsistencia silenciosa custa meses de bugs invisiveis.
+2. **Adicionar comentario inline citando a fonte canonica** (`# Fonte: /league-teams + /team + /lastx`) para que futuros refactors nao revertam por engano.
+3. **Defesa em camadas — fix-133 ainda eh necessario.** O #139 fecha um vetor (extracao de dados pela API), mas a camada de team name resolution continua quebrada para ~10-15% dos times. Fix completo requer ambos.
+4. **Sintese da doc antes de codar economiza tempo.** Ler as 5 docs principais (League Teams + Team + Lastx + League Season + Match Schedule) levou 20min e revelou que o bug original (#138) era 5x maior do que documentado.
 
 ---
 

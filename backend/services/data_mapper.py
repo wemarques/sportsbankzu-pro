@@ -265,109 +265,328 @@ class DataMapper:
                     return val
             return default
 
+        # ============================================================
+        # CANONICAL FOOTYSTATS FIELD NAMES — #139 (fix sistemico de #138)
+        # ============================================================
+        # Fonte: documentacao oficial /league-teams + /team + /lastx
+        # https://footystats.org/api/documentations/league-teams
+        #
+        # Convencao: para CADA campo, primario = chave canonica oficial,
+        # fallbacks = chaves alternativas / endpoints secundarios / legados.
+        # NUNCA inverter a ordem sem revalidar contra a doc.
+        # ============================================================
+
         return {
             "team_name": api_team.get("name") or api_team.get("cleanName"),
             "common_name": api_team.get("cleanName"),
             "season": api_team.get("season"),
             "country": api_team.get("country"),
-            # --- Record / Form (Team CSV: 186) ---
-            "matches_played": _pick(["matchesPlayed_overall"], ["matchesPlayed", "matches_played"], None),
-            "wins": _pick(["wins_overall"], ["wins"], None),
-            "wins_home": _pick(["wins_home"], default=None),
-            "wins_away": _pick(["wins_away"], default=None),
-            "draws": _pick(["draws_overall"], ["draws"], None),
-            "losses": _pick(["losses_overall"], ["losses"], None),
-            "win_percentage": _pick(["winPercentage_overall", "win_percentage_overall"], default=None),
-            "draw_percentage": _pick(["drawPercentage_overall", "draw_percentage_overall"], default=None),
-            "loss_percentage": _pick(["lossPercentage_overall", "loss_percentage_overall"], default=None),
-            "league_position": _pick(["league_position_overall", "league_position"], ["table_position"], None),
-            # PPG (Team CSV: 186 — points_per_game Total/Home/Away)
-            "points_per_game": api_team.get("pointsPerGame", 0.0) or api_team.get("ppg", 0.0),
-            "points_per_game_overall": _pick(["pointsPerGame_overall"], ["pointsPerGame", "ppg"], 0.0),
-            "points_per_game_home": _pick(["pointsPerGame_home"], default=None),
-            "points_per_game_away": _pick(["pointsPerGame_away"], default=None),
-            # --- Goals (Team CSV: 186) ---
-            "goals_scored": api_team.get("seasonGoals_overall", 0) or api_team.get("seasonGoals", 0),
-            "goals_conceded": api_team.get("seasonConceded_overall", 0) or api_team.get("seasonConceded", 0),
-            "goal_difference": _pick(["goalDifference_overall"], ["goal_difference"], None),
-            "average_total_goals_per_match": _pick(
-                ["averageTotalGoalsPerMatch_overall", "average_total_goals_per_match_overall"],
-                default=None,
+            # --- Record / Form (FootyStats /league-teams stats block) ---
+            # Doc: seasonMatchesPlayed_overall (NAO matchesPlayed_overall — esse era o bug #138)
+            "matches_played": _pick(
+                ["seasonMatchesPlayed_overall"],
+                ["matchesPlayed_overall", "matchesPlayed", "matches_played"],
+                None,
             ),
+            "matches_played_home": _pick(
+                ["seasonMatchesPlayed_home"], ["matchesPlayed_home"], None,
+            ),
+            "matches_played_away": _pick(
+                ["seasonMatchesPlayed_away"], ["matchesPlayed_away"], None,
+            ),
+            "wins": _pick(
+                ["seasonWinsNum_overall"],
+                ["wins_overall", "seasonWins_overall", "wins"],
+                None,
+            ),
+            "wins_home": _pick(
+                ["seasonWinsNum_home"], ["wins_home"], None,
+            ),
+            "wins_away": _pick(
+                ["seasonWinsNum_away"], ["wins_away"], None,
+            ),
+            "draws": _pick(
+                ["seasonDrawsNum_overall"],
+                ["draws_overall", "seasonDraws_overall", "draws"],
+                None,
+            ),
+            "draws_home": _pick(["seasonDrawsNum_home"], ["draws_home"], None),
+            "draws_away": _pick(["seasonDrawsNum_away"], ["draws_away"], None),
+            "losses": _pick(
+                ["seasonLossesNum_overall"],
+                ["losses_overall", "seasonLosses_overall", "losses"],
+                None,
+            ),
+            "losses_home": _pick(["seasonLossesNum_home"], ["losses_home"], None),
+            "losses_away": _pick(["seasonLossesNum_away"], ["losses_away"], None),
+            # Doc: winPercentage_overall / drawPercentage_overall / losePercentage_overall
+            # Atencao: 'lose' (NAO 'loss') no nome canonico
+            "win_percentage": _pick(
+                ["winPercentage_overall"],
+                ["win_percentage_overall", "win_percentage"],
+                None,
+            ),
+            "win_percentage_home": _pick(["winPercentage_home"], default=None),
+            "win_percentage_away": _pick(["winPercentage_away"], default=None),
+            "draw_percentage": _pick(
+                ["drawPercentage_overall"],
+                ["draw_percentage_overall", "draw_percentage"],
+                None,
+            ),
+            "loss_percentage": _pick(
+                ["losePercentage_overall"],
+                ["lossPercentage_overall", "loss_percentage_overall", "loss_percentage"],
+                None,
+            ),
+            "league_position": _pick(
+                ["league_position_overall", "league_position"],
+                ["table_position", "performance_rank"],
+                None,
+            ),
+            # PPG: doc canonica = seasonPPG_*
+            "points_per_game": api_team.get("seasonPPG_overall")
+                or api_team.get("pointsPerGame", 0.0)
+                or api_team.get("ppg", 0.0),
+            "points_per_game_overall": _pick(
+                ["seasonPPG_overall"],
+                ["pointsPerGame_overall", "pointsPerGame", "ppg"],
+                0.0,
+            ),
+            "points_per_game_home": _pick(
+                ["seasonPPG_home"], ["pointsPerGame_home"], None,
+            ),
+            "points_per_game_away": _pick(
+                ["seasonPPG_away"], ["pointsPerGame_away"], None,
+            ),
+            "points_per_game_recent": _pick(["seasonRecentPPG"], default=None),
+            # --- Goals (canonico: seasonGoals_overall em stats block) ---
+            # IMPORTANTE: ate #138 isto buscava em api_team root, nao em stats.
+            # /league-teams retorna esses campos DENTRO de stats.
+            "goals_scored": _pick(
+                ["seasonGoals_overall", "seasonScoredNum_overall"],
+                ["seasonGoals", "goals_scored"],
+                0,
+            ),
+            "goals_scored_home": _pick(
+                ["seasonScoredNum_home"], ["seasonGoals_home"], None,
+            ),
+            "goals_scored_away": _pick(
+                ["seasonScoredNum_away"], ["seasonGoals_away"], None,
+            ),
+            "goals_conceded": _pick(
+                ["seasonConceded_overall", "seasonConcededNum_overall"],
+                ["seasonConceded", "goals_conceded"],
+                0,
+            ),
+            "goals_conceded_home": _pick(
+                ["seasonConcededNum_home"], ["seasonConceded_home"], None,
+            ),
+            "goals_conceded_away": _pick(
+                ["seasonConcededNum_away"], ["seasonConceded_away"], None,
+            ),
+            "goal_difference": _pick(
+                ["seasonGoalDifference_overall"],
+                ["goalDifference_overall", "goal_difference"],
+                None,
+            ),
+            "goal_difference_home": _pick(["seasonGoalDifference_home"], default=None),
+            "goal_difference_away": _pick(["seasonGoalDifference_away"], default=None),
+            # Media total de gols (marcados+sofridos): canonico = seasonAVG_*
+            "average_total_goals_per_match": _pick(
+                ["seasonAVG_overall"],
+                ["averageTotalGoalsPerMatch_overall", "average_total_goals_per_match_overall"],
+                None,
+            ),
+            "average_total_goals_per_match_home": _pick(["seasonAVG_home"], default=None),
+            "average_total_goals_per_match_away": _pick(["seasonAVG_away"], default=None),
+            # Media de gols MARCADOS: canonico = seasonScoredAVG_*
             "goals_scored_per_match_overall": _pick(
-                ["seasonScoredAVG_overall", "seasonGoalsAVG_overall",
-                 "goals_scored_per_match_overall"], default=None,
+                ["seasonScoredAVG_overall"],
+                ["seasonGoalsAVG_overall", "goals_scored_per_match_overall"],
+                None,
             ),
             "goals_scored_per_match_home": _pick(
-                ["seasonScoredAVG_home", "seasonGoalsAVG_home",
-                 "goals_scored_per_match_home"], default=None,
+                ["seasonScoredAVG_home"],
+                ["seasonGoalsAVG_home", "goals_scored_per_match_home"],
+                None,
             ),
             "goals_scored_per_match_away": _pick(
-                ["seasonScoredAVG_away", "seasonGoalsAVG_away",
-                 "goals_scored_per_match_away"], default=None,
+                ["seasonScoredAVG_away"],
+                ["seasonGoalsAVG_away", "goals_scored_per_match_away"],
+                None,
             ),
+            # Media de gols SOFRIDOS: canonico = seasonConcededAVG_*
             "goals_conceded_per_match_overall": _pick(
-                ["seasonConcededAVG_overall", "goals_conceded_per_match_overall"], default=None,
+                ["seasonConcededAVG_overall"],
+                ["goals_conceded_per_match_overall"],
+                None,
             ),
             "goals_conceded_per_match_home": _pick(
-                ["seasonConcededAVG_home", "goals_conceded_per_match_home"], default=None,
+                ["seasonConcededAVG_home"],
+                ["goals_conceded_per_match_home"],
+                None,
             ),
             "goals_conceded_per_match_away": _pick(
-                ["seasonConcededAVG_away", "goals_conceded_per_match_away"], default=None,
+                ["seasonConcededAVG_away"],
+                ["goals_conceded_per_match_away"],
+                None,
             ),
-            "minutes_per_goal_scored": _pick(["minutesPerGoalScored_overall"], default=None),
-            "minutes_per_goal_conceded": _pick(["minutesPerGoalConceded_overall"], default=None),
-            # --- Half-time goals (Team CSV: 186) ---
-            "goals_scored_half_time": _pick(["goals_scored_half_time_overall", "seasonGoalsHT_overall"], default=None),
-            "goals_conceded_half_time": _pick(["goals_conceded_half_time_overall", "seasonConcededHT_overall"], default=None),
+            # Minutes per goal: doc /team usa seasonGoalsMin_overall
+            "minutes_per_goal_scored": _pick(
+                ["seasonGoalsMin_overall"], ["minutesPerGoalScored_overall"], None,
+            ),
+            "minutes_per_goal_conceded": _pick(
+                ["seasonConcededMin_overall"], ["minutesPerGoalConceded_overall"], None,
+            ),
+            # --- Half-time goals (canonico: scoredGoalsHT_*, concededGoalsHT_*, scoredAVGHT_*) ---
+            "goals_scored_half_time": _pick(
+                ["scoredGoalsHT_overall"],
+                ["seasonGoalsHT_overall", "goals_scored_half_time_overall"],
+                None,
+            ),
+            "goals_conceded_half_time": _pick(
+                ["concededGoalsHT_overall"],
+                ["seasonConcededHT_overall", "goals_conceded_half_time_overall"],
+                None,
+            ),
             "goals_scored_per_match_half_time": _pick(
-                ["goals_scored_per_match_half_time_overall", "seasonScoredAVGHT_overall"], default=None,
+                ["scoredAVGHT_overall"],
+                ["seasonScoredAVGHT_overall", "goals_scored_per_match_half_time_overall"],
+                None,
             ),
             "goals_conceded_per_match_half_time": _pick(
-                ["goals_conceded_per_match_half_time_overall", "seasonConcededAVGHT_overall"], default=None,
+                ["concededAVGHT_overall"],
+                ["seasonConcededAVGHT_overall", "goals_conceded_per_match_half_time_overall"],
+                None,
             ),
-            # --- Clean sheets / BTTS / FTS (Team CSV: 186 — critical for prediction) ---
-            "clean_sheets": _pick(["cleanSheets_overall", "clean_sheets_overall"], default=None),
+            "average_total_goals_per_match_half_time": _pick(
+                ["AVGHT_overall"], default=None,
+            ),
+            # --- Clean sheets / BTTS / FTS (CRITICOS PARA PREDICAO) ---
+            # Doc canonica: seasonCS_overall, seasonCSPercentage_overall
+            "clean_sheets": _pick(
+                ["seasonCS_overall"],
+                ["cleanSheets_overall", "clean_sheets_overall", "cleanSheets"],
+                None,
+            ),
+            "clean_sheets_home": _pick(["seasonCS_home"], default=None),
+            "clean_sheets_away": _pick(["seasonCS_away"], default=None),
             "clean_sheet_percentage": _pick(
-                ["cleanSheetPercentage_overall", "clean_sheet_percentage_overall"], default=None,
+                ["seasonCSPercentage_overall"],
+                ["cleanSheetPercentage_overall", "clean_sheet_percentage_overall"],
+                None,
             ),
-            "btts_count": _pick(["bttsCount_overall", "btts_count_overall"], default=None),
+            "clean_sheet_percentage_home": _pick(["seasonCSPercentage_home"], default=None),
+            "clean_sheet_percentage_away": _pick(["seasonCSPercentage_away"], default=None),
+            # BTTS: canonico = seasonBTTS_overall, seasonBTTSPercentage_overall
+            "btts_count": _pick(
+                ["seasonBTTS_overall"],
+                ["bttsCount_overall", "btts_count_overall"],
+                None,
+            ),
             "btts_percentage": _pick(
-                ["bttsPercentage_overall", "btts_percentage_overall"], default=None,
+                ["seasonBTTSPercentage_overall"],
+                ["bttsPercentage_overall", "btts_percentage_overall"],
+                None,
             ),
-            "fts_count": _pick(["ftsCount_overall", "fts_count_overall"], default=None),
+            "btts_percentage_home": _pick(["seasonBTTSPercentage_home"], default=None),
+            "btts_percentage_away": _pick(["seasonBTTSPercentage_away"], default=None),
+            # FTS: canonico = seasonFTS_overall, seasonFTSPercentage_overall
+            "fts_count": _pick(
+                ["seasonFTS_overall"],
+                ["ftsCount_overall", "fts_count_overall"],
+                None,
+            ),
             "fts_percentage": _pick(
-                ["ftsPercentage_overall", "fts_percentage_overall"], default=None,
+                ["seasonFTSPercentage_overall"],
+                ["ftsPercentage_overall", "fts_percentage_overall"],
+                None,
             ),
             "first_team_to_score_percentage": _pick(
-                ["firstTeamToScorePercentage_overall", "first_team_to_score_percentage_overall"], default=None,
+                ["firstTeamToScorePercentage_overall", "first_team_to_score_percentage_overall"],
+                default=None,
             ),
-            # --- Over/Under percentages (Team CSV: 186 — directly relevant for markets!) ---
-            "over05_percentage": _pick(["over05Percentage_overall", "over05_percentage_overall"], default=None),
-            "over15_percentage": _pick(["over15Percentage_overall", "over15_percentage_overall"], default=None),
-            "over25_percentage": _pick(["over25Percentage_overall", "over25_percentage_overall"], default=None),
-            "over35_percentage": _pick(["over35Percentage_overall", "over35_percentage_overall"], default=None),
-            "over45_percentage": _pick(["over45Percentage_overall", "over45_percentage_overall"], default=None),
-            "under15_percentage": _pick(["under15Percentage_overall", "under15_percentage_overall"], default=None),
-            "under25_percentage": _pick(["under25Percentage_overall", "under25_percentage_overall"], default=None),
-            # --- Possession (Team CSV: 186) ---
+            # --- Over/Under percentages (CRITICO para mercados) ---
+            # Doc canonica: seasonOver*Percentage_overall, seasonUnder*Percentage_overall
+            "over05_percentage": _pick(
+                ["seasonOver05Percentage_overall"],
+                ["over05Percentage_overall", "over05_percentage_overall"],
+                None,
+            ),
+            "over15_percentage": _pick(
+                ["seasonOver15Percentage_overall"],
+                ["over15Percentage_overall", "over15_percentage_overall"],
+                None,
+            ),
+            "over25_percentage": _pick(
+                ["seasonOver25Percentage_overall"],
+                ["over25Percentage_overall", "over25_percentage_overall"],
+                None,
+            ),
+            "over35_percentage": _pick(
+                ["seasonOver35Percentage_overall"],
+                ["over35Percentage_overall", "over35_percentage_overall"],
+                None,
+            ),
+            "over45_percentage": _pick(
+                ["seasonOver45Percentage_overall"],
+                ["over45Percentage_overall", "over45_percentage_overall"],
+                None,
+            ),
+            "over55_percentage": _pick(
+                ["seasonOver55Percentage_overall"], default=None,
+            ),
+            "under05_percentage": _pick(["seasonUnder05Percentage_overall"], default=None),
+            "under15_percentage": _pick(
+                ["seasonUnder15Percentage_overall"],
+                ["under15Percentage_overall", "under15_percentage_overall"],
+                None,
+            ),
+            "under25_percentage": _pick(
+                ["seasonUnder25Percentage_overall"],
+                ["under25Percentage_overall", "under25_percentage_overall"],
+                None,
+            ),
+            "under35_percentage": _pick(["seasonUnder35Percentage_overall"], default=None),
+            "under45_percentage": _pick(["seasonUnder45Percentage_overall"], default=None),
+            # --- Possession ---
+            # NAO documentado em /league-teams oficial; mantido como best-effort.
             "average_possession": _pick(
                 ["possessionAVG_overall", "average_possession_overall"],
                 ["average_possession", "possessionAVG"],
                 None,
             ),
-            "average_possession_home": _pick(["possessionAVG_home", "average_possession_home"], default=None),
-            "average_possession_away": _pick(["possessionAVG_away", "average_possession_away"], default=None),
-            # --- Corners (Team CSV: 186 + Pt.2: 442) ---
+            "average_possession_home": _pick(
+                ["possessionAVG_home"], ["average_possession_home"], None,
+            ),
+            "average_possession_away": _pick(
+                ["possessionAVG_away"], ["average_possession_away"], None,
+            ),
+            # --- Corners ---
+            # Doc /league-teams: cornersRecorded_matches_overall e' a "Media de
+            # escanteios por partida". NAO existe cornersAVG_overall em team-level
+            # (esse vive em /league-season league-level apenas).
             "corners_per_match": _pick(
-                ["cornersAVG_overall", "corners_per_match_overall"],
-                ["cornersAVG", "corners_per_match"],
+                ["cornersRecorded_matches_overall"],
+                ["cornersAVG_overall", "corners_per_match_overall",
+                 "cornersAVG", "corners_per_match"],
                 None,
             ),
-            "corners_per_match_home": _pick(["cornersAVG_home", "corners_per_match_home"], default=None),
-            "corners_per_match_away": _pick(["cornersAVG_away", "corners_per_match_away"], default=None),
-            "corners_total": _pick(["cornersTotal_overall", "corners_total_overall"], default=None),
-            # Pt.2: corners against (opponent corners) — #124: added season* keys
+            "corners_per_match_home": _pick(
+                ["cornersRecorded_matches_home"],
+                ["cornersAVG_home", "corners_per_match_home"],
+                None,
+            ),
+            "corners_per_match_away": _pick(
+                ["cornersRecorded_matches_away"],
+                ["cornersAVG_away", "corners_per_match_away"],
+                None,
+            ),
+            "corners_total": _pick(
+                ["cornersTotal_overall", "corners_total_overall"], default=None,
+            ),
+            # Corners against: NAO existe campo direto em /league-teams.
+            # Derivado por #124 a partir de fallback historico (cornersAgainst*).
             "corners_against_per_match": _pick(
                 ["cornersAgainstAVG_overall", "corners_against_per_match_overall",
                  "seasonCornersAgainst_overall", "seasonCornersAgainstAVG_overall"],
@@ -384,6 +603,7 @@ class DataMapper:
                 default=None,
             ),
             # #131: Corner TOTAL averages (corners totais do jogo = for + against)
+            # Nao documentado oficialmente; provavel chave do plano premium.
             "corners_total_avg_overall": _pick(
                 ["cornersTotalAVG_overall", "corners_total_avg_overall"], default=None,
             ),
@@ -393,40 +613,59 @@ class DataMapper:
             "corners_total_avg_away": _pick(
                 ["cornersTotalAVG_away", "corners_total_avg_away"], default=None,
             ),
-            # #131: Corners recorded matches (sample size for confidence)
+            # Sample size for confidence
             "corners_recorded_matches_overall": _pick(
-                ["cornersRecorded_matches_overall", "corners_recorded_matches_overall"], default=None,
+                ["cornersRecorded_matches_overall", "corners_recorded_matches_overall"],
+                default=None,
             ),
-            # Pt.2: corner over percentages (for corner markets)
+            # Corner over percentages — doc /league-teams confirma ate 13.5
+            "over65_corners_percentage": _pick(
+                ["over65CornersPercentage_overall"], default=None,
+            ),
+            "over75_corners_percentage": _pick(
+                ["over75CornersPercentage_overall"], default=None,
+            ),
             "over85_corners_percentage": _pick(
-                ["over85CornersPercentage_overall", "over85_corners_percentage_overall"], default=None,
+                ["over85CornersPercentage_overall"], default=None,
             ),
             "over95_corners_percentage": _pick(
-                ["over95CornersPercentage_overall", "over95_corners_percentage_overall"], default=None,
+                ["over95CornersPercentage_overall"], default=None,
             ),
             "over105_corners_percentage": _pick(
-                ["over105CornersPercentage_overall", "over105_corners_percentage_overall"], default=None,
-            ),
-            # #128a: additional corner percentage thresholds (features.py reads 65/115/145)
-            "over65_corners_percentage": _pick(
-                ["over65CornersPercentage_overall", "over65_corners_percentage_overall"], default=None,
+                ["over105CornersPercentage_overall"], default=None,
             ),
             "over115_corners_percentage": _pick(
-                ["over115CornersPercentage_overall", "over115_corners_percentage_overall"], default=None,
+                ["over115CornersPercentage_overall"], default=None,
             ),
+            "over125_corners_percentage": _pick(
+                ["over125CornersPercentage_overall"], default=None,
+            ),
+            "over135_corners_percentage": _pick(
+                ["over135CornersPercentage_overall"], default=None,
+            ),
+            # Compat: 14.5 nao existe na doc oficial; manter como None com fallback legado
             "over145_corners_percentage": _pick(
-                ["over145CornersPercentage_overall", "over145_corners_percentage_overall"], default=None,
+                ["over145CornersPercentage_overall"], default=None,
             ),
-            # --- Cards (Team CSV: 186 + Pt.2: 442) ---
+            # --- Cards ---
+            # ATENCAO: NAO existe cardsAVG_overall em team-level /league-teams
+            # (vive so em /league-season league-level — esse era um dos sintomas de #137).
+            # Doc /league-teams expoe SOMENTE os buckets over*Cards*. Para obter media,
+            # ev_classification deriva via cards_engine. Mantemos lookup com fallbacks
+            # para o caso de o plano premium expor cardsAVG_overall.
             "cards_per_match": _pick(
-                ["cardsAVG_overall", "cards_per_match_overall"],
-                ["cardsAVG", "cards_per_match"],
+                ["cardsAVG_overall"],
+                ["cards_per_match_overall", "cardsAVG", "cards_per_match"],
                 None,
             ),
-            "cards_per_match_home": _pick(["cardsAVG_home", "cards_per_match_home"], default=None),
-            "cards_per_match_away": _pick(["cardsAVG_away", "cards_per_match_away"], default=None),
+            "cards_per_match_home": _pick(
+                ["cardsAVG_home"], ["cards_per_match_home"], None,
+            ),
+            "cards_per_match_away": _pick(
+                ["cardsAVG_away"], ["cards_per_match_away"], None,
+            ),
             "cards_total": _pick(["cardsTotal_overall", "cards_total_overall"], default=None),
-            # #124: cards against (opponent cards) + variance for NB2
+            # Cards against: idem corners — sem campo direto, derivado.
             "cards_against_per_match": _pick(
                 ["cardsAgainstAVG_overall", "cards_against_avg_overall",
                  "seasonCardsAgainst_overall", "seasonCardsAgainstAVG_overall"],
@@ -443,17 +682,19 @@ class DataMapper:
             "cards_variance": _pick(
                 ["cardsVariance_overall", "cards_variance_overall"], default=None,
             ),
-            # #128b: card over-percentages (for calibrator + features)
-            "over25_cards_percentage": _pick(
-                ["over25CardsPercentage_overall", "over25_cards_percentage_overall"], default=None,
-            ),
-            "over35_cards_percentage": _pick(
-                ["over35CardsPercentage_overall", "over35_cards_percentage_overall"], default=None,
-            ),
-            "over45_cards_percentage": _pick(
-                ["over45CardsPercentage_overall", "over45_cards_percentage_overall"], default=None,
-            ),
-            # --- Shots (Team CSV: 186 + Pt.2: 442) ---
+            # Cards over-percentages — doc /league-teams confirma 0.5 ate 8.5
+            "over05_cards_percentage": _pick(["over05CardsPercentage_overall"], default=None),
+            "over15_cards_percentage": _pick(["over15CardsPercentage_overall"], default=None),
+            "over25_cards_percentage": _pick(["over25CardsPercentage_overall"], default=None),
+            "over35_cards_percentage": _pick(["over35CardsPercentage_overall"], default=None),
+            "over45_cards_percentage": _pick(["over45CardsPercentage_overall"], default=None),
+            "over55_cards_percentage": _pick(["over55CardsPercentage_overall"], default=None),
+            "over65_cards_percentage": _pick(["over65CardsPercentage_overall"], default=None),
+            "over75_cards_percentage": _pick(["over75CardsPercentage_overall"], default=None),
+            "over85_cards_percentage": _pick(["over85CardsPercentage_overall"], default=None),
+            # --- Shots ---
+            # NAO existe em team-level /league-teams oficial. Vive so em /league-season.
+            # Mantido como best-effort para planos premium / endpoints alternativos.
             "shots_per_match": _pick(
                 ["shotsAVG_overall", "shots_per_match_overall"],
                 ["shotsAVG", "shots_per_match"],
@@ -466,12 +707,17 @@ class DataMapper:
                 ["shotsOnTargetAVG", "shots_on_target_per_match"],
                 None,
             ),
-            "shots_on_target_per_match_home": _pick(["shotsOnTargetAVG_home", "shots_on_target_per_match_home"], default=None),
-            "shots_on_target_per_match_away": _pick(["shotsOnTargetAVG_away", "shots_on_target_per_match_away"], default=None),
+            "shots_on_target_per_match_home": _pick(
+                ["shotsOnTargetAVG_home", "shots_on_target_per_match_home"], default=None,
+            ),
+            "shots_on_target_per_match_away": _pick(
+                ["shotsOnTargetAVG_away", "shots_on_target_per_match_away"], default=None,
+            ),
             "shots_off_target_per_match": _pick(
                 ["shotsOffTargetAVG_overall", "shots_off_target_per_match_overall"], default=None,
             ),
-            # --- Fouls (Pt.2: 442) ---
+            # --- Fouls ---
+            # NAO existe em team-level /league-teams oficial. Best-effort apenas.
             "fouls_per_match": _pick(
                 ["foulsAVG_overall", "fouls_per_match_overall"],
                 ["foulsAVG", "fouls_per_match"],
@@ -479,13 +725,21 @@ class DataMapper:
             ),
             "fouls_per_match_home": _pick(["foulsAVG_home", "fouls_per_match_home"], default=None),
             "fouls_per_match_away": _pick(["foulsAVG_away", "fouls_per_match_away"], default=None),
-            "fouls_total": _pick(["foulsTotal_overall", "fouls_by_this_team_overall", "fouls_total_overall"], default=None),
-            # --- Offsides (Pt.2: 442) ---
-            "offsides_per_match": _pick(["offsidesAVG_overall", "offsidesTeamAVG_overall"], default=None),
-            # --- xG (Team CSV: 186) ---
-            "xg_for_avg": _pick(
-                ["xg_for_avg_overall", "xgForAVG_overall", "xg_for_avg"],
+            "fouls_total": _pick(
+                ["foulsTotal_overall", "fouls_by_this_team_overall", "fouls_total_overall"],
                 default=None,
+            ),
+            # --- Offsides ---
+            # NAO existe em team-level /league-teams oficial. Best-effort.
+            "offsides_per_match": _pick(
+                ["offsidesAVG_overall", "offsidesTeamAVG_overall"], default=None,
+            ),
+            # --- xG ---
+            # NAO documentado oficialmente em /league-teams.
+            # Pode existir em planos premium ou ser derivado de /match.
+            # Manter lookup com fallbacks; consumidor (xg_blend #128e) checa cobertura.
+            "xg_for_avg": _pick(
+                ["xg_for_avg_overall", "xgForAVG_overall", "xg_for_avg"], default=None,
             ),
             "xg_for_avg_home": _pick(["xg_for_avg_home", "xgForAVG_home"], default=None),
             "xg_for_avg_away": _pick(["xg_for_avg_away", "xgForAVG_away"], default=None),
@@ -495,26 +749,55 @@ class DataMapper:
             ),
             "xg_against_avg_home": _pick(["xg_against_avg_home", "xgAgainstAVG_home"], default=None),
             "xg_against_avg_away": _pick(["xg_against_avg_away", "xgAgainstAVG_away"], default=None),
-            # --- Prediction Risk (Team CSV: 186) ---
-            "prediction_risk": _pick(["predictionRisk_overall", "prediction_risk_overall"], default=None),
-            # --- 2nd half (Pt.2: 442) ---
+            # --- Prediction Risk ---
+            # Doc /team: campo canonico = 'risk' (NAO predictionRisk_overall)
+            "prediction_risk": _pick(
+                ["risk"],
+                ["predictionRisk_overall", "prediction_risk_overall"],
+                None,
+            ),
+            # --- 2nd half ---
             "goals_scored_2h_per_match": _pick(["goals_scored_2h_per_match_overall"], default=None),
             "goals_conceded_2h_per_match": _pick(["goals_conceded_2h_per_match_overall"], default=None),
             "average_total_goals_2h_per_match": _pick(["average_total_goals_2h_per_match_overall"], default=None),
             "btts_2h_percentage": _pick(["btts_2h_percentage_overall"], default=None),
-            # --- BTTS compound (Pt.2: 442) ---
+            # --- BTTS compound ---
             "btts_and_win_percentage": _pick(
                 ["BTTS_and_win_percentage_overall", "btts_and_win_percentage_overall"], default=None,
             ),
             "scored_both_halves_percentage": _pick(
-                ["scoredBothHalvesPercentage_overall", "scored_both_halves_percentage_overall"], default=None,
+                ["scoredBothHalvesPercentage_overall", "scored_both_halves_percentage_overall"],
+                default=None,
             ),
-            # --- Home advantage (Team CSV: 186) ---
+            # --- Home advantage ---
+            # Doc /league-teams: homeOverallAdvantage / homeAttackAdvantage / homeDefenceAdvantage
+            # (NAO homeAdvantagePercentage_*)
+            "home_advantage_overall": _pick(
+                ["homeOverallAdvantage"],
+                ["homeAdvantagePercentage_home", "home_advantage_percentage"],
+                None,
+            ),
+            "home_advantage_attack": _pick(
+                ["homeAttackAdvantage"],
+                ["homeAttackAdvantagePercentage"],
+                None,
+            ),
+            "home_advantage_defence": _pick(
+                ["homeDefenceAdvantage"],
+                ["homeDefenceAdvantagePercentage"],
+                None,
+            ),
+            # Compat: chave legada usada por consumidores antigos
             "home_advantage_percentage": _pick(
+                ["homeOverallAdvantage"],
                 ["homeAdvantagePercentage_home", "home_advantage_percentage_home",
-                 "homeAdvantagePercentage", "home_advantage_percentage"], default=None,
+                 "homeAdvantagePercentage", "home_advantage_percentage"],
+                None,
             ),
-            # --- Goal timings (Team CSV: 186) — goals per 10-min interval ---
+            # --- Goal timings (10-min interval) ---
+            # ATENCAO: estes campos vivem em /league-season league-level (goals_min_*),
+            # NAO em team-level /league-teams. Mantido com sufixo _overall para o caso
+            # de plano premium; consumidor deve tolerar None.
             "goals_scored_min_0_to_10": _pick(["goals_scored_min_0_to_10_overall"], default=None),
             "goals_scored_min_11_to_20": _pick(["goals_scored_min_11_to_20_overall"], default=None),
             "goals_scored_min_21_to_30": _pick(["goals_scored_min_21_to_30_overall"], default=None),
