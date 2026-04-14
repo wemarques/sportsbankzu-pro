@@ -213,15 +213,24 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
     away: detail.score?.away ?? 0,
   };
 
+  // Extrair stats ao vivo dos matchStats (campos podem vir do polling de live-scores)
+  const ms = detail.matchStats as Record<string, unknown> | undefined;
+  const _hCorners = (ms?.["homeCornersCount"] as number) ?? 0;
+  const _aCorners = (ms?.["awayCornersCount"] as number) ?? 0;
+  const _hYellow = (ms?.["homeYellowCards"] as number) ?? 0;
+  const _aYellow = (ms?.["awayYellowCards"] as number) ?? 0;
+  const _hRed = (ms?.["homeRedCards"] as number) ?? 0;
+  const _aRed = (ms?.["awayRedCards"] as number) ?? 0;
+
   const liveStats: LiveStats = {
-    homeCorners: 0,
-    awayCorners: 0,
-    totalCorners: detail.currentCorners ?? 0,
-    homeYellow: 0,
-    awayYellow: 0,
-    homeRed: 0,
-    awayRed: 0,
-    totalCards: 0,
+    homeCorners: _hCorners,
+    awayCorners: _aCorners,
+    totalCorners: detail.currentCorners ?? (_hCorners + _aCorners),
+    homeYellow: _hYellow,
+    awayYellow: _aYellow,
+    homeRed: _hRed,
+    awayRed: _aRed,
+    totalCards: _hYellow + _aYellow + _hRed + _aRed,
   };
 
   const match: MatchContext = {
@@ -245,37 +254,50 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
   const btts = score.home > 0 && score.away > 0;
   const result1x2: "1" | "X" | "2" =
     score.home > score.away ? "1" : score.home < score.away ? "2" : "X";
-  const totalCorners = detail.currentCorners ?? undefined;
-  const finished = detail.status === "finished";
+  // Extrair totais reais de corners e cards dos matchStats
+  const totalCorners: number | undefined =
+    (detail.currentCorners != null && detail.currentCorners > 0)
+      ? detail.currentCorners
+      : undefined;
 
-  for (const pick of picks) {
-    let result: PickResult = null;
-    if (finished) {
-      result = evaluatePick(pick.label, totalGoals, btts, result1x2, totalCorners)
-        ? "hit"
-        : "miss";
-    } else if (match.isLive && pick.liveTarget) {
-      // Preview ao vivo: over bateu (current > line) → hit; under estourou (current >= line) → miss
-      if (pick.liveDir === "over" && pick.liveTarget.line != null) {
-        if (pick.liveTarget.current > pick.liveTarget.line) result = "hit";
-      } else if (pick.liveDir === "under" && pick.liveTarget.line != null) {
-        if (pick.liveTarget.current >= pick.liveTarget.line) result = "miss";
-      } else if (
-        pick.liveDir === "corridor" &&
-        pick.liveTarget.max != null &&
-        pick.liveTarget.current >= pick.liveTarget.max
-      ) {
-        result = "miss";
+  // Cards: somar yellow + red de ambos os times se disponível
+  const homeCards = (detail.matchStats as Record<string, unknown> | undefined)?.["homeYellowCards"] as number | undefined;
+  const awayCards = (detail.matchStats as Record<string, unknown> | undefined)?.["awayYellowCards"] as number | undefined;
+  const homeRed = (detail.matchStats as Record<string, unknown> | undefined)?.["homeRedCards"] as number | undefined;
+  const awayRed = (detail.matchStats as Record<string, unknown> | undefined)?.["awayRedCards"] as number | undefined;
+  const totalCards: number | undefined =
+    (homeCards != null && awayCards != null)
+      ? (homeCards + awayCards + (homeRed ?? 0) + (awayRed ?? 0))
+      : undefined;
+
+  // Avaliar resultado para jogos finalizados
+  if (detail.status === "finished") {
+    for (const pick of picks) {
+      if (pick.isCorridorBet && pick.corridorLegs) {
+        // Corredor: AMBAS as pernas devem acertar
+        const allHit = pick.corridorLegs.every((leg) =>
+          evaluatePick(leg.selection, totalGoals, btts, result1x2, totalCorners, totalCards)
+        );
+        pick.result = allHit ? "hit" : "miss";
+      } else {
+        const hit = evaluatePick(
+          pick.label, totalGoals, btts, result1x2, totalCorners, totalCards
+        );
+        pick.result = hit ? "hit" : "miss";
       }
     }
-    if (pick.isCorridorBet && finished && pick.corridorLegs) {
-      // Corredor: ambas pernas precisam acertar
-      const bothHit = pick.corridorLegs.every((leg) =>
-        evaluatePick(leg.selection, totalGoals, btts, result1x2, totalCorners)
-      );
-      result = bothHit ? "hit" : "miss";
+  } else if (detail.status === "live") {
+    // Preview ao vivo: Over que bateu → hit antecipado, Under que estourou → miss antecipado
+    for (const pick of picks) {
+      if (!pick.liveTarget || !pick.liveDir) continue;
+      if (pick.liveDir === "over" && pick.liveTarget.line != null) {
+        if (pick.liveTarget.current > pick.liveTarget.line) pick.result = "hit";
+      } else if (pick.liveDir === "under" && pick.liveTarget.line != null) {
+        if (pick.liveTarget.current >= pick.liveTarget.line) pick.result = "miss";
+      } else if (pick.liveDir === "corridor" && pick.liveTarget.max != null) {
+        if (pick.liveTarget.current >= pick.liveTarget.max) pick.result = "miss";
+      }
     }
-    pick.result = result;
   }
 
   const analysis: AIAnalysisData = {
