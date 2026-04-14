@@ -59,7 +59,7 @@ import type {
 } from "./api";
 
 /** Evaluate a single pick against the actual result. */
-function evaluatePick(
+export function evaluatePick(
   mercado: string,
   totalGoals: number,
   btts: boolean,

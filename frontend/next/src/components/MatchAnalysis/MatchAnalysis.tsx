@@ -12,9 +12,15 @@ interface MatchAnalysisProps {
   match: MatchContext;
   picks: PickData[];
   analysis: AIAnalysisData;
+  bankroll?: number;
 }
 
-export default function MatchAnalysis({ match, picks, analysis }: MatchAnalysisProps) {
+export default function MatchAnalysis({
+  match,
+  picks,
+  analysis,
+  bankroll = 100,
+}: MatchAnalysisProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const filters: { id: FilterId; l: string }[] = [
     { id: "all", l: "Todos" },
@@ -155,7 +161,7 @@ export default function MatchAnalysis({ match, picks, analysis }: MatchAnalysisP
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {filtered.map((p) => (
-              <PickCard key={p.id} pick={p} match={match} />
+              <PickCard key={p.id} pick={p} match={match} bankroll={bankroll} />
             ))}
             {filtered.length === 0 && (
               <div style={{ textAlign: "center", padding: 20, color: C.t3, fontSize: 11 }}>

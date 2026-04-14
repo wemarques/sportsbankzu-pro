@@ -7648,3 +7648,42 @@ Terminologia tecnica deve ser traduzida para o usuario final. Apostadores querem
 
 ---
 
+## 148 — Stake Kelly para VIAVEL + Badge resultado + Simulador de banca
+
+**Data:** 2026-04-14
+**Arquivos afetados:**
+- backend/services/bankroll_engine.py (STAKE_MULTIPLIER NEUTRO=0.30, MAX_STAKE_PCT_BY_CLASS, VIAVEL_FLOOR_PCT, branch NEUTRO em compute_stake)
+- frontend/next/src/components/BankrollCard.tsx (calcQuarterKelly com param classification, rename Bankroll → Banca)
+- frontend/next/src/components/MatchAnalysis/types.ts (PickResult + campo result no PickData)
+- frontend/next/src/components/MatchAnalysis/atoms.tsx (ResultBadge, StakeRow)
+- frontend/next/src/components/MatchAnalysis/PickCard.tsx (bankroll prop, StakeRow inline, ResultBadge, legs com stake)
+- frontend/next/src/components/MatchAnalysis/MatchAnalysis.tsx (bankroll prop)
+- frontend/next/src/components/MatchAnalysis/AICard.tsx (RECOMENDACAO → SUGESTAO)
+- frontend/next/src/lib/matchDataMapper.ts (evaluatePick para result, preview ao vivo)
+- frontend/next/src/lib/localAudit.ts (export evaluatePick)
+- frontend/next/src/app/dashboard/page.tsx (propaga bankroll ao MatchAnalysis)
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+1. Picks VIAVEL (NEUTRO) tinham stake=0 — STAKE_MULTIPLIER NEUTRO=0.0 bloqueava qualquer aposta.
+2. Nao havia indicacao visual de acerto/erro pos-jogo (✓/✗).
+3. Card de banca era estatico: apostador nao tinha simulador inline nos picks.
+4. Label "RECOMENDACAO" na aba Resumo soava forte demais para narrativa.
+
+### Correcoes aplicadas
+1. **Backend**: STAKE_MULTIPLIER[NEUTRO]=0.30, MAX_STAKE_PCT_BY_CLASS[NEUTRO]=0.02, VIAVEL_FLOOR_PCT=0.005. Novo ramo em compute_stake para VIAVEL: exige prob>=50%, aplica QK*0.30, floor 0.5% se Kelly<=0, cap 2%.
+2. **Frontend calcQuarterKelly**: agora aceita `classification` opcional. NEUTRO usa multiplicador 0.30 e cap 2%; NEUTRO_QUALIFICADO usa 0.60 e cap 5%; SAFE padrao.
+3. **StakeRow atom**: exibe banca, percentual (gold) e stake (green) dentro de cada PickCard.
+4. **ResultBadge atom**: ✓ verde (acertou) / ✗ branco em fundo vermelho (errou). Preview ao vivo para over que bateu ou under/corredor que estourou.
+5. **matchDataMapper**: importa evaluatePick (exportado) e preenche pick.result quando finished ou preview ao vivo. Corredor exige ambas pernas para hit.
+6. **BankrollCard**: rename textos UI — "Bankroll Disponivel" → "Banca Disponível", "% do bankroll" → "% da banca".
+7. **AICard**: label RECOMENDACAO → SUGESTAO.
+
+### Licao aprendida
+Kelly mantem consistencia matematica para todas as classificacoes — nao faz sentido
+bloquear stake de VIAVEL quando a prob > 50%, desde que com multiplicador reduzido e cap conservador.
+O apostador decide com numeros, nao com bloqueios arbitrarios.
+
+---
+

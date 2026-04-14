@@ -165,7 +165,7 @@ export const AICard = ({
                     letterSpacing: "0.04em",
                   }}
                 >
-                  RECOMENDAÇÃO
+                  SUGESTÃO
                 </div>
                 <p style={{ fontSize: 11, lineHeight: 1.5, color: C.t1, margin: 0 }}>
                   {analysis.recommendation}

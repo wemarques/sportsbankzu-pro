@@ -20,6 +20,8 @@ export interface LiveTarget {
 
 export type LiveDirection = "over" | "under" | "corridor" | null;
 
+export type PickResult = "hit" | "miss" | null;
+
 export interface PickData {
   id: string;
   label: string;
@@ -34,6 +36,7 @@ export interface PickData {
   corridorLegs?: CorridorLeg[];
   liveTarget?: LiveTarget | null;
   liveDir?: LiveDirection;
+  result?: PickResult;
 }
 
 export interface LiveStats {

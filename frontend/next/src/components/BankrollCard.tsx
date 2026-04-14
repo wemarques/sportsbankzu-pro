@@ -2,17 +2,41 @@
 
 import React from "react";
 
-/* ── Quarter Kelly calculation ── */
+/* ── Quarter Kelly calculation (#148) ── */
 export function calcQuarterKelly(
   prob: number,
   odd: number,
   bankroll: number,
+  classification?: string,
 ): { stake: number; pct: number; ev: number } {
   if (prob <= 0 || odd <= 1 || bankroll <= 0) return { stake: 0, pct: 0, ev: 0 };
   const b = odd - 1;
   const kelly = (prob * b - (1 - prob)) / b;
-  const qk = kelly * 0.25;
-  const cappedPct = Math.min(Math.max(qk, 0), 0.05); // cap 0-5%
+
+  // Multiplicador e cap por classificação
+  let multiplier = 0.25; // Quarter Kelly default (SAFE)
+  let cap = 0.05;
+
+  if (classification === "NEUTRO") {
+    // VIÁVEL: prob < 50% não recebe stake
+    if (prob < 0.5) return { stake: 0, pct: 0, ev: (prob * odd - 1) * 100 };
+    multiplier = 0.25 * 0.3; // Quarter Kelly × 0.30
+    cap = 0.02; // Cap 2%
+  } else if (classification === "NEUTRO_QUALIFICADO") {
+    multiplier = 0.25 * 0.6;
+    cap = 0.05;
+  } else if (classification === "NO_BET") {
+    return { stake: 0, pct: 0, ev: (prob * odd - 1) * 100 };
+  }
+
+  let qk = kelly * multiplier;
+
+  // Floor para VIÁVEL: se Kelly ≤ 0 mas prob ≥ 50%
+  if (classification === "NEUTRO" && qk <= 0 && prob >= 0.5) {
+    qk = 0.005; // floor 0.5%
+  }
+
+  const cappedPct = Math.min(Math.max(qk, 0), cap);
   return {
     stake: Math.max(Math.round(bankroll * cappedPct * 100) / 100, 0),
     pct: cappedPct,
@@ -48,8 +72,8 @@ export default function BankrollCard({
       <div className="bkr-header">
         <div className="bkr-title-row">
           <div>
-            <span className="bkr-title">Bankroll Disponivel</span>
-            <span className="bkr-subtitle">Quarter Kelly &bull; Cap 5% por pick</span>
+            <span className="bkr-title">Banca Disponível</span>
+            <span className="bkr-subtitle">Quarter Kelly &bull; Cap 5%</span>
           </div>
           <span className="bkr-badge">EDITAVEL</span>
         </div>
@@ -87,7 +111,7 @@ export default function BankrollCard({
           <div className="bkr-stat bkr-stat--green">
             <span className="bkr-stat-label">Stake Total</span>
             <span className="bkr-stat-value bkr-stat-value--green">{fmtBRL(totalStake)}</span>
-            <span className="bkr-stat-sub">{bankroll > 0 ? ((totalStake / bankroll) * 100).toFixed(1) : "0.0"}% do bankroll</span>
+            <span className="bkr-stat-sub">{bankroll > 0 ? ((totalStake / bankroll) * 100).toFixed(1) : "0.0"}% da banca</span>
           </div>
           <div className="bkr-stat bkr-stat--yellow">
             <span className="bkr-stat-label">EV Medio</span>

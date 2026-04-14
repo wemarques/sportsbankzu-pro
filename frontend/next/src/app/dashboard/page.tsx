@@ -2557,6 +2557,7 @@ export default function Dashboard() {
                       match={mapped.match}
                       picks={mapped.picks}
                       analysis={mapped.analysis}
+                      bankroll={bankroll}
                     />
                   );
                 })()

@@ -7,7 +7,9 @@ import type {
   LiveDirection,
   MatchContext,
   PickData,
+  PickResult,
 } from "@/components/MatchAnalysis/types";
+import { evaluatePick } from "@/lib/localAudit";
 
 type MatchPrediction = NonNullable<MatchDetailData["predictions"]>[number];
 
@@ -237,6 +239,44 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
 
   const rawPicks = (detail.predictions ?? []).map(predictionToPick);
   const picks = groupCorridors(rawPicks, liveStats, score);
+
+  // #148 — preencher result (hit/miss) quando terminado ou preview ao vivo
+  const totalGoals = score.home + score.away;
+  const btts = score.home > 0 && score.away > 0;
+  const result1x2: "1" | "X" | "2" =
+    score.home > score.away ? "1" : score.home < score.away ? "2" : "X";
+  const totalCorners = detail.currentCorners ?? undefined;
+  const finished = detail.status === "finished";
+
+  for (const pick of picks) {
+    let result: PickResult = null;
+    if (finished) {
+      result = evaluatePick(pick.label, totalGoals, btts, result1x2, totalCorners)
+        ? "hit"
+        : "miss";
+    } else if (match.isLive && pick.liveTarget) {
+      // Preview ao vivo: over bateu (current > line) → hit; under estourou (current >= line) → miss
+      if (pick.liveDir === "over" && pick.liveTarget.line != null) {
+        if (pick.liveTarget.current > pick.liveTarget.line) result = "hit";
+      } else if (pick.liveDir === "under" && pick.liveTarget.line != null) {
+        if (pick.liveTarget.current >= pick.liveTarget.line) result = "miss";
+      } else if (
+        pick.liveDir === "corridor" &&
+        pick.liveTarget.max != null &&
+        pick.liveTarget.current >= pick.liveTarget.max
+      ) {
+        result = "miss";
+      }
+    }
+    if (pick.isCorridorBet && finished && pick.corridorLegs) {
+      // Corredor: ambas pernas precisam acertar
+      const bothHit = pick.corridorLegs.every((leg) =>
+        evaluatePick(leg.selection, totalGoals, btts, result1x2, totalCorners)
+      );
+      result = bothHit ? "hit" : "miss";
+    }
+    pick.result = result;
+  }
 
   const analysis: AIAnalysisData = {
     summary: detail.aiAnalysis?.summary ?? "",

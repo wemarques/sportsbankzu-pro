@@ -177,3 +177,4 @@
 | 146 | **ATIVA** | Safety | Regra de EV obrigatório no prompt Mistral — NUNCA afirmar EV+ sem verificar prob × odd > 1 |
 | 146b | **ATIVA** | Safety | Corredores devem ser apresentados como unidade (Over + Under = faixa esperada) |
 | 147 | Implementado | Feature | Redesign Match Analysis + Rename VIÁVEL + Glossário + LiveTracker + CorridorCard |
+| 148 | Implementado | Feature | Stake Kelly VIÁVEL (QK×0.30, cap 2%, floor 0.5%) + Badge resultado + Simulador banca |

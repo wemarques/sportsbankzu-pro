@@ -1,14 +1,17 @@
 import { C, CLS } from "./constants";
-import { Badge, Ev, Odd, ProbBar } from "./atoms";
+import { Badge, Ev, Odd, ProbBar, ResultBadge, StakeRow } from "./atoms";
 import { LiveProgress } from "./LiveProgress";
+import { calcQuarterKelly } from "@/components/BankrollCard";
 import type { MatchContext, PickData } from "./types";
 
 const CorridorCard = ({
   pick,
   match,
+  bankroll,
 }: {
   pick: PickData;
   match: MatchContext;
+  bankroll: number;
 }) => {
   const legs = pick.corridorLegs ?? [];
   const min = pick.liveTarget?.min ?? 0;
@@ -37,6 +40,7 @@ const CorridorCard = ({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Badge cls={pick.classification} />
+        <ResultBadge result={pick.result} />
         <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>{pick.label}</span>
       </div>
       <LiveProgress pick={pick} match={match} />
@@ -109,28 +113,54 @@ const CorridorCard = ({
         </div>
         {legs.length > 0 && (
           <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
-            {legs.map((leg, i) => (
-              <div
-                key={`${leg.selection}-${i}`}
-                style={{
-                  flex: 1,
-                  background: "rgba(255,255,255,0.02)",
-                  borderRadius: 5,
-                  padding: "6px 8px",
-                }}
-              >
-                <div style={{ fontSize: 11, color: C.t2, marginBottom: 4 }}>
-                  {leg.selection}
+            {legs.map((leg, i) => {
+              const legStake = calcQuarterKelly(
+                leg.prob,
+                leg.odd,
+                bankroll,
+                pick.classification
+              );
+              return (
+                <div
+                  key={`${leg.selection}-${i}`}
+                  style={{
+                    flex: 1,
+                    background: "rgba(255,255,255,0.02)",
+                    borderRadius: 5,
+                    padding: "6px 8px",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: C.t2, marginBottom: 4 }}>
+                    {leg.selection}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Odd odd={leg.odd} />
+                    <Ev ev={leg.ev} />
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <ProbBar prob={leg.prob} size="sm" />
+                  </div>
+                  {legStake.stake > 0 && (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 10,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      <span style={{ color: C.gold }}>
+                        {(legStake.pct * 100).toFixed(1)}%
+                      </span>
+                      <span style={{ color: C.green, fontWeight: 700 }}>
+                        R${legStake.stake.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Odd odd={leg.odd} />
-                  <Ev ev={leg.ev} />
-                </div>
-                <div style={{ marginTop: 4 }}>
-                  <ProbBar prob={leg.prob} size="sm" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -141,11 +171,14 @@ const CorridorCard = ({
 export const PickCard = ({
   pick,
   match,
+  bankroll,
 }: {
   pick: PickData;
   match: MatchContext;
+  bankroll: number;
 }) => {
-  if (pick.isCorridorBet) return <CorridorCard pick={pick} match={match} />;
+  if (pick.isCorridorBet)
+    return <CorridorCard pick={pick} match={match} bankroll={bankroll} />;
   const noBet = pick.classification === "NO_BET";
   const st = CLS[pick.classification] ?? CLS.NEUTRO;
   return (
@@ -165,6 +198,7 @@ export const PickCard = ({
         style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
       >
         <Badge cls={pick.classification} />
+        <ResultBadge result={pick.result} />
         <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>{pick.label}</span>
       </div>
       <LiveProgress pick={pick} match={match} />
@@ -188,6 +222,7 @@ export const PickCard = ({
         )}
         <Ev ev={pick.ev} />
       </div>
+      <StakeRow pick={pick} bankroll={bankroll} />
       {noBet && pick.ev != null && pick.ev < 0 && pick.bookOdd != null && (
         <div
           style={{

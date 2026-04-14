@@ -25,9 +25,21 @@ KELLY_FRACTION = 0.25  # Quarter Kelly default
 STAKE_MULTIPLIER = {
     MarketClassification.SAFE: 1.0,
     MarketClassification.NEUTRO_QUALIFICADO: 0.60,
-    MarketClassification.NEUTRO: 0.0,  # No stake for plain NEUTRO
+    MarketClassification.NEUTRO: 0.30,  # VIÁVEL — Quarter Kelly reduzido (#148)
     MarketClassification.NO_BET: 0.0,
 }
+
+# ─── Cap por classificação (#148) ───
+MAX_STAKE_PCT_BY_CLASS = {
+    MarketClassification.SAFE: 0.05,                  # 5%
+    MarketClassification.NEUTRO_QUALIFICADO: 0.05,    # 5%
+    MarketClassification.NEUTRO: 0.02,                # 2% — VIÁVEL mais conservador
+    MarketClassification.NO_BET: 0.0,
+}
+
+# Floor mínimo para VIÁVEL quando Kelly retorna <= 0 mas prob >= 50% (#148)
+VIAVEL_FLOOR_PCT = 0.005  # 0.5% da banca
+VIAVEL_MIN_PROB = 0.50
 
 # ─── Caps ───
 MAX_STAKE_PER_BET_PCT = 0.05      # 5% of bankroll max per single bet
@@ -152,6 +164,39 @@ def compute_stake(
             "haircut": 1.0,
         }
 
+    # ─── Branch VIÁVEL (#148) ───
+    if cls == MarketClassification.NEUTRO:
+        if prob < VIAVEL_MIN_PROB:
+            return {
+                "stake": 0.0,
+                "stake_reason": "viavel_prob_below_50",
+                "kelly_raw": 0.0,
+                "haircut": 1.0,
+            }
+        raw_kelly = kelly_stake(prob, book_odd, bankroll, kelly_fraction)
+        adjusted = raw_kelly * multiplier
+        # Floor: se Kelly dá 0 ou negativo, usar mínimo 0.5% da banca
+        if adjusted <= 0:
+            adjusted = bankroll * VIAVEL_FLOOR_PCT
+        # Haircuts
+        haircut = calculate_haircut(market_output, reason_codes)
+        adjusted *= haircut
+        # Cap 2%
+        cap_pct = MAX_STAKE_PCT_BY_CLASS[cls]
+        max_cap = bankroll * cap_pct
+        capped = min(adjusted, max_cap)
+        final_stake = round(max(0, capped), 2)
+        pct = final_stake / bankroll if bankroll > 0 else 0.0
+        return {
+            "stake": final_stake,
+            "stake_reason": "quarter_kelly_viavel",
+            "kelly_raw": round(raw_kelly, 2),
+            "haircut": round(haircut, 3),
+            "capped": capped < adjusted,
+            "classification_multiplier": multiplier,
+            "pct": round(pct, 4),
+        }
+
     # Calculate Kelly
     raw_kelly = kelly_stake(prob, book_odd, bankroll, kelly_fraction)
 
@@ -162,8 +207,9 @@ def compute_stake(
     haircut = calculate_haircut(market_output, reason_codes)
     adjusted *= haircut
 
-    # Apply per-bet cap
-    max_per_bet = bankroll * MAX_STAKE_PER_BET_PCT
+    # Apply per-bet cap (por classificação #148, fallback MAX_STAKE_PER_BET_PCT)
+    cap_pct = MAX_STAKE_PCT_BY_CLASS.get(cls, MAX_STAKE_PER_BET_PCT)
+    max_per_bet = bankroll * cap_pct
     capped = min(adjusted, max_per_bet)
 
     # Round to 2 decimal places
