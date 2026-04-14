@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import os
 import logging
 from datetime import datetime, timedelta
@@ -321,6 +321,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                             league_df=league_df,
                             players=None,
                             date_filter=date,
+                            season_id=season_id,  # #141: enables referee lookup
                         )
                     except Exception as e:
                         logger.error(f"[fixtures] {lid}: build_records_from_matches crashed: {type(e).__name__}: {e}")

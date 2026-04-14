@@ -583,6 +583,222 @@ def build_records_from_matches(
             avgGoals = tsum / totalMatches if totalMatches > 0 else 0.0
         homeForm = compute_form(matches, home, 5)
         awayForm = compute_form(matches, away, 5)
+        _TEAM_ALIASES = {
+            "psg": "paris saint-germain",
+            "inter milan": "internazionale",
+            "nec": "n.e.c.",
+            "rennes": "rennais",
+            "man united": "manchester united",
+            "man city": "manchester city",
+            "atletico madrid": "atletico de madrid",
+            "fc barcelona": "barcelona",
+            "ac milan": "milan",
+            "napoli": "napoli",
+            "real sociedad": "real sociedad",
+            "celta vigo": "celta de vigo",
+            "betis": "real betis",
+            "hertha": "hertha",
+            "mainz": "mainz",
+            "wolfsburg": "wolfsburg",
+            "rb leipzig": "rasenballsport leipzig",
+        }
+
+        def _normalize_team_name(name: str) -> str:
+            """Strip common suffixes/prefixes and normalize for matching."""
+            import re
+            n = name.strip().lower()
+            # Remove common suffixes/prefixes
+            for suffix in [" fc", " sc", " ec", " ac", " cf", " fk", " bk", " sk",
+                           " afc", " ssc", " as", " rcd", " cd", " se", " rc",
+                           " fr", " nfc", " if", " ff"]:
+                if n.endswith(suffix):
+                    n = n[:-len(suffix)].strip()
+            for prefix in ["fc ", "sc ", "fk ", "sk ", "ac ", "as ", "rc ", "se ",
+                           "club atletico ", "clube atletico ", "ca "]:
+                if n.startswith(prefix):
+                    n = n[len(prefix):].strip()
+            # Remove dots (N.E.C. -> NEC)
+            n = n.replace(".", "")
+            # Normalize whitespace
+            n = re.sub(r'\s+', ' ', n).strip()
+            return n
+
+        def _token_match_score(name_a: str, name_b: str) -> float:
+            """Token overlap score between two names (0.0-1.0)."""
+            a_tokens = set(_normalize_team_name(name_a).split())
+            b_tokens = set(_normalize_team_name(name_b).split())
+            if not a_tokens or not b_tokens:
+                return 0.0
+            overlap = a_tokens & b_tokens
+            # Score = overlap relative to the smaller set
+            smaller = min(len(a_tokens), len(b_tokens))
+            return len(overlap) / smaller if smaller > 0 else 0.0
+
+        # ---- Previous season blending (#064) ----
+        _MIN_SEASON_MATCHES = 5
+        _BLEND_STAT_COLS = [
+            "goals_scored_per_match_home", "goals_scored_per_match_away",
+            "goals_scored_per_match_overall", "goals_conceded_per_match_home",
+            "goals_conceded_per_match_away", "goals_conceded_per_match_overall",
+            "goals_scored_avg_home", "goals_scored_avg_away",
+            "goals_conceded_avg_home", "goals_conceded_avg_away",
+            "goals_scored_avg_overall", "goals_conceded_avg_overall",
+            "corners_per_match", "cards_per_match",
+            "btts_percentage", "clean_sheet_percentage",
+            "xg_for_avg", "xg_against_avg",
+        ]
+
+        def _find_team_in_df(name: str, df, log_prefix: str = "") -> Optional["pd.Series"]:
+            """Find a team in a DataFrame using 6 matching strategies. Shared by current/prev season."""
+            if df is None:
+                return None
+            nc = pick_column(df, ["team_name", "team", "name", "club"])
+            if not nc:
+                return None
+            # 1. Exact
+            row = df[df[nc] == name]
+            if len(row) > 0:
+                return row.iloc[0]
+            # 1b. Alias
+            alias = _TEAM_ALIASES.get(name.lower())
+            if alias:
+                for idx, tv in df[nc].items():
+                    if alias in str(tv).lower():
+                        return df.loc[idx]
+            # 2. Substring
+            for idx, tv in df[nc].items():
+                tvl = str(tv).lower()
+                nl = name.lower()
+                if nl in tvl or tvl in nl:
+                    return df.loc[idx]
+            # 3. Normalized
+            norm = _normalize_team_name(name)
+            for idx, tv in df[nc].items():
+                if _normalize_team_name(str(tv)) == norm:
+                    return df.loc[idx]
+            # 4. Token overlap
+            best_s, best_i, best_v = 0.0, None, None
+            for idx, tv in df[nc].items():
+                s = _token_match_score(name, str(tv))
+                if s > best_s:
+                    best_s, best_i, best_v = s, idx, tv
+            if best_s >= 0.5 and len(name) > 2:
+                return df.loc[best_i]
+            # 5. Prefix
+            if len(name) <= 4:
+                nl = name.lower()
+                for idx, tv in df[nc].items():
+                    tvl = str(tv).lower()
+                    if tvl.startswith(nl + " ") or tvl.startswith(nl + "."):
+                        return df.loc[idx]
+            return None
+
+        def _blend_row(current_row, prev_row, games_played):
+            """Blend current + previous season stats based on games played.
+
+            weight = current season weight (0.0 = 100% previous season, 1.0 = 100% current).
+            E.g. mp=0 → weight=0.00 (fully previous), mp=3 → weight=0.60, mp>=5 → weight=1.00.
+            """
+            if prev_row is None:
+                return current_row
+            if current_row is None:
+                return prev_row
+            # weight = current season weight: 0.0 means 100% prev, 1.0 means 100% current
+            weight = min(1.0, (games_played or 0) / _MIN_SEASON_MATCHES)
+            blended = current_row.copy()
+            for col in _BLEND_STAT_COLS:
+                curr_v = current_row.get(col) if col in current_row.index else None
+                prev_v = prev_row.get(col) if col in prev_row.index else None
+                try:
+                    if curr_v is not None and prev_v is not None:
+                        blended[col] = float(curr_v) * weight + float(prev_v) * (1 - weight)
+                    elif prev_v is not None and (curr_v is None or weight < 0.5):
+                        blended[col] = float(prev_v)
+                except (ValueError, TypeError):
+                    pass
+            return blended
+
+        def get_team_row(name: str) -> Optional["pd.Series"]:
+            if teams is None:
+                logger.warning(f"[lambda-diag] teams DataFrame is None for league={league_id}")
+                return None
+            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
+            if not name_col:
+                logger.warning(f"[lambda-diag] no name column found in teams. cols={list(teams.columns)[:10]}")
+                return None
+            # 1. Exact match
+            row = teams[teams[name_col] == name]
+            if len(row) > 0:
+                return row.iloc[0]
+
+            # 1b. Known alias lookup
+            alias = _TEAM_ALIASES.get(name.lower())
+            if alias:
+                for idx, team_val in teams[name_col].items():
+                    if alias in str(team_val).lower():
+                        logger.warning(
+                            f"[lambda-diag] Exact match failed for '{name}', "
+                            f"alias matched '{team_val}' (alias='{alias}') in col={name_col}"
+                        )
+                        return teams.loc[idx]
+
+            # 2. Substring match (both directions)
+            for idx, team_val in teams[name_col].items():
+                tv = str(team_val).lower()
+                nl = name.lower()
+                if nl in tv or tv in nl:
+                    logger.warning(
+                        f"[lambda-diag] Exact match failed for '{name}', "
+                        f"fuzzy matched '{team_val}' (substring) in col={name_col}"
+                    )
+                    return teams.loc[idx]
+
+            # 3. Normalized exact match (strip FC/SC/AC etc.)
+            norm_name = _normalize_team_name(name)
+            for idx, team_val in teams[name_col].items():
+                if _normalize_team_name(str(team_val)) == norm_name:
+                    logger.warning(
+                        f"[lambda-diag] Exact match failed for '{name}', "
+                        f"normalized matched '{team_val}' in col={name_col}"
+                    )
+                    return teams.loc[idx]
+
+            # 4. Token overlap (>= 50% token match for multi-word names)
+            best_score = 0.0
+            best_idx = None
+            best_val = None
+            for idx, team_val in teams[name_col].items():
+                score = _token_match_score(name, str(team_val))
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+                    best_val = team_val
+            if best_score >= 0.5 and len(name) > 2:
+                logger.warning(
+                    f"[lambda-diag] Exact match failed for '{name}', "
+                    f"token matched '{best_val}' (score={best_score:.2f}) in col={name_col}"
+                )
+                return teams.loc[best_idx]
+
+            # 5. Short name prefix match (for "AZ" -> "AZ Alkmaar", "NEC" -> "NEC Nijmegen")
+            if len(name) <= 4:
+                nl = name.lower()
+                for idx, team_val in teams[name_col].items():
+                    tv = str(team_val).lower()
+                    # Check if db name starts with the short name + space
+                    if tv.startswith(nl + " ") or tv.startswith(nl + "."):
+                        logger.warning(
+                            f"[lambda-diag] Exact match failed for '{name}', "
+                            f"prefix matched '{team_val}' in col={name_col}"
+                        )
+                        return teams.loc[idx]
+
+            sample = list(teams[name_col].head(5))
+            logger.warning(
+                f"[lambda-diag] Team '{name}' NOT FOUND after 5 strategies. "
+                f"norm='{norm_name}' Sample: {sample}"
+            )
+            return None
         # ----------------------------------------------------------------
         # Team stat extractors — fix-133 / #140
         # ----------------------------------------------------------------
@@ -947,222 +1163,6 @@ def build_records_from_matches(
         def safe(val: Optional[float], default: float) -> float:
             return float(val) if val is not None and val > 0 else default
         # Known aliases: API name -> canonical substring to search in DB
-        _TEAM_ALIASES = {
-            "psg": "paris saint-germain",
-            "inter milan": "internazionale",
-            "nec": "n.e.c.",
-            "rennes": "rennais",
-            "man united": "manchester united",
-            "man city": "manchester city",
-            "atletico madrid": "atletico de madrid",
-            "fc barcelona": "barcelona",
-            "ac milan": "milan",
-            "napoli": "napoli",
-            "real sociedad": "real sociedad",
-            "celta vigo": "celta de vigo",
-            "betis": "real betis",
-            "hertha": "hertha",
-            "mainz": "mainz",
-            "wolfsburg": "wolfsburg",
-            "rb leipzig": "rasenballsport leipzig",
-        }
-
-        def _normalize_team_name(name: str) -> str:
-            """Strip common suffixes/prefixes and normalize for matching."""
-            import re
-            n = name.strip().lower()
-            # Remove common suffixes/prefixes
-            for suffix in [" fc", " sc", " ec", " ac", " cf", " fk", " bk", " sk",
-                           " afc", " ssc", " as", " rcd", " cd", " se", " rc",
-                           " fr", " nfc", " if", " ff"]:
-                if n.endswith(suffix):
-                    n = n[:-len(suffix)].strip()
-            for prefix in ["fc ", "sc ", "fk ", "sk ", "ac ", "as ", "rc ", "se ",
-                           "club atletico ", "clube atletico ", "ca "]:
-                if n.startswith(prefix):
-                    n = n[len(prefix):].strip()
-            # Remove dots (N.E.C. -> NEC)
-            n = n.replace(".", "")
-            # Normalize whitespace
-            n = re.sub(r'\s+', ' ', n).strip()
-            return n
-
-        def _token_match_score(name_a: str, name_b: str) -> float:
-            """Token overlap score between two names (0.0-1.0)."""
-            a_tokens = set(_normalize_team_name(name_a).split())
-            b_tokens = set(_normalize_team_name(name_b).split())
-            if not a_tokens or not b_tokens:
-                return 0.0
-            overlap = a_tokens & b_tokens
-            # Score = overlap relative to the smaller set
-            smaller = min(len(a_tokens), len(b_tokens))
-            return len(overlap) / smaller if smaller > 0 else 0.0
-
-        # ---- Previous season blending (#064) ----
-        _MIN_SEASON_MATCHES = 5
-        _BLEND_STAT_COLS = [
-            "goals_scored_per_match_home", "goals_scored_per_match_away",
-            "goals_scored_per_match_overall", "goals_conceded_per_match_home",
-            "goals_conceded_per_match_away", "goals_conceded_per_match_overall",
-            "goals_scored_avg_home", "goals_scored_avg_away",
-            "goals_conceded_avg_home", "goals_conceded_avg_away",
-            "goals_scored_avg_overall", "goals_conceded_avg_overall",
-            "corners_per_match", "cards_per_match",
-            "btts_percentage", "clean_sheet_percentage",
-            "xg_for_avg", "xg_against_avg",
-        ]
-
-        def _find_team_in_df(name: str, df, log_prefix: str = "") -> Optional["pd.Series"]:
-            """Find a team in a DataFrame using 6 matching strategies. Shared by current/prev season."""
-            if df is None:
-                return None
-            nc = pick_column(df, ["team_name", "team", "name", "club"])
-            if not nc:
-                return None
-            # 1. Exact
-            row = df[df[nc] == name]
-            if len(row) > 0:
-                return row.iloc[0]
-            # 1b. Alias
-            alias = _TEAM_ALIASES.get(name.lower())
-            if alias:
-                for idx, tv in df[nc].items():
-                    if alias in str(tv).lower():
-                        return df.loc[idx]
-            # 2. Substring
-            for idx, tv in df[nc].items():
-                tvl = str(tv).lower()
-                nl = name.lower()
-                if nl in tvl or tvl in nl:
-                    return df.loc[idx]
-            # 3. Normalized
-            norm = _normalize_team_name(name)
-            for idx, tv in df[nc].items():
-                if _normalize_team_name(str(tv)) == norm:
-                    return df.loc[idx]
-            # 4. Token overlap
-            best_s, best_i, best_v = 0.0, None, None
-            for idx, tv in df[nc].items():
-                s = _token_match_score(name, str(tv))
-                if s > best_s:
-                    best_s, best_i, best_v = s, idx, tv
-            if best_s >= 0.5 and len(name) > 2:
-                return df.loc[best_i]
-            # 5. Prefix
-            if len(name) <= 4:
-                nl = name.lower()
-                for idx, tv in df[nc].items():
-                    tvl = str(tv).lower()
-                    if tvl.startswith(nl + " ") or tvl.startswith(nl + "."):
-                        return df.loc[idx]
-            return None
-
-        def _blend_row(current_row, prev_row, games_played):
-            """Blend current + previous season stats based on games played.
-
-            weight = current season weight (0.0 = 100% previous season, 1.0 = 100% current).
-            E.g. mp=0 → weight=0.00 (fully previous), mp=3 → weight=0.60, mp>=5 → weight=1.00.
-            """
-            if prev_row is None:
-                return current_row
-            if current_row is None:
-                return prev_row
-            # weight = current season weight: 0.0 means 100% prev, 1.0 means 100% current
-            weight = min(1.0, (games_played or 0) / _MIN_SEASON_MATCHES)
-            blended = current_row.copy()
-            for col in _BLEND_STAT_COLS:
-                curr_v = current_row.get(col) if col in current_row.index else None
-                prev_v = prev_row.get(col) if col in prev_row.index else None
-                try:
-                    if curr_v is not None and prev_v is not None:
-                        blended[col] = float(curr_v) * weight + float(prev_v) * (1 - weight)
-                    elif prev_v is not None and (curr_v is None or weight < 0.5):
-                        blended[col] = float(prev_v)
-                except (ValueError, TypeError):
-                    pass
-            return blended
-
-        def get_team_row(name: str) -> Optional["pd.Series"]:
-            if teams is None:
-                logger.warning(f"[lambda-diag] teams DataFrame is None for league={league_id}")
-                return None
-            name_col = pick_column(teams, ["team_name", "team", "name", "club"])
-            if not name_col:
-                logger.warning(f"[lambda-diag] no name column found in teams. cols={list(teams.columns)[:10]}")
-                return None
-            # 1. Exact match
-            row = teams[teams[name_col] == name]
-            if len(row) > 0:
-                return row.iloc[0]
-
-            # 1b. Known alias lookup
-            alias = _TEAM_ALIASES.get(name.lower())
-            if alias:
-                for idx, team_val in teams[name_col].items():
-                    if alias in str(team_val).lower():
-                        logger.warning(
-                            f"[lambda-diag] Exact match failed for '{name}', "
-                            f"alias matched '{team_val}' (alias='{alias}') in col={name_col}"
-                        )
-                        return teams.loc[idx]
-
-            # 2. Substring match (both directions)
-            for idx, team_val in teams[name_col].items():
-                tv = str(team_val).lower()
-                nl = name.lower()
-                if nl in tv or tv in nl:
-                    logger.warning(
-                        f"[lambda-diag] Exact match failed for '{name}', "
-                        f"fuzzy matched '{team_val}' (substring) in col={name_col}"
-                    )
-                    return teams.loc[idx]
-
-            # 3. Normalized exact match (strip FC/SC/AC etc.)
-            norm_name = _normalize_team_name(name)
-            for idx, team_val in teams[name_col].items():
-                if _normalize_team_name(str(team_val)) == norm_name:
-                    logger.warning(
-                        f"[lambda-diag] Exact match failed for '{name}', "
-                        f"normalized matched '{team_val}' in col={name_col}"
-                    )
-                    return teams.loc[idx]
-
-            # 4. Token overlap (>= 50% token match for multi-word names)
-            best_score = 0.0
-            best_idx = None
-            best_val = None
-            for idx, team_val in teams[name_col].items():
-                score = _token_match_score(name, str(team_val))
-                if score > best_score:
-                    best_score = score
-                    best_idx = idx
-                    best_val = team_val
-            if best_score >= 0.5 and len(name) > 2:
-                logger.warning(
-                    f"[lambda-diag] Exact match failed for '{name}', "
-                    f"token matched '{best_val}' (score={best_score:.2f}) in col={name_col}"
-                )
-                return teams.loc[best_idx]
-
-            # 5. Short name prefix match (for "AZ" -> "AZ Alkmaar", "NEC" -> "NEC Nijmegen")
-            if len(name) <= 4:
-                nl = name.lower()
-                for idx, team_val in teams[name_col].items():
-                    tv = str(team_val).lower()
-                    # Check if db name starts with the short name + space
-                    if tv.startswith(nl + " ") or tv.startswith(nl + "."):
-                        logger.warning(
-                            f"[lambda-diag] Exact match failed for '{name}', "
-                            f"prefix matched '{team_val}' in col={name_col}"
-                        )
-                        return teams.loc[idx]
-
-            sample = list(teams[name_col].head(5))
-            logger.warning(
-                f"[lambda-diag] Team '{name}' NOT FOUND after 5 strategies. "
-                f"norm='{norm_name}' Sample: {sample}"
-            )
-            return None
         def get_stat(row: Optional["pd.Series"], keys: List[str]) -> Optional[float]:
             if row is None:
                 return None
