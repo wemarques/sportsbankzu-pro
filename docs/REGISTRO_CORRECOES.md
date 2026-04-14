@@ -7418,3 +7418,100 @@ Calibradores per-league podem mostrar drift no proximo `POST /api/backtesting/ca
 
 ---
 
+## 141 — FootyStats /league-referees: referee avg cards wired into cards engine
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/footstats_client.py`, `backend/services/fixtures_service.py`
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+O cards engine (NB2) ja suportava `referee_avg_cards` como input, mas o pipeline nunca passava esse dado. O campo `referee_factor` era sempre 1.0.
+
+### Causa raiz
+Nenhum endpoint de arbitros estava integrado. O FootyStats disponibiliza `/league-referees` com ~65 datapoints por arbitro (cards/fouls/appearances).
+
+### Correcoes aplicadas
+1. `FootyStatsClient.get_league_referees(season_id)` — novo metodo com cache 24h
+2. `_build_referee_lookup(season_id)` — helper que constroi mapa {nome_normalizado: avg_cards/game}
+3. `_lookup_referee_avg()` — busca por nome normalizado + token overlap (ex: "M. Oliver" casa com "Michael Oliver")
+4. Wired no loop de `build_records_from_matches` — lookup construido ONCE per league, passado para workers paralelos
+
+### Licao aprendida
+Normalizar nomes de arbitros (strip accents + lowercase) e fuzzy match por token overlap e suficiente para >95% dos casos cross-API.
+
+---
+
+## 142 — FootyStats /lastx: recent form canonica para EMA/lambda calculator
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/footstats_client.py`, `backend/services/fixtures_service.py`, `backend/services/data_mapper.py`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+O EMA half-life (#108) dependia de reconstruir a lista de gols recentes filtrando `league-matches` — caro, impreciso e falhava quando o time tinha poucos jogos na temporada.
+
+### Causa raiz
+O endpoint canônico `/lastx` (buckets last_5/last_6/last_10) nunca estava integrado.
+
+### Correcoes aplicadas
+1. `FootyStatsClient.get_team_lastx(team_id)` — novo metodo com cache 2h
+2. `_parse_lastx_response()` — parser tolerante a 3 shapes (stats block, matches arrays, raw list)
+3. `_fetch_lastx_for_team()` + `_get_lastx_cached()` — memoizacao por team_id per league
+4. `data_mapper.map_team_to_internal()` — agora preserva `team_id` (antes era descartado)
+5. Wired em `build_records_from_matches`: lastx sobrescreve `goals_last5` e fornece `recent_goals_list` para EMA do lambda calculator
+6. Fallback: quando lastx indisponivel, continua usando `get_team_goals_from_cache` (#108c original)
+
+### Licao aprendida
+Preservar IDs da API upstream no mapper e essencial. Sem `team_id`, nao ha como chamar endpoints per-team.
+
+---
+
+## 143 — API-Football /fixtures/players: per-player cards/fouls para auditoria pos-jogo
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/api_football_client.py`, `backend/routes/live.py`
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+A auditoria pos-jogo de cards nao tinha dados granulares por jogador. Apenas o total de cards do jogo era conhecido (via /fixtures/events), mas sem fouls, sem distribuicao por jogador.
+
+### Causa raiz
+O endpoint `/fixtures/players` (per-player stats com cards/fouls/shots) nunca estava integrado.
+
+### Correcoes aplicadas
+1. `APIFootballClient.get_fixture_players(fixture_id)` — novo metodo com cache 6h
+2. `parse_fixture_players_cards()` — static parser que agrega yellow/red/fouls por team, tolerante a nulls
+3. Wired em `live_fixture_detail()` — retorna `playersCards` com breakdown home/away
+
+### Licao aprendida
+Parsers devem ser metodos estaticos quando nao dependem de estado do client — facilita testes unitarios isolados.
+
+---
+
+## 144 — extract_best_odds: Corners O/U 4.5-12.5 desbloqueando scanner #110
+
+**Data:** 2026-04-14
+**Arquivos afetados:** `backend/services/api_football_client.py`
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+O scanner expandido (#110) nao funcionava para corners porque `extract_best_odds` nao extraia odds de Corners O/U. Apenas Goals O/U e Cards O/U estavam implementados.
+
+### Causa raiz
+A branch `"over/under" in bet_name` capturava corners como se fossem goals (bet names como "Corners Over Under" contem "over/under"). Alem disso, nenhuma branch dedicada a corners existia.
+
+### Correcoes aplicadas
+1. Nova branch `"corner" in bet_name` posicionada ANTES da branch de goals O/U
+2. Guard `and "corner" not in bet_name` na branch de goals para impedir captura cruzada
+3. Linhas suportadas: 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5
+4. Keys: `corners_over_85`, `corners_under_85`, etc. (formato consistente com cards_over_35)
+
+### Licao aprendida
+Branches elif de parsing de odds devem ser ordenadas do mais especifico para o mais generico. "corner" deve vir antes de "over/under" generico para evitar captura cruzada.
+
+---
+

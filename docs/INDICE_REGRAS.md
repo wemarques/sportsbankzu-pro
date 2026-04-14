@@ -169,3 +169,7 @@
 | 139 | Corrigido | Fix | data_mapper canonical FootyStats field names: ~30+ campos com primary key season* + novos home/away splits |
 | 140 | Corrigido | Fix | fix-133: 8 helpers de team_stat extraction roteados via _find_team_in_df (5-strategy fuzzy) |
 | 128h | Corrigido | Fix | Recalibracao: xG blend ativado em 20 ligas, Brier O/U -0.0036 |
+| 141 | Implementado | Feature | FootyStats /league-referees: referee avg cards wired into cards engine (referee_factor) |
+| 142 | Implementado | Feature | FootyStats /lastx: recent form canonica (goals/cards/corners last5) → EMA/lambda calculator |
+| 143 | Implementado | Feature | API-Football /fixtures/players: per-player cards/fouls para auditoria pos-jogo |
+| 144 | Implementado | Feature | extract_best_odds: Corners O/U 4.5-12.5 desbloqueando scanner #110 |

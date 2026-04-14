@@ -161,6 +161,17 @@ def live_fixture_detail(fixture_id: int = Path(..., description="API-Football fi
     except Exception as e:
         logger.warning(f"[live] Injuries fetch failed for fixture {fixture_id}: {e}")
 
+    # #143 — per-player cards/fouls from /fixtures/players (post-match audit).
+    # Only valuable once the match is finished; while live the API may return
+    # partial / empty data, so we don't error if it's missing.
+    try:
+        players_raw = _afc.get_fixture_players(fixture_id, ttl_minutes=360)
+        if players_raw:
+            cards_summary = _afc.parse_fixture_players_cards(players_raw)
+            result["playersCards"] = cards_summary
+    except Exception as e:
+        logger.warning(f"[live] /fixtures/players fetch failed for fixture {fixture_id}: {e}")
+
     return result
 
 

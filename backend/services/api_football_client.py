@@ -923,6 +923,107 @@ class APIFootballClient:
         return data.get("response", [])
 
     # ==================================================================
+    # FIXTURE PLAYERS  (#143)
+    # ==================================================================
+    def get_fixture_players(self, fixture_id: int, ttl_minutes: int = 360) -> List[Dict]:
+        """Fetch per-player statistics for a finished fixture.
+
+        Endpoint API-Football `fixtures/players`. Returns a list of two team
+        blocks, each with a ``players`` array. Every player has a nested
+        ``statistics`` block with cards (yellow/red), fouls (committed/drawn),
+        shots, passes, dribbles, etc.
+
+        Available ~minutes after the final whistle. Use case: post-match
+        audit feeding the cards / fouls calibration loop.
+
+        Cache padrão: 6h (data is immutable once the match ends).
+        """
+        params = {"fixture": str(fixture_id)}
+        data = self._get_sync("fixtures/players", params, ttl_minutes=ttl_minutes)
+        return data.get("response", [])
+
+    @staticmethod
+    def parse_fixture_players_cards(players_response: List[Dict]) -> Dict[str, Any]:
+        """Aggregate per-team cards/fouls from a /fixtures/players payload.
+
+        Returns:
+            {
+              "home": {
+                "team_id": int|None, "team_name": str,
+                "yellow": int, "red": int, "total_cards": int,
+                "fouls_committed": int, "fouls_drawn": int,
+                "players_with_cards": int,
+              },
+              "away": { ... },
+              "total_cards": int,  # combined home+away
+            }
+
+        Tolerant: fields default to 0 when API returns null/None.
+        """
+        out: Dict[str, Any] = {"total_cards": 0}
+        if not players_response or not isinstance(players_response, list):
+            return out
+
+        sides = ["home", "away"]
+        for idx, team_block in enumerate(players_response[:2]):
+            if not isinstance(team_block, dict):
+                continue
+            side = sides[idx]
+            team = team_block.get("team", {}) or {}
+            agg = {
+                "team_id": team.get("id"),
+                "team_name": team.get("name", ""),
+                "yellow": 0,
+                "red": 0,
+                "total_cards": 0,
+                "fouls_committed": 0,
+                "fouls_drawn": 0,
+                "players_with_cards": 0,
+            }
+            for p in team_block.get("players", []) or []:
+                if not isinstance(p, dict):
+                    continue
+                stats_arr = p.get("statistics") or []
+                if not isinstance(stats_arr, list) or not stats_arr:
+                    continue
+                stat = stats_arr[0]
+                if not isinstance(stat, dict):
+                    continue
+                cards = stat.get("cards", {}) or {}
+                fouls = stat.get("fouls", {}) or {}
+                try:
+                    y = int(cards.get("yellow") or 0)
+                except (ValueError, TypeError):
+                    y = 0
+                try:
+                    # API-Football uses "red" for straight reds and a
+                    # "yellowred" implicit second yellow → counted as red.
+                    r = int(cards.get("red") or 0)
+                except (ValueError, TypeError):
+                    r = 0
+                try:
+                    fc = int(fouls.get("committed") or 0)
+                except (ValueError, TypeError):
+                    fc = 0
+                try:
+                    fd = int(fouls.get("drawn") or 0)
+                except (ValueError, TypeError):
+                    fd = 0
+
+                agg["yellow"] += y
+                agg["red"] += r
+                agg["fouls_committed"] += fc
+                agg["fouls_drawn"] += fd
+                if y > 0 or r > 0:
+                    agg["players_with_cards"] += 1
+
+            agg["total_cards"] = agg["yellow"] + agg["red"]
+            out[side] = agg
+            out["total_cards"] += agg["total_cards"]
+
+        return out
+
+    # ==================================================================
     # ODDS (pre-match)
     # ==================================================================
     def get_odds(self, fixture_id: int, ttl_minutes: int = 30) -> List[Dict]:
@@ -953,8 +1054,11 @@ class APIFootballClient:
         Returns:
             {
                 "home": float, "draw": float, "away": float,
-                "over_25": float, "under_25": float,
+                "over_25": float, "under_25": float,   (goals O/U 0.5–5.5)
                 "btts_yes": float, "btts_no": float,
+                "dc_1x": float, "dc_12": float, "dc_x2": float,
+                "corners_over_85": float, "corners_under_85": float,  (4.5–12.5, #144)
+                "cards_over_35": float, "cards_under_35": float,      (1.5–6.5, #095)
                 "bookmaker": str,
             }
         """
@@ -995,7 +1099,28 @@ class APIFootballClient:
                         if "home" in result:
                             result.setdefault("bookmaker", bk_name)
 
-                    elif "over/under" in bet_name or "goals" in bet_name:
+                    # Corners Over/Under (#144) — checked BEFORE goals O/U
+                    # because corner bet names commonly contain "over/under"
+                    # and would otherwise be miscaptured by the goals branch.
+                    elif "corner" in bet_name:
+                        for v in values:
+                            val = str(v.get("value", "")).lower()
+                            odd = _safe_float(v.get("odd"))
+                            if not odd:
+                                continue
+                            # Scanner #110 needs lines 4.5 – 12.5
+                            for line in ("4.5", "5.5", "6.5", "7.5", "8.5",
+                                         "9.5", "10.5", "11.5", "12.5"):
+                                key_sfx = line.replace(".", "")
+                                if f"over {line}" in val and f"corners_over_{key_sfx}" not in result:
+                                    result[f"corners_over_{key_sfx}"] = odd
+                                elif f"under {line}" in val and f"corners_under_{key_sfx}" not in result:
+                                    result[f"corners_under_{key_sfx}"] = odd
+
+                    elif ("over/under" in bet_name or "goals" in bet_name) \
+                            and "corner" not in bet_name \
+                            and "card" not in bet_name \
+                            and "booking" not in bet_name:
                         for v in values:
                             val = str(v.get("value", "")).lower()
                             odd = _safe_float(v.get("odd"))

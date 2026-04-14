@@ -277,6 +277,8 @@ class DataMapper:
         # ============================================================
 
         return {
+            # #142 — preserve FootyStats team id for /lastx (recent-form) lookups
+            "team_id": api_team.get("id"),
             "team_name": api_team.get("name") or api_team.get("cleanName"),
             "common_name": api_team.get("cleanName"),
             "season": api_team.get("season"),

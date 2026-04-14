@@ -28,6 +28,262 @@ def _safe_int(val: Any) -> Optional[int]:
         return None
 
 
+# ============================================================================
+# #141 — League Referees lookup helpers
+# ============================================================================
+def _normalize_referee_name(name: str) -> str:
+    """Normalize a referee name for cross-API matching (strip accents, lowercase)."""
+    if not name:
+        return ""
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", str(name))
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+
+
+def _build_referee_lookup(season_id: Optional[int]) -> Dict[str, float]:
+    """Return mapping {normalized_name: avg_cards_per_game} for the league season.
+
+    Uses FootyStats `/league-referees` (#141). Empty dict on any failure —
+    callers must treat None/missing referee as "no adjustment" so the cards
+    engine falls back to its default referee_factor=1.0.
+    """
+    if not season_id:
+        return {}
+    try:
+        from backend.services.footstats_client import FootyStatsClient
+        cli = FootyStatsClient()
+        data = cli.get_league_referees(int(season_id))
+    except Exception as e:
+        logger.debug(f"[#141] referee lookup fetch failed for season {season_id}: {e}")
+        return {}
+    if not isinstance(data, dict) or not data.get("success"):
+        return {}
+    out: Dict[str, float] = {}
+    for ref in data.get("data", []) or []:
+        if not isinstance(ref, dict):
+            continue
+        name = (ref.get("full_name") or ref.get("name") or "").strip()
+        if not name:
+            continue
+        # Prefer pre-computed average; fall back to manual division
+        avg = ref.get("cards_per_game_overall")
+        if avg in (None, 0, "0", -1):
+            try:
+                yc = float(ref.get("yellow_cards_overall", 0) or 0)
+                rc = float(ref.get("red_cards_overall", 0) or 0)
+                apps = float(ref.get("appearances_overall", 0) or 0)
+                avg = (yc + rc) / apps if apps > 0 else None
+            except (ValueError, TypeError):
+                avg = None
+        if avg is None:
+            continue
+        try:
+            out[_normalize_referee_name(name)] = float(avg)
+        except (ValueError, TypeError):
+            pass
+    if out:
+        logger.info(f"[#141] referee lookup built for season {season_id}: {len(out)} referees")
+    return out
+
+
+def _lookup_referee_avg(referee_name: Optional[str], lookup: Dict[str, float]) -> Optional[float]:
+    """Look up a referee's avg cards/game by name using normalized + token-overlap matching."""
+    if not referee_name or not lookup:
+        return None
+    norm = _normalize_referee_name(referee_name)
+    if not norm:
+        return None
+    if norm in lookup:
+        return lookup[norm]
+    # Token overlap fallback (handles "M. Oliver" vs "Michael Oliver")
+    name_tokens = {t for t in norm.split() if len(t) > 1}
+    if not name_tokens:
+        return None
+    best_match: Optional[float] = None
+    best_overlap = 0
+    for ref_norm, avg in lookup.items():
+        ref_tokens = {t for t in ref_norm.split() if len(t) > 1}
+        overlap = len(name_tokens & ref_tokens)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_match = avg
+    # Require at least 1 non-trivial token in common
+    return best_match if best_overlap >= 1 else None
+
+
+# ============================================================================
+# #142 — Team Last X (recent form) helpers
+# ============================================================================
+def _extract_team_id_from_row(row: Any) -> Optional[int]:
+    """Extract the FootyStats team_id from a teams DataFrame row, if present."""
+    if row is None:
+        return None
+    try:
+        for key in ("team_id", "id"):
+            if hasattr(row, "get"):
+                v = row.get(key)
+            elif hasattr(row, "__getitem__"):
+                try:
+                    v = row[key]
+                except (KeyError, IndexError):
+                    v = None
+            else:
+                v = None
+            if v is None:
+                continue
+            try:
+                tid = int(v)
+                if tid > 0:
+                    return tid
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        return None
+    return None
+
+
+def _parse_lastx_response(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse FootyStats /lastx response into per-team aggregates.
+
+    Returns a dict with whichever fields could be extracted:
+      goals_for_last5, goals_against_last5, cards_for_last5,
+      corners_for_last5, xg_for_last5, recent_goals_list
+
+    The endpoint returns 3 buckets (last5/last6/last10). We prefer last5
+    when present and fall back to last6 / last10 in that order. The
+    function is tolerant to multiple response shapes:
+
+    Shape A (recent docs): data is a dict containing "stats" with prefixed
+        keys like "goals_scored_avg_last_5" / "cardsAVG_last_5".
+    Shape B (older docs): data is an object with arrays
+        "last5_matches" / "last6_matches" / "last10_matches", each holding
+        match dicts with "homeGoalCount" / "awayGoalCount" / "team_a_yellow_cards" etc.
+    Shape C (raw list): data is a list of recent match dicts.
+    """
+    out: Dict[str, Any] = {}
+    if not isinstance(data, dict) or not data.get("success"):
+        return out
+    payload = data.get("data")
+    if payload is None:
+        return out
+
+    # Shape A — explicit stats block with last_N keys
+    stats_block: Optional[Dict[str, Any]] = None
+    if isinstance(payload, dict):
+        if isinstance(payload.get("stats"), dict):
+            stats_block = payload["stats"]
+        elif any(k.endswith("_last_5") or k.endswith("_last5") for k in payload.keys() if isinstance(k, str)):
+            stats_block = payload
+    if stats_block:
+        def _pick(*keys):
+            for k in keys:
+                v = stats_block.get(k)
+                if v is not None:
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        continue
+            return None
+        out["goals_for_last5"] = _pick("seasonScoredAVG_last_5", "scoredAVG_last_5", "goals_scored_avg_last_5", "goals_for_avg_last_5")
+        out["goals_against_last5"] = _pick("seasonConcededAVG_last_5", "concededAVG_last_5", "goals_conceded_avg_last_5")
+        out["cards_for_last5"] = _pick("cardsAVG_last_5", "cards_per_match_last_5")
+        out["corners_for_last5"] = _pick("cornersAVG_last_5", "corners_per_match_last_5")
+        out["xg_for_last5"] = _pick("xgAVG_last_5", "xg_for_avg_last_5")
+
+    # Shape B/C — iterate matches, compute averages and recent goals
+    recent_matches: List[Dict[str, Any]] = []
+    if isinstance(payload, dict):
+        for k in ("last5_matches", "last_5_matches", "matches_last5"):
+            v = payload.get(k)
+            if isinstance(v, list) and v:
+                recent_matches = v
+                break
+        if not recent_matches:
+            for k in ("last6_matches", "last10_matches"):
+                v = payload.get(k)
+                if isinstance(v, list) and v:
+                    recent_matches = v
+                    break
+    elif isinstance(payload, list):
+        recent_matches = payload
+
+    if recent_matches:
+        team_id_hint = None
+        if isinstance(payload, dict):
+            try:
+                team_id_hint = int(payload.get("team_id") or payload.get("id") or 0) or None
+            except (ValueError, TypeError):
+                team_id_hint = None
+
+        goals_list: List[float] = []
+        cards_list: List[float] = []
+        corners_list: List[float] = []
+        for m in recent_matches:
+            if not isinstance(m, dict):
+                continue
+            home_id = m.get("homeID") or m.get("home_id")
+            away_id = m.get("awayID") or m.get("away_id")
+            home_g = m.get("homeGoalCount", m.get("home_team_goal_count"))
+            away_g = m.get("awayGoalCount", m.get("away_team_goal_count"))
+            home_y = m.get("team_a_yellow_cards") or 0
+            away_y = m.get("team_b_yellow_cards") or 0
+            home_r = m.get("team_a_red_cards") or 0
+            away_r = m.get("team_b_red_cards") or 0
+            home_c = m.get("team_a_corners") or m.get("home_team_corner_count") or 0
+            away_c = m.get("team_b_corners") or m.get("away_team_corner_count") or 0
+
+            try:
+                home_g = float(home_g) if home_g not in (None, -1) else None
+                away_g = float(away_g) if away_g not in (None, -1) else None
+            except (ValueError, TypeError):
+                continue
+            if home_g is None or away_g is None:
+                continue
+
+            # Determine which side is "this team" using team_id_hint
+            if team_id_hint and home_id == team_id_hint:
+                goals_list.append(home_g)
+                cards_list.append(float(home_y) + float(home_r))
+                corners_list.append(float(home_c))
+            elif team_id_hint and away_id == team_id_hint:
+                goals_list.append(away_g)
+                cards_list.append(float(away_y) + float(away_r))
+                corners_list.append(float(away_c))
+            else:
+                # Without a hint, just take whichever side is non-zero (best effort)
+                goals_list.append(home_g)
+                cards_list.append(float(home_y) + float(home_r))
+                corners_list.append(float(home_c))
+
+        if goals_list:
+            out.setdefault("goals_for_last5", sum(goals_list) / len(goals_list))
+            out["recent_goals_list"] = goals_list  # most recent first per FootyStats convention
+        if cards_list:
+            out.setdefault("cards_for_last5", sum(cards_list) / len(cards_list))
+        if corners_list:
+            out.setdefault("corners_for_last5", sum(corners_list) / len(corners_list))
+
+    # Drop None entries to keep the dict tight
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _fetch_lastx_for_team(team_id: Optional[int]) -> Dict[str, Any]:
+    """Fetch FootyStats /lastx for one team. Returns parsed aggregates or {}.
+
+    Cached at the FootyStats client layer (TTL 2h). Safe to call repeatedly.
+    """
+    if not team_id:
+        return {}
+    try:
+        from backend.services.footstats_client import FootyStatsClient
+        cli = FootyStatsClient()
+        raw = cli.get_team_lastx(int(team_id))
+    except Exception as e:
+        logger.debug(f"[#142] /lastx fetch failed for team_id={team_id}: {e}")
+        return {}
+    return _parse_lastx_response(raw)
+
+
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
@@ -36,8 +292,11 @@ def build_records_from_matches(
     league_df: Optional["pd.DataFrame"] = None,
     players: Optional["pd.DataFrame"] = None,
     date_filter: str = "today",
+    season_id: Optional[int] = None,
     _rows_override: Optional[List] = None,
     _goals_cache_override: Optional[Dict] = None,
+    _referee_lookup_override: Optional[Dict[str, float]] = None,
+    _lastx_cache_override: Optional[Dict[int, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     from backend.main import date_range, aggregate_team_xg, expected_goals_v2
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
@@ -68,6 +327,29 @@ def build_records_from_matches(
         except Exception:
             pass
 
+    # Build referee lookup ONCE per league (#141) — single FootyStats call,
+    # then reused across all matches in this league for the day.
+    if _referee_lookup_override is not None:
+        _referee_lookup = _referee_lookup_override
+    else:
+        _referee_lookup = _build_referee_lookup(season_id) if season_id else {}
+
+    # Per-league /lastx cache (#142). Memoized by team_id so each team is
+    # fetched at most once per build, even when shared across parallel batches.
+    if _lastx_cache_override is not None:
+        _lastx_cache: Dict[int, Dict[str, Any]] = _lastx_cache_override
+    else:
+        _lastx_cache = {}
+
+    def _get_lastx_cached(team_id: Optional[int]) -> Dict[str, Any]:
+        if not team_id:
+            return {}
+        if team_id in _lastx_cache:
+            return _lastx_cache[team_id]
+        parsed = _fetch_lastx_for_team(team_id)
+        _lastx_cache[team_id] = parsed
+        return parsed
+
     # ── Parallel batch processing (#115) ─────────────────────────────
     _PARALLEL_THRESHOLD = 4
     _MAX_WORKERS = 3
@@ -90,8 +372,11 @@ def build_records_from_matches(
                     league_df=league_df,
                     players=players,
                     date_filter=date_filter,
+                    season_id=season_id,
                     _rows_override=batch,
                     _goals_cache_override=_goals_cache,
+                    _referee_lookup_override=_referee_lookup,
+                    _lastx_cache_override=_lastx_cache,
                 )
                 for batch in batches
             ]
@@ -956,6 +1241,25 @@ def build_records_from_matches(
         away_goals_avg = safe(get_stat(away_row, ["goals_scored_per_match_overall", "goals_scored_per_match", "goals_scored_avg_overall"]) if away_row is not None else None, away_attack)
         away_goals_avg_away = safe(get_stat(away_row, ["goals_scored_per_match_away", "goals_scored_avg_away"]) if away_row is not None else None, away_attack)
         away_goals_last5 = safe(get_stat(away_row, ["goals_scored_avg_last_5", "goals_scored_avg_last5", "goals_scored_last_5", "goals_scored_last5"]) if away_row is not None else None, away_goals_avg)
+
+        # #142 — FootyStats /lastx is the canonical source for recent form.
+        # Override goals_last5 (and remember the per-game list for EMA).
+        # Fails silent: when team_id is missing or the API call fails, we
+        # fall back to the values derived from the league-teams stats above.
+        _home_team_id = _extract_team_id_from_row(home_row)
+        _away_team_id = _extract_team_id_from_row(away_row)
+        _home_lastx = _get_lastx_cached(_home_team_id)
+        _away_lastx = _get_lastx_cached(_away_team_id)
+        if _home_lastx.get("goals_for_last5") is not None:
+            try:
+                home_goals_last5 = float(_home_lastx["goals_for_last5"])
+            except (ValueError, TypeError):
+                pass
+        if _away_lastx.get("goals_for_last5") is not None:
+            try:
+                away_goals_last5 = float(_away_lastx["goals_for_last5"])
+            except (ValueError, TypeError):
+                pass
         away_conceded_avg = safe(get_stat(away_row, ["goals_conceded_per_match_overall", "goals_conceded_per_match", "goals_conceded_avg_overall"]) if away_row is not None else None, away_defense)
         away_conceded_avg_away = safe(get_stat(away_row, ["goals_conceded_per_match_away", "goals_conceded_avg_away"]) if away_row is not None else None, away_defense)
         home_xg_series = parse_series(get_stat(home_row, ["xg_per_game", "xg_last_5", "xg_last5", "xg_series", "xg_recent"]) if home_row is not None else None)
@@ -1010,14 +1314,31 @@ def build_records_from_matches(
             "average_goals_per_match": league_goal_avg,
         }
         # Extract real per-match goals for EMA (#108c, optimized #112)
+        # #142 — Prefer FootyStats /lastx per-match list when available
+        # (more authoritative + keyed by team_id, immune to name-matching).
         _home_recent = None
         _away_recent = None
-        try:
-            from backend.modeling.ema_weights import get_team_goals_from_cache
-            _home_recent = get_team_goals_from_cache(_goals_cache, home, is_home=True) or None
-            _away_recent = get_team_goals_from_cache(_goals_cache, away, is_home=False) or None
-        except Exception:
-            pass
+        _home_lx_list = _home_lastx.get("recent_goals_list") if isinstance(_home_lastx, dict) else None
+        _away_lx_list = _away_lastx.get("recent_goals_list") if isinstance(_away_lastx, dict) else None
+        if isinstance(_home_lx_list, list) and len(_home_lx_list) >= 3:
+            try:
+                _home_recent = [float(g) for g in _home_lx_list if g is not None]
+            except (ValueError, TypeError):
+                _home_recent = None
+        if isinstance(_away_lx_list, list) and len(_away_lx_list) >= 3:
+            try:
+                _away_recent = [float(g) for g in _away_lx_list if g is not None]
+            except (ValueError, TypeError):
+                _away_recent = None
+        if _home_recent is None or _away_recent is None:
+            try:
+                from backend.modeling.ema_weights import get_team_goals_from_cache
+                if _home_recent is None:
+                    _home_recent = get_team_goals_from_cache(_goals_cache, home, is_home=True) or None
+                if _away_recent is None:
+                    _away_recent = get_team_goals_from_cache(_goals_cache, away, is_home=False) or None
+            except Exception:
+                pass
 
         lam_home, lam_away = expected_goals_v2(
             home_team_data=home_team_data,
@@ -1490,12 +1811,21 @@ def build_records_from_matches(
             # Expose v2 card predictions in the API response (#085, #085b NB2)
             try:
                 from backend.modeling.cards_engine import predict_cards
+                # #141 — look up referee avg cards/game from FootyStats league-referees.
+                # Falls back to None when no referee on the match or no lookup hit;
+                # cards engine treats None as "no adjustment" (referee_factor=1.0).
+                _ref_name = r.get("referee") if hasattr(r, "get") else None
+                _ref_avg = _lookup_referee_avg(_ref_name, _referee_lookup)
                 _cards_result = predict_cards(
                     home_stats=record["stats"],
                     away_stats=record["stats"],
                     league_id=league_id,
                     league_stats=league_avgs if isinstance(league_avgs, dict) else None,
+                    referee_avg_cards=_ref_avg,
                 )
+                if _ref_avg is not None and _ref_name:
+                    record["refereeName"] = _ref_name
+                    record["refereeAvgCards"] = round(_ref_avg, 2)
                 record["cardsPredictions"] = {
                     "projectedTotalCards": _cards_result.get("projected_total_cards"),
                     "cardsLambda": _cards_result.get("cards_lambda"),

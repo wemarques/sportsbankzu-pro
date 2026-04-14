@@ -245,6 +245,38 @@ class FootyStatsClient:
         params = {"league_id": season_id} # O endpoint league-tables usa league_id mas refere-se ao season_id
         return self._request("league-tables", params, ttl_minutes=360)
 
+    # ==================================================================
+    # #141 — League Referees
+    # ==================================================================
+    def get_league_referees(self, season_id: int, ttl_minutes: int = 1440) -> Dict[str, Any]:
+        """Retorna a lista de árbitros da liga + estatísticas (cards/fouls/etc.).
+
+        Endpoint FootyStats `/league-referees`. ~65 datapoints por árbitro:
+        appearances, yellow_cards_overall, red_cards_overall, fouls_per_game,
+        cards_per_game_overall, etc.
+
+        Cache padrão: 24h (lista muda raramente; stats atualizadas diariamente).
+        """
+        params = {"season_id": season_id}
+        return self._request("league-referees", params, ttl_minutes=ttl_minutes)
+
+    # ==================================================================
+    # #142 — Team Last X (recent form)
+    # ==================================================================
+    def get_team_lastx(self, team_id: int, ttl_minutes: int = 120) -> Dict[str, Any]:
+        """Retorna últimas 5/6/10 partidas de uma equipa com stats agregadas.
+
+        Endpoint FootyStats `/lastx`. Retorna 3 buckets por equipa:
+        last_5, last_6, last_10 — cada um com goals/cards/corners/xg médios.
+
+        Fonte canónica para forma recente. Mais preciso e mais barato do
+        que filtrar `league-matches` por equipa (#108c).
+
+        Cache padrão: 2h (forma muda lentamente; valores agregados de N jogos).
+        """
+        params = {"team_id": team_id}
+        return self._request("lastx", params, ttl_minutes=ttl_minutes)
+
     # Suffixes that indicate cup/reserve/youth/playoff competitions.
     # Used by resolve_season_id to deprioritize these when looking for the main league.
     _CUP_SUFFIXES = ("cup", "playoff", "play-off", "play off", "reserve", "u19", "u21", "women", "super cup")
