@@ -114,7 +114,8 @@ function groupCorridors(
     const dir = detectOverUnder(pick.label);
     const line = extractLine(pick.label);
 
-    if (family !== "other" && dir && line != null) {
+    // Cards não formam corredor — exibir como picks individuais (#148b)
+    if (family !== "other" && family !== "cards" && dir && line != null) {
       const oppositeDir = dir === "over" ? "under" : "over";
       let partnerIdx = -1;
       for (let j = i + 1; j < picks.length; j++) {

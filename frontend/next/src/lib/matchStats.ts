@@ -32,6 +32,9 @@ const MATCH_STATS_KEYS: (keyof MatchStats)[] = [
   "homeLeaguePosition", "awayLeaguePosition",
   "homeAvgTotalGoals", "awayAvgTotalGoals",
   "cornersPotential", "cornerOver85Prob", "cornerOver95Prob", "cornerOver105Prob",
+  // Actual match card/corner counts (needed by evaluatePick for result badges)
+  "homeCornersCount", "awayCornersCount",
+  "homeYellowCards", "awayYellowCards", "homeRedCards", "awayRedCards",
 ];
 
 /**

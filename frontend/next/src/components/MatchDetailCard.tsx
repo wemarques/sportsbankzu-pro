@@ -270,6 +270,13 @@ export interface MatchDetailData {
     cornerOver85Prob?: number;
     cornerOver95Prob?: number;
     cornerOver105Prob?: number;
+    // Actual match card/corner counts (for result badges)
+    homeCornersCount?: number;
+    awayCornersCount?: number;
+    homeYellowCards?: number;
+    awayYellowCards?: number;
+    homeRedCards?: number;
+    awayRedCards?: number;
   };
   h2h?: {
     totalMatches?: number;
