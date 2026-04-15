@@ -2589,4 +2589,21 @@ export default function Dashboard() {
             ) : (
               <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 30, textAlign: "center", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}>
                 <div style={{ fontSize: "0.7rem", marginBottom: 10 }}>Dados indisponiveis</div>
-    
+                <button onClick={handleReliabilityClick} style={{ fontSize: "0.6rem", padding: "5px 14px", borderRadius: 6, border: "1px solid rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)", color: "#60a5fa", cursor: "pointer" }}>Tentar novamente</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Batch Audit Panel (modal overlay) */}
+      {batchAuditOpen && batchAuditResult && (
+        <BatchAuditPanel
+          result={batchAuditResult}
+          onClose={() => setBatchAuditOpen(false)}
+          onApplyCorrections={handleBatchApplyCorrections}
+        />
+      )}
+    </div>
+  );
+}

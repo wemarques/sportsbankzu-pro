@@ -149,17 +149,9 @@ function groupCorridors(
             : pick.classification === "NEUTRO" || partner.classification === "NEUTRO"
             ? "NEUTRO"
             : "NO_BET";
-        const familyLabel =
-          family === "corners"
-            ? "Escanteios"
-            : family === "cards"
-            ? "Cartões"
-            : "Gols";
-        const current =
-          family === "corners"
+        const familyLabel = family === "corners" ? "Escanteios" : "Gols";
+        const current = family === "corners"
             ? liveStats.totalCorners
-            : family === "cards"
-            ? liveStats.totalCards
             : score.home + score.away;
 
         result.push({
