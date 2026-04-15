@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { C, CLS } from "./constants";
 import { calcQuarterKelly } from "@/components/BankrollCard";
 import type { ClassificationKey, PickData, PickResult } from "./types";
@@ -100,62 +101,85 @@ export const StakeRow = ({
   pick: PickData;
   bankroll: number;
 }) => {
-  if (!pick.bookOdd || pick.classification === "NO_BET" || bankroll <= 0) return null;
-  const { stake, pct } = calcQuarterKelly(
-    pick.rawProb,
-    pick.bookOdd,
-    bankroll,
-    pick.classification
-  );
-  if (stake <= 0) return null;
+  const kellyResult = (pick.bookOdd && pick.classification !== "NO_BET" && bankroll > 0)
+    ? calcQuarterKelly(pick.rawProb, pick.bookOdd, bankroll, pick.classification)
+    : null;
+  const suggestedPct = kellyResult && kellyResult.stake > 0 ? kellyResult.pct * 100 : null;
+  const [customPct, setCustomPct] = useState<string>("");
+  const isCustom = customPct !== "";
+  const activePct = isCustom ? parseFloat(customPct) || 0 : (suggestedPct ?? 0);
+  const stakeValue = Math.max(Math.round(bankroll * (activePct / 100) * 100) / 100, 0);
+
+  if (bankroll <= 0 || pick.classification === "NO_BET") return null;
+
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 6,
         padding: "6px 10px",
         borderRadius: 5,
         background: "rgba(255,255,255,0.02)",
         border: `1px solid ${C.border}`,
+        flexWrap: "wrap",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span style={{ fontSize: 10, color: C.t3 }}>Banca</span>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: C.t2,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
+        <span style={{ fontSize: 11, fontWeight: 600, color: C.t2, fontVariantNumeric: "tabular-nums" }}>
           R${bankroll.toLocaleString("pt-BR")}
         </span>
       </div>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: C.gold,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {(pct * 100).toFixed(1)}%
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder={suggestedPct != null ? suggestedPct.toFixed(1) : "0"}
+          value={customPct}
+          onChange={(e) => setCustomPct(e.target.value)}
+          style={{
+            width: 48,
+            padding: "2px 4px",
+            borderRadius: 4,
+            border: `1px solid ${isCustom ? C.gold : C.border}`,
+            background: isCustom ? "rgba(255,195,0,0.08)" : "rgba(255,255,255,0.04)",
+            color: isCustom ? C.gold : C.t2,
+            fontSize: 11,
+            fontWeight: 700,
+            fontVariantNumeric: "tabular-nums",
+            textAlign: "right",
+            outline: "none",
+          }}
+          min={0}
+          max={100}
+          step={0.1}
+        />
+        <span style={{ fontSize: 10, color: C.t3 }}>%</span>
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span style={{ fontSize: 10, color: C.t3 }}>Stake</span>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: C.green,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          R${stake.toFixed(2)}
+        <span style={{ fontSize: 12, fontWeight: 700, color: stakeValue > 0 ? C.green : C.t3, fontVariantNumeric: "tabular-nums" }}>
+          R${stakeValue.toFixed(2)}
         </span>
       </div>
+      {isCustom && (
+        <button
+          onClick={() => setCustomPct("")}
+          style={{
+            padding: "1px 6px",
+            borderRadius: 3,
+            border: `1px solid ${C.border}`,
+            background: "transparent",
+            color: C.t3,
+            fontSize: 9,
+            cursor: "pointer",
+          }}
+          title="Voltar ao Kelly sugerido"
+        >
+          Auto
+        </button>
+      )}
     </div>
   );
 };

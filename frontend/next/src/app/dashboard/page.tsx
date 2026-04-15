@@ -2529,6 +2529,12 @@ export default function Dashboard() {
           <section ref={rightPanelRef} className="st-panel-right detail-card-section">
             {detailData ? (
               <>
+              {/* Mobile back button (#148c) */}
+              {isMobile && (
+                <button className="st-view-back" onClick={() => setSelectedMatchId(null)} style={{ marginBottom: 8 }}>
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+              )}
               {/* Bankroll Card (#094) */}
               {detailData.predictions && detailData.predictions.length > 0 && (() => {
                 const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && p.book_odd != null && p.book_odd > 1);
