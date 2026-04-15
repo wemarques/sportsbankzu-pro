@@ -1,7 +1,7 @@
 import { C, CLS } from "./constants";
 import { Badge, Ev, Odd, ProbBar, ResultBadge, StakeRow } from "./atoms";
 import { LiveProgress } from "./LiveProgress";
-import { calcQuarterKelly } from "@/components/BankrollCard";
+import { calcQuarterKelly, calcStakeOportunidade } from "@/components/BankrollCard";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { MatchContext, PickData } from "./types";
 
@@ -117,12 +117,13 @@ const CorridorCard = ({
         {legs.length > 0 && (
           <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
             {legs.map((leg, i) => {
-              const legStake = calcQuarterKelly(
-                leg.prob,
-                leg.odd,
-                bankroll,
-                pick.classification
-              );
+              const kellyLeg = calcQuarterKelly(leg.prob, leg.odd, bankroll, pick.classification);
+              const oportLeg = stakeMode === "oportunidade"
+                ? calcStakeOportunidade(leg.prob, leg.odd, bankroll, pick.classification)
+                : null;
+              const legStake = stakeMode === "oportunidade" && oportLeg && !oportLeg.bloqueado
+                ? { stake: oportLeg.stake, pct: oportLeg.pct }
+                : kellyLeg;
               return (
                 <div
                   key={`${leg.selection}-${i}`}
@@ -159,6 +160,14 @@ const CorridorCard = ({
                       <span style={{ color: C.green, fontWeight: 700 }}>
                         R${legStake.stake.toFixed(2)}
                       </span>
+                    </div>
+                  )}
+                  {stakeMode === "oportunidade" && oportLeg && oportLeg.bloqueado && (
+                    <div style={{ marginTop: 4, fontSize: 9, color: C.red }}>{oportLeg.motivo}</div>
+                  )}
+                  {stakeMode === "oportunidade" && oportLeg && !oportLeg.bloqueado && oportLeg.ev < 0 && (
+                    <div style={{ marginTop: 2, fontSize: 9, color: C.orange }}>
+                      Custo R${oportLeg.custoPor100.toFixed(0)}/R$100
                     </div>
                   )}
                 </div>

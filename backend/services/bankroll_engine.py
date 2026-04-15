@@ -281,10 +281,15 @@ def compute_stake_oportunidade(
             "mode": "oportunidade", "desconto_ev": 1.0, "custo_por_100": 0,
         }
 
+    # 1b. Sem odds reais → não calcular stake (#149 fix)
+    if not book_odd or book_odd <= 1.0:
+        return {
+            "stake": 0.0, "stake_pct": 0.0, "stake_reason": "no_real_odds",
+            "mode": "oportunidade", "desconto_ev": 1.0, "custo_por_100": 0,
+        }
+
     # 2. EV deflacionado
-    ev = 0.0
-    if book_odd and book_odd > 1.0:
-        ev = prob * book_odd - 1.0  # EV como decimal (-0.10 = -10%)
+    ev = prob * book_odd - 1.0  # EV como decimal (-0.10 = -10%)
 
     # 3. Bloqueio por EV
     if ev < tier["ev_bloqueio"]:

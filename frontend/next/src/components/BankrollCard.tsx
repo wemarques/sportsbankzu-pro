@@ -103,7 +103,8 @@ export function calcStakeOportunidade(
   stakePct = Math.min(stakePct, tier.cap);
 
   const stakeValor = Math.max(Math.round(bankroll * stakePct * 100) / 100, 0);
-  const custoPor100 = evDecimal < 0 ? Math.round(-evDecimal * 10000) / 100 : 0;
+  // Custo por R$100 apostados — espelha backend: round((-ev) * 100, 2)
+  const custoPor100 = evDecimal < 0 ? Math.round(-evDecimal * 100 * 100) / 100 : 0;
 
   return {
     stake: stakeValor,
