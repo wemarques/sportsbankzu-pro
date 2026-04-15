@@ -19,6 +19,7 @@ import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import LeagueConfidenceBadge, { ConfidenceLegend } from "@/components/LeagueConfidenceBadge";
 import BankrollCard, { calcQuarterKelly } from "@/components/BankrollCard";
+import type { StakeMode } from "@/components/BankrollCard";
 import ReliabilityCard from "@/components/ReliabilityCard";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import AuditBanner from "@/components/AuditBanner";
@@ -674,6 +675,12 @@ export default function Dashboard() {
     }
     return 250;
   });
+  const [stakeMode, setStakeMode] = useState<StakeMode>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("sportsbankzu-stake-mode") as StakeMode) || "kelly";
+    }
+    return "kelly";
+  });
   const [isMockData, setIsMockData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -1208,6 +1215,12 @@ export default function Dashboard() {
   const handleBankrollChange = useCallback((v: number) => {
     setBankroll(v);
     try { localStorage.setItem("sportsbankzu-bankroll", v.toString()); } catch {}
+  }, []);
+
+  // Persist stakeMode to localStorage (#149)
+  const handleStakeModeChange = useCallback((mode: StakeMode) => {
+    setStakeMode(mode);
+    try { localStorage.setItem("sportsbankzu-stake-mode", mode); } catch {}
   }, []);
 
   const handleTopbarShareWhatsApp = useCallback(async () => {
@@ -2552,6 +2565,8 @@ export default function Dashboard() {
                     totalStake={totalStake}
                     avgEV={avgEV}
                     pickCount={evPicks.length}
+                    stakeMode={stakeMode}
+                    onStakeModeChange={handleStakeModeChange}
                   />
                 );
               })()}
@@ -2563,6 +2578,7 @@ export default function Dashboard() {
                     picks={mapped.picks}
                     analysis={mapped.analysis}
                     bankroll={bankroll}
+                    stakeMode={stakeMode}
                   />
                 );
               })()}

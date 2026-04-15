@@ -2,16 +2,19 @@ import { C, CLS } from "./constants";
 import { Badge, Ev, Odd, ProbBar, ResultBadge, StakeRow } from "./atoms";
 import { LiveProgress } from "./LiveProgress";
 import { calcQuarterKelly } from "@/components/BankrollCard";
+import type { StakeMode } from "@/components/BankrollCard";
 import type { MatchContext, PickData } from "./types";
 
 const CorridorCard = ({
   pick,
   match,
   bankroll,
+  stakeMode = "kelly",
 }: {
   pick: PickData;
   match: MatchContext;
   bankroll: number;
+  stakeMode?: StakeMode;
 }) => {
   const legs = pick.corridorLegs ?? [];
   const min = pick.liveTarget?.min ?? 0;
@@ -172,13 +175,15 @@ export const PickCard = ({
   pick,
   match,
   bankroll,
+  stakeMode = "kelly",
 }: {
   pick: PickData;
   match: MatchContext;
   bankroll: number;
+  stakeMode?: StakeMode;
 }) => {
   if (pick.isCorridorBet)
-    return <CorridorCard pick={pick} match={match} bankroll={bankroll} />;
+    return <CorridorCard pick={pick} match={match} bankroll={bankroll} stakeMode={stakeMode} />;
   const noBet = pick.classification === "NO_BET";
   const st = CLS[pick.classification] ?? CLS.NEUTRO;
   return (
@@ -222,7 +227,7 @@ export const PickCard = ({
         )}
         <Ev ev={pick.ev} />
       </div>
-      <StakeRow pick={pick} bankroll={bankroll} />
+      <StakeRow pick={pick} bankroll={bankroll} stakeMode={stakeMode} />
       {noBet && pick.ev != null && pick.ev < 0 && pick.bookOdd != null && (
         <div
           style={{

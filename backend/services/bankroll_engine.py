@@ -55,6 +55,34 @@ HAIRCUT_INJURIES = 0.10           # -10% when relevant injuries
 HAIRCUT_HIGH_CORRELATION = 0.15   # -15% when picks are correlated
 HAIRCUT_VOLATILE_MARKET = 0.10    # -10% for volatile markets
 
+# ─── Modo Oportunidade (#149) ───
+OPORTUNIDADE_TIERS = {
+    MarketClassification.SAFE: {
+        "stake_base_pct": 0.03,
+        "cap_max_pct": 0.05,
+        "ev_bloqueio": -0.05,
+    },
+    MarketClassification.NEUTRO_QUALIFICADO: {
+        "stake_base_pct": 0.02,
+        "cap_max_pct": 0.04,
+        "ev_bloqueio": -0.10,
+    },
+    MarketClassification.NEUTRO: {
+        "stake_base_pct": 0.01,
+        "cap_max_pct": 0.02,
+        "ev_bloqueio": -0.15,
+    },
+    MarketClassification.NO_BET: {
+        "stake_base_pct": 0.00,
+        "cap_max_pct": 0.00,
+        "ev_bloqueio": 999,
+    },
+}
+
+OPORT_BONUS_FATOR = 0.3     # multiplicador excesso confiança
+OPORT_BONUS_MAX = 0.02      # teto bônus +2%
+OPORT_DESCONTO_PISO = 0.50  # mínimo 50% do stake quando EV negativo
+
 
 def kelly_stake(
     probability: float,
@@ -222,6 +250,80 @@ def compute_stake(
         "haircut": round(haircut, 3),
         "capped": capped < adjusted,
         "classification_multiplier": multiplier,
+    }
+
+
+def compute_stake_oportunidade(
+    market_output: Dict[str, Any],
+    bankroll: float,
+    market_threshold: float = 0.50,
+) -> Dict[str, Any]:
+    """Compute stake no modo Oportunidade (#149).
+
+    Stake baseado no tier da classificação, com desconto por EV negativo
+    e bônus por excesso de confiança acima do threshold.
+    """
+    classification = market_output.get("classification", "NO_BET")
+    book_odd = market_output.get("book_odd")
+    prob = market_output.get("calibrated_probability") or market_output.get("raw_probability")
+
+    try:
+        cls = MarketClassification(classification)
+    except ValueError:
+        cls = MarketClassification.NO_BET
+
+    tier = OPORTUNIDADE_TIERS.get(cls, OPORTUNIDADE_TIERS[MarketClassification.NO_BET])
+
+    # 1. Piso absoluto 50%
+    if not prob or prob < 0.50:
+        return {
+            "stake": 0.0, "stake_pct": 0.0, "stake_reason": "prob_below_50",
+            "mode": "oportunidade", "desconto_ev": 1.0, "custo_por_100": 0,
+        }
+
+    # 2. EV deflacionado
+    ev = 0.0
+    if book_odd and book_odd > 1.0:
+        ev = prob * book_odd - 1.0  # EV como decimal (-0.10 = -10%)
+
+    # 3. Bloqueio por EV
+    if ev < tier["ev_bloqueio"]:
+        return {
+            "stake": 0.0, "stake_pct": 0.0,
+            "stake_reason": f"ev_{ev:.2%}_below_{tier['ev_bloqueio']:.0%}",
+            "mode": "oportunidade", "desconto_ev": 0, "custo_por_100": 0,
+        }
+
+    # 4. Stake base
+    stake_pct = tier["stake_base_pct"]
+
+    # 5. Bônus excesso confiança (saturado)
+    excesso = max(0, prob - market_threshold)
+    bonus = min(excesso * OPORT_BONUS_FATOR, OPORT_BONUS_MAX)
+    stake_pct += bonus
+
+    # 6. Desconto EV negativo
+    desconto = 1.0
+    if ev < 0:
+        desconto = max(OPORT_DESCONTO_PISO, 1.0 + ev)
+        stake_pct *= desconto
+
+    # 7. Cap
+    stake_pct = min(stake_pct, tier["cap_max_pct"])
+
+    # 8. Valor final
+    stake_valor = round(bankroll * stake_pct, 2)
+    custo_por_100 = round((-ev) * 100, 2) if ev < 0 else 0
+
+    return {
+        "stake": stake_valor,
+        "stake_pct": round(stake_pct, 4),
+        "stake_reason": "oportunidade",
+        "mode": "oportunidade",
+        "ev": round(ev, 4),
+        "desconto_ev": round(desconto, 2),
+        "custo_por_100": custo_por_100,
+        "cap_aplicado": stake_pct >= tier["cap_max_pct"],
     }
 
 

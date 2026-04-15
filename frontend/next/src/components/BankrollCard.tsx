@@ -44,18 +44,94 @@ export function calcQuarterKelly(
   };
 }
 
+/* ── Oportunidade stake calculation (#149) ── */
+export interface OportunidadeResult {
+  stake: number;
+  pct: number;
+  ev: number;
+  descontoEv: number;
+  custoPor100: number;
+  bloqueado: boolean;
+  motivo?: string;
+}
+
+const OPORT_TIERS: Record<string, { base: number; cap: number; evBloqueio: number }> = {
+  SAFE:                 { base: 0.03, cap: 0.05, evBloqueio: -0.05 },
+  NEUTRO_QUALIFICADO:   { base: 0.02, cap: 0.04, evBloqueio: -0.10 },
+  NEUTRO:               { base: 0.01, cap: 0.02, evBloqueio: -0.15 },
+  NO_BET:               { base: 0.00, cap: 0.00, evBloqueio: 999 },
+};
+
+export function calcStakeOportunidade(
+  prob: number,
+  odd: number,
+  bankroll: number,
+  classification: string,
+  marketThreshold: number = 0.50,
+): OportunidadeResult {
+  const tier = OPORT_TIERS[classification] ?? OPORT_TIERS.NO_BET;
+  const evDecimal = odd > 1 ? prob * odd - 1 : 0;
+  const evPct = evDecimal * 100;
+
+  // Piso 50%
+  if (prob < 0.50 || bankroll <= 0) {
+    return { stake: 0, pct: 0, ev: evPct, descontoEv: 1, custoPor100: 0, bloqueado: true, motivo: "Prob < 50%" };
+  }
+
+  // Bloqueio EV
+  if (evDecimal < tier.evBloqueio) {
+    return { stake: 0, pct: 0, ev: evPct, descontoEv: 0, custoPor100: 0, bloqueado: true,
+             motivo: `EV ${(evDecimal * 100).toFixed(1)}% abaixo do limite` };
+  }
+
+  // Stake base
+  let stakePct = tier.base;
+
+  // Bônus confiança (saturado em +2%)
+  const excesso = Math.max(0, prob - marketThreshold);
+  const bonus = Math.min(excesso * 0.3, 0.02);
+  stakePct += bonus;
+
+  // Desconto EV negativo
+  let desconto = 1.0;
+  if (evDecimal < 0) {
+    desconto = Math.max(0.50, 1.0 + evDecimal);
+    stakePct *= desconto;
+  }
+
+  // Cap
+  stakePct = Math.min(stakePct, tier.cap);
+
+  const stakeValor = Math.max(Math.round(bankroll * stakePct * 100) / 100, 0);
+  const custoPor100 = evDecimal < 0 ? Math.round(-evDecimal * 10000) / 100 : 0;
+
+  return {
+    stake: stakeValor,
+    pct: stakePct,
+    ev: evPct,
+    descontoEv: desconto,
+    custoPor100,
+    bloqueado: false,
+  };
+}
+
 /* ── Format BRL ── */
 function fmtBRL(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 /* ── Props ── */
+export type StakeMode = "kelly" | "oportunidade";
+
 interface BankrollCardProps {
   bankroll: number;
   onBankrollChange: (v: number) => void;
   totalStake: number;
   avgEV: number;
   pickCount: number;
+  stakeMode?: StakeMode;
+  onStakeModeChange?: (m: StakeMode) => void;
+  exposurePct?: number;
 }
 
 const PRESETS = [50, 100, 250, 500, 1000];
@@ -66,6 +142,9 @@ export default function BankrollCard({
   totalStake,
   avgEV,
   pickCount,
+  stakeMode = "kelly",
+  onStakeModeChange,
+  exposurePct,
 }: BankrollCardProps) {
   return (
     <div className="bkr-card">
@@ -73,7 +152,9 @@ export default function BankrollCard({
         <div className="bkr-title-row">
           <div>
             <span className="bkr-title">Banca Disponível</span>
-            <span className="bkr-subtitle">Quarter Kelly &bull; Cap 5%</span>
+            <span className="bkr-subtitle">
+              {stakeMode === "kelly" ? "Quarter Kelly \u00B7 Cap 5%" : "Stake por Confian\u00E7a \u00B7 Cap vari\u00E1vel"}
+            </span>
           </div>
           <span className="bkr-badge">EDITAVEL</span>
         </div>
@@ -105,6 +186,40 @@ export default function BankrollCard({
           </button>
         ))}
       </div>
+
+      {onStakeModeChange && (
+        <div className="bkr-mode-toggle">
+          <button
+            className={`bkr-mode-btn ${stakeMode === "kelly" ? "bkr-mode-btn--active" : ""}`}
+            onClick={() => onStakeModeChange("kelly")}
+          >
+            Kelly
+          </button>
+          <button
+            className={`bkr-mode-btn ${stakeMode === "oportunidade" ? "bkr-mode-btn--active" : ""}`}
+            onClick={() => onStakeModeChange("oportunidade")}
+          >
+            Oportunidade
+          </button>
+        </div>
+      )}
+
+      {exposurePct != null && exposurePct > 0 && (
+        <div className="bkr-exposure">
+          <div className="bkr-exposure-label">
+            Exposição: {(exposurePct * 100).toFixed(1)}% / 15%
+          </div>
+          <div className="bkr-exposure-track">
+            <div
+              className={`bkr-exposure-bar ${exposurePct > 0.15 ? "bkr-exposure-bar--danger" : ""}`}
+              style={{ width: `${Math.min(exposurePct / 0.15 * 100, 100)}%` }}
+            />
+          </div>
+          {exposurePct > 0.15 && (
+            <div className="bkr-exposure-alert">Acima do limite recomendado de 15%</div>
+          )}
+        </div>
+      )}
 
       {pickCount > 0 && (
         <div className="bkr-summary">

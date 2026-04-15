@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { C, CLS } from "./constants";
-import { calcQuarterKelly } from "@/components/BankrollCard";
+import { calcQuarterKelly, calcStakeOportunidade } from "@/components/BankrollCard";
+import type { StakeMode } from "@/components/BankrollCard";
 import type { ClassificationKey, PickData, PickResult } from "./types";
 
 export const Badge = ({ cls }: { cls: ClassificationKey }) => {
@@ -97,20 +98,54 @@ export const ResultBadge = ({ result }: { result?: PickResult }) => {
 export const StakeRow = ({
   pick,
   bankroll,
+  stakeMode = "kelly",
 }: {
   pick: PickData;
   bankroll: number;
+  stakeMode?: StakeMode;
 }) => {
+  // Kelly calculation
   const kellyResult = (pick.bookOdd && pick.classification !== "NO_BET" && bankroll > 0)
     ? calcQuarterKelly(pick.rawProb, pick.bookOdd, bankroll, pick.classification)
     : null;
-  const suggestedPct = kellyResult && kellyResult.stake > 0 ? kellyResult.pct * 100 : null;
+
+  // Oportunidade calculation
+  const oportResult = (bankroll > 0 && pick.classification !== "NO_BET")
+    ? calcStakeOportunidade(pick.rawProb, pick.bookOdd ?? 0, bankroll, pick.classification)
+    : null;
+
+  const suggestedPct = stakeMode === "oportunidade"
+    ? (oportResult && !oportResult.bloqueado ? oportResult.pct * 100 : null)
+    : (kellyResult && kellyResult.stake > 0 ? kellyResult.pct * 100 : null);
+
   const [customPct, setCustomPct] = useState<string>("");
   const isCustom = customPct !== "";
   const activePct = isCustom ? parseFloat(customPct) || 0 : (suggestedPct ?? 0);
   const stakeValue = Math.max(Math.round(bankroll * (activePct / 100) * 100) / 100, 0);
 
   if (bankroll <= 0 || pick.classification === "NO_BET") return null;
+
+  // If oportunidade mode and blocked, show reason
+  if (stakeMode === "oportunidade" && oportResult && oportResult.bloqueado && !isCustom) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 10px",
+          borderRadius: 5,
+          background: "rgba(239,68,68,0.04)",
+          border: `1px solid rgba(239,68,68,0.15)`,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: 10, color: C.red, fontWeight: 600 }}>
+          {oportResult.motivo}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -163,6 +198,11 @@ export const StakeRow = ({
           R${stakeValue.toFixed(2)}
         </span>
       </div>
+      {stakeMode === "oportunidade" && oportResult && oportResult.ev < 0 && !oportResult.bloqueado && !isCustom && (
+        <span style={{ fontSize: 9, color: C.orange }}>
+          Custo R${oportResult.custoPor100.toFixed(0)}/R$100
+        </span>
+      )}
       {isCustom && (
         <button
           onClick={() => setCustomPct("")}
@@ -175,7 +215,7 @@ export const StakeRow = ({
             fontSize: 9,
             cursor: "pointer",
           }}
-          title="Voltar ao Kelly sugerido"
+          title={stakeMode === "oportunidade" ? "Voltar ao Oportunidade sugerido" : "Voltar ao Kelly sugerido"}
         >
           Auto
         </button>

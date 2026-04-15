@@ -7687,3 +7687,30 @@ O apostador decide com numeros, nao com bloqueios arbitrarios.
 
 ---
 
+## 149 — Modo Oportunidade: stake por tier de classificação + desconto EV
+
+**Data:** 2026-04-15
+**Arquivos afetados:** bankroll_engine.py, BankrollCard.tsx, atoms.tsx, PickCard.tsx, MatchAnalysis.tsx, dashboard/page.tsx, match-detail-card.css
+**Severidade:** Media
+**Status:** Implementado
+
+### Problema identificado
+O modo Kelly atual retorna stake=0 para picks classificados como VIAVEL e VALOR DETECTADO quando o EV e marginal ou negativo, desperdicando oportunidades com sinal estatistico positivo.
+
+### Causa raiz
+Quarter Kelly e conservador por design — otimiza crescimento de longo prazo, mas ignora sinais de momento. Picks com prob > 50% e classificacao valida (SAFE/NQ/NEUTRO) mas EV < 0 nao recebem alocacao.
+
+### Correcoes aplicadas
+1. **Backend:** Nova funcao `compute_stake_oportunidade()` em bankroll_engine.py com tiers por classificacao (SAFE 3%, NQ 2%, NEUTRO 1%), desconto proporcional por EV negativo (piso 50%), bonus saturado por excesso de confianca (+2% max).
+2. **Frontend:** `calcStakeOportunidade()` espelhada em BankrollCard.tsx para calculo client-side.
+3. **Toggle Kelly/Oportunidade:** Botao no BankrollCard permite alternar modos. Modo persistido em localStorage.
+4. **StakeRow dual:** atoms.tsx calcula stake com base no modo ativo, exibe custo esperado (R$/R$100) quando EV negativo.
+5. **Barra de exposicao:** Visual no BankrollCard mostrando % da banca exposta vs limite 15% (alerta, nao bloqueante).
+6. **Propagacao:** stakeMode flui de dashboard → MatchAnalysis → PickCard → StakeRow.
+7. **Pipeline intacto:** Classificacoes, thresholds, deflacoes, probabilidades — NADA alterado.
+
+### Licao aprendida
+Kelly otimiza longo prazo. Oportunidade captura momento com custo transparente. O modo dual permite ao operador escolher a estrategia conforme o contexto, sem sacrificar a infraestrutura matematica existente.
+
+---
+

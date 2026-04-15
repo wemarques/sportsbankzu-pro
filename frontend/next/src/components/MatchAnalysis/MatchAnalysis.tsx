@@ -4,6 +4,7 @@ import { C } from "./constants";
 import { AICard } from "./AICard";
 import { PickCard } from "./PickCard";
 import { EVHelp } from "./EVHelp";
+import type { StakeMode } from "@/components/BankrollCard";
 import type { AIAnalysisData, MatchContext, PickData } from "./types";
 
 type FilterId = "all" | "viable" | "value";
@@ -13,6 +14,7 @@ interface MatchAnalysisProps {
   picks: PickData[];
   analysis: AIAnalysisData;
   bankroll?: number;
+  stakeMode?: StakeMode;
 }
 
 export default function MatchAnalysis({
@@ -20,6 +22,7 @@ export default function MatchAnalysis({
   picks,
   analysis,
   bankroll = 100,
+  stakeMode = "kelly",
 }: MatchAnalysisProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const filters: { id: FilterId; l: string }[] = [
@@ -161,7 +164,7 @@ export default function MatchAnalysis({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {filtered.map((p) => (
-              <PickCard key={p.id} pick={p} match={match} bankroll={bankroll} />
+              <PickCard key={p.id} pick={p} match={match} bankroll={bankroll} stakeMode={stakeMode} />
             ))}
             {filtered.length === 0 && (
               <div style={{ textAlign: "center", padding: 20, color: C.t3, fontSize: 11 }}>

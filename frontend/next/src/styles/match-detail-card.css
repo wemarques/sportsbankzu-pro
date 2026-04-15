@@ -2686,6 +2686,29 @@
 .bkr-stat-value--green { color: #4ade80; }
 .bkr-stat-value--yellow { color: #eab308; }
 .bkr-stat-sub { display: block; font-size: 0.55rem; color: #94a3b8; }
+.bkr-mode-toggle { display: flex; gap: 4px; margin: 8px 0; }
+.bkr-mode-btn {
+  flex: 1; padding: 6px 0; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+  background: transparent; color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.bkr-mode-btn:hover { background: rgba(255,255,255,0.04); }
+.bkr-mode-btn--active {
+  background: rgba(255,195,0,0.12); color: #ffc300; border-color: rgba(255,195,0,0.3);
+}
+.bkr-exposure { margin-top: 8px; margin-bottom: 8px; }
+.bkr-exposure-label { font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.bkr-exposure-track {
+  height: 4px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden;
+}
+.bkr-exposure-bar {
+  height: 100%; border-radius: 4px; background: linear-gradient(90deg, #00df82, #ffc300);
+  transition: width 0.3s;
+}
+.bkr-exposure-bar--danger { background: linear-gradient(90deg, #ffc300, #ef4444); }
+.bkr-exposure-alert {
+  font-size: 10px; color: #ef4444; margin-top: 4px; font-weight: 600;
+}
 .bkr-disclaimer {
   font-size: 0.55rem; color: #475569; text-align: center;
   padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04);
