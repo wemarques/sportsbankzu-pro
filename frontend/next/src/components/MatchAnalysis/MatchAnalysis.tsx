@@ -47,8 +47,6 @@ export default function MatchAnalysis({
     >
       <div
         style={{
-          maxWidth: 500,
-          margin: "0 auto",
           display: "flex",
           flexDirection: "column",
           gap: 12,
