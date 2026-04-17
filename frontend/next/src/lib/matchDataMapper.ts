@@ -223,7 +223,7 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
     awayYellow: _aYellow,
     homeRed: _hRed,
     awayRed: _aRed,
-    totalCards: _hYellow + _aYellow + _hRed + _aRed,
+    totalCards: detail.currentCards ?? (_hYellow + _aYellow + _hRed + _aRed),
   };
 
   const match: MatchContext = {
@@ -248,20 +248,21 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
   const result1x2: "1" | "X" | "2" =
     score.home > score.away ? "1" : score.home < score.away ? "2" : "X";
   // Extrair totais reais de corners e cards dos matchStats
+  // Fallback chain: currentCorners (live overlay) → matchStats (API data) → undefined
+  const _msCornerSum = (_hCorners + _aCorners) > 0 ? (_hCorners + _aCorners) : undefined;
   const totalCorners: number | undefined =
     (detail.currentCorners != null && detail.currentCorners > 0)
       ? detail.currentCorners
-      : undefined;
+      : _msCornerSum;
 
-  // Cards: somar yellow + red de ambos os times se disponível
-  const homeCards = (detail.matchStats as Record<string, unknown> | undefined)?.["homeYellowCards"] as number | undefined;
-  const awayCards = (detail.matchStats as Record<string, unknown> | undefined)?.["awayYellowCards"] as number | undefined;
-  const homeRed = (detail.matchStats as Record<string, unknown> | undefined)?.["homeRedCards"] as number | undefined;
-  const awayRed = (detail.matchStats as Record<string, unknown> | undefined)?.["awayRedCards"] as number | undefined;
+  // Cards: fallback chain igual a corners — currentCards (live) → matchStats → undefined
+  const _msCardSum = (_hYellow + _aYellow + _hRed + _aRed) > 0
+    ? (_hYellow + _aYellow + _hRed + _aRed)
+    : undefined;
   const totalCards: number | undefined =
-    (homeCards != null && awayCards != null)
-      ? (homeCards + awayCards + (homeRed ?? 0) + (awayRed ?? 0))
-      : undefined;
+    (detail.currentCards != null && detail.currentCards > 0)
+      ? detail.currentCards
+      : _msCardSum;
 
   // Avaliar resultado para jogos finalizados
   if (detail.status === "finished") {
