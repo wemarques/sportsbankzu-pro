@@ -468,6 +468,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     "liga-mx": "mexico-liga-mx",
     "primera-division": "primera-division",
     "primera-a": "colombia-primera-a",
+    "colombian-primera-a": "colombia-primera-a",
     "a-league": "a-league",
     "pro-league": "pro-league",
   };
