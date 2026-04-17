@@ -141,8 +141,18 @@ export type Match = {
   cornerPredictions?: CornerPredictions;
   cardsPredictions?: CardsPredictions;
   predictions?: MatchPrediction[];
+  rejectedInsights?: RejectedInsight[];
   source: "footystats";
   lastUpdated: string;
+};
+
+export type RejectedInsight = {
+  market: string;
+  raw_prob: number;
+  deflated_prob: number;
+  ev: number | null;
+  reason: string;
+  reason_codes?: string[];
 };
 
 export type CornerPredictions = {

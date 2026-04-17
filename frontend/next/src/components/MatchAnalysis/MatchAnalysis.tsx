@@ -6,6 +6,7 @@ import { PickCard } from "./PickCard";
 import { EVHelp } from "./EVHelp";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { AIAnalysisData, MatchContext, PickData } from "./types";
+import type { RejectedInsightUI } from "@/lib/matchDataMapper";
 
 type FilterId = "all" | "viable" | "value";
 
@@ -15,6 +16,7 @@ interface MatchAnalysisProps {
   analysis: AIAnalysisData;
   bankroll?: number;
   stakeMode?: StakeMode;
+  rejectedInsights?: RejectedInsightUI[];
 }
 
 export default function MatchAnalysis({
@@ -23,6 +25,7 @@ export default function MatchAnalysis({
   analysis,
   bankroll = 100,
   stakeMode = "kelly",
+  rejectedInsights = [],
 }: MatchAnalysisProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const filters: { id: FilterId; l: string }[] = [
@@ -172,6 +175,45 @@ export default function MatchAnalysis({
           </div>
           <EVHelp />
         </div>
+
+        {/* Rejected insights (#152) — transparency for notable NO_BET markets */}
+        {rejectedInsights.length > 0 && (
+          <div
+            style={{
+              background: "rgba(255,107,53,0.06)",
+              border: `1px solid rgba(255,107,53,0.15)`,
+              borderRadius: 8,
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#ff6b35", letterSpacing: "0.04em", marginBottom: 6 }}>
+              MERCADOS ANALISADOS — NÃO RECOMENDADOS
+            </div>
+            {rejectedInsights.map((r, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "4px 0",
+                  borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                }}
+              >
+                <span style={{ fontSize: 11, color: C.t2 }}>{r.market}</span>
+                <span style={{ fontSize: 10, color: C.t3 }}>
+                  {r.rawProb.toFixed(0)}% raw → {r.deflatedProb.toFixed(0)}% cal
+                  {r.ev != null && (
+                    <span style={{ color: r.ev < 0 ? "#ff4444" : "#00ff88", marginLeft: 4 }}>
+                      EV {r.ev > 0 ? "+" : ""}{r.ev.toFixed(1)}%
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 4, color: "#ff6b35" }}>— {r.reason}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

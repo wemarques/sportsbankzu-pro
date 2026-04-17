@@ -163,6 +163,9 @@ def selecionar_mercados_v2(
             stats["mercado_principal"] = principal.get("mercado")
             stats["odd_minima"] = principal.get("odd_minima")
             stats["data_quality_score"] = bundle.data_quality_score
+            # Rejected insights for UI transparency (#152)
+            if bundle.rejected_insights:
+                stats["rejected_insights"] = bundle.rejected_insights
             return mercados
 
         # V2 produced zero viable markets — fall back to legacy so match still appears

@@ -596,6 +596,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
       avgGoals: item.h2h?.avgGoals ?? 0,
     },
     predictions: item.mercados ?? item.predictions ?? [],
+    rejectedInsights: item.stats?.rejected_insights ?? [],
     source: item.source ?? "footystats",
     lastUpdated: item.lastUpdated ?? new Date().toISOString(),
   };
@@ -646,6 +647,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     predictions: match.predictions,
     currentCorners: match.currentCorners ?? null,
     currentCards: match.currentCards ?? null,
+    rejectedInsights: match.rejectedInsights ?? [],
   };
 }
 
@@ -2607,6 +2609,7 @@ export default function Dashboard() {
                     analysis={mapped.analysis}
                     bankroll={bankroll}
                     stakeMode={stakeMode}
+                    rejectedInsights={mapped.rejectedInsights}
                   />
                 );
               })()}

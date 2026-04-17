@@ -196,10 +196,19 @@ function groupCorridors(
   return result;
 }
 
+export type RejectedInsightUI = {
+  market: string;
+  rawProb: number;
+  deflatedProb: number;
+  ev: number | null;
+  reason: string;
+};
+
 export function mapToMatchAnalysis(detail: MatchDetailData): {
   match: MatchContext;
   picks: PickData[];
   analysis: AIAnalysisData;
+  rejectedInsights: RejectedInsightUI[];
 } {
   const score = {
     home: detail.score?.home ?? 0,
@@ -301,5 +310,13 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
     recommendation: detail.aiAnalysis?.recommendation ?? "",
   };
 
-  return { match, picks, analysis };
+  const rejectedInsights: RejectedInsightUI[] = (detail.rejectedInsights ?? []).map((r) => ({
+    market: r.market,
+    rawProb: r.raw_prob,
+    deflatedProb: r.deflated_prob,
+    ev: r.ev,
+    reason: r.reason,
+  }));
+
+  return { match, picks, analysis, rejectedInsights };
 }

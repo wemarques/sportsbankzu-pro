@@ -6,7 +6,7 @@ This ensures consistent fields regardless of the source market type.
 """
 
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import AliasChoices, BaseModel, Field
 
 
@@ -146,3 +146,7 @@ class MatchMarketBundle(BaseModel):
     markets: List[MarketOutput] = []
     eligible_for_multiples: bool = False
     reason_codes: List[ReasonCode] = []
+    rejected_insights: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Notable markets rejected with reason, for UI transparency (#152)"
+    )

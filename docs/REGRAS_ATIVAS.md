@@ -237,3 +237,15 @@ Over X + Under Y do mesmo mercado devem ser apresentados como CORREDOR com faixa
 Nunca listar como picks independentes.
 
 **Verificacao:** `grep -n "REGRA DE CORREDORES" backend/services/mistral_analysis.py` (deve retornar 1+ hit)
+
+### #152 — Deflação BTTS reduzida + Monotonidade cartões + Transparência rejeição
+
+**Tipo:** Fix + Feature
+**Relacionado:** #105, #106, #043, #120
+
+1. BTTS: banda deflação reduzida pela metade em `_calibrate_and_deflate()` (lambda per-league já deflaciona)
+2. Cards: adicionado ao enforcement de monotonidade em `_apply_line_safety_margin()` (ao lado de Corners e Goals)
+3. UI: novo campo `rejected_insights` expõe mercados rejeitados com prob ≥ 55% — exibido no MatchAnalysis
+
+**Verificação:** `grep -n "BTTS" backend/services/ev_classification.py | grep -i half` (deflação reduzida)
+**Verificação:** `grep -n "Cards" backend/services/ev_classification.py | grep -i families` (monotonidade)

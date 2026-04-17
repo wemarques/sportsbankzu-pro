@@ -7714,3 +7714,30 @@ Kelly otimiza longo prazo. Oportunidade captura momento com custo transparente. 
 
 ---
 
+
+## 152 — Corrigir deflação BTTS, monotonidade cartões e transparência rejeição
+
+**Data:** 2026-04-17
+**Arquivos afetados:** ev_classification.py, market_service.py, market_output.py, MatchAnalysis.tsx, matchDataMapper.ts, leagues.ts, MatchDetailCard.tsx, dashboard/page.tsx
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+1. BTTS com 64.3% raw era bloqueado (NO_BET) por dupla deflação: lambda per-league (0.80) + banda (0.85) = ~45%, gerando EV -21%
+2. Cartões tinham probabilidades incoerentes entre linhas (Over 1.5=59%, Under 3.5=56%) porque a monotonidade só era aplicada para Corners e Goals
+3. Usuário não tinha visibilidade de por que mercados com probabilidade alta foram rejeitados
+
+### Causa raiz
+1. Deflação BTTS aplicava banda completa sobre probabilidade já deflacionada por lambda per-league — dupla penalidade
+2. `_apply_line_safety_margin()` em ev_classification.py excluía explicitamente Cards do enforcement de monotonidade
+3. Pipeline filtrava NO_BET sem expor informação de rejeição ao frontend
+
+### Correções aplicadas
+1. **BTTS deflação reduzida (#152):** `_calibrate_and_deflate()` agora aplica apenas METADE da deflação de banda para BTTS (já que lambda per-league já deflaciona). Resultado: BTTS 64.3% → ~52-55% (vs ~45% anterior)
+2. **Monotonidade para cartões (#152):** Adicionado `Cards` ao dict `families` em `_apply_line_safety_margin()`, com lookup de threshold correto. Agora Cards Over lines recebem o mesmo enforcement de coerência que Corners e Goals
+3. **Rejected insights (#152):** Novo campo `rejected_insights` em `MatchMarketBundle` coleta mercados NO_BET com raw_prob ≥ 55%. Propagado via stats → Match → MatchDetailData → MatchAnalysis. UI exibe seção "Mercados Analisados — Não Recomendados" com prob raw, prob calibrada, EV e motivo da rejeição
+
+### Lição aprendida
+Deflação em camadas (lambda + banda) precisa considerar que cada camada já penaliza — aplicar 100% de ambas é dupla contagem. Transparência sobre rejeições reduz confusão quando narrativa e recomendação divergem.
+
+---

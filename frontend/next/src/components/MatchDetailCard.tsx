@@ -291,6 +291,14 @@ export interface MatchDetailData {
   aiAnalysis?: AIAnalysis;
   currentCorners?: number | null;
   currentCards?: number | null;
+  rejectedInsights?: {
+    market: string;
+    raw_prob: number;
+    deflated_prob: number;
+    ev: number | null;
+    reason: string;
+    reason_codes?: string[];
+  }[];
   cornerPredictions?: {
     projectedTotalFT?: number | null;
     projectedTotal1H?: number | null;

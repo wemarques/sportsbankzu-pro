@@ -179,3 +179,4 @@
 | 147 | Implementado | Feature | Redesign Match Analysis + Rename VIÁVEL + Glossário + LiveTracker + CorridorCard |
 | 148 | Implementado | Feature | Stake Kelly VIÁVEL (QK×0.30, cap 2%, floor 0.5%) + Badge resultado + Simulador banca |
 | 149 | Implementado | Feature | Modo Oportunidade: stake por tier de classificação + desconto EV + barra exposição |
+| 152 | **ATIVA** | Fix + Feature | Deflação BTTS reduzida (metade da banda) + monotonidade para cartões + rejected insights na UI |

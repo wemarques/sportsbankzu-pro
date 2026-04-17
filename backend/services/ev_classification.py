@@ -70,9 +70,22 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
-    """Calibrate via Isotonic model then apply band+league deflation (#105, #113)."""
+    """Calibrate via Isotonic model then apply band+league deflation (#105, #113, #152)."""
     calibrated = calibrate_prob(raw, market, league_id, regime)
-    result = apply_probability_deflation(calibrated, league_id)
+    # BTTS: lambda already deflated per-league in poisson_matrix (btts_multiplier).
+    # Applying full band deflation on top causes double-penalty (~64% → ~44%).
+    # #152: halve band deflation for BTTS to prevent excessive cumulative deflation.
+    if market.upper() == "BTTS":
+        deflation = _band_deflation(calibrated)
+        half_deflation = deflation / 2.0
+        result = calibrated * (1.0 - half_deflation)
+        # Per-league factor still applies
+        if league_id:
+            factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+            result *= max(factor, 0.85)
+        result = max(result, 0.05)
+    else:
+        result = apply_probability_deflation(calibrated, league_id)
     # Under 2.5 extra deflation — worst market in Brier #104 (Δ=-0.03, acc=57%) (#113)
     if "under" in market.lower() and "2.5" in market:
         result *= 0.90
@@ -1100,6 +1113,29 @@ def evaluate_match_markets(
     if proj_ft and proj_ft > 0:
         _apply_corner_direction_filter(active_markets, proj_ft)
 
+    # ─── Collect rejected insights (#152) ───
+    # Notable markets classified NO_BET with raw_prob ≥ 55% — explain why
+    _rejected_insights = []
+    for m in markets:
+        if m.classification != MarketClassification.NO_BET:
+            continue
+        raw_p = m.raw_probability or 0
+        if raw_p < 0.55:
+            continue
+        cal_p = m.calibrated_probability or 0
+        ev_val = m.ev
+        reason = "EV negativo após deflação" if (ev_val is not None and ev_val < 0) else "prob insuficiente"
+        if not m.odds_available:
+            reason = "sem odds disponíveis"
+        _rejected_insights.append({
+            "market": m.display_label or m.selection,
+            "raw_prob": round(raw_p * 100, 1),
+            "deflated_prob": round(cal_p * 100, 1),
+            "ev": round(ev_val * 100, 1) if ev_val is not None else None,
+            "reason": reason,
+            "reason_codes": [rc.value for rc in m.reason_codes],
+        })
+
     # ─── Build bundle ───
     bundle = MatchMarketBundle(
         match_id=match_id,
@@ -1108,6 +1144,7 @@ def evaluate_match_markets(
         league_id=league_id,
         data_quality_score=quality,
         markets=active_markets,
+        rejected_insights=_rejected_insights,
     )
 
     # Check eligibility for multiples
@@ -1230,7 +1267,7 @@ def _filter_corridor_bets(markets: List[MarketOutput]) -> List[MarketOutput]:
 
 
 # ── Line safety margin (#120) ─────────────────────────────────────
-LINE_SAFETY_MARGIN = 0.05  # 5% — corners and goals only, NOT cards
+LINE_SAFETY_MARGIN = 0.05  # 5% — corners, goals, and cards (#152)
 
 
 def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]:
@@ -1240,7 +1277,7 @@ def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]
     downgrade it if a lower line also qualifies. Prevents consistently
     selecting 1 line above the correct one.
 
-    Only affects Over lines for Corners and Over/Under (goals). Cards excluded.
+    Affects Over lines for Corners, Over/Under (goals), and Cards (#152).
     """
     import re
     _line_re = re.compile(r"(\d+\.?\d*)")
@@ -1253,6 +1290,8 @@ def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]
             families.setdefault("Corners", []).append(m)
         elif m.market_type == "Over/Under":
             families.setdefault("Goals", []).append(m)
+        elif m.market_type == "Cards":
+            families.setdefault("Cards", []).append(m)
 
     for family, over_list in families.items():
         if len(over_list) <= 1:
@@ -1264,7 +1303,7 @@ def _apply_line_safety_margin(markets: List[MarketOutput]) -> List[MarketOutput]
 
         over_list.sort(key=_line_val)
 
-        cat = "Corners" if family == "Corners" else "Over/Under"
+        cat = {"Corners": "Corners", "Goals": "Over/Under", "Cards": "Cards"}.get(family, "Over/Under")
         th = _get_thresholds(cat)
         neutro_prob = th.get("neutro_prob", 0.50)
 
