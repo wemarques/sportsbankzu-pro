@@ -450,8 +450,28 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     ?? item.away ?? "Away";
   // Heuristic: correct leagueId when backend returns wrong/missing (e.g. Danish teams in EPL group)
   const inferred = inferLeagueFromTeams(home, away);
-  // Backend config uses "superliga", frontend uses "denmark-superliga"
-  const normalizedLid = leagueId === "superliga" ? "denmark-superliga" : leagueId;
+  // Backend config uses short IDs, frontend uses prefixed IDs
+  const LEAGUE_ID_ALIASES: Record<string, string> = {
+    "superliga": "denmark-superliga",
+    "league-one": "england-league-one",
+    "ligue-1": "france-ligue-1",
+    "bundesliga": "germany-bundesliga",
+    "2-bundesliga": "germany-2-bundesliga",
+    "serie-a": "italy-serie-a",
+    "serie-b": "italy-serie-b",
+    "la-liga": "spain-la-liga",
+    "eredivisie": "netherlands-eredivisie",
+    "liga-nos": "portugal-liga-nos",
+    "primeira-liga": "portugal-liga-nos",
+    "super-lig": "turkey-super-lig",
+    "mls": "usa-mls",
+    "liga-mx": "mexico-liga-mx",
+    "primera-division": "primera-division",
+    "primera-a": "colombia-primera-a",
+    "a-league": "a-league",
+    "pro-league": "pro-league",
+  };
+  const normalizedLid = LEAGUE_ID_ALIASES[leagueId] ?? leagueId;
   const resolvedLeagueId = inferred ?? normalizedLid;
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
   const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
@@ -1565,14 +1585,18 @@ export default function Dashboard() {
       if (leagueId === "brazil-serie-b") return 1;
       return 2;
     };
-    const leagueOrder = AVAILABLE_LEAGUES.reduce((map, l, i) => { map[l.id] = i; return map; }, {} as Record<string, number>);
     const sortedEntries = Array.from(byLeague.entries()).sort(([a], [b]) => {
       const pA = getBrazilPriority(a);
       const pB = getBrazilPriority(b);
       if (pA !== pB) return pA - pB;
+      // Ordenar por país (alfabético), depois por nome da liga
+      const countryA = AVAILABLE_LEAGUES.find((l) => l.id === a)?.country ?? "";
+      const countryB = AVAILABLE_LEAGUES.find((l) => l.id === b)?.country ?? "";
+      const cmp = countryA.localeCompare(countryB, "pt-BR");
+      if (cmp !== 0) return cmp;
       const nameA = AVAILABLE_LEAGUES.find((l) => l.id === a)?.name ?? a;
       const nameB = AVAILABLE_LEAGUES.find((l) => l.id === b)?.name ?? b;
-      return nameA.localeCompare(nameB);
+      return nameA.localeCompare(nameB, "pt-BR");
     });
     return sortedEntries.map(([leagueId, matches]) => {
       const league = AVAILABLE_LEAGUES.find((l) => l.id === leagueId);
@@ -2247,7 +2271,7 @@ export default function Dashboard() {
                     <div className="st-league-header" onClick={() => toggleLeague(group.leagueId)}>
                       <span className="st-league-flag">{group.countryFlag}</span>
                       <span className="st-league-name">
-                        {group.country ? `${group.country} - ` : ""}{group.leagueName}
+                        {group.country ? <><span className="st-league-country">{group.country.toUpperCase()}</span>{" - "}</> : ""}{group.leagueName}
                         {leagueClassifications[group.leagueId] && (
                           <LeagueConfidenceBadge
                             classification={leagueClassifications[group.leagueId].classification}

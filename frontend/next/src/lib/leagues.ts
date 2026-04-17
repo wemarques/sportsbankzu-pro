@@ -321,7 +321,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "brazil-serie-a",
-    name: "Série A",
+    name: "Brasileirão Série A",
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao.png",
@@ -334,7 +334,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "brazil-serie-b",
-    name: "Série B",
+    name: "Brasileirão Série B",
     country: "Brasil",
     countryFlag: "🇧🇷",
     logo: "/logos/brasileirao-b.png",

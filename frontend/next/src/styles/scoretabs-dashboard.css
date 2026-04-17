@@ -405,14 +405,20 @@
 }
 
 .st-league-flag {
-  font-size: 1rem;
+  font-size: 1.25rem;
 }
 
 .st-league-name {
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--st-text);
   flex: 1;
+}
+
+.st-league-country {
+  font-weight: 700;
+  color: var(--st-accent);
+  letter-spacing: 0.04em;
 }
 
 .st-league-count {
