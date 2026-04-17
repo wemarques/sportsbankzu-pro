@@ -290,6 +290,7 @@ export interface MatchDetailData {
   round?: string;
   aiAnalysis?: AIAnalysis;
   currentCorners?: number | null;
+  currentCards?: number | null;
   cornerPredictions?: {
     projectedTotalFT?: number | null;
     projectedTotal1H?: number | null;

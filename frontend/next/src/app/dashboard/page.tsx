@@ -624,6 +624,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     aiAnalysis: ai,
     predictions: match.predictions,
     currentCorners: match.currentCorners ?? null,
+    currentCards: match.currentCards ?? null,
   };
 }
 
@@ -863,7 +864,7 @@ export default function Dashboard() {
 
       liveScoreFailCountRef.current = 0;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }> = data.matches ?? [];
+      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number; currentCards?: number }> = data.matches ?? [];
 
       // Camada 2 (#071, #122): when liveList is empty, do NOT auto-finish.
       // Empty list may be caused by API rate limit, not actual match completion.
@@ -913,7 +914,7 @@ export default function Dashboard() {
   }, []);
 
   /** Merge live overlay data into allMatches state */
-  function mergeLiveOverlay(liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number }>) {
+  function mergeLiveOverlay(liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number; currentCards?: number }>) {
     setAllMatches((prev) => {
       let changed = false;
       let matched = 0;
@@ -970,7 +971,8 @@ export default function Dashboard() {
         const periodChanged = m.period !== (live.period as Match["period"]);
         const minuteChanged = m.minute !== live.minute;
         const cornersChanged = live.currentCorners != null && m.currentCorners !== live.currentCorners;
-        if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged) return m;
+        const cardsChanged = live.currentCards != null && m.currentCards !== live.currentCards;
+        if (!scoreChanged && !statusChanged && !periodChanged && !minuteChanged && !cornersChanged && !cardsChanged) return m;
         changed = true;
         if (process.env.NODE_ENV === "development" && live.currentCorners != null) {
           console.log(`[live-scores] currentCorners merged: ${m.homeTeam.name} vs ${m.awayTeam.name} → ${live.currentCorners}`);
@@ -982,6 +984,7 @@ export default function Dashboard() {
           period: live.period as Match["period"],
           minute: live.minute,
           ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
+          ...(live.currentCards != null ? { currentCards: live.currentCards } : {}),
         };
       });
       unmatched = liveList.length - matched;

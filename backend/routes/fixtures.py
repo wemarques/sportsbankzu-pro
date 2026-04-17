@@ -1121,6 +1121,7 @@ def live_scores() -> Dict[str, Any]:
                             score["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
                         # Corner kicks total (home + away)
                         current_corners: int | None = None
+                        current_cards: int | None = None
                         if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
                             current_corners = ld["home_corners"] + ld["away_corners"]
                         elif ld.get("home_corners") is not None:
@@ -1128,19 +1129,28 @@ def live_scores() -> Dict[str, Any]:
                         elif ld.get("away_corners") is not None:
                             current_corners = ld["away_corners"]
                         # Fallback: inline stats may be missing for some leagues (e.g. Brazilian Serie A)
-                        if current_corners is None and ld.get("fixture_id") is not None:
+                        if (current_corners is None or current_cards is None) and ld.get("fixture_id") is not None:
                             try:
                                 _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=5)
                                 if _raw_stats:
-                                    _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
-                                    if _hc is not None and _ac is not None:
-                                        current_corners = int(_hc) + int(_ac)
-                                    else:
-                                        _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                    if current_corners is None:
+                                        _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                        if _hc is not None and _ac is not None:
+                                            current_corners = int(_hc) + int(_ac)
+                                    _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                    if current_corners is None:
                                         _hc = _parsed.get("home", {}).get("corner_kicks")
                                         _ac = _parsed.get("away", {}).get("corner_kicks")
                                         if _hc is not None and _ac is not None:
                                             current_corners = int(_hc) + int(_ac)
+                                    # Cards: yellow + red (#149b)
+                                    if current_cards is None:
+                                        _hy = _parsed.get("home", {}).get("yellow_cards")
+                                        _ay = _parsed.get("away", {}).get("yellow_cards")
+                                        _hr = _parsed.get("home", {}).get("red_cards")
+                                        _ar = _parsed.get("away", {}).get("red_cards")
+                                        if _hy is not None and _ay is not None:
+                                            current_cards = int(_hy or 0) + int(_ay or 0) + int(_hr or 0) + int(_ar or 0)
                                     if current_corners is None:
                                         _sample = list(_raw_stats[0].keys()) if _raw_stats and isinstance(_raw_stats[0], dict) else "non-dict"
                                         logger.info(
@@ -1162,6 +1172,8 @@ def live_scores() -> Dict[str, Any]:
                         }
                         if current_corners is not None:
                             entry["currentCorners"] = current_corners
+                        if current_cards is not None:
+                            entry["currentCards"] = current_cards
                         af_result.append(entry)
                     if af_result:
                         logger.info(
@@ -1465,27 +1477,37 @@ def live_scores() -> Dict[str, Any]:
                         if ld["halftime_home"] is not None:
                             score_entry["halftime"] = {"home": ld["halftime_home"], "away": ld["halftime_away"]}
                         current_corners: int | None = None
+                        current_cards: int | None = None
                         if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
                             current_corners = ld["home_corners"] + ld["away_corners"]
                         elif ld.get("home_corners") is not None:
                             current_corners = ld["home_corners"]
                         elif ld.get("away_corners") is not None:
                             current_corners = ld["away_corners"]
-                        if current_corners is None and ld.get("fixture_id") is not None:
+                        if (current_corners is None or current_cards is None) and ld.get("fixture_id") is not None:
                             try:
                                 _raw_stats = _afc.get_fixture_statistics(int(ld["fixture_id"]), ttl_minutes=5)
                                 if _raw_stats:
-                                    _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
-                                    if _hc is not None and _ac is not None:
-                                        current_corners = int(_hc) + int(_ac)
-                                    else:
-                                        _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                    if current_corners is None:
+                                        _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                        if _hc is not None and _ac is not None:
+                                            current_corners = int(_hc) + int(_ac)
+                                    _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                    if current_corners is None:
                                         _hc = _parsed.get("home", {}).get("corner_kicks")
                                         _ac = _parsed.get("away", {}).get("corner_kicks")
                                         if _hc is not None and _ac is not None:
                                             current_corners = int(_hc) + int(_ac)
+                                    # Cards: yellow + red (#149b)
+                                    if current_cards is None:
+                                        _hy = _parsed.get("home", {}).get("yellow_cards")
+                                        _ay = _parsed.get("away", {}).get("yellow_cards")
+                                        _hr = _parsed.get("home", {}).get("red_cards")
+                                        _ar = _parsed.get("away", {}).get("red_cards")
+                                        if _hy is not None and _ay is not None:
+                                            current_cards = int(_hy or 0) + int(_ay or 0) + int(_hr or 0) + int(_ar or 0)
                             except Exception as _stat_err:
-                                logger.info(f"[live-scores] corners fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
+                                logger.info(f"[live-scores] corners/cards fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
                         entry: Dict[str, Any] = {
                             "id": ld["fixture_id"],
                             "homeTeam": home_name,
@@ -1498,6 +1520,8 @@ def live_scores() -> Dict[str, Any]:
                         }
                         if current_corners is not None:
                             entry["currentCorners"] = current_corners
+                        if current_cards is not None:
+                            entry["currentCards"] = current_cards
                         af_result.append(entry)
                     if af_result:
                         logger.info(
@@ -1623,8 +1647,9 @@ def live_scores() -> Dict[str, Any]:
                         if af_status in period_map:
                             rec["period"] = period_map[af_status]
 
-                        # Overlay corner kicks from API-Football
+                        # Overlay corner kicks and cards from API-Football
                         _corners: int | None = None
+                        _cards: int | None = None
                         if ld.get("home_corners") is not None and ld.get("away_corners") is not None:
                             _corners = ld["home_corners"] + ld["away_corners"]
                         elif ld.get("home_corners") is not None:
@@ -1633,21 +1658,30 @@ def live_scores() -> Dict[str, Any]:
                             _corners = ld["away_corners"]
                         # Fallback: /fixtures?live=all may not include inline statistics for some
                         # leagues (e.g. Brazilian Serie A). Fetch /fixtures/statistics explicitly.
-                        if _corners is None:
+                        if _corners is None or _cards is None:
                             _fx_id = matched_fx.get("fixture", {}).get("id")
                             if _fx_id is not None:
                                 try:
                                     _raw_stats = _afc.get_fixture_statistics(int(_fx_id), ttl_minutes=5)
                                     if _raw_stats:
-                                        _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
-                                        if _hc is not None and _ac is not None:
-                                            _corners = int(_hc) + int(_ac)
-                                        else:
-                                            _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                        if _corners is None:
+                                            _hc, _ac = _afc._extract_corners_from_stats(_raw_stats)
+                                            if _hc is not None and _ac is not None:
+                                                _corners = int(_hc) + int(_ac)
+                                        _parsed = _afc.parse_fixture_statistics(_raw_stats)
+                                        if _corners is None:
                                             _hc = _parsed.get("home", {}).get("corner_kicks")
                                             _ac = _parsed.get("away", {}).get("corner_kicks")
                                             if _hc is not None and _ac is not None:
                                                 _corners = int(_hc) + int(_ac)
+                                        # Cards: yellow + red (#149b)
+                                        if _cards is None:
+                                            _hy = _parsed.get("home", {}).get("yellow_cards")
+                                            _ay = _parsed.get("away", {}).get("yellow_cards")
+                                            _hr = _parsed.get("home", {}).get("red_cards")
+                                            _ar = _parsed.get("away", {}).get("red_cards")
+                                            if _hy is not None and _ay is not None:
+                                                _cards = int(_hy or 0) + int(_ay or 0) + int(_hr or 0) + int(_ar or 0)
                                         if _corners is None:
                                             _sample = list(_raw_stats[0].keys()) if _raw_stats and isinstance(_raw_stats[0], dict) else "non-dict"
                                             logger.info(
@@ -1655,7 +1689,7 @@ def live_scores() -> Dict[str, Any]:
                                                 f"raw_stats_len={len(_raw_stats)}, first_block_keys={_sample}"
                                             )
                                 except Exception as _stat_err:
-                                    logger.info(f"[live-scores] corners fallback failed fixture_id={_fx_id}: {_stat_err}")
+                                    logger.info(f"[live-scores] corners/cards fallback failed fixture_id={_fx_id}: {_stat_err}")
                         if _corners is not None:
                             rec["currentCorners"] = _corners
                         elif rec.get("currentCorners") is None:
@@ -1664,6 +1698,8 @@ def live_scores() -> Dict[str, Any]:
                                 f"[live-scores][corners] No corner data for live match "
                                 f"{rh} vs {ra} (AF=none, FS pre-enrich=none)"
                             )
+                        if _cards is not None:
+                            rec["currentCards"] = _cards
 
                         _af_enriched += 1
 

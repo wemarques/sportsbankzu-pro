@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
             period: m.period,
             minute: m.minute,
             ...(m.currentCorners != null ? { currentCorners: m.currentCorners } : {}),
+            ...(m.currentCards != null ? { currentCards: m.currentCards } : {}),
           }));
         if (fbMatches.length > 0) {
           console.log(`[live-scores] Fallback via /fixtures — ${fbMatches.length} live/finished matches (${fbResult.durationMs}ms)`);
