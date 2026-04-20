@@ -183,4 +183,4 @@
 | 153 | **ATIVA** | Fix | Complementar league-matches (page 1) com todays-matches para capturar todos os jogos da rodada |
 | 154 | **ATIVA** | Fix | Paginar league-matches (todas as páginas, max_per_page=1000) para análise completa em todas as ligas |
 | 155 | **ATIVA** | Fix | Mapear period API-Football→frontend (1H→1T, HT→HT, 2H→2T) + anular minute no HT |
-| 156 | **ATIVA** | Pipeline | Deflation default 0.90 para ligas sem calibração + Corners Over ≤ 6.5 bloqueado |
+| 156 | **ATIVA** | Pipeline | Deflation default 0.90 para ligas sem calibração per-league |

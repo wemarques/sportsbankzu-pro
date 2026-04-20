@@ -286,13 +286,13 @@ Frontend `computeLiveInfo()` retorna `{period:"HT", minute:null}` imediatamente 
 
 **Verificação:** `grep -n "_PERIOD_MAP\|#155" backend/routes/live.py frontend/next/src/app/dashboard/page.tsx`
 
-### #156 — Deflation default 0.90 + Corners Over ≤ 6.5 bloqueado
+### #156 — Deflation default 0.90 para ligas sem calibração
 
 **Tipo:** Pipeline (calibração)
-**Relacionado:** #043, #105, #110
+**Relacionado:** #043, #105
 
-1. `_DEFAULT_OU_DEFLATION = 0.90` em `poisson_matrix.py` — piso de 10% deflação para ligas sem calibração per-league
-2. `_CORNERS_OVER_MIN_LINE = 7.5` em `ev_classification.py` — Over 4.5/5.5/6.5 excluídos (overconfidence Poisson)
-3. Under corners NÃO afetados (loop separado)
+`_DEFAULT_OU_DEFLATION = 0.90` em `poisson_matrix.py` — piso de 10% deflação para ligas sem calibração per-league.
+Previne lambdas inflados quando `lambda_multiplier` não existe no DB.
+Corners Over 6.5 (0/4) monitorado mas NÃO bloqueado — amostra insuficiente (N=4 < MIN_N=20, regra #079).
 
-**Verificação:** `grep -n "_DEFAULT_OU_DEFLATION\|_CORNERS_OVER_MIN_LINE" backend/modeling/poisson_matrix.py backend/services/ev_classification.py`
+**Verificação:** `grep -n "_DEFAULT_OU_DEFLATION" backend/modeling/poisson_matrix.py`

@@ -883,20 +883,9 @@ def evaluate_match_markets(
             )
             _corner_raw[curr_line] = (prev_raw, curr_src, curr_gov)
 
-    # #156: Minimum line for Corner Over picks — lines ≤ 6.5 have 0% accuracy
-    # (mechanically overconfident from Poisson). Over 7.5 has 75% accuracy (12/16).
-    _CORNERS_OVER_MIN_LINE = 7.5
-
     # Pass 2: build MarketOutputs with corrected probs
     for line_val in CORNER_LINES:
         if line_val not in _corner_raw:
-            continue
-        # #156: Skip Over lines below minimum (Under lines unaffected — processed separately)
-        if line_val < _CORNERS_OVER_MIN_LINE:
-            logger.debug(
-                f"[corners-filter] {home_team} vs {away_team}: "
-                f"Over {line_val} skipped (#156: min line={_CORNERS_OVER_MIN_LINE})"
-            )
             continue
         raw, _corner_source, gov_line = _corner_raw[line_val]
         line_key = f"over_{line_val}"

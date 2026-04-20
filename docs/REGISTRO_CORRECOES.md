@@ -22,7 +22,7 @@ Auditoria 19/04 revelou 6 problemas: Lambda Erro 1.17 (target <0.5), Escanteios 
 ### Correções aplicadas
 1. **FASE 1**: Recalibrado A-League (N=982), Bundesliga (N=1800), Süper Lig (N=2133) via endpoint calibrate
 2. **FASE 2**: `_DEFAULT_OU_DEFLATION = 0.90` em `poisson_matrix.py` — 10% deflação mínima para ligas sem calibração
-3. **FASE 3**: `_CORNERS_OVER_MIN_LINE = 7.5` em `ev_classification.py` — bloqueia Over ≤ 6.5 (0/4 acurácia)
+3. **FASE 3 (REVERTIDA)**: Corners Over ≤ 6.5 NÃO bloqueado — amostra N=4 insuficiente (regra #079 exige N≥20). Monitorar nas próximas rodadas.
 
 ### Resultados da recalibração
 | Liga | N matches | lambda_deflation_ou | Brier O/U |
