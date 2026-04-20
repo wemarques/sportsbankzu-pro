@@ -314,10 +314,15 @@ type LivePeriod = "1T" | "HT" | "2T";
 
 /** Compute live period from kickoff time when backend hasn't supplied it yet.
  * When backend provides period/minute, use max(backend, estimated) so stale
- * backend data (e.g. 68' when real time is 90') doesn't freeze the display. */
+ * backend data (e.g. 68' when real time is 90') doesn't freeze the display.
+ * #155: HT from backend has absolute priority — never show minute during halftime. */
 function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | null } | null {
   if (match.status !== "live") return null;
   try {
+    // #155: If backend explicitly says HT, trust it unconditionally
+    if (match.period === "HT") {
+      return { period: "HT", minute: null };
+    }
     const kickoff = new Date(match.datetime).getTime();
     const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
     if (elapsed < 0) return null;
@@ -329,6 +334,10 @@ function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | n
       if (minute == null) minute = est.minute;
       else minute = Math.max(minute, est.minute);
     } else if (elapsed <= 62) {
+      // #155: During HT window, if backend says 1T/2T trust the period but null minute
+      if (period === "1T" || period === "2T") {
+        return { period: period as LivePeriod, minute };
+      }
       if (!period) period = "HT";
       minute = null;
     } else {

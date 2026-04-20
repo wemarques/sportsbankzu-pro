@@ -4,6 +4,29 @@
 
 ---
 
+## 155 — Fix live status: mapear period + anular minute no HT
+
+**Data:** 2026-04-19
+**Arquivos afetados:** backend/routes/live.py, frontend/next/src/app/dashboard/page.tsx
+**Severidade:** Média
+**Status:** Implementado
+
+### Problema identificado
+Jogos ao vivo mostravam "VIVO / 1T / 90'" — minuto inflado e período incorreto durante o intervalo (HT). Talleres Córdoba vs Deportivo Riestra exibia 90' no 1T quando o jogo estava no HT 2-0.
+
+### Causa raiz
+1. **Backend** (`live.py:86`): Campo `period` recebia status cru da API-Football ("1H", "HT", "2H") sem mapear para formato frontend ("1T", "HT", "2T"). Minuto era enviado mesmo durante HT.
+2. **Frontend** (`dashboard.tsx:computeLiveInfo()`): Cálculo temporal `Date.now() - kickoff` inflava o minuto via `Math.max()` — quando >62min desde o kickoff (contando intervalo), estimava 90' para 2T, ignorando que o jogo estava no HT.
+
+### Correções aplicadas
+1. **Backend**: `_PERIOD_MAP` converte status API-Football → labels frontend. `minute=None` quando `status in ("HT", "BT")`.
+2. **Frontend**: `computeLiveInfo()` retorna `{period:"HT", minute:null}` imediatamente quando backend diz `period="HT"`, sem aplicar `Math.max()`.
+
+### Lição aprendida
+Dados de status da API-Football (1H/HT/2H) devem ser mapeados na camada backend. O frontend não deve sobrescrever período autoritativo com estimativas temporais.
+
+---
+
 ## 154 — Paginar league-matches para análise completa em todas as ligas
 
 **Data:** 2026-04-19

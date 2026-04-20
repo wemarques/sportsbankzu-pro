@@ -16,6 +16,9 @@ from backend.services.api_football_client import APIFootballClient
 from backend.config.leagues_config import get_api_football_league_id, get_season_for_league
 
 logger = logging.getLogger("sportsbankzu.live")
+
+# #155 — Map API-Football status codes to frontend period labels
+_PERIOD_MAP = {"1H": "1T", "HT": "HT", "2H": "2T", "ET": "ET", "BT": "HT", "P": "PEN"}
 router = APIRouter(prefix="/live", tags=["live"])
 
 _afc = APIFootballClient()
@@ -82,8 +85,8 @@ def live_fixtures(league: str = Query("", description="Internal league ID (optio
                     "away": live_data.get("halftime_away"),
                 },
             },
-            "minute": live_data["minute"],
-            "period": live_data["status"],
+            "minute": None if live_data["status"] in ("HT", "BT") else live_data["minute"],  # #155: no minute during HT
+            "period": _PERIOD_MAP.get(live_data["status"], live_data["status"]),  # #155: map to frontend labels
             "datetime": fx.get("fixture", {}).get("date", ""),
         }
         records.append(record)

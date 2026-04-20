@@ -273,3 +273,15 @@ Substitui `get_league_matches(page=1)` em fixtures.py.
 todays-matches complement (#153) mantido como rede de segurança.
 
 **Verificação:** `grep -n "get_all_league_matches" backend/services/footstats_client.py backend/routes/fixtures.py`
+
+### #155 — Mapear period e anular minute durante HT no live
+
+**Tipo:** Fix
+**Relacionado:** #089
+
+Backend `live.py` mapeia status API-Football (1H/HT/2H) → labels frontend (1T/HT/2T) via `_PERIOD_MAP`.
+Quando `status in ("HT","BT")`, `minute=None` — nunca mostrar minuto no intervalo.
+Frontend `computeLiveInfo()` retorna `{period:"HT", minute:null}` imediatamente quando backend diz HT.
+`Math.max()` só se aplica a 1T/2T, nunca a HT.
+
+**Verificação:** `grep -n "_PERIOD_MAP\|#155" backend/routes/live.py frontend/next/src/app/dashboard/page.tsx`
