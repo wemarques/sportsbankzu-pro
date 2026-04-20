@@ -330,14 +330,46 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     if records:
                         for r in records:
                             r["dataSource"] = "FootyStats API (Tempo Real)"
-                    else:
-                        logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}', trying todays-matches fallback")
-                        # Fallback: league-matches may not include today's fixtures on page 1
-                        # (pagination issue for leagues deep into their season).
-                        # Use the todays-matches endpoint which returns all of today's matches.
-                        records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
-                        if records:
-                            logger.info(f"[fixtures] {lid}: todays-matches fallback found {len(records)} records")
+
+                    # #153 — Complement with todays-matches to catch fixtures
+                    # missing from page 1 of league-matches (pagination by season,
+                    # not by date — leagues deep into their season may have today's
+                    # matches on page 2+).
+                    _todays_complement = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
+                    if _todays_complement:
+                        if not records:
+                            # No rich records at all — use todays-matches as primary
+                            records = _todays_complement
+                            logger.info(f"[fixtures] {lid}: todays-matches provided all {len(records)} records (no page-1 matches)")
+                        else:
+                            # Merge: add any matches from todays-matches that are NOT already
+                            # in the rich records (matched by normalized team names).
+                            _existing_teams = set()
+                            for r in records:
+                                _h = r.get("homeTeam", {})
+                                _a = r.get("awayTeam", {})
+                                _hn = (_h.get("name") or _h) if isinstance(_h, (dict, str)) else ""
+                                _an = (_a.get("name") or _a) if isinstance(_a, (dict, str)) else ""
+                                if isinstance(_hn, str) and isinstance(_an, str):
+                                    _existing_teams.add((_hn.strip().lower(), _an.strip().lower()))
+
+                            _added = 0
+                            for tr in _todays_complement:
+                                _th = tr.get("homeTeam", {})
+                                _ta = tr.get("awayTeam", {})
+                                _thn = (_th.get("name", "") if isinstance(_th, dict) else str(_th)).strip().lower()
+                                _tan = (_ta.get("name", "") if isinstance(_ta, dict) else str(_ta)).strip().lower()
+                                if (_thn, _tan) not in _existing_teams:
+                                    records.append(tr)
+                                    _existing_teams.add((_thn, _tan))
+                                    _added += 1
+                            if _added:
+                                logger.info(
+                                    f"[fixtures] {lid}: todays-matches complement added {_added} "
+                                    f"missing matches (total now {len(records)}) (#153)"
+                                )
+                    elif not records:
+                        logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}', no todays-matches available")
                     found_via_api = True
                 else:
                     logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
@@ -666,10 +698,16 @@ def _enrich_with_api_football(
 
 
 def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id: int = None) -> List[Dict[str, Any]]:
-    """Fallback: use todays-matches endpoint when league-matches has no records for today.
-    This endpoint returns all matches across all leagues for today in one call,
-    so we filter by competition_id (season_id) or country+league name to extract only the relevant ones."""
-    if date not in ("today", "tomorrow"):
+    """Use todays-matches endpoint to get ALL matches for a league on a given date.
+    This endpoint returns all matches across all leagues for today/tomorrow/ISO-date in one call,
+    so we filter by competition_id (season_id) or country+league name to extract only the relevant ones.
+
+    Supports date values: "today", "tomorrow", or ISO date string "YYYY-MM-DD" (#153).
+    """
+    import re as _re
+    # Accept "today", "tomorrow", or ISO date strings (YYYY-MM-DD) (#153)
+    _is_iso_date = bool(_re.match(r"^\d{4}-\d{2}-\d{2}$", date or ""))
+    if date not in ("today", "tomorrow") and not _is_iso_date:
         return []
     try:
         from backend.services.util_service import status_map
@@ -681,7 +719,9 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
         # "today", which after 21:00 BRT (00:00 UTC) would return next-day matches.
         BRT = _tz(timedelta(hours=-3))
         now_brt = _dt.now(BRT)
-        if date == "tomorrow":
+        if _is_iso_date:
+            date_param = date  # Already in YYYY-MM-DD format
+        elif date == "tomorrow":
             date_param = (now_brt + _td(days=1)).strftime("%Y-%m-%d")
         else:
             date_param = now_brt.strftime("%Y-%m-%d")

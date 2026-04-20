@@ -4,6 +4,30 @@
 
 ---
 
+## 153 — Complementar league-matches com todays-matches para capturar todos os jogos da rodada
+
+**Data:** 2026-04-19
+**Arquivos afetados:** backend/routes/fixtures.py
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+Brasileirão Série B e Colômbia mostravam apenas ~3 jogos quando a rodada tem 7-10. Outras ligas avançadas na temporada também perdiam jogos.
+
+### Causa raiz
+`get_league_matches(season_id, page=1)` pagina por temporada, não por data. Para ligas avançadas na temporada, os jogos de hoje podem estar na página 2+, e o sistema só busca a página 1. O fallback `_fallback_todays_matches()` só era ativado quando `records` estava completamente vazio — se page 1 retornava 3 jogos, o fallback nunca disparava.
+
+### Correções aplicadas
+1. **Complement, not fallback:** Após `build_records_from_matches()`, SEMPRE buscar `_fallback_todays_matches()` e complementar os rich records com jogos ausentes (match por team names normalizados)
+2. **ISO date support:** `_fallback_todays_matches()` agora aceita datas ISO "YYYY-MM-DD" além de "today"/"tomorrow"
+3. **Merge logic:** Rich records (lambda, Poisson, xG, Dixon-Coles) são preservados; todays-matches records (implied probs) são adicionados apenas para jogos que não estão na page 1
+4. **Logging:** Log detalhado de quantos jogos foram complementados (#153)
+
+### Lição aprendida
+Endpoints de listagem paginada por temporada nunca devem ser a ÚNICA fonte para jogos de uma data específica. Sempre complementar com endpoint de data (todays-matches) para garantir completude.
+
+---
+
 > Historico completo de todos os fixes e correcoes do sistema.
 > Para regras ativas e permanentes, consultar `docs/REGRAS_ATIVAS.md`.
 > Indice rapido em `docs/INDICE_REGRAS.md`.

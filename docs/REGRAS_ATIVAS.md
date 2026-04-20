@@ -249,3 +249,15 @@ Nunca listar como picks independentes.
 
 **Verificação:** `grep -n "BTTS" backend/services/ev_classification.py | grep -i half` (deflação reduzida)
 **Verificação:** `grep -n "Cards" backend/services/ev_classification.py | grep -i families` (monotonidade)
+
+### #153 — Complementar league-matches com todays-matches para completude de jogos
+
+**Tipo:** Fix
+**Relacionado:** #089
+
+`get_league_matches(page=1)` pagina por temporada — ligas avançadas podem ter jogos de hoje na página 2+.
+Fix: SEMPRE buscar `_fallback_todays_matches()` como COMPLEMENTO (não apenas fallback).
+Rich records (lambda/Poisson/xG) são preservados; todays-matches preenche jogos ausentes da page 1.
+`_fallback_todays_matches()` agora aceita ISO dates além de "today"/"tomorrow".
+
+**Verificação:** `grep -n "#153" backend/routes/fixtures.py` (complement logic)
