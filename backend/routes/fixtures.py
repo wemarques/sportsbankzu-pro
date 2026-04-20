@@ -182,6 +182,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     if not raw_list:
                         logger.warning(f"[fixtures] {lid}: API success but empty data list")
                         return []
+
+                    # #154-diag: log total matches from all pages
+                    logger.info(f"[fixtures] {lid}: league-matches returned {len(raw_list)} total matches (season_id={season_id})")
+
                     try:
                         matches_df = DataMapper.matches_to_df(raw_list)
                     except Exception as e:
@@ -326,6 +330,12 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     except Exception as e:
                         logger.error(f"[fixtures] {lid}: build_records_from_matches crashed: {type(e).__name__}: {e}")
                         records = []
+
+                    # #154-diag: log how many matches survived date filter
+                    logger.info(
+                        f"[fixtures] {lid}: build_records → {len(records)} records for date='{date}' "
+                        f"(from {len(matches_df)} rows in DataFrame)"
+                    )
 
                     if records:
                         for r in records:
