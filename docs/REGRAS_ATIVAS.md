@@ -285,3 +285,14 @@ Frontend `computeLiveInfo()` retorna `{period:"HT", minute:null}` imediatamente 
 `Math.max()` só se aplica a 1T/2T, nunca a HT.
 
 **Verificação:** `grep -n "_PERIOD_MAP\|#155" backend/routes/live.py frontend/next/src/app/dashboard/page.tsx`
+
+### #156 — Deflation default 0.90 + Corners Over ≤ 6.5 bloqueado
+
+**Tipo:** Pipeline (calibração)
+**Relacionado:** #043, #105, #110
+
+1. `_DEFAULT_OU_DEFLATION = 0.90` em `poisson_matrix.py` — piso de 10% deflação para ligas sem calibração per-league
+2. `_CORNERS_OVER_MIN_LINE = 7.5` em `ev_classification.py` — Over 4.5/5.5/6.5 excluídos (overconfidence Poisson)
+3. Under corners NÃO afetados (loop separado)
+
+**Verificação:** `grep -n "_DEFAULT_OU_DEFLATION\|_CORNERS_OVER_MIN_LINE" backend/modeling/poisson_matrix.py backend/services/ev_classification.py`

@@ -74,7 +74,9 @@ def _get_rho(league_id: str | None) -> float:
 # ─── Lambda Deflation — Per-League from Calibration DB (#052) ───
 # Uniform deflation (#043) replaced by per-league factors from calibration.
 # Default: 1.0 (no deflation) when no calibration exists for a league.
-_DEFAULT_OU_DEFLATION = 1.0
+# #156: Default 0.90 (10% deflation) for leagues without per-league calibration.
+# Prevents undeflated lambdas from overpredicting goals (lambda error was 1.17).
+_DEFAULT_OU_DEFLATION = 0.90
 _DEFAULT_BTTS_DEFLATION = 1.0
 _DEFAULT_1X2_DEFLATION = 1.0
 

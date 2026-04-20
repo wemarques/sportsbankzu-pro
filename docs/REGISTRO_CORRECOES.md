@@ -4,6 +4,38 @@
 
 ---
 
+## 156 — Correção auditoria: deflation default, recalibração ligas, filtro corners
+
+**Data:** 2026-04-20
+**Arquivos afetados:** backend/modeling/poisson_matrix.py, backend/services/ev_classification.py
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+Auditoria 19/04 revelou 6 problemas: Lambda Erro 1.17 (target <0.5), Escanteios Over 6.5 com 0% acurácia, A-League Brier 0.4579, Süper Lig 43%, Bundesliga 44%.
+
+### Causa raiz
+1. `_DEFAULT_OU_DEFLATION = 1.0` — ligas sem calibração per-league recebiam zero deflação, inflando lambdas
+2. Escanteios Over ≤ 6.5: probabilidades Poisson ~82% criam overconfidence mecânica; Over 7.5 tem 75% acurácia
+3. A-League, Süper Lig, Bundesliga com calibração desatualizada
+
+### Correções aplicadas
+1. **FASE 1**: Recalibrado A-League (N=982), Bundesliga (N=1800), Süper Lig (N=2133) via endpoint calibrate
+2. **FASE 2**: `_DEFAULT_OU_DEFLATION = 0.90` em `poisson_matrix.py` — 10% deflação mínima para ligas sem calibração
+3. **FASE 3**: `_CORNERS_OVER_MIN_LINE = 7.5` em `ev_classification.py` — bloqueia Over ≤ 6.5 (0/4 acurácia)
+
+### Resultados da recalibração
+| Liga | N matches | lambda_deflation_ou | Brier O/U |
+|------|-----------|--------------------:|----------:|
+| A-League | 982 | 1.0 | 0.2090 |
+| Bundesliga | 1800 | 1.0 | 0.2096 |
+| Süper Lig | 2133 | 0.95 | 0.2207 |
+
+### Lição aprendida
+Default deflation = 1.0 é perigoso: ligas sem calibração operam sem rede de segurança. Piso mínimo de 10% previne overprediction sistêmica.
+
+---
+
 ## 155 — Fix live status: mapear period + anular minute no HT
 
 **Data:** 2026-04-19
