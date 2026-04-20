@@ -296,3 +296,14 @@ Previne lambdas inflados quando `lambda_multiplier` não existe no DB.
 Corners Over 6.5 (0/4) monitorado mas NÃO bloqueado — amostra insuficiente (N=4 < MIN_N=20, regra #079).
 
 **Verificação:** `grep -n "_DEFAULT_OU_DEFLATION" backend/modeling/poisson_matrix.py`
+
+### #157 — Bloquear pares Double Chance antagonistas
+
+**Tipo:** Safety (Hard Constraint)
+**Relacionado:** #098
+
+Qualquer par de mercados Double Chance (DC 1X + DC 12, DC 1X + DC X2, DC 12 + DC X2) soma >100% por definição
+(DC 1X + DC 12 = 100% + P(Home), DC 1X + DC X2 = 100% + P(Draw), DC 12 + DC X2 = 100% + P(Away)).
+`_sao_complementares()` em `safety_validation.py` detecta pares DC distintos via `_DC_PATTERN` e bloqueia o pick com menor EV.
+
+**Verificação:** `grep -n "_DC_PATTERN" backend/services/safety_validation.py`

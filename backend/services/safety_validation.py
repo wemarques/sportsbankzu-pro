@@ -22,8 +22,19 @@ _COMPLEMENTARY_PAIRS = [
 _MAX_COMPLEMENTARY_SUM = 105  # 5% tolerance for rounding
 
 
+_DC_PATTERN = re.compile(r"dc\s*(1x|12|x2)", re.IGNORECASE)
+
+
 def _sao_complementares(m1: str, m2: str) -> bool:
-    """Check if two markets are complementary (Over/Under on same line)."""
+    """Check if two markets are complementary (Over/Under on same line, or any DC pair)."""
+    # #157: Any pair of Double Chance markets is complementary.
+    # DC 1X + DC 12 = 100% + P(1), DC 1X + DC X2 = 100% + P(X),
+    # DC 12 + DC X2 = 100% + P(2) — always > 100%, always block the weaker one.
+    dc1 = _DC_PATTERN.search(m1)
+    dc2 = _DC_PATTERN.search(m2)
+    if dc1 and dc2 and dc1.group(1).lower() != dc2.group(1).lower():
+        return True
+
     for pat_a, pat_b in _COMPLEMENTARY_PAIRS:
         # Forward: m1=A, m2=B
         ma = re.search(pat_a, m1)

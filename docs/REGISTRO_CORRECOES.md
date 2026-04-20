@@ -7845,3 +7845,26 @@ Kelly otimiza longo prazo. Oportunidade captura momento com custo transparente. 
 Deflação em camadas (lambda + banda) precisa considerar que cada camada já penaliza — aplicar 100% de ambas é dupla contagem. Transparência sobre rejeições reduz confusão quando narrativa e recomendação divergem.
 
 ---
+
+## 157 — Bloquear pares Double Chance antagonistas
+
+**Data:** 2026-04-19
+**Arquivos afetados:** backend/services/safety_validation.py
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+Jogo Once Caldas vs La Equidad exibia simultaneamente DC 1X (55-57%) e DC 12 (56-58%) — mercados matematicamente antagonistas. Por definição, DC 1X + DC 12 = 100% + P(Home), sempre >100%. Exibir ambos como recomendação é incoerente e confunde o apostador.
+
+### Causa raiz
+`_sao_complementares()` em `safety_validation.py` só detectava pares Over/Under (gols, escanteios, cartões) e BTTS Sim/Não. Não cobria Double Chance, que tem 3 variantes (1X, 12, X2) onde qualquer par soma >100%.
+
+### Correções aplicadas
+1. **Regex `_DC_PATTERN`:** Adicionado `re.compile(r"dc\s*(1x|12|x2)", re.IGNORECASE)` para detectar mercados DC pelo prefixo
+2. **Detecção em `_sao_complementares()`:** Se ambos os mercados são DC com variantes diferentes (ex: 1X vs 12), retorna `True` imediatamente — sem precisar checar soma, pois é sempre >100%
+3. **Bloqueio via `validar_mercados_complementares()`:** O pick DC com menor EV é bloqueado (hard constraint, não exibido ao usuário)
+
+### Lição aprendida
+Mercados complementares não se limitam a Over/Under. Double Chance é inerentemente complementar em qualquer par de variantes distintas. A safety layer deve cobrir TODOS os pares matematicamente conflitantes.
+
+---

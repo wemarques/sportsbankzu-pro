@@ -184,3 +184,4 @@
 | 154 | **ATIVA** | Fix | Paginar league-matches (todas as páginas, max_per_page=1000) para análise completa em todas as ligas |
 | 155 | **ATIVA** | Fix | Mapear period API-Football→frontend (1H→1T, HT→HT, 2H→2T) + anular minute no HT |
 | 156 | **ATIVA** | Pipeline | Deflation default 0.90 para ligas sem calibração per-league |
+| 157 | **ATIVA** | Safety | Bloquear pares Double Chance antagonistas (DC 1X+DC 12, DC 1X+DC X2, DC 12+DC X2) |
