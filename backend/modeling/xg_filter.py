@@ -47,8 +47,8 @@ def detectar_sorte_insustentavel(
         >>> detectar_sorte_insustentavel(18, 17.5, 10)
         (False, 0.5, 'NORMAL')
     """
-    # Validar dados
-    if games_played < XG_MIN_SAMPLE_SIZE:
+    # Validar dados (#154: guard against None)
+    if games_played is None or games_played < XG_MIN_SAMPLE_SIZE:
         logger.debug(
             f"Sample size insuficiente ({games_played} < {XG_MIN_SAMPLE_SIZE}). "
             f"Filtro não aplicado."
@@ -268,7 +268,7 @@ def calcular_xg_medio(
         >>> calcular_xg_medio(15.5, 10)
         1.55
     """
-    if games_played <= 0:
+    if not games_played or games_played <= 0:
         logger.warning(f"games_played inválido ({games_played}). Retornando 0.")
         return 0.0
     
