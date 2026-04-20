@@ -261,3 +261,15 @@ Rich records (lambda/Poisson/xG) são preservados; todays-matches preenche jogos
 `_fallback_todays_matches()` agora aceita ISO dates além de "today"/"tomorrow".
 
 **Verificação:** `grep -n "#153" backend/routes/fixtures.py` (complement logic)
+
+### #154 — Paginar league-matches (todas as páginas) para análise completa
+
+**Tipo:** Fix
+**Relacionado:** #153
+
+`get_all_league_matches()` busca TODAS as páginas com `max_per_page=1000`.
+Cache in-memory TTL 15min + cache SQLite 2h por página.
+Substitui `get_league_matches(page=1)` em fixtures.py.
+todays-matches complement (#153) mantido como rede de segurança.
+
+**Verificação:** `grep -n "get_all_league_matches" backend/services/footstats_client.py backend/routes/fixtures.py`

@@ -195,9 +195,63 @@ class FootyStatsClient:
         return self._request("league-list", params, ttl_minutes=1440) # Cache de 24h
 
     def get_league_matches(self, season_id: int, page: int = 1) -> Dict[str, Any]:
-        """Retorna todas as partidas de uma temporada específica."""
+        """Retorna uma página de partidas de uma temporada. Preferir get_all_league_matches()."""
         params = {"season_id": season_id, "page": page}
-        return self._request("league-matches", params, ttl_minutes=120) # Cache de 2h
+        return self._request("league-matches", params, ttl_minutes=120)  # Cache de 2h
+
+    # ── #154 — Paginação completa de league-matches ──────────────
+    _all_matches_cache: Dict[int, Tuple[float, list]] = {}
+    _ALL_MATCHES_CACHE_TTL = 900  # 15 minutos
+
+    def get_all_league_matches(self, season_id: int, max_per_page: int = 1000, max_pages: int = 10) -> Dict[str, Any]:
+        """Busca TODAS as páginas de league-matches para uma temporada (#154).
+
+        Usa max_per_page=1000 (máximo da API) para minimizar calls.
+        Safety cap de max_pages evita loop infinito.
+        Retorna dict compatível com get_league_matches: {"success": True, "data": [...]}.
+        """
+        # ── In-memory cache (sobrevive entre invocations no mesmo Lambda container) ──
+        now = time.monotonic()
+        cached = self._all_matches_cache.get(season_id)
+        if cached:
+            ts, matches = cached
+            if now - ts < self._ALL_MATCHES_CACHE_TTL:
+                logger.debug(f"[league-matches-all] CACHE HIT season={season_id} ({len(matches)} matches)")
+                return {"success": True, "data": matches}
+
+        all_matches: list = []
+        page = 1
+
+        while page <= max_pages:
+            params = {"season_id": season_id, "page": page, "max_per_page": max_per_page}
+            response = self._request("league-matches", params, ttl_minutes=120, timeout=20)
+
+            if not response.get("success"):
+                # Se page 1 falhou, retorna erro; se page N>1 falhou, retorna o que temos
+                if page == 1:
+                    return response
+                logger.warning(f"[league-matches-all] season={season_id} page={page} failed, returning {len(all_matches)} matches from pages 1-{page-1}")
+                break
+
+            data = response.get("data", [])
+            all_matches.extend(data)
+
+            pager = response.get("pager", {})
+            max_page = pager.get("max_page", 1)
+
+            logger.info(
+                f"[league-matches-all] season={season_id} page={page}/{max_page} "
+                f"fetched={len(data)} total_so_far={len(all_matches)}"
+            )
+
+            if page >= max_page or len(data) == 0:
+                break
+            page += 1
+
+        # Cache em memória
+        self._all_matches_cache[season_id] = (now, all_matches)
+        logger.info(f"[league-matches-all] season={season_id} DONE: {len(all_matches)} matches in {page} page(s)")
+        return {"success": True, "data": all_matches}
 
     def get_todays_matches(self, date: Optional[str] = None, timezone: str = "America/Sao_Paulo") -> Dict[str, Any]:
         """Retorna os jogos do dia (ou de uma data específica)."""

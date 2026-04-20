@@ -4,6 +4,31 @@
 
 ---
 
+## 154 — Paginar league-matches para análise completa em todas as ligas
+
+**Data:** 2026-04-19
+**Arquivos afetados:** backend/services/footstats_client.py, backend/routes/fixtures.py
+**Severidade:** Alta
+**Status:** Corrigido
+
+### Problema identificado
+`get_league_matches(page=1)` busca apenas a primeira página (500 jogos default). Em ligas avançadas na temporada, jogos de hoje podem estar em páginas posteriores. Com fix #153, esses jogos apareciam via todays-matches mas com análise parcial (só odds, sem lambda/Poisson/xG/picks).
+
+### Causa raiz
+FootyStats API pagina league-matches por temporada. Default é 500 jogos/página. Ligas com 300+ jogos na temporada (ex: 20 times × 38 rodadas = 380 jogos) podem ter jogos recentes na página 2.
+
+### Correções aplicadas
+1. **`get_all_league_matches()`**: Novo método que busca TODAS as páginas automaticamente, com `max_per_page=1000` (máximo da API) para minimizar calls e safety cap de 10 páginas
+2. **Cache in-memory TTL 15min**: `_all_matches_cache` por `season_id`, sobrevive entre invocations no mesmo Lambda container
+3. **Cache SQLite por página**: Cada página individual tem TTL 2h no SQLite (via `_request`)
+4. **fixtures.py**: Substituído `get_league_matches(season_id)` por `get_all_league_matches(season_id)`, timeout aumentado para 45s
+5. **todays-matches complement (#153)**: Mantido como rede de segurança
+
+### Lição aprendida
+Endpoints paginados devem SEMPRE ser consumidos em todas as páginas quando o objetivo é cobertura completa. Cache em duas camadas (in-memory + SQLite) minimiza impacto na quota da API.
+
+---
+
 ## 153 — Complementar league-matches com todays-matches para capturar todos os jogos da rodada
 
 **Data:** 2026-04-19

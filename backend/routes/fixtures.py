@@ -167,14 +167,14 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                 # #119b — Fetch matches, season-stats, and teams in parallel
                 from concurrent.futures import ThreadPoolExecutor as _TPE
                 with _TPE(max_workers=3) as _pool:
-                    _f_matches = _pool.submit(footstats.get_league_matches, season_id)
+                    _f_matches = _pool.submit(footstats.get_all_league_matches, season_id)  # #154: all pages
                     _f_stats = _pool.submit(footstats.get_league_season_stats, season_id)
                     _f_teams = _pool.submit(footstats.get_league_teams, season_id)
 
                     try:
-                        matches_data = _f_matches.result(timeout=30)
+                        matches_data = _f_matches.result(timeout=45)  # #154: more time for multi-page fetch
                     except Exception as e:
-                        logger.error(f"[fixtures] {lid}: get_league_matches failed: {e}")
+                        logger.error(f"[fixtures] {lid}: get_all_league_matches failed: {e}")
                         matches_data = {"success": False}
 
                 if matches_data.get("success"):

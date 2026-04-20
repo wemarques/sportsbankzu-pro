@@ -181,3 +181,4 @@
 | 149 | Implementado | Feature | Modo Oportunidade: stake por tier de classificação + desconto EV + barra exposição |
 | 152 | **ATIVA** | Fix + Feature | Deflação BTTS reduzida (metade da banda) + monotonidade para cartões + rejected insights na UI |
 | 153 | **ATIVA** | Fix | Complementar league-matches (page 1) com todays-matches para capturar todos os jogos da rodada |
+| 154 | **ATIVA** | Fix | Paginar league-matches (todas as páginas, max_per_page=1000) para análise completa em todas as ligas |
