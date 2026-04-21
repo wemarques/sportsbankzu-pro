@@ -307,3 +307,24 @@ Qualquer par de mercados Double Chance (DC 1X + DC 12, DC 1X + DC X2, DC 12 + DC
 `_sao_complementares()` em `safety_validation.py` detecta pares DC distintos via `_DC_PATTERN` e bloqueia o pick com menor EV.
 
 **Verificação:** `grep -n "_DC_PATTERN" backend/services/safety_validation.py`
+
+### #158 — Direction rescue requer EV >= -5%
+
+**Tipo:** Fix (Hard Constraint)
+**Relacionado:** #127, #130, #106
+
+VIA 2 direction rescue (#127) permitia classificar picks como NEUTRO (VIÁVEL) com EV arbitrariamente negativo (-10%, -20%) se a direção do modelo confirmasse. Isso gerava picks com perda esperada sistemática.
+Fix: ambos os rescues (prob >= neutro_prob e prob >= rescue_prob) agora exigem `ev >= -0.05` (ou ev=None para mercados sem odd). Picks com EV < -5% são NO_BET mesmo com direção natural.
+
+**Verificação:** `grep -n "#158" backend/services/ev_classification.py`
+
+### #159 — Reliability N usa Brier acumulado
+
+**Tipo:** Fix
+**Relacionado:** #109, #079
+
+`/health/reliability` lia `total_matches` do último batch do cron (um único dia), mostrando N=13 em vez do acumulado.
+Fix: agora usa `calculate_snapshot()` do `brier_service`, que consulta TODOS os picks em `audit_results`.
+Fallback: se `brier_service` falhar, volta ao comportamento anterior (batch único).
+
+**Verificação:** `grep -n "calculate_snapshot\|#159" backend/routes/health.py`

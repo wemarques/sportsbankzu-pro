@@ -359,8 +359,9 @@ def classify_market(
             classification = MarketClassification.NEUTRO
         elif not output.odds_available:
             classification = MarketClassification.NEUTRO
-        # #127: VIA 2 rescue — NEUTRO even with negative EV if direction confirms
-        elif _dir_natural and output.odds_available:
+        # #127/#158: VIA 2 rescue — NEUTRO if direction confirms AND EV not too negative
+        # #158: Cap at EV >= -5% — beyond that, direction alone can't justify the pick
+        elif _dir_natural and output.odds_available and (output.ev is None or output.ev >= -0.05):
             classification = MarketClassification.NEUTRO
             reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
             logger.info(
@@ -368,9 +369,11 @@ def classify_market(
                 f"(ev={output.ev}, but dir confirms, proj diff={_dir_diff:+.1f})"
             )
 
-    # #127: VIA 2 rescue for prob below neutro_prob (0.50-0.59 range)
+    # #127/#158: VIA 2 rescue for prob below neutro_prob (0.50-0.59 range)
+    # #158: Cap at EV >= -5% — beyond that, direction alone can't justify the pick
     elif (prob_for_class >= _DIRECTION_RESCUE_PROB and _dir_natural and
-          output.data_quality_score >= th.get("min_quality", 0.3) * 0.8):
+          output.data_quality_score >= th.get("min_quality", 0.3) * 0.8
+          and (output.ev is None or output.ev >= -0.05)):
         classification = MarketClassification.NEUTRO
         reason_codes.append(ReasonCode.DIRECTION_NATURAL_MATCH)
         logger.info(

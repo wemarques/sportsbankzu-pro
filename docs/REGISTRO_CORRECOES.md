@@ -7868,3 +7868,48 @@ Jogo Once Caldas vs La Equidad exibia simultaneamente DC 1X (55-57%) e DC 12 (56
 Mercados complementares não se limitam a Over/Under. Double Chance é inerentemente complementar em qualquer par de variantes distintas. A safety layer deve cobrir TODOS os pares matematicamente conflitantes.
 
 ---
+
+## 158 — Direction rescue requer EV >= -5%
+
+**Data:** 2026-04-21
+**Arquivos afetados:** backend/services/ev_classification.py
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problema identificado
+Jogos da Primera División Argentina (Tigre vs Huracán, Central Córdoba vs Platense) exibiam Over 1.5 gols como VIÁVEL com EV de -10.3% e -12.3%. O direction rescue (#127 VIA 2) promovia picks com EV arbitrariamente negativo se a projeção do modelo confirmasse a direção (ex: projeção de 2.1 gols → Over 1.5 "natural").
+
+### Causa raiz
+`classify_market()` linhas 362-364: o bloco `elif _dir_natural and output.odds_available` não verificava o valor do EV. Qualquer EV negativo passava. O #130 adicionou guard apenas na promoção NEUTRO→NEUTRO_QUALIFICADO, mas não no rescue inicial NO_BET→NEUTRO.
+
+### Correções aplicadas
+1. **Cap EV -5% no rescue NEUTRO (prob >= neutro_prob):** Adicionado `and (output.ev is None or output.ev >= -0.05)` na condição do direction rescue
+2. **Cap EV -5% no rescue below-neutro (prob >= rescue_prob):** Mesma condição aplicada ao segundo rescue path
+3. **Tolerância:** -5% permite variações de odds justas sem bloquear picks marginais, mas impede perdas esperadas > 5%
+
+### Lição aprendida
+Direction é sinal informativo, não override de EV. Um pick na "direção certa" com EV -10% continua sendo uma aposta ruim — a odd não compensa a probabilidade. O rescue deve ser tratado como tie-breaker para casos borderline, não como salvamento incondicional.
+
+---
+
+## 159 — Reliability N usa Brier acumulado (não batch único)
+
+**Data:** 2026-04-21
+**Arquivos afetados:** backend/routes/health.py
+**Severidade:** Média
+**Status:** Implementado
+
+### Problema identificado
+Relatório de confiabilidade mostrava "Amostra (N): 13 (min: 20)" — o N representava apenas os 13 jogos do último batch do cron, não o acumulado histórico. Com isso, o sistema NUNCA atingiria N>=20 em rodadas normais (tipicamente 8-15 jogos/dia), invalidando todas as decisões que dependem de amostra mínima.
+
+### Causa raiz
+`/health/reliability` (health.py linhas 323-336) lia `total_matches` do campo `context` do último `audit_results` com `pick_type='AUDIT'`. Este valor é populado pelo cron com `len(match_results)` — apenas os jogos daquela execução. O `brier_service.calculate_snapshot()` já consulta TODOS os picks acumulados em `audit_results`, mas nunca era chamado pelo endpoint de reliability.
+
+### Correções aplicadas
+1. **Primary path:** `/health/reliability` agora chama `calculate_snapshot()` do `brier_service`, usando `total_picks` (acumulado) e `brier_model` (Brier global)
+2. **Fallback:** Se `brier_service` falhar (ex: DB indisponível), volta ao comportamento anterior (batch único) para não quebrar o endpoint
+
+### Lição aprendida
+Endpoints de monitoramento devem ler de fontes acumuladas, não de snapshots de execução. Um relatório de "confiabilidade" que reseta a cada rodada perde o propósito de medir tendências.
+
+---

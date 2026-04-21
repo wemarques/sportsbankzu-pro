@@ -320,20 +320,29 @@ async def reliability_metrics():
 
     stats = get_stats(days=30)
 
-    # --- Predictability: from last cron audit ---
+    # --- Predictability: from accumulated Brier snapshot (#159) ---
     pred_data: dict = {"brier_score": None, "n_total": 0, "suficiente": False}
     try:
-        recent = audit_db.get_recent_audit_results(days=7, limit=1)
-        if recent:
-            import json as _json
-            ctx = recent[0].get("data") or recent[0].get("context") or {}
-            if isinstance(ctx, str):
-                ctx = _json.loads(ctx)
-            pred_data["brier_score"] = ctx.get("avg_brier_score")
-            pred_data["n_total"] = ctx.get("total_matches", 0)
+        from backend.services.brier_service import calculate_snapshot
+        snapshot = calculate_snapshot()
+        if snapshot:
+            pred_data["brier_score"] = snapshot.get("brier_model")
+            pred_data["n_total"] = snapshot.get("total_picks", 0)
             pred_data["suficiente"] = pred_data["n_total"] >= 20
     except Exception:
-        pass
+        # Fallback to last cron batch if brier_service unavailable
+        try:
+            recent = audit_db.get_recent_audit_results(days=7, limit=1)
+            if recent:
+                import json as _json
+                ctx = recent[0].get("data") or recent[0].get("context") or {}
+                if isinstance(ctx, str):
+                    ctx = _json.loads(ctx)
+                pred_data["brier_score"] = ctx.get("avg_brier_score")
+                pred_data["n_total"] = ctx.get("total_matches", 0)
+                pred_data["suficiente"] = pred_data["n_total"] >= 20
+        except Exception:
+            pass
 
     # --- Safety ---
     safety = {
