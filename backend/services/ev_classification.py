@@ -102,26 +102,26 @@ def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str)
             result *= max(per_league_factor, 0.85)
         result = max(result, 0.05)
     else:
-        # #165-d: half-band only for O/U markets where lambda is actually
-        # pre-deflated (ou_defl < 1.0). 1X2/DC/other markets use full band
-        # unchanged. The earlier `_DEFAULT_OU_DEFLATION < 1.0` OR clause was
-        # wrong: DB-calibrated leagues can override ou_defl back to 1.0 (e.g.
-        # premier-league), in which case lambda is NOT deflated and full band
-        # should apply. `ou_defl` already folds the default (0.90) via
-        # `_get_league_deflation`'s fallback for uncalibrated leagues.
+        # #165-e: unconditional half-band for O/U markets. Product decision:
+        # #105 bands were calibrated before Dixon-Coles, per-league calibration,
+        # and xG blend. In production, 18/22 leagues have `lambda_multiplier: 1.0`
+        # in the DB (no lambda-level deflation) so the #165-d gate was inert —
+        # gols picks closed while BTTS kept its #152 half-band. Mirrors BTTS
+        # treatment until Brier recalibration justifies re-tightening.
+        # 1X2/DC/Corners/Cards remain on full band (legacy #105 path).
         is_ou_market = market.lower().startswith(("over ", "under "))
-        ou_defl, _, _ = _get_league_deflation(league_id)
-        if is_ou_market and ou_defl < 1.0:
+        if is_ou_market:
             result = calibrated * (1.0 - deflation_band / 2.0)
             if league_id:
                 result *= max(per_league_factor, 0.85)
             result = max(result, 0.05)
+            ou_defl, _, _ = _get_league_deflation(league_id)
             logger.info(
                 "[OU-HALFBAND] league=%s market=%s band=%.3f->%.3f ou_defl=%.2f",
                 league_id or "-", market, deflation_band, deflation_band/2, ou_defl,
             )
         else:
-            # Full band: 1X2, DC, Corners, Cards, OR O/U with ou_defl==1.0
+            # Full band: 1X2, DC, Corners, Cards (legacy #105 path)
             result = apply_probability_deflation(calibrated, league_id)
     # Under 2.5 extra deflation (#113) — skipped when lambda-level OU deflation
     # is already active (#156/#161). The `_LEAGUE_DEFLATION` static dict only
