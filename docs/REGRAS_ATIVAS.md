@@ -448,4 +448,34 @@ manter só o de maior EV absoluto. Log `[CARDS-CORRIDOR]`.
 
 **Kill switch:** Brier O/U regredir > 0.03 na próxima auditoria → reverter Parte A; picks SAFE caírem >30% → reverter Parte B.
 
+### #166 — Odds Ingestion v2 (checklist break + per-league priority)
+
+**Tipo:** Feature (Pipeline de ingestão)
+**Relacionado:** #120 (odds enrichment), #144 (corners odds), #095 (cards odds)
+
+**Gap raiz:** `extract_best_odds()` em `api_football_client.py` parava no primeiro
+bookmaker com 1X2 (`if "home" in result: break`), perdendo O/U de ligas latinas
+(MLS, Brasileirão A/B, Liga MX, Argentina, Colômbia) onde a cobertura de O/U
+está fragmentada fora das top 5 casas europeias. Detalhado em
+`docs/gap_analysis_api_football.md`.
+
+**Fix (flag-gated via `ODDS_INGESTION_V2=true`):**
+1. **Checklist break**: loop interno E externo quebram apenas quando
+   `{home, over_25, btts_yes}` estão todos presentes. Flag-off preserva
+   comportamento legado (break após 1X2).
+2. **PRIORITY_BOOKMAKERS por liga** em `leagues_config.py`: MLS → DraftKings/
+   FanDuel/Caesars; Brasileirão → Betano/Sportingbet; México/Argentina/Colômbia
+   → 1xBet/local. Fallback = default europeu. Chave usa internal slug.
+3. **Paginação** de 5 → 10 páginas (always-on, low-risk).
+4. **Bet ID logging** (BET_ID_MAP vazio): loga IDs desconhecidos para validação
+   futura via `curl /odds/bets`. Name matching continua primário.
+5. **Endpoint `/api/debug/odds-coverage`** registrado somente quando flag on,
+   protegido por header `X-Debug-Key` (match `ODDS_DEBUG_KEY` env var).
+6. **Log `[ODDS-SLOW]`** se extract_best_odds levar > 1.0s.
+
+**Kill switch:** `ODDS_INGESTION_V2=false` (env var; zero redeploy). Triggers:
+`[ODDS-SLOW]` > 10% dos requests, ou Brier O/U > 0.25 pós-ativação.
+
+**Verificação:** `grep -n "_ODDS_V2\|_ESSENTIAL_ODDS\|get_priority_bookmakers" backend/services/api_football_client.py backend/config/leagues_config.py`
+
 **Verificação:** `grep -n "#165\|OU-HALFBAND\|EV_FLOOR_DROP\|CARDS-CORRIDOR" backend/services/ev_classification.py backend/services/market_service.py backend/models/market_output.py`

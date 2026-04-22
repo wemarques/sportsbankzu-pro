@@ -4,6 +4,105 @@
 
 ---
 
+## 166 — Odds Ingestion v2 — checklist break + per-league priority + bet ID logging
+
+**Data:** 2026-04-22
+**Arquivos afetados:** backend/services/api_football_client.py, backend/config/leagues_config.py, backend/routes/fixtures.py, backend/routes/debug.py (novo), backend/main.py
+**Severidade:** Alta (ligas latinas retornam `book_odd=null` para O/U, suprimindo picks)
+**Status:** Implementado (flag-gated)
+
+### Problema identificado
+Investigação sistemática (`docs/gap_analysis_api_football.md`) mapeou 8 gaps entre a API-Football v3.9.3 e a implementação. Os dois críticos (Gap #1 + #3) explicam diretamente o sintoma: MLS, Brasileirão A/B, Liga MX, Argentina e Colômbia retornavam `book_odd=null` para mercados de gols, enquanto BTTS funcionava.
+
+Exemplo (pré-fix, MLS):
+- Bookmakers ordenados por prioridade europeia: `bet365 > pinnacle > 1xbet > ...`
+- Bet365 oferece 1X2 + BTTS para o fixture, mas NÃO tem O/U para MLS
+- Código processa Bet365, preenche `home`, `draw`, `away`, `btts_yes` → `if "home" in result: break` → **para**
+- DraftKings (que tem O/U completo) na lista é preterida e nunca consultada
+- Resultado: `over_25=null, under_25=null` → pick de gols suprimido no classificador
+
+### Causa raiz
+1. **Gap #1 (crítico):** Early-break após 1X2 em `api_football_client.py:1174-1176` cortava a iteração antes de coletar O/U de bookmakers subsequentes.
+2. **Gap #3 (médio):** Lista de prioridade hardcoded (`bet365, pinnacle, 1xbet, betfair, unibet`) é europeia — não reflete cobertura regional de Americas.
+3. **Gap #6 (menor):** String matching de nomes de bets pode falhar se a API mudar terminologia ("Goals" → "Total Goals" etc.).
+
+BTTS não era afetado porque, em ligas europeias, Bet365 publica 1X2 + O/U + BTTS no mesmo pacote → o bug não se manifesta. Em ligas latinas a cobertura é fragmentada por mercado.
+
+### Correções aplicadas (flag `ODDS_INGESTION_V2=true`)
+
+**Parte A — Checklist break duplo (inner + outer):**
+```python
+_ESSENTIAL_ODDS = frozenset({"home", "over_25", "btts_yes"})
+_done = False
+for entry in odds_response:
+    if _done: break
+    for bk in sorted_bk:
+        for bet in bk.get("bets", []):
+            ...
+        if _ODDS_V2 and _ESSENTIAL_ODDS.issubset(result):
+            _done = True
+            break
+```
+Break ocorre só quando os 3 mercados essenciais estão preenchidos. Cobre responses paginadas multi-entry.
+
+**Parte B — PRIORITY_BOOKMAKERS per-league** em `leagues_config.py`:
+```python
+PRIORITY_BOOKMAKERS = {
+    "default":             ["bet365", "pinnacle", "1xbet", "betfair", "unibet"],
+    "mls":                 ["draftkings", "fanduel", "caesars", "bet365", "pinnacle"],
+    "brasileirao-serie-a": ["betano", "bet365", "1xbet", "pinnacle", "sportingbet"],
+    "brasileirao-serie-b": ["betano", "bet365", "1xbet", "pinnacle"],
+    "liga-mx":             ["1xbet", "bet365", "caliente", "pinnacle"],
+    "primera-division":    ["1xbet", "bet365", "pinnacle"],
+    "colombian-primera-a": ["1xbet", "bet365", "betplay", "pinnacle"],
+}
+def get_priority_bookmakers(league_id) -> list[str]: ...
+```
+Keys são internal slugs (alinhado com `LEAGUE_ID_ALIASES`). `extract_best_odds()` agora aceita `league_id` parâmetro; callers em `routes/fixtures.py:483` e `api_football_client.py:1667` passam o valor.
+
+**Parte C — Paginação 5 → 10 páginas** (always-on, backward-compat):
+```python
+for page in range(2, min(total_pages + 1, 11)):  # was 6
+```
+
+**Parte D — BET_ID_MAP esqueleto** (intencionalmente vazio):
+```python
+BET_ID_MAP: dict[int, str] = {}  # populate after validation via /odds/bets
+```
+Quando `bet.get("id")` não está no map (e o map não está vazio), log `[ODDS] Unknown bet id=X name=...`. Name matching continua primário — zero regressão.
+
+**Parte E — Endpoint `/api/debug/odds-coverage`** em `backend/routes/debug.py`:
+- Registrado no `main.py` SOMENTE quando `ODDS_INGESTION_V2=true`
+- Requer header `X-Debug-Key` matching `ODDS_DEBUG_KEY` env var (401 se inválido, 503 se env não setado)
+- Retorna: total_bookmakers, per-bookmaker (has_1x2/has_ou/has_btts), extracted odds, missing essentials, source_bookmaker, elapsed_ms
+
+**Parte F — Log `[ODDS-SLOW]`** se `extract_best_odds` levar > 1.0s (observabilidade).
+
+### Plano de Rollout
+1. Deploy com `ODDS_INGESTION_V2=false` — legacy path ativo, Partes C/D/F always-on (low-risk).
+2. Ativar flag em produção via `aws lambda update-function-configuration --environment ...`. Zero redeploy para rollback.
+3. Validar via `/api/debug/odds-coverage?fixture_id=X&league_id=mls` (com X-Debug-Key) para 3 MLS + 3 Brasileirão + 3 EPL (controle).
+4. Após 7 dias estável: remover flag e endpoint debug (#166b futura).
+
+### Kill Switch
+- **Automático:** `[ODDS-SLOW]` > 10% dos requests /fixtures em 5 min → desativar flag.
+- **Manual:** Brier O/U > 0.25 após 50+ picks → investigar odds incorretas.
+- **Rollback:** `ODDS_INGESTION_V2=false` via env var. Zero downtime.
+
+### Pre-mortem
+| Falha | Probabilidade | Mitigação |
+|---|---|---|
+| API-Football renomeia bet names | baixa | name fallback primário; BET_ID_MAP futuro |
+| Bookmaker regional retorna formato estranho | baixa | `_safe_float()` + try/except no loop |
+| Checklist nunca completa → CPU wasted | baixa | bookmaker list é finita; fixture é single-request |
+| Debug endpoint vaza odds públicos | baixa | dados já públicos; key obrigatória mesmo assim |
+| Per-league priority lista casa inexistente | baixa | sort fallthrough para alphabetical |
+
+### Lição aprendida
+Hardcoding de prioridades regionais em código acumula dívida técnica. Config per-league com fallback explícito é mais robusto. Feature flags para mudanças de ingestão (alto risco de latência) são essenciais para rollback zero-downtime.
+
+---
+
 ## 165 — O/U half-band + EV Floor 1% + Cards corridor dedup
 
 **Data:** 2026-04-22

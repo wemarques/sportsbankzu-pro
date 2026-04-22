@@ -142,6 +142,15 @@ try:
     app.include_router(_r_ai_analysis.router)
 except Exception:
     pass
+
+# #166: odds-coverage debug endpoint gated on ODDS_INGESTION_V2=true.
+# Rollback = flip env var; router disappears on next cold start.
+if os.getenv("ODDS_INGESTION_V2", "false").lower() == "true":
+    try:
+        from backend.routes import debug as _r_debug
+        app.include_router(_r_debug.router)
+    except Exception:
+        pass
 try:
     from backend.routes import audit_status as _r_audit_status
     app.include_router(_r_audit_status.router)

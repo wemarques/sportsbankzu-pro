@@ -198,3 +198,4 @@
 | 164b | **ATIVA** | Fix | Escopar logging à namespace sportsbankzu (sem root override) — evita spam boto3/urllib3/mangum no CloudWatch |
 | 164c | **ATIVA** | Fix | Hook 5 V2-BUNDLES: chave `nome`→`mercado` + filtrar só `gols`/`btts` (exclui corners/cards do gols_total) |
 | 165 | **ATIVA** | Fix + Feat | O/U half-band quando lambda pré-deflacionado (#156) + EV Floor 1% (EV_FLOOR_DROP) + Cards corridor dedup (sum>105% → maior EV) |
+| 166 | **ATIVA** | Feature | Odds ingestion v2 — checklist break (home+over_25+btts_yes) + PRIORITY_BOOKMAKERS per-league + paginação 5→10 + endpoint debug gated. Flag `ODDS_INGESTION_V2` |

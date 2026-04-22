@@ -480,7 +480,7 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
             af_odds = _afc.get_odds(int(af_id), ttl_minutes=180)
             if not af_odds:
                 continue
-            best = _afc.extract_best_odds(af_odds)
+            best = _afc.extract_best_odds(af_odds, league_id=rec.get("leagueId", ""))
             if not best:
                 continue
             filled = []

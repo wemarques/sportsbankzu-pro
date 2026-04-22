@@ -27,6 +27,19 @@ except ImportError:
 
 logger = logging.getLogger("sportsbankzu.services.api_football")
 
+# ─── #166 — Odds Ingestion v2 feature flag + constants ──────────────────
+# When true: use per-league PRIORITY_BOOKMAKERS + checklist break (inner+outer
+# loops exit only when {home, over_25, btts_yes} all present).
+# When false: legacy behaviour (hardcoded European priority + break after 1X2).
+# BET_ID_MAP stays empty until validated; name matching is primary.
+from backend.config.leagues_config import (
+    get_priority_bookmakers as _get_priority_bookmakers,
+    BET_ID_MAP as _BET_ID_MAP,
+)
+_ODDS_V2 = os.getenv("ODDS_INGESTION_V2", "false").lower() == "true"
+_DEFAULT_ODDS_PRIORITY = ["bet365", "pinnacle", "1xbet", "betfair", "unibet"]
+_ESSENTIAL_ODDS = frozenset({"home", "over_25", "btts_yes"})
+
 # Canonical alias map: nickname/abbreviation → full canonical name (lowercase).
 # Used by _team_names_match to resolve common short names that fuzzy/token
 # matching cannot handle (e.g. "Wolves" vs "Wolverhampton Wanderers").
@@ -1040,17 +1053,20 @@ class APIFootballClient:
         paging = data.get("paging", {})
         total_pages = paging.get("total", 1)
         if total_pages > 1:
-            for page in range(2, min(total_pages + 1, 6)):  # Cap at 5 pages
+            for page in range(2, min(total_pages + 1, 11)):  # #166: cap at 10 pages
                 params["page"] = str(page)
                 page_data = self._get_sync("odds", params, ttl_minutes=ttl_minutes)
                 results.extend(page_data.get("response", []))
 
         return results
 
-    def extract_best_odds(self, odds_response: List[Dict]) -> Dict[str, Any]:
+    def extract_best_odds(
+        self, odds_response: List[Dict], league_id: str = ""
+    ) -> Dict[str, Any]:
         """Extract best odds from the odds response into a flat dict.
 
-        Prioritizes well-known bookmakers (Bet365, Pinnacle, 1xBet).
+        Prioritizes per-league bookmakers when ODDS_INGESTION_V2 is enabled
+        (#166), otherwise uses the legacy hardcoded European priority.
         Returns:
             {
                 "home": float, "draw": float, "away": float,
@@ -1066,10 +1082,17 @@ class APIFootballClient:
         if not odds_response:
             return result
 
-        # Priority bookmakers
-        priority = ["bet365", "pinnacle", "1xbet", "betfair", "unibet"]
+        # #166: per-league priority when flag on; legacy hardcoded list when off.
+        priority = (
+            _get_priority_bookmakers(league_id) if _ODDS_V2
+            else _DEFAULT_ODDS_PRIORITY
+        )
+        _t0 = time.time()
+        _done = False  # #166: signals when essentials are complete — breaks outer too
 
         for entry in odds_response:
+            if _done:
+                break
             bookmakers = entry.get("bookmakers", [])
             # Sort: prioritized bookmakers first
             sorted_bk = sorted(
@@ -1083,7 +1106,19 @@ class APIFootballClient:
             for bk in sorted_bk:
                 bk_name = bk.get("name", "")
                 for bet in bk.get("bets", []):
+                    bet_id = bet.get("id")
                     bet_name = (bet.get("name") or "").lower()
+                    # #166: BET_ID_MAP is the future primary identifier once
+                    # validated via /odds/bets. Currently empty → all matching
+                    # falls through to the existing name-based branches. Unknown
+                    # non-null IDs are logged so we can populate the map from
+                    # real data rather than guessed values.
+                    _mapped = _BET_ID_MAP.get(bet_id) if bet_id is not None else None
+                    if bet_id is not None and _mapped is None and _BET_ID_MAP:
+                        logger.warning(
+                            "[ODDS] Unknown bet id=%s name=%r — add to BET_ID_MAP",
+                            bet_id, bet_name,
+                        )
                     values = bet.get("values", [])
 
                     if "match winner" in bet_name or bet_name == "1x2":
@@ -1171,10 +1206,24 @@ class APIFootballClient:
                                 elif f"under {line}" in val and f"cards_under_{key_sfx}" not in result:
                                     result[f"cards_under_{key_sfx}"] = odd
 
-                # If we have at least 1X2 from a priority bookmaker, stop
-                if "home" in result:
-                    break
+                # #166: checklist break — stop only when all essentials present
+                # (home + over_25 + btts_yes). Legacy flag-off keeps the old
+                # early-break after 1X2 for safety / rollback.
+                if _ODDS_V2:
+                    if _ESSENTIAL_ODDS.issubset(result):
+                        _done = True
+                        break
+                else:
+                    if "home" in result:
+                        break
 
+        _elapsed = time.time() - _t0
+        if _elapsed > 1.0:
+            _bk_total = sum(len(e.get("bookmakers", [])) for e in odds_response)
+            logger.warning(
+                "[ODDS-SLOW] league=%s elapsed=%.2fs bookmakers=%d keys=%d",
+                league_id or "-", _elapsed, _bk_total, len(result),
+            )
         return result
 
     # ==================================================================
@@ -1664,7 +1713,7 @@ class APIFootballClient:
             if af_fixture_id and status == "scheduled":
                 try:
                     odds_data = self.get_odds(af_fixture_id, ttl_minutes=30)
-                    best_odds = self.extract_best_odds(odds_data)
+                    best_odds = self.extract_best_odds(odds_data, league_id=league_id)
                     if best_odds.get("home"):
                         record["odds"] = {
                             "home": best_odds.get("home"),

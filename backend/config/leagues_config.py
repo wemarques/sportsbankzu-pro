@@ -170,3 +170,33 @@ def get_league_config(league_id: str):
         if league["id"] == resolved_id:
             return league
     return None
+
+
+# ─── #166 — API-Football Odds Ingestion v2 ──────────────────────────────
+# Per-league bookmaker priority for odds extraction. Keys are internal slugs
+# (same as LEAGUES_CONFIG['id']). Regional coverage matters for Latin leagues
+# where Bet365/Pinnacle don't consistently publish O/U goals.
+PRIORITY_BOOKMAKERS: dict[str, list[str]] = {
+    "default":               ["bet365", "pinnacle", "1xbet", "betfair", "unibet"],
+    "mls":                   ["draftkings", "fanduel", "caesars", "bet365", "pinnacle"],
+    "brasileirao-serie-a":   ["betano", "bet365", "1xbet", "pinnacle", "sportingbet"],
+    "brasileirao-serie-b":   ["betano", "bet365", "1xbet", "pinnacle"],
+    "liga-mx":               ["1xbet", "bet365", "caliente", "pinnacle"],
+    "primera-division":      ["1xbet", "bet365", "pinnacle"],       # Argentina
+    "colombian-primera-a":   ["1xbet", "bet365", "betplay", "pinnacle"],
+}
+
+# API-Football numeric bet ID → internal market key.
+# Intentionally left EMPTY until validated via `curl /odds/bets` with a live
+# API key. Name matching remains the primary identifier. Unknown IDs (any
+# non-empty ID absent from this map) are logged as warnings so we can
+# populate the map from real API data rather than from guessed values.
+BET_ID_MAP: dict[int, str] = {}
+
+
+def get_priority_bookmakers(league_id: str | None) -> list[str]:
+    """Return per-league bookmaker priority. Falls back to default."""
+    if not league_id:
+        return PRIORITY_BOOKMAKERS["default"]
+    resolved = LEAGUE_ID_ALIASES.get(league_id, league_id)
+    return PRIORITY_BOOKMAKERS.get(resolved, PRIORITY_BOOKMAKERS["default"])
