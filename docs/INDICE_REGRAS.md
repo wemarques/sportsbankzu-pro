@@ -187,3 +187,4 @@
 | 157 | **ATIVA** | Safety | Bloquear pares Double Chance antagonistas (DC 1X+DC 12, DC 1X+DC X2, DC 12+DC X2) |
 | 158 | **ATIVA** | Fix | Direction rescue requer EV >= -5% — picks com EV muito negativo não podem ser "rescued" |
 | 159 | **ATIVA** | Fix | Reliability N usa Brier acumulado (não batch único) — /health/reliability agora lê calculate_snapshot() |
+| 160 | **ATIVA** | Infra | Late audit 02:00 BRT para jogos das Américas (Liga MX, MLS, Libertadores) que terminam após 23:45 BRT |

@@ -7913,3 +7913,27 @@ Relatório de confiabilidade mostrava "Amostra (N): 13 (min: 20)" — o N repres
 Endpoints de monitoramento devem ler de fontes acumuladas, não de snapshots de execução. Um relatório de "confiabilidade" que reseta a cada rodada perde o propósito de medir tendências.
 
 ---
+
+## 160 — Late audit 02:00 BRT para jogos das Américas
+
+**Data:** 2026-04-22
+**Arquivos afetados:** backend/cron_handler.py, scripts/setup_late_audit.py (novo)
+**Severidade:** Média
+**Status:** Implementado (pendente: criar EventBridge rule)
+
+### Problema identificado
+Liga MX (Querétaro vs Cruz Azul, Pumas vs Juárez) não aparecia no relatório de auditoria. Jogos mexicanos começam ~19:00 CDT (22:00 BRT) e terminam ~21:00 CDT (00:00 BRT) — depois do cutoff do today_audit (23:45 BRT). O batch_audit do dia seguinte (20:00 BRT) pega esses jogos, mas com atraso de ~20h.
+
+### Causa raiz
+Arquitetura de crons com 2 slots (20:00 BRT batch_audit + 23:45 BRT today_audit) não cobria jogos que terminam entre 23:45-02:00 BRT — janela típica de Liga MX, MLS e Copa Libertadores.
+
+### Correções aplicadas
+1. **Handler `late_audit`** em cron_handler.py: calcula o dia BRT anterior e roda batch_audit completo para esse dia (sem cutoff de hora)
+2. **Script `setup_late_audit.py`**: cria EventBridge rule `sportsbank-late-audit` às 05:00 UTC (02:00 BRT)
+3. **Dedup natural**: Postgres `ON CONFLICT DO UPDATE` garante que picks já auditados pelo today_audit são atualizados, não duplicados
+4. **Cobertura de horários**: batch_audit 20:00 BRT (europeus ontem) → today_audit 23:45 BRT (europeus/SA hoje) → late_audit 02:00 BRT (Américas tarde)
+
+### Lição aprendida
+Sistemas com cobertura global de futebol devem considerar os 4 fusos principais: Europa (CET/BST, jogos 15:00-22:00 BRT), América do Sul (BRT, 16:00-22:00 BRT), México/EUA (CDT/PDT, 20:00-01:00 BRT), e Oceania (AEST, 05:00-09:00 BRT). Cada fuso precisa de janela de auditoria adequada.
+
+---

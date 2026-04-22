@@ -42,6 +42,10 @@ def cron_handler(event, context):
         elif action == "today_audit":
             # New rule: cron(45 2 * * ? *) → 02:45 UTC = 23:45 BRT
             return _run_batch_audit("today", before_time_brt="23:45")
+        elif action == "late_audit":
+            # #160: cron(0 5 * * ? *) → 05:00 UTC = 02:00 BRT
+            # Catches Liga MX, MLS, Copa Libertadores etc. that finish after 23:45 BRT
+            return _run_late_audit()
         elif action == "retrain_calibrators":
             return _run_retrain_calibrators()
         elif action == "adjust_thresholds":
@@ -777,6 +781,37 @@ def _check_shadow_safe_activation(recent_picks: list) -> None:
     # for all picks with SAFE_CIRCUIT_BREAKER. This is deferred to the
     # /health/safe-status endpoint which already tracks reactivation criteria.
     # The cron logs progress; manual activation via endpoint when ready.
+
+
+def _run_late_audit() -> dict:
+    """#160: Late-night audit for Americas matches finishing after 23:45 BRT.
+
+    Scheduled: cron(0 5 * * ? *) → 05:00 UTC = 02:00 BRT.
+
+    Strategy: runs batch_audit for "today" (BRT date = yesterday calendar since
+    it's now 02:00 BRT of the new day). Uses the previous BRT calendar day to
+    catch Liga MX, MLS, Copa Libertadores etc. that finished between 23:45-01:59 BRT.
+
+    Only audits matches NOT already audited by today_audit (dedup by match ID).
+    """
+    from backend.routes.ai_analysis import _get_all_finished_matches
+    from datetime import timezone as _tz_mod, timedelta as _td_local
+    from datetime import datetime as _dt_local
+
+    _BRT = _tz_mod(_td_local(hours=-3))
+    # At 02:00 BRT, "yesterday" in BRT = the calendar day whose late matches we want
+    yesterday_brt = (_dt_local.now(_BRT) - _td_local(days=1)).strftime("%Y-%m-%d")
+
+    logger.info(f"[late_audit] Starting late audit for {yesterday_brt} (Americas late matches)")
+
+    # Fetch all finished matches for that BRT date — no time cutoff
+    result = _run_batch_audit(yesterday_brt)
+
+    # Tag the result so we know it came from late_audit
+    result["audit_type"] = "late_audit"
+    result["target_date"] = yesterday_brt
+
+    return result
 
 
 def _run_retrain_calibrators() -> dict:

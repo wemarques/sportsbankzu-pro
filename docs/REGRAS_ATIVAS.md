@@ -328,3 +328,15 @@ Fix: agora usa `calculate_snapshot()` do `brier_service`, que consulta TODOS os 
 Fallback: se `brier_service` falhar, volta ao comportamento anterior (batch único).
 
 **Verificação:** `grep -n "calculate_snapshot\|#159" backend/routes/health.py`
+
+### #160 — Late audit 02:00 BRT para Américas
+
+**Tipo:** Infra (Automação)
+**Relacionado:** #109, #089
+
+Cron `late_audit` às 05:00 UTC (02:00 BRT) audita jogos das Américas que terminam após 23:45 BRT.
+Liga MX, MLS, Copa Libertadores tipicamente terminam 00:00-01:30 BRT — fora do cutoff do today_audit.
+Dedup natural: `ON CONFLICT (match_id) DO UPDATE` — se today_audit já auditou, late_audit atualiza sem duplicar.
+EventBridge rule: `sportsbank-late-audit`, setup via `scripts/setup_late_audit.py`.
+
+**Verificação:** `grep -n "late_audit" backend/cron_handler.py`
