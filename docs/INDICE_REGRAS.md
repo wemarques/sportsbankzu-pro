@@ -194,3 +194,7 @@
 | 161 | **ATIVA** | Fix | Gate Under-2.5 penalty ×0.90 quando lambda já deflacionado (#156). Evita ~19% deflação cumulativa matando gols |
 | 162 | **ATIVA** | Fix+Feat | SAFE 0/0 exibe N/A (não 0%), compute_ev_summary() no relatório de auditoria |
 | 163 | **ATIVA** | Feature | Accuracy ponderada (1/fair_odd) — favoritos pesam mais que underdogs |
+| 164 | **ATIVA** | Fix | Logger `sportsbankzu` forçado a INFO (LOG_LEVEL env, fallback INFO) — AWS Lambda filtrava INFO via root handler em WARNING |
+| 164b | **ATIVA** | Fix | Escopar logging à namespace sportsbankzu (sem root override) — evita spam boto3/urllib3/mangum no CloudWatch |
+| 164c | **ATIVA** | Fix | Hook 5 V2-BUNDLES: chave `nome`→`mercado` + filtrar só `gols`/`btts` (exclui corners/cards do gols_total) |
+| 165 | **ATIVA** | Fix + Feat | O/U half-band quando lambda pré-deflacionado (#156) + EV Floor 1% (EV_FLOOR_DROP) + Cards corridor dedup (sum>105% → maior EV) |

@@ -70,7 +70,7 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
-    """Calibrate via Isotonic model then apply band+league deflation (#105, #113, #152).
+    """Calibrate via Isotonic model then apply band+league deflation (#105, #113, #152, #165).
 
     #161: Under-2.5 extra penalty (#113) is now redundant when the lambda itself
     is already deflated at the poisson-matrix level (#156: `_DEFAULT_OU_DEFLATION`
@@ -78,8 +78,16 @@ def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str)
     penalty for Under 2.5, zeroing EV on most books and suppressing gols picks.
     The #113 ×0.90 now only applies if neither global default nor per-league
     OU deflation is active — i.e., only in the legacy no-deflation path.
+
+    #165: O/U half-band when lambda is already deflated at the Poisson layer.
+    #105 bands (10-25%) were calibrated with `_DEFAULT_OU_DEFLATION = 1.0`.
+    #156 set the default to 0.90 without re-calibrating bands, creating a
+    double-penalty: lambda ×0.90 THEN full band. Mirrors #152 BTTS logic.
+    Full band remains as fallback if #156 is ever reverted (ou_defl == 1.0).
     """
-    from backend.modeling.poisson_matrix import _DEFAULT_OU_DEFLATION
+    from backend.modeling.poisson_matrix import (
+        _DEFAULT_OU_DEFLATION, _get_league_deflation,
+    )
     calibrated = calibrate_prob(raw, market, league_id, regime)
     # BTTS: lambda already deflated per-league in poisson_matrix (btts_multiplier).
     # Applying full band deflation on top causes double-penalty (~64% → ~44%).
@@ -94,7 +102,20 @@ def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str)
             result *= max(per_league_factor, 0.85)
         result = max(result, 0.05)
     else:
-        result = apply_probability_deflation(calibrated, league_id)
+        # #165: half-band when lambda pre-deflated (parallels #152 BTTS logic).
+        ou_defl, _, _ = _get_league_deflation(league_id)
+        if ou_defl < 1.0 or _DEFAULT_OU_DEFLATION < 1.0:
+            result = calibrated * (1.0 - deflation_band / 2.0)
+            if league_id:
+                result *= max(per_league_factor, 0.85)
+            result = max(result, 0.05)
+            logger.info(
+                "[OU-HALFBAND] league=%s market=%s band=%.3f->%.3f ou_defl=%.2f",
+                league_id or "-", market, deflation_band, deflation_band/2, ou_defl,
+            )
+        else:
+            # Legacy path: no lambda-level OU deflation -> full band (#105 original)
+            result = apply_probability_deflation(calibrated, league_id)
     # Under 2.5 extra deflation (#113) — skipped when lambda-level OU deflation
     # is already active (#156/#161). The `_LEAGUE_DEFLATION` static dict only
     # covers serie-a/league-two; DB-calibrated leagues (lambda_multiplier from
@@ -451,6 +472,12 @@ def classify_market(
         classification = MarketClassification.NO_BET
         if ReasonCode.NEGATIVE_EV not in reason_codes:
             reason_codes.append(ReasonCode.NEGATIVE_EV)
+
+    # #165: EV floor — drop picks with 0 <= EV < 1% (statistical noise, not edge)
+    if (output.ev is not None and 0 <= output.ev < 0.01
+            and classification != MarketClassification.NO_BET):
+        classification = MarketClassification.NO_BET
+        reason_codes.append(ReasonCode.EV_FLOOR_DROP)
 
     # ─── Force NO_BET on absurdly high EV (#064) ───
     if (ReasonCode.SUSPICIOUS_EV in reason_codes and

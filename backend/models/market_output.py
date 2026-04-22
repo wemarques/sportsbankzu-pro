@@ -40,6 +40,7 @@ class ReasonCode(str, Enum):
     DIRECTION_AGAINST_PROJFT = "DIRECTION_AGAINST_PROJFT"  # #123
     DIRECTION_NATURAL_MATCH = "DIRECTION_NATURAL_MATCH"  # #126
     DIRECTION_NATURAL_NO_EV = "DIRECTION_NATURAL_NO_EV"  # #130: direction OK but EV < 0
+    EV_FLOOR_DROP = "EV_FLOOR_DROP"  # #165: EV < 1% is statistical noise, not edge
 
 
 class MarketOutput(BaseModel):

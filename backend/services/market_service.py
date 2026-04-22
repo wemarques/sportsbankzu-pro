@@ -65,15 +65,35 @@ def _dedup_market_groups(mercados: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             others.append(m)
 
     result = list(others)
-    for best in (
-        _pick_best(corners),
-        _pick_best(goals_over),
-        _pick_best(goals_under),
-        _pick_best(cards_over),
-        _pick_best(cards_under),
-    ):
+    for best in (_pick_best(corners), _pick_best(goals_over), _pick_best(goals_under)):
         if best:
             result.append(best)
+
+    # #165: cards corridor dedup — when best Over + best Under cards sum > 105%
+    # (same threshold as #098), keep only the higher-EV side. Prevents
+    # "Cartoes Over 2.5 + Cartoes Under 4.5" showing as 2 picks of noise.
+    best_co = _pick_best(cards_over)
+    best_cu = _pick_best(cards_under)
+    if best_co and best_cu:
+        soma = (best_co.get("prob_max") or 0) + (best_cu.get("prob_max") or 0)
+        if soma > 105:
+            ev_co = best_co.get("ev") or 0
+            ev_cu = best_cu.get("ev") or 0
+            dropped = best_cu if ev_co >= ev_cu else best_co
+            kept = best_co if ev_co >= ev_cu else best_cu
+            logger.info(
+                "[CARDS-CORRIDOR] drop=%s kept=%s prob_sum=%d ev_drop=%.3f ev_kept=%.3f",
+                dropped.get("mercado"), kept.get("mercado"), soma,
+                (dropped.get("ev") or 0), (kept.get("ev") or 0),
+            )
+            if ev_co >= ev_cu:
+                best_cu = None
+            else:
+                best_co = None
+    if best_co:
+        result.append(best_co)
+    if best_cu:
+        result.append(best_cu)
     return result
 
 

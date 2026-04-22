@@ -4,6 +4,68 @@
 
 ---
 
+## 165 — O/U half-band + EV Floor 1% + Cards corridor dedup
+
+**Data:** 2026-04-22
+**Arquivos afetados:** backend/services/ev_classification.py, backend/models/market_output.py, backend/services/market_service.py
+**Severidade:** Alta (continuação de #161 — assimetria BTTS↔OU)
+**Status:** Implementado
+
+### Problema identificado
+Red Team MLS 22/04/2026: BTTS passava consistentemente enquanto Over/Under 2.5 falhava nos mesmos jogos, apesar de raw prob maior. Exemplo real (NY City vs FC Cincinnati, MLS):
+- Over 2.5: raw=0.7707 calib=0.6165 book=1.61 → EV −0.7% → NO_BET
+- BTTS Yes: raw=0.6999 calib=0.6474 book=1.60 → EV +3.6% → NEUTRO
+
+### Causa raiz
+Investigação da `_calibrate_and_deflate()` combinada com leitura de `poisson_matrix.derive_all_markets()`:
+
+1. **O/U dupla deflação post-#156**: `_DEFAULT_OU_DEFLATION = 0.90` deflata lambda ao nível Poisson (poisson_matrix.py:229), e `#105` depois aplica band 10-25% na prob. Total: ~25-35% cumulativo.
+2. **BTTS deflação única**: `_DEFAULT_BTTS_DEFLATION = 1.0` (lambda NÃO deflacionado em ligas não-calibradas) + `#152` half-band. Total: ~5-12.5%.
+3. **Resultado**: Over 2.5 com raw MAIOR que BTTS produzia final MENOR — assimetria que sufoca gols.
+
+O comentário original de `#152` justifica half-band como proteção contra double-penalty assumindo `btts_multiplier < 1.0` — válido apenas em ligas DB-calibradas. Ligas como MLS não tinham calibração, mas o half-band era aplicado mesmo assim. **Bands `#105` (10-25%) foram calibrados na era `_DEFAULT_OU_DEFLATION = 1.0`**; #156 mudou o prior sem re-calibrar bands.
+
+### Correções aplicadas
+
+**Parte A — O/U half-band gated (#165-A)** em `_calibrate_and_deflate()`:
+```python
+ou_defl, _, _ = _get_league_deflation(league_id)
+if ou_defl < 1.0 or _DEFAULT_OU_DEFLATION < 1.0:
+    result = calibrated * (1.0 - deflation_band / 2.0)  # half (mirrors #152)
+else:
+    result = apply_probability_deflation(calibrated, league_id)  # legacy full-band
+```
+Log `[OU-HALFBAND]` em cada aplicação.
+
+**Parte B — EV Floor 1% (#165-B)** em `classify_market()` após o force-NO_BET gate:
+```python
+if (output.ev is not None and 0 <= output.ev < 0.01
+        and classification != MarketClassification.NO_BET):
+    classification = MarketClassification.NO_BET
+    reason_codes.append(ReasonCode.EV_FLOOR_DROP)
+```
+Novo `ReasonCode.EV_FLOOR_DROP` em `market_output.py` (inline, sem constante global).
+
+**Parte C — Cards corridor dedup (#165-C)** em `_dedup_market_groups()`:
+Quando `_pick_best(cards_over)` e `_pick_best(cards_under)` existem e `prob_max_co + prob_max_cu > 105` (mesmo threshold do #098), mantém apenas o de maior EV. Log `[CARDS-CORRIDOR]`.
+
+### Validação local (simulação com valores CloudWatch reais)
+
+NY City vs FC Cincinnati (MLS):
+- BTTS Yes (inalterado): raw=0.6999 band=0.15 half=(0.075) final=0.6474 ev=+3.59% → NEUTRO
+- Over 2.5 BEFORE #165: raw=0.7707 band=0.20 **full** final=0.6166 ev=−0.73% → NO_BET
+- Over 2.5 AFTER  #165: raw=0.7707 band=0.20 **half=(0.100)** final=0.6936 ev=**+11.67%** → NEUTRO/SAFE
+
+### Kill switch
+- Brier O/U regressão > 0.03 na próxima auditoria → reverter Parte A
+- Picks SAFE caírem > 30% vs baseline → reverter Parte B
+- Cards picks caírem > 40% → reajustar threshold Parte C (105 → 110?)
+
+### Lição aprendida
+Quando um default constante muda (#156 OU deflation) sem re-calibrar parâmetros downstream (#105 bands), surge dupla penalidade silenciosa. Simetria com uma camada existente (#152 BTTS half-band) é um bom guia para validar a correção.
+
+---
+
 ## 156 — Correção auditoria: deflation default, recalibração ligas, filtro corners
 
 **Data:** 2026-04-20

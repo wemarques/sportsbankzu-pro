@@ -424,3 +424,28 @@ Favoritos (odd 1.50, w=0.67) pesam mais que underdogs (odd 4.00, w=0.25).
 Integrado ao cron_handler batch_summary e deterministic_audit overall_notes.
 
 **Verificação:** `grep -n "compute_weighted_accuracy" backend/services/backtesting.py backend/cron_handler.py`
+
+### #165 — O/U half-band + EV floor 1% + cards corridor dedup
+
+**Tipo:** Fix + Feature (Pipeline + UX)
+**Relacionado:** #105, #152, #156, #161, #098
+
+**Parte A — O/U half-band quando lambda pré-deflacionado:** `#105` band deflation (10-25%) foi
+calibrado com `_DEFAULT_OU_DEFLATION = 1.0`. Pós-#156 (`_DEFAULT_OU_DEFLATION = 0.90`), lambda e prob
+ficam duplamente deflacionados. Fix mirrors #152 BTTS logic: se `ou_defl < 1.0 OR _DEFAULT_OU_DEFLATION < 1.0`,
+aplicar metade da banda (`deflation_band / 2.0`). Full band remains como fallback legacy.
+Log `[OU-HALFBAND]` em cada aplicação. Validação real: NY City vs FC Cincinnati Over 2.5 passou de
+EV −0.7% (NO_BET) → +11.7% (NEUTRO/SAFE) — simétrico com BTTS já passando.
+
+**Parte B — EV Floor 1%:** picks com `0 ≤ EV < 1%` são ruído estatístico (dentro do erro do modelo).
+Filtro em `classify_market()` força NO_BET com `ReasonCode.EV_FLOOR_DROP`. Inline (sem nova constante
+global). Picks com EV negativo continuam tratados pelos gates existentes (neutro_ev, ev<-0.05).
+
+**Parte C — Cards corridor dedup:** `_dedup_market_groups()` em `market_service.py` tratava `cards_over`
+e `cards_under` separadamente → "Cartoes Over 2.5 + Cartoes Under 4.5" coexistiam como picks ruidosos.
+Fix: se ambos `best_co` e `best_cu` existem e `prob_max_co + prob_max_cu > 105%` (mesmo threshold do #098),
+manter só o de maior EV absoluto. Log `[CARDS-CORRIDOR]`.
+
+**Kill switch:** Brier O/U regredir > 0.03 na próxima auditoria → reverter Parte A; picks SAFE caírem >30% → reverter Parte B.
+
+**Verificação:** `grep -n "#165\|OU-HALFBAND\|EV_FLOOR_DROP\|CARDS-CORRIDOR" backend/services/ev_classification.py backend/services/market_service.py backend/models/market_output.py`
