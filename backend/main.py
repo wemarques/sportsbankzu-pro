@@ -40,7 +40,16 @@ try:
 except Exception:
     Mangum = None  # type: ignore
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+# #164: AWS Lambda's Python runtime pre-configures the root logger at WARNING
+# with its own handler, so basicConfig is a no-op. For our INFO-level hooks
+# (GOLS-TRACE / GOLS-CLASSIFY / V2-BUNDLES in ev_classification.py and
+# market_service.py) to reach CloudWatch, we must explicitly set BOTH the
+# root logger and the `sportsbankzu` namespace level. LOG_LEVEL env var
+# controls it; fallback is INFO.
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=_LOG_LEVEL)
+logging.getLogger().setLevel(_LOG_LEVEL)  # root — overrides Lambda's default WARNING
+logging.getLogger("sportsbankzu").setLevel(_LOG_LEVEL)
 logger = logging.getLogger("sportsbankzu")
 
 app = FastAPI(title="SportsBankZU Pro Backend", version="4.0.0")
