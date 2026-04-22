@@ -105,8 +105,16 @@ def selecionar_mercados_v2(
             legacy = market.to_legacy_mercado()
             mercados.append(legacy)
 
-        # Hook 5 (V2-BUNDLES): log gols markets before NO_BET filter (#161)
-        _gols_total = sum(1 for m in mercados if "gol" in (m.get("mercado", "")).lower() or "over" in (m.get("mercado", "")).lower() or "under" in (m.get("mercado", "")).lower())
+        # Hook 5 (V2-BUNDLES): log gols/BTTS markets before NO_BET filter (#161).
+        # Exclude corner ("Escanteios Over X.5") and card ("Cartões Over X.5")
+        # markets — they share the "over"/"under" substring but are tracked
+        # separately. Count strictly "gols" or "BTTS" to keep gols_total honest.
+        def _is_gols_market(name: str) -> bool:
+            n = (name or "").lower()
+            if "escanteio" in n or "cart" in n or "corner" in n:
+                return False
+            return "gols" in n or "btts" in n
+        _gols_total = sum(1 for m in mercados if _is_gols_market(m.get("mercado", "")))
 
         # Filter out NO_BET markets — legacy function never returned these
         mercados = [
@@ -114,7 +122,7 @@ def selecionar_mercados_v2(
             if m.get("finalClassification", m.get("status", "NO_BET")) in _CLASSIFICATION_RANK
         ]
 
-        _gols_kept = sum(1 for m in mercados if "gol" in (m.get("mercado", "")).lower() or "over" in (m.get("mercado", "")).lower() or "under" in (m.get("mercado", "")).lower())
+        _gols_kept = sum(1 for m in mercados if _is_gols_market(m.get("mercado", "")))
         if _gols_total > 0:
             logger.info(
                 "[V2-BUNDLES] league=%s gols_total=%d gols_kept=%d (dropped %d by NO_BET filter)",
