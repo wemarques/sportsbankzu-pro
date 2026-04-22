@@ -115,6 +115,57 @@ Antes de propor ou implementar qualquer correção:
 6. **Implemente defesa em profundidade** — não confie em uma única camada de correção. Se o bug pode ocorrer por múltiplas causas (ex: status "incomplete", "live", campo numérico inesperado), adicione guards em cada camada relevante
 7. **Teste o cenário completo** — após implementar, simule mentalmente o fluxo com os dados do bug reportado e confirme que TODAS as variantes são cobertas antes de declarar resolvido
 
+## Workflow de Validação
+
+Prompts obrigatórios em cada fase do ciclo de desenvolvimento. Usar ANTES de executar, não depois.
+
+### Antes de implementar qualquer correção
+**Prompt:** "Pre-mortem this change — o que pode dar errado com essa mudança?"
+
+Listar: arquivos afetados, efeitos colaterais em outros módulos, regras do REGRAS_ATIVAS.md que podem ser violadas, cenários de dados extremos (N=0, null, divisão por zero), e impacto em produção se o fix estiver errado. Caso real: corners Over 6.5 bloqueados com N=4 violou regra #079 (MIN_N=20) — pre-mortem teria pego.
+
+### Antes de todo deploy
+**Prompt:** "Red team this fix before I deploy"
+
+Verificar: py_compile em TODOS os arquivos modificados, tsc --noEmit no frontend, arquivos não foram truncados (comparar wc -l antes/depois), diff mostra apenas as mudanças intencionais, nenhum arquivo foi reescrito inteiramente quando bastava um edit pontual.
+
+### Para decisões com trade-off
+**Prompt:** "Steelman both options, then recommend"
+
+Quando houver 2+ caminhos possíveis (ex: reverter constante global vs gatar penalty específico), apresentar o melhor argumento a favor de cada opção ANTES de recomendar. Evita viés de confirmação.
+
+### Para análise de relatórios de auditoria
+**Prompt:** "As a skeptical auditor who will lose money on bad picks, analyze this report"
+
+Framing padrão para todo relatório de auditoria (cron batch, reliability, calibração). Força foco em: onde estou perdendo dinheiro, quais métricas estão maquiando problemas reais, quais amostras são insuficientes para conclusões.
+
+### Para evitar overengineering
+**Prompt:** "What's the simplest fix that solves this specific problem?"
+
+Antes de reescrever um arquivo inteiro, perguntar se um edit de 3 linhas resolve. Caso real: Claude Code reescreveu 6 arquivos inteiros e truncou todos — edits pontuais teriam evitado o problema.
+
+### Para forçar priorização
+**Prompt:** "What's the one thing I should fix first and why?"
+
+Quando há múltiplos problemas simultâneos, forçar sequenciamento. Tasks em paralelo aumentam risco de conflito e truncamento. Caso real: 4 tasks simultâneas (#161-163 + hooks) geraram 6 arquivos corrompidos.
+
+### Para edits no Claude Code
+**Prompt:** "Diff only — show me the exact lines you'll change before editing"
+
+OBRIGATÓRIO antes de qualquer edit em arquivos com mais de 200 linhas. Forçar preview do diff evita reescrituras completas e truncamentos. Se o Claude Code propuser reescrever o arquivo inteiro, REJEITAR e pedir edit pontual.
+
+### Sequência padrão para deploys
+```
+1. "What's the one thing?" → priorizar
+2. "Diff only" → preview das mudanças
+3. Implementar → edits pontuais
+4. "Pre-mortem this change" → antes do commit
+5. py_compile + tsc → validação técnica
+6. Commit + deploy
+7. "Red team this report" → depois do deploy
+8. Verificação com dados reais
+```
+
 ## Conventions
 
 - Language: Portuguese (pt-BR) for UI, English for code and comments
