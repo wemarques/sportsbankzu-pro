@@ -35,6 +35,7 @@ logger = logging.getLogger("sportsbankzu.services.api_football")
 from backend.config.leagues_config import (
     get_priority_bookmakers as _get_priority_bookmakers,
     BET_ID_MAP as _BET_ID_MAP,
+    LEAGUE_ID_ALIASES as _LEAGUE_ID_ALIASES,
 )
 _ODDS_V2 = os.getenv("ODDS_INGESTION_V2", "false").lower() == "true"
 _DEFAULT_ODDS_PRIORITY = ["bet365", "pinnacle", "1xbet", "betfair", "unibet"]
@@ -1083,6 +1084,14 @@ class APIFootballClient:
             return result
 
         # #166: per-league priority when flag on; legacy hardcoded list when off.
+        # Diagnostic log (always-on) — confirms whether league_id arrives as
+        # slug ("mls"), numeric ("253"), or alias ("brazil-serie-a"). Required
+        # to validate the fix isn't inert at call sites. Remove once format confirmed.
+        _resolved_lid = _LEAGUE_ID_ALIASES.get(league_id, league_id)
+        logger.info(
+            "[ODDS-LEAGUEID] raw=%r resolved=%r priority=%r",
+            league_id, _resolved_lid, _get_priority_bookmakers(league_id)[:2],
+        )
         priority = (
             _get_priority_bookmakers(league_id) if _ODDS_V2
             else _DEFAULT_ODDS_PRIORITY
