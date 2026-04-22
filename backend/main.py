@@ -40,15 +40,14 @@ try:
 except Exception:
     Mangum = None  # type: ignore
 
-# #164: AWS Lambda's Python runtime pre-configures the root logger at WARNING
-# with its own handler, so basicConfig is a no-op. For our INFO-level hooks
-# (GOLS-TRACE / GOLS-CLASSIFY / V2-BUNDLES in ev_classification.py and
-# market_service.py) to reach CloudWatch, we must explicitly set BOTH the
-# root logger and the `sportsbankzu` namespace level. LOG_LEVEL env var
-# controls it; fallback is INFO.
+# #164: AWS Lambda's Python runtime pre-configures the root logger at WARNING,
+# so basicConfig is a no-op in Lambda. Explicitly set the `sportsbankzu`
+# namespace level so our hooks (GOLS-TRACE / GOLS-CLASSIFY / V2-BUNDLES in
+# ev_classification.py and market_service.py) reach CloudWatch. Namespace-only
+# (no root override) keeps boto3/urllib3/mangum INFO logs out of CloudWatch
+# for cost and signal-to-noise reasons. LOG_LEVEL env var controls it; fallback INFO.
 _LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=_LOG_LEVEL)
-logging.getLogger().setLevel(_LOG_LEVEL)  # root — overrides Lambda's default WARNING
 logging.getLogger("sportsbankzu").setLevel(_LOG_LEVEL)
 logger = logging.getLogger("sportsbankzu")
 
