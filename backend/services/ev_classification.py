@@ -70,25 +70,52 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
-    """Calibrate via Isotonic model then apply band+league deflation (#105, #113, #152)."""
+    """Calibrate via Isotonic model then apply band+league deflation (#105, #113, #152).
+
+    #161: Under-2.5 extra penalty (#113) is now redundant when the lambda itself
+    is already deflated at the poisson-matrix level (#156: `_DEFAULT_OU_DEFLATION`
+    or per-league `lambda_multiplier`). Stacking both produced ~19% cumulative
+    penalty for Under 2.5, zeroing EV on most books and suppressing gols picks.
+    The #113 ×0.90 now only applies if neither global default nor per-league
+    OU deflation is active — i.e., only in the legacy no-deflation path.
+    """
+    from backend.modeling.poisson_matrix import _DEFAULT_OU_DEFLATION
     calibrated = calibrate_prob(raw, market, league_id, regime)
     # BTTS: lambda already deflated per-league in poisson_matrix (btts_multiplier).
     # Applying full band deflation on top causes double-penalty (~64% → ~44%).
     # #152: halve band deflation for BTTS to prevent excessive cumulative deflation.
+    deflation_band = _band_deflation(calibrated)
+    per_league_factor = _LEAGUE_DEFLATION.get(league_id, 1.0) if league_id else 1.0
     if market.upper() == "BTTS":
-        deflation = _band_deflation(calibrated)
-        half_deflation = deflation / 2.0
+        half_deflation = deflation_band / 2.0
         result = calibrated * (1.0 - half_deflation)
         # Per-league factor still applies
         if league_id:
-            factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
-            result *= max(factor, 0.85)
+            result *= max(per_league_factor, 0.85)
         result = max(result, 0.05)
     else:
         result = apply_probability_deflation(calibrated, league_id)
-    # Under 2.5 extra deflation — worst market in Brier #104 (Δ=-0.03, acc=57%) (#113)
+    # Under 2.5 extra deflation (#113) — skipped when lambda-level OU deflation
+    # is already active (#156/#161). The `_LEAGUE_DEFLATION` static dict only
+    # covers serie-a/league-two; DB-calibrated leagues (lambda_multiplier from
+    # calibration DB) apply at the lambda layer in poisson_matrix, so they
+    # are covered indirectly by the `_DEFAULT_OU_DEFLATION < 1.0` gate below.
+    # Kill-switch signal: if Lambda Error Médio > 1.0 in next audit, revisit.
+    extra_under_applied = False
     if "under" in market.lower() and "2.5" in market:
-        result *= 0.90
+        if _DEFAULT_OU_DEFLATION >= 1.0 and league_id not in _LEAGUE_DEFLATION:
+            # Legacy path: no lambda-level deflation → apply #113 safety penalty.
+            result *= 0.90
+            extra_under_applied = True
+    # Hook 1 (GOLS-TRACE): raw → calibrated → deflation factors → final
+    if market.lower().startswith(("over ", "under ")) or market.upper() == "BTTS":
+        logger.info(
+            "[GOLS-TRACE] league=%s market=%s raw=%.4f calib_iso=%.4f "
+            "band=%.2f per_league=%.2f default_ou=%.2f under25_extra=%s final=%.4f",
+            league_id or "-", market, raw, calibrated,
+            deflation_band, per_league_factor, _DEFAULT_OU_DEFLATION,
+            extra_under_applied, result,
+        )
     return result
 from backend.modeling.corners.predictor import predict_corners, get_corner_governance_info
 from backend.modeling.corners.operational_states import CornerOperationalState
@@ -456,6 +483,33 @@ def classify_market(
     # #129c: mark shadow SAFE picks for audit tracking
     if ReasonCode.SAFE_CIRCUIT_BREAKER in reason_codes and SAFE_SHADOW_MODE:
         output.source_flags = list(output.source_flags or []) + ["shadow_safe"]
+    # Hook 2 (GOLS-CLASSIFY): decision + drop reason for Over/Under + BTTS
+    _sel = (output.selection or "").lower()
+    _is_gols_market = _sel.startswith(("over ", "under ")) or output.market_type == "BTTS"
+    if _is_gols_market:
+        _drop_reason = None
+        if classification == MarketClassification.NO_BET:
+            if not output.odds_available:
+                _drop_reason = "no_odds"
+            elif prob_for_class < th.get("neutro_prob", 0.50):
+                _drop_reason = f"prob<{th.get('neutro_prob', 0.50):.2f}"
+            elif output.ev is not None and output.ev < -0.05:
+                _drop_reason = f"ev<{-0.05:.2f} (={output.ev:.3f})"
+            elif output.ev is not None and output.ev < th.get("neutro_ev", 0.0):
+                _drop_reason = f"ev<neutro_ev (={output.ev:.3f})"
+            else:
+                _drop_reason = "other"
+        logger.info(
+            "[GOLS-CLASSIFY] league=%s sel=%r raw=%.4f calib=%.4f prob_for_class=%.4f "
+            "ev=%s odd=%s quality=%.2f -> %s%s",
+            league_id or "-", output.selection,
+            output.raw_probability or 0.0, output.calibrated_probability or 0.0,
+            prob_for_class,
+            f"{output.ev:+.4f}" if output.ev is not None else "None",
+            output.book_odd, output.data_quality_score,
+            classification.value,
+            f" (drop: {_drop_reason})" if _drop_reason else "",
+        )
     return output
 
 
@@ -1100,13 +1154,37 @@ def evaluate_match_markets(
         logger.info("[Chaos] Capped all SAFE → NEUTRO for chaotic match")
 
     # ─── Filter NO_BET markets that have zero probability ───
-    active_markets = [m for m in markets if (m.calibrated_probability or m.raw_probability or 0) > 0.05]
+    # Hook 3 (FLOOR-DROP): log markets silently dropped by the ≤5% prob floor.
+    _floor_kept = []
+    _floor_dropped = []
+    for m in markets:
+        _p = (m.calibrated_probability or m.raw_probability or 0)
+        if _p > 0.05:
+            _floor_kept.append(m)
+        else:
+            _floor_dropped.append((m.display_label or m.selection, _p, m.classification.value))
+    if _floor_dropped:
+        logger.warning(
+            "[FLOOR-DROP] %s vs %s: dropped %d markets ≤5%% prob: %s",
+            home_team, away_team, len(_floor_dropped), _floor_dropped,
+        )
+    active_markets = _floor_kept
 
     # ─── Filter redundant 1X2 ↔ Double Chance ───
     active_markets = _filter_1x2_dc_redundancy(active_markets)
 
     # ─── Filter corridor bets (Over X.5 + Under (X+1).5) ───
+    # Hook 4 (CORRIDOR-DROPPED): log corridor eliminations.
+    _pre_corr = {id(m) for m in active_markets}
     active_markets = _filter_corridor_bets(active_markets)
+    _post_corr = {id(m) for m in active_markets}
+    _dropped_corr = [m for m in markets if id(m) in _pre_corr and id(m) not in _post_corr]
+    if _dropped_corr:
+        logger.info(
+            "[CORRIDOR-DROPPED] %s vs %s: removed %d: %s",
+            home_team, away_team, len(_dropped_corr),
+            [(m.display_label or m.selection) for m in _dropped_corr],
+        )
 
     # ─── Line safety margin (#120) — downgrade borderline Over lines ───
     _apply_line_safety_margin(active_markets)

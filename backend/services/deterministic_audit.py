@@ -54,8 +54,8 @@ def generate_deterministic_audit_report(
 
     avg_brier = batch_summary.get("avg_brier_score", 0.0)
     avg_lambda_err = batch_summary.get("avg_lambda_error", 0.0)
-    safe_acc = batch_summary.get("safe_accuracy_pct", 0.0)
-    neutro_acc = batch_summary.get("neutro_accuracy_pct", 0.0)
+    safe_acc = batch_summary.get("safe_accuracy_pct")  # None when 0/0 (#162)
+    neutro_acc = batch_summary.get("neutro_accuracy_pct")  # None when 0/0 (#162)
     overall_acc = batch_summary.get("overall_accuracy_pct", 0.0)
     total_audited = batch_summary.get("total_audited", 0)
 
@@ -157,6 +157,23 @@ def generate_deterministic_audit_report(
         if ev_summary:
             notes_parts.append(f"Hit Rate por EV: {ev_summary}")
 
+    # #162: EV metrics from batch_summary
+    ev_metrics = batch_summary.get("ev_metrics", {})
+    if ev_metrics.get("ev_medio_geral") is not None:
+        notes_parts.append(
+            f"EV Medio: {ev_metrics['ev_medio_geral']:+.3f} "
+            f"(positivo: {ev_metrics.get('ev_medio_positivo', 0):+.3f}, "
+            f"{ev_metrics.get('total_picks_ev_positivo', 0)}/{ev_metrics.get('total_picks_acionaveis', 0)} picks)"
+        )
+
+    # #163: Weighted accuracy from batch_summary
+    w_acc = batch_summary.get("weighted_accuracy", {})
+    if w_acc.get("acuracia_ponderada") is not None:
+        notes_parts.append(
+            f"Accuracy Ponderada (1/fair_odd): {w_acc['acuracia_ponderada']:.1f}% "
+            f"(bruta: {w_acc.get('acuracia_bruta', 0):.1f}%)"
+        )
+
     # ── confidence ──────────────────────────────────────────────────
     confidence = _compute_confidence(total_audited)
 
@@ -186,11 +203,12 @@ def generate_deterministic_audit_report(
 
 
 def _compute_assessment(
-    avg_brier: float, safe_acc: float, avg_lambda_err: float, overall_acc: float
+    avg_brier: float, safe_acc: float | None, avg_lambda_err: float, overall_acc: float
 ) -> str:
-    if avg_brier > 0.28 or safe_acc < 40 or avg_lambda_err > 1.5:
+    # #162: safe_acc=None means 0/0 (no SAFE picks emitted) — skip SAFE-based alarms
+    if avg_brier > 0.28 or (safe_acc is not None and safe_acc < 40) or avg_lambda_err > 1.5:
         return "CRITICO"
-    if avg_brier > 0.24 or safe_acc < 50 or avg_lambda_err > 1.0 or overall_acc < 45:
+    if avg_brier > 0.24 or (safe_acc is not None and safe_acc < 50) or avg_lambda_err > 1.0 or overall_acc < 45:
         return "NECESSITA_AJUSTE"
     return "SATISFATORIO"
 
@@ -231,13 +249,16 @@ def _compute_lambda_evaluation(
     }
 
 
-def _compute_threshold_evaluation(safe_acc: float, neutro_acc: float) -> dict[str, Any]:
-    safe_status = "OK" if safe_acc >= 55 else "BAIXO"
-    neutro_status = "OK" if neutro_acc >= 45 else "BAIXO"
+def _compute_threshold_evaluation(safe_acc: float | None, neutro_acc: float | None) -> dict[str, Any]:
+    # #162: None = no picks emitted → status N/A
+    safe_status = "N/A" if safe_acc is None else ("OK" if safe_acc >= 55 else "BAIXO")
+    neutro_status = "N/A" if neutro_acc is None else ("OK" if neutro_acc >= 45 else "BAIXO")
 
     notes_parts = []
     if safe_status == "BAIXO":
         notes_parts.append(f"{_display_name('SAFE')} accuracy {safe_acc:.1f}% abaixo do alvo 55%")
+    if safe_status == "N/A":
+        notes_parts.append(f"{_display_name('SAFE')}: nenhum pick emitido (circuit breaker ativo)")
     if neutro_status == "BAIXO":
         notes_parts.append(f"{_display_name('NEUTRO')} accuracy {neutro_acc:.1f}% abaixo do alvo 45%")
     if not notes_parts:
@@ -325,8 +346,8 @@ def _compute_corrections(
             "impact": "MEDIUM",
         })
 
-    # Rule 3: SAFE accuracy low → increase thresholds
-    if safe_acc < 50 and batch_summary.get("safe_total", 0) >= 5:
+    # Rule 3: SAFE accuracy low → increase thresholds (#162: skip when None)
+    if safe_acc is not None and safe_acc < 50 and batch_summary.get("safe_total", 0) >= 5:
         corrections.append({
             "type": "threshold",
             "parameter": "safe_prob_ou",

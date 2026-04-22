@@ -141,7 +141,7 @@ export function evaluatePick(
  */
 function computeModelUpdateRecommendation(
   overallAccuracy: number,
-  safeAccuracy: number,
+  safeAccuracy: number | null,  // #162: null when 0/0
   avgBrier: number,
   avgLambdaError: number,
   marketAccuracy: BatchAuditMarketAccuracy[],
@@ -196,11 +196,12 @@ function computeModelUpdateRecommendation(
   }
 
   // 4. SAFE accuracy (should be higher than overall; < 55% is a problem)
-  if (safeAccuracy < 50) {
+  // #162: skip when null (0/0 — circuit breaker active, no SAFE picks emitted)
+  if (safeAccuracy != null && safeAccuracy < 50) {
     reasons.push(`Picks SAFE com acurácia muito baixa (${safeAccuracy.toFixed(1)}%) — thresholds SAFE precisam recalibração`);
     actions.push("Elevar thresholds mínimos para classificação SAFE");
     score += 3;
-  } else if (safeAccuracy < 60) {
+  } else if (safeAccuracy != null && safeAccuracy < 60) {
     reasons.push(`Picks SAFE com acurácia abaixo do esperado (${safeAccuracy.toFixed(1)}%)`);
     actions.push("Revisar critérios de classificação SAFE");
     score += 1;
@@ -254,7 +255,7 @@ function computeModelUpdateRecommendation(
  */
 function computeLocalCorrections(
   overallAccuracy: number,
-  safeAccuracy: number,
+  safeAccuracy: number | null,  // #162
   avgBrier: number,
   avgLambdaError: number,
   marketAccuracy: BatchAuditMarketAccuracy[],
@@ -276,8 +277,8 @@ function computeLocalCorrections(
     });
   }
 
-  // SAFE threshold correction
-  if (safeAccuracy > 0 && safeAccuracy < 60) {
+  // SAFE threshold correction (#162: skip when null)
+  if (safeAccuracy != null && safeAccuracy > 0 && safeAccuracy < 60) {
     const bump = safeAccuracy < 50 ? 0.05 : 0.03;
     corrections.push({
       type: "THRESHOLD",
@@ -355,7 +356,7 @@ function computeLocalCorrections(
  */
 function buildLocalModelEvaluation(
   overallAccuracy: number,
-  safeAccuracy: number,
+  safeAccuracy: number | null,  // #162
   avgBrier: number,
   avgLambdaError: number,
   marketAccuracy: BatchAuditMarketAccuracy[],
@@ -387,9 +388,9 @@ function buildLocalModelEvaluation(
   else if (avgLambdaError > 1.5) { lambdaStatus = "WARNING"; lambdaDirection = "OVER_ESTIMATING"; }
 
   // Threshold evaluation
-  let safeStatus: string = "OK";
-  if (safeAccuracy > 0 && safeAccuracy < 50) safeStatus = "CRITICAL";
-  else if (safeAccuracy > 0 && safeAccuracy < 60) safeStatus = "WARNING";
+  let safeStatus: string = safeAccuracy == null ? "N/A" : "OK";  // #162
+  if (safeAccuracy != null && safeAccuracy > 0 && safeAccuracy < 50) safeStatus = "CRITICAL";
+  else if (safeAccuracy != null && safeAccuracy > 0 && safeAccuracy < 60) safeStatus = "WARNING";
 
   let neutroStatus: string = "OK";
   const neutroAcc = overallAccuracy; // overall includes neutro
@@ -640,8 +641,8 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
       finished_matches: 0,
       audited_matches: 0,
       overall_accuracy: 0,
-      safe_accuracy: 0,
-      neutro_accuracy: 0,
+      safe_accuracy: null,  // #162
+      neutro_accuracy: null,  // #162
       safe_correct: 0,
       safe_total: 0,
       neutro_correct: 0,
@@ -781,7 +782,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     : 0;
   const safeAcc = safeTotal > 0
     ? Math.round((safeCorrect / safeTotal) * 1000) / 10
-    : 0;
+    : null;  // #162: null when 0/0
   const avgBrier = brierScores.length > 0
     ? brierScores.reduce((a, b) => a + b, 0) / brierScores.length
     : 0;
@@ -848,7 +849,7 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     neutro_accuracy:
       neutroTotal > 0
         ? Math.round((neutroCorrect / neutroTotal) * 1000) / 10
-        : 0,
+        : null,  // #162
     safe_correct: safeCorrect,
     safe_total: safeTotal,
     neutro_correct: neutroCorrect,

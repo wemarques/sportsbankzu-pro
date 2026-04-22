@@ -442,8 +442,8 @@ export interface BatchAuditResult {
   finished_matches: number;
   audited_matches: number;
   overall_accuracy: number;
-  safe_accuracy: number;
-  neutro_accuracy: number;
+  safe_accuracy: number | null;  // #162: null when 0/0
+  neutro_accuracy: number | null;  // #162: null when 0/0
   safe_correct: number;
   safe_total: number;
   neutro_correct: number;
@@ -599,8 +599,8 @@ function _mergeBatchAuditResults(
       safeTotal + neutroTotal > 0
         ? Math.round(((safeCorrect + neutroCorrect) / (safeTotal + neutroTotal)) * 1000) / 10
         : 0,
-    safe_accuracy: safeTotal > 0 ? Math.round((safeCorrect / safeTotal) * 1000) / 10 : 0,
-    neutro_accuracy: neutroTotal > 0 ? Math.round((neutroCorrect / neutroTotal) * 1000) / 10 : 0,
+    safe_accuracy: safeTotal > 0 ? Math.round((safeCorrect / safeTotal) * 1000) / 10 : null,  // #162
+    neutro_accuracy: neutroTotal > 0 ? Math.round((neutroCorrect / neutroTotal) * 1000) / 10 : null,  // #162
     avg_brier_score:
       totalAudited > 0
         ? successful.reduce((s, r) => s + (r.avg_brier_score || 0) * (r.audited_matches || 0), 0) /

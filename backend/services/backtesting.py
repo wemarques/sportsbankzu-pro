@@ -655,3 +655,71 @@ def calibration_grid_search(
         })
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# #162 — EV summary metrics
+# ---------------------------------------------------------------------------
+
+def compute_ev_summary(picks: list[dict]) -> dict:
+    """Compute EV summary from audited picks (#162).
+
+    Args:
+        picks: list of dicts with keys 'ev' (float|None), 'classification'.
+    Returns:
+        dict with ev_medio_geral, ev_medio_positivo, total_picks_acionaveis,
+        total_picks_ev_positivo.
+    """
+    actionable = [p for p in picks if p.get("classification") not in (None, "NO_BET")]
+    evs = [p["ev"] for p in actionable if p.get("ev") is not None]
+    pos_evs = [e for e in evs if e > 0]
+
+    return {
+        "ev_medio_geral": sum(evs) / len(evs) if evs else None,
+        "ev_medio_positivo": sum(pos_evs) / len(pos_evs) if pos_evs else None,
+        "total_picks_acionaveis": len(actionable),
+        "total_picks_ev_positivo": len(pos_evs),
+    }
+
+
+# ---------------------------------------------------------------------------
+# #163 — Weighted accuracy (1/fair_odd)
+# ---------------------------------------------------------------------------
+
+def compute_weighted_accuracy(picks: list[dict]) -> dict:
+    """Compute weighted accuracy where harder picks (lower fair_odd) weigh more (#163).
+
+    Weight = 1 / fair_odd. A correct pick on a 4.00 underdog (w=0.25)
+    matters less than a correct pick on a 1.50 favourite (w=0.67).
+
+    Args:
+        picks: list of dicts with 'outcome' (bool), 'fair_odd' (float), 'classification'.
+    Returns:
+        dict with acuracia_ponderada, acuracia_bruta, n_picks.
+    """
+    valid = [
+        p for p in picks
+        if p.get("outcome") is not None
+        and p.get("fair_odd") is not None
+        and p["fair_odd"] > 1.0
+        and p.get("classification") not in (None, "NO_BET")
+    ]
+    if not valid:
+        return {"acuracia_ponderada": None, "acuracia_bruta": None, "n_picks": 0}
+
+    total_weight = 0.0
+    weighted_correct = 0.0
+    brute_correct = 0
+
+    for p in valid:
+        w = 1.0 / p["fair_odd"]
+        total_weight += w
+        if p["outcome"]:
+            weighted_correct += w
+            brute_correct += 1
+
+    return {
+        "acuracia_ponderada": round(weighted_correct / total_weight * 100, 1) if total_weight > 0 else None,
+        "acuracia_bruta": round(brute_correct / len(valid) * 100, 1),
+        "n_picks": len(valid),
+    }

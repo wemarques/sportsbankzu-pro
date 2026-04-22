@@ -11,7 +11,7 @@ interface AuditReportData {
   modelSeverity: "ALTA" | "MEDIA" | "BAIXA";
   mistralSeverity?: "ALTA" | "MEDIA" | "BAIXA";
   brierScore: number;
-  safeAccuracy: number;
+  safeAccuracy: number | null;  // #162: null when 0/0
   lambdaError: number;
   leagues: {
     name: string;
@@ -197,7 +197,7 @@ function formatReport(d: AuditReportData) {
   l.push("METRICAS GLOBAIS");
   l.push(div);
   l.push("Brier Score: " + d.brierScore.toFixed(4) + " (ideal < 0.22)");
-  l.push("SAFE Acuracia: " + d.safeAccuracy.toFixed(1) + "% (meta > 65%)");
+  l.push("SAFE Acuracia: " + (d.safeAccuracy != null ? d.safeAccuracy.toFixed(1) + "%" : "N/A (circuit breaker)") + " (meta > 65%)");
   if (d.lambdaError != null) l.push("Lambda Erro Medio: " + d.lambdaError.toFixed(2) + " gols (limite < 0.5)");
   l.push("");
   l.push(div);
@@ -330,8 +330,8 @@ export default function AuditReportCard({ data }: Props) {
 
   const bC = brierColor(d.brierScore);
   const bL = d.brierScore <= 0.22 ? "OK" : d.brierScore <= 0.30 ? "ATENCAO" : "CRITICO";
-  const sC = d.safeAccuracy >= 65 ? "#00ff88" : d.safeAccuracy >= 40 ? "#ffa726" : "#ff4d4d";
-  const sL = d.safeAccuracy >= 65 ? "OK" : d.safeAccuracy >= 40 ? "ATENCAO" : "CRITICO";
+  const sC = d.safeAccuracy == null ? "#888" : d.safeAccuracy >= 65 ? "#00ff88" : d.safeAccuracy >= 40 ? "#ffa726" : "#ff4d4d";
+  const sL = d.safeAccuracy == null ? "N/A" : d.safeAccuracy >= 65 ? "OK" : d.safeAccuracy >= 40 ? "ATENCAO" : "CRITICO";
   const lC = d.lambdaError > 0.5 ? "#ff4d4d" : d.lambdaError > 0.3 ? "#ffa726" : "#00ff88";
   const lL = d.lambdaError > 0.5 ? "ALTO" : d.lambdaError > 0.3 ? "ATENCAO" : "OK";
 
@@ -421,7 +421,7 @@ export default function AuditReportCard({ data }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, padding: "0 20px 16px" }}>
           {[
             { label: "Brier Score", val: d.brierScore.toFixed(4), color: bC, badge: bL, pct: Math.min((d.brierScore / 0.4) * 100, 100), target: "Ideal: < 0.22" },
-            { label: "SAFE Acuracia", val: d.safeAccuracy.toFixed(1) + "%", color: sC, badge: sL, pct: d.safeAccuracy, target: "Meta: > 65%" },
+            { label: "SAFE Acuracia", val: d.safeAccuracy != null ? d.safeAccuracy.toFixed(1) + "%" : "N/A", color: sC, badge: sL, pct: d.safeAccuracy ?? 0, target: "Meta: > 65%" },
             { label: "Lambda Erro", val: d.lambdaError.toFixed(2), color: lC, badge: lL, pct: Math.min((d.lambdaError / 1.5) * 100, 100), target: "Limite: < 0.5 gols" },
           ].map((m, i) => (
             <div key={i} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: 14 }}>

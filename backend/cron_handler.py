@@ -428,8 +428,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
 
     # Aggregate
     overall_accuracy_pct = (overall_correct / overall_total * 100.0) if overall_total > 0 else 0.0
-    safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else 0.0
-    neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else 0.0
+    safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else None  # #162: None when 0/0
+    neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else None  # #162
     avg_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.0
     avg_lambda_error = sum(lambda_errors) / len(lambda_errors) if lambda_errors else 0.0
     avg_ev = sum(ev_values) / len(ev_values) if ev_values else 0.0
@@ -554,6 +554,25 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     ]
     batch_summary["odds_baseline"] = compute_implied_odds_brier(baseline_picks)
 
+    # #162: EV summary metrics
+    from backend.services.backtesting import compute_ev_summary, compute_weighted_accuracy
+    ev_summary_picks = [
+        {"ev": p.get("ev"), "classification": p.get("classification")}
+        for p in all_evaluated_picks
+    ]
+    batch_summary["ev_metrics"] = compute_ev_summary(ev_summary_picks)
+
+    # #163: Weighted accuracy (1/fair_odd)
+    w_acc_picks = [
+        {
+            "outcome": p.get("acertou"),
+            "fair_odd": 1.0 / p["prob"] if p.get("prob") and p["prob"] > 0 else None,
+            "classification": p.get("classification"),
+        }
+        for p in all_evaluated_picks
+    ]
+    batch_summary["weighted_accuracy"] = compute_weighted_accuracy(w_acc_picks)
+
     # Model evaluation: deterministic rules (#079, #082)
     model_evaluation = None
     try:
@@ -677,8 +696,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "timestamp": datetime.now().isoformat(),
         "audited_matches": len(match_results),
         "overall_accuracy": round(overall_accuracy_pct, 1),
-        "safe_accuracy": round(safe_accuracy_pct, 1),
-        "neutro_accuracy": round(neutro_accuracy_pct, 1),
+        "safe_accuracy": round(safe_accuracy_pct, 1) if safe_accuracy_pct is not None else None,
+        "neutro_accuracy": round(neutro_accuracy_pct, 1) if neutro_accuracy_pct is not None else None,
         "avg_brier_score": round(avg_brier, 4),
         "avg_ev": round(avg_ev, 4),
         "model_assessment": model_evaluation.get("overall_assessment", "") if model_evaluation else "N/A",
@@ -691,6 +710,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "rejected_corrections": len(rejected),
         "calibrators_retrained": len(calibrator_results),
         "diagnostic": diagnostic_report,
+        "ev_metrics": batch_summary.get("ev_metrics", {}),
+        "weighted_accuracy": batch_summary.get("weighted_accuracy", {}),
     }
 
     logger.info(f"Cron batch audit completed: {json.dumps(result)}")

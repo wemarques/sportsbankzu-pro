@@ -7937,3 +7937,37 @@ Arquitetura de crons com 2 slots (20:00 BRT batch_audit + 23:45 BRT today_audit)
 Sistemas com cobertura global de futebol devem considerar os 4 fusos principais: Europa (CET/BST, jogos 15:00-22:00 BRT), América do Sul (BRT, 16:00-22:00 BRT), México/EUA (CDT/PDT, 20:00-01:00 BRT), e Oceania (AEST, 05:00-09:00 BRT). Cada fuso precisa de janela de auditoria adequada.
 
 ---
+
+## #161–163 — Desbloquear gols, SAFE N/A, EV metrics, accuracy ponderada
+
+**Data:** 2026-04-22
+**Arquivos afetados:** backend/services/ev_classification.py, backend/services/deterministic_audit.py, backend/services/backtesting.py, backend/cron_handler.py, backend/services/market_service.py, frontend/next/src/components/AuditReportCard.tsx, frontend/next/src/lib/localAudit.ts, frontend/next/src/lib/api.ts
+**Severidade:** Alta
+**Status:** Implementado
+
+### Problemas identificados
+1. **#161**: Under 2.5 gols aplicava penalidade extra ×0.90 (#113) empilhada com `_DEFAULT_OU_DEFLATION=0.90` (#156) + deflação por banda (#105) = ~19% deflação cumulativa. Matava EV de todos os mercados de gols.
+2. **#162**: SAFE accuracy mostrava "0.0%" quando 0/0 picks (circuit breaker ativo) — deveria ser "N/A". EV metrics ausentes do relatório de auditoria.
+3. **#163**: Accuracy bruta trata todos os picks igualmente. Accuracy ponderada (1/fair_odd) dá mais peso a favoritos (mais previsíveis) e menos a underdogs.
+
+### Correções aplicadas
+**#161 — Gate Under-2.5 penalty:**
+- `_calibrate_and_deflate()`: penalty ×0.90 (#113) só aplica se `_DEFAULT_OU_DEFLATION >= 1.0` E `league_id not in _LEAGUE_DEFLATION` — path legado sem deflação lambda
+- 5 hooks de diagnóstico: GOLS-TRACE, GOLS-CLASSIFY, FLOOR-DROP, CORRIDOR-DROPPED, V2-BUNDLES
+- Kill switch: se Lambda Error > 1.0 na próxima auditoria, revisitar
+
+**#162 — SAFE N/A + EV metrics:**
+- `safe_accuracy_pct` / `neutro_accuracy_pct` retornam `None` quando total=0 (cron_handler)
+- `_compute_assessment()`: skip SAFE-based alarms quando None
+- `_compute_threshold_evaluation()`: status="N/A" quando None
+- `compute_ev_summary()`: EV médio geral e positivo em backtesting.py
+- Frontend: tipo `number | null`, display "N/A" cinza, guards em todas comparações
+
+**#163 — Weighted accuracy:**
+- `compute_weighted_accuracy()`: peso = 1/fair_odd
+- Integrado ao cron_handler e deterministic_audit notes
+
+### Lição aprendida
+Deflações em múltiplas camadas (banda + per-league + default + per-market) podem empilhar silenciosamente. Cada nova deflação deve calcular o efeito cumulativo total, não apenas seu impacto isolado. Valores 0/0 não são iguais a 0% — representam ausência de dados e devem ser tratados como null/N/A.
+
+---

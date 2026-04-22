@@ -340,3 +340,87 @@ Dedup natural: `ON CONFLICT (match_id) DO UPDATE` — se today_audit já auditou
 EventBridge rule: `sportsbank-late-audit`, setup via `scripts/setup_late_audit.py`.
 
 **Verificação:** `grep -n "late_audit" backend/cron_handler.py`
+
+### #161 — Under-2.5 extra ×0.90 (#113) gated pós-#156
+
+**Tipo:** Fix (Pipeline)
+**Relacionado:** #113, #156, #105
+
+#113 adicionava `×0.90` em `_calibrate_and_deflate()` para Under 2.5 (pior mercado Brier #104).
+Pós-#156 (`_DEFAULT_OU_DEFLATION = 0.90` global + per-league `lambda_multiplier` no DB), o lambda já
+vem deflacionado antes da deriv. Prob Poisson — a penalidade extra causava dupla deflação
+(~19% cumulativa), zerando EV de gols e suprimindo picks mesmo a 75% raw.
+Fix: aplicar `×0.90` apenas quando `_DEFAULT_OU_DEFLATION >= 1.0 AND league_id not in _LEAGUE_DEFLATION`
+(caminho legado sem deflação de lambda). Kill-switch signal: se Lambda Erro > 1.0 na próxima auditoria,
+reabrir #113. Instrumentação: 5 hooks (`GOLS-TRACE`, `GOLS-CLASSIFY`, `FLOOR-DROP`,
+`CORRIDOR-DROPPED`, `V2-BUNDLES`) expõem raw→deflated→EV→classificação em CloudWatch.
+
+**Verificação:** `grep -n "#161\|extra_under_applied" backend/services/ev_classification.py`
+
+### #162 — SAFE/NEUTRO accuracy = None quando sem picks + EV metrics no relatório
+
+**Tipo:** UI + Pipeline (observabilidade)
+**Relacionado:** #069, #077, #043
+
+`safe_accuracy_pct` e `neutro_accuracy_pct` retornam `None` (não `0.0`) quando `safe_total=0`/`neutro_total=0`.
+Frontend e exportações exibem "N/A" ao invés de "0.0%" (que gerava alarme falso).
+Guards adicionados em `AuditReportCard.tsx`, `localAudit.ts`, `deterministic_audit.py`.
+
+Novas métricas no `batch_summary` (acurácia sem EV é enganosa — 80% a odd 1.10 perde dinheiro):
+- `ev_medio_geral` — média de EV de todos os picks
+- `ev_medio_positivo` — média de EV apenas de picks com EV > 0
+- `total_picks_acionaveis` — picks com book_odd > 1.0 (odd real disponível)
+- `total_picks_ev_positivo` — picks com EV estritamente > 0
+
+Implementação: `compute_ev_summary()` em `backend/services/backtesting.py`. Exposto no topo de
+`overall_notes` do relatório determinístico + campo no `/cron_audit` result.
+
+**Verificação:** `grep -n "#162\|compute_ev_summary" backend/services/backtesting.py backend/cron_handler.py`
+
+### #163 — Acurácia ponderada por 1/fair_odd
+
+**Tipo:** Feature (métrica)
+**Relacionado:** #162, #106
+
+`compute_weighted_accuracy(picks)` em `backtesting.py` calcula `Σ(w_i · hit_i) / Σ(w_i)` com `w_i = 1/fair_odd_i`.
+Picks difíceis (fair_odd alta) pesam mais; acertar favoritos óbvios não infla a métrica. Comparada com
+acurácia bruta no relatório — se bruta alta e ponderada baixa, modelo está acertando só os "chutos".
+Limitação v1: peso ignora `book_odd` — fair 2.0 a book 2.5 (EV+25%) pesa igual a fair 2.0 a book 1.8 (EV-10%).
+v2 poderá usar EV ou (book_odd - fair_odd) como peso.
+
+**Verificação:** `grep -n "compute_weighted_accuracy" backend/services/backtesting.py`
+
+### #161 — Gate Under-2.5 penalty quando lambda já deflacionado
+
+**Tipo:** Fix
+**Relacionado:** #113, #105, #156
+
+Under-2.5 extra ×0.90 (#113) redundante quando `_DEFAULT_OU_DEFLATION < 1.0` (#156) ou `league_id in _LEAGUE_DEFLATION`.
+Gate em `_calibrate_and_deflate()`: penalty só aplica no path legado sem deflação lambda.
+5 hooks de diagnóstico: GOLS-TRACE, GOLS-CLASSIFY, FLOOR-DROP, CORRIDOR-DROPPED, V2-BUNDLES.
+Kill switch: se Lambda Error > 1.0, revisitar.
+
+**Verificação:** `grep -n "extra_under_applied\|GOLS-TRACE" backend/services/ev_classification.py`
+
+### #162 — SAFE 0/0 exibe N/A + EV metrics no relatório
+
+**Tipo:** Fix + Feature
+**Relacionado:** #043, #079
+
+`safe_accuracy_pct` e `neutro_accuracy_pct` retornam `None` quando total=0.
+Backend: `_compute_assessment()` skip SAFE alarms, `_compute_threshold_evaluation()` retorna "N/A".
+Frontend: tipo `number | null`, display "N/A" cinza, guards em comparações.
+`compute_ev_summary()`: EV médio geral e positivo adicionados ao relatório.
+
+**Verificação:** `grep -n "safe_acc is not None\|ev_metrics" backend/services/deterministic_audit.py backend/cron_handler.py`
+
+### #163 — Accuracy ponderada por 1/fair_odd
+
+**Tipo:** Feature
+**Relacionado:** #162
+
+`compute_weighted_accuracy()` usa peso = 1/fair_odd.
+Favoritos (odd 1.50, w=0.67) pesam mais que underdogs (odd 4.00, w=0.25).
+Integrado ao cron_handler batch_summary e deterministic_audit overall_notes.
+
+**Verificação:** `grep -n "compute_weighted_accuracy" backend/services/backtesting.py backend/cron_handler.py`

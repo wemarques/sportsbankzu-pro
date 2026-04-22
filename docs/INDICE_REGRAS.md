@@ -188,3 +188,9 @@
 | 158 | **ATIVA** | Fix | Direction rescue requer EV >= -5% — picks com EV muito negativo não podem ser "rescued" |
 | 159 | **ATIVA** | Fix | Reliability N usa Brier acumulado (não batch único) — /health/reliability agora lê calculate_snapshot() |
 | 160 | **ATIVA** | Infra | Late audit 02:00 BRT para jogos das Américas (Liga MX, MLS, Libertadores) que terminam após 23:45 BRT |
+| 161 | **ATIVA** | Fix | Under-2.5 extra ×0.90 (#113) gated — skip quando `_DEFAULT_OU_DEFLATION < 1.0` ou liga em `_LEAGUE_DEFLATION` (evita dupla penalidade pós-#156) |
+| 162 | **ATIVA** | Pipeline + UI | SAFE/NEUTRO accuracy = None quando sem picks (exibe "N/A" ao invés de "0.0%") + EV metrics no relatório (ev_medio_geral/positivo, picks_acionaveis, picks_ev_positivo) |
+| 163 | **ATIVA** | Feature | Acurácia ponderada por 1/fair_odd — picks difíceis pesam mais; exposto via `compute_weighted_accuracy()` em `backtesting.py` |
+| 161 | **ATIVA** | Fix | Gate Under-2.5 penalty ×0.90 quando lambda já deflacionado (#156). Evita ~19% deflação cumulativa matando gols |
+| 162 | **ATIVA** | Fix+Feat | SAFE 0/0 exibe N/A (não 0%), compute_ev_summary() no relatório de auditoria |
+| 163 | **ATIVA** | Feature | Accuracy ponderada (1/fair_odd) — favoritos pesam mais que underdogs |
