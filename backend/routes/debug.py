@@ -164,30 +164,22 @@ def corners_diagnostic(
 
     client = _get_fsc()
 
-    # ── Season resolution via public get_league_list (cached 24h) ─────
+    # ── Season resolution via public resolve_season_ids (cached 24h) ──
+    # Reuses the same matcher the rest of the codebase uses:
+    # substring match on FootyStats league name (which embeds the country),
+    # chosen_only=False, cup-filter, most-recent-first. Avoids our diagnostic
+    # diverging from production matching logic.
     season_id: Optional[int] = None
     try:
-        list_resp = client.get_league_list(chosen_only=True)
+        season_pairs = client.resolve_season_ids(
+            cfg["country"], cfg["name"],
+            alt_names=cfg.get("alt_names"), n_seasons=1,
+        )
     except Exception as e:
-        list_resp = None
-        notes.append(f"get_league_list failed: {e}")
-    if list_resp and list_resp.get("data"):
-        target_country = (cfg["country"] or "").lower()
-        target_names = {(cfg["name"] or "").lower(), *[
-            a.lower() for a in (cfg.get("alt_names") or [])
-        ]}
-        latest_year = -1
-        for entry in list_resp["data"]:
-            country = (entry.get("country") or "").lower()
-            name = (entry.get("name") or entry.get("league_name") or "").lower()
-            if country != target_country or name not in target_names:
-                continue
-            for s in entry.get("season", []) or []:
-                year = int(s.get("year", 0) or 0)
-                sid = s.get("id")
-                if sid and year > latest_year:
-                    latest_year = year
-                    season_id = int(sid)
+        season_pairs = []
+        notes.append(f"resolve_season_ids failed: {e}")
+    if season_pairs:
+        season_id = int(season_pairs[0][0])
 
     result: dict = {
         "league_id": resolved,
