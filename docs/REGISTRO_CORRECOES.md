@@ -4,6 +4,29 @@
 
 ---
 
+## 167 — Investigação: MLS corners Brier floor confirmado
+
+**Data:** 2026-04-23
+**Arquivos afetados:** nenhum (investigação apenas)
+**Severidade:** Informativa
+**Status:** Investigado — sem alteração
+
+### Problema investigado
+Brier de corners MLS = 0.2411, 3º pior entre 22 ligas. Hipótese: recalibrar
+deflation (0.97→0.95) e/ou safe_prob_corners (0.72→0.75).
+
+### Resultado
+Auto-calibrador rodou grid completo (13 deflations × 5 safe_prob, N=2669 matches,
+6 seasons). Parâmetros atuais (0.97/0.72) são Brier-ótimos. Ambas hipóteses
+foram testadas e rejeitadas.
+
+### Conclusão
+Brier 0.241 é o floor do modelo atual de corners (Poisson simples com médias
+cornersFor/cornersAgainst). Redução requer mudança de modelo (NB2, como #122
+para cards) ou features adicionais (xG, posse), não recalibração de parâmetros.
+
+---
+
 ## 166 — Odds Ingestion v2 — checklist break + per-league priority + bet ID logging
 
 **Data:** 2026-04-22
