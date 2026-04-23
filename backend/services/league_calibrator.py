@@ -1356,6 +1356,7 @@ def save_calibration(league_id: str, params: Dict[str, Any]) -> None:
         "lambda_deflation_ou": ("lambda_multiplier", "Calibrated lambda deflation for O/U"),
         "lambda_deflation_btts": ("btts_multiplier", "Calibrated BTTS deflation"),
         "corner_factor": ("corner_multiplier", "Calibrated corner factor (Brier-based)"),
+        "corners_alpha": ("corners_alpha", "Calibrated NB2 alpha for corners (#170-A)"),
         "lambda_weight_season": ("lambda_weight_season", "Calibrated season weight"),
         "lambda_weight_recent": ("lambda_weight_recent", "Calibrated recent weight"),
         "safe_enabled": ("safe_enabled", "Per-league SAFE status"),

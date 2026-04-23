@@ -461,6 +461,7 @@ async def calibration_status():
                 "btts": corrections.get("btts_multiplier", {}).get("value", "1.0 (default)"),
                 "1x2": corrections.get("1x2_multiplier", {}).get("value", "1.0 (default)"),
                 "corners": corrections.get("corner_multiplier", {}).get("value", "1.0 (default)"),
+                "corners_alpha": corrections.get("corners_alpha", {}).get("value"),  # #170-A
                 "cards": corrections.get("cards_multiplier", {}).get("value", "1.0 (default)"),
                 # xG and BTTS weights
                 "xg_blend": corrections.get("xg_blend_weight", {}).get("value", "0.30 (default)"),
