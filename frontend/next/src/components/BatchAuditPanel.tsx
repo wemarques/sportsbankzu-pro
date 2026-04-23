@@ -487,7 +487,8 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                   <ShieldCheck size={16} />
                   <div className="mdc-batch-audit__summary-label">SAFE</div>
                   <div className="mdc-batch-audit__summary-value">
-                    <AccuracyColor pct={result.safe_accuracy} />
+                    {/* #168: guard null from #162 — safe_accuracy is number|null when safe_total=0 */}
+                    {result.safe_accuracy != null ? <AccuracyColor pct={result.safe_accuracy} /> : <span style={{color:"#666"}}>N/A</span>}
                     <span className="mdc-batch-audit__summary-sub">{result.safe_correct}/{result.safe_total}</span>
                   </div>
                 </div>
@@ -495,7 +496,8 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
                   <Brain size={16} />
                   <div className="mdc-batch-audit__summary-label">NEUTRO</div>
                   <div className="mdc-batch-audit__summary-value">
-                    <AccuracyColor pct={result.neutro_accuracy} />
+                    {/* #168: guard null from #162 — neutro_accuracy is number|null when neutro_total=0 */}
+                    {result.neutro_accuracy != null ? <AccuracyColor pct={result.neutro_accuracy} /> : <span style={{color:"#666"}}>N/A</span>}
                     <span className="mdc-batch-audit__summary-sub">{result.neutro_correct}/{result.neutro_total}</span>
                   </div>
                 </div>
