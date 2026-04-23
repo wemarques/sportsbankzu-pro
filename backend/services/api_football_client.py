@@ -1084,14 +1084,14 @@ class APIFootballClient:
             return result
 
         # #166: per-league priority when flag on; legacy hardcoded list when off.
-        # Diagnostic log (always-on) — confirms whether league_id arrives as
-        # slug ("mls"), numeric ("253"), or alias ("brazil-serie-a"). Required
-        # to validate the fix isn't inert at call sites. Remove once format confirmed.
-        _resolved_lid = _LEAGUE_ID_ALIASES.get(league_id, league_id)
-        logger.info(
-            "[ODDS-LEAGUEID] raw=%r resolved=%r priority=%r",
-            league_id, _resolved_lid, _get_priority_bookmakers(league_id)[:2],
-        )
+        # Diagnostic log kept at DEBUG level — format validated 2026-04-23
+        # (all call sites pass canonical internal slug). Can be removed later.
+        if logger.isEnabledFor(logging.DEBUG):
+            _resolved_lid = _LEAGUE_ID_ALIASES.get(league_id, league_id)
+            logger.debug(
+                "[ODDS-LEAGUEID] raw=%r resolved=%r priority=%r",
+                league_id, _resolved_lid, _get_priority_bookmakers(league_id)[:2],
+            )
         priority = (
             _get_priority_bookmakers(league_id) if _ODDS_V2
             else _DEFAULT_ODDS_PRIORITY
