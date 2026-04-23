@@ -76,7 +76,7 @@ CORNER_BRIER_GRID = [0.75, 0.80, 0.83, 0.85, 0.88, 0.90, 0.92, 0.95, 0.97, 1.00,
 # observed in Fase 1 diagnostic (MLS 0.033, EPL 0.005). Floor 0.005 matches
 # the lowest empirical value; ceiling 0.20 matches the previous default 0.15
 # with a small headroom above.
-CORNER_ALPHA_GRID = [0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20]
+CORNER_ALPHA_GRID = [0.0, 0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20]
 CARDS_DEFLATION_GRID = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30]  # #119b includes inflation >1.0
 XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30]  # #129b: capped at 0.30 (weight>=0.4 worsens lambda error)
 RHO_GRID = [round(-0.25 + i * 0.01, 2) for i in range(31)]  # -0.25 to 0.05

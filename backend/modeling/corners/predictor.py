@@ -404,14 +404,14 @@ def _get_alpha(league_id: str, expected_ft: float) -> float:
             corrs = get_lambda_corrections(league_id)
             val = (corrs.get("corners_alpha") or {}).get("value")
             if val is not None:
-                return max(0.001, min(5.0, float(val)))
+                return max(0.0, min(5.0, float(val)))  # #170-A: allow α=0 (Poisson)
         except Exception:
             pass
     training_meta = load_artifact("corner_training_metadata")
     if training_meta:
         nb_info = training_meta.get("training_results", {}).get("negative_binomial", {})
         if nb_info and nb_info.get("alpha"):
-            return max(0.001, min(5.0, nb_info["alpha"]))
+            return max(0.0, min(5.0, nb_info["alpha"]))  # #170-A: allow α=0 (Poisson)
 
     # Default estimation: typical football corner overdispersion
     return 0.15
