@@ -4,6 +4,31 @@
 
 ---
 
+## 169 — Strict Contract + First Principles adicionados à Regra de Investigação
+
+**Data:** 2026-04-23
+**Arquivos afetados:** CLAUDE.md, docs/INDICE_REGRAS.md
+**Severidade:** Informativa
+**Status:** Implementado
+
+### Problema identificado
+5 termos de disciplina de integração foram propostos (Ground Truth, Gap Analysis,
+Strict Contract, First Principles, Devil's Advocate). Análise crítica identificou
+que 3 deles (Ground Truth, Gap Analysis, Devil's Advocate) já estavam cobertos
+pelas seções "Regra de Investigação Obrigatória" e "Workflow de Validação" existentes.
+
+### Correção aplicada
+Apenas os 2 termos complementares foram adicionados como itens 8 e 9 da
+"Regra de Investigação Obrigatória":
+- #8 Strict Contract: payloads como contrato tipado, fallbacks obrigatórios
+- #9 First Principles: listar campos disponíveis não utilizados antes de criar features
+
+### Lição aprendida
+Antes de adicionar seções ao CLAUDE.md, mapear sobreposição com seções existentes.
+Mais seções = menos peso por seção para o Claude Code.
+
+---
+
 ## 167 — Investigação: MLS corners Brier floor confirmado
 
 **Data:** 2026-04-23
