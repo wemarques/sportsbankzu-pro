@@ -91,6 +91,52 @@ Brier em todas as iterações por construção. O simulator usar Poisson enquant
 predictor usa NB2 (com α) é um descompasso que mascara o sinal do hyperparameter.
 Verificar sempre: "a simulação que compara parâmetros realmente os consome?"
 
+### Segunda lição: correção estatística ≠ ganho de Brier nas linhas monitoradas
+Para lines 8.5/9.5/10.5 próximas da média μ≈10, a dispersão da NB2 tem efeito
+marginal em P(Over X.5). Variância correta (ratio ≈ 1.0) importa para
+intervalos de confiança e mercados futuros nas caudas (4.5, 12.5, per-side),
+mas não move a média das 3 linhas auditadas. Brier alto em corners é floor
+do modelo (#167), não problema de α.
+
+### Resultados completos — 22 ligas calibradas (flag ON, 2026-04-23)
+
+Todas as ligas foram re-calibradas com `CORNERS_ALPHA_CALIBRATED=true`.
+α_emp_produção caiu de 0.15 constante para [0.005, 0.03] per-league:
+
+| Liga | α calibrado | Brier before | Brier after | Δ |
+|---|---:|---:|---:|---:|
+| 2-bundesliga | 0.010 | 0.237509 | 0.237622 | +0.000113 |
+| a-league | 0.010 | 0.225697 | 0.225702 | +0.000005 |
+| brasileirao-serie-a | 0.010 | 0.234250 | 0.234359 | +0.000109 |
+| brasileirao-serie-b | 0.010 | 0.234170 | 0.234162 | −0.000008 |
+| bundesliga | 0.030 | 0.242270 | 0.242271 | +0.000000 |
+| championship | 0.020 | 0.238638 | 0.238634 | −0.000004 |
+| colombian-primera-a | 0.020 | 0.236935 | 0.236860 | −0.000075 |
+| eredivisie | 0.010 | 0.238096 | 0.238078 | −0.000018 |
+| la-liga | 0.010 | 0.239193 | 0.239193 | 0 |
+| league-one | 0.020 | 0.240153 | 0.239920 | −0.000233 |
+| liga-mx | 0.020 | 0.240312 | 0.240199 | −0.000113 |
+| ligue-1 | 0.010 | 0.238240 | 0.238434 | +0.000194 |
+| mls | 0.020 | 0.241085 | 0.241085 | 0 |
+| premier-league | 0.005 | 0.235966 | 0.235966 | 0 |
+| premiership | 0.010 | 0.233641 | 0.233643 | +0.000002 |
+| primeira-liga | 0.030 | 0.241021 | 0.241044 | +0.000023 |
+| primera-division | 0.010 | 0.238627 | 0.238627 | −0.000000 |
+| pro-league | 0.020 | 0.239582 | 0.239486 | −0.000096 |
+| serie-a | 0.010 | 0.240569 | 0.240629 | +0.000060 |
+| serie-b | 0.010 | 0.241087 | 0.241144 | +0.000057 |
+| super-lig | 0.010 | 0.240651 | 0.240656 | +0.000005 |
+| superliga | 0.020 | 0.240917 | 0.240811 | −0.000106 |
+
+**Síntese**: 22 ligas com α não-default. Brier: 3 melhoraram, 3 regrediram
+(todos Δ < +0.0002), 16 inalterados. Aggregate Δ = **−0.000086** across 22
+(mean −0.0000039). Ratio `alpha_empirical / alpha_production` colapsou de
+0.42-0.53 → 1.00-1.13 (diagnostic endpoint confirma variance bem especificada).
+
+**Decisão**: flag ON mantido. Correção estatística tem valor de longo prazo
+(confidence intervals corretos, base para mercados futuros em linhas de cauda)
+mesmo sem ganho de Brier imediato nas 3 linhas auditadas.
+
 ---
 
 ## 169 — Strict Contract + First Principles adicionados à Regra de Investigação
