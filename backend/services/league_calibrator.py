@@ -1115,7 +1115,10 @@ def calibrate_league(
     best_corner_alpha: Optional[float] = None
     if os.getenv("CORNERS_ALPHA_CALIBRATED", "false").lower() == "true":
         base_brier = best_corner.get("brier", 1.0)
-        best_alpha_state: Dict[str, Any] = {"brier": base_brier, "alpha": None}
+        # #170-A fix: initialize with α=0 (Poisson). If no α>0 strictly improves
+        # Brier, Poisson is saved explicitly — otherwise stale old α value stays
+        # in DB because save_calibration skips None values.
+        best_alpha_state: Dict[str, Any] = {"brier": base_brier, "alpha": 0.0}
         for c_alpha in CORNER_ALPHA_GRID:
             result = _simulate_all_markets(
                 matches,
