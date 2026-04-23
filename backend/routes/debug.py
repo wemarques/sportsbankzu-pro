@@ -12,10 +12,29 @@ import time
 from fastapi import APIRouter, Header, HTTPException
 from typing import Optional, List, Tuple
 
-from backend.services.api_football_client import APIFootballClient
-
 router = APIRouter(prefix="/api/debug", tags=["debug"])
-_afc = APIFootballClient()
+
+# Lazy singletons — avoid eager instantiation at module import time.
+# Clients read env vars + open SQLite caches on __init__, so lazy keeps
+# module import cheap and matches the pattern used elsewhere in the code.
+_afc_singleton = None
+_fsc_singleton = None
+
+
+def _get_afc():
+    global _afc_singleton
+    if _afc_singleton is None:
+        from backend.services.api_football_client import APIFootballClient
+        _afc_singleton = APIFootballClient()
+    return _afc_singleton
+
+
+def _get_fsc():
+    global _fsc_singleton
+    if _fsc_singleton is None:
+        from backend.services.footstats_client import FootyStatsClient
+        _fsc_singleton = FootyStatsClient()
+    return _fsc_singleton
 
 
 def _pearson(xs: list, ys: list) -> Optional[float]:
@@ -56,10 +75,11 @@ def odds_coverage(
     Header: X-Debug-Key: <ODDS_DEBUG_KEY>
     """
     _require_debug_key(x_debug_key)
-    if not _afc.is_configured:
+    afc = _get_afc()
+    if not afc.is_configured:
         raise HTTPException(503, "API-Football not configured")
     t0 = time.time()
-    odds_response = _afc.get_odds(int(fixture_id), ttl_minutes=5)
+    odds_response = afc.get_odds(int(fixture_id), ttl_minutes=5)
     if not odds_response:
         return {
             "fixture_id": fixture_id,
@@ -91,7 +111,7 @@ def odds_coverage(
                 "has_btts": any("both teams" in n or "btts" in n for n in names),
             })
 
-    extracted = _afc.extract_best_odds(odds_response, league_id=league_id)
+    extracted = afc.extract_best_odds(odds_response, league_id=league_id)
     essentials = ["home", "over_25", "btts_yes"]
     missing = [k for k in essentials if k not in extracted]
     return {
@@ -113,11 +133,20 @@ def corners_diagnostic(
 ) -> dict:
     """#170 Fase 1 — empirical diagnostic for corners model gaps.
 
-    Computes 4 metrics from CACHE ONLY (no live FootyStats calls):
-    1A  coverage of home_advantage_attack
-    1B  correlations of homeAttackAdvantage vs existing team-level features
-    1C  home vs away corners correlation per match
-    1D  empirical variance vs NB2-predicted variance ratio
+    Uses FootyStatsClient PUBLIC methods (get_league_list, get_league_teams,
+    get_league_matches). Each method is cache-backed internally (24h/6h/2h
+    TTL). A fresh call happens only on expiry, which is acceptable for a
+    permanent endpoint.
+
+    Metrics:
+    1A  coverage of home_advantage_attack across teams in the league
+    1B  Pearson(homeAttackAdvantage, {shots, possession, xg, corners});
+        redundant=true if any |r|>0.7 (multicollinearity)
+    1C  Pearson(team_a_corners, team_b_corners) across finished matches;
+        bivariate_potential=true if r<-0.15
+    1D  empirical variance vs NB2 variance predicted using PRODUCTION
+        alpha (predictor._get_alpha), not alpha fitted from the same data.
+        Ratio > 1.1 → NB2 under-dispersed, < 0.9 → over-dispersed.
 
     Query: ?league=mls  (internal slug or alias)
     Header: X-Debug-Key: <ODDS_DEBUG_KEY>
@@ -127,43 +156,38 @@ def corners_diagnostic(
     notes: List[str] = []
 
     from backend.config.leagues_config import LEAGUE_ID_ALIASES, get_league_config
-    from backend.services.footstats_client import FootyStatsClient
 
     resolved = LEAGUE_ID_ALIASES.get(league, league)
     cfg = get_league_config(resolved)
     if not cfg:
         raise HTTPException(404, f"unknown league: {league}")
 
-    client = FootyStatsClient()
+    client = _get_fsc()
 
-    # ── Season resolution from cache (league-list, ttl 24h) ───────────
-    # _request adds params["key"] = api_key before hashing, so mirror it.
-    # If league-list not cached, we cannot resolve season_id → skip everything.
-    list_params = {"key": client.api_key}
-    list_key = client._generate_cache_key("league-list", list_params)
-    list_data = client._get_from_cache(list_key, max_age_minutes=999999)
+    # ── Season resolution via public get_league_list (cached 24h) ─────
     season_id: Optional[int] = None
-    if list_data and list_data.get("data"):
-        # Match league-list entry by country + name (case-insensitive)
+    try:
+        list_resp = client.get_league_list(chosen_only=True)
+    except Exception as e:
+        list_resp = None
+        notes.append(f"get_league_list failed: {e}")
+    if list_resp and list_resp.get("data"):
         target_country = (cfg["country"] or "").lower()
         target_names = {(cfg["name"] or "").lower(), *[
             a.lower() for a in (cfg.get("alt_names") or [])
         ]}
         latest_year = -1
-        for entry in list_data["data"]:
+        for entry in list_resp["data"]:
             country = (entry.get("country") or "").lower()
             name = (entry.get("name") or entry.get("league_name") or "").lower()
             if country != target_country or name not in target_names:
                 continue
-            # pick newest season from this league's seasons array
             for s in entry.get("season", []) or []:
                 year = int(s.get("year", 0) or 0)
                 sid = s.get("id")
                 if sid and year > latest_year:
                     latest_year = year
                     season_id = int(sid)
-    else:
-        notes.append("league-list not in cache — season resolution skipped")
 
     result: dict = {
         "league_id": resolved,
@@ -177,19 +201,20 @@ def corners_diagnostic(
     }
 
     if season_id is None:
-        if not any("league-list" in n for n in notes):
-            notes.append("No matching season in league-list for this league")
+        notes.append("No matching season found for this league in get_league_list")
         result["elapsed_ms"] = int((time.time() - t0) * 1000)
         return result
 
-    # ── 1A + 1B: league-teams cache ───────────────────────────────────
-    teams_params = {"season_id": season_id, "include": "stats", "key": client.api_key}
-    teams_key = client._generate_cache_key("league-teams", teams_params)
-    teams_data = client._get_from_cache(teams_key, max_age_minutes=999999)
-    if teams_data is None:
-        notes.append("league-teams not in cache — 1A+1B skipped")
+    # ── 1A + 1B: public get_league_teams (cached 6h) ──────────────────
+    try:
+        teams_resp = client.get_league_teams(season_id, include_stats=True)
+    except Exception as e:
+        teams_resp = None
+        notes.append(f"get_league_teams failed: {e}")
+    if not teams_resp or not teams_resp.get("data"):
+        notes.append("league-teams returned no data — 1A+1B skipped")
     else:
-        teams = teams_data.get("data", []) or []
+        teams = teams_resp.get("data", []) or []
         haa_col: list = []
         shots_col: list = []
         poss_col: list = []
@@ -200,7 +225,6 @@ def corners_diagnostic(
             if not isinstance(t, dict):
                 continue
             total_teams += 1
-            # FootyStats primary keys first, with fallbacks matching data_mapper.py
             stats = t.get("stats") if isinstance(t.get("stats"), dict) else t
             haa = stats.get("homeAttackAdvantage")
             if haa is None:
@@ -243,22 +267,20 @@ def corners_diagnostic(
         redundant = any(c is not None and abs(c) > 0.7 for c in corrs.values())
         result["correlations"] = {"pairs": corrs, "redundant": redundant}
 
-    # ── 1C + 1D: league-matches cache (walk pages until miss) ─────────
+    # ── 1C + 1D: public get_league_matches per page (cached 2h) ───────
     pairs: List[Tuple[int, int]] = []
-    pages_hit = 0
+    pages_walked = 0
     for page in range(1, 11):
-        m_params = {
-            "season_id": season_id,
-            "page": page,
-            "max_per_page": 1000,
-            "key": client.api_key,
-        }
-        m_key = client._generate_cache_key("league-matches", m_params)
-        cached = client._get_from_cache(m_key, max_age_minutes=999999)
-        if cached is None:
+        try:
+            page_resp = client.get_league_matches(season_id, page=page)
+        except Exception as e:
+            notes.append(f"get_league_matches page={page} failed: {e}")
             break
-        pages_hit += 1
-        for m in cached.get("data", []) or []:
+        if not page_resp or not page_resp.get("success"):
+            break
+        pages_walked += 1
+        data = page_resp.get("data", []) or []
+        for m in data:
             a = m.get("team_a_corners")
             b = m.get("team_b_corners")
             try:
@@ -268,9 +290,12 @@ def corners_diagnostic(
             if ai < 0 or bi < 0:
                 continue
             pairs.append((ai, bi))
+        pager = page_resp.get("pager", {}) or {}
+        if page >= pager.get("max_page", 1) or len(data) == 0:
+            break
 
-    if pages_hit == 0:
-        notes.append("league-matches not in cache — 1C+1D skipped")
+    if pages_walked == 0:
+        notes.append("get_league_matches returned no pages — 1C+1D skipped")
     elif len(pairs) < 10:
         notes.append(f"only {len(pairs)} finished matches with corner data — 1C+1D skipped")
     else:
@@ -287,23 +312,29 @@ def corners_diagnostic(
             "bivariate_potential": r_ha is not None and r_ha < -0.15,
         }
 
-        # 1D — empirical variance vs NB2 method-of-moments alpha fit
+        # 1D — empirical variance vs PRODUCTION NB2 variance.
+        # Uses predictor._get_alpha (same alpha that evaluates live picks)
+        # so ratio isn't tautological. alpha_empirical is also reported
+        # for informational comparison.
+        from backend.modeling.corners.predictor import _get_alpha
         mean_total = sum(totals) / n
         var_total = sum((v - mean_total) ** 2 for v in totals) / (n - 1) if n > 1 else 0.0
+        alpha_prod = _get_alpha(resolved, mean_total)
         if var_total > mean_total and mean_total > 0:
-            alpha_fit = (var_total - mean_total) / (mean_total ** 2)
+            alpha_empirical = (var_total - mean_total) / (mean_total ** 2)
         else:
-            alpha_fit = 0.0  # degenerate → Poisson
-        nb2_var_predicted = mean_total + alpha_fit * (mean_total ** 2)
-        ratio = round(var_total / nb2_var_predicted, 3) if nb2_var_predicted > 0 else None
+            alpha_empirical = 0.0
+        nb2_var_prod = mean_total + alpha_prod * (mean_total ** 2)
+        ratio = round(var_total / nb2_var_prod, 3) if nb2_var_prod > 0 else None
         result["nb2_dispersion"] = {
             "n_matches": n,
             "empirical_mean": round(mean_total, 3),
             "empirical_variance": round(var_total, 3),
-            "nb2_variance_predicted": round(nb2_var_predicted, 3),
-            "alpha_fit": round(alpha_fit, 4),
-            "ratio_empirical_to_predicted": ratio,
-            "note": "ratio > 1.1 → NB2 underestimates; < 0.9 → overestimates",
+            "alpha_production": round(alpha_prod, 4),
+            "alpha_empirical": round(alpha_empirical, 4),
+            "nb2_variance_production": round(nb2_var_prod, 3),
+            "ratio_empirical_to_production": ratio,
+            "note": "ratio > 1.1 → production NB2 under-dispersed; < 0.9 → over-dispersed",
         }
 
     result["elapsed_ms"] = int((time.time() - t0) * 1000)
