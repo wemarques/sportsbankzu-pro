@@ -16,7 +16,14 @@ distribution, then prices all lines symmetrically.
 
 import logging
 import math
+import os
 from typing import Any, Dict, List, Optional
+
+# #170-A: feature flag to enable per-league NB2 alpha from the calibration DB.
+# OFF (default): legacy path — global artifact or 0.15 fallback.
+# ON: _get_alpha reads corners_alpha per league from lambda_corrections; predictions
+# use calibrated NB2 variance matching empirical dispersion measured in #170 Fase 1.
+_ALPHA_CALIBRATED = os.getenv("CORNERS_ALPHA_CALIBRATED", "false").lower() == "true"
 
 from backend.modeling.corners import (
     CORNER_LINES,
@@ -384,7 +391,22 @@ def _compute_context_risk_penalty(
 
 
 def _get_alpha(league_id: str, expected_ft: float) -> float:
-    """Get NB alpha from training artifacts, or estimate."""
+    """Get NB alpha. #170-A: per-league from calibration DB when flag on.
+
+    Order of precedence:
+    1. #170-A: per-league `corners_alpha` from lambda_corrections (flag-gated)
+    2. Global training artifact NB alpha
+    3. 0.15 fallback
+    """
+    if _ALPHA_CALIBRATED and league_id:
+        try:
+            from backend.modeling.lambda_calculator import get_lambda_corrections
+            corrs = get_lambda_corrections(league_id)
+            val = (corrs.get("corners_alpha") or {}).get("value")
+            if val is not None:
+                return max(0.001, min(5.0, float(val)))
+        except Exception:
+            pass
     training_meta = load_artifact("corner_training_metadata")
     if training_meta:
         nb_info = training_meta.get("training_results", {}).get("negative_binomial", {})

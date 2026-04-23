@@ -10,11 +10,15 @@ Reference: REGRAS #052
 import logging
 import json
 import math
+import os
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 from backend.services.math_service import poisson_pmf
 from backend.modeling.poisson_matrix import dixon_coles_tau
+# #170-A: NB2 CDF used for corner Brier simulation — same distribution the
+# live predictor uses (backend/modeling/corners/negative_binomial.py).
+from backend.modeling.corners.negative_binomial import nb_cdf
 
 logger = logging.getLogger("sportsbankzu.league_calibrator")
 logger.setLevel(logging.INFO)
@@ -68,6 +72,11 @@ BTTS_DEFLATION_GRID = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30]
 CORNER_DEFLATION_GRID = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 ONE_X_TWO_DEFLATION_GRID = [0.90, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]
 CORNER_BRIER_GRID = [0.75, 0.80, 0.83, 0.85, 0.88, 0.90, 0.92, 0.95, 0.97, 1.00, 1.03, 1.05, 1.10]  # #119a finer granularity
+# #170-A: NB2 alpha candidates for corners. Range covers empirical dispersion
+# observed in Fase 1 diagnostic (MLS 0.033, EPL 0.005). Floor 0.005 matches
+# the lowest empirical value; ceiling 0.20 matches the previous default 0.15
+# with a small headroom above.
+CORNER_ALPHA_GRID = [0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20]
 CARDS_DEFLATION_GRID = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30]  # #119b includes inflation >1.0
 XG_BLEND_GRID = [0.0, 0.10, 0.20, 0.30]  # #129b: capped at 0.30 (weight>=0.4 worsens lambda error)
 RHO_GRID = [round(-0.25 + i * 0.01, 2) for i in range(31)]  # -0.25 to 0.05
@@ -87,6 +96,9 @@ def _simulate_all_markets(
     corner_deflation: float = 1.0,
     cards_deflation: float = 1.0,
     xg_blend_weight: float = 0.0,
+    # #170-A: NB2 alpha for corner variance. 0.0 → Poisson (nb_cdf degrades
+    # when alpha<=0), preserving pre-#170-A behaviour when calibrator omits it.
+    corner_alpha: float = 0.0,
     compute_only: str | None = None,
     rho: float = 0.0,
 ) -> Dict[str, float]:
@@ -227,7 +239,10 @@ def _simulate_all_markets(
                 corner_lambda = avg_corners_league * corner_deflation
                 corner_lambda = max(3.0, min(20.0, corner_lambda))
                 for line, key in [(8.5, "corners_o85"), (9.5, "corners_o95"), (10.5, "corners_o105")]:
-                    prob_over_c = sum(poisson_pmf(k, corner_lambda) for k in range(int(line) + 1, 25))
+                    # #170-A: NB2 with per-league alpha. alpha=0.0 → Poisson
+                    # (nb_cdf degrades to Poisson PMF sum), so the pre-#170-A
+                    # deflation grid behaviour is preserved byte-for-byte.
+                    prob_over_c = 1.0 - nb_cdf(int(line), corner_lambda, corner_alpha)
                     brier[key].append(_brier(prob_over_c, 1 if tc > line else 0))
 
         # ── Cards (NB2 — same model as cards_engine.py) (#122) ──
@@ -1092,6 +1107,42 @@ def calibrate_league(
     else:
         corner_factor = best_corner.get("deflation", 1.0)
 
+    # ── Grid search 5b (#170-A): Corners NB2 alpha (decoupled from deflation) ──
+    # Flag-gated. Alpha only affects distribution variance, not mean projection,
+    # so this is sequential (9 iterations) rather than nested (9×13=117). When
+    # flag off, best_corner_alpha stays None and nothing is written to the DB,
+    # preserving pre-#170-A calibration shape.
+    best_corner_alpha: Optional[float] = None
+    if os.getenv("CORNERS_ALPHA_CALIBRATED", "false").lower() == "true":
+        base_brier = best_corner.get("brier", 1.0)
+        best_alpha_state: Dict[str, Any] = {"brier": base_brier, "alpha": None}
+        for c_alpha in CORNER_ALPHA_GRID:
+            result = _simulate_all_markets(
+                matches,
+                lambda_deflation_ou=best_ou_defl,
+                lambda_weights=best_ou_weights,
+                lambda_deflation_btts=best_btts.get("deflation", 1.0),
+                lambda_deflation_1x2=best_1x2_defl.get("deflation", 1.0),
+                corner_deflation=corner_factor,
+                corner_alpha=c_alpha,
+                compute_only="corners",
+                rho=optimal_rho,
+            )
+            b = result.get("brier_corners_avg")
+            if b is not None and b < best_alpha_state["brier"]:
+                best_alpha_state = {"brier": b, "alpha": c_alpha}
+        best_corner_alpha = best_alpha_state["alpha"]
+        if best_corner_alpha is not None:
+            logger.info(
+                f"[calibrator] {league_id}: α corners={best_corner_alpha} "
+                f"(brier {best_alpha_state['brier']:.4f} vs Poisson baseline {base_brier:.4f})"
+            )
+        else:
+            logger.info(
+                f"[calibrator] {league_id}: α grid found no improvement over "
+                f"Poisson baseline {base_brier:.4f}"
+            )
+
     # ── Grid search 6: Cards deflation ──
     best_cards = {"brier": 1.0}
 
@@ -1239,6 +1290,10 @@ def calibrate_league(
         "lambda_weight_season": best_ou.get("weight_season", 0.60),
         "lambda_weight_recent": best_ou.get("weight_recent", 0.40),
         "corner_factor": corner_factor,
+        # #170-A: None when flag off (no alpha grid ran); scalar when calibrated.
+        # Predictor._get_alpha reads this via get_lambda_corrections when
+        # CORNERS_ALPHA_CALIBRATED=true, else falls back to artifact/0.15.
+        "corners_alpha": best_corner_alpha,
         "safe_enabled": safe_enabled,
         # Per-market deflation
         "lambda_deflation_1x2": best_1x2_defl.get("deflation", 1.0),

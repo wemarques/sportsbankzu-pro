@@ -201,3 +201,5 @@
 | 166 | **ATIVA** | Feature | Odds ingestion v2 — checklist break (home+over_25+btts_yes) + PRIORITY_BOOKMAKERS per-league + paginação 5→10 + endpoint debug gated. Flag `ODDS_INGESTION_V2` |
 | 167 | **INFORMATIVA** | Investigação | MLS corners Brier 0.241 confirmado como floor do modelo atual — grid search rejeitou deflation 0.95 e safe_prob 0.75 |
 | 169 | **ATIVA** | Guideline | Strict Contract (tipos/nulls/fallbacks em APIs externas) + First Principles (campos subutilizados = oportunidade de Brier) — complemento à Regra de Investigação |
+| 170 | **ATIVA** | Feature | Corners diagnostic endpoint — 4 métricas empíricas (coverage homeAttackAdvantage, correlations, home×away, NB2 dispersion) para decisões sobre modelo de corners |
+| 170-A | **ATIVA** | Pipeline | NB2 α corners calibrado per-league — resolve super-dispersão 5-30× detectada pelo #170 (MLS α_emp=0.033 vs α_prod=0.15, EPL α_emp=0.005). Flag `CORNERS_ALPHA_CALIBRATED` |

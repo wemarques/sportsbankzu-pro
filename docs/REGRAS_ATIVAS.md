@@ -479,3 +479,29 @@ está fragmentada fora das top 5 casas europeias. Detalhado em
 **Verificação:** `grep -n "_ODDS_V2\|_ESSENTIAL_ODDS\|get_priority_bookmakers" backend/services/api_football_client.py backend/config/leagues_config.py`
 
 **Verificação:** `grep -n "#165\|OU-HALFBAND\|EV_FLOOR_DROP\|CARDS-CORRIDOR" backend/services/ev_classification.py backend/services/market_service.py backend/models/market_output.py`
+
+### #170-A — NB2 α corners calibrado per-league
+
+**Tipo:** Pipeline (calibração)
+**Relacionado:** #167 (Brier floor), #170 (diagnostic endpoint), #122 (cards NB2)
+
+#170 Fase 1 mostrou que o α NB2 de produção (0.15 default) é **5-30× maior** que
+o empírico (MLS 0.033, EPL 0.005). Resultado: variância NB2 2-4× maior que a
+real → distribuição achatada → P(Over X.5) sub-confiante → Brier alto.
+
+**Fix (flag-gated via `CORNERS_ALPHA_CALIBRATED=true`):**
+- Novo grid `CORNER_ALPHA_GRID = [0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20]`
+  em `league_calibrator.py`
+- Busca sequencial (não aninhada) — α não afeta média da projeção, só variância
+- `_simulate_all_markets` agora aceita `corner_alpha` e usa `nb_cdf` da
+  `backend/modeling/corners/negative_binomial` (mesmo NB2 que o predictor live usa)
+- Quando α=0, `nb_cdf` degrada para Poisson → backward compat byte-exact com
+  comportamento pré-#170-A
+- Persistido como `corners_alpha` na `lambda_corrections` DB
+- `predictor._get_alpha(league_id, _)` lê DB quando flag on, fallback
+  artifact/0.15 quando off ou sem valor
+
+**Kill switch:** `CORNERS_ALPHA_CALIBRATED=false` (env var). Predictor volta ao
+path legado, calibrator ignora o loop. Valores em DB permanecem mas são ignorados.
+
+**Verificação:** `grep -n "CORNER_ALPHA_GRID\|corners_alpha\|_ALPHA_CALIBRATED" backend/services/league_calibrator.py backend/modeling/corners/predictor.py`

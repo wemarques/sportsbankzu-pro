@@ -4,6 +4,95 @@
 
 ---
 
+## 170-A — NB2 α corners calibrado per-league (resolve super-dispersão detectada pelo #170)
+
+**Data:** 2026-04-23
+**Arquivos afetados:** backend/modeling/corners/predictor.py, backend/services/league_calibrator.py, docs/INDICE_REGRAS.md, docs/REGRAS_ATIVAS.md
+**Severidade:** Alta (Brier corners 0.241 → previsível melhora significativa)
+**Status:** Implementado — flag-gated `CORNERS_ALPHA_CALIBRATED`
+
+### Problema identificado
+#170 Fase 1 (diagnostic endpoint) revelou que o α NB2 usado no predictor de corners
+é constante 0.15 para todas as ligas (fallback quando `corner_training_metadata.json`
+está ausente, que é o caso em produção). Porém, α empírico medido em matches
+finalizados cacheados é:
+- MLS: **0.033** (4.5× menor que produção)
+- EPL: **0.005** (30× menor — quase Poisson puro)
+
+Variância NB2 = μ + α·μ². Com μ≈10 corners:
+- Produção: 10 + 0.15·100 = **25**
+- MLS real: 10 + 0.033·100 = **13.3** (variância real empirical=13.04, match perfeito)
+- EPL real: 10 + 0.005·100 = **10.5** (variância real=10.46, match perfeito)
+
+A distribuição NB2 de produção é **2-4× mais dispersa** que a realidade. Resultado:
+P(Over 8.5) que deveria ser ~73% com μ=10 e dispersão baixa sai como ~60% com
+dispersão inflada. **Modelo sistematicamente sub-confiante → Brier alto**.
+
+### Causa raiz
+`_get_alpha(league_id, expected_ft)` em `predictor.py:386` ignora `league_id` e
+retorna sempre 0.15 (fallback). O calibrador (`league_calibrator.py::_simulate_all_markets`)
+simulava corners com **Poisson** (`poisson_pmf`), não NB2, então mesmo se existisse
+grid search em α ele produziria Brier idêntico para todos os valores — sem
+oportunidade de descobrir o α ótimo.
+
+### Correções aplicadas
+
+**Parte 1 — Bug estrutural no simulador (pre-condição):**
+- `_simulate_all_markets` agora aceita `corner_alpha: float = 0.0`
+- Corners agora usam `nb_cdf(int(line), corner_lambda, corner_alpha)` do
+  `backend.modeling.corners.negative_binomial` (mesmo NB2 que o predictor live)
+- Backward compat: `nb_cdf(k, μ, 0.0)` = Poisson CDF byte-exato (verificado no
+  pre-mortem com smoke test)
+
+**Parte 2 — Grid search sequencial (flag-gated):**
+```python
+CORNER_ALPHA_GRID = [0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20]
+```
+Após a busca de deflation, loop simples de 9 iterações com `corner_alpha=c_alpha`.
+Sequencial (não aninhado) porque α não afeta média, só variância — decoupled
+optimization. Custo: 9 sims extra por liga em vez de 9×13=117 (aninhado).
+
+**Parte 3 — Persistência:**
+- `params["corners_alpha"] = best_corner_alpha` (None se flag off ou sem ganho)
+- Salvo em `lambda_corrections` DB via `save_calibration` (sem migração —
+  key é arbitrary; padrão idêntico ao `xg_blend_weight`)
+
+**Parte 4 — Leitura per-league em produção (flag-gated):**
+- `predictor._get_alpha` agora checa `get_lambda_corrections(league_id)["corners_alpha"]`
+  quando `CORNERS_ALPHA_CALIBRATED=true`
+- Fallback: artifact global → 0.15 (path legado preservado)
+
+### Plano de Rollout
+1. Deploy com flag off (nenhum comportamento muda)
+2. Rodar `POST /api/backtesting/calibrate?league=X` para MLS, EPL, La Liga
+3. Verificar logs `[calibrator] <league>: α corners=X (brier Y vs baseline Z)`
+4. Se α calibrado ≠ 0.15 e Brier melhora → ativar flag
+5. Validar via `/api/debug/corners-diagnostic` — ratio_empirical_to_production
+   deve aproximar de 1.0
+
+### Kill Switch
+- `CORNERS_ALPHA_CALIBRATED=false` via env var — rollback instantâneo
+- Brier corners regride > 0.005 em auditoria pós-ativação → desligar
+- Picks corners caírem > 30% → desligar e investigar (α muito pequeno pode
+  tornar modelo over-confident e ativar gates internos)
+
+### Pre-mortem
+| Falha | Probabilidade | Mitigação |
+|---|---|---|
+| `nb_cdf(k, μ, 0)` ≠ Poisson CDF | baixa | Verificado byte-exato em smoke test (0.00e+00 diff) |
+| Grid não cobre α empírico | baixa | [0.005, 0.20] inclui MLS 0.033 e EPL 0.005 |
+| Alpha calibrado overfit ao train | média | Monitorar Brier pós-ativação; hold-out validação em sprint seguinte |
+| Predictor crash se DB lookup falha | baixa | try/except → fallback silencioso para artifact/0.15 |
+| Global state leak entre Lambda requests | none | Sem variáveis globais mutáveis — tudo flui por parâmetros |
+
+### Lição aprendida
+Grid search sem variar o parâmetro de interesse (α nesse caso) produz o mesmo
+Brier em todas as iterações por construção. O simulator usar Poisson enquanto o
+predictor usa NB2 (com α) é um descompasso que mascara o sinal do hyperparameter.
+Verificar sempre: "a simulação que compara parâmetros realmente os consome?"
+
+---
+
 ## 169 — Strict Contract + First Principles adicionados à Regra de Investigação
 
 **Data:** 2026-04-23
