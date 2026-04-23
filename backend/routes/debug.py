@@ -11,9 +11,10 @@ import time
 from fastapi import APIRouter, Header, HTTPException
 from typing import Optional
 
-from backend.services.api_football_client import api_football_client as _afc
+from backend.services.api_football_client import APIFootballClient
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
+_afc = APIFootballClient()
 
 
 def _require_debug_key(header_key: Optional[str]) -> None:
