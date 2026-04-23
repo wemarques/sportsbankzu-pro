@@ -200,3 +200,4 @@
 | 165 | **ATIVA** | Fix + Feat | O/U half-band quando lambda pré-deflacionado (#156) + EV Floor 1% (EV_FLOOR_DROP) + Cards corridor dedup (sum>105% → maior EV) |
 | 166 | **ATIVA** | Feature | Odds ingestion v2 — checklist break (home+over_25+btts_yes) + PRIORITY_BOOKMAKERS per-league + paginação 5→10 + endpoint debug gated. Flag `ODDS_INGESTION_V2` |
 | 167 | **INFORMATIVA** | Investigação | MLS corners Brier 0.241 confirmado como floor do modelo atual — grid search rejeitou deflation 0.95 e safe_prob 0.75 |
+| 169 | **ATIVA** | Guideline | Strict Contract (tipos/nulls/fallbacks em APIs externas) + First Principles (campos subutilizados = oportunidade de Brier) — complemento à Regra de Investigação |

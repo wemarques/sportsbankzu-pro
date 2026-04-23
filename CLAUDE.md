@@ -114,6 +114,8 @@ Antes de propor ou implementar qualquer correção:
 5. **Valide com dados reais** — quando possível, adicione logging temporário ou leia logs existentes para confirmar qual valor a API externa realmente retorna, em vez de supor
 6. **Implemente defesa em profundidade** — não confie em uma única camada de correção. Se o bug pode ocorrer por múltiplas causas (ex: status "incomplete", "live", campo numérico inesperado), adicione guards em cada camada relevante
 7. **Teste o cenário completo** — após implementar, simule mentalmente o fluxo com os dados do bug reportado e confirme que TODAS as variantes são cobertas antes de declarar resolvido
+8. **Strict Contract com APIs externas** — tratar payloads de FootyStats e API-Football como contrato tipado: validar tipos antes de usar (int vs string, null vs 0, array vazio vs campo ausente). Todo campo opcional DEVE ter fallback explícito no código. Edge cases obrigatórios: resposta vazia, paginação incompleta, rate limit, campo null inesperado.
+9. **First Principles na extração de features** — antes de criar feature nova ou investigar Brier alto, listar TODOS os campos disponíveis na API que não estamos usando. Campos subutilizados são oportunidades de reduzir Brier (ex: referee stats para cards, stadium/altitude para gols, formação tática para corners).
 
 ## Workflow de Validação
 
