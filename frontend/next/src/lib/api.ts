@@ -48,9 +48,10 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
 /**
  * Max leagues per batch — aligns with Lambda ThreadPoolExecutor (4 workers)
  * so each request can fill internal parallelism (#119c).
- * Vercel proxy timeout (fetch/route ~55s) still allows 5 warm leagues.
+ * FootyStats ~12-19s/league; 3 leagues × 4 workers = single parallel round ≤ 20s
+ * within API Gateway 30s limit.
  */
-const LEAGUES_PER_BATCH = 5;
+const LEAGUES_PER_BATCH = 3;
 
 /**
  * Max concurrent batch requests — fewer simultaneous Lambda cold starts /

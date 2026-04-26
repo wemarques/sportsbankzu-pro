@@ -777,8 +777,9 @@ export default function AIReviewDashboard() {
     try {
       const leagueIds = Array.from(selectedLeagues);
 
-      // Batch leagues into groups of 6 to avoid backend timeout with 22 leagues
-      const BATCH_SIZE = 6;
+      // Batch leagues into groups of 3 to avoid backend timeout with 22 leagues
+      // FootyStats ~12-19s/league; 3 leagues × 4 workers = single parallel round ≤ 20s
+      const BATCH_SIZE = 3;
       const batches: string[][] = [];
       for (let i = 0; i < leagueIds.length; i += BATCH_SIZE) {
         batches.push(leagueIds.slice(i, i + BATCH_SIZE));
