@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "fluid": true,
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/next vercel.json package.json",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ':(top)frontend/next' ':(top)vercel.json' ':(top)package.json'",
   "functions": {
     "app/api/matches/fetch/route.ts": {
       "maxDuration": 120,
