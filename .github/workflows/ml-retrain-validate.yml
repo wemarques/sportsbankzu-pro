@@ -193,6 +193,17 @@ jobs:
               o_s = f'{ov:.4f}' if isinstance(ov, float) else str(ov)
               m_s = f'{me:.4f}' if isinstance(me, float) else str(me)
               print(f'| {lid} | {b_s} | {e_s} | {a_s} | {o_s} | {m_s} | {cl} |')
+
+          # #171 FASE 3E: surface quality warnings for human review.
+          warnings = data.get('quality_warnings', []) or []
+          if warnings:
+              print()
+              print('### Quality Warnings')
+              print()
+              for w in warnings:
+                  print(f'- {w}')
+              print()
+              print('> **These warnings require human review before running ml-retrain-promote.**')
           " >> $GITHUB_STEP_SUMMARY
           else
             echo "::warning::training_summary.json not found"

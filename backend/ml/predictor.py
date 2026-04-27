@@ -217,10 +217,47 @@ def is_ml_available(league_id: str) -> bool:
     if val_brier >= 0.60:
         return False
 
-    # Improvement #4: if market is very efficient AND odds add minimal value,
-    # prefer Poisson to avoid just copying the market
     market_eff = meta.get("market_efficiency_r2")
     odds_value = meta.get("odds_value_added")
+
+    # #171 FASE 3A: OddsVal gate — model must beat market implied odds.
+    # Negative OddsVal means ML is worse than just trusting odds; activating it
+    # injects noise into Kelly. Threshold is configurable so future cleaner
+    # retrains can relax it.
+    ODDSVAL_DEACTIVATION_THRESHOLD = float(os.getenv("ODDSVAL_DEACTIVATION_THRESHOLD", "-0.015"))
+    if odds_value is not None and odds_value < ODDSVAL_DEACTIVATION_THRESHOLD:
+        logger.info(
+            f"[{league_id}] ML suppressed: OddsVal={odds_value:.4f} < "
+            f"{ODDSVAL_DEACTIVATION_THRESHOLD} (model worse than market)"
+        )
+        return False
+
+    # #171 FASE 3B: ECE gate — high ECE means systematic overconfidence and
+    # Kelly multiplies that error. Bankroll engine already haircuts (FASE 2C),
+    # but for ECE > 0.10 it's safer to fall back to Poisson entirely.
+    ECE_DEACTIVATION_THRESHOLD = float(os.getenv("ECE_DEACTIVATION_THRESHOLD", "0.10"))
+    validation_ece = meta.get("validation_ece")
+    if validation_ece is not None and validation_ece > ECE_DEACTIVATION_THRESHOLD:
+        logger.info(
+            f"[{league_id}] ML suppressed: ECE={validation_ece:.4f} > "
+            f"{ECE_DEACTIVATION_THRESHOLD} (overconfident model)"
+        )
+        return False
+
+    # #171 FASE 3C: MktEff=0 with non-trivial sample size is almost always
+    # missing/corrupted implied-odds data, not a genuinely inefficient market.
+    # We can't verify the model adds value when the baseline is missing.
+    if market_eff is not None and market_eff == 0.0:
+        n_samples = meta.get("n_samples", 0) or 0
+        if n_samples > 200:
+            logger.info(
+                f"[{league_id}] ML suppressed: MktEff=0.0 with n={n_samples} "
+                f"(likely corrupted odds data — cannot verify market inefficiency)"
+            )
+            return False
+
+    # Improvement #4: if market is very efficient AND odds add minimal value,
+    # prefer Poisson to avoid just copying the market
     if market_eff is not None and market_eff > 0.15:
         if odds_value is not None and abs(odds_value) < 0.01:
             logger.info(
@@ -230,6 +267,76 @@ def is_ml_available(league_id: str) -> bool:
             return False
 
     return True
+
+
+def get_ml_activation_status(league_id: str) -> Dict[str, Any]:
+    """#171 FASE 3G: detailed activation report — which gate (if any) suppressed ML.
+
+    Mirrors the gate order in is_ml_available so retrain reports can show
+    exactly why a league fell back to Poisson without re-running validation.
+    """
+    result: Dict[str, Any] = {"active": True, "suppressed_by": None, "metrics": {}}
+
+    if np is None:
+        result["active"] = False
+        result["suppressed_by"] = "numpy_unavailable"
+        return result
+
+    bundle = _load_models(league_id)
+    if not bundle:
+        result["active"] = False
+        result["suppressed_by"] = "no_model"
+        return result
+
+    meta = bundle.get("metadata", {}) or {}
+    result["metrics"] = {
+        "brier": meta.get("validation_brier"),
+        "ece": meta.get("validation_ece"),
+        "odds_value": meta.get("odds_value_added"),
+        "market_eff": meta.get("market_efficiency_r2"),
+        "n_samples": meta.get("n_samples"),
+    }
+
+    if meta.get("ml_deactivated"):
+        result["active"] = False
+        result["suppressed_by"] = "explicit_deactivation"
+        return result
+
+    val_brier = meta.get("validation_brier")
+    if val_brier is not None and val_brier >= 0.60:
+        result["active"] = False
+        result["suppressed_by"] = "brier_threshold"
+        return result
+
+    odds_value = meta.get("odds_value_added")
+    odds_val_thr = float(os.getenv("ODDSVAL_DEACTIVATION_THRESHOLD", "-0.015"))
+    if odds_value is not None and odds_value < odds_val_thr:
+        result["active"] = False
+        result["suppressed_by"] = "oddsval_gate"
+        return result
+
+    ece_thr = float(os.getenv("ECE_DEACTIVATION_THRESHOLD", "0.10"))
+    val_ece = meta.get("validation_ece")
+    if val_ece is not None and val_ece > ece_thr:
+        result["active"] = False
+        result["suppressed_by"] = "ece_gate"
+        return result
+
+    market_eff = meta.get("market_efficiency_r2")
+    if market_eff is not None and market_eff == 0.0:
+        n_samples = meta.get("n_samples", 0) or 0
+        if n_samples > 200:
+            result["active"] = False
+            result["suppressed_by"] = "mkteff_zero"
+            return result
+
+    if market_eff is not None and market_eff > 0.15:
+        if odds_value is not None and abs(odds_value) < 0.01:
+            result["active"] = False
+            result["suppressed_by"] = "market_efficient_no_value"
+            return result
+
+    return result
 
 
 def predict_1x2(

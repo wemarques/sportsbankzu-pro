@@ -179,6 +179,62 @@ def main():
     # Sort by brier (best first)
     classifications.sort(key=lambda x: x.get("brier") or 99)
 
+    # ──────────────────────────────────────────────────────────
+    # 4a-bis. #171 FASE 3D: Quality warnings — flag the conditions that
+    # amplified the P0 incident so reviewers can refuse promotion.
+    # ──────────────────────────────────────────────────────────
+    quality_warnings = []
+
+    ov_values = [
+        c.get("odds_value_added") for c in classifications
+        if isinstance(c.get("odds_value_added"), float)
+    ]
+    if ov_values and all(v < 0 for v in ov_values):
+        quality_warnings.append(
+            f"CRITICAL: OddsVal negative in ALL {len(ov_values)} leagues — "
+            f"ML model is universally worse than market implied odds"
+        )
+
+    ece_values = [c["ece"] for c in classifications if c.get("ece") is not None]
+    if ece_values:
+        avg_ece = sum(ece_values) / len(ece_values)
+        if avg_ece > 0.08:
+            quality_warnings.append(
+                f"WARNING: Average ECE={avg_ece:.4f} across {len(ece_values)} leagues — "
+                f"models are {avg_ece * 100:.0f}% overconfident on average"
+            )
+
+    for c in classifications:
+        if (
+            c.get("market_efficiency_r2") == 0.0
+            and isinstance(c.get("n_samples"), int)
+            and c["n_samples"] > 200
+        ):
+            quality_warnings.append(
+                f"DATA_ISSUE: {c['league_id']} has MktEff=0 with n={c['n_samples']} — "
+                f"check implied odds extraction"
+            )
+
+    for c in classifications:
+        if (
+            c["classification"] == "ML_ACTIVE"
+            and c.get("ece") is not None
+            and c["ece"] > 0.10
+        ):
+            quality_warnings.append(
+                f"RISKY: {c['league_id']} is ML_ACTIVE with ECE={c['ece']:.4f} — "
+                f"consider deactivation"
+            )
+
+    if quality_warnings:
+        logger.warning("")
+        logger.warning("=" * 70)
+        logger.warning("QUALITY WARNINGS (requires human review before promote)")
+        logger.warning("=" * 70)
+        for w in quality_warnings:
+            logger.warning(f"  ! {w}")
+        logger.warning("")
+
     # 4b. Classification counts
     counts = {
         "ML_ACTIVE": sum(1 for c in classifications if c["classification"] == "ML_ACTIVE"),
@@ -235,6 +291,7 @@ def main():
         "chronological_all_sorted": all_sorted,
         "brier_deactivation_threshold": BRIER_DEACTIVATION_THRESHOLD,
         "market_totals": market_totals,
+        "quality_warnings": quality_warnings,
         "leagues": [],
     }
 

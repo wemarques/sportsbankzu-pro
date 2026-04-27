@@ -188,7 +188,19 @@ def _compute_market_efficiency(
 
     # R² = 1 - (BS_market / BS_uniform); higher = market captures more info
     r_squared = 1.0 - (brier_market / brier_uniform)
-    return round(max(0.0, r_squared), 4)
+    r_squared = round(max(0.0, r_squared), 4)
+
+    # #171 FASE 3C: R²=0 with substantial samples almost certainly means missing
+    # or corrupted implied-odds data, not a genuinely inefficient market. Log
+    # so reviewers spot the data issue before promoting.
+    if r_squared == 0.0 and n_samples > 100:
+        logger.warning(
+            "market_efficiency_r2=0.0 with %d samples — likely missing/corrupted "
+            "implied odds data. brier_market=%.4f, brier_uniform=%.4f",
+            n_samples, brier_market, brier_uniform,
+        )
+
+    return r_squared
 
 
 def _get_adaptive_params(n_samples: int) -> Dict[str, Any]:
