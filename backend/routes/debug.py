@@ -449,7 +449,13 @@ def pick_outcomes(
             ctx_dict = {}
 
         prob = probs_dict.get("prob")
-        odd = ctx_dict.get("book_odd") or ctx_dict.get("odd")
+        # log_pick stores book_odd in predicted_probs, not context — check both.
+        odd = (
+            probs_dict.get("book_odd")
+            or probs_dict.get("odd")
+            or ctx_dict.get("book_odd")
+            or ctx_dict.get("odd")
+        )
         ev = r[7]
         pick_type = r[5] or "NEUTRO"
         result = r[4]
