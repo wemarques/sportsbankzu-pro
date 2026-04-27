@@ -400,6 +400,7 @@ def corrections_audit(
 def pick_outcomes(
     hours: int = 48,
     limit: int = 500,
+    until_hours_ago: int = 0,
     x_debug_key: Optional[str] = Header(default=None, alias="X-Debug-Key"),
 ) -> dict:
     """#171 forensic — pick outcomes from the last N hours.
@@ -416,17 +417,19 @@ def pick_outcomes(
 
     from backend.audit import init_db, _use_postgres
 
-    cutoff = datetime.now() - timedelta(hours=hours)
+    # Window: [now - until_hours_ago - hours, now - until_hours_ago]
+    end_ts = datetime.now() - timedelta(hours=until_hours_ago)
+    start_ts = end_ts - timedelta(hours=hours)
     conn = init_db()
     cur = conn.cursor()
     ph = "%s" if _use_postgres() else "?"
     cur.execute(
         f"SELECT match_id, league, market, predicted_probs, actual_result, "
         f"pick_type, brier_score, ev, context, timestamp "
-        f"FROM audit_results WHERE timestamp >= {ph} "
+        f"FROM audit_results WHERE timestamp >= {ph} AND timestamp <= {ph} "
         f"AND actual_result IS NOT NULL "
         f"ORDER BY timestamp DESC LIMIT {ph}",
-        (cutoff, limit),
+        (start_ts, end_ts, limit),
     )
     rows = cur.fetchall()
     conn.close()
