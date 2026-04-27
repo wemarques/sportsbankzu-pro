@@ -4,6 +4,95 @@
 
 ---
 
+## 172 — Vercel Build Minutes: Turbo→Standard + ignoreCommand com pathspec `:(top)`
+
+**Data:** 2026-04-27
+**Arquivos afetados:** vercel.json
+**Severidade:** Média (custo de infra, não afeta cálculos do produto)
+**Status:** Implementado
+
+### Problema identificado
+Fatura Vercel do dia 27/04 totalizou **$20.03 num único dia**, com **Build Minutes
+representando $18.27 (91%)**. Em 6 deploys, equivale a média de 20 min faturados
+por deploy. Extrapolação mensal: ~$580/mês só em CI.
+
+A primeira hipótese (build lento) foi descartada após análise do log de deploy:
+build real levava 22s wall-clock. O custo desproporcional vinha de outro fator.
+
+### Causa raiz
+
+**Trigger primário — Turbo Build Machine.** Projeto configurado para usar Turbo
+Build Machine (30 cores / 60 GB RAM) em todas as builds. Vercel fatura Turbo a
+um múltiplo do tempo real (~4×). Para projeto Next.js 14 deste porte (build em
+<30s), Turbo é overkill — Standard (4 cores / 8 GB) é mais que suficiente.
+
+**Trigger secundário — deploys desnecessários.** Todo `git push origin main`,
+mesmo em commits que só tocam `backend/`, `docs/` ou `cli/`, dispara build do
+frontend Next. Em workflow de alta cadência (vibe coding), ~30-50% dos builds
+são desperdício puro.
+
+### Correções aplicadas
+
+**Camada 1 — Build Machine: Turbo → Standard (Vercel UI):**
+- Project Settings → Build & Development → Build Machine → Standard
+- Confirmado no log do próximo build: `Build machine configuration: 4 cores, 8 GB`
+- Wall-clock subiu de 22s para ~30s, trade-off aceitável dado o corte de custo
+
+**Camada 2 — ignoreCommand v1 (commit `0dc4757`) — BUGADA:**
+```json
+"ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/next vercel.json package.json"
+```
+Intenção: skipar build se commit não toca frontend/next, vercel.json ou package.json.
+
+O próprio commit `0dc4757` (que modifica `vercel.json`) foi CANCELED por
+ignoreCommand quando deveria ter buildado. Inspector URL confirmou:
+> "The Deployment has been canceled as a result of running the command defined
+> in the 'Ignored Build Step' setting."
+
+**Causa raiz do bug:** Vercel executa `ignoreCommand` a partir do Root Directory
+do projeto (`frontend/next/`), não da raiz do repositório. Com cwd em
+`frontend/next/`, os pathspecs `frontend/next`, `vercel.json` e `package.json`
+procuravam por `frontend/next/frontend/next`, `frontend/next/vercel.json` e
+`frontend/next/package.json` (último existe mas não mudou nesse commit). Diff
+ficava vazio → exit 0 → **skip incondicional, incluindo mudanças válidas em
+frontend**.
+
+**Camada 3 — ignoreCommand v2 (commit `24a8e57`) — CORRETA:**
+```json
+"ignoreCommand": "git diff --quiet HEAD^ HEAD -- ':(top)frontend/next' ':(top)vercel.json' ':(top)package.json'"
+```
+
+Pathspec magic `:(top)` ancora paths no repo root, independente de cwd. Validação:
+- Build do `24a8e57` (toca vercel.json) → BUILDING (correto, exit 1)
+- Build deste commit em `docs/REGISTRO_CORRECOES.md` → esperado CANCELED via
+  ignoreCommand (validação do skip — completa esta entrada)
+
+### Lição aprendida
+
+**Vercel `ignoreCommand` opera no cwd do Root Directory, não no repo root.**
+Sempre usar pathspec magic `:(top)` ou caminhos absolutos quando referenciar
+arquivos fora do Root Directory. Pathspecs ingênuos só funcionam se
+Root Directory == repo root, o que não é o caso em projetos com frontend em
+subdiretório.
+
+**"Canceled" no Vercel UI é ambíguo** — pode ser cancelamento manual, superseding
+deploy, ou ignoreCommand exit 0. Sempre abrir o inspector URL para ler a razão
+textual antes de declarar comportamento correto. Já fomos enganados uma vez por
+um agente que assumiu "CANCELED = skipped corretamente" sem confirmar.
+
+**Não declarar ignoreCommand validado sem testar AMBOS os cenários:** commit que
+toca path monitorado deve buildar; commit que não toca deve skipar. A simetria
+parece óbvia mas exige validação empírica em cada lado.
+
+**Antes de otimizar tempo de build, verificar a dimensão de billing dominante.**
+Em projetos com alta cadência de commits e Build Machine inadequada,
+`deploys-por-dia × custo-por-build` é frequentemente o eixo de maior alavanca —
+não o tempo de build em si. O log mostrava 22s/build, e o instinto de "otimizar
+o que parece lento" levou a propostas erradas (desligar typecheck, etc.) que
+foram descartadas após análise correta da fatura.
+
+---
+
 ## 171 — INCIDENTE CRÍTICO: Perda de 50% da banca em 24h
 
 **Data:** 2026-04-27
