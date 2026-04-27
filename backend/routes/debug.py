@@ -394,3 +394,124 @@ def corrections_audit(
         "leagues_state": leagues_state,
         "elapsed_ms": int((time.time() - t0) * 1000),
     }
+
+
+@router.get("/pick-outcomes")
+def pick_outcomes(
+    hours: int = 48,
+    limit: int = 500,
+    x_debug_key: Optional[str] = Header(default=None, alias="X-Debug-Key"),
+) -> dict:
+    """#171 forensic — pick outcomes from the last N hours.
+
+    Returns: market, league, prob_modelada, odd, ev, pick_type, result,
+    stake_pct_estimated. stake_pct is estimated as Quarter-Kelly ×
+    STAKE_MULTIPLIER[pick_type] — actual stake is client-side and not
+    persisted. Aggregates by market and by league for triage.
+    """
+    _require_debug_key(x_debug_key)
+    t0 = time.time()
+    from datetime import datetime, timedelta
+    import json as _json
+
+    from backend.audit import init_db, _use_postgres
+
+    cutoff = datetime.now() - timedelta(hours=hours)
+    conn = init_db()
+    cur = conn.cursor()
+    ph = "%s" if _use_postgres() else "?"
+    cur.execute(
+        f"SELECT match_id, league, market, predicted_probs, actual_result, "
+        f"pick_type, brier_score, ev, context, timestamp "
+        f"FROM audit_results WHERE timestamp >= {ph} "
+        f"AND actual_result IS NOT NULL "
+        f"ORDER BY timestamp DESC LIMIT {ph}",
+        (cutoff, limit),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    _STAKE_MULT = {"SAFE": 1.0, "SAFE*": 1.0,
+                   "NEUTRO_QUALIFICADO": 0.6, "NEUTRO": 0.3}
+    picks = []
+    by_market: dict = {}
+    by_league: dict = {}
+    total_hits = 0
+    total = 0
+    for r in rows:
+        try:
+            probs_dict = _json.loads(r[3]) if isinstance(r[3], str) else (r[3] or {})
+        except Exception:
+            probs_dict = {}
+        try:
+            ctx_dict = _json.loads(r[8]) if isinstance(r[8], str) else (r[8] or {})
+        except Exception:
+            ctx_dict = {}
+
+        prob = probs_dict.get("prob")
+        odd = ctx_dict.get("book_odd") or ctx_dict.get("odd")
+        ev = r[7]
+        pick_type = r[5] or "NEUTRO"
+        result = r[4]
+        is_hit = result == "hit"
+
+        stake_pct = None
+        try:
+            if prob and odd and float(odd) > 1.0 and 0 < float(prob) < 1:
+                kelly = max(0.0, (float(prob) * float(odd) - 1) / (float(odd) - 1))
+                stake_pct = round(kelly * 0.25 * _STAKE_MULT.get(pick_type, 0.3), 5)
+        except Exception:
+            pass
+
+        picks.append({
+            "timestamp": r[9].isoformat() if hasattr(r[9], "isoformat") else str(r[9]),
+            "league": r[1],
+            "market": r[2],
+            "prob_modelada": prob,
+            "odd": odd,
+            "ev": ev,
+            "pick_type": pick_type,
+            "result": result,
+            "stake_pct_estimated": stake_pct,
+        })
+
+        total += 1
+        if is_hit:
+            total_hits += 1
+
+        bm_key = r[2] or "?"
+        bm = by_market.setdefault(bm_key, {"total": 0, "hits": 0,
+                                           "ev_sum": 0.0, "stake_sum": 0.0})
+        bm["total"] += 1
+        if is_hit:
+            bm["hits"] += 1
+        if ev is not None:
+            bm["ev_sum"] += float(ev)
+        if stake_pct:
+            bm["stake_sum"] += stake_pct
+
+        bl_key = r[1] or "?"
+        bl = by_league.setdefault(bl_key, {"total": 0, "hits": 0,
+                                           "stake_sum": 0.0})
+        bl["total"] += 1
+        if is_hit:
+            bl["hits"] += 1
+        if stake_pct:
+            bl["stake_sum"] += stake_pct
+
+    for v in by_market.values():
+        v["hit_rate"] = round(v["hits"] / v["total"], 4) if v["total"] else 0
+        v["ev_avg"] = round(v["ev_sum"] / v["total"], 4) if v["total"] else 0
+    for v in by_league.values():
+        v["hit_rate"] = round(v["hits"] / v["total"], 4) if v["total"] else 0
+
+    return {
+        "hours_back": hours,
+        "total_picks": total,
+        "total_hits": total_hits,
+        "overall_hit_rate": round(total_hits / total, 4) if total else 0,
+        "by_market": by_market,
+        "by_league": by_league,
+        "picks_sample": picks[:50],
+        "elapsed_ms": int((time.time() - t0) * 1000),
+    }
