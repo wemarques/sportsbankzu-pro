@@ -1,5 +1,6 @@
 """#166 — Odds ingestion diagnostic endpoint.
 #170 — Corners model structural gap diagnostic (Fase 1).
+#171 — Forensic endpoint for the auto-correction cascade incident.
 
 Registered only when ODDS_INGESTION_V2=true (see main.py). Requires
 X-Debug-Key header matching ODDS_DEBUG_KEY env var — blocks anonymous
@@ -331,3 +332,65 @@ def corners_diagnostic(
 
     result["elapsed_ms"] = int((time.time() - t0) * 1000)
     return result
+
+
+@router.get("/corrections-audit")
+def corrections_audit(
+    days: int = 7,
+    limit: int = 200,
+    x_debug_key: Optional[str] = Header(default=None, alias="X-Debug-Key"),
+) -> dict:
+    """#171 forensic — list recent corrections + current lambda_corrections per league.
+
+    Reveals what the auto-correction cron applied during the bankroll loss
+    incident on 2026-04-26/27. Filter ?days= to widen window.
+    """
+    _require_debug_key(x_debug_key)
+    t0 = time.time()
+
+    from backend.audit import get_recent_corrections
+    from backend.config.leagues_config import LEAGUES_CONFIG
+    from backend.modeling.lambda_calculator import get_lambda_corrections
+
+    recent = get_recent_corrections(days=days, limit=limit)
+
+    # Tag toxic-looking auto-applied lambda corrections
+    toxic_threshold_low = 0.92  # any lambda deflation below this is suspect
+    for c in recent:
+        c["suspect"] = (
+            c.get("applied_by") == "cron_auto"
+            and "lambda" in (c.get("parameter") or "").lower()
+            and isinstance(c.get("new_value"), (int, float))
+            and c["new_value"] < toxic_threshold_low
+        )
+
+    # Snapshot current lambda corrections per league
+    leagues_state = []
+    for cfg in LEAGUES_CONFIG:
+        lid = cfg["id"]
+        try:
+            corrs = get_lambda_corrections(lid)
+        except Exception as e:
+            leagues_state.append({"league": lid, "error": str(e)})
+            continue
+        leagues_state.append({
+            "league": lid,
+            "lambda_multiplier": (corrs.get("lambda_multiplier") or {}).get("value"),
+            "btts_multiplier": (corrs.get("btts_multiplier") or {}).get("value"),
+            "1x2_multiplier": (corrs.get("1x2_multiplier") or {}).get("value"),
+            "corner_multiplier": (corrs.get("corner_multiplier") or {}).get("value"),
+            "cards_multiplier": (corrs.get("cards_multiplier") or {}).get("value"),
+            "corners_alpha": (corrs.get("corners_alpha") or {}).get("value"),
+            "safe_enabled": (corrs.get("safe_enabled") or {}).get("value"),
+        })
+
+    suspects = [c for c in recent if c.get("suspect")]
+    return {
+        "days": days,
+        "total_corrections": len(recent),
+        "suspect_count": len(suspects),
+        "suspects": suspects,
+        "all_corrections": recent,
+        "leagues_state": leagues_state,
+        "elapsed_ms": int((time.time() - t0) * 1000),
+    }
