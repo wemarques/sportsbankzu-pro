@@ -59,6 +59,37 @@ HAIRCUT_INJURIES = 0.10           # -10% when relevant injuries
 HAIRCUT_HIGH_CORRELATION = 0.15   # -15% when picks are correlated
 HAIRCUT_VOLATILE_MARKET = 0.10    # -10% for volatile markets
 
+# ─── ECE Haircut (#171 FASE 2C) ───
+# When league ECE exceeds threshold, reduce Kelly stake proportionally.
+# ECE = 0.08 means model is 8% overconfident → haircut reduces stake.
+# Linear interpolation between threshold and ceiling.
+ECE_HAIRCUT_THRESHOLD = float(os.getenv("ECE_HAIRCUT_THRESHOLD", "0.06"))
+ECE_HAIRCUT_MAX = float(os.getenv("ECE_HAIRCUT_MAX", "0.25"))
+ECE_HAIRCUT_CEILING = float(os.getenv("ECE_HAIRCUT_CEILING", "0.12"))
+
+# ─── OddsVal Haircut (#171 FASE 2B) ───
+# OddsVal < 0 means the model is less calibrated than the market's implied
+# odds. Haircut scales linearly to MAX as OddsVal approaches FLOOR.
+ODDSVAL_HAIRCUT_FLOOR = float(os.getenv("ODDSVAL_HAIRCUT_FLOOR", "-0.02"))
+HAIRCUT_NEGATIVE_ODDSVAL_MAX = float(os.getenv("HAIRCUT_NEGATIVE_ODDSVAL_MAX", "0.30"))
+
+# ─── Market Family Exposure Caps (#171 FASE 2D) ───
+# Prevent any single market family from dominating daily exposure.
+# Triggered the #171 incident: corners family stake/day went from 1.20%
+# to 7.11% after #170-A (5.93× growth) — this cap keeps it ≤ 5%.
+MAX_FAMILY_STAKE_DAY_PCT = {
+    "corners": float(os.getenv("MAX_CORNER_STAKE_DAY_PCT", "0.05")),
+    "cards":   float(os.getenv("MAX_CARDS_STAKE_DAY_PCT",  "0.05")),
+    "goals":   float(os.getenv("MAX_GOALS_STAKE_DAY_PCT",  "0.10")),
+    "1x2":     float(os.getenv("MAX_1X2_STAKE_DAY_PCT",    "0.10")),
+}
+DEFAULT_FAMILY_CAP_PCT = 0.10
+
+# ─── Daily Loss Circuit Breaker (#171 FASE 2A) ───
+# When today's cumulative loss exceeds this fraction of starting bankroll,
+# block all new picks. Prevents bad-luck-streak spirals like the #171 incident.
+DAILY_LOSS_BREAKER_PCT = float(os.getenv("DAILY_LOSS_BREAKER_PCT", "0.15"))
+
 # ─── Modo Oportunidade (#149) ───
 OPORTUNIDADE_TIERS = {
     MarketClassification.SAFE: {
@@ -117,6 +148,43 @@ def kelly_stake(
 
     stake = bankroll * f * kelly_fraction
     return max(0, stake)
+
+
+def ece_haircut_factor(ece: Optional[float]) -> float:
+    """#171 FASE 2C: ECE-based haircut (0.75-1.0).
+
+    ECE ≤ THRESHOLD → 1.0 (no haircut).
+    ECE ≥ CEILING → 1.0 - ECE_HAIRCUT_MAX (max reduction).
+    Otherwise: linear interpolation.
+    None → 1.0 (neutro fallback when calibration data isn't propagated).
+    """
+    if ece is None or ece <= ECE_HAIRCUT_THRESHOLD:
+        return 1.0
+    if ece >= ECE_HAIRCUT_CEILING:
+        return 1.0 - ECE_HAIRCUT_MAX
+    span = ECE_HAIRCUT_CEILING - ECE_HAIRCUT_THRESHOLD
+    if span <= 0:
+        return 1.0 - ECE_HAIRCUT_MAX
+    ratio = (ece - ECE_HAIRCUT_THRESHOLD) / span
+    return 1.0 - (ratio * ECE_HAIRCUT_MAX)
+
+
+def oddsval_haircut_factor(odds_val: Optional[float]) -> float:
+    """#171 FASE 2B: OddsVal-based haircut (0.70-1.0).
+
+    OddsVal ≥ 0 → 1.0 (model adds value vs market).
+    OddsVal ≤ FLOOR → 1.0 - HAIRCUT_NEGATIVE_ODDSVAL_MAX.
+    Otherwise: linear interpolation.
+    None → 1.0 (neutro fallback).
+    """
+    if odds_val is None or odds_val >= 0:
+        return 1.0
+    if odds_val <= ODDSVAL_HAIRCUT_FLOOR:
+        return 1.0 - HAIRCUT_NEGATIVE_ODDSVAL_MAX
+    if ODDSVAL_HAIRCUT_FLOOR == 0:
+        return 1.0
+    ratio = odds_val / ODDSVAL_HAIRCUT_FLOOR  # both negative → positive ratio in [0,1]
+    return 1.0 - (ratio * HAIRCUT_NEGATIVE_ODDSVAL_MAX)
 
 
 def calculate_haircut(
@@ -196,6 +264,13 @@ def compute_stake(
             "haircut": 1.0,
         }
 
+    # #171 FASE 2: ECE + OddsVal haircuts. league_ece / league_odds_val are
+    # not yet populated by the upstream pipeline; both functions return 1.0
+    # when None (neutro fallback). Once propagation is wired, these gates
+    # automatically activate for high-ECE / negative-OddsVal leagues.
+    ece_factor = ece_haircut_factor(market_output.get("league_ece"))
+    oddsval_factor = oddsval_haircut_factor(market_output.get("league_odds_val"))
+
     # ─── Branch VIÁVEL (#148) ───
     if cls == MarketClassification.NEUTRO:
         if prob < VIAVEL_MIN_PROB:
@@ -207,12 +282,14 @@ def compute_stake(
             }
         raw_kelly = kelly_stake(prob, book_odd, bankroll, kelly_fraction)
         adjusted = raw_kelly * multiplier
-        # Floor: se Kelly dá 0 ou negativo, usar mínimo 0.5% da banca
+        # Floor: se Kelly dá 0 ou negativo, usar mínimo configurável da banca
         if adjusted <= 0:
             adjusted = bankroll * VIAVEL_FLOOR_PCT
         # Haircuts
         haircut = calculate_haircut(market_output, reason_codes)
         adjusted *= haircut
+        adjusted *= ece_factor       # #171 FASE 2C
+        adjusted *= oddsval_factor   # #171 FASE 2B
         # Cap 2%
         cap_pct = MAX_STAKE_PCT_BY_CLASS[cls]
         max_cap = bankroll * cap_pct
@@ -224,6 +301,8 @@ def compute_stake(
             "stake_reason": "quarter_kelly_viavel",
             "kelly_raw": round(raw_kelly, 2),
             "haircut": round(haircut, 3),
+            "ece_factor": round(ece_factor, 3),         # #171 FASE 2C
+            "oddsval_factor": round(oddsval_factor, 3), # #171 FASE 2B
             "capped": capped < adjusted,
             "classification_multiplier": multiplier,
             "pct": round(pct, 4),
@@ -238,6 +317,8 @@ def compute_stake(
     # Apply haircut
     haircut = calculate_haircut(market_output, reason_codes)
     adjusted *= haircut
+    adjusted *= ece_factor       # #171 FASE 2C
+    adjusted *= oddsval_factor   # #171 FASE 2B
 
     # Apply per-bet cap (por classificação #148, fallback MAX_STAKE_PER_BET_PCT)
     cap_pct = MAX_STAKE_PCT_BY_CLASS.get(cls, MAX_STAKE_PER_BET_PCT)
@@ -252,6 +333,8 @@ def compute_stake(
         "stake_reason": "kelly_calculated",
         "kelly_raw": round(raw_kelly, 2),
         "haircut": round(haircut, 3),
+        "ece_factor": round(ece_factor, 3),         # #171 FASE 2C
+        "oddsval_factor": round(oddsval_factor, 3), # #171 FASE 2B
         "capped": capped < adjusted,
         "classification_multiplier": multiplier,
     }
@@ -373,3 +456,89 @@ def apply_daily_cap(
         s["daily_capped"] = True
 
     return all_stakes
+
+
+def _market_family(market_type: str) -> str:
+    """#171 FASE 2D: classify market_type into a family for exposure capping."""
+    mt = (market_type or "").lower()
+    if "corner" in mt or "escante" in mt:
+        return "corners"
+    if "card" in mt or "cart" in mt or "booking" in mt:
+        return "cards"
+    if any(k in mt for k in ("over", "under", "btts", "gol", "ambas")):
+        return "goals"
+    if "1x2" in mt or "result" in mt or "double" in mt or "dc" in mt or "winner" in mt:
+        return "1x2"
+    return mt or "unknown"
+
+
+def apply_family_cap(
+    all_stakes: List[Dict[str, Any]],
+    bankroll: float,
+) -> List[Dict[str, Any]]:
+    """#171 FASE 2D: per-market-family daily exposure cap.
+
+    Groups stakes by family (corners / cards / goals / 1x2). If a family's
+    total exceeds its daily cap, scales every stake in that family
+    proportionally. MUST be called BEFORE apply_daily_cap so the daily
+    30% budget reflects already-capped family totals.
+
+    Mitigates the #171 trigger pattern: a single market family (corners)
+    consuming disproportionate exposure after a hyperparameter shift.
+    """
+    from collections import defaultdict
+
+    family_totals: dict = defaultdict(float)
+    family_items: dict = defaultdict(list)
+
+    for s in all_stakes:
+        family = _market_family(s.get("market_type", "unknown"))
+        family_totals[family] += s.get("stake", 0)
+        family_items[family].append(s)
+
+    for family, total in family_totals.items():
+        cap_pct = MAX_FAMILY_STAKE_DAY_PCT.get(family, DEFAULT_FAMILY_CAP_PCT)
+        max_family = bankroll * cap_pct
+        if total > max_family and total > 0:
+            scale = max_family / total
+            for s in family_items[family]:
+                s["stake"] = round(s["stake"] * scale, 2)
+                s["family_capped"] = True
+                s["family_cap_scale"] = round(scale, 3)
+                s["family"] = family
+            logger.warning(
+                "[bankroll] Family '%s' capped: %.2f -> %.2f (scale=%.3f, cap=%.0f%%)",
+                family, total, max_family, scale, cap_pct * 100,
+            )
+
+    return all_stakes
+
+
+def check_daily_loss_breaker(
+    daily_pnl: float,
+    bankroll: float,
+) -> bool:
+    """#171 FASE 2A: daily-loss circuit breaker.
+
+    Returns True if today's accumulated loss exceeds the configured
+    threshold of starting bankroll. Caller (frontend / decision route)
+    must respect the signal — backend doesn't know real bankroll state,
+    so this function is pure logic on values supplied by the caller.
+
+    Args:
+        daily_pnl: Today's P&L (negative = loss).
+        bankroll: Starting bankroll for the day.
+
+    Returns:
+        True if breaker tripped (block new bets); False otherwise.
+    """
+    if bankroll <= 0:
+        return True  # defensive: zero/negative bankroll = block
+    loss_pct = abs(min(0.0, daily_pnl)) / bankroll
+    if loss_pct >= DAILY_LOSS_BREAKER_PCT:
+        logger.warning(
+            "[bankroll] CIRCUIT BREAKER tripped: daily loss %.1f%% >= %.0f%% threshold",
+            loss_pct * 100, DAILY_LOSS_BREAKER_PCT * 100,
+        )
+        return True
+    return False

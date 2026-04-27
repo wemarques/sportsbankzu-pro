@@ -505,3 +505,42 @@ real → distribuição achatada → P(Over X.5) sub-confiante → Brier alto.
 path legado, calibrator ignora o loop. Valores em DB permanecem mas são ignorados.
 
 **Verificação:** `grep -n "CORNER_ALPHA_GRID\|corners_alpha\|_ALPHA_CALIBRATED" backend/services/league_calibrator.py backend/modeling/corners/predictor.py`
+
+### #171 — Proteção de banca: ECE/OddsVal haircuts, family cap, daily loss breaker
+
+**Tipo:** Pipeline (proteção de capital)
+**Relacionado:** #148 (Kelly), #149 (Oportunidade), #170-A (trigger), incidente P0 27/04
+
+Após incidente P0 (50% banca em 24h causado por #170-A reduzindo α NB2 →
+corners stake/dia subiu 5.93×), `bankroll_engine.py` recebeu 4 camadas de
+proteção:
+
+1. **ECE haircut (#171 FASE 2C):** quando ECE da liga ∈ [0.06, 0.12], reduzir
+   Kelly até 25% (interpolação linear). Acima de 0.12 satura no máximo.
+   Função `ece_haircut_factor(ece)`. None → 1.0 (neutro).
+
+2. **OddsVal haircut (#171 FASE 2B):** quando OddsVal ∈ [-0.02, 0), reduzir
+   Kelly até 30% (interpolação linear). Função `oddsval_haircut_factor(odds_val)`.
+   OddsVal ≥ 0 ou None → 1.0.
+
+3. **Market family cap (#171 FASE 2D):** `apply_family_cap(stakes, bankroll)`
+   agrupa por família (corners/cards/goals/1x2) e escala se exceder cap diário.
+   Defaults: corners 5%, cards 5%, goals 10%, 1x2 10%. **Deve ser chamada
+   ANTES de `apply_daily_cap`.**
+
+4. **Daily loss circuit breaker (#171 FASE 2A):** `check_daily_loss_breaker(daily_pnl, bankroll)`
+   retorna True quando perda diária ≥ 15%. Backend expõe lógica; frontend
+   deve respeitar o sinal.
+
+**Notas operacionais:**
+- ECE/OddsVal precisam ser propagados em `market_output` como `league_ece` /
+  `league_odds_val`. Hoje não estão — haircuts retornam 1.0 (neutro). Pipeline
+  upstream deve passar a popular esses campos.
+- `apply_daily_cap` e `apply_game_cap` existem como library functions mas não
+  são chamadas em backend hoje; integração é caller-side.
+
+**Kill switches (env vars, sem redeploy):** `AUTO_APPLY_CONFIDENCE_MIN`,
+`VIAVEL_FLOOR_PCT`, `CORNERS_ALPHA_CALIBRATED`, `ECE_HAIRCUT_THRESHOLD/MAX/CEILING`,
+`ODDSVAL_HAIRCUT_FLOOR/MAX`, `MAX_CORNER_STAKE_DAY_PCT`, `DAILY_LOSS_BREAKER_PCT`.
+
+**Verificação:** `grep -n "ece_haircut_factor\|oddsval_haircut_factor\|apply_family_cap\|check_daily_loss_breaker" backend/services/bankroll_engine.py`

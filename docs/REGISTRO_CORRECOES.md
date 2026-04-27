@@ -4,6 +4,106 @@
 
 ---
 
+## 171 — INCIDENTE CRÍTICO: Perda de 50% da banca em 24h
+
+**Data:** 2026-04-27
+**Arquivos afetados:** backend/services/bankroll_engine.py, backend/cron_handler.py, backend/audit.py, backend/routes/debug.py
+**Severidade:** Crítica (P0)
+**Status:** Corrigido (FASE 0 + FASE 2)
+
+### Problema identificado
+A banca foi reduzida em 50% em 24 horas por overexposure em corners.
+
+### Hipótese inicial — REFUTADA
+A primeira hipótese foi "auto-correção cascateante" (cron_handler aplicando
+correções tóxicas em `lambda_ou` por bug em `ADJUSTMENT_LIMITS`). A análise
+forense via `/api/debug/corrections-audit` confirmou que **três correções
+foram gravadas** (lambda_ou: 1.0→0.93, 0.94, 0.94 em 26/04), mas **nenhum
+consumidor lê a chave `lambda_ou`** — predições leem `lambda_multiplier`.
+As correções são *dead writes*. O bug de validação existe e foi corrigido,
+mas não foi a causa do incidente.
+
+### Causa raiz CONFIRMADA (análise forense de 48h)
+
+**Trigger primário — #170-A (NB2 α per-league):** Em 2026-04-23 ativamos
+`CORNERS_ALPHA_CALIBRATED=true` que substituiu α=0.15 (default) por valores
+calibrados de 0.005-0.03 por liga. A redução estreitou a variância da
+distribuição NB2 → P(Over X.5) ficou mais confiante → mais picks cruzaram
+threshold → Kelly stakes cresceram.
+
+Análise comparativa via `/api/debug/pick-outcomes`:
+- Pré-flag (7d antes de 23/04): **30.4 corners picks/dia**, stake_sum/dia ≈ **1.20%** banca
+- Pós-flag (últimas 48h): **88.0 corners picks/dia (2.89×)**, stake_sum/dia ≈ **7.11% (5.93×)**
+
+E os mercados de cauda onde a stake mais cresceu (Escanteios Over 10.5,
+Under 9.5) bateram em uma sequência de azar:
+- Escanteios Over 10.5: 100% hit pré-flag (n=2) → **33% hit pós (n=6)**
+- Escanteios Under 9.5: 50% hit pré (n=8) → **38% hit pós (n=8)**
+
+**Amplificador — ECE 0.07-0.11:** ML Retrain Run #15 mostrou overconfidence
+sistemática nas 22 ligas ML_ACTIVE. Probabilidades infladas → Kelly aloca
+mais do que deveria.
+
+**Agravante — VIÁVEL floor:** Forçava 0.5% da banca quando Kelly retornava 0,
+acumulando exposição em mercados com EV negativo persistente.
+
+### Correções aplicadas
+
+**FASE 0 (emergência, deployada 27/04):**
+- `AUTO_APPLY_CONFIDENCE_MIN=101` em `cron_handler.py` — bloqueia auto-apply
+- `VIAVEL_FLOOR_PCT=0` em `bankroll_engine.py` — desabilita floor forçado
+- `CORNERS_ALPHA_CALIBRATED=false` (env var Lambda) — reverte α para 0.15
+- `lambda_deflation` adicionado ao `ADJUSTMENT_LIMITS` em `audit.py`
+  (range [0.80, 1.20], max_delta 0.08) — defesa em profundidade
+
+**FASE 2 (hardening estrutural):**
+- **2C — ECE haircut** em `bankroll_engine.py`: `ece_haircut_factor(ece)`
+  reduz Kelly até 25% quando ECE ∈ [0.06, 0.12]. Wired em `compute_stake`
+  (ambos os branches VIÁVEL e normal). Fallback 1.0 quando ECE=None.
+- **2B — OddsVal haircut** em `bankroll_engine.py`:
+  `oddsval_haircut_factor(odds_val)` reduz Kelly até 30% quando OddsVal
+  ∈ [-0.02, 0). Mesmo padrão de wiring + fallback.
+- **2D — Market family cap** em `bankroll_engine.py`: `apply_family_cap()`
+  agrupa stakes por família (corners/cards/goals/1x2) e escala se cap diário
+  excedido. Defaults: corners 5%, cards 5%, goals 10%, 1x2 10%. Mitiga
+  diretamente o trigger #170-A: corners não pode mais subir 5.93× sem cap.
+- **2A — Daily loss circuit breaker** em `bankroll_engine.py`:
+  `check_daily_loss_breaker(daily_pnl, bankroll)` retorna True quando perda
+  diária ≥ 15%. Backend expõe lógica; frontend deve respeitar o sinal.
+
+**Endpoints forenses (`backend/routes/debug.py`):**
+- `/api/debug/corrections-audit` — lista correções recentes + estado atual
+- `/api/debug/pick-outcomes` — picks últimas N horas, agrega por mercado/liga,
+  estima stake Kelly, suporta janela com `until_hours_ago`
+
+### Kill switches (env vars, sem redeploy)
+- `AUTO_APPLY_CONFIDENCE_MIN` (default 101) — re-ativar auto-apply: setar 80
+- `VIAVEL_FLOOR_PCT` (default 0.001) — restaurar 0.005 ou desabilitar com 0
+- `CORNERS_ALPHA_CALIBRATED` (default false) — re-ativar α calibrado
+- `ECE_HAIRCUT_THRESHOLD/MAX/CEILING` — ajustar agressividade do ECE haircut
+- `ODDSVAL_HAIRCUT_FLOOR/MAX` — ajustar agressividade do OddsVal haircut
+- `MAX_CORNER_STAKE_DAY_PCT` etc. — ajustar caps por família
+- `DAILY_LOSS_BREAKER_PCT` (default 0.15) — ajustar circuit breaker
+
+### Lição aprendida
+**Reduzir variância de distribuição (α do NB2) sem recalibrar thresholds de EV
+cria overexposure silenciosa.** Mais picks cruzam threshold → mais stake →
+concentração em mercados de cauda → variância amplificada exatamente onde
+deveria ter sido amortecida.
+
+ECE amplifica porque Kelly confia em probabilidades infladas. Defesas
+obrigatórias quando se mexe em hyperparameters de modelo:
+1. Cap de exposição por família de mercado (não só global)
+2. Haircut por qualidade de calibração (ECE/OddsVal) no Kelly
+3. Circuit breaker de perda diária
+4. Fluxo audit→apply DESACOPLADO (auto-apply é arma apontada para si mesmo)
+
+A hipótese H1 (cascata de correções) ensinou um lema separado: **valide
+sempre que o "código sob suspeita" é realmente consumido em produção.**
+Grep nos consumidores antes de assumir uma cadeia causal.
+
+---
+
 ## 170-A — NB2 α corners calibrado per-league (resolve super-dispersão detectada pelo #170)
 
 **Data:** 2026-04-23
