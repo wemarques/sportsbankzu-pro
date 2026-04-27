@@ -625,12 +625,16 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     # Auto-apply high-confidence corrections from model evaluation (with validation)
     auto_applied = []
     rejected = []
+    # #171 emergency: env-var-gated circuit breaker. Default 101 = impossible
+    # to satisfy (max confidence is 80) → no auto-apply. Set to 80 to restore
+    # legacy behaviour after root cause is fixed and validated.
+    AUTO_APPLY_CONFIDENCE_THRESHOLD = int(os.getenv("AUTO_APPLY_CONFIDENCE_MIN", "101"))
     if model_evaluation and model_evaluation.get("recommended_corrections"):
         from backend.audit import validate_adjustment, audit_logger
         for corr in model_evaluation["recommended_corrections"]:
             confidence = corr.get("confidence", 0)
-            # Only auto-apply if confidence >= 80%
-            if confidence >= 80:
+            # #171: gated by AUTO_APPLY_CONFIDENCE_MIN env var
+            if confidence >= AUTO_APPLY_CONFIDENCE_THRESHOLD:
                 try:
                     old_val = float(corr.get("current_value", 0))
                     new_val = float(corr.get("suggested_value", 0))

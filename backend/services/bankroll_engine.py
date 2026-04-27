@@ -11,6 +11,7 @@ Server-side bankroll management:
 
 import logging
 import math
+import os
 from typing import Dict, Any, List, Optional
 
 from backend.models.market_output import MarketClassification, ReasonCode
@@ -38,7 +39,10 @@ MAX_STAKE_PCT_BY_CLASS = {
 }
 
 # Floor mínimo para VIÁVEL quando Kelly retorna <= 0 mas prob >= 50% (#148)
-VIAVEL_FLOOR_PCT = 0.005  # 0.5% da banca
+# #171: configurable via env var. Default reduced 0.005 → 0.001 (0.5% → 0.1%)
+# during P0 investigation. Forcing a stake when Kelly returns 0 is dangerous
+# when model calibration is suspect. Set VIAVEL_FLOOR_PCT=0 to disable entirely.
+VIAVEL_FLOOR_PCT = float(os.getenv("VIAVEL_FLOOR_PCT", "0.001"))
 VIAVEL_MIN_PROB = 0.50
 
 # ─── Caps ───

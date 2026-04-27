@@ -786,6 +786,13 @@ ADJUSTMENT_LIMITS = {
     "CORNER_THRESHOLD": {"min": 0.30, "max": 0.95, "max_delta": 0.12},
     "CORNER_MULTIPLIER": {"min": 0.70, "max": 1.40, "max_delta": 0.15},
     "BTTS_MULTIPLIER": {"min": 0.70, "max": 1.40, "max_delta": 0.15},
+    # #171: Lambda deflation has its own range — NOT a probability threshold!
+    # Without this entry, validate_adjustment fell back to "THRESHOLD" (range
+    # 0.40-0.95), which let aggressive deflations like 0.84 pass while normal
+    # values 1.0 were rejected. Cause of the auto-correction cascade that
+    # produced the P0 50%-bankroll incident on 2026-04-26/27.
+    "lambda_deflation": {"min": 0.80, "max": 1.20, "max_delta": 0.08},
+    "lambda_calibration": {"min": 0.10, "max": 0.90, "max_delta": 0.10},
 }
 
 
