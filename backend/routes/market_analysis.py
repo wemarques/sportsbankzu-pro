@@ -23,6 +23,7 @@ class MarketAnalysisRequest(BaseModel):
     league_id: str = ""
     regime: str = "NORMAL"
     bankroll: Optional[float] = None
+    daily_pnl: Optional[float] = None  # #171 FASE 2.1: today's P&L for circuit breaker
 
 
 class BatchAnalysisRequest(BaseModel):
@@ -30,6 +31,7 @@ class BatchAnalysisRequest(BaseModel):
     league_id: str = ""
     regime: str = "NORMAL"
     bankroll: Optional[float] = None
+    daily_pnl: Optional[float] = None  # #171 FASE 2.1: today's P&L for circuit breaker
 
 
 @router.post("/match")
@@ -37,7 +39,31 @@ async def analyze_match(req: MarketAnalysisRequest):
     """Analyze a single match through the full 5-layer pipeline."""
     try:
         from backend.services.ev_classification import evaluate_match_markets
-        from backend.services.bankroll_engine import compute_stake
+        from backend.services.bankroll_engine import compute_stake, check_daily_loss_breaker
+
+        # #171 FASE 2.1: daily-loss circuit breaker — block new bets after threshold loss.
+        if req.bankroll and req.bankroll > 0 and req.daily_pnl is not None:
+            if check_daily_loss_breaker(req.daily_pnl, req.bankroll):
+                return {
+                    "success": True,
+                    "result": {
+                        "markets": [],
+                        "_circuit_breaker": True,
+                        "_message": "Daily loss circuit breaker ativado. Novas apostas bloqueadas.",
+                        "_daily_loss_pct": round(abs(req.daily_pnl) / req.bankroll * 100, 1),
+                    },
+                }
+
+        # #171 FASE 2.1: load ML metadata once for ECE/OddsVal haircuts.
+        league_ece = None
+        league_odds_val = None
+        try:
+            from backend.ml.predictor import get_ml_metadata
+            ml_meta = get_ml_metadata(req.league_id) if req.league_id else {}
+            league_ece = ml_meta.get("validation_ece")
+            league_odds_val = ml_meta.get("odds_value_added")
+        except Exception:
+            pass  # ML unavailable — haircuts fall through to 1.0
 
         bundle = evaluate_match_markets(
             req.match_data,
@@ -60,6 +86,10 @@ async def analyze_match(req: MarketAnalysisRequest):
 
             # Add bankroll info if requested
             if req.bankroll and req.bankroll > 0:
+                # #171 FASE 2.1: inject league-quality metrics + market_type for haircuts.
+                m["league_ece"] = league_ece
+                m["league_odds_val"] = league_odds_val
+                m["market_type"] = market.market_type
                 stake_info = compute_stake(m, req.bankroll)
                 m["stake"] = stake_info["stake"]
                 m["stake_info"] = stake_info
@@ -83,7 +113,37 @@ async def analyze_batch(req: BatchAnalysisRequest):
             select_picks_for_game,
             build_multiples,
         )
-        from backend.services.bankroll_engine import compute_stake
+        from backend.services.bankroll_engine import (
+            compute_stake,
+            apply_family_cap,
+            apply_daily_cap,
+            check_daily_loss_breaker,
+        )
+
+        # #171 FASE 2.1: daily-loss circuit breaker — short-circuit before any work.
+        if req.bankroll and req.bankroll > 0 and req.daily_pnl is not None:
+            if check_daily_loss_breaker(req.daily_pnl, req.bankroll):
+                return {
+                    "success": True,
+                    "matches": [],
+                    "total_matches": 0,
+                    "multiples": [],
+                    "total_eligible_picks": 0,
+                    "_circuit_breaker": True,
+                    "_message": "Daily loss circuit breaker ativado. Novas apostas bloqueadas até amanhã.",
+                    "_daily_loss_pct": round(abs(req.daily_pnl) / req.bankroll * 100, 1),
+                }
+
+        # #171 FASE 2.1: load ML metadata once per request for haircut computation.
+        league_ece = None
+        league_odds_val = None
+        try:
+            from backend.ml.predictor import get_ml_metadata
+            ml_meta = get_ml_metadata(req.league_id) if req.league_id else {}
+            league_ece = ml_meta.get("validation_ece")
+            league_odds_val = ml_meta.get("odds_value_added")
+        except Exception:
+            pass  # ML unavailable — haircuts fall through to 1.0
 
         results = []
         all_eligible_picks = []
@@ -109,6 +169,10 @@ async def analyze_batch(req: BatchAnalysisRequest):
                 m["match_id"] = bundle.match_id
 
                 if req.bankroll and req.bankroll > 0:
+                    # #171 FASE 2.1: inject quality metrics + market_type for haircut/cap.
+                    m["league_ece"] = league_ece
+                    m["league_odds_val"] = league_odds_val
+                    m["market_type"] = market.market_type
                     stake_info = compute_stake(m, req.bankroll)
                     m["stake"] = stake_info["stake"]
 
@@ -120,6 +184,20 @@ async def analyze_batch(req: BatchAnalysisRequest):
             eligible = filter_eligible_for_multiples(match_result["markets"])
             selected = select_picks_for_game(eligible)
             all_eligible_picks.extend(selected)
+
+        # #171 FASE 2.1: cross-match exposure caps. Family cap FIRST so daily cap
+        # operates on already-trimmed totals. Mutates dicts in-place; results
+        # holds the same dicts referenced from match_result["markets"].
+        if req.bankroll and req.bankroll > 0:
+            all_market_stakes = [
+                m
+                for match_result in results
+                for m in match_result["markets"]
+                if m.get("stake", 0) > 0
+            ]
+            if all_market_stakes:
+                apply_family_cap(all_market_stakes, req.bankroll)
+                apply_daily_cap(all_market_stakes, req.bankroll)
 
         # Build multiples from eligible picks
         multiples = build_multiples(all_eligible_picks)

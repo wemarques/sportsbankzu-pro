@@ -468,6 +468,20 @@ def clear_model_cache():
     logger.info("ML model cache cleared")
 
 
+def get_ml_metadata(league_id: str) -> Dict[str, Any]:
+    """#171 FASE 2.1: public accessor for league-level ML metadata.
+
+    Returns the metadata dict (validation_ece, odds_value_added, etc.) so
+    bankroll haircuts in market_analysis can be computed without poking at
+    the private _load_models. Empty dict if model unavailable — callers
+    treat that as "no haircut" (neutral 1.0).
+    """
+    bundle = _load_models(league_id)
+    if not bundle:
+        return {}
+    return bundle.get("metadata", {}) or {}
+
+
 def champion_vs_challenger(
     poisson_probs: Dict[str, float],
     ml_probs: Optional[Dict[str, float]],
