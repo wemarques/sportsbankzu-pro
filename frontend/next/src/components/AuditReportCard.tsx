@@ -66,9 +66,13 @@ function fromBatchAudit(r: BatchAuditResult): AuditReportData {
   const dateStr = now.toLocaleDateString("pt-BR");
 
   // Determine severities
+  // #168/#174: r.safe_accuracy is number|null per #162 (null when 0/0).
+  // Skip safe_accuracy contribution when null — never penalize severity for absence of SAFE picks.
+  const safeBelow40 = r.safe_accuracy != null && r.safe_accuracy < 40;
+  const safeBelow65 = r.safe_accuracy != null && r.safe_accuracy < 65;
   const modelSev: "ALTA" | "MEDIA" | "BAIXA" =
-    r.avg_brier_score > 0.30 || r.safe_accuracy < 40 ? "ALTA" :
-    r.avg_brier_score > 0.22 || r.safe_accuracy < 65 ? "MEDIA" : "BAIXA";
+    r.avg_brier_score > 0.30 || safeBelow40 ? "ALTA" :
+    r.avg_brier_score > 0.22 || safeBelow65 ? "MEDIA" : "BAIXA";
 
   const eval_ = r.model_evaluation;
   const mistralAssessment = eval_?.overall_assessment ?? "";
@@ -101,7 +105,9 @@ function fromBatchAudit(r: BatchAuditResult): AuditReportData {
       severity: r.avg_brier_score > 0.30 ? "critical" : "warning",
     });
   }
-  if (r.safe_accuracy < 65) {
+  // #174: guard null per #162 — was crashing AuditReportCard with TypeError
+  // "Cannot read properties of null (reading 'toFixed')" when SAFE = 0/0.
+  if (r.safe_accuracy != null && r.safe_accuracy < 65) {
     diagnostics.push({
       text: `Picks SAFE com acurácia baixa (${r.safe_accuracy.toFixed(1)}%) — thresholds SAFE precisam recalibração`,
       severity: r.safe_accuracy < 40 ? "critical" : "warning",
@@ -125,7 +131,8 @@ function fromBatchAudit(r: BatchAuditResult): AuditReportData {
 
   // Actions
   const modelActions: string[] = [];
-  if (r.safe_accuracy < 65) modelActions.push("Ajustar thresholds de probabilidade");
+  // #174: guard null per #162 — only suggest threshold tuning when SAFE has data and is underperforming
+  if (r.safe_accuracy != null && r.safe_accuracy < 65) modelActions.push("Ajustar thresholds de probabilidade");
   if (r.avg_brier_score > 0.25) modelActions.push("Recalibrar probabilidades do modelo");
 
   const mistralActions: string[] = [];
