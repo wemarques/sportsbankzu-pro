@@ -204,3 +204,6 @@
 | 170 | **ATIVA** | Feature | Corners diagnostic endpoint — 4 métricas empíricas (coverage homeAttackAdvantage, correlations, home×away, NB2 dispersion) para decisões sobre modelo de corners |
 | 170-A | **ATIVA** | Pipeline | NB2 α corners calibrado per-league — resolve super-dispersão 5-30× detectada pelo #170 (MLS α_emp=0.033 vs α_prod=0.15, EPL α_emp=0.005). Flag `CORNERS_ALPHA_CALIBRATED` |
 | 171 | **ATIVA** | Pipeline (P0) | Proteção banca pós-#170-A: ECE haircut (até -25%), OddsVal haircut (até -30%), market-family cap (corners 5%, goals 10%), daily loss circuit breaker (15%), `lambda_deflation` em ADJUSTMENT_LIMITS, env-var-gated auto-apply (AUTO_APPLY_CONFIDENCE_MIN=101) |
+| 172 | Implementado | Infra | Vercel Build Minutes: Turbo→Standard + ignoreCommand com pathspec `:(top)` (~$580/mês → ~$58) |
+| 173 | Implementado | Observabilidade | Medição degradação fim-de-temporada (script local) + snapshot diário de standings em S3 (cron 06:00 UTC) para backtest retroativo de features de contexto de temporada |
+| 174 | Implementado | Fix + Política | Bug Report Card (null guards `safe_accuracy` em AuditReportCard.tsx, espelho do #168) + política de não-mexer com N=11 + watchlist Cartões Over 2.5 (calibrar α per-league se accuracy <40% com N≥15) |

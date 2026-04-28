@@ -4,6 +4,317 @@
 
 ---
 
+## 174 — Auditoria 28/04 (N=11): bug Report Card + política de não-mexer + watchlist cartões
+
+**Data:** 2026-04-28
+**Arquivos afetados:**
+- `frontend/next/src/components/AuditReportCard.tsx` (null guards `safe_accuracy`)
+
+**Severidade:** Alta (bug bloqueador no dashboard) + Média (política operacional)
+**Status:** Implementado (bug) + Documentado (política)
+
+### Problema identificado
+
+Auditoria de 28/04/2026 cobriu apenas 4 jogos (Championship + League One, fim
+de temporada inglesa). Métricas:
+
+- 11 picks (NEUTRO, todos)
+- Accuracy global 72.7% (8/11)
+- Brier 0.2533 (acima do target 0.22)
+- Lambda error 1.40 gols
+- Cartões Over 2.5: 0/2 (0%)
+- Cartões Over 1.5: 2/2 (100%)
+- Escanteios Over 7.5: 3/4 (75%)
+- Under 3.5 gols: 3/3 (100%)
+- Duplas inter-jogo Under 3.5: 3/3
+
+Aba "Report Card" do dashboard apresentou erro de renderização:
+"Algo deu errado ao renderizar o dashboard. Tente recarregar a página."
+
+### Causa raiz
+
+**Bug de renderização:** `frontend/next/src/components/AuditReportCard.tsx`
+acessava `r.safe_accuracy` sem null guard em três lugares (linhas 70-71,
+104-107, 128). Após a #162, `safe_accuracy` é `number | null` (null quando
+SAFE = 0/0). Com SAFE desabilitado pelo circuit breaker #043, todos os
+campos retornam null. As comparações `r.safe_accuracy < 40` e
+`r.safe_accuracy < 65` tratavam null como 0 (coerção), inflando a severidade
+para ALTA. Pior: `r.safe_accuracy.toFixed(1)` na linha 106 lançava
+`TypeError: Cannot read properties of null (reading 'toFixed')`,
+quebrando todo o componente.
+
+`BatchAuditPanel.tsx` já tinha sido atualizado pela #168 com guards
+`!= null`, mas `AuditReportCard.tsx` foi esquecido na mesma passada.
+
+**Sinal estatístico ilusório:** com N=11 picks em 4 jogos, todos os números
+da tabela "Acurácia por Mercado" têm intervalos de confiança 95% tão largos
+que tornam qualquer ajuste de calibração injustificável. Exemplos:
+
+- Cartões Over 2.5: 0/2 → IC95% [0%, 84%]
+- Under 3.5 gols: 3/3 → IC95% [44%, 100%]
+- Escanteios Over 7.5: 3/4 → IC95% [22%, 99%]
+
+A REGRA #079 já estabelece `MIN_N_BRIER=20` exatamente para evitar isso,
+mas o relatório atual sugere "Manter ciclo semanal" sem destacar que
+nenhuma das métricas tem N suficiente para gerar ação.
+
+**Amostra contaminada por sazonalidade:** as 3 duplas Under 3.5 acertando
+100% são compatíveis com o sinal de fim-de-temporada que a #173 (Caminho 1)
+foi projetada para detectar. League One e Championship encerram em 03/05;
+times rebaixados/classificados/sem motivação produzem jogos mornos com
+poucos gols. Generalizar esse 3/3 para outras fases da temporada perderia
+dinheiro nas primeiras rodadas da temporada 2026/27.
+
+### Correções aplicadas
+
+**Camada 1 — Bug fix (frontend):**
+
+`AuditReportCard.tsx` ganhou três null guards consistentes com #168:
+
+```ts
+// L69-75: severidade
+const safeBelow40 = r.safe_accuracy != null && r.safe_accuracy < 40;
+const safeBelow65 = r.safe_accuracy != null && r.safe_accuracy < 65;
+const modelSev: "ALTA" | "MEDIA" | "BAIXA" =
+  r.avg_brier_score > 0.30 || safeBelow40 ? "ALTA" :
+  r.avg_brier_score > 0.22 || safeBelow65 ? "MEDIA" : "BAIXA";
+
+// L110-115: diagnóstico
+if (r.safe_accuracy != null && r.safe_accuracy < 65) {
+  diagnostics.push({
+    text: `Picks SAFE com acurácia baixa (${r.safe_accuracy.toFixed(1)}%)…`,
+    severity: r.safe_accuracy < 40 ? "critical" : "warning",
+  });
+}
+
+// L135: ações recomendadas
+if (r.safe_accuracy != null && r.safe_accuracy < 65)
+  modelActions.push("Ajustar thresholds de probabilidade");
+```
+
+`tsc --noEmit -p .` passa sem erros.
+
+**Camada 2 — Política operacional (não-mexer):**
+
+Decisão registrada de NÃO ajustar thresholds, deflations ou pesos de
+calibração com base na auditoria de 28/04. Justificativa:
+
+1. N=11 picks total; mercado mais populoso (Cartões Over 2.5) tem N=2.
+2. Auditoria #079 exige N≥20 por mercado para sinalização válida.
+3. Composição por liga é desbalanceada (League One 9, Championship 2).
+4. Fase da temporada introduz viés (rebatedores, motivação) ainda não
+   modelado.
+5. Auto-apply circuit breaker (#171) já bloqueia correções com confidence
+   <101 até validação completa do incidente. Recomendação local de
+   "1 correção sugerida" foi corretamente ignorada.
+
+**Camada 3 — Watchlist Cartões Over 2.5:**
+
+Mercado Cartões Over 2.5 entra em watchlist explícita. Critério de
+escalação para ação corretiva:
+
+- Acumular N≥15 picks em Cartões Over 2.5 nas próximas 2-3 rodadas.
+- Se accuracy <40% E Brier >0.27 com N≥15, calibrar α NB2 per-league
+  para cards (mesma metodologia da #170-A para corners).
+- Inspecionar especificamente jogos competitivos com expectativa de
+  cards moderados (hipótese: λ_cards superestimado para jogos
+  taticamente equilibrados).
+
+Casos qualitativos observados (não conclusivos com N=2):
+
+- Southampton 2×2 Ipswich: 4 gols, mas <3 cards. Modelo provavelmente
+  inflou λ por ser jogo aberto.
+- Peterborough 0×0 Mansfield: 0-0 não gerou agressividade compensatória.
+
+**Camada 4 — Gancho com #173 Caminho 1:**
+
+Quando `audit_end_of_season_picks.py` rodar (depende de `DATABASE_URL`),
+o sinal de Under 3.5 em League One e Championship deve aparecer entre as
+ligas com Brier(late) significativamente melhor que Brier(early). Se
+aparecer em ≥3 ligas com N≥20, o sinal é real e justifica investimento em
+features de contexto de temporada. Caso contrário, registrar como dívida
+técnica de baixa prioridade — mas com a salvaguarda de que duplas Under 3.5
+em fim de temporada não devem ter aumento de stake até comprovação fora
+de janela sazonal.
+
+### Steps manuais pendentes
+
+1. Validar fix do Report Card no dashboard:
+   - Recarregar página com cache limpo.
+   - Confirmar que aba renderiza sem o "Algo deu errado…".
+2. Rodar Caminho 1 do #173 (precisa `DATABASE_URL` no ambiente):
+   ```bash
+   python scripts/audit_end_of_season_picks.py
+   type reports\end_of_season_audit.md
+   ```
+3. Continuar acumulando picks por mercado até atingir N≥20 antes de
+   qualquer ajuste de calibração.
+
+### Lição aprendida
+
+**Null guards têm que ser consistentes em TODOS os componentes.** A #168
+fixou `BatchAuditPanel` mas `AuditReportCard` consumia o mesmo
+`BatchAuditResult` e foi esquecido. Padrão reutilizável: ao introduzir
+um campo nullable em um tipo compartilhado, fazer grep do nome do campo
+em todo o frontend e auditar cada ponto de uso. TypeScript não pega isso
+porque os campos eram tratados como `number` antes da #162 e a coerção
+`null < n` retorna `true` silenciosamente.
+
+**Tamanho de amostra é a primeira métrica a olhar em qualquer auditoria.**
+Antes de interpretar Brier, accuracy ou breakdown por mercado, conferir N.
+Tabelas com N<20 por linha devem ser apresentadas com aviso visual ou
+suprimidas. (TODO opcional para próxima iteração: pintar cells com N<20
+em cinza e adicionar tooltip "amostra insuficiente para sinalização".)
+
+**Sazonalidade contamina amostras curtas.** Auditoria de fim de temporada
+inglesa não generaliza. Tratar o relatório como instantâneo, não tendência.
+Conectar explicitamente com o pipeline #173 para evitar tomada de decisão
+em janela contaminada.
+
+---
+
+## 173 — Medição de degradação fim-de-temporada + snapshot diário de standings
+
+**Data:** 2026-04-27
+**Arquivos afetados:**
+- `scripts/audit_end_of_season_picks.py` (novo) — Caminho 1
+- `backend/services/standings_snapshot.py` (novo) — Caminho 2
+- `backend/cron_handler.py` (action `snapshot_standings` + `_run_snapshot_standings`)
+- `scripts/setup_standings_snapshot.py` (novo) — EventBridge rule
+
+**Severidade:** Média (preparatório / observabilidade)
+**Status:** Implementado
+
+### Problema identificado
+
+Em fim-de-temporada (abril-maio nas ligas europeias), times rebaixados
+matematicamente, garantidos no título e meio-de-tabela sem motivação podem
+mudar de comportamento (lambdas, escantos, cartões) em relação ao restante
+da temporada. Sem dados, é impossível decidir entre:
+
+1. Investir em features de contexto de temporada (rank, gap_to_relegation,
+   round, motivação) — caro, semanas de trabalho.
+2. Aceitar como dívida técnica de baixa prioridade — mas correr risco de
+   perder dinheiro em picks com lambdas calibrados em jogos de meio de
+   temporada.
+
+A regra de investigação obrigatória do CLAUDE.md exige **medir antes de
+prescrever**. Sem instrumentação, qualquer decisão é especulação.
+
+### Causa raiz
+
+Dois gaps de observabilidade:
+
+1. **Sem segmentação temporal das auditorias existentes.** Já temos
+   `audit_results` em PostgreSQL com Brier por pick desde fevereiro. Mas
+   nunca segmentamos por fase da temporada para comparar Brier(early) vs
+   Brier(late) por liga.
+2. **Sem persistência histórica de standings.** O endpoint
+   `api_football.get_standings()` cacheia em SQLite com TTL de 6h. Standings
+   antigos somem. Em 3-6 meses, sem snapshot, é impossível reconstruir
+   `rank no momento do pick` para qualquer feature de contexto retroativa.
+
+### Correções aplicadas
+
+**Caminho 1 — Medição local imediata (`scripts/audit_end_of_season_picks.py`)**
+
+Script standalone que conecta ao PostgreSQL via `DATABASE_URL` (ou SQLite
+fallback), lê todos os picks com `actual_result IS NOT NULL` e `brier_score
+IS NOT NULL`, segmenta por fase da temporada usando proxy temporal:
+
+- `early`: picks até percentil 40 da janela temporal da liga
+- `mid`: picks entre 40-80
+- `late`: picks acima do percentil 80
+
+Para cada liga com N≥20 em `early` E `late`:
+
+- Calcula Brier médio por bucket
+- Diff percentual: `(Brier_late − Brier_early) / Brier_early × 100%`
+- Flag se diff ≥ +15% (regra MIN_N_BRIER #079)
+
+Decisão automatizada no relatório:
+
+- ≥3 ligas flagged → **SINAL REAL** justifica Caminho 2 + investimento
+  em features de contexto.
+- 1-2 → **SINAL FRACO** — registrar como dívida técnica de baixa prioridade.
+- 0 → **SEM SINAL** — não há degradação mensurável.
+
+Output: markdown report em `reports/end_of_season_audit.md` com tabela
+por liga + breakdown por mercado.
+
+**Caminho 2 — Persistência preparatória (`standings_snapshot.py` + cron)**
+
+Novo serviço `snapshot_all_leagues_to_s3()`:
+
+- Itera todas as ligas em `LEAGUES_CONFIG`
+- Chama `api_football_client.get_standings(ttl_minutes=0)` (bypass cache,
+  fresh data)
+- Tenta também `footstats_client.get_league_tables()` para redundância
+- Persiste em `s3://meu-bucket-sportsbank/standings/{YYYY-MM-DD}/{league_id}.json`
+- Defensivo: per-league try/except — uma falha não aborta o batch
+
+Schema do JSON salvo:
+
+```json
+{
+  "league_id": "premier-league",
+  "league_name": "Premier League",
+  "country": "England",
+  "season": 2025,
+  "collected_at": "2026-04-27T06:00:00Z",
+  "api_football": [...],
+  "footystats": [...],
+  "errors": {}
+}
+```
+
+Wiring:
+
+- Action `snapshot_standings` adicionada em `cron_handler.cron_handler()`.
+- `_run_snapshot_standings()` chama o serviço.
+- Script `setup_standings_snapshot.py` cria EventBridge rule
+  `sportsbank-standings-snapshot` com schedule `cron(0 6 * * ? *)` —
+  06:00 UTC = 03:00 BRT, depois de batch_audit (23:00 UTC) e
+  late_audit (05:00 UTC), fora do horário de pico.
+
+Em ~3-6 meses temos histórico suficiente para juntar `pick.timestamp` com
+`standing.collected_at` mais próximo e medir Brier por
+`(rank, gap_to_relegation, ...)`.
+
+### Steps manuais pendentes
+
+1. Rodar Caminho 1 localmente (requer `DATABASE_URL` setado):
+   ```bash
+   python scripts/audit_end_of_season_picks.py
+   cat reports/end_of_season_audit.md
+   ```
+2. Deploy Lambda (após validação local):
+   ```bash
+   python scripts/deploy_lambda.py
+   ```
+3. Criar EventBridge rule do snapshot:
+   ```bash
+   python scripts/setup_standings_snapshot.py
+   python scripts/setup_standings_snapshot.py --invoke   # teste manual
+   python scripts/setup_standings_snapshot.py --status
+   ```
+
+### Lição aprendida
+
+**Medir antes de prescrever.** A tentação de pular direto para features
+ricas (rank, motivação, momento da temporada) é grande, mas sem dados
+segmentados é especulação cara. Caminho 1 dá veredito em <1h com dados
+existentes. Caminho 2 é barato (~30 min de implementação, custo S3
+negligível) e desbloqueia análise retroativa fina em 3-6 meses, mesmo
+que Caminho 1 dê SINAL FRACO hoje.
+
+Padrão reutilizável: para qualquer hipótese sobre degradação contextual
+(weather, referee, lineups, fatigue), fazer (1) measurement script com
+dados existentes + (2) persistência preparatória dos sinais que ainda
+não armazenamos.
+
+---
+
 ## 172 — Vercel Build Minutes: Turbo→Standard + ignoreCommand com pathspec `:(top)`
 
 **Data:** 2026-04-27

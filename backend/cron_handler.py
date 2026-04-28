@@ -52,6 +52,10 @@ def cron_handler(event, context):
             return _run_threshold_adjustment()
         elif action == "retrain_corners":
             return _run_retrain_corners()
+        elif action == "snapshot_standings":
+            # #173: persistencia diaria de standings em S3 para backtest
+            # futuro de features de contexto de temporada.
+            return _run_snapshot_standings()
         else:
             return {"status": "error", "message": f"Unknown action: {action}"}
     except Exception as e:
@@ -913,6 +917,28 @@ def _run_retrain_corners() -> dict:
         }
     except Exception as e:
         logger.error(f"[Corners] Weekly retrain failed: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+
+def _run_snapshot_standings() -> dict:
+    """Snapshot diario de standings em S3 (REGRA #173).
+
+    Sem snapshots historicos, e impossivel fazer backtest de features de
+    contexto de temporada (rebaixados, briga pelo titulo, meio da tabela).
+    Em ~3-6 meses de coleta temos historico suficiente.
+
+    Scheduled (recomendado): cron(0 6 * * ? *) -> 06:00 UTC = 03:00 BRT.
+    Apos batch_audit (23:00 UTC) + late_audit (05:00 UTC) — fora do
+    horario de pico para nao concorrer com auditoria.
+    """
+    logger.info("[snapshot_standings] Starting daily standings snapshot")
+    try:
+        from backend.services.standings_snapshot import snapshot_all_leagues_to_s3
+        result = snapshot_all_leagues_to_s3()
+        logger.info(f"[snapshot_standings] Done: {result.get('uploaded')}/{result.get('uploaded', 0) + result.get('failed', 0)} uploaded")
+        return result
+    except Exception as e:
+        logger.error(f"[snapshot_standings] Failed: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
