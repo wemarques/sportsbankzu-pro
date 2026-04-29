@@ -1,0 +1,12 @@
+{
+    "KeyPairs": [
+        {
+            "KeyPairId": "key-060ad55e126ec6df9",
+            "KeyType": "rsa",
+            "Tags": [],
+            "CreateTime": "2025-10-30T21:44:55.480000+00:00",
+            "KeyName": "prognosticos-brasileirao-key",
+            "KeyFingerprint": "38:38:79:de:39:08:86:d6:c1:78:f3:b4:6c:43:ef:ae:f1:23:e8:8c"
+        }
+    ]
+}

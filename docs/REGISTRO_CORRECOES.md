@@ -17,8 +17,9 @@
 ### Problema identificado
 EC2 t3.micro `prognosticos-brasileirao-server` (i-0f93a5877fccfaf79) rodando 24/7
 desde 2025-10-30 sem utilizacao detectada (CPU baixo, NetworkOut baixo, zero
-referencias no codigo do repo). Custo: ~$7.50/mes = $90/ano de dark spend nao
-documentado.
+referencias no codigo do repo). Custo: ~$11/mes = $132/ano de dark spend
+(compute t3.micro $7.59 + EBS gp2 8GB $0.80 + IPv4 auto-atribuido
+34.205.26.29 a $3.65/mes desde fev/2024).
 
 ### Causa raiz
 Provavelmente prototipo pre-migracao para Lambda que nao foi terminado.
@@ -30,7 +31,9 @@ funcionalidade hoje coberta pelo Lambda backend.
    (recoverable se descobrirmos que era usado).
 2. Termination da instancia. Volumes EBS auto-deletados pelo
    DeleteOnTermination flag (vol-0937a7381515edc73, 8GB gp2 — 0 orphans).
-3. Save: ~$90/ano. Reduz bill mensal de ~$29 para ~$22.
+3. Save: ~$132/ano. Reduz bill mensal de ~$29 para ~$18. Save real
+   superior ao reportado inicialmente porque a EC2 usava IPv4
+   auto-atribuido (verificado via Achado D do cleanup pos-decommission).
 
 ### Licao aprendida
 **Inventory mensal de recursos AWS evita dark spend acumulado.** A EC2
@@ -41,6 +44,39 @@ checklist trimestral, comparar com lista esperada documentada.
 A REGRA #173 (versionar IAM em `infra/`) se estende aqui: tudo que
 roda em AWS deve ter referencia em `infra/` ou `scripts/`. Recursos
 sem documento associado sao candidatos a decommission.
+
+### Cleanup adicional pos-decommission (29/04)
+
+Apos verify dos 5 residuos (FASE 1 read-only):
+
+| Achado | Resultado | Acao |
+|--------|-----------|------|
+| A — Snapshots/AMIs | zero suspeitos | NONE |
+| B-SG | 3 SGs orfaos da stack legacy prognosticos-brasileirao | DELETE 3 |
+| B-IAM | sem instance profile | NONE |
+| B-Key | prognosticos-brasileirao-key orfa | DELETE |
+| C — Log groups | zero da EC2 | NONE |
+| D — IPv4 | era auto-atribuido (34.205.26.29) | UPDATE save $90→$132/ano |
+| E — EIP 52.205.88.74 | RDSNetworkInterface managed pelo RDS service (RequesterId 669721064323), nao orfao | KEEP |
+
+**SGs deletados** (mesma stack legacy nunca completamente limpa):
+- `sg-02f90dbf96b0bbb81` (prognosticos-brasileirao-sg-ec2) — apontava para a EC2
+- `sg-038d423ed99a78205` (prognosticos-brasileirao-sg-rds) — apontava para RDS que nunca existiu/foi terminado
+- `sg-0dd38d14195007b99` (prognosticos-brasileirao-sg-cache) — apontava para ElastiCache que nunca existiu/foi terminado
+
+Ordem de delete por dependencia inversa: rds -> cache -> ec2 (os 2 primeiros referenciavam o terceiro).
+
+Bonus security cleanup: as 3 SGs tinham rules 0.0.0.0/0 em SSH/HTTP/HTTPS/8501 — vetor latente caso alguma instancia futura fosse atachada por engano.
+
+**Metadados capturados em audit trail:**
+- `infra/decommissioned/prognosticos-brasileirao-server.json` (instance, ja existia)
+- `infra/decommissioned/prognosticos-brasileirao-server-volumes.json` (ja existia)
+- `infra/decommissioned/sg-prognosticos-brasileirao.json` (sg-ec2)
+- `infra/decommissioned/sg-prognosticos-brasileirao-rds.json`
+- `infra/decommissioned/sg-prognosticos-brasileirao-cache.json`
+- `infra/decommissioned/key-prognosticos-brasileirao.json`
+
+Total decommission #175: 1 EC2 + 1 EBS + 3 SGs + 1 Key Pair = $132/ano save.
 
 ---
 

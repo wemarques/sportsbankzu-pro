@@ -1,0 +1,41 @@
+{
+    "SecurityGroups": [
+        {
+            "GroupId": "sg-0dd38d14195007b99",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-02750b737963e5ffc",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-1:838823110426:security-group/sg-0dd38d14195007b99",
+            "OwnerId": "838823110426",
+            "GroupName": "prognosticos-brasileirao-sg-cache",
+            "Description": "Security group for ElastiCache Redis",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 6379,
+                    "ToPort": 6379,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "838823110426",
+                            "GroupId": "sg-02f90dbf96b0bbb81"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        }
+    ]
+}

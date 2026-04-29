@@ -1,0 +1,41 @@
+{
+    "SecurityGroups": [
+        {
+            "GroupId": "sg-038d423ed99a78205",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-02750b737963e5ffc",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-1:838823110426:security-group/sg-038d423ed99a78205",
+            "OwnerId": "838823110426",
+            "GroupName": "prognosticos-brasileirao-sg-rds",
+            "Description": "Security group for RDS PostgreSQL",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 5432,
+                    "ToPort": 5432,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "838823110426",
+                            "GroupId": "sg-02f90dbf96b0bbb81"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        }
+    ]
+}
