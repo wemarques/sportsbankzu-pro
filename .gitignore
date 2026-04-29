@@ -37,3 +37,6 @@ nul
 .ml_data/
 .calibrators/
 sportsbank_lambda.zip
+.envrc
+.envrc.local
+.env.*.local
