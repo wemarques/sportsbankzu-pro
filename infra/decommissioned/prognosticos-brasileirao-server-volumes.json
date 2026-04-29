@@ -1,0 +1,9 @@
+[
+    {
+        "VolumeId": "vol-0937a7381515edc73",
+        "Size": 8,
+        "Type": "gp2",
+        "DeleteOnTermination": true,
+        "State": "in-use"
+    }
+]

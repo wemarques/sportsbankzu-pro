@@ -4,6 +4,46 @@
 
 ---
 
+## 175 — EC2 prognosticos-brasileirao-server terminada (dark spend)
+
+**Data:** 2026-04-29
+**Arquivos afetados:**
+- `infra/decommissioned/prognosticos-brasileirao-server.json` (audit trail)
+- `infra/decommissioned/prognosticos-brasileirao-server-volumes.json`
+
+**Severidade:** Baixa (FinOps, sem impacto em produto)
+**Status:** Implementado
+
+### Problema identificado
+EC2 t3.micro `prognosticos-brasileirao-server` (i-0f93a5877fccfaf79) rodando 24/7
+desde 2025-10-30 sem utilizacao detectada (CPU baixo, NetworkOut baixo, zero
+referencias no codigo do repo). Custo: ~$7.50/mes = $90/ano de dark spend nao
+documentado.
+
+### Causa raiz
+Provavelmente prototipo pre-migracao para Lambda que nao foi terminado.
+Nome sugere servidor especifico para predicoes do Brasileirao —
+funcionalidade hoje coberta pelo Lambda backend.
+
+### Correcoes aplicadas
+1. Captura de metadados em `infra/decommissioned/` para audit trail
+   (recoverable se descobrirmos que era usado).
+2. Termination da instancia. Volumes EBS auto-deletados pelo
+   DeleteOnTermination flag (vol-0937a7381515edc73, 8GB gp2 — 0 orphans).
+3. Save: ~$90/ano. Reduz bill mensal de ~$29 para ~$22.
+
+### Licao aprendida
+**Inventory mensal de recursos AWS evita dark spend acumulado.** A EC2
+ficou 6 meses gastando $45 sem ninguem perceber. Padrao reutilizavel:
+incluir `aws ec2 describe-instances` + `aws ec2 describe-addresses` na
+checklist trimestral, comparar com lista esperada documentada.
+
+A REGRA #173 (versionar IAM em `infra/`) se estende aqui: tudo que
+roda em AWS deve ter referencia em `infra/` ou `scripts/`. Recursos
+sem documento associado sao candidatos a decommission.
+
+---
+
 ## 174 — Auditoria 28/04 (N=11): bug Report Card + política de não-mexer + watchlist cartões
 
 **Data:** 2026-04-28
