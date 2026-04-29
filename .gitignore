@@ -40,3 +40,25 @@ sportsbank_lambda.zip
 .envrc
 .envrc.local
 .env.*.local
+
+# === Runtime artifacts (REGRA #176 — nao tracked) ===
+# SQLite caches e journals (TTL-based, regenerated local)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Audit/decision logs (local-specific)
+decisions.log
+*.log
+
+# TypeScript build cache (per-machine)
+*.tsbuildinfo
+.next/cache/
+
+# FUSE filesystem leftovers (Cowork mount)
+.fuse_hidden*
+
+# Playwright MCP debug artifacts (logs + screenshots, per-run)
+.playwright-mcp/console-*.log
+.playwright-mcp/page-*.png
