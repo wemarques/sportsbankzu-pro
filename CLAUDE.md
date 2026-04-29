@@ -179,14 +179,22 @@ OBRIGATÓRIO antes de qualquer edit em arquivos com mais de 200 linhas. Forçar 
 
 ## Leitura Obrigatória
 
-Antes de qualquer alteração no sistema, LEIA:
+Antes de qualquer alteração no sistema, LEIA NESTA ORDEM:
 
-1. **`docs/REGRAS_ATIVAS.md`** — Regras permanentes que afetam decisoes futuras (~20 regras). LEIA SEMPRE antes de propor correcoes.
+1. **`docs/BACKLOG.md`** — Pendências em aberto da sessão anterior. **Ponto de partida obrigatório** para construção evolutiva. Cada item tem ID `B-NNN`, prioridade (P0-P3 ou Q-estudo), esforço, contexto e critério de sucesso. Itens completados migram para REGRAS com `#N`.
+2. **`docs/REGRAS_ATIVAS.md`** — Regras permanentes que afetam decisoes futuras (~20 regras). LEIA SEMPRE antes de propor correcoes.
    - **`docs/INDICE_REGRAS.md`** — Indice rapido de todas as 104+ regras (uma linha cada).
    - **`docs/REGISTRO_CORRECOES.md`** — Historico completo de todos os fixes e correcoes. Consultar quando precisar de contexto.
-2. **Este arquivo (CLAUDE.md)** — Especialmente as seções "Estado Atual do Pipeline" e "Proibições".
+3. **Este arquivo (CLAUDE.md)** — Especialmente as seções "Estado Atual do Pipeline" e "Proibições".
 
 Se o arquivo REGRAS tiver uma entrada sobre o problema que você está investigando, leia-a inteira antes de propor qualquer correção.
+
+**Fluxo padrão de início de sessão:**
+
+1. Abrir `docs/BACKLOG.md` → ler "Notas para próximo Claude" + listagem P0/P1
+2. Perguntar ao usuário qual item priorizar (ou continuar In Progress)
+3. Ao concluir item: migrar para REGISTRO_CORRECOES.md como `#N`, marcar ✅ no BACKLOG, atualizar "Última revisão"
+4. Ao descobrir débito novo durante a tarefa: adicionar no BACKLOG com ID `B-NNN` na categoria correta — não interromper a tarefa atual para tratar achado lateral
 
 ## Estado Atual do Pipeline (Março 2026)
 
