@@ -5,9 +5,9 @@
 > concluído, migra para `docs/REGISTRO_CORRECOES.md` com numeração `#N` e é
 > marcado como ✅ aqui.
 
-**Última revisão:** 2026-04-29
+**Última revisão:** 2026-04-30
 **Itens abertos:** 10
-**Última conversa:** Sessão de 2026-04-28/29 — fechou #173 (Caminho 1+2 EOS audit + standings snapshot), #174 (Report Card null guards + watchlist cards), #175 (decommission EC2 prognosticos-brasileirao + 3 SGs + key + IPv4). Higiene de repo: `.gitattributes` + `.gitignore` tightening + 31 arquivos untracked.
+**Última conversa:** Sessão de 2026-04-30 — fechou #176 (Red team HTTP_ERROR resilience: retry 429 + backoff, mensagens por HTTP status, global exception handler JSON, detecção auth/payment errors FootyStats + API-Football, EmptyState contextual hints). Causa raiz do erro reportado: ausência de jogos agendados para as ligas configuradas.
 
 ---
 
@@ -305,6 +305,7 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 
 Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apenas como contexto rápido para sessões próximas.
 
+- ✅ **#176** (2026-04-30) Red team HTTP_ERROR: retry 429, mensagens específicas, global exception handler, detecção auth/payment, EmptyState hints
 - ✅ **#175** (2026-04-29) Decommission EC2 prognosticos-brasileirao + 3 SGs + key. Save $132/ano.
 - ✅ **#174** (2026-04-28) Bug Report Card null guards `safe_accuracy` + política N=11 + watchlist Cartões Over 2.5
 - ✅ **#173** (2026-04-27/29) Caminho 1 (audit_end_of_season_picks.py) + Caminho 2 (standings snapshot S3 daily 06:00 UTC) + IAM `S3SportsbankWrite` versionada em `infra/`
@@ -329,10 +330,12 @@ Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apen
 - Bug do Report Card está em produção corrigido (commit `d5d0a4f`).
 - Bill AWS reduzido para ~$18/mês. Próximo grande save depende de B-Q01 (Aurora).
 - 10 usuários ativos. Otimizações de escala não fazem sentido até 10× crescimento.
+- #176 implementado: error handling melhorado com retry 429, backoff, mensagens específicas por HTTP status, global exception handler no FastAPI, detecção auth/payment de APIs externas. Deploy pendente.
 
 **Próxima ação de maior leverage:**
 B-001 + B-002 combinados (~3h total): cleanup audit_results + EOS audit re-run com filtros corretos. Destrava B-Q02 (decisão sobre features de contexto).
 
 **Decisões pendentes do usuário:**
+- Deploy do #176 para produção (backend Lambda + Vercel frontend)
 - Confirmar prioridade entre higiene técnica (B-001/B-002) e feature work no produto
 - Reavaliar B-Q01 quando Performance Insights tiver 14-30 dias de dados (após ~2026-05-15)

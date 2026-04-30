@@ -8858,6 +8858,55 @@ Sistemas com cobertura global de futebol devem considerar os 4 fusos principais:
 
 ---
 
+## #176 — Red team HTTP_ERROR resilience + detecção de auth/payment errors
+
+**Data:** 2026-04-30
+**Arquivos afetados:** backend/main.py, backend/services/footstats_client.py, backend/services/api_football_client.py, backend/routes/fixtures.py, frontend/next/src/lib/backend.ts, frontend/next/src/lib/api.ts, frontend/next/src/app/api/matches/fetch/route.ts, frontend/next/src/app/api/combinadas/route.ts, frontend/next/src/app/api/ai/match/[id]/audit/route.ts, frontend/next/src/components/EmptyState.tsx
+**Severidade:** Média
+**Status:** Implementado
+
+### Problema identificado
+Sistema exibia "Servidor indisponivel — O servidor retornou um erro (0s). Codigo: HTTP_ERROR" sem distinguir a causa raiz: throttle (429), cold start (502/503/504), erro interno (500), chave de API expirada/pagamento, ou ausência legítima de jogos. A mensagem "(0s)" era causada por `Math.round(durationMs / 1000)` arredondando respostas sub-500ms para 0. HTTP 429 não era retriable. Backend podia retornar HTML em exceções não tratadas. Erros de auth/payment das APIs externas (FootyStats 401/403, API-Football subscription expired) eram invisíveis — o frontend mostrava "Servidor indisponível" sem indicar que o problema era pagamento.
+
+### Causa raiz
+A sessão 2026-04-30 confirmou que o erro específico reportado era ausência de jogos agendados para as ligas configuradas (cenário legítimo "sem jogos"), possivelmente combinado com erro transiente do Lambda. Porém a investigação red team revelou 7 fragilidades estruturais no tratamento de erros.
+
+### Correções aplicadas
+
+**Camada 1 — Retry + backoff (3 API routes):**
+- HTTP 429 adicionado ao conjunto de erros retriable em `matches/fetch`, `combinadas`, `audit`
+- Backoff antes de retry: 2s para 429 (throttle), 500ms para 502/503/504
+- Invariante timeout verificada: `timeout × tentativas + backoff < maxDuration`
+
+**Camada 2 — Mensagens de erro específicas:**
+- `_friendlyErrorMessage()` agora distingue HTTP 429 (throttle), 500 (erro interno), 502-504 (cold start), API_KEY_ERROR (pagamento)
+- Duração exibida em ms quando < 1s (elimina "(0s)" enganoso)
+- `httpStatus` propagado no payload de erro
+
+**Camada 3 — Global exception handler (backend/main.py):**
+- `@app.exception_handler(Exception)` retorna JSON 500 com `detail` e `error` truncado (nunca HTML)
+- Log com `exc_info=True` para stack trace completo no CloudWatch
+
+**Camada 4 — Detecção de CONNECTION_ERROR (backend.ts):**
+- `ECONNRESET`, `EPIPE`, `socket hang up` adicionados ao regex de detecção
+
+**Camada 5 — Detecção de auth/payment errors:**
+- FootyStatsClient: detecta HTTP 401/403 e `success: false` com keywords de auth (key, subscription, expired, payment, plan, quota) → retorna `auth_error: True`
+- API-Football client: detecta HTTP 401/403 e keywords de auth no campo `errors` → retorna `_auth_error: True`
+- fixtures.py: `_add_api_warnings()` verifica estado das API keys quando 0 matches retornados
+- fetch/route.ts: detecta `_warnings` e retorna `kind: "API_KEY_ERROR"` com mensagem específica
+
+**Camada 6 — EmptyState (UI):**
+- Dicas contextuais por tipo de erro: API_KEY_ERROR (pagamento), HTTP_ERROR (Lambda), TIMEOUT (cold start)
+
+**Camada 7 — Fan-out retry (api.ts):**
+- `UNKNOWN` adicionado ao set de erros retriable em batches falhados
+
+### Lição aprendida
+Mensagens de erro genéricas ("Servidor indisponível") dificultam diagnóstico. Cada camada de erro (transiente, auth, pagamento, cold start) precisa de mensagem e ação específica. Erros de APIs externas (FootyStats, API-Football) devem ser classificados por tipo (auth vs rate limit vs server error) antes de propagar ao frontend. `Math.round(ms / 1000)` perde precisão para respostas rápidas — usar ms para < 1s.
+
+---
+
 ## #161–163 — Desbloquear gols, SAFE N/A, EV metrics, accuracy ponderada
 
 **Data:** 2026-04-22

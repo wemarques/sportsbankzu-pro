@@ -208,3 +208,4 @@
 | 173 | Implementado | Observabilidade | Medição degradação fim-de-temporada (script local) + snapshot diário de standings em S3 (cron 06:00 UTC) para backtest retroativo de features de contexto de temporada |
 | 174 | Implementado | Fix + Política | Bug Report Card (null guards `safe_accuracy` em AuditReportCard.tsx, espelho do #168) + política de não-mexer com N=11 + watchlist Cartões Over 2.5 (calibrar α per-league se accuracy <40% com N≥15) |
 | 175 | Implementado | FinOps | EC2 prognosticos-brasileirao-server t3.micro terminada (dark spend ~$90/ano, sem utilização) — captura de metadados em `infra/decommissioned/` para audit trail |
+| 176 | Implementado | Fix + Resilience | Red team HTTP_ERROR: retry 429 + backoff, mensagens por HTTP status, global exception handler JSON, detecção auth/payment errors (FootyStats+API-Football), EmptyState contextual hints |
