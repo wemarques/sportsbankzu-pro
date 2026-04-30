@@ -382,7 +382,14 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}', no todays-matches available")
                     found_via_api = True
                 else:
-                    logger.warning(f"[fixtures] {lid}: API success=False: {matches_data.get('message','')}")
+                    msg = matches_data.get("message", "")
+                    if matches_data.get("auth_error"):
+                        logger.error(
+                            f"[fixtures] {lid}: AUTH/PAYMENT ERROR — {msg}. "
+                            "Verifique FOOTYSTATS_API_KEY e status da assinatura."
+                        )
+                    else:
+                        logger.warning(f"[fixtures] {lid}: API success=False: {msg}")
                     # Fallback to todays-matches when league-matches fails
                     records = _fallback_todays_matches(lid, league_config, date, season_id=season_id)
                     if records:
@@ -1081,7 +1088,10 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     # Single league: process directly (no thread overhead)
     if len(league_ids) == 1:
         records = _process_single_league(league_ids[0], date, base)
-        return {"matches": records}
+        result: Dict[str, Any] = {"matches": records}
+        if not records:
+            _add_api_warnings(result)
+        return result
 
     # Multiple leagues: process in parallel threads
     out: List[Dict[str, Any]] = []
@@ -1104,7 +1114,28 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     league_order = {lid: i for i, lid in enumerate(league_ids)}
     out.sort(key=lambda r: (league_order.get(r.get("leagueId", ""), 999), r.get("datetime", "")))
 
-    return {"matches": out}
+    result = {"matches": out}
+    if not out:
+        _add_api_warnings(result)
+    return result
+
+
+def _add_api_warnings(result: Dict[str, Any]) -> None:
+    """Check API key status and add warnings when fixtures return empty."""
+    import os
+    warnings = []
+
+    fs_key = os.getenv("FOOTYSTATS_API_KEY", "")
+    if not fs_key or fs_key == "example":
+        warnings.append("FOOTYSTATS_API_KEY not configured or using default 'example' key")
+
+    af_key = os.getenv("API_FOOTBALL_KEY", "")
+    if not af_key:
+        warnings.append("API_FOOTBALL_KEY not configured")
+
+    if warnings:
+        result["_warnings"] = warnings
+        logger.warning(f"[fixtures] Empty results with API warnings: {warnings}")
 
 
 # ── Last-known live scores cache (#060) ──────────────────────────────

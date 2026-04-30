@@ -124,7 +124,29 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Backend returned 0 matches — this is legitimate (no games for this date)
+      // Backend returned 0 matches — check for API warnings (key/payment issues)
+      const backendData = result.data as Record<string, unknown>;
+      const apiWarnings = backendData?._warnings as string[] | undefined;
+      if (apiWarnings && apiWarnings.length > 0) {
+        console.error(
+          `[fetch/route] Backend returned 0 matches WITH API warnings: ${apiWarnings.join("; ")} | ${result.durationMs}ms`,
+        );
+        return Response.json(
+          {
+            matches: [],
+            _dataSource: "error",
+            _error: {
+              kind: "API_KEY_ERROR",
+              message: "Problema com chave de API ou assinatura do provedor de dados. Verifique as configuracoes de pagamento.",
+              warnings: apiWarnings,
+              durationMs: result.durationMs,
+            },
+            _latencyMs: result.durationMs,
+          },
+          { status: 503 },
+        );
+      }
+
       console.log(
         `[fetch/route] Backend returned 0 matches for date=${url.searchParams.get("date") || "today"} | ${result.durationMs}ms`,
       );
@@ -238,6 +260,8 @@ function _friendlyErrorMessage(kind: string, durationMs?: number, rawMessage?: s
       return `O servidor demorou demais para responder${dur}. Lambda pode estar em cold start — tente novamente.`;
     case "CONNECTION_ERROR":
       return "Nao foi possivel conectar ao servidor de dados. Verifique se o backend esta ativo.";
+    case "API_KEY_ERROR":
+      return "Problema com chave de API ou assinatura do provedor de dados. Verifique as configuracoes de pagamento em football-data-api.com e api-football.com.";
     case "HTTP_ERROR": {
       if (httpStatus === 429) {
         return `Limite de requisicoes atingido (throttling)${dur}. Aguarde alguns segundos e tente novamente.`;

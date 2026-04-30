@@ -258,6 +258,17 @@ class APIFootballClient:
                 resp = _requests.get(url, headers=self._headers(), params=params, timeout=self.timeout)
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
 
+                if resp.status_code in (401, 403):
+                    logger.error(
+                        f"[api-football/{endpoint}] HTTP {resp.status_code} — API key invalid/expired. "
+                        "Check API_FOOTBALL_KEY and subscription at api-football.com"
+                    )
+                    return {
+                        "response": [],
+                        "errors": {"message": f"API-Football auth error (HTTP {resp.status_code})"},
+                        "_auth_error": True,
+                    }
+
                 if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < max_attempts:
                     logger.warning(f"[api-football/{endpoint}] HTTP {resp.status_code} (attempt {attempt}) — retrying in 2s")
                     time.sleep(2)
@@ -284,9 +295,19 @@ class APIFootballClient:
 
                 errors = data.get("errors")
                 if errors and ((isinstance(errors, dict) and errors) or (isinstance(errors, list) and errors)):
+                    err_msg = str(errors).lower()
+                    # Auth/payment detection
+                    _AUTH_KEYWORDS = ("token", "key", "subscription", "expired", "invalid",
+                                      "unauthorized", "forbidden", "payment", "plan")
+                    if any(kw in err_msg for kw in _AUTH_KEYWORDS):
+                        logger.error(
+                            f"[api-football/{endpoint}] AUTH/PAYMENT issue: {errors}. "
+                            "Check API_FOOTBALL_KEY and subscription at api-football.com"
+                        )
+                        data["_auth_error"] = True
+                        return data
                     # Rate limit circuit breaker (#112)
-                    err_msg = str(errors)
-                    if "request limit" in err_msg.lower() or "rate limit" in err_msg.lower():
+                    if "request limit" in err_msg or "rate limit" in err_msg:
                         self.__class__._rate_limited = True
                         logger.warning(f"[api-football] RATE LIMITED — circuit breaker ON, skipping all future calls")
                     else:

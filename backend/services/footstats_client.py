@@ -154,10 +154,21 @@ class FootyStatsClient:
                         pass
                     return data
                 else:
+                    msg = data.get("message", "unknown")
+                    is_auth = any(kw in str(msg).lower() for kw in (
+                        "key", "subscription", "expired", "invalid", "unauthorized", "forbidden",
+                        "payment", "plan", "quota", "limit exceeded", "access denied",
+                    ))
+                    if is_auth:
+                        logger.error(
+                            f"[{endpoint}] AUTH/PAYMENT issue (HTTP {response.status_code}, {elapsed_ms}ms): {msg}. "
+                            "Check FOOTYSTATS_API_KEY and subscription at football-data-api.com"
+                        )
+                        return {"success": False, "auth_error": True, "message": msg}
                     logger.warning(
-                        f"[{endpoint}] success=False (HTTP {response.status_code}, {elapsed_ms}ms): {data.get('message', 'unknown')}"
+                        f"[{endpoint}] success=False (HTTP {response.status_code}, {elapsed_ms}ms): {msg}"
                     )
-                    return {"success": False, "message": data.get("message")}
+                    return {"success": False, "message": msg}
 
             except requests.exceptions.Timeout as e:
                 last_error = e
@@ -174,6 +185,16 @@ class FootyStatsClient:
             except requests.exceptions.HTTPError as e:
                 last_error = e
                 status = e.response.status_code if e.response is not None else "?"
+                if status in (401, 403):
+                    logger.error(
+                        f"[{endpoint}] HTTP {status} — API key invalid, expired, or subscription issue. "
+                        "Check FOOTYSTATS_API_KEY and subscription status at football-data-api.com"
+                    )
+                    return {
+                        "success": False,
+                        "auth_error": True,
+                        "message": f"FootyStats API key error (HTTP {status}). Verifique assinatura/pagamento em football-data-api.com",
+                    }
                 logger.error(f"[{endpoint}] HTTP {status} error: {e}")
                 break  # Non-retryable HTTP error
             except Exception as e:
