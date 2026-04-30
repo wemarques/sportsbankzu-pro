@@ -37,8 +37,18 @@ export default function EmptyState({
       <p className="st-empty-state__message">{config.message}</p>
 
       {errorCode && (variant === "backend-offline" || variant === "client-error") && (
-        <p className="st-empty-state__error-code" style={{ fontSize: "0.7rem", color: "#666", fontFamily: "monospace", marginTop: 4 }}>
+        <p className="st-empty-state__error-code" style={{ fontSize: "0.7rem", color: "#888", fontFamily: "monospace", marginTop: 4, userSelect: "all" }}>
           Codigo: {errorCode}
+          {errorCode === "HTTP_ERROR" && (
+            <span style={{ display: "block", marginTop: 2, color: "#999" }}>
+              Dica: verifique se o Lambda esta ativo em AWS Console
+            </span>
+          )}
+          {errorCode === "TIMEOUT" && (
+            <span style={{ display: "block", marginTop: 2, color: "#999" }}>
+              Dica: Lambda pode estar em cold start — tente em 15s
+            </span>
+          )}
         </p>
       )}
 

@@ -64,7 +64,7 @@ export function classifyError(
   // Network-level failures
   if (err instanceof TypeError) {
     const msg = err.message;
-    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH/.test(msg)) {
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EPIPE|socket hang up/.test(msg)) {
       return { kind: "CONNECTION_ERROR", message: msg, url: masked, durationMs };
     }
   }

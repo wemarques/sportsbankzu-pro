@@ -23,16 +23,20 @@ export async function POST(
     });
 
     // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
-    if (
+    const isAuditRetryable =
       !result.ok &&
       result.error &&
       (result.error.kind === "TIMEOUT" ||
         result.error.kind === "CONNECTION_ERROR" ||
-        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
-    ) {
+        (result.error.kind === "HTTP_ERROR" &&
+          /HTTP (429|502|503|504)/.test(result.error.message)));
+    if (isAuditRetryable) {
+      const is429 = /HTTP 429/.test(result.error!.message);
+      const backoffMs = is429 ? 2000 : 500;
       console.log(
-        `[ai/audit] ${result.error.kind} on first attempt (${result.error.durationMs ?? 0}ms), retrying (Lambda cold start)...`,
+        `[ai/audit] ${result.error!.kind} on first attempt (${result.error!.durationMs ?? 0}ms), retrying after ${backoffMs}ms...`,
       );
+      await new Promise((r) => setTimeout(r, backoffMs));
       result = await fetchBackend(endpoint, {
         method: "POST",
         body: bodyStr,

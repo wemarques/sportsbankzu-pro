@@ -71,6 +71,19 @@ app.add_middleware(
 
 data_collector = FootballDataCollector()
 
+# Global exception handler — ensures ALL unhandled errors return JSON
+# (prevents HTML 500 pages from confusing the Next.js frontend)
+from starlette.responses import JSONResponse
+from starlette.requests import Request as _StarletteReq
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(_request: _StarletteReq, exc: Exception):
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)[:200]},
+    )
+
 # Duration tracking middleware (#102)
 import time as _time_mod
 from starlette.middleware.base import BaseHTTPMiddleware
