@@ -4,6 +4,44 @@
 
 ---
 
+## 176 — FootyStats API key rotacionada + sanitização de logs (B-010)
+
+**Data:** 2026-05-01
+**Arquivos afetados:**
+- `backend/services/footstats_client.py` (helper `_redact_key` + uso em 4 logger.* + return error sanitizado)
+
+**Severidade:** Alta (secret leak ativo em CloudWatch)
+**Status:** Implementado
+
+### Problema identificado
+Cliente FootyStats logava URL completa com query string em `logger.error/warning` quando `requests.exceptions.HTTPError` (e similares) era capturada — `str(e)` da requests inclui a URL e a key estava em `?key=...`. Log group `/aws/lambda/sportsbank-pro-backend` tinha `retentionInDays=None` → cópias indefinidas. Detectado durante diagnóstico do incidente HTTP_ERROR de 29/04 (degradação upstream FootyStats causou centenas de 429s, cada um logando a URL com key). Contagem: **616 ocorrências de "key=" em 24h** antes do patch.
+
+### Causa raiz
+- Padrão comum em código de integração: `logger.error(f"... {e}")` onde `e` é exceção do `requests` que serializa a URL completa.
+- Key passada via query string (`params["key"] = self.api_key`) em vez de header.
+- Falta de helper centralizado para sanitização.
+
+### Correções aplicadas
+1. **Rotação da key** no dashboard FootyStats — invalida a antiga (key vazada de 26 chars → key nova de 27 chars).
+2. **Update do env var** `FOOTYSTATS_API_KEY` na Lambda (via AWS Console — sem expor key em shell history).
+3. **Helper `_redact_key(text)`** em `footstats_client.py` (regex `([?&])key=[^&\s"\']+` → `\1key=***REDACTED***`).
+4. **Aplicação em 4 pontos:** `logger.warning` ConnectionError, `logger.error` HTTPError, `logger.error` Unexpected (com `exc_info=False` para evitar leak via traceback), `logger.error` Failed after N attempts. Também sanitizado o `return {"error": str(last_error)}` para não vazar pra cima.
+5. **Retention temporária 7 dias** no log group para expirar logs com key antiga (TODO: restaurar 90d em 2026-05-08 — ver B-003).
+6. **Smoke test pós-deploy:** snapshot_standings → 20 ligas uploaded, 0 failures, 0 ocorrências de "key=" em logs novos.
+
+### Análise de outros clients
+- `backend/services/api_football_client.py`: usa header `x-apisports-key` — **não vaza** em URL. Sem patch necessário.
+- `backend/services/mistral_analysis.py`: usa header `Authorization: Bearer` — **não vaza** em URL. Sem patch necessário.
+
+### Steps manuais pendentes
+- **2026-05-08:** restaurar `retentionInDays=90` (item B-003 do BACKLOG).
+- Considerar mover `_redact_key` para `backend/services/util_service.py` se outro client passar a usar key em query string (defesa em profundidade — item futuro).
+
+### Lição aprendida
+**Nenhum cliente HTTP deve logar URL com query string sem sanitizar segredos.** Auth via header é fortemente preferível a query string — porque headers nunca aparecem em `str(requests.HTTPError)`. Para integrações que só aceitam key em query (como FootyStats), helper de redação é mandatório em todo `logger.*` que receba exceção do `requests`. Padrão para revisão de PR: qualquer novo cliente HTTP que receba `e` em log deve passar por sanitização.
+
+---
+
 ## 175 — EC2 prognosticos-brasileirao-server terminada (dark spend)
 
 **Data:** 2026-04-29
