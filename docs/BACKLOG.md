@@ -198,16 +198,43 @@
 **Esforço:** XS (1 min)
 **Status:** Open
 **Adicionado:** 2026-04-29
+**Data alvo:** 2026-05-08 (após expiração dos logs com FootyStats key vazada — ver #176)
 
-**Contexto:** Log group `/aws/lambda/sportsbank-pro-backend` tem `retention=None` (nunca expira). Atualmente ~170 MB. Custo trivial hoje (<$0.01/mês), mas vai acumular para vários GB ao longo de 1-2 anos.
+**Contexto:** Log group `/aws/lambda/sportsbank-pro-backend` está em `retention=7d` temporário desde 2026-05-01 (#176, B-010) para expirar logs antigos com `?key=...` vazado. A partir de 2026-05-08 todos os logs anteriores a 2026-05-01 já foram pruned, e podemos restaurar 90d (compromisso entre retenção para debug e custo).
 
-**Critério de sucesso:**
+**Critério de sucesso:** retention=90 confirmado via `describe-log-groups`, zero `key=` em logs recentes (sanitização ainda efetiva), B-003 marcado como concluído + commit no repo.
+
+**Comando pronto (executar em 2026-05-08, sequencialmente):**
 ```bash
-aws logs put-retention-policy --log-group-name /aws/lambda/sportsbank-pro-backend \
+# Verificacao 1: retention atual ainda eh 7
+MSYS_NO_PATHCONV=1 aws logs describe-log-groups \
+  --log-group-name-prefix /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 \
+  --query "logGroups[].{Name:logGroupName,Retention:retentionInDays}"
+
+# Verificacao 2: zero leaks de key= em logs recentes (24h)
+START_TS=$(python -c "import time; print(int(time.time()*1000 - 86400000))")
+MSYS_NO_PATHCONV=1 aws logs filter-log-events \
+  --log-group-name /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 --start-time $START_TS \
+  --filter-pattern '?"?key=" ?"&key="' \
+  --query "events[*].message" --output text | head -5
+
+# Aplicar retention=90 (so se as 2 verificacoes acima estao OK)
+MSYS_NO_PATHCONV=1 aws logs put-retention-policy \
+  --log-group-name /aws/lambda/sportsbank-pro-backend \
   --retention-in-days 90 --region us-east-1
+
+# Confirmar
+MSYS_NO_PATHCONV=1 aws logs describe-log-groups \
+  --log-group-name-prefix /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 --query "logGroups[].retentionInDays"
 ```
 
-**Notas:** 90 dias é compromisso entre retenção para debug e custo. Pode ajustar para 30d se virar problema.
+**Notas:**
+- Marcar como concluído + commit `chore(B-003): restaurar CloudWatch retention=90d pos-expiracao logs com FootyStats key (B-010 done em 30/04)` após execução bem-sucedida.
+- 90 dias é compromisso entre retenção para debug e custo. Pode ajustar para 30d se virar problema.
+- Se Verificação 2 retornar key= em logs recentes: PARAR — sanitização quebrou, investigar regressão no `_redact_key` em `footstats_client.py` antes de mexer em retention.
 
 ---
 
