@@ -1,385 +1,178 @@
-# CLAUDE.md — Project Instructions for Claude Code
+# CLAUDE.md — SportsBankZU Pro
 
-## Project Overview
+**Stack:** Next.js 14 (Vercel) + FastAPI/Python (AWS Lambda) + PostgreSQL (RDS). Streamlit foi descontinuado — ignorar referências antigas em código/docs.
 
-SportsBankZU Pro is a professional sports prediction system with a 3-layer architecture:
-- **Backend**: FastAPI (Python) serving fixtures, probabilities, lambdas, and stats
-- **Frontend 1**: Streamlit (app.py) with tables and probability charts
-- **Frontend 2**: Next.js 14 dashboard with multi-league selector and match analysis
+## Leitura obrigatória antes de qualquer alteração
 
-## Quick Commands
+Ler nesta ordem: `docs/BACKLOG.md` (P0/P1) → `docs/REGRAS_ATIVAS.md` → `docs/INDICE_REGRAS.md`. Consultar `docs/REGISTRO_CORRECOES.md` quando precisar do histórico de um fix `#N`.
+
+## Comandos
 
 ```bash
-# Backend
+# Backend local
 uvicorn backend.main:app --reload --port 5001
 
-# Streamlit
-streamlit run app.py
-
-# Next.js dashboard
+# Frontend
 cd frontend/next && npm run dev
 
-# CLI (unified)
-python -m cli --help
-
-# Tests (Python)
+# Tests
 pytest -q
-
-# Tests (E2E Playwright)
 cd frontend/next && npm run test:e2e
 ```
 
-## Key Directories
+## Diretórios
 
-- `backend/` — FastAPI app, routes, services, models, AI integration
-- `backend/routes/` — API endpoints (fixtures, leagues, decision, quadro, ai, health)
-- `backend/services/` — Business logic (math, market, fixtures, quadro, decision)
-- `backend/modeling/` — Statistical models (lambda, xg_filter, chaos_detector, calibrator)
-- `backend/ai/` — Mistral AI integration (auditor, context, prompts)
-- `frontend/next/` — Next.js 14 App Router dashboard
-- `frontend/next/e2e/` — Playwright E2E tests
-- `cli/` — Click-based CLI wrapping backend services
-- `scripts/` — Deployment and utility scripts
+- `backend/routes/` — endpoints (fixtures, leagues, decision, quadro, ai, health)
+- `backend/services/` — lógica de negócio (math, market, fixtures, decision, **mistral_analysis.py**, ev_classification, correlation_matrix)
+- `backend/modeling/` — modelos estatísticos (lambda, xg_filter, chaos_detector, calibrator, market_validator, league_calibrator)
+- `frontend/next/src/` — App Router; `frontend/next/e2e/` — Playwright
+- `cli/`, `scripts/`
 
-## API Routes (Lambda / API Gateway)
+## API Lambda — armadilhas conhecidas
 
-O backend Lambda é acessado via API Gateway em `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`.
+Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
 
-**ATENÇÃO:** Os prefixos são inconsistentes:
+| Rota correta | Errado |
+|---|---|
+| `/health` | `/api/health` (404) |
+| `/api/fixtures/...` | |
+| `/api/backtesting/...` | |
+| `POST /api/backtesting/calibrate?league=X` | `?league_id=X` |
+| `/api/backtesting/calibration-status` | |
+| `/api/health/safe-status` | |
 
-| Endpoint | Rota Correta | ERRADO |
-|----------|-------------|--------|
-| Health check | `/health` | ~~/api/health~~ (404) |
-| Fixtures | `/api/fixtures/...` | |
-| Backtesting | `/api/backtesting/...` | |
-| Calibrate | `POST /api/backtesting/calibrate?league=X` | ~~/api/backtesting/calibrate?league_id=X~~ (param errado) |
-| Calibration status | `/api/backtesting/calibration-status` | |
-| SAFE status | `/api/health/safe-status` | |
+API Gateway tem hard limit de **30s**. Calibração leva 15–40s; **503 não significa falha** — Lambda continua processando e persiste o resultado.
 
-**Parâmetro de calibração:** O endpoint usa `league=` (NÃO `league_id=`).
+## Deploy Lambda
 
-**Timeout:** API Gateway tem hard limit de 30s. Calibração leva 15-40s. Se retornar 503, o Lambda continua processando e salva os dados.
-
-**Deploy Lambda:**
 ```bash
-# Verificar estado ANTES de deploy
-MSYS_NO_PATHCONV=1 aws lambda get-function-configuration --function-name sportsbank-pro-backend --region us-east-1 --query '{State: State, LastUpdateStatus: LastUpdateStatus}'
+# Pré-check OBRIGATÓRIO antes de update-function-code
+MSYS_NO_PATHCONV=1 aws lambda get-function-configuration \
+  --function-name sportsbank-pro-backend --region us-east-1 \
+  --query '{State: State, LastUpdateStatus: LastUpdateStatus}'
+# Só prosseguir se State=Active e LastUpdateStatus=Successful
 
-# Só deployar quando State=Active e LastUpdateStatus=Successful
-MSYS_NO_PATHCONV=1 aws lambda update-function-code --function-name sportsbank-pro-backend --s3-bucket meu-bucket-sportsbank --s3-key deploy/sportsbank_lambda.zip --region us-east-1
+MSYS_NO_PATHCONV=1 aws lambda update-function-code \
+  --function-name sportsbank-pro-backend \
+  --s3-bucket meu-bucket-sportsbank \
+  --s3-key deploy/sportsbank_lambda.zip --region us-east-1
 ```
 
-**Lambda Layer (scipy):**
-O Lambda usa uma Layer separada (`scipy-numpy-layer`) com scipy para
-os modelos NB2 (cards e corners). A Layer é independente do ZIP de deploy.
-numpy já está no ZIP de deploy — a Layer contém apenas scipy.
+## Lambda Layer (scipy) — `arn:aws:lambda:us-east-1:838823110426:layer:scipy-numpy-layer:2`
 
-- **Se a versão Python do Lambda mudar** (ex: python3.11 → python3.12),
-  a Layer DEVE ser recriada — extensões C compiladas para 3.11 não carregam em 3.12.
-- Sem Layer compatível, cards NB2 cai silenciosamente para Poisson fallback.
-- Recriar: `pip install scipy -t layer/python/ --platform manylinux2014_x86_64 --only-binary=:all: --python-version 3.XX --no-deps`
-- ZIP: `cd layer && zip -r ../scipy-layer.zip python/ -x '*.pyc' '*__pycache__*' '*.dist-info/*' '*/tests/*'`
-- Publicar: `aws lambda publish-layer-version --layer-name scipy-numpy-layer --content S3Bucket=meu-bucket-sportsbank,S3Key=deploy/scipy-layer.zip --compatible-runtimes python3.XX --region us-east-1`
-- Atachar: `aws lambda update-function-configuration --function-name sportsbank-pro-backend --layers <LAYER_ARN> --region us-east-1`
-- Layer ARN atual: `arn:aws:lambda:us-east-1:838823110426:layer:scipy-numpy-layer:2`
+- Layer contém **apenas scipy** (numpy está no ZIP de deploy). Usada por NB2 (cards e corners).
+- Sem Layer compatível, **NB2 cai silenciosamente para Poisson** (sem erro visível).
+- Mudança de runtime Python (ex.: 3.11 → 3.12) **exige recriar a Layer** — extensões C não são portáveis entre versões.
 
-## Context7 Usage
-
-Context7 MCP is configured for this project. Use it to fetch up-to-date documentation:
-
-- Next.js: `use context7 /vercel/next.js`
-- Playwright: `use context7 /microsoft/playwright`
-- FastAPI: `use context7 /fastapi/fastapi`
-- Tailwind CSS: `use context7 /tailwindlabs/tailwindcss`
-- Radix UI: `use context7 /radix-ui/primitives`
-- Recharts: `use context7 /recharts/recharts`
-- Click: `use context7 /pallets/click`
-
-## Environment Variables
-
-- `MISTRAL_API_KEY` — Required for AI audit features
-- `PY_BACKEND_URL` — Backend URL for Next.js API routes
-- `BACKEND_URL` — Backend URL for Streamlit
-- `FUTEBOL_ROOT` / `DATA_ROOT` — Root data directory for backend
-- `S3_BUCKET` — Optional S3 bucket for data storage
-
-## Regra de Investigação Obrigatória
-
-Antes de propor ou implementar qualquer correção:
-
-1. **Não assuma a causa raiz** — investigue todos os caminhos de código envolvidos, do backend ao frontend, incluindo mappers, services, routes e componentes React
-2. **Trace o fluxo completo** — siga o dado desde a origem (API externa) até a renderização final no browser, identificando cada transformação intermediária
-3. **Verifique todos os pontos de entrada** — um mesmo campo pode ser setado em múltiplos locais (mapper, service, route, endpoint de overlay, polling do frontend). Cheque todos antes de concluir
-4. **Considere caching e deploy** — cache da API (SQLite TTL), cache do browser, builds desatualizados no Vercel e cold starts do Lambda podem mascarar ou perpetuar bugs
-5. **Valide com dados reais** — quando possível, adicione logging temporário ou leia logs existentes para confirmar qual valor a API externa realmente retorna, em vez de supor
-6. **Implemente defesa em profundidade** — não confie em uma única camada de correção. Se o bug pode ocorrer por múltiplas causas (ex: status "incomplete", "live", campo numérico inesperado), adicione guards em cada camada relevante
-7. **Teste o cenário completo** — após implementar, simule mentalmente o fluxo com os dados do bug reportado e confirme que TODAS as variantes são cobertas antes de declarar resolvido
-8. **Strict Contract com APIs externas** — tratar payloads de FootyStats e API-Football como contrato tipado: validar tipos antes de usar (int vs string, null vs 0, array vazio vs campo ausente). Todo campo opcional DEVE ter fallback explícito no código. Edge cases obrigatórios: resposta vazia, paginação incompleta, rate limit, campo null inesperado.
-9. **First Principles na extração de features** — antes de criar feature nova ou investigar Brier alto, listar TODOS os campos disponíveis na API que não estamos usando. Campos subutilizados são oportunidades de reduzir Brier (ex: referee stats para cards, stadium/altitude para gols, formação tática para corners).
-
-## Workflow de Validação
-
-Prompts obrigatórios em cada fase do ciclo de desenvolvimento. Usar ANTES de executar, não depois.
-
-### Antes de implementar qualquer correção
-**Prompt:** "Pre-mortem this change — o que pode dar errado com essa mudança?"
-
-Listar: arquivos afetados, efeitos colaterais em outros módulos, regras do REGRAS_ATIVAS.md que podem ser violadas, cenários de dados extremos (N=0, null, divisão por zero), e impacto em produção se o fix estiver errado. Caso real: corners Over 6.5 bloqueados com N=4 violou regra #079 (MIN_N=20) — pre-mortem teria pego.
-
-### Antes de todo deploy
-**Prompt:** "Red team this fix before I deploy"
-
-Verificar: py_compile em TODOS os arquivos modificados, tsc --noEmit no frontend, arquivos não foram truncados (comparar wc -l antes/depois), diff mostra apenas as mudanças intencionais, nenhum arquivo foi reescrito inteiramente quando bastava um edit pontual.
-
-### Para decisões com trade-off
-**Prompt:** "Steelman both options, then recommend"
-
-Quando houver 2+ caminhos possíveis (ex: reverter constante global vs gatar penalty específico), apresentar o melhor argumento a favor de cada opção ANTES de recomendar. Evita viés de confirmação.
-
-### Para análise de relatórios de auditoria
-**Prompt:** "As a skeptical auditor who will lose money on bad picks, analyze this report"
-
-Framing padrão para todo relatório de auditoria (cron batch, reliability, calibração). Força foco em: onde estou perdendo dinheiro, quais métricas estão maquiando problemas reais, quais amostras são insuficientes para conclusões.
-
-### Para evitar overengineering
-**Prompt:** "What's the simplest fix that solves this specific problem?"
-
-Antes de reescrever um arquivo inteiro, perguntar se um edit de 3 linhas resolve. Caso real: Claude Code reescreveu 6 arquivos inteiros e truncou todos — edits pontuais teriam evitado o problema.
-
-### Para forçar priorização
-**Prompt:** "What's the one thing I should fix first and why?"
-
-Quando há múltiplos problemas simultâneos, forçar sequenciamento. Tasks em paralelo aumentam risco de conflito e truncamento. Caso real: 4 tasks simultâneas (#161-163 + hooks) geraram 6 arquivos corrompidos.
-
-### Para edits no Claude Code
-**Prompt:** "Diff only — show me the exact lines you'll change before editing"
-
-OBRIGATÓRIO antes de qualquer edit em arquivos com mais de 200 linhas. Forçar preview do diff evita reescrituras completas e truncamentos. Se o Claude Code propuser reescrever o arquivo inteiro, REJEITAR e pedir edit pontual.
-
-### Sequência padrão para deploys
-```
-1. "What's the one thing?" → priorizar
-2. "Diff only" → preview das mudanças
-3. Implementar → edits pontuais
-4. "Pre-mortem this change" → antes do commit
-5. py_compile + tsc → validação técnica
-6. Commit + deploy
-7. "Red team this report" → depois do deploy
-8. Verificação com dados reais
+```bash
+pip install scipy -t layer/python/ --platform manylinux2014_x86_64 --only-binary=:all: --python-version 3.XX --no-deps
+cd layer && zip -r ../scipy-layer.zip python/ -x '*.pyc' '*__pycache__*' '*.dist-info/*' '*/tests/*'
+aws lambda publish-layer-version --layer-name scipy-numpy-layer \
+  --content S3Bucket=meu-bucket-sportsbank,S3Key=deploy/scipy-layer.zip \
+  --compatible-runtimes python3.XX --region us-east-1
+aws lambda update-function-configuration --function-name sportsbank-pro-backend \
+  --layers <LAYER_ARN> --region us-east-1
 ```
 
-## Conventions
+## Variáveis de ambiente
 
-- Language: Portuguese (pt-BR) for UI, English for code and comments
-- Supported leagues: 22+ European and South American leagues + Copa do Brasil
-- Prediction markets: 1X2, Over/Under (0.5-4.5), BTTS, Double Chance, Corners (4.5-12.5), Cards Over/Under (2.5-5.5)
-- Classification levels: SAFE, NEUTRO_QUALIFICADO, NEUTRO, NO_BET (see REGRAS #028)
+`MISTRAL_API_KEY`, `PY_BACKEND_URL`, `FUTEBOL_ROOT` / `DATA_ROOT`, `S3_BUCKET` (opcional).
+
+## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
+
+```
+FootyStats + API-Football v3
+  → build_records_from_matches (fixtures_service.py)
+  → calcular_lambda_jogo (deflation 0.85 #043 + γ home #078)
+  → xg_filter bidirecional (#035-M3)
+  → chaos_detector + SAFE blocker (#035-M2)
+  → Poisson + Dixon-Coles τ(ρ) — mercados de gols (#028, #078)
+  → BTTS fusion 40/30/30 com deflation 0.80 (#043)
+  → Corners Engine v2 (4.5–12.5) com redução 20% (#043)
+  → 1X2: implied_probs(odds) [+ ML ensemble]
+  → selecionar_mercados_v2 (market_service.py — ativo desde #035-M1)
+       ev_classification 4 níveis (#028) — SAFE via circuit breaker (#043)
+       market_reference_signal capping por qualidade (#031)
+       bankroll_engine Quarter Kelly com caps (#028)
+       correlation_matrix anti-redundância (#028)
+  → Next.js (Vercel)
+```
+
+**Calibração per-league automática** (`league_calibrator.py`): deflation (O/U, BTTS, 1X2, cards #056, corners), lambda weights season/recent, xG blend, BTTS fusion, thresholds safe_prob de 6 mercados, Dixon-Coles ρ (#078), home advantage γ (#078), SAFE enabled per liga (#054 — 36/37 ligas com `safe_enabled=true`).
+
+## Contrato Mistral (#082)
+
+**Mistral é EXCLUSIVAMENTE narrativa.** Arquivo: `backend/services/mistral_analysis.py` (prompt v3.0, `MistralAnalysisService`, **temperature 0.15**).
+
+- **Faz:** `summary`, `key_points`, `recommendation`, `confidence` (informativo), corners review opcional.
+- **NÃO faz:** calcular/modificar probabilidades, auditar pipeline, ajustar lambdas/thresholds/pesos, classificar picks (SAFE/NEUTRO).
+- Sem `MISTRAL_API_KEY` ou Mistral indisponível → retorna default com `confidence=0`. **Não afeta** cálculos.
+- Não alterar o prompt sem preservar as 4 camadas anti-alucinação (#001, #002).
+
+## Domínio
+
+- Mercados: 1X2, O/U 0.5–4.5, BTTS, Double Chance, Corners 4.5–12.5, Cards O/U 2.5–5.5
+- Classificação (#028): SAFE / NEUTRO_QUALIFICADO / NEUTRO / NO_BET
 - Regimes: NORMAL, HIPER-OFENSIVA
-- Sempre que solicitado a realizar análises financeiras ou previsões esportivas, utilize as ferramentas mapeadas no Antigravity localizadas em `backend/services` e `backend/modeling`. Não tente simular a lógica de cálculo manualmente.
+- 22+ ligas europeias e sul-americanas + Copa do Brasil
+- UI em pt-BR; código e comentários em inglês
 
-## Leitura Obrigatória
+## Checklist novo mercado (#006) — 7 pontos obrigatórios
 
-Antes de qualquer alteração no sistema, LEIA NESTA ORDEM:
+1. Engine — `backend/modeling/`
+2. `backend/services/ev_classification.py`
+3. `backend/modeling/market_validator.py`
+4. `backend/services/market_service.py` (dedup)
+5. `backend/services/correlation_matrix.py`
+6. `frontend/next/src/lib/localAudit.ts` (evaluatePick)
+7. `backend/routes/ai_analysis.py` (evaluatePick backend)
 
-1. **`docs/BACKLOG.md`** — Pendências em aberto da sessão anterior. **Ponto de partida obrigatório** para construção evolutiva. Cada item tem ID `B-NNN`, prioridade (P0-P3 ou Q-estudo), esforço, contexto e critério de sucesso. Itens completados migram para REGRAS com `#N`.
-2. **`docs/REGRAS_ATIVAS.md`** — Regras permanentes que afetam decisoes futuras (~20 regras). LEIA SEMPRE antes de propor correcoes.
-   - **`docs/INDICE_REGRAS.md`** — Indice rapido de todas as 104+ regras (uma linha cada).
-   - **`docs/REGISTRO_CORRECOES.md`** — Historico completo de todos os fixes e correcoes. Consultar quando precisar de contexto.
-3. **Este arquivo (CLAUDE.md)** — Especialmente as seções "Estado Atual do Pipeline" e "Proibições".
+## Proibições (regras travadas — NÃO violar sem entrada em REGRAS_ATIVAS)
 
-Se o arquivo REGRAS tiver uma entrada sobre o problema que você está investigando, leia-a inteira antes de propor qualquer correção.
+1. **Não inventar nomes de spec.** Se não está em `REGRAS_ATIVAS.md`, não existe (ex.: "v5.5-ML" foi alucinação propagada).
+2. **Não alterar thresholds sem auditoria.** Os atuais (#042) vieram de auditoria de 27 jogos.
+3. **Não reativar SAFE** sem 3 auditorias consecutivas com accuracy > 50% (#043).
+4. **Não remover deflations** sem lambda error < 0.5 por 3 rodadas (#043).
+5. **Não duplicar funções** — verificar `services/` e `modeling/` antes de criar (caso #035-M4: cópia em `main.py`).
+6. **Não mergear PR** sem entrada em `docs/REGISTRO_CORRECOES.md` (e `REGRAS_ATIVAS.md` se permanente).
+7. **Threshold change > 15% BLOQUEADO** sem dados.
+8. **MIN_N_BRIER = 20** (#079) — auditorias com N<20 são apenas diagnósticas, nunca decisórias.
+9. **Complementares > 105% BLOQUEADOS** (#098).
+10. **Deflação progressiva por banda (#105)** — NÃO reverter para uniforme.
+11. **Classificação usa prob raw; EV usa prob deflacionada** (#106).
 
-**Fluxo padrão de início de sessão:**
+## Finalização obrigatória pós-alteração
 
-1. Abrir `docs/BACKLOG.md` → ler "Notas para próximo Claude" + listagem P0/P1
-2. Perguntar ao usuário qual item priorizar (ou continuar In Progress)
-3. Ao concluir item: migrar para REGISTRO_CORRECOES.md como `#N`, marcar ✅ no BACKLOG, atualizar "Última revisão"
-4. Ao descobrir débito novo durante a tarefa: adicionar no BACKLOG com ID `B-NNN` na categoria correta — não interromper a tarefa atual para tratar achado lateral
+`CLAUDE.md` e os 3 arquivos de REGRAS existem em **dois diretórios espelhados** — sincronizar antes do commit.
 
-## Estado Atual do Pipeline (Março 2026)
-
-> **ATENÇÃO:** Esta seção reflete o estado real em produção. Atualizar sempre que uma REGRA nova for adicionada.
-
-### Pipeline Ativo: V2 de 5 Camadas (REGRAS #028, ativado em #035)
-
-```
-FootyStats API + API-Football v3
-    │
-    ▼
-build_records_from_matches (fixtures_service.py)
-    ├─► calcular_lambda_jogo (lambda_calculator.py) — com deflation 0.85 ATIVO (#043) + γ home (#078)
-    ├─► xg_filter BIDIRECIONAL (#035-M3)
-    ├─► chaos_detector com SAFE blocker (#035-M2)
-    ├─► Poisson matrix + Dixon-Coles τ(ρ) → todos mercados de gols (#028, #078)
-    ├─► BTTS fusion: FootyStats 40% + Poisson 30% + team_avg 30% — com deflation 0.80 (#043)
-    ├─► Corners Engine v2 bidirecional 4.5-12.5 (#033) — com redução 20% (#043)
-    ├─► 1X2: implied_probs(odds) [+ ML ensemble quando ativo]
-    │
-    ▼
-selecionar_mercados_v2 (market_service.py) ← ATIVO desde #035-M1
-    ├─► ev_classification: 4 níveis (#028) — SAFE desabilitado via circuit breaker (#043)
-    ├─► market_reference_signal: capping por qualidade (#031)
-    ├─► bankroll_engine: Quarter Kelly com caps (#028)
-    ├─► correlation_matrix: anti-redundância (#028)
-    │
-    ▼
-API → Next.js 14 (Vercel) + Streamlit
-```
-
-### Alertas Críticos Ativos
-
-| Alerta | REGRA | Status |
-|--------|-------|--------|
-| **SAFE reativado** per liga | #054 | 36/37 ligas com safe_enabled=true |
-| **Lambda deflation per liga** | #052-#053 | Dixon-Coles + grid 0.80-1.50 |
-| **BTTS deflation per liga** | #054-#056 | Calibrado contra seasonBTTSPercentage real |
-| **Corners per liga** | #055-#056 | Brier-based + season stats |
-| **Cards per liga** | #056 | Fix extração + season stats Poisson |
-| **Thresholds per liga** | #055 | safe_prob calibrado por Brier quality |
-
-### Parâmetros Calibráveis (PER-LEAGUE desde #052, calibrados automaticamente)
-
-| Módulo | Parâmetro | Calibrado? | Arquivo |
-|--------|-----------|-----------|---------|
-| Lambda O/U | deflation | Per-league | league_calibrator.py |
-| Lambda BTTS | deflation | Per-league | league_calibrator.py |
-| Lambda 1X2 | deflation | Per-league | league_calibrator.py |
-| Lambda weights | season/recent | Per-league | league_calibrator.py |
-| Cards | deflation | Per-league (#056) | league_calibrator.py |
-| Corners | deflation (Brier) | Per-league | league_calibrator.py |
-| xG blend | weight | Per-league | league_calibrator.py |
-| BTTS fusion | weights | Heuristic | league_calibrator.py |
-| Thresholds | safe_prob x 6 mercados | Per-league | league_calibrator.py |
-| Dixon-Coles ρ | rho | Per-league (#078) | league_calibrator.py |
-| Home advantage γ | gamma | Per-league (#078) | league_calibrator.py |
-| SAFE | enabled | Per-league | league_calibrator.py |
-
-## CONTRATO DA MISTRAL AI (#082)
-
-> **Princípio:** Mistral é EXCLUSIVAMENTE narrativa. Nunca calcula, nunca ajusta, nunca audita.
-
-### O que a Mistral FAZ (narrativa):
-- `summary` — resumo textual do jogo
-- `key_points` — fatores qualitativos relevantes
-- `recommendation` — sugestão narrativa (não vinculante)
-- `confidence` — auto-avaliação de confiança (informativa)
-- Corners review opcional (`mistral_review.py`)
-
-### O que a Mistral NÃO FAZ (cálculo):
-- Calcular ou modificar probabilidades (1X2, O/U, BTTS)
-- Validar ou auditar cálculos do pipeline
-- Gerar correções de parâmetros (lambda, thresholds, deflation)
-- Auditar picks ou classificações (SAFE/NEUTRO)
-- Ajustar lambdas, thresholds ou pesos de calibração
-
-### Arquivo principal:
-- `backend/services/mistral_analysis.py` (prompt v3.0, serviço `MistralAnalysisService`)
-
-### Fallback:
-- Se `MISTRAL_API_KEY` ausente ou Mistral indisponível: retorna análise default com `confidence=0`
-- Ausência da Mistral **NÃO afeta** probabilidades, classificações ou pipeline de cálculo
-
-## Proibições
-
-1. **NÃO criar nomes de especificação fictícios** — Exemplo: "v5.5-ML" foi inventado por uma sessão anterior e propagado como se fosse real. Se não está no REGRAS, não existe.
-2. **NÃO alterar thresholds sem dados de auditoria** — Os thresholds atuais (#042) vieram de uma auditoria de 27 jogos. Qualquer mudança exige backtesting documentado.
-3. **NÃO reativar SAFE** sem 3 auditorias consecutivas com accuracy > 50% (#043).
-4. **NÃO remover deflations de lambda** sem lambda error < 0.5 por 3 rodadas (#043).
-5. **NÃO duplicar funções** — `main.py` tinha cópia de `selecionar_mercados_jogo` (deprecated em #035-M4). Verificar se a função já existe em services/ ou modeling/ antes de criar.
-6. **NÃO alterar o prompt Mistral** sem manter as 4 camadas de defesa anti-alucinação (#001, #002).
-7. **NÃO mergear PRs** sem registrar a alteração no `docs/REGISTRO_CORRECOES.md` (e `REGRAS_ATIVAS.md` se for regra permanente).
-8. **NÃO assumir causa raiz** — Seguir as 7 regras de investigação obrigatória acima.
-
-## Registro de Alterações
-
-Toda alteração significativa DEVE ser registrada em `docs/REGISTRO_CORRECOES.md` seguindo o formato (e em `docs/REGRAS_ATIVAS.md` se for regra permanente):
-
-```
-## NNN — Título descritivo
-
-**Data:** YYYY-MM-DD
-**Arquivos afetados:** lista de arquivos
-**Severidade:** Crítica / Alta / Média / Baixa
-**Status:** Corrigido / Implementado
-
-### Problema identificado
-(descrição do problema)
-
-### Causa raiz
-(análise da causa)
-
-### Correções aplicadas
-(lista de correções com camadas)
-
-### Lição aprendida
-(o que aprendemos para não repetir)
-```
-
-Se a alteração não justifica uma entrada no REGRAS (ex: typo, formatação), não precisa de registro. Mas qualquer mudança em lógica de cálculo, thresholds, pesos, pipeline, prompt Mistral, ou infraestrutura DEVE ter entrada.
-
-## Regra de Finalização Obrigatória (Pós-Alteração)
-
-**TODA alteração no sistema DEVE seguir estes passos antes de ser considerada concluída:**
-
-### 1. Sincronizar arquivos espelhados
 ```bash
-# REGRAS — manter cópia idêntica nos dois diretórios
+# 1. Espelhar
 cp sportsbankzu-pro/docs/REGISTRO_CORRECOES.md docs/REGISTRO_CORRECOES.md
-cp sportsbankzu-pro/docs/REGRAS_ATIVAS.md docs/REGRAS_ATIVAS.md
-cp sportsbankzu-pro/docs/INDICE_REGRAS.md docs/INDICE_REGRAS.md
+cp sportsbankzu-pro/docs/REGRAS_ATIVAS.md      docs/REGRAS_ATIVAS.md
+cp sportsbankzu-pro/docs/INDICE_REGRAS.md      docs/INDICE_REGRAS.md
+cp sportsbankzu-pro/CLAUDE.md                  CLAUDE.md
 
-# CLAUDE.md — manter cópia idêntica nos dois diretórios
-cp sportsbankzu-pro/CLAUDE.md CLAUDE.md
-```
+# 2-3. Commit + push
+cd sportsbankzu-pro && git add -A \
+  && git commit -m "feat/fix/refactor: descrição curta (#NNN)" \
+  && git push origin main
 
-### 2. Commit no repositório local
-```bash
-cd sportsbankzu-pro
-git add -A
-git commit -m "feat/fix/refactor: descrição curta (#NNN)"
-```
-
-### 3. Push para GitHub
-```bash
-git push origin main
-```
-
-### 4. Deploy (se backend alterado)
-```bash
+# 4. Deploy (se backend alterado)
 python scripts/deploy_lambda.py
-```
 
-### 5. Validação pós-deploy
-```bash
+# 5. Validar
 curl -s https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/health
 ```
 
-**Atalho:** execute `bash scripts/finalize.sh` para rodar os passos 1-3 automaticamente.
+Atalho: `bash scripts/finalize.sh` roda 1–3 automaticamente. Pular apenas para alterações exclusivas de doc local.
 
-**Quando NÃO executar:** alterações exclusivamente em documentação local (ex: notas pessoais) que não afetam o sistema.
+## Formato de entrada em REGISTRO_CORRECOES.md
 
-## Regras de Escopo do Projeto (#107h)
+```
+## NNN — Título descritivo
+**Data:** YYYY-MM-DD | **Arquivos:** ... | **Severidade:** Crítica/Alta/Média/Baixa | **Status:** Corrigido/Implementado
 
-### Estrutura de diretorios
-- Rotas: `backend/routes/`
-- Servicos: `backend/services/`
-- Modelos estatisticos: `backend/modeling/`
-- AI/Mistral: `backend/services/mistral_analysis.py`
-- Frontend: `frontend/next/src/`
+### Problema identificado · Causa raiz · Correções aplicadas (com camadas) · Lição aprendida
+```
 
-### Checklist novo mercado (REGRAS #006)
-1. Engine (`backend/modeling/`)
-2. ev_classification (`backend/services/ev_classification.py`)
-3. market_validator (`backend/modeling/market_validator.py`)
-4. dedup (`backend/services/market_service.py`)
-5. correlation_matrix (`backend/services/correlation_matrix.py`)
-6. evaluatePick frontend (`frontend/next/src/lib/localAudit.ts`)
-7. evaluatePick backend (`backend/routes/ai_analysis.py`)
-
-### Regras de seguranca
-- Threshold changes > 15% BLOQUEADOS sem dados
-- MIN_N_BRIER = 20 (#079)
-- Mistral: temperature 0.15, EXCLUSIVAMENTE narrativo (#082)
-- Complementares > 105% BLOQUEADOS (#098)
-- Deflacao progressiva por banda (#105) — NAO reverter para uniforme
-- Classificacao usa prob raw, EV usa prob deflacionada (#106)
+**Exigem entrada:** lógica de cálculo, thresholds, pesos, pipeline, prompt Mistral, infraestrutura. Typos/formatação não.
