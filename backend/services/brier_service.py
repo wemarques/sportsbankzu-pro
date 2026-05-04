@@ -10,7 +10,10 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from scipy.stats import wilcoxon
+# #182 — scipy import lazy inside _with_ci. Top-level import broke production
+# Lambda (numpy._core.tests missing in the bundled scipy/numpy combination).
+# Locally scipy is available; lazily importing keeps the happy path intact and
+# fails open with p_value=None when the Lambda Layer can't satisfy scipy.
 
 logger = logging.getLogger("sportsbankzu.brier")
 
@@ -92,8 +95,13 @@ def _with_ci(picks, brier_model, brier_implied):
             "below_min_n": True,
         }
     try:
+        # #182 — lazy import; ImportError on Lambda surfaces here, not at module load.
+        from scipy.stats import wilcoxon
         _, pval = wilcoxon(bm_per[:n_paired], bi_per[:n_paired])
     except Exception:
+        # Covers both ImportError (Lambda Layer mismatch) and degenerate-input
+        # cases (e.g. all-zero diffs). p_value=None disables significance test;
+        # significant_at_5pct will be False.
         pval = None
     delta = brier_implied - brier_model
     return {

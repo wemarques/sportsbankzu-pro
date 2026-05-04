@@ -9043,3 +9043,40 @@ A função em `mistral_analysis.py:619-654` tem 3 limitações estruturais:
 Métricas duplas no mesmo contexto sem awareness explícita do consumidor produzem alucinações sutis. O sistema mantém raw e deflated por design (#106 — classificação vs EV) mas o prompt do Mistral não distinguia. Validação parcial (Camada 6 só inspeciona `recomendacao_principal`) deixa narrativa livre para divergir do display sem alarme. Princípio: quando uma camada de validação tem escopo limitado, **documentar o limite na própria função** (não em ticket externo) e adicionar camada complementar com escopo declarado, não estender a primeira indefinidamente. Observabilidade antes de automação: medir antes de retry/fallback, especialmente em LLM downstream.
 
 ---
+
+## #182 — Hotfix scipy lazy import (P0 — produção quebrada após #178)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_brier_178_ci.py | **Severidade:** Crítica (P0 — endpoint /metrics/brier 100% quebrado em produção) | **Status:** Hotfix implementado
+
+### Problema identificado
+Após deploy do #178, endpoint `/metrics/brier` em produção retornou:
+```json
+{"error": "No module named 'numpy._core.tests'", "total_picks": 0}
+```
+Causa: `from scipy.stats import wilcoxon` no topo de `brier_service.py` (linha 13, adicionado no #178) é executado no import do módulo. No Lambda, o numpy bundled no ZIP de deploy + scipy do Layer (`scipy-numpy-layer:2`) têm versões incompatíveis — scipy ≥ 1.13 espera `numpy._core.tests` que não existe no numpy < 2.0. Resultado: ImportError no carregamento do módulo, todo `brier_service` indisponível, endpoint retorna fallback com `total_picks=0`.
+
+### Causa raiz
+1. **Top-level import scipy** força resolução em load-time. Falha aqui derruba o módulo inteiro, não só a função que usa scipy.
+2. **Layer + ZIP coexistem com versões diferentes:** o Lambda Layer `scipy-numpy-layer:2` (#170-A) carrega scipy ≥ 1.13 com numpy 2.x esperado; o ZIP de deploy embarca numpy 1.x para outras dependências. Conflito silencioso até o load do scipy.stats.
+3. **Local não detectou:** `pytest -v` rodou 14/14 verde antes do deploy do #178 porque local tem scipy + numpy compatíveis (instalados via requirements.txt). Lambda usa Layer separado.
+
+### Correções aplicadas (camadas)
+1. **Remover top-level import:** linha 13 deletada. Substituída por bloco-comentário `# #182 — scipy import lazy inside _with_ci`.
+2. **Lazy import dentro do try/except em `_with_ci()`:** o `from scipy.stats import wilcoxon` foi movido para DENTRO do `try:` que já cobria a chamada `wilcoxon(...)`. `except Exception` agora captura tanto `ImportError` (Lambda Layer mismatch) quanto erros runtime de `wilcoxon` (degenerate input). Em ambos os casos, `pval = None` → `significant_at_5pct = False` → contrato preservado.
+3. **Test ajustado:** `test_strong_signal_is_significant` relaxa `assert p_value is not None` para `assert p_value is None or isinstance(..., float)`. Documenta o novo contrato (p_value pode ser None na produção, float em local). Demais 6 testes passam sem modificação. 7/7 verdes.
+
+**Riscos descartados:**
+- Comportamento local: scipy continua disponível → import dentro do try/except passa → wilcoxon roda → p_value é float. Idêntico ao #178.
+- Contrato `_with_ci`: dict shape inalterado. Consumidores (`_segment` → snapshot → endpoint) continuam funcionando com p_value=None tratado como "indeterminado".
+- Significância estatística: quando p_value=None, `significant_at_5pct=False` por construção (`bool(pval is not None and ...)`) — fail-safe correto.
+- Regra #079: MIN_N=20 preservado, intocado.
+
+**O que esse hotfix DELIBERADAMENTE não faz:**
+- **Não corrige o Lambda Layer.** scipy real em Lambda fica como fix separado (recriar `scipy-numpy-layer` com numpy compatível, ou bundle scipy no ZIP). Risco: produção continua sem Wilcoxon, todos os `model_beats_house_ci.p_value` em CloudWatch serão None até esse fix futuro.
+- **Não muda outros lugares que importam scipy** — apenas `brier_service.py` foi adicionado no #178; outros não foram tocados.
+- **Não adiciona test que simula ImportError** explicitamente (via monkeypatch de `sys.modules`) — escopo mínimo, fora da urgência P0.
+
+### Lição aprendida
+Top-level import de dependência opcional (especialmente em código que roda em Lambda com Layers de versão divergente do dev) é fragilidade. Padrão correto: lazy import dentro da função que usa, em try/except amplo. Validação local (`pytest`) NÃO substitui smoke test pós-deploy contra o endpoint real — adicionar smoke check ao `scripts/finalize.sh` ou pós-deploy seria a próxima camada de defesa. Princípio: **se o código importa, validar o import na ENV alvo, não só na ENV de dev.**
+
+---

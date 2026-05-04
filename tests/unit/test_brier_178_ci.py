@@ -27,8 +27,14 @@ def test_strong_signal_is_significant():
     ci = _with_ci(picks, 0.21, 0.23)
     assert ci["n"] == 50
     assert ci["delta"] == 0.02
-    # Wilcoxon devolve um p-value valido (testa que a engine rodou, nao a magnitude)
-    assert ci["p_value"] is not None
+    # #182: p_value e float quando scipy esta disponivel (local/CI), None quando o
+    # import falha (Lambda Layer com numpy/scipy incompativeis). Em ambos os casos,
+    # o resto do dict deve estar coerente.
+    assert ci["p_value"] is None or isinstance(ci["p_value"], float)
+    assert ci["beats_bool"] is True  # delta > 0
+    # significant_at_5pct so deve ser True quando p_value e float E < 0.05
+    if ci["p_value"] is None:
+        assert ci["significant_at_5pct"] is False
 
 
 def test_min_n_threshold():
