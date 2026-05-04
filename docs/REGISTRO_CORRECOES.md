@@ -4,6 +4,47 @@
 
 ---
 
+## 179 — Recalibração banda 50-60% (shadow mode)
+
+**Data:** 2026-05-04
+**Arquivos afetados:**
+- `backend/services/ev_classification.py` (`_band_deflation_v179_shadow`, `apply_probability_deflation_with_shadow`, flag `SHADOW_BAND_50_60_V179`)
+- `backend/cron_handler.py` (persist `prob_deflated` + `prob_shadow_v179` em `audit_results.predicted_probs` JSONB)
+- `backend/routes/health.py` (`GET /metrics/shadow_v179`)
+- `tests/unit/test_calibrator_179.py` (4 cases)
+
+**Severidade:** Alta (sub-confiança crônica em 68% do volume)
+**Status:** Implementado em shadow — NÃO promovido em produção
+
+### Problema identificado
+UNBLOCK_REPORT 2026-05-04 — banda 50-60% sub-confiante em **−12.7pp** (predicted 54.8%, actual 67.5%, N=1796 picks = ~68% do volume). Gap quase exatamente igual à deflação atual de 12% aplicada por `_band_deflation` para essa banda. Strong evidence de que a deflação progressiva (#105) está mal calibrada justamente onde concentra a maior parte dos picks — efeito é supressão sistemática de EV+ e classificação NO_BET excessiva.
+
+### Causa raiz
+`_band_deflation` em `backend/services/ev_classification.py:42` retorna **0.12** para `prob ∈ [0.50, 0.60)` desde #105. A escolha foi conservadora durante a calibração inicial (379 picks Brier #104) e nunca foi revisada com volume estatístico significativo. Com 1796 observações pós-#105, fica visível que essa banda específica está sendo deflacionada além do necessário — outras bandas (60-70%, 70-80%) seguem dentro do esperado por enquanto.
+
+NÃO se trata de bug em `calibrator.py` (que faz IsotonicRegression genérica para `calibrate_prob`) — a recalibração isotônica precede a deflação progressiva, e o problema é estrito da camada de deflação.
+
+### Correções aplicadas (shadow mode)
+1. **`_band_deflation_v179_shadow(prob)`**: função paralela a `_band_deflation`. Idêntica em todas as bandas exceto `[0.50, 0.60)` que retorna `0.05` (era `0.12` — ~60% menos agressivo). Banda crítica isolada; nenhum efeito em outras faixas.
+2. **`apply_probability_deflation_with_shadow(prob, league_id)`**: retorna tupla `(current_deflated, shadow_deflated_v179)`. Per-league factor (#105) e floor `0.05` aplicam idênticos a ambos os ramos. Gated por `SHADOW_BAND_50_60_V179` env var (default `false` → shadow = current; `true` → divergência só na banda).
+3. **Persistência observability**: `cron_handler.log_pick(...)` agora grava `prob_deflated` e `prob_shadow_v179` no JSONB `predicted_probs` ao lado de `prob`. Computado a partir de `merc.raw_probability` quando disponível; caso contrário, ambos caem no valor live (`prob_pick`) — i.e., comparação fica neutra, não introduz ruído.
+4. **`GET /metrics/shadow_v179`**: lê últimos 5000 picks com `actual_result IN ('hit','miss')`, filtra os que caíram em `[0.50, 0.60)` no path live, computa Brier de cada ramo, retorna `improvement_pct = (brier_current − brier_shadow) / brier_current * 100`. Honra MIN_N=20 (regra #079) — `insufficient_n` quando N < MIN_N. Quando flag OFF, retorna `shadow_disabled` direto (sem leitura de DB).
+5. **Testes** (`tests/unit/test_calibrator_179.py`): (i) flag OFF retorna idênticos em todas as bandas, (ii) flag ON diverge dentro de `[0.50, 0.60)` com magnitude exata (0.05 vs 0.12), (iii) flag ON mantém idêntico fora da banda, (iv) MIN_N=20 preservado.
+
+### Não incluído nesta correção (deferred)
+- **Promoção a live**: NÃO aplicada. Bloqueada por gate de 2 semanas + `improvement_pct >= 3%` no `/metrics/shadow_v179`.
+- **Auto-rollback** em caso de degradação shadow: deferido — primeiro ciclo será revisado manualmente para captura de aprendizado.
+- **Recalibração de outras bandas**: 60-70% e 70-80% não mostraram gap significativo no UNBLOCK_REPORT atual; serão reavaliadas ao acumular volume comparável.
+
+### Promoção e rollback
+- **Promoção**: setar `SHADOW_BAND_50_60_V179=true` em produção (Lambda env). Aguardar 2 semanas. Verificar `/metrics/shadow_v179` → `improvement_pct >= 3.0` com `n >= MIN_N`. Se ambos OK, refatorar `_band_deflation` (mudar `0.12` para `0.05` na linha 47) e remover shadow.
+- **Rollback (instantâneo)**: `SHADOW_BAND_50_60_V179=false`. Sem redeploy. Preserva linha live.
+
+### Lição aprendida
+**Toda mudança em calibração (deflação, isotonic, fatores per-league) deve passar por shadow mode mínimo de 2 semanas + improvement out-of-sample ≥ 3% antes de ser promovida.** O incidente P0 #171 mostrou o custo de promover recalibração sem shadow (50% banca em 24h após `CORNERS_ALPHA_CALIBRATED`). Shadow gera dois snapshots no audit log e zero risco em produção; o custo é apenas storage adicional no JSONB. Adicionado a `REGRAS_ATIVAS.md` como regra permanente.
+
+---
+
 ## 176 — FootyStats API key rotacionada + sanitização de logs (B-010)
 
 **Data:** 2026-05-01

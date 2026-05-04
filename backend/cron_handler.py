@@ -266,12 +266,31 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             try:
                 _norm_market = merc_name.strip()
                 actual_outcome = "hit" if is_correct else "miss"
+                # #179: shadow snapshot of band 50-60% recalibration. When the
+                # SHADOW_BAND_50_60_V179 env flag is OFF (default), prob_deflated
+                # and prob_shadow_v179 are identical — observability only, no
+                # behavior change. The endpoint /metrics/shadow_v179 compares them.
+                _shadow_current = prob_pick
+                _shadow_v179 = prob_pick
+                try:
+                    from backend.services.ev_classification import (
+                        apply_probability_deflation_with_shadow,
+                    )
+                    _raw_prob = merc.get("raw_probability")
+                    if _raw_prob is not None:
+                        _shadow_current, _shadow_v179 = apply_probability_deflation_with_shadow(
+                            float(_raw_prob), league or ""
+                        )
+                except Exception:
+                    pass
                 audit_db.log_pick(
                     match_id=m.get("id", f"{home}-{away}"),
                     league=league,
                     market=_norm_market,
                     predicted_probs={
                         "prob": prob_pick,
+                        "prob_deflated": _shadow_current,  # #179
+                        "prob_shadow_v179": _shadow_v179,  # #179
                         "market": _norm_market,
                         "odd": odd_pick if odd_pick > 0 else None,
                         "book_odd": odd_pick if odd_pick > 0 else None,

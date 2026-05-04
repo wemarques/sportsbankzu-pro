@@ -544,3 +544,30 @@ proteção:
 `ODDSVAL_HAIRCUT_FLOOR/MAX`, `MAX_CORNER_STAKE_DAY_PCT`, `DAILY_LOSS_BREAKER_PCT`.
 
 **Verificação:** `grep -n "ece_haircut_factor\|oddsval_haircut_factor\|apply_family_cap\|check_daily_loss_breaker" backend/services/bankroll_engine.py`
+
+### #179 — Shadow mode obrigatório para mudanças de calibração/deflação
+
+**Tipo:** Regra permanente (Governança de modelo)
+**Relacionado:** #105 (deflação progressiva), #042 (backtesting), #079 (MIN_N=20),
+#171 (incidente P0 −50% banca em 24h por calibração promovida sem shadow), #170-A.
+
+Toda mudança em calibração ou deflação (band deflation `_band_deflation`, IsotonicRegression
+em `calibrator.py`, fatores per-league em `_LEAGUE_DEFLATION`, NB2 α em corners, etc.) DEVE
+ser introduzida em **shadow mode** antes de promover ao caminho live, atendendo
+obrigatoriamente todos os critérios abaixo:
+
+1. **Persistência paralela** dos valores live e shadow no `audit_results.predicted_probs`
+   JSONB (campos `prob_deflated` + `prob_<feature>_<id>`), sem alterar comportamento live.
+2. **Endpoint diff** dedicado (padrão `GET /metrics/shadow_<id>`) que computa Brier
+   live vs shadow e retorna `improvement_pct`. Honra `MIN_N=20` (regra #079).
+3. **Janela mínima de observação:** 2 semanas calendário com flag de shadow ativada
+   em produção, acumulando picks reais.
+4. **Gate de promoção:** `improvement_pct >= 3.0` no Brier out-of-sample do segmento
+   afetado. Promoção parcial (apenas a banda/segmento que satisfaz o gate) é aceitável.
+5. **Rollback obrigatoriamente via env var** (sem redeploy). O kill-switch deve estar
+   documentado na entrada do REGISTRO. Default da flag = `false`.
+
+Promoção sem shadow é **bloqueada** — exceções exigem entrada explícita em REGRAS_ATIVAS
+descrevendo a razão (ex.: hotfix de segurança, não recalibração).
+
+**Verificação:** `grep -n "SHADOW_BAND_50_60_V179\|apply_probability_deflation_with_shadow" backend/services/ev_classification.py`

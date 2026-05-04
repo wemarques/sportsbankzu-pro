@@ -12,6 +12,7 @@ a single entry point for all market evaluation.
 """
 
 import logging
+import os
 from typing import Dict, Any, List, Optional
 
 from backend.models.market_output import (
@@ -48,6 +49,29 @@ def _band_deflation(prob: float) -> float:
     return 0.10
 
 
+def _band_deflation_v179_shadow(prob: float) -> float:
+    """#179 SHADOW: reduced deflation for 50-60% band.
+
+    UNBLOCK_REPORT 2026-05-04 showed band 50-60% sub-confident by -12.7pp
+    (predicted 54.8%, actual 67.5%, N=1796 = 68% of volume). Current 12%
+    deflation matches the observed gap almost exactly — strong evidence
+    the deflation itself is the cause.
+
+    Shadow change: reduce 50-60% deflation from 0.12 to 0.05 (~60% less
+    aggressive). Other bands unchanged. Promotion gate: 2 weeks shadow
+    + improvement_pct >= 3% on /metrics/shadow_v179.
+    """
+    if prob >= 0.80:
+        return 0.25
+    if prob >= 0.70:
+        return 0.20
+    if prob >= 0.60:
+        return 0.15
+    if prob >= 0.50:
+        return 0.05  # #179: was 0.12
+    return 0.10
+
+
 def apply_probability_deflation(prob: float, league_id: str = "") -> float:
     """Apply progressive band deflation + per-league factor (#105).
 
@@ -67,6 +91,37 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
         deflated *= max(factor, 0.85)
 
     return max(deflated, 0.05)
+
+
+# #179 — Shadow flag for band 50-60% recalibration. Default OFF; when OFF
+# the shadow path returns identical values to current. Promotion to live
+# requires 2 weeks of shadow data + improvement_pct >= 3% on
+# /metrics/shadow_v179. Rollback is a single env-var flip.
+SHADOW_BAND_50_60_V179 = os.getenv("SHADOW_BAND_50_60_V179", "false").lower() == "true"
+
+
+def apply_probability_deflation_with_shadow(prob: float, league_id: str = "") -> "tuple[float, float]":
+    """#179: returns (current_deflated, shadow_deflated_v179).
+
+    When SHADOW_BAND_50_60_V179=false (default), the two values are identical.
+    When true, the shadow path uses `_band_deflation_v179_shadow` (0.05 in band
+    [0.50, 0.60); identical elsewhere). Per-league factor and the 0.05 floor
+    apply to both branches. Used by `/metrics/shadow_v179` for out-of-sample
+    Brier comparison without altering live behavior.
+    """
+    current_def = _band_deflation(prob)
+    shadow_def = _band_deflation_v179_shadow(prob) if SHADOW_BAND_50_60_V179 else current_def
+
+    current = prob * (1.0 - current_def)
+    shadow = prob * (1.0 - shadow_def)
+
+    if league_id:
+        factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+        f_capped = max(factor, 0.85)
+        current *= f_capped
+        shadow *= f_capped
+
+    return max(current, 0.05), max(shadow, 0.05)
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
