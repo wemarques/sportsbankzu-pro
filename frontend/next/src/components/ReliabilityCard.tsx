@@ -1,6 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+
+/* #178 — model_beats_house with CI shape (inline; matches backend brier_service._with_ci) */
+type ModelBeatsHouseCI = {
+  beats_bool: boolean;
+  delta: number | null;
+  p_value: number | null;
+  n: number;
+  significant_at_5pct: boolean;
+  below_min_n: boolean;
+};
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -53,6 +63,66 @@ function Row({ label, value, sub }: { label: string; value: React.ReactNode; sub
       <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#f8fafc", fontFamily: "monospace" }}>
         {value ?? <EmptyVal />}
       </span>
+    </div>
+  );
+}
+
+/* #178 — model_beats_house with Wilcoxon p-value badge.
+   Self-contained: fetches /api/metrics/brier on mount.
+   Three states: below_min_n (gray), significant (green), not significant (yellow). */
+function ModelBeatsHouseRow() {
+  const [ci, setCi] = useState<ModelBeatsHouseCI | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let aborted = false;
+    fetch("/api/metrics/brier", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((j) => {
+        if (aborted) return;
+        const next = j?.model_beats_house_ci ?? null;
+        setCi(next);
+      })
+      .catch((e) => {
+        if (!aborted) setErr(String(e?.message ?? e));
+      });
+    return () => {
+      aborted = true;
+    };
+  }, []);
+
+  let value: React.ReactNode = <EmptyVal text="Carregando..." />;
+  if (err) {
+    value = <EmptyVal text="Indisponivel" />;
+  } else if (ci) {
+    if (ci.below_min_n) {
+      value = (
+        <span style={{ color: "#94a3b8", fontWeight: 600, fontFamily: "monospace" }}>
+          Indeterminado (N={ci.n}&lt;20)
+        </span>
+      );
+    } else if (ci.significant_at_5pct) {
+      value = (
+        <span style={{ color: "#4ade80", fontWeight: 700, fontFamily: "monospace" }}>
+          Sim (delta {ci.delta?.toFixed(4)}, p={ci.p_value?.toFixed(3)}, N={ci.n})
+        </span>
+      );
+    } else {
+      value = (
+        <span style={{ color: "#f59e0b", fontWeight: 600, fontFamily: "monospace" }}>
+          Sem significancia (delta {ci.delta?.toFixed(4) ?? "?"}, p={ci.p_value?.toFixed(3) ?? "?"}, N={ci.n})
+        </span>
+      );
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+      <div>
+        <span style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>Bate o mercado?</span>
+        <span style={{ fontSize: "0.62rem", color: "#64748b", marginLeft: 8 }}>Wilcoxon paired</span>
+      </div>
+      <span style={{ fontSize: "0.78rem" }}>{value}</span>
     </div>
   );
 }
@@ -164,6 +234,7 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           score={pred.brier_score != null ? (1 - pred.brier_score).toFixed(2) : <EmptyVal />} sub="P_brier">
           <Row label="Brier Score" value={pred.brier_score?.toFixed(4) ?? null} sub="target < 0.22" />
           <Row label="Amostra (N)" value={pred.n_total ?? 0} sub="min: 20" />
+          <ModelBeatsHouseRow />
           {!pred.suficiente && (
             <div style={{ fontSize: "0.72rem", color: "#f59e0b", padding: "6px 0" }}>
               {"\u26a0\ufe0f"} Amostra insuficiente — execute &quot;Auditar Rodada&quot; apos jogos finalizados

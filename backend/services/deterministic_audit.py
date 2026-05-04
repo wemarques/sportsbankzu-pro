@@ -321,15 +321,16 @@ def _compute_corrections(
         base_confidence = 70
 
     # Rule 1: O/U Brier too high → lambda deflation
-    if avg_brier > 0.25:
-        delta = avg_brier - 0.22  # target Brier = 0.22
+    from backend.services.brier_service import BRIER_TARGET  # #178
+    if avg_brier > BRIER_TARGET:
+        delta = avg_brier - BRIER_TARGET  # #178: single canonical target
         suggested_deflation = max(0.80, 1.0 - delta * 2)
         corrections.append({
             "type": "lambda_deflation",
             "parameter": "lambda_ou",
             "current_value": 1.0,
             "suggested_value": round(suggested_deflation, 2),
-            "reason": f"Brier O/U {avg_brier:.4f} > 0.25. Reducao de deflation sugerida.",
+            "reason": f"Brier O/U {avg_brier:.4f} > {BRIER_TARGET}. Reducao de deflation sugerida.",
             "confidence": base_confidence,
             "impact": "HIGH" if avg_brier > 0.28 else "MEDIUM",
         })

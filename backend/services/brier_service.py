@@ -10,9 +10,12 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from scipy.stats import wilcoxon
+
 logger = logging.getLogger("sportsbankzu.brier")
 
 MIN_N = 20  # REGRA #079
+BRIER_TARGET = 0.22  # #178: single canonical value — UI + alerts must align
 
 
 def _conn():
@@ -60,6 +63,49 @@ def _brier(probs, outcomes):
     return sum((p - o) ** 2 for p, o in zip(probs, outcomes)) / len(probs)
 
 
+def _with_ci(picks, brier_model, brier_implied):
+    """#178 — model_beats_house with Wilcoxon paired test.
+
+    Returns dict {beats_bool, delta, p_value, n, significant_at_5pct, below_min_n}.
+    significant_at_5pct=False if N<MIN_N (REGRA #079) regardless of delta.
+    """
+    n = len(picks)
+    if n < MIN_N or brier_model is None or brier_implied is None:
+        return {
+            "beats_bool": False,
+            "delta": None,
+            "p_value": None,
+            "n": n,
+            "significant_at_5pct": False,
+            "below_min_n": n < MIN_N,
+        }
+    bm_per = [(p["prob"] - p["out"]) ** 2 for p in picks if p.get("odd")]
+    bi_per = [((1.0 / p["odd"]) - p["out"]) ** 2 for p in picks if p.get("odd")]
+    n_paired = min(len(bm_per), len(bi_per))
+    if n_paired < MIN_N:
+        return {
+            "beats_bool": False,
+            "delta": None,
+            "p_value": None,
+            "n": n_paired,
+            "significant_at_5pct": False,
+            "below_min_n": True,
+        }
+    try:
+        _, pval = wilcoxon(bm_per[:n_paired], bi_per[:n_paired])
+    except Exception:
+        pval = None
+    delta = brier_implied - brier_model
+    return {
+        "beats_bool": bool(brier_model < brier_implied),
+        "delta": round(delta, 5),
+        "p_value": round(float(pval), 5) if pval is not None else None,
+        "n": n_paired,
+        "significant_at_5pct": bool(pval is not None and pval < 0.05 and delta > 0),
+        "below_min_n": False,
+    }
+
+
 def _segment(picks):
     n = len(picks)
     if n == 0:
@@ -79,6 +125,7 @@ def _segment(picks):
         "brier_implied": round(bi, 4) if bi else None,
         "model_beats_house": beats,
         "delta": round(delta, 4) if delta else None,
+        "model_beats_house_ci": _with_ci(picks, bm, bi),
     }
 
 

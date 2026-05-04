@@ -8961,3 +8961,35 @@ Métricas agregadas em eixos isolados são suficientes para diagnóstico global 
 **Não inclui:** recalibração da banda 50-60% (achado novo do UNBLOCK_REPORT, fix separado), display Brier 0.22/0.25 (fix separado), credenciais hygiene em `scripts/create_users_table.py` (fix separado, security).
 
 ---
+
+## #178 — Brier display consistency + model_beats_house with CI
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, backend/services/backtesting.py, backend/services/deterministic_audit.py, backend/audit.py, frontend/next/src/components/AuditReportCard.tsx, frontend/next/src/components/ReliabilityCard.tsx, frontend/next/src/lib/localAudit.ts, tests/unit/test_brier_178_ci.py | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Auditoria red-team (REDTEAM_REPORT.md achado 4.1) detectou **três valores conflitantes** para o mesmo limite de Brier na mesma tela: backend dispara alerta apenas em `>0.25` (`backtesting.py:588`, `audit.py:667`, `deterministic_audit.py:324`), mas a UI exibe "Ideal < 0.22" em vários lugares (`AuditReportCard.tsx:206,430`, `ReliabilityCard.tsx:96,165,234`) e ainda escreve "acima do ideal (0.25)" em outros (`localAudit.ts:301`). UNBLOCK confirmou ao vivo que `brier_model = 0.2279` cai exatamente nesse buraco — operador vê "ruim" enquanto o sistema acabou de bater o mercado com N=2630. Adicionalmente, `model_beats_house` era exposto apenas como booleano puro (`brier_model < brier_implied`) sem teste estatístico — fragil porque uma diferença marginal sem N suficiente vira "verdadeiro" sem suporte de evidência.
+
+### Causa raiz
+1. **Sem fonte única de verdade** para o target: cada chamador hardcodeava `0.22` ou `0.25` na própria expressão. `deterministic_audit.py:325` até documentava em comentário "target Brier = 0.22" mas o gate de alerta na linha 324 era `> 0.25` — incoerência interna.
+2. **Sem garantia estatística** em `model_beats_house`: comparação direta de médias `brier_model < brier_implied` sem teste pareado, sem N mínimo, sem partição de sinal vs ruído.
+
+### Correções aplicadas (camadas)
+1. **Backend — fonte única `BRIER_TARGET`:** constante `BRIER_TARGET = 0.22` em `brier_service.py:16`. Importada em `backtesting.py:587` (lazy local import dentro de função para evitar ciclo), `deterministic_audit.py:324`, `audit.py:667`. Substitui todos os `0.25` hardcoded e o `0.22` solto do comentário em `deterministic_audit.py:325`. Renomeia campo `brier_below_025` → `brier_below_target` em `backtesting.py:617` (sem consumidores externos — verificado por grep).
+2. **Backend — `_with_ci()`:** nova função em `brier_service.py` que aplica Wilcoxon paired test sobre as séries per-pick `(prob - hit)²` vs `(1/odd - hit)²`. Retorna dict `{beats_bool, delta, p_value, n, significant_at_5pct, below_min_n}`. `significant_at_5pct = (p<0.05 AND delta>0 AND n>=MIN_N=20)` — respeita REGRA #079 explicitamente. Wrapped em `try/except` para casos degenerados (todos diffs idênticos).
+3. **Backend — integração em `_segment`:** todo segmento (global, by_league, by_market, by_classification, by_league_market) ganha campo aditivo `model_beats_house_ci` no return. Booleano legado `model_beats_house` mantido para retrocompat — não-breaking.
+4. **Frontend — consistência 0.22:** `AuditReportCard.tsx:136` (`>0.25` → `>0.22`), `localAudit.ts:165` (comentário), `localAudit.ts:170` (`>0.25` → `>0.22`), `localAudit.ts:295,301` (`>0.25` → `>0.22` + texto "ideal (0.25)" → "(0.22)"). Outros lugares já estavam em `0.22` (verificados em `AuditReportCard.tsx:75,102,183,206,339,430`, `ReliabilityCard.tsx:96,165,234`, `admin/reliability/page.tsx:144`).
+5. **Frontend — badge CI:** novo componente `<ModelBeatsHouseRow />` self-contained em `ReliabilityCard.tsx`. Faz fetch a `/api/metrics/brier` (Next.js route já existente) no mount, lê `model_beats_house_ci` top-level, renderiza 3 estados — **cinza** (`below_min_n`), **verde** (`significant_at_5pct=true`), **amarelo** (sem significância). Tipo `ModelBeatsHouseCI` definido inline (não cria `types/` directory). Sem mudança em prop drilling, sem refactor de parent.
+6. **Teste novo:** `tests/unit/test_brier_178_ci.py` — 4 casos (`below_min_n_returns_indeterminate`, `brier_target_is_022`, `strong_signal_is_significant`, `min_n_threshold`). 37 passes em pytest `-k "brier or audit or backtest or metrics"` — não-regressivo.
+
+**Riscos descartados:**
+- Modelo: zero impacto. Pipeline preditivo, EV, classificação, deflations — tudo intocado.
+- API contract: campo aditivo. Consumidores que não conhecem `model_beats_house_ci` continuam lendo `model_beats_house` boolean.
+- UX regressão: badge novo aparece apenas no `ReliabilityCard` (já um modal opcional). Sem alteração de fluxo principal.
+- Regra #079: MIN_N=20 preservado como gate decisório dentro do próprio `_with_ci()` (`significant_at_5pct=False if n_paired<MIN_N`).
+
+### Lição aprendida
+Constantes operacionais (Brier target, MIN_N, LAMBDA_LIMIT, etc.) precisam de **fonte única importada** — não duplicar em strings ou gates espalhados. Inconsistência de 0.03 (0.22 vs 0.25) era invisível para quem escreveu cada arquivo isolado, mas o operador olha para o mesmo número em 3 lugares e vê 3 verdades. Métricas booleanas (`model_beats_house = True/False`) são frágeis quando o significado pratico depende de N — substituir por dicionário com `(value, p, n, gate)` separa ruído de sinal sem inflar a complexidade.
+
+**Não inclui:** recalibração da banda 50-60% (UNBLOCK achado novo, próximo fix), filter corners 0.85 (descartado pela UNBLOCK), `CORNERS_ALPHA_CALIBRATED` flag flip (depende de #179), credenciais hygiene em `scripts/create_users_table.py` (security separado).
+
+---

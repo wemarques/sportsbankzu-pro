@@ -27,7 +27,7 @@ MIN_N_LOG_LOSS = 20
 # ---------------------------------------------------------------------------
 
 def compute_brier_score(predictions: list[dict]) -> float | None:
-    """Brier Score: mean of (prob - outcome)^2. Target: < 0.22 O/U, < 0.25 general.
+    """Brier Score: mean of (prob - outcome)^2. Target: < BRIER_TARGET (0.22, #178).
 
     predictions: list of {"prob": float, "outcome": bool|int}
     Reuses audit.calculate_brier() logic without duplicating.
@@ -575,9 +575,10 @@ def evaluate_safe_reactivation() -> dict:
 
     Criteria (ALL must be True):
     - 3 consecutive audits with accuracy > 50%
-    - Brier Score < 0.25
+    - Brier Score < BRIER_TARGET (0.22, #178)
     - Lambda error < 0.90 (#129b: revised from 0.50 — Dixon-Coles benchmark)
     """
+    from backend.services.brier_service import BRIER_TARGET  # #178
     recent = run_backtest(days=30)  # #119d — expanded from 14 to accumulate N > MIN_N_BRIER(20)
 
     brier = recent.get("brier")
@@ -585,7 +586,7 @@ def evaluate_safe_reactivation() -> dict:
     hit_rate = (recent.get("hit_rate") or {}).get("overall")
 
     LAMBDA_LIMIT = 0.90  # #129b: revised from 0.50 (unreachable)
-    brier_met = brier is not None and brier < 0.25
+    brier_met = brier is not None and brier < BRIER_TARGET
     lambda_met = lambda_err is not None and lambda_err < LAMBDA_LIMIT
     accuracy_met = hit_rate is not None and hit_rate > 0.50
 
@@ -603,7 +604,7 @@ def evaluate_safe_reactivation() -> dict:
     else:
         failing = []
         if not brier_met:
-            failing.append(f"Brier {brier:.4f} > 0.25" if brier else "Brier: sem dados")
+            failing.append(f"Brier {brier:.4f} > {BRIER_TARGET}" if brier else "Brier: sem dados")
         if not lambda_met:
             failing.append(f"Lambda error {lambda_err:.4f} > {LAMBDA_LIMIT}" if lambda_err else "Lambda: sem dados")
         if not accuracy_met:
@@ -614,7 +615,7 @@ def evaluate_safe_reactivation() -> dict:
         "can_reactivate": can_reactivate,
         "criteria": {
             "accuracy_above_50": {"met": accuracy_met, "value": hit_rate, "target": 0.50},
-            "brier_below_025": {"met": brier_met, "value": brier, "target": 0.25},
+            "brier_below_target": {"met": brier_met, "value": brier, "target": BRIER_TARGET},
             "lambda_error_below_limit": {"met": lambda_met, "value": lambda_err, "target": LAMBDA_LIMIT},
             "enough_data": {"met": has_enough_data, "value": n_picks, "target": 15},
         },
