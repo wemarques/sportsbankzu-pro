@@ -209,3 +209,4 @@
 | 174 | Implementado | Fix + Política | Bug Report Card (null guards `safe_accuracy` em AuditReportCard.tsx, espelho do #168) + política de não-mexer com N=11 + watchlist Cartões Over 2.5 (calibrar α per-league se accuracy <40% com N≥15) |
 | 175 | Implementado | FinOps | EC2 prognosticos-brasileirao-server t3.micro terminada (dark spend ~$90/ano, sem utilização) — captura de metadados em `infra/decommissioned/` para audit trail |
 | 176 | Implementado | Security | FootyStats key rotacionada + helper `_redact_key` em `footstats_client.py` mascara `?key=`/`&key=` em 4 logger.* + retention temp 7d (restaurar 90d em 2026-05-08) |
+| 177 | Implementado | Backend | Joint `by_league_market` JSONB no `brier_service` (MIN_N=5 diagnóstico + flag `diagnostic_only` quando N<20) — destrava validação red-team de subset (VALIDATE_REPORT 2026-05-04) |

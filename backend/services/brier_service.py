@@ -38,9 +38,14 @@ def _ensure_table():
                 by_market JSONB,
                 by_band JSONB,
                 by_classification JSONB,
+                by_league_market JSONB,
                 new_picks INTEGER DEFAULT 0,
                 audit_date TEXT
             )
+        """)
+        cur.execute("""
+            ALTER TABLE brier_history
+            ADD COLUMN IF NOT EXISTS by_league_market JSONB
         """)
         conn.commit()
         cur.close()
@@ -151,6 +156,21 @@ def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
     for k, v in cg.items():
         by_cls[k] = _segment(v)
 
+    # By league x market (joint - #177)
+    # MIN_N=5 for diagnostic; segments with N<MIN_N (20, REGRA #079) carry diagnostic_only=True.
+    JOINT_MIN_N_DIAGNOSTIC = 5
+    by_league_market = {}
+    lmk = defaultdict(list)
+    for p in picks:
+        if p.get("league") and p.get("market"):
+            lmk[(p["league"], p["market"])].append(p)
+    for (lg, mk), v in lmk.items():
+        if len(v) >= JOINT_MIN_N_DIAGNOSTIC:
+            seg = _segment(v)
+            if seg:
+                seg["diagnostic_only"] = len(v) < MIN_N
+                by_league_market[f"{lg}|||{mk}"] = seg
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "total_picks": len(picks),
@@ -160,6 +180,7 @@ def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
         "by_market": by_market,
         "by_band": by_band,
         "by_classification": by_cls,
+        "by_league_market": by_league_market,
     }
 
 
@@ -171,13 +192,15 @@ def persist_snapshot(snapshot: Dict, new_picks: int = 0) -> bool:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO brier_history (total_picks,brier_model,brier_implied,model_beats_house,"
-            "delta,accuracy,by_league,by_market,by_band,by_classification,new_picks,audit_date) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "delta,accuracy,by_league,by_market,by_band,by_classification,by_league_market,"
+            "new_picks,audit_date) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 snapshot["total_picks"], snapshot.get("brier_model"), snapshot.get("brier_implied"),
                 snapshot.get("model_beats_house"), snapshot.get("delta"), snapshot.get("accuracy"),
                 json.dumps(snapshot.get("by_league", {})), json.dumps(snapshot.get("by_market", {})),
                 json.dumps(snapshot.get("by_band", {})), json.dumps(snapshot.get("by_classification", {})),
+                json.dumps(snapshot.get("by_league_market", {})),
                 new_picks, snapshot.get("audit_date"),
             ),
         )
@@ -206,7 +229,8 @@ def get_history(limit: int = 30) -> List[Dict]:
         cur = conn.cursor()
         cur.execute(
             "SELECT id,timestamp,total_picks,brier_model,brier_implied,model_beats_house,"
-            "delta,accuracy,by_league,by_market,by_band,by_classification,new_picks,audit_date "
+            "delta,accuracy,by_league,by_market,by_band,by_classification,by_league_market,"
+            "new_picks,audit_date "
             "FROM brier_history ORDER BY timestamp DESC LIMIT %s",
             (limit,),
         )

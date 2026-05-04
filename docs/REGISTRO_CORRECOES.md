@@ -8929,3 +8929,35 @@ Sistemas com cobertura global de futebol devem considerar os 4 fusos principais:
 Deflações em múltiplas camadas (banda + per-league + default + per-market) podem empilhar silenciosamente. Cada nova deflação deve calcular o efeito cumulativo total, não apenas seu impacto isolado. Valores 0/0 não são iguais a 0% — representam ausência de dados e devem ser tratados como null/N/A.
 
 ---
+
+## #177 — Joint breakdown by_league_market no brier_service
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_brier_service_177.py | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Auditoria red-team de 2026-05-04 (`audits/red-team/2026-05-04/unblock/UNBLOCK_REPORT.md` + `validate/VALIDATE_REPORT.md`) confirmou `model_beats_house=true` global (delta +0.0058, N=2630), mas heterogêneo: 13 ligas com delta>0, 9 com delta<0; 9 mercados com delta>0, 13 com delta<0. Para validar o subset vencedor (4 ligas × 4 mercados) o operador precisa do delta na **interseção** — `model_beats_house` quando `league IN {...} AND market IN {...}`. O endpoint `/metrics/brier` expunha apenas eixos isolados (`by_league` OU `by_market`), não joint. Sem joint, era impossível responder "esse filtro tem ROI positivo em R$?" — bloqueava decisão sobre alocação de bankroll real (VALIDATE_REPORT veredicto WAIT).
+
+### Causa raiz
+`calculate_snapshot()` em `brier_service.py:117-163` agrupava picks por `p["league"]` e por `p["market"]` independentemente, sem cross-tab. O schema `brier_history` tinha colunas `by_league JSONB`, `by_market JSONB`, `by_band JSONB`, `by_classification JSONB` — sem `by_league_market`.
+
+### Correções aplicadas (camadas)
+1. **Schema:** coluna `by_league_market JSONB` no `CREATE TABLE` (linha 41) + `ALTER TABLE ADD COLUMN IF NOT EXISTS` idempotente embutido em `_ensure_table()` (linhas 46-49). Aditivo nullable, sem rollback.
+2. **Cálculo joint:** novo bloco em `calculate_snapshot()` (linhas 159-172) com `JOINT_MIN_N_DIAGNOSTIC=5` para diagnóstico e flag `diagnostic_only=True` quando N<MIN_N (20, regra #079). Chave plana `f"{league}|||{market}"` com separador `|||` (improvável em nomes de liga/mercado, evita colisão).
+3. **Persistência:** `persist_snapshot()` INSERT estendido com 13 colunas (linhas 193-198 + tuple linha 204).
+4. **Leitura:** `get_history()` SELECT estendido com a nova coluna (linha 213).
+5. **Teste novo:** `tests/unit/test_brier_service_177.py` com 3 casos (segment shape, threshold diagnóstico, formato de chave). 22 passes em `pytest -k "brier or audit"` — não-regressivo.
+
+**Riscos descartados:**
+- Schema breaking: nenhum (coluna aditiva, nullable, ALTER IF NOT EXISTS).
+- Performance: O(N) sobre picks já em memória — irrelevante para N=2630.
+- Frontend: nenhum consumer atual lê `by_league_market` — quem ler `get_history()` recebe a chave nova mas não quebra; quem lê `by_league`/`by_market` continua funcionando.
+- Regra #079: respeitada — `MIN_N_BRIER=20` continua sendo o gate decisório; o `diagnostic_only=True` em N=5..19 é apenas observabilidade, não decisão.
+
+**Validação operacional:** após próximo cron de Brier, `/metrics/brier` deve expor chaves do tipo `"Mls|||BTTS — SIM"`, `"Brasileirao Serie B|||Under 3.5 gols"`, etc. Auditoria red-team pode então rodar `/red-team-validate-filter` v2 contra dados joint reais e responder GO/WAIT em R$.
+
+### Lição aprendida
+Métricas agregadas em eixos isolados são suficientes para diagnóstico global mas insuficientes para validação de subset. Quando `model_beats_house` é heterogêneo entre ligas e mercados, decisões de alocação exigem o cross-tab — não a média marginal. O custo de adicionar joint breakdown é trivial (~25 LOC + ALTER aditivo) comparado ao custo de não conseguir responder a pergunta. Mantém-se a regra #079 (MIN_N=20 para decisão) e adiciona-se um threshold diagnóstico (N=5) com flag explícita — separação clara entre "olhar" e "agir".
+
+**Não inclui:** recalibração da banda 50-60% (achado novo do UNBLOCK_REPORT, fix separado), display Brier 0.22/0.25 (fix separado), credenciais hygiene em `scripts/create_users_table.py` (fix separado, security).
+
+---
