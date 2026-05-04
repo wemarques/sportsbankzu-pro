@@ -8993,3 +8993,53 @@ Constantes operacionais (Brier target, MIN_N, LAMBDA_LIMIT, etc.) precisam de **
 **Não inclui:** recalibração da banda 50-60% (UNBLOCK achado novo, próximo fix), filter corners 0.85 (descartado pela UNBLOCK), `CORNERS_ALPHA_CALIBRATED` flag flip (depende de #179), credenciais hygiene em `scripts/create_users_table.py` (security separado).
 
 ---
+
+## #181 — Mistral input/output contract (full-text validation)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/ai/mistral_contract.py (novo), backend/services/mistral_analysis.py, backend/routes/ai_analysis.py, CLAUDE.md, tests/unit/test_mistral_contract_181.py | **Severidade:** Alta | **Status:** Implementado (observabilidade; retry/fallback automatizados em fix follow-up após dados de CloudWatch)
+
+### Problema identificado
+Operador observou em 2026-05-04 (Sporting CP × Vitória Guimarães): card de análise Mistral citava *"Under 3.5 odd 1.67 prob 70% EV +16.9%"* enquanto o display do sistema mostrava *"Under 3.5 odd 1.70 prob 56-58%"*. Gap ≈13pp = exatamente o valor da deflação progressiva (#105) para a banda 50-60%. Mistral fabricou um valor de EV (16.9%) que o sistema nunca computou.
+
+### Causa raiz (diagnóstico Q1 + Q2 — leitura de código)
+
+**Q1 — Por que Camada 6 (`_validate_recommendation_vs_pipeline`, #096) não bloqueou:**
+A função em `mistral_analysis.py:619-654` tem 3 limitações estruturais:
+1. Inspeciona apenas `recomendacao_principal` (string única) — não lê `resumo_analitico` nem `key_points`, exatamente onde a narrativa quebrada apareceu.
+2. Detecta apenas contradição de **direção** (Over X ↔ Under X com mesma linha). Mistral disse "Under 3.5" alinhado com pipeline → direção bate → função aprova.
+3. Não valida coerência **numérica** (probs/odds/EV). É puramente string contradiction check.
+
+**Q2 — Probs em `match_stats` são RAW, não DEFLATED (verificado por code-walking):**
+1. `backend/modeling/poisson_matrix.py:242,248,256` produz `homeWinProb`/`over25Prob`/`bttsProb` direto da matriz Poisson (raw).
+2. `backend/modeling/calibrator.py:328-346` faz isotonic regression in-place (#100) — calibrado, mas **NÃO deflated**.
+3. `backend/routes/ai_analysis.py:_map_record_to_v3:381-389` aliasa para snake_case sem alterar valor: `stats["prob_over_25"] = stats.get("over25Prob")` — segue raw/calibrated.
+4. Display lê de outro caminho: `pred["prob_max"]` em `record["mercados"]`, deflated por `ev_classification.py` (#105/#106).
+5. Regra **#106** explicita o duplo-tracking: *"Classificação usa prob raw, EV usa prob deflacionada"*. By design — só que ninguém disse pro Mistral.
+
+**Como o bug se manifesta:** o prompt envia AMBAS as camadas no MESMO contexto — linha 213 `Prob Over 2.5: 70%` (raw) e bloco "PICKS DO PIPELINE" linhas 297-302 com `prob_pct=57%` (deflated). Mistral, sem awareness de calibração, recombina arbitrariamente, ataca com narrativa convincente.
+
+### Correções aplicadas (camadas)
+1. **Novo módulo `backend/ai/mistral_contract.py`** — `ApprovedPick` dataclass, `validate_output(text, approved)` (regex de mercados + EV computation pattern), `log_violations`, `fallback_narrative` (kept para fix follow-up). Inclui diagnóstico inline no docstring para o futuro.
+2. **`mistral_analysis.py` prompt enrichment:** linhas 192-198 (Regras de Ouro) ganharam 2 regras explícitas — *"Use APENAS probs dos PICKS DO PIPELINE (deflated)"* e *"NUNCA compute EV no texto"*. Linhas 208-216 (probs Poisson) marcadas com `(raw)` e header `(RAW — uso interno, NÃO citar em narrativa #181)`.
+3. **`mistral_analysis._log_contract_violations` (novo método)** — chamado após Camada 6 em `analyze_match`. Concatena `resumo_analitico + recomendacao_principal + key_points` e passa por `validate_output`. **LOG-ONLY**, sem retry, sem fallback automático — observabilidade primeiro (CloudWatch via `sportsbankzu.mistral.contract`). Decisão: mascarar sintoma sem dados de frequência seria voltar ao mesmo padrão que produziu o bug.
+4. **`_validate_recommendation_vs_pipeline` docstring** — limitação Q1 documentada inline para futuros leitores; aponta para `mistral_contract.py::validate_output` como complemento full-text.
+5. **`routes/ai_analysis.py:_map_record_to_v3`** — warning não-bloqueante quando `match_stats` tem raw probs sem deflated keys, via `logger.info` namespace `[ai_analysis #181]`.
+6. **`CLAUDE.md`** — secção `## Contrato Mistral` ampliada com: proibição #181 explícita (raw probs + EV computation), descrição da camada dupla de probs no prompt, ponteiro para `mistral_contract.py`.
+7. **Testes:** `tests/unit/test_mistral_contract_181.py` (9 casos: clean narrative, market outside, EV detection, empty text, empty approved list, fallback variants, log emission, label formatting). 45 passes em `pytest -k "mistral or brier or audit"` — não-regressivo (#082 testes intactos).
+
+**Riscos descartados:**
+- Modelo: zero impacto. Não toca `prob`, `EV`, classificação ou pipeline.
+- API contract: assinatura `analyze_match(home, away, league, stats, odds, context, picks)` preservada. Callers (`routes/ai_analysis.py:42,95`, `match_analysis_service.py`, `corners/mistral_review.py`) intactos.
+- Camada 6 backward-compat: comportamento inalterado, apenas docstring enriquecido.
+- Fail-open: se `mistral_contract.py` import falhar, `_log_contract_violations` retorna silenciosamente — não derruba `analyze_match`.
+
+**Não inclui (deliberadamente):**
+- Retry automático após violação — exige dados de frequência primeiro (CloudWatch deve coletar 1-2 semanas antes de wire).
+- Fallback automático — mesma razão; `fallback_narrative` está pronto mas não auto-invocado.
+- Refactor de `match_analysis_service.py` (caller paralelo via `MistralClient` direto) — fora do path do bug observado; fica para auditoria separada se relevante.
+- Extensão da Camada 6 para inspecionar full-text dentro de `_validate_recommendation_vs_pipeline` — duplicaria `validate_output`. Manter as duas funções separadas (Camada 6 = bloqueia; contract = observa) reduz acoplamento.
+
+### Lição aprendida
+Métricas duplas no mesmo contexto sem awareness explícita do consumidor produzem alucinações sutis. O sistema mantém raw e deflated por design (#106 — classificação vs EV) mas o prompt do Mistral não distinguia. Validação parcial (Camada 6 só inspeciona `recomendacao_principal`) deixa narrativa livre para divergir do display sem alarme. Princípio: quando uma camada de validação tem escopo limitado, **documentar o limite na própria função** (não em ticket externo) e adicionar camada complementar com escopo declarado, não estender a primeira indefinidamente. Observabilidade antes de automação: medir antes de retry/fallback, especialmente em LLM downstream.
+
+---

@@ -100,14 +100,15 @@ FootyStats + API-Football v3
 
 **Calibração per-league automática** (`league_calibrator.py`): deflation (O/U, BTTS, 1X2, cards #056, corners), lambda weights season/recent, xG blend, BTTS fusion, thresholds safe_prob de 6 mercados, Dixon-Coles ρ (#078), home advantage γ (#078), SAFE enabled per liga (#054 — 36/37 ligas com `safe_enabled=true`).
 
-## Contrato Mistral (#082)
+## Contrato Mistral (#082, reforçado #181)
 
 **Mistral é EXCLUSIVAMENTE narrativa.** Arquivo: `backend/services/mistral_analysis.py` (prompt v3.0, `MistralAnalysisService`, **temperature 0.15**).
 
 - **Faz:** `summary`, `key_points`, `recommendation`, `confidence` (informativo), corners review opcional.
-- **NÃO faz:** calcular/modificar probabilidades, auditar pipeline, ajustar lambdas/thresholds/pesos, classificar picks (SAFE/NEUTRO).
+- **NÃO faz:** calcular/modificar probabilidades, auditar pipeline, ajustar lambdas/thresholds/pesos, classificar picks (SAFE/NEUTRO), **citar probabilidades raw (pré-deflação) em narrativa (#181)**, **computar EV no texto (#181)**.
 - Sem `MISTRAL_API_KEY` ou Mistral indisponível → retorna default com `confidence=0`. **Não afeta** cálculos.
 - Não alterar o prompt sem preservar as 4 camadas anti-alucinação (#001, #002).
+- **Probs no prompt em duas camadas (#181):** "Estatísticas Poisson" carrega RAW (uso interno do modelo), "PICKS DO PIPELINE" carrega DEFLATED (única fonte legítima para narrativa). Mistral é instruído via prompt rules a só citar deflated. Validação `backend/ai/mistral_contract.py::validate_output` inspeciona resumo + key_points + recomendação (full text) e loga violações via `sportsbankzu.mistral.contract`. Camada 6 (`_validate_recommendation_vs_pipeline` em `mistral_analysis.py`) só inspeciona `recomendacao_principal` e direção Over/Under — limitação documentada na docstring da função.
 
 ## Domínio
 
