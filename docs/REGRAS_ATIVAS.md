@@ -545,6 +545,29 @@ proteção:
 
 **Verificação:** `grep -n "ece_haircut_factor\|oddsval_haircut_factor\|apply_family_cap\|check_daily_loss_breaker" backend/services/bankroll_engine.py`
 
+### #180 — Display de picks segue family_winner por default (annotate, don't filter)
+
+**Tipo:** Regra permanente (UX)
+**Relacionado:** #171 (`_market_family`), #165 (cards corridor dedup), #098 (complementares >105%)
+
+Toda lista de picks exposta ao frontend DEVE ser anotada por `select_family_winners()`
+(em `backend/services/family_selection.py`) — agrupa por família via `market_family()`
+(wrapper público de `_market_family`, regra #171) e marca `family_winner: bool` no
+pick mais forte de cada família.
+
+Princípio: **annotate, don't filter.** Picks não-winners mantêm probs, EV, odds,
+classificação intactos. Display layer decide visibilidade. Telemetria/auditoria
+continuam vendo o universo completo.
+
+Ranking (tupla maior = melhor): `(classification_rank, ev, delta_brier, band_score)`.
+- classification: SAFE > NEUTRO_QUALIFICADO > NEUTRO > INFORMATIVO > NO_BET
+- band preferida: 60-70% > 50-60% ≈ 70-80% > 80%+ > <50%
+
+**Kill switch:** `ENABLE_FAMILY_SELECTION_180=false` (env var, sem redeploy) — todos
+os picks ficam `family_winner=True` mas `family` continua anotada.
+
+**Verificação:** `grep -n "select_family_winners\|market_family" backend/services/family_selection.py backend/services/market_service.py backend/routes/market_analysis.py`
+
 ### #179 — Shadow mode obrigatório para mudanças de calibração/deflação
 
 **Tipo:** Regra permanente (Governança de modelo)

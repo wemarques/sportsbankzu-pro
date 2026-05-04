@@ -193,6 +193,11 @@ def selecionar_mercados_v2(
         if mercados and league_id:
             mercados = apply_signal_capping(mercados, league_id)
 
+        # #180: annotate family + family_winner so display can collapse aninhados
+        if mercados:
+            from backend.services.family_selection import select_family_winners
+            select_family_winners(mercados)
+
         # Set principal market in stats
         stats = jogo.get("stats", {})
         if mercados:

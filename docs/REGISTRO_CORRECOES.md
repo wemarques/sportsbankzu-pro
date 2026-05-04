@@ -9121,3 +9121,45 @@ Causa: `from scipy.stats import wilcoxon` no topo de `brier_service.py` (linha 1
 Top-level import de dependência opcional (especialmente em código que roda em Lambda com Layers de versão divergente do dev) é fragilidade. Padrão correto: lazy import dentro da função que usa, em try/except amplo. Validação local (`pytest`) NÃO substitui smoke test pós-deploy contra o endpoint real — adicionar smoke check ao `scripts/finalize.sh` ou pós-deploy seria a próxima camada de defesa. Princípio: **se o código importa, validar o import na ENV alvo, não só na ENV de dev.**
 
 ---
+
+## #180 — Family pick selection (1 winner por família via _market_family reusado)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/bankroll_engine.py, backend/services/family_selection.py (novo), backend/services/market_service.py, backend/routes/market_analysis.py, tests/unit/test_family_selection_180.py | **Severidade:** Média (UX — sem impacto em modelo/EV/classificação) | **Status:** Implementado (backend); frontend toggle deferido
+
+### Problema identificado
+Sporting × Vitória (04/05) exibiu Over 1.5 + Under 3.5 ambos como VIÁVEL na mesma família "goals". Os intervalos são aninhados (Over 1.5 ⊂ Under 3.5 não-trivialmente, mas ambos são consequências da mesma projeção λ_total) — apresentar os dois é redundância visual, não diversidade real de risco. O usuário lê isso como "duas oportunidades" quando é uma só vista por dois ângulos.
+
+### Causa raiz
+O pipeline classifica cada linha (Over/Under × N) independentemente em `classify_market`. Não há agregação por família ANTES de exibir. `_dedup_market_groups` (#165) apenas consolida o melhor Over de gols + melhor Under de gols + cards corridor — não faz seleção *cross-direção* na família goals. Resultado: Over 2.5 + Under 3.5 + BTTS-Sim podem coexistir no display, todos da família "goals", todos correlacionados.
+
+### Correções aplicadas (camadas)
+
+1. **Reuso de #171 `_market_family`:** exposto via wrapper público `market_family()` em `backend/services/bankroll_engine.py`. Sem novo módulo `market_families.py` — a heurística existente já cobre corners/cards/goals/1x2/unknown.
+
+2. **Novo módulo `backend/services/family_selection.py`:**
+   - `select_family_winners(picks)` agrupa por família e marca `family_winner=True` para o melhor pick de cada família, `False` para os demais.
+   - **Annotate, don't filter**: nada é removido — todos os picks mantêm probs/EV/odds. Display layer decide se mostra apenas winners ou todos.
+   - Ranking interno (tupla maior = melhor): `(classification_rank, ev, delta_brier, band_score)`. SAFE > NEUTRO_QUALIFICADO > NEUTRO > INFORMATIVO > NO_BET. Empate desempata por EV; depois delta_brier; depois banda preferida (60-70% > 50-60% ≈ 70-80% > 80%+ > <50%).
+   - Família "unknown" e famílias com 1 pick recebem todos como `family_winner=True` (sem decisão a tomar).
+
+3. **Feature flag `ENABLE_FAMILY_SELECTION_180`** (default `true`). Quando `false`, todos os picks recebem `family_winner=True` (efetivamente desativa a feature) mas `family` continua anotada para telemetria.
+
+4. **Integração:**
+   - `backend/services/market_service.py::selecionar_mercados_v2`: chamada após `_dedup_market_groups` + `apply_signal_capping`, antes de retornar a lista.
+   - `backend/routes/market_analysis.py::analyze_match` e `analyze_batch`: chamada após o loop que faz `to_legacy_mercado()` por mercado.
+
+5. **Frontend toggle:** deferido. Backend já anota `family` + `family_winner` em todo pick exposto. Frontend pode consumir em fix separado para adicionar o toggle "Mostrar X pick(s) alternativo(s) na mesma família".
+
+### Caveats
+- **Ranking depende de probs corretos.** Antes de #179 promover (banda 50-60% sub-confidente -12.7pp), o ranking pode escolher pick "errado" em casos limites onde o pick perdedor está na banda 50-60% e o vencedor está em 60-70%. Funciona — apenas com leve desvio até #179 promover.
+- **Família "unknown" não deduplica.** Mercados que `_market_family` não classifica (ex.: "Casa", "Empate", "Fora" caem no fallback `return mt or "unknown"` — strings literais, não "1x2") ficam todos como winners. Isso é conservador, não destrutivo.
+- **`_dedup_market_groups` continua rodando antes** — então cada família já chega com no máximo 1 Over + 1 Under de gols, 1 corner-line, 1 cards-corridor. Family selection adiciona uma camada *sobre* isso (escolhe entre Over-gols vs Under-gols vs BTTS dentro da família "goals").
+
+### Risco / Kill switch
+Risco médio. Sem impacto em modelo, EV, classificação, stake. Apenas display.
+**Kill switch:** `ENABLE_FAMILY_SELECTION_180=false` (env var, sem redeploy).
+
+### Lição aprendida
+"Annotate, don't filter" preserva opcionalidade. Reusar a heurística #171 (`_market_family`) ao invés de criar novo módulo evita a tentação de re-implementar a classificação de família com regras ligeiramente diferentes — uma única fonte de verdade para o conceito de família. Princípio: **antes de criar módulo novo, perguntar se a abstração que vou criar já existe sob outro nome no código existente.**
+
+---
