@@ -4,6 +4,49 @@
 
 ---
 
+## 183 — Enrichment de matches complementados via get_match_details
+
+**Data:** 2026-05-09
+**Arquivos afetados:**
+- `backend/routes/fixtures.py` (`_enrich_complement_record`, integração no complement loop, flag `ENABLE_MATCH_DETAILS_ENRICHMENT_183`)
+- `tests/unit/test_match_enrichment_183.py` (7 cases)
+
+**Severidade:** Média
+**Status:** Implementado — flag DESLIGADA por padrão (rollout controlado pendente de validação empírica contra FootyStats real)
+
+### Problema identificado
+Operador observou em 2026-05-09 que Brasileirão Série B exibia 6 jogos no painel mas apenas 3 com picks. Investigação confirmou que os 3 jogos sem picks vieram do complement `todays-matches` (regra #153) — formato básico, sem stats agregadas/lambda/xG suficientes para o pipeline gerar `mercados[]`. Os 3 jogos com picks vieram da página 1 de `league-matches` (formato rico).
+
+### Causa raiz
+Regra #153 complementa `league-matches` com `todays-matches` para garantir cobertura de todos os jogos do dia (paginação por temporada deixa jogos de hoje fora da página 1 em ligas avançadas). O record produzido por `_fallback_todays_matches` carrega odds e probabilidades implícitas mas **não passa por `build_records_from_matches`** — i.e., não tem stats por time, lambdas Poisson, xG blend, etc. Sem esses inputs o pipeline downstream (`selecionar_mercados_v2`) não consegue popular `mercados[]`.
+
+### Correções aplicadas
+1. **`_enrich_complement_record(basic_record, lid, teams_df, prev_teams_df, league_df, season_id, date)`** — para cada match que entra via complement #153, chama `footstats.get_match_details(match_id)` (cache 60min, FootyStats Pro sem rate limit relevante), normaliza via `DataMapper.matches_to_df([match_data])` e reconstrói o record rico via `build_records_from_matches` reusando `teams_df`/`prev_teams_df`/`league_df` que já estão em escopo no caller. Resultado é tagueado com `dataSource = "FootyStats API (Tempo Real - via #183)"`.
+
+2. **Critério de sucesso defensivo** — após reconstruir, exige `mercados[]` não-vazio. Record "marginalmente mais rico" sem mercados não resolve #183 (era exatamente esse o sintoma observado), então retorna `None` e o caller mantém o basic record. Pior caso ≡ comportamento atual.
+
+3. **Feature flag** `ENABLE_MATCH_DETAILS_ENRICHMENT_183` (env var) — **default `false`**. Rollout exige flip manual em produção e validação contra um jogo real antes de promover para `true` por default. Sem chave FootyStats local não foi possível validar empiricamente o schema do `/match` payload nesta sessão.
+
+4. **Logs estruturados** — `[#183] {lid}: enriched=N fallback=M` por liga, permitindo diagnóstico imediato da taxa de sucesso pós-flip.
+
+5. **Degrade gracefully** — qualquer falha (network, schema, mercados vazio, exception) → `None` → caller usa o basic record. Sem regressão em caso de falha.
+
+### Custo / latência
+- ~25-35 chamadas extras a `/match` por dia (uma por jogo complementado), cacheadas por 60min. FootyStats Pro sem rate limit relevante.
+- Latência: +1-3s por liga afetada (sequencial dentro do complement loop). Paralelização via `ThreadPoolExecutor` é follow-up se necessário.
+
+### Validação pós-deploy (pendente)
+Antes de mudar flag default para `true`:
+1. Setar `ENABLE_MATCH_DETAILS_ENRICHMENT_183=true` na env Lambda via console AWS.
+2. `curl /api/fixtures?leagues=brasileirao-serie-b&date=today` — confirmar que os 3 jogos antes vazios agora têm `mercados[]` populado.
+3. Conferir CloudWatch para `[#183] brasileirao-serie-b: enriched=3 fallback=0` (ou similar).
+4. Se OK → promover default para `true` em commit subsequente. Se NOT OK → manter `false`, investigar payload real do `/match` e iterar.
+
+### Lição aprendida
+Records que vêm via fallback/complement não passam automaticamente pelo pipeline rico — sempre que o pipeline depende de stats agregadas (teams_df / league_df), enrichment via endpoint individual é necessário. A `_fallback_todays_matches` original (#153) foi desenhada como rede de segurança mínima; agora documentamos explicitamente que ela precisa de re-enrichment para produzir mercados.
+
+---
+
 ## 179 — Recalibração banda 50-60% (shadow mode)
 
 **Data:** 2026-05-04
