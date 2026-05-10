@@ -1288,6 +1288,15 @@ def build_records_from_matches(
         away_goals_series = parse_series(get_stat(away_row, ["goals_per_game", "goals_scored_last_5", "goals_scored_last5", "goals_last_5", "goals_last5"]) if away_row is not None else None)
         home_games_played = safe(get_stat(home_row, ["matches_played", "games_played", "matches"]) if home_row is not None else None, None)
         away_games_played = safe(get_stat(away_row, ["matches_played", "games_played", "matches"]) if away_row is not None else None, None)
+        # #184: surface team-data gap so the silent record-drop scenario
+        # (xg_filter TypeError → outer except → match skipped) is diagnosable
+        # from logs alone next time, instead of requiring CloudWatch traces.
+        if home_games_played is None or away_games_played is None:
+            logger.warning(
+                f"[fixtures_service] {league_id}: team row missing/incomplete for "
+                f"{home!r} (games={home_games_played}) / {away!r} (games={away_games_played}) "
+                f"— xG filter will degrade to no-adjustment"
+            )
         home_goals_scored_total = safe(get_stat(home_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if home_row is not None else None, None)
         away_goals_scored_total = safe(get_stat(away_row, ["goals_scored", "goals_scored_overall", "goals_scored_total", "goals_scored_for_season"]) if away_row is not None else None, None)
         home_xg_total = safe(get_stat(home_row, ["xg_for_total", "xg_total", "xg_for", "xg"]) if home_row is not None else None, None)
@@ -1876,7 +1885,7 @@ def build_records_from_matches(
             logger.warning(f"Falha ao calcular mercados para {home} vs {away}: {e}")
             records[-1]["mercados"] = []
       except Exception as e:
-        _match_label = f"{r.get('home_team', '?')} vs {r.get('away_team', '?')}"
+        _match_label = f"{r.get('team_a_name', r.get('home_team', '?'))} vs {r.get('team_b_name', r.get('away_team', '?'))}"
         logger.error(f"[fixtures_service] Skipping match {_match_label}: {type(e).__name__}: {e}", exc_info=True)
         continue
     return records

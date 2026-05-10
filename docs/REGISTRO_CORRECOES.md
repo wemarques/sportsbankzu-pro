@@ -4,6 +4,58 @@
 
 ---
 
+## 184 — xG filter None-guard previne drops silenciosos no pipeline
+
+**Data:** 2026-05-09
+**Arquivos afetados:**
+- `backend/modeling/xg_filter.py` (defense-in-depth None-guard em `ajustar_lambda_por_xg`; coerce na fronteira `ajustar_lambda_jogo_por_xg:218-225`)
+- `backend/services/fixtures_service.py` (label de skip-log corrigido; warning observability quando team row falta)
+- `tests/unit/test_xg_filter_184.py` (6 cases)
+
+**Severidade:** Alta (drop silencioso de 50% dos jogos do dia em uma liga)
+**Status:** Implementado
+
+### Problema identificado
+Operador observou em 2026-05-09 que Brasileirão Série B exibia 6 jogos no painel mas apenas 3 com `mercados[]` populado. Investigação inicial (#183) atribuiu ao complement #153 — fix #183 foi commitado (`cdee7c8`, flag `false`) mas era tratamento, não cura. Investigação subsequente via CloudWatch revelou 3 stack traces idênticos hoje 19:08:51-19:08:54 UTC:
+
+```
+[fixtures_service] Skipping match ? vs ?: TypeError:
+'>=' not supported between instances of 'NoneType' and 'int'
+File "/var/task/backend/modeling/xg_filter.py", line 134
+    if games_played >= XG_MIN_SAMPLE_SIZE and xg > 0:
+```
+
+### Causa raiz
+Cadeia de propagação em 5 saltos:
+
+1. `fixtures_service.py:1289-1290` — quando time não tem row em `teams_df` (alias mismatch / dados faltantes para um dos times do jogo), `home_games_played = None` (via `safe(..., None)`).
+2. `fixtures_service.py:1315/1328` — propaga `home_team_data["games_played"] = None`.
+3. `xg_filter.py:218-225` (pré-fix) — `.get("games_played", 0)` retornava `None`, não `0`. **`dict.get(key, default)` só usa o default quando a chave está ausente — chave-com-None retorna None.** Bug sutil presente desde a criação do filtro.
+4. `xg_filter.py:134` — `if games_played >= XG_MIN_SAMPLE_SIZE and xg > 0:` → `TypeError` (None >= int).
+5. `fixtures_service.py:1878-1881` — outer except em `build_records_from_matches` capturava qualquer Exception, logava `Skipping match ? vs ?` (label cego — usava chaves obsoletas `home_team`/`away_team` enquanto DataMapper escreve `team_a_name`/`team_b_name`) e descartava o record. `_fallback_todays_matches` (#153) então preenchia o gap com record básico (sem mercados).
+
+**Validação local pós-fix** (com teams_df real do FootyStats, mesmo input que produção): build_records_from_matches retorna **6/6 records**, todos com `mercados[]` populado (2-3 mercados cada). Antes do fix: 3/6.
+
+### Correções aplicadas
+1. **Defense-in-depth em `ajustar_lambda_por_xg` (xg_filter.py:115-129)** — short-circuit no início: se `goals_scored is None or xg is None or games_played is None`, retorna `lambda_original` com `adjustment_applied=False` e `skipped_reason='none_input'`. Garante que mesmo callers externos (testes, scripts ad-hoc) que passem None diretamente não causam crash.
+2. **Coerção na fronteira em `ajustar_lambda_jogo_por_xg` (xg_filter.py:218-225)** — `.get(k) or 0` em vez de `.get(k, 0)`. Captura o caso real (chave existe com None).
+3. **Label legível em `fixtures_service.py:1879`** — `r.get('team_a_name', r.get('home_team', '?'))` etc., usando o schema correto do DataMapper. Próximo crash terá `[fixtures_service] Skipping match Ceará vs Atlético GO` em vez de `? vs ?`.
+4. **Warning observability em `fixtures_service.py:1290`** — quando `home_games_played` ou `away_games_played` é None, loga `[fixtures_service] {league_id}: team row missing/incomplete for {home}/{away} — xG filter will degrade to no-adjustment`. Surface o gap upstream (alias mismatch / FootyStats team_id falhando) sem precisar de CloudWatch.
+
+### Custo
+- Latência: zero (4 verificações `is None` adicionais por jogo)
+- API calls: zero (não chama nada novo)
+
+### Relação com #183 (commit `cdee7c8`)
+#183 é tratamento (enrichment via `get_match_details`); #184 é cura. Após #184 esses 3 jogos saem direto pelo caminho rico — #183 vira no-op (records nunca caem no complement com gap de mercados). Decisão: manter #183 dormente (flag `false`), reavaliar remoção em refactor futuro.
+
+### Lição aprendida
+**`dict.get(key, default)` é traiçoeiro com Optional fields:** o default só se aplica quando a chave está ausente, NÃO quando a chave existe com valor None. Para coerce-on-falsy use `dict.get(key) or default`. Aplica a qualquer dict construído a partir de Pydantic models com `Optional[X]` ou de extrações `.get(...) or None` upstream.
+
+**Outer except é veneno em pipelines:** `except Exception` sem distinguir a categoria do erro mascarou esse bug por meses. Logging com `r.get('home_team')` (chave que não existe pós-DataMapper) tornou os logs inúteis. Warning observability adicionada em #184.4 garante que qualquer reincidência seja visível imediatamente em logs Lambda padrão.
+
+---
+
 ## 183 — Enrichment de matches complementados via get_match_details
 
 **Data:** 2026-05-09
