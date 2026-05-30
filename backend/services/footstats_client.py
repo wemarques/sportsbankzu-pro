@@ -1,3 +1,4 @@
+import re
 import requests
 import os
 import json
@@ -9,6 +10,15 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 
 logger = logging.getLogger("sportsbankzu.footstats")
+
+_KEY_QS_RE = re.compile(r'([?&])key=[^&\s"\']+', re.IGNORECASE)
+
+
+def _redact_key(text: Any) -> str:
+    """Mascara qualquer ?key=... ou &key=... em strings (ex: URLs em mensagens de exceção do requests)."""
+    if text is None:
+        return ""
+    return _KEY_QS_RE.sub(r'\1key=***REDACTED***', str(text))
 
 class FootyStatsClient:
     """Cliente para integração com a API FootyStats (football-data-api.com)."""
@@ -178,37 +188,27 @@ class FootyStatsClient:
                     continue
             except requests.exceptions.ConnectionError as e:
                 last_error = e
-                logger.warning(f"[{endpoint}] Connection error (attempt {attempt}/{max_attempts}): {e}")
+                logger.warning(f"[{endpoint}] Connection error (attempt {attempt}/{max_attempts}): {_redact_key(e)}")
                 if attempt < max_attempts:
                     time.sleep(2)
                     continue
             except requests.exceptions.HTTPError as e:
                 last_error = e
                 status = e.response.status_code if e.response is not None else "?"
-                if status in (401, 403):
-                    logger.error(
-                        f"[{endpoint}] HTTP {status} — API key invalid, expired, or subscription issue. "
-                        "Check FOOTYSTATS_API_KEY and subscription status at football-data-api.com"
-                    )
-                    return {
-                        "success": False,
-                        "auth_error": True,
-                        "message": f"FootyStats API key error (HTTP {status}). Verifique assinatura/pagamento em football-data-api.com",
-                    }
-                logger.error(f"[{endpoint}] HTTP {status} error: {e}")
+                logger.error(f"[{endpoint}] HTTP {status} error: {_redact_key(e)}")
                 break  # Non-retryable HTTP error
             except Exception as e:
                 last_error = e
-                logger.error(f"[{endpoint}] Unexpected error (attempt {attempt}/{max_attempts}): {e}", exc_info=True)
+                logger.error(f"[{endpoint}] Unexpected error (attempt {attempt}/{max_attempts}): {_redact_key(e)}", exc_info=False)
                 break
 
-        logger.error(f"[{endpoint}] Failed after {max_attempts} attempts: {last_error}")
+        logger.error(f"[{endpoint}] Failed after {max_attempts} attempts: {_redact_key(last_error)}")
         try:
             from backend.services.reliability_tracker import track_api_call
             track_api_call("footystats", False)
         except Exception:
             pass
-        return {"success": False, "error": str(last_error)}
+        return {"success": False, "error": _redact_key(last_error)}
 
     def get_league_list(self, chosen_only: bool = True) -> Dict[str, Any]:
         """Retorna a lista de ligas disponíveis."""

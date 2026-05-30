@@ -28,6 +28,11 @@ _afc = APIFootballClient()
 # Keeps API call volume reasonable while dramatically reducing latency.
 _MAX_LEAGUE_WORKERS = 4
 
+# #183: enrich complement matches (#153) via get_match_details so the pipeline
+# can produce mercados[]. Disabled by default — flip to "true" in Lambda env
+# after empirical validation against a real FootyStats key.
+ENABLE_MATCH_DETAILS_ENRICHMENT_183 = os.getenv("ENABLE_MATCH_DETAILS_ENRICHMENT_183", "false").lower() == "true"
+
 
 def _deduplicate_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Remove duplicate fixture records that refer to the same match.
@@ -364,19 +369,36 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                                     _existing_teams.add((_hn.strip().lower(), _an.strip().lower()))
 
                             _added = 0
+                            _enriched_ok = 0
+                            _enriched_fail = 0
                             for tr in _todays_complement:
                                 _th = tr.get("homeTeam", {})
                                 _ta = tr.get("awayTeam", {})
                                 _thn = (_th.get("name", "") if isinstance(_th, dict) else str(_th)).strip().lower()
                                 _tan = (_ta.get("name", "") if isinstance(_ta, dict) else str(_ta)).strip().lower()
                                 if (_thn, _tan) not in _existing_teams:
-                                    records.append(tr)
+                                    # #183: try to enrich via get_match_details so the pipeline
+                                    # can produce mercados[]. Degrade gracefully on any failure.
+                                    _enriched = None
+                                    if ENABLE_MATCH_DETAILS_ENRICHMENT_183:
+                                        _enriched = _enrich_complement_record(
+                                            tr, lid, teams_df, prev_teams_df, league_df, season_id, date,
+                                        )
+                                        if _enriched:
+                                            _enriched_ok += 1
+                                        else:
+                                            _enriched_fail += 1
+                                    records.append(_enriched if _enriched else tr)
                                     _existing_teams.add((_thn, _tan))
                                     _added += 1
                             if _added:
                                 logger.info(
                                     f"[fixtures] {lid}: todays-matches complement added {_added} "
                                     f"missing matches (total now {len(records)}) (#153)"
+                                )
+                            if ENABLE_MATCH_DETAILS_ENRICHMENT_183 and (_enriched_ok or _enriched_fail):
+                                logger.info(
+                                    f"[#183] {lid}: enriched={_enriched_ok} fallback={_enriched_fail}"
                                 )
                     elif not records:
                         logger.warning(f"[fixtures] {lid}: API OK but 0 records for date '{date}', no todays-matches available")
@@ -712,6 +734,93 @@ def _enrich_with_api_football(
             logger.warning(f"[fixtures] {lid}: API-Football fallback failed: {e}")
 
     return records
+
+
+def _enrich_complement_record(
+    basic_record: Dict[str, Any],
+    lid: str,
+    teams_df: Optional["pd.DataFrame"],
+    prev_teams_df: Optional["pd.DataFrame"],
+    league_df: Optional["pd.DataFrame"],
+    season_id: Optional[int],
+    date: str,
+) -> Optional[Dict[str, Any]]:
+    """#183: enrich a basic todays-matches record by fetching full match details.
+
+    For matches that came via _fallback_todays_matches (#153 complement),
+    fetch full FootyStats /match payload, normalize via DataMapper.matches_to_df,
+    and rebuild a rich record via build_records_from_matches() reusing the
+    teams_df/league_df already loaded for this league.
+
+    Success criterion: the resulting record must have a non-empty mercados[].
+    A "marginally richer" record without mercados[] does NOT solve the problem
+    (#183 was filed because complement records had no mercados to begin with),
+    so we return None in that case and let the caller keep the basic record.
+
+    Returns:
+        Enriched record (with non-empty mercados[]) on success.
+        None on any failure / empty mercados — caller keeps the basic record.
+    """
+    match_id = basic_record.get("footystatsId")
+    if not match_id:
+        return None
+
+    try:
+        details = footstats.get_match_details(int(match_id))
+    except Exception as e:
+        logger.warning(f"[#183] {lid}: get_match_details({match_id}) crashed: {type(e).__name__}: {e}")
+        return None
+
+    if not details or not details.get("success"):
+        logger.info(f"[#183] {lid}: get_match_details({match_id}) returned no data")
+        return None
+
+    match_data = details.get("data")
+    if isinstance(match_data, list):
+        match_data = match_data[0] if match_data else None
+    if not match_data:
+        return None
+
+    if pd is None:
+        logger.warning(f"[#183] {lid}: pandas unavailable — cannot enrich")
+        return None
+
+    try:
+        single_df = DataMapper.matches_to_df([match_data])
+    except Exception as e:
+        logger.warning(f"[#183] {lid}: matches_to_df({match_id}) crashed: {type(e).__name__}: {e}")
+        return None
+
+    if single_df is None or single_df.empty:
+        return None
+
+    try:
+        rich_records = build_records_from_matches(
+            league_id=lid,
+            matches=single_df,
+            teams=teams_df,
+            teams2=prev_teams_df,
+            league_df=league_df,
+            players=None,
+            date_filter=date,
+            season_id=season_id,
+        )
+    except Exception as e:
+        logger.warning(f"[#183] {lid}: build_records_from_matches({match_id}) crashed: {type(e).__name__}: {e}")
+        return None
+
+    if not rich_records:
+        return None
+
+    enriched = rich_records[0]
+    mercados = enriched.get("mercados") or []
+    if not mercados:
+        # Marginally richer record without mercados[] does not solve #183.
+        # Caller will keep basic_record.
+        return None
+
+    enriched["dataSource"] = "FootyStats API (Tempo Real - via #183)"
+    return enriched
 
 
 def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id: int = None) -> List[Dict[str, Any]]:

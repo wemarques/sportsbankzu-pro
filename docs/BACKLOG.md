@@ -5,9 +5,11 @@
 > concluído, migra para `docs/REGISTRO_CORRECOES.md` com numeração `#N` e é
 > marcado como ✅ aqui.
 
-**Última revisão:** 2026-04-30
-**Itens abertos:** 10
-**Última conversa:** Sessão de 2026-04-30 — fechou #176 (Red team HTTP_ERROR resilience: retry 429 + backoff, mensagens por HTTP status, global exception handler JSON, detecção auth/payment errors FootyStats + API-Football, EmptyState contextual hints). Causa raiz do erro reportado: ausência de jogos agendados para as ligas configuradas.
+**Última revisão:** 2026-04-29
+**Itens abertos:** 14 (4 novos do incidente HTTP_ERROR de 29/04)
+**Última conversa:** Sessão de 2026-04-28/29 — fechou #173 (Caminho 1+2 EOS audit + standings snapshot), #174 (Report Card null guards + watchlist cards), #175 (decommission EC2 prognosticos-brasileirao + 3 SGs + key + IPv4). Higiene de repo: `.gitattributes` + `.gitignore` tightening + 31 arquivos untracked.
+
+**Incidente HTTP_ERROR (0s) de 29/04:** causa raiz = degradação upstream (FootyStats 429 + api-football date format bug). 5 hipóteses originais (H1-H5) refutadas. Achado lateral CRÍTICO (secret leak): **resolvido em 2026-05-01 (#176, B-010 ✅)**. Pendentes: B-011 (date format bug), B-012 (backoff/circuit breaker), B-013 (variantes do leak).
 
 ---
 
@@ -53,7 +55,98 @@
 
 ---
 
+## P0 — CRÍTICO (fazer ANTES de qualquer outra coisa)
+
+### B-010 Rotacionar FootyStats API key + sanitizar logs ✅ CONCLUÍDO 2026-05-01 (#176)
+
+**Categoria:** Security (secret leak ativo)
+**Prioridade:** P0
+**Esforço:** S (45 min total: rotação + sanitização + retention)
+**Status:** Done — ver `REGISTRO_CORRECOES.md#176`
+**Adicionado:** 2026-04-29
+**Descoberto em:** incidente HTTP_ERROR de 29/04 — diagnóstico mostrou logs FootyStats imprimindo `?key=...` em CloudWatch.
+
+**Contexto:** Cliente FootyStats (`backend/services/footstats_client.py`) está logando URL completa com query string, incluindo `?key=<API_KEY>`. CloudWatch retention=None → milhares de cópias da key persistem indefinidamente. Qualquer principal IAM com `logs:GetLogEvents` lê tudo. Equivale a key já comprometida.
+
+**Critério de sucesso (em ordem):**
+1. Rotacionar key no dashboard FootyStats → invalida a antiga
+2. Atualizar `FOOTYSTATS_API_KEY` na Lambda env via `aws lambda update-function-configuration --environment ...`
+3. Patch em `footstats_client.py`: mascarar `?key=...` em qualquer `logger.error/info/debug` antes de logar URL. Padrão típico: `logged_url = re.sub(r'(\?|&)key=[^&]+', r'\1key=***REDACTED***', url)`
+4. Set log retention temporário curto (7 dias) para expirar logs com key antiga: `aws logs put-retention-policy --log-group-name /aws/lambda/sportsbank-pro-backend --retention-in-days 7`
+5. Após 7+ dias, voltar retention para 90d (B-003)
+6. Smoke test: rodar `aws logs tail /aws/lambda/sportsbank-pro-backend --since 5m | grep "key="` → esperado vazio
+
+**Notas:** Documentar como REGRA #N. Padrão reutilizável: nenhum cliente HTTP deve logar URL com query string sem sanitizar segredos. Aplicar mesmo princípio aos clients de API-Football, Mistral.
+
+---
+
 ## P1 — Alta prioridade (próxima sessão)
+
+### B-011 Bug de date format em api-football fixtures
+
+**Categoria:** Hygiene (regressão)
+**Prioridade:** P1
+**Esforço:** M (1-2h)
+**Status:** Open
+**Adicionado:** 2026-04-29
+**Descoberto em:** incidente HTTP_ERROR de 29/04.
+
+**Contexto:** CloudWatch tem dezenas de erros `[api-football/fixtures] API error: {'date': 'The Date field must contain a valid date: Y-m-d.'}` em 30 min. Algum chamador está passando date inválida (vazia, None, formato errado). Pode ser regressão recente.
+
+**Critério de sucesso:**
+- Identificar local que monta o param `date` para api-football com formato errado
+- `grep -rn "api_football.*fixtures" backend/services/` para mapear chamadores
+- `git log -p backend/services/api_football_client.py | head -200` para ver mudanças recentes
+- Adicionar guard antes de mandar request: se `date is None or date == "" or not re.match(r'^\d{4}-\d{2}-\d{2}$', date)`, omitir parâmetro ou raise descritivo
+- Verificar logs após fix: zero ocorrências de "must contain a valid date"
+
+**Notas:** O sintoma "(0s)" reportado pelo usuário pode ter contribuição parcial deste bug se a rota chamadora retorna erro sem retry.
+
+---
+
+### B-012 FootyStats 429 — retry com backoff + circuit breaker
+
+**Categoria:** Resilience
+**Prioridade:** P1
+**Esforço:** M (2-3h)
+**Status:** Open
+**Adicionado:** 2026-04-29
+**Descoberto em:** incidente HTTP_ERROR de 29/04 — centenas de 429s sem tratamento.
+
+**Contexto:** Cliente FootyStats (`backend/services/footstats_client.py`) fez "Failed after 2 attempts: 429 Client Error: Too Many Requests" em massa. Sem backoff exponencial nem circuit breaker, qualquer rate-limit do provedor vira HTTP_ERROR para o usuário final.
+
+**Critério de sucesso:**
+- Adicionar backoff exponencial nos retries (não só max_attempts=2 fixo): wait 2s, 4s, 8s entre tentativas para 429
+- Implementar circuit breaker simples: após N 429s em janela de M minutos, parar de chamar FootyStats por X minutos. Cache stale data ou retornar `[]` em vez de propagar erro
+- Adicionar header `X-RateLimit-Remaining` parsing se FootyStats retornar (alguns providers retornam) — antecipar throttling
+- Métrica: contar 429s/hora em CloudWatch metric custom para alarme proativo
+
+**Dependência:** B-010 deve ser feito primeiro (sanitização de logs evita que reintentos exponham mais cópias da key).
+
+---
+
+## P3 — Baixa prioridade (cosmético)
+
+### B-013 Frontend: incluir 429 no retry regex + mensagem informativa
+
+**Categoria:** Tooling (UX)
+**Prioridade:** P3
+**Esforço:** XS (30 min)
+**Status:** Open
+**Adicionado:** 2026-04-29
+
+**Contexto:** Frontend retry regex atual: `/HTTP (502|503|504)/`. 429 (rate limit) não retentado, vira HTTP_ERROR direto. Usuário vê "Servidor indisponivel (0s)" quando na verdade é rate limit transitório do upstream.
+
+**Critério de sucesso:**
+- Adicionar 429 ao regex: `/HTTP (429|502|503|504)/`
+- Mensagem específica para 429: "Limite de requisições atingido. Tentando novamente em alguns segundos..."
+- Backoff no client-side antes de retry (1s, 2s, 4s)
+
+**Notas:** Resolve só o sintoma. Causa raiz é B-012 (não atingir 429 no upstream). Mas é defesa em profundidade — se algum dia FootyStats reduzir quota, frontend não precisa mudar de novo.
+
+---
+
+## P1 — Alta prioridade (Analytics — continuação)
 
 ### B-001 EOS audit re-run com filtros corretos
 
@@ -105,16 +198,43 @@
 **Esforço:** XS (1 min)
 **Status:** Open
 **Adicionado:** 2026-04-29
+**Data alvo:** 2026-05-08 (após expiração dos logs com FootyStats key vazada — ver #176)
 
-**Contexto:** Log group `/aws/lambda/sportsbank-pro-backend` tem `retention=None` (nunca expira). Atualmente ~170 MB. Custo trivial hoje (<$0.01/mês), mas vai acumular para vários GB ao longo de 1-2 anos.
+**Contexto:** Log group `/aws/lambda/sportsbank-pro-backend` está em `retention=7d` temporário desde 2026-05-01 (#176, B-010) para expirar logs antigos com `?key=...` vazado. A partir de 2026-05-08 todos os logs anteriores a 2026-05-01 já foram pruned, e podemos restaurar 90d (compromisso entre retenção para debug e custo).
 
-**Critério de sucesso:**
+**Critério de sucesso:** retention=90 confirmado via `describe-log-groups`, zero `key=` em logs recentes (sanitização ainda efetiva), B-003 marcado como concluído + commit no repo.
+
+**Comando pronto (executar em 2026-05-08, sequencialmente):**
 ```bash
-aws logs put-retention-policy --log-group-name /aws/lambda/sportsbank-pro-backend \
+# Verificacao 1: retention atual ainda eh 7
+MSYS_NO_PATHCONV=1 aws logs describe-log-groups \
+  --log-group-name-prefix /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 \
+  --query "logGroups[].{Name:logGroupName,Retention:retentionInDays}"
+
+# Verificacao 2: zero leaks de key= em logs recentes (24h)
+START_TS=$(python -c "import time; print(int(time.time()*1000 - 86400000))")
+MSYS_NO_PATHCONV=1 aws logs filter-log-events \
+  --log-group-name /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 --start-time $START_TS \
+  --filter-pattern '?"?key=" ?"&key="' \
+  --query "events[*].message" --output text | head -5
+
+# Aplicar retention=90 (so se as 2 verificacoes acima estao OK)
+MSYS_NO_PATHCONV=1 aws logs put-retention-policy \
+  --log-group-name /aws/lambda/sportsbank-pro-backend \
   --retention-in-days 90 --region us-east-1
+
+# Confirmar
+MSYS_NO_PATHCONV=1 aws logs describe-log-groups \
+  --log-group-name-prefix /aws/lambda/sportsbank-pro-backend \
+  --region us-east-1 --query "logGroups[].retentionInDays"
 ```
 
-**Notas:** 90 dias é compromisso entre retenção para debug e custo. Pode ajustar para 30d se virar problema.
+**Notas:**
+- Marcar como concluído + commit `chore(B-003): restaurar CloudWatch retention=90d pos-expiracao logs com FootyStats key (B-010 done em 30/04)` após execução bem-sucedida.
+- 90 dias é compromisso entre retenção para debug e custo. Pode ajustar para 30d se virar problema.
+- Se Verificação 2 retornar key= em logs recentes: PARAR — sanitização quebrou, investigar regressão no `_redact_key` em `footstats_client.py` antes de mexer em retention.
 
 ---
 
@@ -305,7 +425,7 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 
 Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apenas como contexto rápido para sessões próximas.
 
-- ✅ **#176** (2026-04-30) Red team HTTP_ERROR: retry 429, mensagens específicas, global exception handler, detecção auth/payment, EmptyState hints
+- ✅ **#176** (2026-05-01) FootyStats key rotacionada + `_redact_key` em logs (`footstats_client.py`) + retention temp 7d. Resolve B-010 (P0 — secret leak). 616 leaks/24h → 0.
 - ✅ **#175** (2026-04-29) Decommission EC2 prognosticos-brasileirao + 3 SGs + key. Save $132/ano.
 - ✅ **#174** (2026-04-28) Bug Report Card null guards `safe_accuracy` + política N=11 + watchlist Cartões Over 2.5
 - ✅ **#173** (2026-04-27/29) Caminho 1 (audit_end_of_season_picks.py) + Caminho 2 (standings snapshot S3 daily 06:00 UTC) + IAM `S3SportsbankWrite` versionada em `infra/`

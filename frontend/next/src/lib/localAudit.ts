@@ -162,12 +162,12 @@ function computeModelUpdateRecommendation(
     };
   }
 
-  // 1. Brier Score evaluation (lower is better, >0.25 is concerning, >0.35 is bad)
+  // 1. Brier Score evaluation (#178: target unificado em 0.22; >0.35 = critical)
   if (avgBrier > 0.35) {
     reasons.push(`Brier Score muito alto (${avgBrier.toFixed(4)}) — calibração das probabilidades está fraca`);
     actions.push("Recalibrar modelos de probabilidade (Isotonic Regression)");
     score += 3;
-  } else if (avgBrier > 0.25) {
+  } else if (avgBrier > 0.22) {
     reasons.push(`Brier Score acima do ideal (${avgBrier.toFixed(4)}) — probabilidades precisam de ajuste`);
     actions.push("Ajustar thresholds de probabilidade");
     score += 1;
@@ -291,14 +291,14 @@ function computeLocalCorrections(
     });
   }
 
-  // Brier score → probability calibration
-  if (avgBrier > 0.25) {
+  // Brier score → probability calibration (#178: target unificado em 0.22)
+  if (avgBrier > 0.22) {
     corrections.push({
       type: "THRESHOLD",
       parameter: "calibration_retrain",
       current_value: avgBrier,
       suggested_value: 0.20,
-      reason: `Brier Score ${avgBrier.toFixed(4)} acima do ideal (0.25) — recalibrar Isotonic Regression`,
+      reason: `Brier Score ${avgBrier.toFixed(4)} acima do ideal (0.22) — recalibrar Isotonic Regression`,
       confidence: avgBrier > 0.35 ? 85 : 65,
       impact: avgBrier > 0.35 ? "HIGH" : "MEDIUM",
     });

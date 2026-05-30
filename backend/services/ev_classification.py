@@ -12,6 +12,7 @@ a single entry point for all market evaluation.
 """
 
 import logging
+import os
 from typing import Dict, Any, List, Optional
 
 from backend.models.market_output import (
@@ -48,6 +49,29 @@ def _band_deflation(prob: float) -> float:
     return 0.10
 
 
+def _band_deflation_v179_shadow(prob: float) -> float:
+    """#179 SHADOW: reduced deflation for 50-60% band.
+
+    UNBLOCK_REPORT 2026-05-04 showed band 50-60% sub-confident by -12.7pp
+    (predicted 54.8%, actual 67.5%, N=1796 = 68% of volume). Current 12%
+    deflation matches the observed gap almost exactly — strong evidence
+    the deflation itself is the cause.
+
+    Shadow change: reduce 50-60% deflation from 0.12 to 0.05 (~60% less
+    aggressive). Other bands unchanged. Promotion gate: 2 weeks shadow
+    + improvement_pct >= 3% on /metrics/shadow_v179.
+    """
+    if prob >= 0.80:
+        return 0.25
+    if prob >= 0.70:
+        return 0.20
+    if prob >= 0.60:
+        return 0.15
+    if prob >= 0.50:
+        return 0.05  # #179: was 0.12
+    return 0.10
+
+
 def apply_probability_deflation(prob: float, league_id: str = "") -> float:
     """Apply progressive band deflation + per-league factor (#105).
 
@@ -67,6 +91,37 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
         deflated *= max(factor, 0.85)
 
     return max(deflated, 0.05)
+
+
+# #179 — Shadow flag for band 50-60% recalibration. Default OFF; when OFF
+# the shadow path returns identical values to current. Promotion to live
+# requires 2 weeks of shadow data + improvement_pct >= 3% on
+# /metrics/shadow_v179. Rollback is a single env-var flip.
+SHADOW_BAND_50_60_V179 = os.getenv("SHADOW_BAND_50_60_V179", "false").lower() == "true"
+
+
+def apply_probability_deflation_with_shadow(prob: float, league_id: str = "") -> "tuple[float, float]":
+    """#179: returns (current_deflated, shadow_deflated_v179).
+
+    When SHADOW_BAND_50_60_V179=false (default), the two values are identical.
+    When true, the shadow path uses `_band_deflation_v179_shadow` (0.05 in band
+    [0.50, 0.60); identical elsewhere). Per-league factor and the 0.05 floor
+    apply to both branches. Used by `/metrics/shadow_v179` for out-of-sample
+    Brier comparison without altering live behavior.
+    """
+    current_def = _band_deflation(prob)
+    shadow_def = _band_deflation_v179_shadow(prob) if SHADOW_BAND_50_60_V179 else current_def
+
+    current = prob * (1.0 - current_def)
+    shadow = prob * (1.0 - shadow_def)
+
+    if league_id:
+        factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+        f_capped = max(factor, 0.85)
+        current *= f_capped
+        shadow *= f_capped
+
+    return max(current, 0.05), max(shadow, 0.05)
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
@@ -169,26 +224,68 @@ SAFE_SHADOW_MODE = os.getenv("SAFE_SHADOW_MODE", "true").lower() == "true"
 _shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
 
 
+def _canonical_league(league_id: str | None) -> str | None:
+    """Resolve a league_id to its canonical backend form before any corrections
+    lookup (#185).
+
+    Callers may pass frontend aliases (e.g. 'brazil-serie-a') or mixed case.
+    The corrections/calibration DB is keyed by the canonical id
+    (e.g. 'brasileirao-serie-a'), so a raw lookup silently misses and falls back
+    to defaults — invisibly disabling SAFE and per-league thresholds for that
+    league. Resolving the alias here closes that gap.
+    """
+    if not league_id:
+        return None
+    lid = league_id.strip().lower()
+    try:
+        from backend.config.leagues_config import LEAGUE_ID_ALIASES
+        return LEAGUE_ID_ALIASES.get(lid, lid)
+    except Exception:
+        return lid
+
+
 def _is_safe_enabled(league_id: str | None) -> bool:
     """Check if SAFE classification is enabled for this league.
 
     Per-league SAFE status from calibration DB (#052).
     Default: disabled (conservative — requires calibration to enable).
     Global override: SAFE_CIRCUIT_BREAKER_ENABLED=True forces all disabled.
+
+    #185: resolve the alias before the lookup and make every silent miss
+    (empty league_id, no corrections row, DB error) visible in the log, so a
+    league dropping out of SAFE is traceable instead of invisible.
     """
     if SAFE_CIRCUIT_BREAKER_ENABLED:
         return False  # Global emergency override
-    if not league_id:
+    lid = _canonical_league(league_id)
+    if not lid:
+        logger.warning("[safe-gate] empty league_id — SAFE disabled by default")
         return False
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
-        corrections = get_lambda_corrections(league_id)
+        corrections = get_lambda_corrections(lid)
+        if not corrections:
+            logger.warning(
+                "[safe-gate] no corrections for league '%s' "
+                "(uncalibrated or key mismatch) — SAFE disabled", lid,
+            )
+            return False
         safe_val = corrections.get("safe_enabled", {}).get("value", "0")
         try:
-            return float(safe_val) >= 1.0
+            enabled = float(safe_val) >= 1.0
         except (ValueError, TypeError):
-            return str(safe_val).lower() in ("true", "1", "yes", "1.0")
-    except Exception:
+            enabled = str(safe_val).lower() in ("true", "1", "yes", "1.0")
+        if not enabled:
+            logger.info(
+                "[safe-gate] league '%s' calibrated but safe_enabled=%r — SAFE off",
+                lid, safe_val,
+            )
+        return enabled
+    except Exception as e:
+        logger.warning(
+            "[safe-gate] error reading corrections for '%s': %s — SAFE disabled",
+            lid, e,
+        )
         return False  # Default: disabled
 
 # ─── Dynamic Thresholds per Market ───
@@ -245,12 +342,18 @@ NEUTRO_QUALIFICADO_THRESHOLDS = {
 
 
 def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Dict[str, float] | None:
-    """Get per-league calibrated threshold from corrections DB (#055)."""
-    if not league_id:
+    """Get per-league calibrated threshold from corrections DB (#055).
+
+    #185: canonicalize league_id (alias-aware) before the lookup — same silent
+    fallback bug as _is_safe_enabled — and log when the expected per-league
+    threshold is absent, so a fallback to defaults is traceable.
+    """
+    lid = _canonical_league(league_id)
+    if not lid:
         return None
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
-        corrections = get_lambda_corrections(league_id)
+        corrections = get_lambda_corrections(lid)
 
         param_map = {
             "Over/Under": "safe_prob_ou",
@@ -266,6 +369,10 @@ def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Di
             val = corrections.get(param_name, {}).get("value")
             if val is not None:
                 return {"safe_prob": float(val)}
+            logger.debug(
+                "[threshold] no calibrated '%s' for league '%s' — using default",
+                param_name, lid,
+            )
         return None
     except Exception:
         return None

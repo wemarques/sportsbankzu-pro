@@ -661,10 +661,11 @@ def adjust_thresholds(defaults: dict) -> None:
     )
     markets = cursor.fetchall()
 
+    from backend.services.brier_service import BRIER_TARGET  # #178
     for market, avg_brier in markets:
         if market not in defaults:
             continue
-        if avg_brier > 0.25:
+        if avg_brier > BRIER_TARGET:
             current = get_current_threshold(conn, market, "SAFE") or defaults[market]["SAFE"]
             cursor.execute(
                 f"""

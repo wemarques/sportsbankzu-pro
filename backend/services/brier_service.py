@@ -10,9 +10,15 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional
 
+# #182 — scipy import lazy inside _with_ci. Top-level import broke production
+# Lambda (numpy._core.tests missing in the bundled scipy/numpy combination).
+# Locally scipy is available; lazily importing keeps the happy path intact and
+# fails open with p_value=None when the Lambda Layer can't satisfy scipy.
+
 logger = logging.getLogger("sportsbankzu.brier")
 
 MIN_N = 20  # REGRA #079
+BRIER_TARGET = 0.22  # #178: single canonical value — UI + alerts must align
 
 
 def _conn():
@@ -38,9 +44,14 @@ def _ensure_table():
                 by_market JSONB,
                 by_band JSONB,
                 by_classification JSONB,
+                by_league_market JSONB,
                 new_picks INTEGER DEFAULT 0,
                 audit_date TEXT
             )
+        """)
+        cur.execute("""
+            ALTER TABLE brier_history
+            ADD COLUMN IF NOT EXISTS by_league_market JSONB
         """)
         conn.commit()
         cur.close()
@@ -53,6 +64,54 @@ def _brier(probs, outcomes):
     if not probs:
         return None
     return sum((p - o) ** 2 for p, o in zip(probs, outcomes)) / len(probs)
+
+
+def _with_ci(picks, brier_model, brier_implied):
+    """#178 — model_beats_house with Wilcoxon paired test.
+
+    Returns dict {beats_bool, delta, p_value, n, significant_at_5pct, below_min_n}.
+    significant_at_5pct=False if N<MIN_N (REGRA #079) regardless of delta.
+    """
+    n = len(picks)
+    if n < MIN_N or brier_model is None or brier_implied is None:
+        return {
+            "beats_bool": False,
+            "delta": None,
+            "p_value": None,
+            "n": n,
+            "significant_at_5pct": False,
+            "below_min_n": n < MIN_N,
+        }
+    bm_per = [(p["prob"] - p["out"]) ** 2 for p in picks if p.get("odd")]
+    bi_per = [((1.0 / p["odd"]) - p["out"]) ** 2 for p in picks if p.get("odd")]
+    n_paired = min(len(bm_per), len(bi_per))
+    if n_paired < MIN_N:
+        return {
+            "beats_bool": False,
+            "delta": None,
+            "p_value": None,
+            "n": n_paired,
+            "significant_at_5pct": False,
+            "below_min_n": True,
+        }
+    try:
+        # #182 — lazy import; ImportError on Lambda surfaces here, not at module load.
+        from scipy.stats import wilcoxon
+        _, pval = wilcoxon(bm_per[:n_paired], bi_per[:n_paired])
+    except Exception:
+        # Covers both ImportError (Lambda Layer mismatch) and degenerate-input
+        # cases (e.g. all-zero diffs). p_value=None disables significance test;
+        # significant_at_5pct will be False.
+        pval = None
+    delta = brier_implied - brier_model
+    return {
+        "beats_bool": bool(brier_model < brier_implied),
+        "delta": round(delta, 5),
+        "p_value": round(float(pval), 5) if pval is not None else None,
+        "n": n_paired,
+        "significant_at_5pct": bool(pval is not None and pval < 0.05 and delta > 0),
+        "below_min_n": False,
+    }
 
 
 def _segment(picks):
@@ -74,6 +133,7 @@ def _segment(picks):
         "brier_implied": round(bi, 4) if bi else None,
         "model_beats_house": beats,
         "delta": round(delta, 4) if delta else None,
+        "model_beats_house_ci": _with_ci(picks, bm, bi),
     }
 
 
@@ -151,6 +211,21 @@ def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
     for k, v in cg.items():
         by_cls[k] = _segment(v)
 
+    # By league x market (joint - #177)
+    # MIN_N=5 for diagnostic; segments with N<MIN_N (20, REGRA #079) carry diagnostic_only=True.
+    JOINT_MIN_N_DIAGNOSTIC = 5
+    by_league_market = {}
+    lmk = defaultdict(list)
+    for p in picks:
+        if p.get("league") and p.get("market"):
+            lmk[(p["league"], p["market"])].append(p)
+    for (lg, mk), v in lmk.items():
+        if len(v) >= JOINT_MIN_N_DIAGNOSTIC:
+            seg = _segment(v)
+            if seg:
+                seg["diagnostic_only"] = len(v) < MIN_N
+                by_league_market[f"{lg}|||{mk}"] = seg
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "total_picks": len(picks),
@@ -160,6 +235,7 @@ def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
         "by_market": by_market,
         "by_band": by_band,
         "by_classification": by_cls,
+        "by_league_market": by_league_market,
     }
 
 
@@ -171,13 +247,15 @@ def persist_snapshot(snapshot: Dict, new_picks: int = 0) -> bool:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO brier_history (total_picks,brier_model,brier_implied,model_beats_house,"
-            "delta,accuracy,by_league,by_market,by_band,by_classification,new_picks,audit_date) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "delta,accuracy,by_league,by_market,by_band,by_classification,by_league_market,"
+            "new_picks,audit_date) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 snapshot["total_picks"], snapshot.get("brier_model"), snapshot.get("brier_implied"),
                 snapshot.get("model_beats_house"), snapshot.get("delta"), snapshot.get("accuracy"),
                 json.dumps(snapshot.get("by_league", {})), json.dumps(snapshot.get("by_market", {})),
                 json.dumps(snapshot.get("by_band", {})), json.dumps(snapshot.get("by_classification", {})),
+                json.dumps(snapshot.get("by_league_market", {})),
                 new_picks, snapshot.get("audit_date"),
             ),
         )
@@ -206,7 +284,8 @@ def get_history(limit: int = 30) -> List[Dict]:
         cur = conn.cursor()
         cur.execute(
             "SELECT id,timestamp,total_picks,brier_model,brier_implied,model_beats_house,"
-            "delta,accuracy,by_league,by_market,by_band,by_classification,new_picks,audit_date "
+            "delta,accuracy,by_league,by_market,by_band,by_classification,by_league_market,"
+            "new_picks,audit_date "
             "FROM brier_history ORDER BY timestamp DESC LIMIT %s",
             (limit,),
         )

@@ -96,6 +96,10 @@ async def analyze_match(req: MarketAnalysisRequest):
 
             result["markets"].append(m)
 
+        # #180: annotate family + family_winner across full market list
+        from backend.services.family_selection import select_family_winners
+        select_family_winners(result["markets"])
+
         return {"success": True, "result": result}
 
     except Exception as e:
@@ -177,6 +181,10 @@ async def analyze_batch(req: BatchAnalysisRequest):
                     m["stake"] = stake_info["stake"]
 
                 match_result["markets"].append(m)
+
+            # #180: annotate family + family_winner per match
+            from backend.services.family_selection import select_family_winners
+            select_family_winners(match_result["markets"])
 
             results.append(match_result)
 

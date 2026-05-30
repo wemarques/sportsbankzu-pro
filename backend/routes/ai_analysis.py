@@ -442,6 +442,26 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
                 "ev_pct": round(ev * 100, 1),
             })
 
+    # #181 — non-blocking warning: stats has raw probs but no deflated keys.
+    # This signals to the operator (via CloudWatch) that the prompt is using raw
+    # probabilities for context, while picks carry the deflated values (the
+    # display source of truth). Mistral is instructed via prompt rules to never
+    # quote raw probs in narrative — see backend/ai/mistral_contract.py for the
+    # full diagnostic and validate_output() that catches violations downstream.
+    _has_raw = any(
+        stats.get(k) not in (None, "N/A")
+        for k in ("prob_over_25", "prob_btts", "prob_home")
+    )
+    _has_deflated = any(
+        k.endswith("_deflated_pct") for k in stats.keys()
+    )
+    if _has_raw and not _has_deflated and picks_for_prompt:
+        logger.info(
+            f"[ai_analysis #181] match={home_name} vs {away_name} — "
+            f"match_stats has raw probs only; deflated values live in "
+            f"pipeline_picks[*].prob_pct. Mistral prompt will reflect this."
+        )
+
     return {
         "id": record.get("id", ""),
         "home_team": home_name,

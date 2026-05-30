@@ -113,6 +113,22 @@ def ajustar_lambda_por_xg(
         >>> ajustar_lambda_por_xg(2.5, 18, 17.5, 10)
         (2.5, False, {...})
     """
+    # #184: defense-in-depth — if any required input is None, return original
+    # lambda with no adjustment. Prevents both the production TypeError
+    # (None >= int) and the spurious "unlucky" detection that would otherwise
+    # treat a missing goals/xg field as a real zero and boost lambda.
+    if goals_scored is None or xg is None or games_played is None:
+        return lambda_original, False, {
+            'has_luck': False,
+            'discrepancy': 0.0,
+            'classification': 'sem_dados',
+            'adjustment_applied': False,
+            'adjustment_factor': 0.0,
+            'lambda_original': lambda_original,
+            'lambda_adjusted': lambda_original,
+            'skipped_reason': 'none_input',
+        }
+
     # Detectar sorte
     has_luck, discrepancy, classification = detectar_sorte_insustentavel(
         goals_scored, xg, games_played
@@ -214,15 +230,17 @@ def ajustar_lambda_jogo_por_xg(
         >>> ajustar_lambda_jogo_por_xg(2.5, 2.0, home, away)
         (2.125, 2.0, {...})
     """
-    # Extrair dados do mandante
-    home_goals = home_team_data.get('goals_scored', 0)
-    home_xg = home_team_data.get('xg', 0)
-    home_games = home_team_data.get('games_played', 0)
-    
+    # Extrair dados do mandante (#184: coerce None to 0 — .get default only
+    # applies for missing key, not for key-with-None-value, which propagates
+    # from teams_df rows where stats are unavailable for a team.)
+    home_goals = home_team_data.get('goals_scored') or 0
+    home_xg = home_team_data.get('xg') or 0
+    home_games = home_team_data.get('games_played') or 0
+
     # Extrair dados do visitante
-    away_goals = away_team_data.get('goals_scored', 0)
-    away_xg = away_team_data.get('xg', 0)
-    away_games = away_team_data.get('games_played', 0)
+    away_goals = away_team_data.get('goals_scored') or 0
+    away_xg = away_team_data.get('xg') or 0
+    away_games = away_team_data.get('games_played') or 0
     
     # Ajustar lambda home
     lambda_home_adj, home_adjusted, home_meta = ajustar_lambda_por_xg(

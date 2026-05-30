@@ -472,6 +472,11 @@ def _market_family(market_type: str) -> str:
     return mt or "unknown"
 
 
+def market_family(market_type: str) -> str:
+    """#180: public wrapper of _market_family for cross-module reuse."""
+    return _market_family(market_type)
+
+
 def apply_family_cap(
     all_stakes: List[Dict[str, Any]],
     bankroll: float,

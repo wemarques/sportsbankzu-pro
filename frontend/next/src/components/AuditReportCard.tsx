@@ -133,7 +133,7 @@ function fromBatchAudit(r: BatchAuditResult): AuditReportData {
   const modelActions: string[] = [];
   // #174: guard null per #162 — only suggest threshold tuning when SAFE has data and is underperforming
   if (r.safe_accuracy != null && r.safe_accuracy < 65) modelActions.push("Ajustar thresholds de probabilidade");
-  if (r.avg_brier_score > 0.25) modelActions.push("Recalibrar probabilidades do modelo");
+  if (r.avg_brier_score > 0.22) modelActions.push("Recalibrar probabilidades do modelo");  // #178: target unificado em 0.22
 
   const mistralActions: string[] = [];
   const corrections = eval_?.recommended_corrections ?? [];

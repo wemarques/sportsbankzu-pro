@@ -4,6 +4,213 @@
 
 ---
 
+## 185 — league_id canônico antes do lookup de correções + observabilidade do gate SAFE
+
+**Data:** 2026-05-29
+**Arquivos afetados:**
+- `backend/services/ev_classification.py` (novo helper `_canonical_league`; `_is_safe_enabled` e `_get_calibrated_threshold` resolvem alias antes do lookup e logam o miss silencioso)
+- `tests/unit/test_ev_classification_185.py` (9 cases)
+
+**Severidade:** Alta (uma liga inteira pode sumir da classificação SAFE sem rastro)
+**Status:** Implementado
+
+### Problema identificado
+Operador relatou que **nenhum mercado do Brasileirão Série A** atingia a classificação SAFE (tag verde "Maior Valor" na UI), enquanto ligas europeias funcionavam normalmente. Sem log que distinguisse "liga não calibrada" de "chave divergente" de "erro de DB", o sintoma era indistinguível de bug de cálculo.
+
+### Causa raiz
+Verificado contra o estado vivo (`GET /api/backtesting/calibration-status`, 2026-05-29): `brasileirao-serie-a` está **`calibrated=true, safe_enabled='true'`**, `brier_over=0.160`. Ou seja, **SAFE estava habilitado no banco o tempo todo** — não era falta de calibração (hipótese inicial de "<100 jogos / N=24" refutada; aquele N=24 era um comentário hardcoded antigo em `_LEAGUE_DEFLATION`, não o estado da DB). O bug é o **lookup nunca encontrar a chave**:
+
+1. **Mismatch de alias (causa real):** o frontend usa o id `brazil-serie-a` (`frontend/src/lib/leagues.ts:333`); a DB de correções é keyed pela forma canônica `brasileirao-serie-a` (`leagues_config.py:18`). `market_analysis.py:68` passa `req.league_id` cru a `evaluate_match_markets`, que repassa cru a `classify_market` (842/889). Pré-#185, `_is_safe_enabled("brazil-serie-a")` e `_get_calibrated_threshold("brazil-serie-a", …)` chamavam `get_lambda_corrections` com o id de frontend → `{}` → SAFE rebaixado p/ NEUTRO_QUALIFICADO + thresholds default (estritos), apesar de `safe_enabled='true'` sob a chave canônica.
+2. **Miss silencioso de DB:** `get_lambda_corrections` retorna `{}` em qualquer falha; o gate tratava `{}` como "não habilitado" sem distinguir *não calibrada* de *chave divergente* de *erro real* — indistinguível de bug de cálculo na UI.
+
+### Correções aplicadas (camadas)
+- **Camada 1 — canonicalização:** novo `_canonical_league(league_id)` resolve alias (via `LEAGUE_ID_ALIASES`) + `strip().lower()` antes de qualquer lookup de correções. Aplicado em `_is_safe_enabled` e `_get_calibrated_threshold`. Fecha a causa nº 2.
+- **Camada 2 — observabilidade:** `_is_safe_enabled` agora loga `WARNING` distinto para (a) `league_id` vazio, (b) `corrections` vazio ("uncalibrated or key mismatch"), (c) exceção de DB; e `INFO` quando a liga está calibrada mas `safe_enabled` está desligado. `_get_calibrated_threshold` loga `DEBUG` quando o threshold per-league está ausente. Torna as causas nº 1 e nº 3 rastreáveis no CloudWatch.
+- **Sem alteração de threshold/deflação/min_ev** — Proibições #2 e #7 respeitadas. Nenhum valor de classificação muda; só a resolução de chave (correção) e a emissão de logs.
+
+### Lição aprendida
+Lookup de calibração keyed por string **deve** canonicalizar o id na fronteira e **nunca** cair em default sem deixar rastro. "Liga não calibrada", "chave divergente" e "DB fora" produzem o mesmo sintoma na UI — só log de causa os separa. Mesmo padrão de #184 (drop silencioso → observabilidade). A calibração da Série A já estava correta; o sintoma era 100% de roteamento de chave.
+
+### Achado relacionado — NÃO corrigido aqui (requer auditoria, Proibição #2)
+`_LEAGUE_DEFLATION` (`ev_classification.py:33`) também é keyed canônico (`brasileirao-serie-a: 0.90`), mas `apply_probability_deflation`/`_calibrate_and_deflate` fazem `get(league_id, 1.0)` com o id **cru**. Com `brazil-serie-a`, a deflação per-league da Série A não é aplicada (usa 1.0) → altera o EV. Corrigir isso muda matemática de probabilidade/EV e exige auditoria própria. Solução recomendada de longo prazo: canonicalizar `league_id` **uma vez na fronteira** (`evaluate_match_markets` ou no route `market_analysis`), para que deflação, gate SAFE, thresholds e ML metadata vejam todos a forma canônica de forma consistente.
+
+### Próximo passo (validação)
+Deploy do #185 e observar `sportsbankzu.ev_classification`: o WARNING `[safe-gate] no corrections for league 'brazil-serie-a'` deixará de ocorrer e picks SAFE da Série A voltam a aparecer. Não é necessário recalibrar (`safe_enabled` já = true).
+
+## 184 — xG filter None-guard previne drops silenciosos no pipeline
+
+**Data:** 2026-05-09
+**Arquivos afetados:**
+- `backend/modeling/xg_filter.py` (defense-in-depth None-guard em `ajustar_lambda_por_xg`; coerce na fronteira `ajustar_lambda_jogo_por_xg:218-225`)
+- `backend/services/fixtures_service.py` (label de skip-log corrigido; warning observability quando team row falta)
+- `tests/unit/test_xg_filter_184.py` (6 cases)
+
+**Severidade:** Alta (drop silencioso de 50% dos jogos do dia em uma liga)
+**Status:** Implementado
+
+### Problema identificado
+Operador observou em 2026-05-09 que Brasileirão Série B exibia 6 jogos no painel mas apenas 3 com `mercados[]` populado. Investigação inicial (#183) atribuiu ao complement #153 — fix #183 foi commitado (`cdee7c8`, flag `false`) mas era tratamento, não cura. Investigação subsequente via CloudWatch revelou 3 stack traces idênticos hoje 19:08:51-19:08:54 UTC:
+
+```
+[fixtures_service] Skipping match ? vs ?: TypeError:
+'>=' not supported between instances of 'NoneType' and 'int'
+File "/var/task/backend/modeling/xg_filter.py", line 134
+    if games_played >= XG_MIN_SAMPLE_SIZE and xg > 0:
+```
+
+### Causa raiz
+Cadeia de propagação em 5 saltos:
+
+1. `fixtures_service.py:1289-1290` — quando time não tem row em `teams_df` (alias mismatch / dados faltantes para um dos times do jogo), `home_games_played = None` (via `safe(..., None)`).
+2. `fixtures_service.py:1315/1328` — propaga `home_team_data["games_played"] = None`.
+3. `xg_filter.py:218-225` (pré-fix) — `.get("games_played", 0)` retornava `None`, não `0`. **`dict.get(key, default)` só usa o default quando a chave está ausente — chave-com-None retorna None.** Bug sutil presente desde a criação do filtro.
+4. `xg_filter.py:134` — `if games_played >= XG_MIN_SAMPLE_SIZE and xg > 0:` → `TypeError` (None >= int).
+5. `fixtures_service.py:1878-1881` — outer except em `build_records_from_matches` capturava qualquer Exception, logava `Skipping match ? vs ?` (label cego — usava chaves obsoletas `home_team`/`away_team` enquanto DataMapper escreve `team_a_name`/`team_b_name`) e descartava o record. `_fallback_todays_matches` (#153) então preenchia o gap com record básico (sem mercados).
+
+**Validação local pós-fix** (com teams_df real do FootyStats, mesmo input que produção): build_records_from_matches retorna **6/6 records**, todos com `mercados[]` populado (2-3 mercados cada). Antes do fix: 3/6.
+
+### Correções aplicadas
+1. **Defense-in-depth em `ajustar_lambda_por_xg` (xg_filter.py:115-129)** — short-circuit no início: se `goals_scored is None or xg is None or games_played is None`, retorna `lambda_original` com `adjustment_applied=False` e `skipped_reason='none_input'`. Garante que mesmo callers externos (testes, scripts ad-hoc) que passem None diretamente não causam crash.
+2. **Coerção na fronteira em `ajustar_lambda_jogo_por_xg` (xg_filter.py:218-225)** — `.get(k) or 0` em vez de `.get(k, 0)`. Captura o caso real (chave existe com None).
+3. **Label legível em `fixtures_service.py:1879`** — `r.get('team_a_name', r.get('home_team', '?'))` etc., usando o schema correto do DataMapper. Próximo crash terá `[fixtures_service] Skipping match Ceará vs Atlético GO` em vez de `? vs ?`.
+4. **Warning observability em `fixtures_service.py:1290`** — quando `home_games_played` ou `away_games_played` é None, loga `[fixtures_service] {league_id}: team row missing/incomplete for {home}/{away} — xG filter will degrade to no-adjustment`. Surface o gap upstream (alias mismatch / FootyStats team_id falhando) sem precisar de CloudWatch.
+
+### Custo
+- Latência: zero (4 verificações `is None` adicionais por jogo)
+- API calls: zero (não chama nada novo)
+
+### Relação com #183 (commit `cdee7c8`)
+#183 é tratamento (enrichment via `get_match_details`); #184 é cura. Após #184 esses 3 jogos saem direto pelo caminho rico — #183 vira no-op (records nunca caem no complement com gap de mercados). Decisão: manter #183 dormente (flag `false`), reavaliar remoção em refactor futuro.
+
+### Lição aprendida
+**`dict.get(key, default)` é traiçoeiro com Optional fields:** o default só se aplica quando a chave está ausente, NÃO quando a chave existe com valor None. Para coerce-on-falsy use `dict.get(key) or default`. Aplica a qualquer dict construído a partir de Pydantic models com `Optional[X]` ou de extrações `.get(...) or None` upstream.
+
+**Outer except é veneno em pipelines:** `except Exception` sem distinguir a categoria do erro mascarou esse bug por meses. Logging com `r.get('home_team')` (chave que não existe pós-DataMapper) tornou os logs inúteis. Warning observability adicionada em #184.4 garante que qualquer reincidência seja visível imediatamente em logs Lambda padrão.
+
+---
+
+## 183 — Enrichment de matches complementados via get_match_details
+
+**Data:** 2026-05-09
+**Arquivos afetados:**
+- `backend/routes/fixtures.py` (`_enrich_complement_record`, integração no complement loop, flag `ENABLE_MATCH_DETAILS_ENRICHMENT_183`)
+- `tests/unit/test_match_enrichment_183.py` (7 cases)
+
+**Severidade:** Média
+**Status:** Implementado — flag DESLIGADA por padrão (rollout controlado pendente de validação empírica contra FootyStats real)
+
+### Problema identificado
+Operador observou em 2026-05-09 que Brasileirão Série B exibia 6 jogos no painel mas apenas 3 com picks. Investigação confirmou que os 3 jogos sem picks vieram do complement `todays-matches` (regra #153) — formato básico, sem stats agregadas/lambda/xG suficientes para o pipeline gerar `mercados[]`. Os 3 jogos com picks vieram da página 1 de `league-matches` (formato rico).
+
+### Causa raiz
+Regra #153 complementa `league-matches` com `todays-matches` para garantir cobertura de todos os jogos do dia (paginação por temporada deixa jogos de hoje fora da página 1 em ligas avançadas). O record produzido por `_fallback_todays_matches` carrega odds e probabilidades implícitas mas **não passa por `build_records_from_matches`** — i.e., não tem stats por time, lambdas Poisson, xG blend, etc. Sem esses inputs o pipeline downstream (`selecionar_mercados_v2`) não consegue popular `mercados[]`.
+
+### Correções aplicadas
+1. **`_enrich_complement_record(basic_record, lid, teams_df, prev_teams_df, league_df, season_id, date)`** — para cada match que entra via complement #153, chama `footstats.get_match_details(match_id)` (cache 60min, FootyStats Pro sem rate limit relevante), normaliza via `DataMapper.matches_to_df([match_data])` e reconstrói o record rico via `build_records_from_matches` reusando `teams_df`/`prev_teams_df`/`league_df` que já estão em escopo no caller. Resultado é tagueado com `dataSource = "FootyStats API (Tempo Real - via #183)"`.
+
+2. **Critério de sucesso defensivo** — após reconstruir, exige `mercados[]` não-vazio. Record "marginalmente mais rico" sem mercados não resolve #183 (era exatamente esse o sintoma observado), então retorna `None` e o caller mantém o basic record. Pior caso ≡ comportamento atual.
+
+3. **Feature flag** `ENABLE_MATCH_DETAILS_ENRICHMENT_183` (env var) — **default `false`**. Rollout exige flip manual em produção e validação contra um jogo real antes de promover para `true` por default. Sem chave FootyStats local não foi possível validar empiricamente o schema do `/match` payload nesta sessão.
+
+4. **Logs estruturados** — `[#183] {lid}: enriched=N fallback=M` por liga, permitindo diagnóstico imediato da taxa de sucesso pós-flip.
+
+5. **Degrade gracefully** — qualquer falha (network, schema, mercados vazio, exception) → `None` → caller usa o basic record. Sem regressão em caso de falha.
+
+### Custo / latência
+- ~25-35 chamadas extras a `/match` por dia (uma por jogo complementado), cacheadas por 60min. FootyStats Pro sem rate limit relevante.
+- Latência: +1-3s por liga afetada (sequencial dentro do complement loop). Paralelização via `ThreadPoolExecutor` é follow-up se necessário.
+
+### Validação pós-deploy (pendente)
+Antes de mudar flag default para `true`:
+1. Setar `ENABLE_MATCH_DETAILS_ENRICHMENT_183=true` na env Lambda via console AWS.
+2. `curl /api/fixtures?leagues=brasileirao-serie-b&date=today` — confirmar que os 3 jogos antes vazios agora têm `mercados[]` populado.
+3. Conferir CloudWatch para `[#183] brasileirao-serie-b: enriched=3 fallback=0` (ou similar).
+4. Se OK → promover default para `true` em commit subsequente. Se NOT OK → manter `false`, investigar payload real do `/match` e iterar.
+
+### Lição aprendida
+Records que vêm via fallback/complement não passam automaticamente pelo pipeline rico — sempre que o pipeline depende de stats agregadas (teams_df / league_df), enrichment via endpoint individual é necessário. A `_fallback_todays_matches` original (#153) foi desenhada como rede de segurança mínima; agora documentamos explicitamente que ela precisa de re-enrichment para produzir mercados.
+
+---
+
+## 179 — Recalibração banda 50-60% (shadow mode)
+
+**Data:** 2026-05-04
+**Arquivos afetados:**
+- `backend/services/ev_classification.py` (`_band_deflation_v179_shadow`, `apply_probability_deflation_with_shadow`, flag `SHADOW_BAND_50_60_V179`)
+- `backend/cron_handler.py` (persist `prob_deflated` + `prob_shadow_v179` em `audit_results.predicted_probs` JSONB)
+- `backend/routes/health.py` (`GET /metrics/shadow_v179`)
+- `tests/unit/test_calibrator_179.py` (4 cases)
+
+**Severidade:** Alta (sub-confiança crônica em 68% do volume)
+**Status:** Implementado em shadow — NÃO promovido em produção
+
+### Problema identificado
+UNBLOCK_REPORT 2026-05-04 — banda 50-60% sub-confiante em **−12.7pp** (predicted 54.8%, actual 67.5%, N=1796 picks = ~68% do volume). Gap quase exatamente igual à deflação atual de 12% aplicada por `_band_deflation` para essa banda. Strong evidence de que a deflação progressiva (#105) está mal calibrada justamente onde concentra a maior parte dos picks — efeito é supressão sistemática de EV+ e classificação NO_BET excessiva.
+
+### Causa raiz
+`_band_deflation` em `backend/services/ev_classification.py:42` retorna **0.12** para `prob ∈ [0.50, 0.60)` desde #105. A escolha foi conservadora durante a calibração inicial (379 picks Brier #104) e nunca foi revisada com volume estatístico significativo. Com 1796 observações pós-#105, fica visível que essa banda específica está sendo deflacionada além do necessário — outras bandas (60-70%, 70-80%) seguem dentro do esperado por enquanto.
+
+NÃO se trata de bug em `calibrator.py` (que faz IsotonicRegression genérica para `calibrate_prob`) — a recalibração isotônica precede a deflação progressiva, e o problema é estrito da camada de deflação.
+
+### Correções aplicadas (shadow mode)
+1. **`_band_deflation_v179_shadow(prob)`**: função paralela a `_band_deflation`. Idêntica em todas as bandas exceto `[0.50, 0.60)` que retorna `0.05` (era `0.12` — ~60% menos agressivo). Banda crítica isolada; nenhum efeito em outras faixas.
+2. **`apply_probability_deflation_with_shadow(prob, league_id)`**: retorna tupla `(current_deflated, shadow_deflated_v179)`. Per-league factor (#105) e floor `0.05` aplicam idênticos a ambos os ramos. Gated por `SHADOW_BAND_50_60_V179` env var (default `false` → shadow = current; `true` → divergência só na banda).
+3. **Persistência observability**: `cron_handler.log_pick(...)` agora grava `prob_deflated` e `prob_shadow_v179` no JSONB `predicted_probs` ao lado de `prob`. Computado a partir de `merc.raw_probability` quando disponível; caso contrário, ambos caem no valor live (`prob_pick`) — i.e., comparação fica neutra, não introduz ruído.
+4. **`GET /metrics/shadow_v179`**: lê últimos 5000 picks com `actual_result IN ('hit','miss')`, filtra os que caíram em `[0.50, 0.60)` no path live, computa Brier de cada ramo, retorna `improvement_pct = (brier_current − brier_shadow) / brier_current * 100`. Honra MIN_N=20 (regra #079) — `insufficient_n` quando N < MIN_N. Quando flag OFF, retorna `shadow_disabled` direto (sem leitura de DB).
+5. **Testes** (`tests/unit/test_calibrator_179.py`): (i) flag OFF retorna idênticos em todas as bandas, (ii) flag ON diverge dentro de `[0.50, 0.60)` com magnitude exata (0.05 vs 0.12), (iii) flag ON mantém idêntico fora da banda, (iv) MIN_N=20 preservado.
+
+### Não incluído nesta correção (deferred)
+- **Promoção a live**: NÃO aplicada. Bloqueada por gate de 2 semanas + `improvement_pct >= 3%` no `/metrics/shadow_v179`.
+- **Auto-rollback** em caso de degradação shadow: deferido — primeiro ciclo será revisado manualmente para captura de aprendizado.
+- **Recalibração de outras bandas**: 60-70% e 70-80% não mostraram gap significativo no UNBLOCK_REPORT atual; serão reavaliadas ao acumular volume comparável.
+
+### Promoção e rollback
+- **Promoção**: setar `SHADOW_BAND_50_60_V179=true` em produção (Lambda env). Aguardar 2 semanas. Verificar `/metrics/shadow_v179` → `improvement_pct >= 3.0` com `n >= MIN_N`. Se ambos OK, refatorar `_band_deflation` (mudar `0.12` para `0.05` na linha 47) e remover shadow.
+- **Rollback (instantâneo)**: `SHADOW_BAND_50_60_V179=false`. Sem redeploy. Preserva linha live.
+
+### Lição aprendida
+**Toda mudança em calibração (deflação, isotonic, fatores per-league) deve passar por shadow mode mínimo de 2 semanas + improvement out-of-sample ≥ 3% antes de ser promovida.** O incidente P0 #171 mostrou o custo de promover recalibração sem shadow (50% banca em 24h após `CORNERS_ALPHA_CALIBRATED`). Shadow gera dois snapshots no audit log e zero risco em produção; o custo é apenas storage adicional no JSONB. Adicionado a `REGRAS_ATIVAS.md` como regra permanente.
+
+---
+
+## 176 — FootyStats API key rotacionada + sanitização de logs (B-010)
+
+**Data:** 2026-05-01
+**Arquivos afetados:**
+- `backend/services/footstats_client.py` (helper `_redact_key` + uso em 4 logger.* + return error sanitizado)
+
+**Severidade:** Alta (secret leak ativo em CloudWatch)
+**Status:** Implementado
+
+### Problema identificado
+Cliente FootyStats logava URL completa com query string em `logger.error/warning` quando `requests.exceptions.HTTPError` (e similares) era capturada — `str(e)` da requests inclui a URL e a key estava em `?key=...`. Log group `/aws/lambda/sportsbank-pro-backend` tinha `retentionInDays=None` → cópias indefinidas. Detectado durante diagnóstico do incidente HTTP_ERROR de 29/04 (degradação upstream FootyStats causou centenas de 429s, cada um logando a URL com key). Contagem: **616 ocorrências de "key=" em 24h** antes do patch.
+
+### Causa raiz
+- Padrão comum em código de integração: `logger.error(f"... {e}")` onde `e` é exceção do `requests` que serializa a URL completa.
+- Key passada via query string (`params["key"] = self.api_key`) em vez de header.
+- Falta de helper centralizado para sanitização.
+
+### Correções aplicadas
+1. **Rotação da key** no dashboard FootyStats — invalida a antiga (key vazada de 26 chars → key nova de 27 chars).
+2. **Update do env var** `FOOTYSTATS_API_KEY` na Lambda (via AWS Console — sem expor key em shell history).
+3. **Helper `_redact_key(text)`** em `footstats_client.py` (regex `([?&])key=[^&\s"\']+` → `\1key=***REDACTED***`).
+4. **Aplicação em 4 pontos:** `logger.warning` ConnectionError, `logger.error` HTTPError, `logger.error` Unexpected (com `exc_info=False` para evitar leak via traceback), `logger.error` Failed after N attempts. Também sanitizado o `return {"error": str(last_error)}` para não vazar pra cima.
+5. **Retention temporária 7 dias** no log group para expirar logs com key antiga (TODO: restaurar 90d em 2026-05-08 — ver B-003).
+6. **Smoke test pós-deploy:** snapshot_standings → 20 ligas uploaded, 0 failures, 0 ocorrências de "key=" em logs novos.
+
+### Análise de outros clients
+- `backend/services/api_football_client.py`: usa header `x-apisports-key` — **não vaza** em URL. Sem patch necessário.
+- `backend/services/mistral_analysis.py`: usa header `Authorization: Bearer` — **não vaza** em URL. Sem patch necessário.
+
+### Steps manuais pendentes
+- **2026-05-08:** restaurar `retentionInDays=90` (item B-003 do BACKLOG).
+- Considerar mover `_redact_key` para `backend/services/util_service.py` se outro client passar a usar key em query string (defesa em profundidade — item futuro).
+
+### Lição aprendida
+**Nenhum cliente HTTP deve logar URL com query string sem sanitizar segredos.** Auth via header é fortemente preferível a query string — porque headers nunca aparecem em `str(requests.HTTPError)`. Para integrações que só aceitam key em query (como FootyStats), helper de redação é mandatório em todo `logger.*` que receba exceção do `requests`. Padrão para revisão de PR: qualquer novo cliente HTTP que receba `e` em log deve passar por sanitização.
+
+---
+
 ## 175 — EC2 prognosticos-brasileirao-server terminada (dark spend)
 
 **Data:** 2026-04-29
@@ -8938,5 +9145,198 @@ Mensagens de erro genéricas ("Servidor indisponível") dificultam diagnóstico.
 
 ### Lição aprendida
 Deflações em múltiplas camadas (banda + per-league + default + per-market) podem empilhar silenciosamente. Cada nova deflação deve calcular o efeito cumulativo total, não apenas seu impacto isolado. Valores 0/0 não são iguais a 0% — representam ausência de dados e devem ser tratados como null/N/A.
+
+---
+
+## #177 — Joint breakdown by_league_market no brier_service
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_brier_service_177.py | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Auditoria red-team de 2026-05-04 (`audits/red-team/2026-05-04/unblock/UNBLOCK_REPORT.md` + `validate/VALIDATE_REPORT.md`) confirmou `model_beats_house=true` global (delta +0.0058, N=2630), mas heterogêneo: 13 ligas com delta>0, 9 com delta<0; 9 mercados com delta>0, 13 com delta<0. Para validar o subset vencedor (4 ligas × 4 mercados) o operador precisa do delta na **interseção** — `model_beats_house` quando `league IN {...} AND market IN {...}`. O endpoint `/metrics/brier` expunha apenas eixos isolados (`by_league` OU `by_market`), não joint. Sem joint, era impossível responder "esse filtro tem ROI positivo em R$?" — bloqueava decisão sobre alocação de bankroll real (VALIDATE_REPORT veredicto WAIT).
+
+### Causa raiz
+`calculate_snapshot()` em `brier_service.py:117-163` agrupava picks por `p["league"]` e por `p["market"]` independentemente, sem cross-tab. O schema `brier_history` tinha colunas `by_league JSONB`, `by_market JSONB`, `by_band JSONB`, `by_classification JSONB` — sem `by_league_market`.
+
+### Correções aplicadas (camadas)
+1. **Schema:** coluna `by_league_market JSONB` no `CREATE TABLE` (linha 41) + `ALTER TABLE ADD COLUMN IF NOT EXISTS` idempotente embutido em `_ensure_table()` (linhas 46-49). Aditivo nullable, sem rollback.
+2. **Cálculo joint:** novo bloco em `calculate_snapshot()` (linhas 159-172) com `JOINT_MIN_N_DIAGNOSTIC=5` para diagnóstico e flag `diagnostic_only=True` quando N<MIN_N (20, regra #079). Chave plana `f"{league}|||{market}"` com separador `|||` (improvável em nomes de liga/mercado, evita colisão).
+3. **Persistência:** `persist_snapshot()` INSERT estendido com 13 colunas (linhas 193-198 + tuple linha 204).
+4. **Leitura:** `get_history()` SELECT estendido com a nova coluna (linha 213).
+5. **Teste novo:** `tests/unit/test_brier_service_177.py` com 3 casos (segment shape, threshold diagnóstico, formato de chave). 22 passes em `pytest -k "brier or audit"` — não-regressivo.
+
+**Riscos descartados:**
+- Schema breaking: nenhum (coluna aditiva, nullable, ALTER IF NOT EXISTS).
+- Performance: O(N) sobre picks já em memória — irrelevante para N=2630.
+- Frontend: nenhum consumer atual lê `by_league_market` — quem ler `get_history()` recebe a chave nova mas não quebra; quem lê `by_league`/`by_market` continua funcionando.
+- Regra #079: respeitada — `MIN_N_BRIER=20` continua sendo o gate decisório; o `diagnostic_only=True` em N=5..19 é apenas observabilidade, não decisão.
+
+**Validação operacional:** após próximo cron de Brier, `/metrics/brier` deve expor chaves do tipo `"Mls|||BTTS — SIM"`, `"Brasileirao Serie B|||Under 3.5 gols"`, etc. Auditoria red-team pode então rodar `/red-team-validate-filter` v2 contra dados joint reais e responder GO/WAIT em R$.
+
+### Lição aprendida
+Métricas agregadas em eixos isolados são suficientes para diagnóstico global mas insuficientes para validação de subset. Quando `model_beats_house` é heterogêneo entre ligas e mercados, decisões de alocação exigem o cross-tab — não a média marginal. O custo de adicionar joint breakdown é trivial (~25 LOC + ALTER aditivo) comparado ao custo de não conseguir responder a pergunta. Mantém-se a regra #079 (MIN_N=20 para decisão) e adiciona-se um threshold diagnóstico (N=5) com flag explícita — separação clara entre "olhar" e "agir".
+
+**Não inclui:** recalibração da banda 50-60% (achado novo do UNBLOCK_REPORT, fix separado), display Brier 0.22/0.25 (fix separado), credenciais hygiene em `scripts/create_users_table.py` (fix separado, security).
+
+---
+
+## #178 — Brier display consistency + model_beats_house with CI
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, backend/services/backtesting.py, backend/services/deterministic_audit.py, backend/audit.py, frontend/next/src/components/AuditReportCard.tsx, frontend/next/src/components/ReliabilityCard.tsx, frontend/next/src/lib/localAudit.ts, tests/unit/test_brier_178_ci.py | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Auditoria red-team (REDTEAM_REPORT.md achado 4.1) detectou **três valores conflitantes** para o mesmo limite de Brier na mesma tela: backend dispara alerta apenas em `>0.25` (`backtesting.py:588`, `audit.py:667`, `deterministic_audit.py:324`), mas a UI exibe "Ideal < 0.22" em vários lugares (`AuditReportCard.tsx:206,430`, `ReliabilityCard.tsx:96,165,234`) e ainda escreve "acima do ideal (0.25)" em outros (`localAudit.ts:301`). UNBLOCK confirmou ao vivo que `brier_model = 0.2279` cai exatamente nesse buraco — operador vê "ruim" enquanto o sistema acabou de bater o mercado com N=2630. Adicionalmente, `model_beats_house` era exposto apenas como booleano puro (`brier_model < brier_implied`) sem teste estatístico — fragil porque uma diferença marginal sem N suficiente vira "verdadeiro" sem suporte de evidência.
+
+### Causa raiz
+1. **Sem fonte única de verdade** para o target: cada chamador hardcodeava `0.22` ou `0.25` na própria expressão. `deterministic_audit.py:325` até documentava em comentário "target Brier = 0.22" mas o gate de alerta na linha 324 era `> 0.25` — incoerência interna.
+2. **Sem garantia estatística** em `model_beats_house`: comparação direta de médias `brier_model < brier_implied` sem teste pareado, sem N mínimo, sem partição de sinal vs ruído.
+
+### Correções aplicadas (camadas)
+1. **Backend — fonte única `BRIER_TARGET`:** constante `BRIER_TARGET = 0.22` em `brier_service.py:16`. Importada em `backtesting.py:587` (lazy local import dentro de função para evitar ciclo), `deterministic_audit.py:324`, `audit.py:667`. Substitui todos os `0.25` hardcoded e o `0.22` solto do comentário em `deterministic_audit.py:325`. Renomeia campo `brier_below_025` → `brier_below_target` em `backtesting.py:617` (sem consumidores externos — verificado por grep).
+2. **Backend — `_with_ci()`:** nova função em `brier_service.py` que aplica Wilcoxon paired test sobre as séries per-pick `(prob - hit)²` vs `(1/odd - hit)²`. Retorna dict `{beats_bool, delta, p_value, n, significant_at_5pct, below_min_n}`. `significant_at_5pct = (p<0.05 AND delta>0 AND n>=MIN_N=20)` — respeita REGRA #079 explicitamente. Wrapped em `try/except` para casos degenerados (todos diffs idênticos).
+3. **Backend — integração em `_segment`:** todo segmento (global, by_league, by_market, by_classification, by_league_market) ganha campo aditivo `model_beats_house_ci` no return. Booleano legado `model_beats_house` mantido para retrocompat — não-breaking.
+4. **Frontend — consistência 0.22:** `AuditReportCard.tsx:136` (`>0.25` → `>0.22`), `localAudit.ts:165` (comentário), `localAudit.ts:170` (`>0.25` → `>0.22`), `localAudit.ts:295,301` (`>0.25` → `>0.22` + texto "ideal (0.25)" → "(0.22)"). Outros lugares já estavam em `0.22` (verificados em `AuditReportCard.tsx:75,102,183,206,339,430`, `ReliabilityCard.tsx:96,165,234`, `admin/reliability/page.tsx:144`).
+5. **Frontend — badge CI:** novo componente `<ModelBeatsHouseRow />` self-contained em `ReliabilityCard.tsx`. Faz fetch a `/api/metrics/brier` (Next.js route já existente) no mount, lê `model_beats_house_ci` top-level, renderiza 3 estados — **cinza** (`below_min_n`), **verde** (`significant_at_5pct=true`), **amarelo** (sem significância). Tipo `ModelBeatsHouseCI` definido inline (não cria `types/` directory). Sem mudança em prop drilling, sem refactor de parent.
+6. **Teste novo:** `tests/unit/test_brier_178_ci.py` — 4 casos (`below_min_n_returns_indeterminate`, `brier_target_is_022`, `strong_signal_is_significant`, `min_n_threshold`). 37 passes em pytest `-k "brier or audit or backtest or metrics"` — não-regressivo.
+
+**Riscos descartados:**
+- Modelo: zero impacto. Pipeline preditivo, EV, classificação, deflations — tudo intocado.
+- API contract: campo aditivo. Consumidores que não conhecem `model_beats_house_ci` continuam lendo `model_beats_house` boolean.
+- UX regressão: badge novo aparece apenas no `ReliabilityCard` (já um modal opcional). Sem alteração de fluxo principal.
+- Regra #079: MIN_N=20 preservado como gate decisório dentro do próprio `_with_ci()` (`significant_at_5pct=False if n_paired<MIN_N`).
+
+### Lição aprendida
+Constantes operacionais (Brier target, MIN_N, LAMBDA_LIMIT, etc.) precisam de **fonte única importada** — não duplicar em strings ou gates espalhados. Inconsistência de 0.03 (0.22 vs 0.25) era invisível para quem escreveu cada arquivo isolado, mas o operador olha para o mesmo número em 3 lugares e vê 3 verdades. Métricas booleanas (`model_beats_house = True/False`) são frágeis quando o significado pratico depende de N — substituir por dicionário com `(value, p, n, gate)` separa ruído de sinal sem inflar a complexidade.
+
+**Não inclui:** recalibração da banda 50-60% (UNBLOCK achado novo, próximo fix), filter corners 0.85 (descartado pela UNBLOCK), `CORNERS_ALPHA_CALIBRATED` flag flip (depende de #179), credenciais hygiene em `scripts/create_users_table.py` (security separado).
+
+---
+
+## #181 — Mistral input/output contract (full-text validation)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/ai/mistral_contract.py (novo), backend/services/mistral_analysis.py, backend/routes/ai_analysis.py, CLAUDE.md, tests/unit/test_mistral_contract_181.py | **Severidade:** Alta | **Status:** Implementado (observabilidade; retry/fallback automatizados em fix follow-up após dados de CloudWatch)
+
+### Problema identificado
+Operador observou em 2026-05-04 (Sporting CP × Vitória Guimarães): card de análise Mistral citava *"Under 3.5 odd 1.67 prob 70% EV +16.9%"* enquanto o display do sistema mostrava *"Under 3.5 odd 1.70 prob 56-58%"*. Gap ≈13pp = exatamente o valor da deflação progressiva (#105) para a banda 50-60%. Mistral fabricou um valor de EV (16.9%) que o sistema nunca computou.
+
+### Causa raiz (diagnóstico Q1 + Q2 — leitura de código)
+
+**Q1 — Por que Camada 6 (`_validate_recommendation_vs_pipeline`, #096) não bloqueou:**
+A função em `mistral_analysis.py:619-654` tem 3 limitações estruturais:
+1. Inspeciona apenas `recomendacao_principal` (string única) — não lê `resumo_analitico` nem `key_points`, exatamente onde a narrativa quebrada apareceu.
+2. Detecta apenas contradição de **direção** (Over X ↔ Under X com mesma linha). Mistral disse "Under 3.5" alinhado com pipeline → direção bate → função aprova.
+3. Não valida coerência **numérica** (probs/odds/EV). É puramente string contradiction check.
+
+**Q2 — Probs em `match_stats` são RAW, não DEFLATED (verificado por code-walking):**
+1. `backend/modeling/poisson_matrix.py:242,248,256` produz `homeWinProb`/`over25Prob`/`bttsProb` direto da matriz Poisson (raw).
+2. `backend/modeling/calibrator.py:328-346` faz isotonic regression in-place (#100) — calibrado, mas **NÃO deflated**.
+3. `backend/routes/ai_analysis.py:_map_record_to_v3:381-389` aliasa para snake_case sem alterar valor: `stats["prob_over_25"] = stats.get("over25Prob")` — segue raw/calibrated.
+4. Display lê de outro caminho: `pred["prob_max"]` em `record["mercados"]`, deflated por `ev_classification.py` (#105/#106).
+5. Regra **#106** explicita o duplo-tracking: *"Classificação usa prob raw, EV usa prob deflacionada"*. By design — só que ninguém disse pro Mistral.
+
+**Como o bug se manifesta:** o prompt envia AMBAS as camadas no MESMO contexto — linha 213 `Prob Over 2.5: 70%` (raw) e bloco "PICKS DO PIPELINE" linhas 297-302 com `prob_pct=57%` (deflated). Mistral, sem awareness de calibração, recombina arbitrariamente, ataca com narrativa convincente.
+
+### Correções aplicadas (camadas)
+1. **Novo módulo `backend/ai/mistral_contract.py`** — `ApprovedPick` dataclass, `validate_output(text, approved)` (regex de mercados + EV computation pattern), `log_violations`, `fallback_narrative` (kept para fix follow-up). Inclui diagnóstico inline no docstring para o futuro.
+2. **`mistral_analysis.py` prompt enrichment:** linhas 192-198 (Regras de Ouro) ganharam 2 regras explícitas — *"Use APENAS probs dos PICKS DO PIPELINE (deflated)"* e *"NUNCA compute EV no texto"*. Linhas 208-216 (probs Poisson) marcadas com `(raw)` e header `(RAW — uso interno, NÃO citar em narrativa #181)`.
+3. **`mistral_analysis._log_contract_violations` (novo método)** — chamado após Camada 6 em `analyze_match`. Concatena `resumo_analitico + recomendacao_principal + key_points` e passa por `validate_output`. **LOG-ONLY**, sem retry, sem fallback automático — observabilidade primeiro (CloudWatch via `sportsbankzu.mistral.contract`). Decisão: mascarar sintoma sem dados de frequência seria voltar ao mesmo padrão que produziu o bug.
+4. **`_validate_recommendation_vs_pipeline` docstring** — limitação Q1 documentada inline para futuros leitores; aponta para `mistral_contract.py::validate_output` como complemento full-text.
+5. **`routes/ai_analysis.py:_map_record_to_v3`** — warning não-bloqueante quando `match_stats` tem raw probs sem deflated keys, via `logger.info` namespace `[ai_analysis #181]`.
+6. **`CLAUDE.md`** — secção `## Contrato Mistral` ampliada com: proibição #181 explícita (raw probs + EV computation), descrição da camada dupla de probs no prompt, ponteiro para `mistral_contract.py`.
+7. **Testes:** `tests/unit/test_mistral_contract_181.py` (9 casos: clean narrative, market outside, EV detection, empty text, empty approved list, fallback variants, log emission, label formatting). 45 passes em `pytest -k "mistral or brier or audit"` — não-regressivo (#082 testes intactos).
+
+**Riscos descartados:**
+- Modelo: zero impacto. Não toca `prob`, `EV`, classificação ou pipeline.
+- API contract: assinatura `analyze_match(home, away, league, stats, odds, context, picks)` preservada. Callers (`routes/ai_analysis.py:42,95`, `match_analysis_service.py`, `corners/mistral_review.py`) intactos.
+- Camada 6 backward-compat: comportamento inalterado, apenas docstring enriquecido.
+- Fail-open: se `mistral_contract.py` import falhar, `_log_contract_violations` retorna silenciosamente — não derruba `analyze_match`.
+
+**Não inclui (deliberadamente):**
+- Retry automático após violação — exige dados de frequência primeiro (CloudWatch deve coletar 1-2 semanas antes de wire).
+- Fallback automático — mesma razão; `fallback_narrative` está pronto mas não auto-invocado.
+- Refactor de `match_analysis_service.py` (caller paralelo via `MistralClient` direto) — fora do path do bug observado; fica para auditoria separada se relevante.
+- Extensão da Camada 6 para inspecionar full-text dentro de `_validate_recommendation_vs_pipeline` — duplicaria `validate_output`. Manter as duas funções separadas (Camada 6 = bloqueia; contract = observa) reduz acoplamento.
+
+### Lição aprendida
+Métricas duplas no mesmo contexto sem awareness explícita do consumidor produzem alucinações sutis. O sistema mantém raw e deflated por design (#106 — classificação vs EV) mas o prompt do Mistral não distinguia. Validação parcial (Camada 6 só inspeciona `recomendacao_principal`) deixa narrativa livre para divergir do display sem alarme. Princípio: quando uma camada de validação tem escopo limitado, **documentar o limite na própria função** (não em ticket externo) e adicionar camada complementar com escopo declarado, não estender a primeira indefinidamente. Observabilidade antes de automação: medir antes de retry/fallback, especialmente em LLM downstream.
+
+---
+
+## #182 — Hotfix scipy lazy import (P0 — produção quebrada após #178)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_brier_178_ci.py | **Severidade:** Crítica (P0 — endpoint /metrics/brier 100% quebrado em produção) | **Status:** Hotfix implementado
+
+### Problema identificado
+Após deploy do #178, endpoint `/metrics/brier` em produção retornou:
+```json
+{"error": "No module named 'numpy._core.tests'", "total_picks": 0}
+```
+Causa: `from scipy.stats import wilcoxon` no topo de `brier_service.py` (linha 13, adicionado no #178) é executado no import do módulo. No Lambda, o numpy bundled no ZIP de deploy + scipy do Layer (`scipy-numpy-layer:2`) têm versões incompatíveis — scipy ≥ 1.13 espera `numpy._core.tests` que não existe no numpy < 2.0. Resultado: ImportError no carregamento do módulo, todo `brier_service` indisponível, endpoint retorna fallback com `total_picks=0`.
+
+### Causa raiz
+1. **Top-level import scipy** força resolução em load-time. Falha aqui derruba o módulo inteiro, não só a função que usa scipy.
+2. **Layer + ZIP coexistem com versões diferentes:** o Lambda Layer `scipy-numpy-layer:2` (#170-A) carrega scipy ≥ 1.13 com numpy 2.x esperado; o ZIP de deploy embarca numpy 1.x para outras dependências. Conflito silencioso até o load do scipy.stats.
+3. **Local não detectou:** `pytest -v` rodou 14/14 verde antes do deploy do #178 porque local tem scipy + numpy compatíveis (instalados via requirements.txt). Lambda usa Layer separado.
+
+### Correções aplicadas (camadas)
+1. **Remover top-level import:** linha 13 deletada. Substituída por bloco-comentário `# #182 — scipy import lazy inside _with_ci`.
+2. **Lazy import dentro do try/except em `_with_ci()`:** o `from scipy.stats import wilcoxon` foi movido para DENTRO do `try:` que já cobria a chamada `wilcoxon(...)`. `except Exception` agora captura tanto `ImportError` (Lambda Layer mismatch) quanto erros runtime de `wilcoxon` (degenerate input). Em ambos os casos, `pval = None` → `significant_at_5pct = False` → contrato preservado.
+3. **Test ajustado:** `test_strong_signal_is_significant` relaxa `assert p_value is not None` para `assert p_value is None or isinstance(..., float)`. Documenta o novo contrato (p_value pode ser None na produção, float em local). Demais 6 testes passam sem modificação. 7/7 verdes.
+
+**Riscos descartados:**
+- Comportamento local: scipy continua disponível → import dentro do try/except passa → wilcoxon roda → p_value é float. Idêntico ao #178.
+- Contrato `_with_ci`: dict shape inalterado. Consumidores (`_segment` → snapshot → endpoint) continuam funcionando com p_value=None tratado como "indeterminado".
+- Significância estatística: quando p_value=None, `significant_at_5pct=False` por construção (`bool(pval is not None and ...)`) — fail-safe correto.
+- Regra #079: MIN_N=20 preservado, intocado.
+
+**O que esse hotfix DELIBERADAMENTE não faz:**
+- **Não corrige o Lambda Layer.** scipy real em Lambda fica como fix separado (recriar `scipy-numpy-layer` com numpy compatível, ou bundle scipy no ZIP). Risco: produção continua sem Wilcoxon, todos os `model_beats_house_ci.p_value` em CloudWatch serão None até esse fix futuro.
+- **Não muda outros lugares que importam scipy** — apenas `brier_service.py` foi adicionado no #178; outros não foram tocados.
+- **Não adiciona test que simula ImportError** explicitamente (via monkeypatch de `sys.modules`) — escopo mínimo, fora da urgência P0.
+
+### Lição aprendida
+Top-level import de dependência opcional (especialmente em código que roda em Lambda com Layers de versão divergente do dev) é fragilidade. Padrão correto: lazy import dentro da função que usa, em try/except amplo. Validação local (`pytest`) NÃO substitui smoke test pós-deploy contra o endpoint real — adicionar smoke check ao `scripts/finalize.sh` ou pós-deploy seria a próxima camada de defesa. Princípio: **se o código importa, validar o import na ENV alvo, não só na ENV de dev.**
+
+---
+
+## #180 — Family pick selection (1 winner por família via _market_family reusado)
+
+**Data:** 2026-05-04 | **Arquivos:** backend/services/bankroll_engine.py, backend/services/family_selection.py (novo), backend/services/market_service.py, backend/routes/market_analysis.py, tests/unit/test_family_selection_180.py | **Severidade:** Média (UX — sem impacto em modelo/EV/classificação) | **Status:** Implementado (backend); frontend toggle deferido
+
+### Problema identificado
+Sporting × Vitória (04/05) exibiu Over 1.5 + Under 3.5 ambos como VIÁVEL na mesma família "goals". Os intervalos são aninhados (Over 1.5 ⊂ Under 3.5 não-trivialmente, mas ambos são consequências da mesma projeção λ_total) — apresentar os dois é redundância visual, não diversidade real de risco. O usuário lê isso como "duas oportunidades" quando é uma só vista por dois ângulos.
+
+### Causa raiz
+O pipeline classifica cada linha (Over/Under × N) independentemente em `classify_market`. Não há agregação por família ANTES de exibir. `_dedup_market_groups` (#165) apenas consolida o melhor Over de gols + melhor Under de gols + cards corridor — não faz seleção *cross-direção* na família goals. Resultado: Over 2.5 + Under 3.5 + BTTS-Sim podem coexistir no display, todos da família "goals", todos correlacionados.
+
+### Correções aplicadas (camadas)
+
+1. **Reuso de #171 `_market_family`:** exposto via wrapper público `market_family()` em `backend/services/bankroll_engine.py`. Sem novo módulo `market_families.py` — a heurística existente já cobre corners/cards/goals/1x2/unknown.
+
+2. **Novo módulo `backend/services/family_selection.py`:**
+   - `select_family_winners(picks)` agrupa por família e marca `family_winner=True` para o melhor pick de cada família, `False` para os demais.
+   - **Annotate, don't filter**: nada é removido — todos os picks mantêm probs/EV/odds. Display layer decide se mostra apenas winners ou todos.
+   - Ranking interno (tupla maior = melhor): `(classification_rank, ev, delta_brier, band_score)`. SAFE > NEUTRO_QUALIFICADO > NEUTRO > INFORMATIVO > NO_BET. Empate desempata por EV; depois delta_brier; depois banda preferida (60-70% > 50-60% ≈ 70-80% > 80%+ > <50%).
+   - Família "unknown" e famílias com 1 pick recebem todos como `family_winner=True` (sem decisão a tomar).
+
+3. **Feature flag `ENABLE_FAMILY_SELECTION_180`** (default `true`). Quando `false`, todos os picks recebem `family_winner=True` (efetivamente desativa a feature) mas `family` continua anotada para telemetria.
+
+4. **Integração:**
+   - `backend/services/market_service.py::selecionar_mercados_v2`: chamada após `_dedup_market_groups` + `apply_signal_capping`, antes de retornar a lista.
+   - `backend/routes/market_analysis.py::analyze_match` e `analyze_batch`: chamada após o loop que faz `to_legacy_mercado()` por mercado.
+
+5. **Frontend toggle:** deferido. Backend já anota `family` + `family_winner` em todo pick exposto. Frontend pode consumir em fix separado para adicionar o toggle "Mostrar X pick(s) alternativo(s) na mesma família".
+
+### Caveats
+- **Ranking depende de probs corretos.** Antes de #179 promover (banda 50-60% sub-confidente -12.7pp), o ranking pode escolher pick "errado" em casos limites onde o pick perdedor está na banda 50-60% e o vencedor está em 60-70%. Funciona — apenas com leve desvio até #179 promover.
+- **Família "unknown" não deduplica.** Mercados que `_market_family` não classifica (ex.: "Casa", "Empate", "Fora" caem no fallback `return mt or "unknown"` — strings literais, não "1x2") ficam todos como winners. Isso é conservador, não destrutivo.
+- **`_dedup_market_groups` continua rodando antes** — então cada família já chega com no máximo 1 Over + 1 Under de gols, 1 corner-line, 1 cards-corridor. Family selection adiciona uma camada *sobre* isso (escolhe entre Over-gols vs Under-gols vs BTTS dentro da família "goals").
+
+### Risco / Kill switch
+Risco médio. Sem impacto em modelo, EV, classificação, stake. Apenas display.
+**Kill switch:** `ENABLE_FAMILY_SELECTION_180=false` (env var, sem redeploy).
+
+### Lição aprendida
+"Annotate, don't filter" preserva opcionalidade. Reusar a heurística #171 (`_market_family`) ao invés de criar novo módulo evita a tentação de re-implementar a classificação de família com regras ligeiramente diferentes — uma única fonte de verdade para o conceito de família. Princípio: **antes de criar módulo novo, perguntar se a abstração que vou criar já existe sob outro nome no código existente.**
 
 ---

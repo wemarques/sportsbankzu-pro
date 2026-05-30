@@ -446,3 +446,76 @@ async def get_brier_history(limit: int = 30):
         return {"history": h, "count": len(h)}
     except Exception as e:
         return {"history": [], "count": 0, "error": str(e)}
+
+
+@router.get("/metrics/shadow_v179")
+async def shadow_v179_diff():
+    """#179: compare current vs shadow Brier on band 50-60%.
+
+    Reads `prob_deflated` and `prob_shadow_v179` from `audit_results.predicted_probs`
+    JSONB and computes Brier under each. Returns improvement_pct = (current - shadow) /
+    current * 100. Promotion gate: SHADOW_BAND_50_60_V179=true for 2 weeks AND
+    improvement_pct >= 3% before promoting the shadow path to live.
+
+    Status returned:
+    - shadow_disabled: env flag is false (default).
+    - insufficient_n: fewer than MIN_N (regra #079) picks landed in band [0.50, 0.60).
+    - error: DB read failed.
+    - ok: comparison computed.
+    """
+    import json
+    from backend.services.brier_service import _conn, MIN_N
+
+    if not os.getenv("SHADOW_BAND_50_60_V179", "").lower() == "true":
+        return {"status": "shadow_disabled", "n": 0}
+
+    try:
+        conn = _conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT predicted_probs, actual_result
+            FROM audit_results
+            WHERE actual_result IN ('hit','miss')
+              AND predicted_probs IS NOT NULL
+            ORDER BY id DESC LIMIT 5000
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+    band_picks = []
+    for pp_raw, result in rows:
+        pp = json.loads(pp_raw) if isinstance(pp_raw, str) else (pp_raw or {})
+        cur_p = pp.get("prob_deflated")
+        if cur_p is None:
+            cur_p = pp.get("prob")
+        shd_p = pp.get("prob_shadow_v179")
+        if cur_p is None or shd_p is None:
+            continue
+        cur_p = float(cur_p)
+        shd_p = float(shd_p)
+        if not (0.50 <= cur_p < 0.60):
+            continue
+        outcome = 1 if result == "hit" else 0
+        band_picks.append({"current": cur_p, "shadow": shd_p, "out": outcome})
+
+    n = len(band_picks)
+    if n < MIN_N:
+        return {"status": "insufficient_n", "n": n, "min_n": MIN_N}
+
+    brier_current = sum((p["current"] - p["out"]) ** 2 for p in band_picks) / n
+    brier_shadow = sum((p["shadow"] - p["out"]) ** 2 for p in band_picks) / n
+    improvement_pct = (brier_current - brier_shadow) / brier_current * 100 if brier_current else 0.0
+
+    return {
+        "status": "ok",
+        "n": n,
+        "brier_current": round(brier_current, 5),
+        "brier_shadow_v179": round(brier_shadow, 5),
+        "improvement_pct": round(improvement_pct, 2),
+        "promote_threshold_pct": 3.0,
+    }

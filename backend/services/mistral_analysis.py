@@ -148,6 +148,11 @@ class MistralAnalysisService:
             result.recomendacao_principal = self._validate_recommendation_vs_pipeline(
                 result.recomendacao_principal, pipeline_picks or []
             )
+            # #181 — full-text contract validation (observability only, no retry)
+            self._log_contract_violations(
+                result, pipeline_picks or [],
+                match_label=f"{home_team} vs {away_team}",
+            )
             return result
         except Exception as e:
             print(f"[MistralV3] Erro ao chamar API: {e}")
@@ -196,24 +201,26 @@ Analise os dados fornecidos seguindo rigorosamente estas diretrizes:
 - **Seja Específico:** Nos key_points, cite lambdas, probabilidades, odds, %. Nunca genérico.
 - **Escanteios obrigatórios:** Se dados de escanteios existirem, DEVE haver pelo menos 1 key_point sobre corners.
 - **Coerência Over/Under (Corredores):** Se recomendar Over X e Under Y do MESMO mercado (gols, cartoes ou escanteios), explicar como CORREDOR com a faixa esperada. Ex: "Corredor de gols: 3 gols (Over 2.5 + Under 3.5)", "Corredor de cartoes: 3-4 cartoes (Over 2.5 + Under 4.5)", "Corredor de escanteios: 9-12 (Over 8.5 + Under 12.5)".
+- **REGRA #181 — Probabilidades narrativas:** Os números abaixo em "Estatísticas Poisson" são RAW (pré-deflação, usados internamente para classificação). Ao escrever resumo_analitico/key_points/recomendacao, **use APENAS as probabilidades dos PICKS DO PIPELINE** (mais abaixo, já deflated #105 — alinhadas ao display do operador). Citar o número raw em narrativa quebra o contrato da regra #082 e produz divergência operador-vs-Mistral.
+- **REGRA #181 — Cálculo de EV:** Você NUNCA computa EV. EV vem pronto em cada pick do pipeline. Não escreva "EV +X%" para mercados fora da lista, nem recompute para os da lista. Se quiser justificar valor, use "EV positivo" / "EV negativo" qualitativo, sem número.
 
 # Dados do Confronto
 
 JOGO: {home_team} vs {away_team}
 COMPETIÇÃO: {league}
 
-ESTATÍSTICAS CALCULADAS (Poisson):
+ESTATÍSTICAS CALCULADAS (Poisson, RAW — uso interno, NÃO citar em narrativa #181):
 - Lambda Casa: {match_stats.get('lambda_home', 'N/A')}
 - Lambda Fora: {match_stats.get('lambda_away', 'N/A')}
-- Prob Casa: {match_stats.get('prob_home', 'N/A')}%
-- Prob Empate: {match_stats.get('prob_draw', 'N/A')}%
-- Prob Fora: {match_stats.get('prob_away', 'N/A')}%
-- Prob Over 0.5: {match_stats.get('prob_over_05', 'N/A')}%
-- Prob Over 1.5: {match_stats.get('prob_over_15', 'N/A')}%
-- Prob Over 2.5: {match_stats.get('prob_over_25', 'N/A')}%
-- Prob Over 3.5: {match_stats.get('prob_over_35', 'N/A')}%
-- Prob Over 4.5: {match_stats.get('prob_over_45', 'N/A')}%
-- Prob BTTS: {match_stats.get('prob_btts', 'N/A')}%
+- Prob Casa: {match_stats.get('prob_home', 'N/A')}% (raw)
+- Prob Empate: {match_stats.get('prob_draw', 'N/A')}% (raw)
+- Prob Fora: {match_stats.get('prob_away', 'N/A')}% (raw)
+- Prob Over 0.5: {match_stats.get('prob_over_05', 'N/A')}% (raw)
+- Prob Over 1.5: {match_stats.get('prob_over_15', 'N/A')}% (raw)
+- Prob Over 2.5: {match_stats.get('prob_over_25', 'N/A')}% (raw)
+- Prob Over 3.5: {match_stats.get('prob_over_35', 'N/A')}% (raw)
+- Prob Over 4.5: {match_stats.get('prob_over_45', 'N/A')}% (raw)
+- Prob BTTS: {match_stats.get('prob_btts', 'N/A')}% (raw)
 
 ODDS DO MERCADO:
 - Casa (1): {odds.get('home', 'N/A')}
@@ -620,6 +627,15 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
         """Reject recommendations that contradict pipeline picks (#096).
 
         E.g. pipeline says Under 2.5, Mistral recommends Over 2.5 → blocked.
+
+        Limitação conhecida (#181, 2026-05-04): inspeciona apenas
+        recomendacao_principal e detecta apenas contradição de DIREÇÃO
+        (Over X ↔ Under X). Não lê resumo_analitico/key_points e não
+        valida coerência numérica (probs/odds/EV). Caso Sporting × Vitória
+        (Mistral citou prob 70% para Under 3.5 quando display mostrava
+        57%) passou despercebido por essa função porque a direção
+        estava correta. Validação full-text + numérica vive em
+        backend/ai/mistral_contract.py::validate_output.
         """
         if not recommendation or not picks:
             return recommendation
@@ -652,6 +668,54 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
                     )
 
         return recommendation
+
+    @staticmethod
+    def _log_contract_violations(
+        result: 'AIAnalysisResponse',
+        pipeline_picks: list,
+        match_label: str = "?",
+    ) -> None:
+        """#181 — full-text contract validation against pipeline picks.
+
+        Inspects resumo_analitico + key_points + recomendacao_principal
+        (Camada 6 only inspected recomendacao_principal). Detects markets
+        outside the approved list and EV computations in the narrative.
+
+        Logs violations through sportsbankzu.mistral.contract logger; does
+        NOT mutate the result, retry, or fallback. Pure observability.
+        Once a few weeks of CloudWatch data show violation frequency, a
+        follow-up fix wires retry/fallback.
+        """
+        try:
+            from backend.ai.mistral_contract import (
+                ApprovedPick, validate_output, log_violations,
+            )
+        except Exception:
+            return  # contract module missing — fail open, don't crash analyze_match
+
+        approved: list = []
+        for p in pipeline_picks or []:
+            try:
+                approved.append(ApprovedPick(
+                    market=str(p.get("market", "")),
+                    classification=str(p.get("classification", "")),
+                    prob_deflated_pct=float(p.get("prob_pct") or 0),
+                    odd=float(p.get("odd") or 0),
+                    ev_pct=float(p.get("ev_pct") or 0),
+                ))
+            except Exception:
+                continue  # skip malformed picks; keep validating the rest
+
+        # Concatenate full narrative — anything visible to the operator.
+        text_parts = [
+            getattr(result, "resumo_analitico", "") or "",
+            getattr(result, "recomendacao_principal", "") or "",
+            *(getattr(result, "key_points", []) or []),
+        ]
+        full_text = " ".join(text_parts)
+        v = validate_output(full_text, approved)
+        if not v["ok"]:
+            log_violations(v["violations"], match_label=match_label)
 
     # -----------------------------------------------------------------
     # FALLBACK
