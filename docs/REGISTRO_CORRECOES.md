@@ -18,11 +18,10 @@
 Operador relatou que **nenhum mercado do Brasileirão Série A** atingia a classificação SAFE (tag verde "Maior Valor" na UI), enquanto ligas europeias funcionavam normalmente. Sem log que distinguisse "liga não calibrada" de "chave divergente" de "erro de DB", o sintoma era indistinguível de bug de cálculo.
 
 ### Causa raiz
-Dois mecanismos, ambos legítimos por design, ficavam **invisíveis**, e um terceiro era bug real:
+Verificado contra o estado vivo (`GET /api/backtesting/calibration-status`, 2026-05-29): `brasileirao-serie-a` está **`calibrated=true, safe_enabled='true'`**, `brier_over=0.160`. Ou seja, **SAFE estava habilitado no banco o tempo todo** — não era falta de calibração (hipótese inicial de "<100 jogos / N=24" refutada; aquele N=24 era um comentário hardcoded antigo em `_LEAGUE_DEFLATION`, não o estado da DB). O bug é o **lookup nunca encontrar a chave**:
 
-1. **`safe_enabled=False` por baixa amostra (esperado, #052/#054):** `league_calibrator` só liga `safe_enabled` com `brier_over_avg < 0.25` **e** `len(matches) >= 100`. O Brasileirão 2026 (temporada Jan–Dez) em maio tem <100 jogos calibrados — `_LEAGUE_DEFLATION` confirma `brasileirao-serie-a` com `N=24`. Logo `ev_classification.py` rebaixa todo SAFE → NEUTRO_QUALIFICADO (linha do circuit breaker #052). Correto, mas sem log de causa.
-2. **Mismatch de alias (bug real):** `_is_safe_enabled` e `_get_calibrated_threshold` chamavam `get_lambda_corrections(league_id)` com o id **cru**. Se o caller passasse o alias de frontend (`brazil-serie-a`) ou case divergente, a busca não casava a chave canônica de calibração (`brasileirao-serie-a`) e caía no default em silêncio (SAFE off + thresholds default estritos).
-3. **Miss silencioso de DB:** `get_lambda_corrections` retorna `{}` em qualquer falha; o gate tratava `{}` como "não habilitado" sem distinguir de erro real.
+1. **Mismatch de alias (causa real):** o frontend usa o id `brazil-serie-a` (`frontend/src/lib/leagues.ts:333`); a DB de correções é keyed pela forma canônica `brasileirao-serie-a` (`leagues_config.py:18`). `market_analysis.py:68` passa `req.league_id` cru a `evaluate_match_markets`, que repassa cru a `classify_market` (842/889). Pré-#185, `_is_safe_enabled("brazil-serie-a")` e `_get_calibrated_threshold("brazil-serie-a", …)` chamavam `get_lambda_corrections` com o id de frontend → `{}` → SAFE rebaixado p/ NEUTRO_QUALIFICADO + thresholds default (estritos), apesar de `safe_enabled='true'` sob a chave canônica.
+2. **Miss silencioso de DB:** `get_lambda_corrections` retorna `{}` em qualquer falha; o gate tratava `{}` como "não habilitado" sem distinguir *não calibrada* de *chave divergente* de *erro real* — indistinguível de bug de cálculo na UI.
 
 ### Correções aplicadas (camadas)
 - **Camada 1 — canonicalização:** novo `_canonical_league(league_id)` resolve alias (via `LEAGUE_ID_ALIASES`) + `strip().lower()` antes de qualquer lookup de correções. Aplicado em `_is_safe_enabled` e `_get_calibrated_threshold`. Fecha a causa nº 2.
@@ -30,10 +29,13 @@ Dois mecanismos, ambos legítimos por design, ficavam **invisíveis**, e um terc
 - **Sem alteração de threshold/deflação/min_ev** — Proibições #2 e #7 respeitadas. Nenhum valor de classificação muda; só a resolução de chave (correção) e a emissão de logs.
 
 ### Lição aprendida
-Lookup de calibração keyed por string **deve** canonicalizar o id na fronteira e **nunca** cair em default sem deixar rastro. "Liga não calibrada", "chave divergente" e "DB fora" produzem o mesmo sintoma na UI — só log de causa os separa. Mesmo padrão de #184 (drop silencioso → observabilidade).
+Lookup de calibração keyed por string **deve** canonicalizar o id na fronteira e **nunca** cair em default sem deixar rastro. "Liga não calibrada", "chave divergente" e "DB fora" produzem o mesmo sintoma na UI — só log de causa os separa. Mesmo padrão de #184 (drop silencioso → observabilidade). A calibração da Série A já estava correta; o sintoma era 100% de roteamento de chave.
 
-### Próximo passo operacional (não-código)
-Para reativar SAFE legitimamente na Série A: rodar `POST /api/backtesting/calibrate?league=brasileirao-serie-a` e confirmar `n_matches >= 100` + `brier_over_avg < 0.25` via `/api/backtesting/calibration-status`. Sujeito à Proibição #3 (3 auditorias consecutivas > 50% antes de reativar SAFE).
+### Achado relacionado — NÃO corrigido aqui (requer auditoria, Proibição #2)
+`_LEAGUE_DEFLATION` (`ev_classification.py:33`) também é keyed canônico (`brasileirao-serie-a: 0.90`), mas `apply_probability_deflation`/`_calibrate_and_deflate` fazem `get(league_id, 1.0)` com o id **cru**. Com `brazil-serie-a`, a deflação per-league da Série A não é aplicada (usa 1.0) → altera o EV. Corrigir isso muda matemática de probabilidade/EV e exige auditoria própria. Solução recomendada de longo prazo: canonicalizar `league_id` **uma vez na fronteira** (`evaluate_match_markets` ou no route `market_analysis`), para que deflação, gate SAFE, thresholds e ML metadata vejam todos a forma canônica de forma consistente.
+
+### Próximo passo (validação)
+Deploy do #185 e observar `sportsbankzu.ev_classification`: o WARNING `[safe-gate] no corrections for league 'brazil-serie-a'` deixará de ocorrer e picks SAFE da Série A voltam a aparecer. Não é necessário recalibrar (`safe_enabled` já = true).
 
 ## 184 — xG filter None-guard previne drops silenciosos no pipeline
 
