@@ -224,26 +224,68 @@ SAFE_SHADOW_MODE = os.getenv("SAFE_SHADOW_MODE", "true").lower() == "true"
 _shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
 
 
+def _canonical_league(league_id: str | None) -> str | None:
+    """Resolve a league_id to its canonical backend form before any corrections
+    lookup (#185).
+
+    Callers may pass frontend aliases (e.g. 'brazil-serie-a') or mixed case.
+    The corrections/calibration DB is keyed by the canonical id
+    (e.g. 'brasileirao-serie-a'), so a raw lookup silently misses and falls back
+    to defaults — invisibly disabling SAFE and per-league thresholds for that
+    league. Resolving the alias here closes that gap.
+    """
+    if not league_id:
+        return None
+    lid = league_id.strip().lower()
+    try:
+        from backend.config.leagues_config import LEAGUE_ID_ALIASES
+        return LEAGUE_ID_ALIASES.get(lid, lid)
+    except Exception:
+        return lid
+
+
 def _is_safe_enabled(league_id: str | None) -> bool:
     """Check if SAFE classification is enabled for this league.
 
     Per-league SAFE status from calibration DB (#052).
     Default: disabled (conservative — requires calibration to enable).
     Global override: SAFE_CIRCUIT_BREAKER_ENABLED=True forces all disabled.
+
+    #185: resolve the alias before the lookup and make every silent miss
+    (empty league_id, no corrections row, DB error) visible in the log, so a
+    league dropping out of SAFE is traceable instead of invisible.
     """
     if SAFE_CIRCUIT_BREAKER_ENABLED:
         return False  # Global emergency override
-    if not league_id:
+    lid = _canonical_league(league_id)
+    if not lid:
+        logger.warning("[safe-gate] empty league_id — SAFE disabled by default")
         return False
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
-        corrections = get_lambda_corrections(league_id)
+        corrections = get_lambda_corrections(lid)
+        if not corrections:
+            logger.warning(
+                "[safe-gate] no corrections for league '%s' "
+                "(uncalibrated or key mismatch) — SAFE disabled", lid,
+            )
+            return False
         safe_val = corrections.get("safe_enabled", {}).get("value", "0")
         try:
-            return float(safe_val) >= 1.0
+            enabled = float(safe_val) >= 1.0
         except (ValueError, TypeError):
-            return str(safe_val).lower() in ("true", "1", "yes", "1.0")
-    except Exception:
+            enabled = str(safe_val).lower() in ("true", "1", "yes", "1.0")
+        if not enabled:
+            logger.info(
+                "[safe-gate] league '%s' calibrated but safe_enabled=%r — SAFE off",
+                lid, safe_val,
+            )
+        return enabled
+    except Exception as e:
+        logger.warning(
+            "[safe-gate] error reading corrections for '%s': %s — SAFE disabled",
+            lid, e,
+        )
         return False  # Default: disabled
 
 # ─── Dynamic Thresholds per Market ───
@@ -300,12 +342,18 @@ NEUTRO_QUALIFICADO_THRESHOLDS = {
 
 
 def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Dict[str, float] | None:
-    """Get per-league calibrated threshold from corrections DB (#055)."""
-    if not league_id:
+    """Get per-league calibrated threshold from corrections DB (#055).
+
+    #185: canonicalize league_id (alias-aware) before the lookup — same silent
+    fallback bug as _is_safe_enabled — and log when the expected per-league
+    threshold is absent, so a fallback to defaults is traceable.
+    """
+    lid = _canonical_league(league_id)
+    if not lid:
         return None
     try:
         from backend.modeling.lambda_calculator import get_lambda_corrections
-        corrections = get_lambda_corrections(league_id)
+        corrections = get_lambda_corrections(lid)
 
         param_map = {
             "Over/Under": "safe_prob_ou",
@@ -321,6 +369,10 @@ def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Di
             val = corrections.get(param_name, {}).get("value")
             if val is not None:
                 return {"safe_prob": float(val)}
+            logger.debug(
+                "[threshold] no calibrated '%s' for league '%s' — using default",
+                param_name, lid,
+            )
         return None
     except Exception:
         return None
