@@ -131,8 +131,8 @@ export async function getMatchesByLeague(
     MAX_CONCURRENT,
   );
 
-  // Identify failed batches for retry
-  const RETRYABLE_ERRORS = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR"]);
+  // Identify failed batches for retry (HTTP_ERROR covers 429/502/503/504)
+  const RETRYABLE_ERRORS = new Set(["TIMEOUT", "HTTP_ERROR", "CONNECTION_ERROR", "NETWORK_ERROR", "UNKNOWN"]);
   const failedBatchIndices: number[] = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];

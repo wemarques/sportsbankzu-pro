@@ -32,16 +32,20 @@ export async function GET(req: NextRequest) {
     });
 
     // Auto-retry once on transient errors (Lambda cold start takes ~10-20s, second call is fast)
-    if (
+    const isRetryable =
       !result.ok &&
       result.error &&
       (result.error.kind === "TIMEOUT" ||
         result.error.kind === "CONNECTION_ERROR" ||
-        (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
-    ) {
+        (result.error.kind === "HTTP_ERROR" &&
+          /HTTP (429|502|503|504)/.test(result.error.message)));
+    if (isRetryable) {
+      const is429 = result.error!.kind === "HTTP_ERROR" && /HTTP 429/.test(result.error!.message);
+      const backoffMs = is429 ? 2000 : 500;
       console.log(
-        `[fetch/route] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying (Lambda cold start)...`,
+        `[fetch/route] ${result.error!.kind} on first attempt (${result.durationMs}ms), retrying after ${backoffMs}ms...`,
       );
+      await new Promise((r) => setTimeout(r, backoffMs));
       result = await fetchBackend(`/fixtures?${qs.toString()}`, {
         timeoutMs: BATCH_TIMEOUT_MS,
       });
@@ -120,7 +124,29 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Backend returned 0 matches — this is legitimate (no games for this date)
+      // Backend returned 0 matches — check for API warnings (key/payment issues)
+      const backendData = result.data as Record<string, unknown>;
+      const apiWarnings = backendData?._warnings as string[] | undefined;
+      if (apiWarnings && apiWarnings.length > 0) {
+        console.error(
+          `[fetch/route] Backend returned 0 matches WITH API warnings: ${apiWarnings.join("; ")} | ${result.durationMs}ms`,
+        );
+        return Response.json(
+          {
+            matches: [],
+            _dataSource: "error",
+            _error: {
+              kind: "API_KEY_ERROR",
+              message: "Problema com chave de API ou assinatura do provedor de dados. Verifique as configuracoes de pagamento.",
+              warnings: apiWarnings,
+              durationMs: result.durationMs,
+            },
+            _latencyMs: result.durationMs,
+          },
+          { status: 503 },
+        );
+      }
+
       console.log(
         `[fetch/route] Backend returned 0 matches for date=${url.searchParams.get("date") || "today"} | ${result.durationMs}ms`,
       );
@@ -154,7 +180,8 @@ export async function GET(req: NextRequest) {
 
     // In production: return error, never mock
     const errorKind = result.error?.kind ?? "BACKEND_ERROR";
-    const friendlyMsg = _friendlyErrorMessage(errorKind, result.durationMs);
+    const httpStatus = _extractHttpStatus(result.error?.message);
+    const friendlyMsg = _friendlyErrorMessage(errorKind, result.durationMs, result.error?.message);
     return Response.json(
       {
         matches: [],
@@ -163,6 +190,7 @@ export async function GET(req: NextRequest) {
           kind: errorKind,
           message: friendlyMsg,
           code: errorKind,
+          httpStatus,
           durationMs: result.durationMs,
         },
         _debug: debug ? {
@@ -210,16 +238,42 @@ export async function GET(req: NextRequest) {
   );
 }
 
+/** Human-readable duration: ms when < 1s, seconds otherwise. */
+function _fmtDuration(ms?: number): string {
+  if (!ms) return "";
+  return ms < 1000 ? ` (${ms}ms)` : ` (${Math.round(ms / 1000)}s)`;
+}
+
+/** Extract HTTP status code (e.g. 429) from error message like "HTTP 429: ..." */
+function _extractHttpStatus(message?: string): number | null {
+  const m = message?.match(/^HTTP (\d{3})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 /** Maps error kind to a user-facing message with diagnostic hint. */
-function _friendlyErrorMessage(kind: string, durationMs?: number): string {
-  const dur = durationMs ? ` (${Math.round(durationMs / 1000)}s)` : "";
+function _friendlyErrorMessage(kind: string, durationMs?: number, rawMessage?: string): string {
+  const dur = _fmtDuration(durationMs);
+  const httpStatus = _extractHttpStatus(rawMessage);
+
   switch (kind) {
     case "TIMEOUT":
       return `O servidor demorou demais para responder${dur}. Lambda pode estar em cold start — tente novamente.`;
     case "CONNECTION_ERROR":
       return "Nao foi possivel conectar ao servidor de dados. Verifique se o backend esta ativo.";
-    case "HTTP_ERROR":
-      return `O servidor retornou um erro${dur}. Pode ser throttling ou reinicializacao do Lambda.`;
+    case "API_KEY_ERROR":
+      return "Problema com chave de API ou assinatura do provedor de dados. Verifique as configuracoes de pagamento em football-data-api.com e api-football.com.";
+    case "HTTP_ERROR": {
+      if (httpStatus === 429) {
+        return `Limite de requisicoes atingido (throttling)${dur}. Aguarde alguns segundos e tente novamente.`;
+      }
+      if (httpStatus === 500) {
+        return `Erro interno no servidor${dur}. Pode indicar bug ou dados corrompidos — tente novamente.`;
+      }
+      if (httpStatus && httpStatus >= 502 && httpStatus <= 504) {
+        return `Servidor reiniciando (cold start)${dur}. Tente novamente em 10-15 segundos.`;
+      }
+      return `O servidor retornou HTTP ${httpStatus ?? "erro"}${dur}. Tente novamente em instantes.`;
+    }
     default:
       return "O servidor de dados esta temporariamente indisponivel. Tente novamente em alguns minutos.";
   }

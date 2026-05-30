@@ -164,10 +164,21 @@ class FootyStatsClient:
                         pass
                     return data
                 else:
+                    msg = data.get("message", "unknown")
+                    is_auth = any(kw in str(msg).lower() for kw in (
+                        "key", "subscription", "expired", "invalid", "unauthorized", "forbidden",
+                        "payment", "plan", "quota", "limit exceeded", "access denied",
+                    ))
+                    if is_auth:
+                        logger.error(
+                            f"[{endpoint}] AUTH/PAYMENT issue (HTTP {response.status_code}, {elapsed_ms}ms): {msg}. "
+                            "Check FOOTYSTATS_API_KEY and subscription at football-data-api.com"
+                        )
+                        return {"success": False, "auth_error": True, "message": msg}
                     logger.warning(
-                        f"[{endpoint}] success=False (HTTP {response.status_code}, {elapsed_ms}ms): {data.get('message', 'unknown')}"
+                        f"[{endpoint}] success=False (HTTP {response.status_code}, {elapsed_ms}ms): {msg}"
                     )
-                    return {"success": False, "message": data.get("message")}
+                    return {"success": False, "message": msg}
 
             except requests.exceptions.Timeout as e:
                 last_error = e

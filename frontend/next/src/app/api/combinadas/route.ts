@@ -32,17 +32,20 @@ export async function POST(req: NextRequest) {
   });
 
   // Auto-retry once on transient errors (only if enough time remains)
-  if (
+  const isPostRetryable =
     !result.ok &&
     result.error &&
     result.durationMs < 30_000 &&
     (result.error.kind === "TIMEOUT" ||
       result.error.kind === "CONNECTION_ERROR" ||
-      (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
-  ) {
+      (result.error.kind === "HTTP_ERROR" && /HTTP (429|502|503|504)/.test(result.error.message)));
+  if (isPostRetryable) {
+    const is429 = /HTTP 429/.test(result.error!.message);
+    const backoffMs = is429 ? 2000 : 500;
     console.log(
-      `[combinadas] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying...`,
+      `[combinadas] ${result.error!.kind} on first attempt (${result.durationMs}ms), retrying after ${backoffMs}ms...`,
     );
+    await new Promise((r) => setTimeout(r, backoffMs));
     result = await fetchBackend("/combinadas", {
       method: "POST",
       body: JSON.stringify(body),
@@ -105,17 +108,20 @@ export async function GET(req: NextRequest) {
   const COMBINADAS_TIMEOUT_MS = 25_000;
   let result = await fetchBackend(`/combinadas?${qs.toString()}`, { timeoutMs: COMBINADAS_TIMEOUT_MS });
 
-  if (
+  const isGetRetryable =
     !result.ok &&
     result.error &&
     result.durationMs < 30_000 &&
     (result.error.kind === "TIMEOUT" ||
       result.error.kind === "CONNECTION_ERROR" ||
-      (result.error.kind === "HTTP_ERROR" && /HTTP (502|503|504)/.test(result.error.message)))
-  ) {
+      (result.error.kind === "HTTP_ERROR" && /HTTP (429|502|503|504)/.test(result.error.message)));
+  if (isGetRetryable) {
+    const is429 = /HTTP 429/.test(result.error!.message);
+    const backoffMs = is429 ? 2000 : 500;
     console.log(
-      `[combinadas] ${result.error.kind} on first attempt (${result.durationMs}ms), retrying...`,
+      `[combinadas] ${result.error!.kind} on first attempt (${result.durationMs}ms), retrying after ${backoffMs}ms...`,
     );
+    await new Promise((r) => setTimeout(r, backoffMs));
     result = await fetchBackend(`/combinadas?${qs.toString()}`, { timeoutMs: COMBINADAS_TIMEOUT_MS });
   }
 
