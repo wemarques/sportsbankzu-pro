@@ -474,7 +474,7 @@ async def shadow_v179_diff():
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT predicted_probs, actual_result
+            SELECT predicted_probs, actual_result, league
             FROM audit_results
             WHERE actual_result IN ('hit','miss')
               AND predicted_probs IS NOT NULL
@@ -487,19 +487,27 @@ async def shadow_v179_diff():
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
+    from backend.services.ev_classification import (
+        _band_deflation, _band_deflation_v179_shadow, _LEAGUE_DEFLATION,
+    )
+
+    def _defl(raw, league, band_fn):
+        d = raw * (1.0 - band_fn(raw))
+        if league:
+            d *= max(_LEAGUE_DEFLATION.get(league, 1.0), 0.85)
+        return max(d, 0.05)
+
     band_picks = []
-    for pp_raw, result in rows:
+    for pp_raw, result, league in rows:
         pp = json.loads(pp_raw) if isinstance(pp_raw, str) else (pp_raw or {})
-        cur_p = pp.get("prob_deflated")
-        if cur_p is None:
-            cur_p = pp.get("prob")
-        shd_p = pp.get("prob_shadow_v179")
-        if cur_p is None or shd_p is None:
+        raw_p = pp.get("prob_raw")
+        if raw_p is None:
+            continue                        # linha antiga (pré-Patch 1) → ignora
+        raw_p = float(raw_p)
+        if not (0.50 <= raw_p < 0.60):      # banda pelo RAW (corrige o bug)
             continue
-        cur_p = float(cur_p)
-        shd_p = float(shd_p)
-        if not (0.50 <= cur_p < 0.60):
-            continue
+        cur_p = _defl(raw_p, league or "", _band_deflation)
+        shd_p = _defl(raw_p, league or "", _band_deflation_v179_shadow)
         outcome = 1 if result == "hit" else 0
         band_picks.append({"current": cur_p, "shadow": shd_p, "out": outcome})
 

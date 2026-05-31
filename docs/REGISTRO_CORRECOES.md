@@ -4,6 +4,32 @@
 
 ---
 
+## 179b — Habilitar shadow banda 50-60% (observabilidade)
+
+**Data:** 2026-05-31
+**Arquivos afetados:**
+- `backend/cron_handler.py` (persiste `prob_raw` no dict `predicted_probs` do `log_pick`; init defensivo `_raw_prob = None` antes do `try`)
+- `backend/routes/health.py` (`shadow_v179_diff`: `SELECT ... , league`; banda filtrada por `prob_raw` e recompute current/shadow via `_band_deflation` vs `_band_deflation_v179_shadow`)
+- Flag Lambda `SHADOW_BAND_50_60_V179=true`
+
+**Severidade:** Média (observabilidade — nenhuma alteração na deflação servida)
+**Status:** Implementado
+
+### Problema identificado
+O endpoint `/metrics/shadow_v179` (monitor forward do gate de promoção 0.12 → 0.05) media a população errada e reportava `improvement_pct=0` por construção: (a) bandava por `prob_deflated` (deflacionada) em `[0.50, 0.60)` — um raw de 55% vira ~48% após deflação e **sai** do filtro; (b) lia `prob_shadow_v179` do banco, coluna **idêntica** a `prob_deflated` no histórico porque a flag esteve OFF. Sem `prob_raw` persistido, não havia como rebandar nem recomputar.
+
+### Causa raiz
+A flag `SHADOW_BAND_50_60_V179` controlava apenas a persistência (cron) e a leitura (endpoint), mas o raw nunca era gravado e o filtro de banda usava a prob errada. O caminho **live** de O/U em `origin/main` usa `_band_deflation` direto (half-band via `_calibrate_and_deflate`) — não passa pela flag. Logo, ligar a flag **não altera a deflação servida**; só habilita o monitor.
+
+### Correções aplicadas (camadas)
+- **Camada 1 — persistência (Patch 1):** `cron_handler.py` grava `prob_raw` em `predicted_probs`. Init `_raw_prob = None` antes do `try` torna o dict crash-safe se o import de `ev_classification` falhar (mesma disciplina None-guard de #184).
+- **Camada 2 — filtro correto (Patch 2):** `shadow_v179_diff` inclui `league` no SELECT, banda por `prob_raw` em `[0.50, 0.60)` e **recompute** current/shadow a partir do raw (`_defl` espelha `apply_probability_deflation_with_shadow`: band fn + `max(factor, 0.85)` + floor 0.05), em vez de ler a coluna shadow inerte. Só conta linhas gravadas **após** o Patch 1 (raw presente).
+- **Camada 3 — flag ON:** `SHADOW_BAND_50_60_V179=true` no Lambda (mapa de env preservado integralmente).
+- **NÃO altera deflação live:** O/U servido segue 0.12 na banda. O endpoint vira o monitor forward; deve retornar `insufficient_n` até acumular ≥ MIN_N picks com `prob_raw` na banda. **Nenhuma promoção** — exceção `#179-EX1` em `REGRAS_ATIVAS.md` fica reservada para o momento da promoção.
+
+### Lição aprendida
+Um monitor de shadow só é válido se filtra a população pela prob **pré-deflação** (raw) e recomputa ambos os ramos da mesma fonte; ler uma coluna shadow que esteve inerte garante `improvement_pct=0` enganoso. Persistir o raw na fronteira é o que viabiliza tanto o forward (endpoint) quanto o retro (backtest via lambdas).
+
 ## 185 — league_id canônico antes do lookup de correções + observabilidade do gate SAFE
 
 **Data:** 2026-05-29

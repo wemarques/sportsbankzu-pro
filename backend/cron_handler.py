@@ -272,6 +272,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                 # behavior change. The endpoint /metrics/shadow_v179 compares them.
                 _shadow_current = prob_pick
                 _shadow_v179 = prob_pick
+                _raw_prob = None  # #179: init before try so dict ref is crash-safe if import fails
                 try:
                     from backend.services.ev_classification import (
                         apply_probability_deflation_with_shadow,
@@ -289,6 +290,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                     market=_norm_market,
                     predicted_probs={
                         "prob": prob_pick,
+                        "prob_raw": float(_raw_prob) if _raw_prob is not None else None,  # #179: habilita recompute
                         "prob_deflated": _shadow_current,  # #179
                         "prob_shadow_v179": _shadow_v179,  # #179
                         "market": _norm_market,
