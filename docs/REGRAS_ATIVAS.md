@@ -621,3 +621,35 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `grep -n "_af_query_dates\|_enrich_context_from_api_football\|_summarize_sources" backend/routes/fixtures.py`
 **Verificação:** `grep -n "compute_ou_stats\|lambda_stats_block\|probSources" backend/services/fixtures_service.py`
 **Verificação:** `grep -n "_CARDS_TOKENS\|cards_engine_default" backend/services/market_reference_signal.py`
+
+### #187 — Odds por família única + display derivado dos lambdas + espelho 1X2 rotulado + linhas altas só com odd
+
+**Tipo:** Fix + Regra permanente (Pipeline + UX)
+**Relacionado:** #028, #064, #095, #103, #110 (emendado), #120, #166, #186
+
+1. **Famílias de linhas (cartões/escanteios) vêm de UM único bet coerente.**
+   `_extract_line_family()` rejeita bets por time/tempo/handicap e descarta
+   escadas incoerentes (over não pode pagar menos em linha maior). NUNCA
+   misturar linhas de bets/bookmakers diferentes na mesma família.
+2. **Mercados são reclassificados após o enrichment de odds** (`_reclassify_after_odds`,
+   exceto jogos finished). Odds que chegam depois do build DEVEM alcançar book_odd/EV.
+3. **Display O/U e BTTS derivam dos lambdas do payload** — `overXXProb` de
+   Poisson(`lambdaTotalOU`), `bttsProb` de (1-e^-λh)(1-e^-λa); invariantes
+   over+under=100 e monotonicidade testadas. Esses campos são TAMBÉM o insumo
+   raw dos picks de gols/BTTS (ev_classification) — mudanças neles são mudança
+   de modelo. Potentials FS em `fsPotentials`; fusão em `bttsFusionProb`.
+   `calibrate_match_stats` calibra APENAS corners (picks continuam com
+   isotonic próprio, #106).
+4. **1X2 é espelho de mercado ROTULADO (decisão de produto, opção b).** UI
+   exibe "(mercado)" / "(modelo ML)" conforme `predictionSource`. Trocar para
+   modelo próprio como 1X2 principal exige backtesting (#042) e nova entrada.
+5. **Cartões > 2.5 e escanteios > 10.5 só exibem com odd real** (emenda ao
+   #110: a linha expandida é escaneada, mas só exibida com suporte real).
+6. **Nenhum sinal exibido com fonte `fallback_default`** — fontes válidas:
+   league_classification, market_model, poisson_pipeline, corners_v2_governance,
+   cards_engine_default, indeterminate.
+
+**Verificação:** `grep -n "_extract_line_family\|_reclassify_after_odds" backend/services/api_football_client.py backend/routes/fixtures.py`
+**Verificação:** `grep -n "compute_btts_from_lambdas\|lambdaTotalOU\|bttsFusionProb" backend/services/fixtures_service.py`
+**Verificação:** `grep -n "fallback_default" backend/services/market_reference_signal.py` (0 hits em retornos)
+**Verificação:** `pytest tests/unit/test_odds_family_187.py tests/unit/test_fixtures_stats_186.py -q`

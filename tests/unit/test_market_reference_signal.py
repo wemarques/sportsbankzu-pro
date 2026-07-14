@@ -71,7 +71,8 @@ class TestGetMarketReferenceSignal:
     def test_corners_uses_v2_governance(self):
         result = get_market_reference_signal("1625", "Corners")
         assert result["signal"] in (SAFE, NEUTRO, RESTRITO)
-        assert result["source"] in ("corners_v2_governance", "fallback_default")
+        # #187: "fallback_default" eliminado das fontes exibidas (Achado 5)
+        assert result["source"] in ("corners_v2_governance", "indeterminate")
 
     @patch("backend.services.market_reference_signal._get_market_model_signal")
     def test_over_under_delegates_to_market_model(self, mock_mkt):

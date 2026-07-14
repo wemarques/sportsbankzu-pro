@@ -212,6 +212,8 @@ export interface MatchDetailData {
     homeWinProb?: number;
     drawProb?: number;
     awayWinProb?: number;
+    /** #187: "odds_implied" (prob. de mercado, #028/#064) | "ml_ensemble" (modelo) */
+    predictionSource?: string;
     avgGoals?: number;
     bttsProb?: number;
     over15Prob?: number;
@@ -1236,12 +1238,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {/* Model-data fallback: show Poisson model stats when team data unavailable */}
                           {!hasTeamData && hasModelData && (
                             <>
-                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Analise estatistica (modelo Poisson)</div>
+                              {/* #187: lambdas vem do modelo Poisson; as prob. 1X2 sao de mercado (odds) */}
+                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Analise estatistica (lambdas do modelo + prob. 1X2 de mercado)</div>
                               <ComparativeBar label="Lambda (Gols Esperados)" homeVal={ms.lambdaHome ?? 0} awayVal={ms.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
                                 {ms.homeWinProb != null && ms.homeWinProb > 0 && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Prob. Vitoria</div>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Prob. Vitoria (mercado)</div>
                                     <span style={{ color: "#4fc3f7" }}>{ms.homeWinProb?.toFixed(1)}%</span>
                                     <span style={{ color: "#666" }}> vs </span>
                                     <span style={{ color: "#ff8a65" }}>{ms.awayWinProb?.toFixed(1) ?? "-"}%</span>
@@ -1491,7 +1494,22 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
             <div className="match-detail-card__content">
               {match.matchStats ? (
                 <div className="mdc-stats-content">
-                  <h4 className="mdc-section-title">Probabilidades</h4>
+                  <h4 className="mdc-section-title">
+                    Probabilidades 1X2
+                    {/* #187 (Achado 3): espelho rotulado — 1X2 e prob. de mercado
+                        (implicita nas odds, de-vig #028/#064), salvo quando o
+                        ensemble ML vence o mercado e assume */}
+                    <span
+                      style={{ fontSize: "0.62rem", fontWeight: 400, color: "#8a8a8a", marginLeft: 6 }}
+                      title={
+                        match.matchStats.predictionSource === "ml_ensemble"
+                          ? "Probabilidades do modelo ML proprio (ensemble venceu o mercado nesta liga)"
+                          : "Probabilidades implicitas nas odds do mercado (de-vig) — nao sao uma previsao independente do modelo"
+                      }
+                    >
+                      {match.matchStats.predictionSource === "ml_ensemble" ? "(modelo ML)" : "(mercado)"}
+                    </span>
+                  </h4>
                   <div className="mdc-stats-grid">
                     <StatRow label="Vitoria Casa" value={formatProbValue(match.matchStats.homeWinProb)} />
                     <StatRow label="Empate" value={formatProbValue(match.matchStats.drawProb)} />

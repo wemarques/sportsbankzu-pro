@@ -433,7 +433,11 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
 
     # API-Football odds enrichment (#120) — runs AFTER _enrich_with_api_football
     # so that apiFootballFixtureId is available on each record.
-    _enrich_odds_from_api_football(records)
+    _odds_enriched = _enrich_odds_from_api_football(records)
+
+    # #187 — markets were classified before these odds existed; reclassify so
+    # picks pick up real book_odd/EV instead of staying NO_ODDS_AVAILABLE.
+    _reclassify_after_odds(_odds_enriched)
 
     # API-Football injuries/lineups (#186) — same ordering requirement as odds.
     _enrich_context_from_api_football(records)
@@ -493,14 +497,19 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     return records
 
 
-def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
+def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Enrich fixture records with odds from API-Football (#120).
 
     Runs AFTER _enrich_with_api_football() so apiFootballFixtureId is available.
     Only fills odds that are None/missing — never overwrites FootyStats odds.
+
+    Returns the records that actually received new odds (#187) so the caller
+    can reclassify their mercados — markets are classified inside
+    build_records_from_matches BEFORE these odds exist.
     """
     if not _afc.is_configured:
-        return
+        return []
+    enriched_recs: List[Dict[str, Any]] = []
     enriched_count = 0
     for rec in records:
         af_id = rec.get("apiFootballFixtureId")
@@ -556,6 +565,7 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
                         filled.append(odds_key)
             if filled:
                 rec.setdefault("source_flags", []).append("api_football_odds")
+                enriched_recs.append(rec)
                 enriched_count += 1
                 _ht = rec.get("homeTeam")
                 home = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
@@ -564,6 +574,46 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
             logger.debug(f"[odds-enrich] af_id={af_id} skipped: {e}")
     if enriched_count:
         logger.info(f"[odds-enrich] Enriched {enriched_count}/{len(records)} records with API-Football odds")
+    return enriched_recs
+
+
+def _reclassify_after_odds(enriched_recs: List[Dict[str, Any]]) -> None:
+    """Re-run market selection for records whose odds were enriched (#187).
+
+    Markets are classified inside build_records_from_matches BEFORE the
+    API-Football odds arrive (#120 ordering), so a pick could stay
+    NO_ODDS_AVAILABLE / "Odd mín" while the same payload already carried its
+    real book odd (e.g. cards lines). Finished matches are skipped — post-match
+    recomputation causes pick flips (see fixtures_service V3.x note).
+    """
+    if not enriched_recs:
+        return
+    from backend.services.market_service import selecionar_mercados_v2
+    from backend.services.safety_validation import validar_mercados_complementares
+
+    reclassified = 0
+    for rec in enriched_recs:
+        if rec.get("status") == "finished":
+            continue
+        stats = rec.get("stats") or {}
+        try:
+            mercados = selecionar_mercados_v2(
+                rec,
+                stats.get("leagueRegime", "NORMAL"),
+                stats.get("leagueVolatility", "MODERADA"),
+                league_id=rec.get("leagueId", ""),
+            )
+            try:
+                mercados = validar_mercados_complementares(mercados)
+            except Exception as _safety_err:
+                logger.debug(f"[reclass] safety validation skipped: {_safety_err}")
+            rec["mercados"] = mercados
+            rec.setdefault("source_flags", []).append("mercados_reclassified_after_odds")
+            reclassified += 1
+        except Exception as e:
+            logger.warning(f"[reclass] {rec.get('id')}: reclassification failed, keeping pre-odds mercados: {e}")
+    if reclassified:
+        logger.info(f"[reclass] {reclassified} record(s) reclassified with enriched odds (#187)")
 
 
 def _enrich_context_from_api_football(records: List[Dict[str, Any]]) -> None:

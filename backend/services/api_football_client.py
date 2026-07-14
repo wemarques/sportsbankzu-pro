@@ -41,6 +41,75 @@ _ODDS_V2 = os.getenv("ODDS_INGESTION_V2", "false").lower() == "true"
 _DEFAULT_ODDS_PRIORITY = ["bet365", "pinnacle", "1xbet", "betfair", "unibet"]
 _ESSENTIAL_ODDS = frozenset({"home", "over_25", "btts_yes"})
 
+# #187 — bet-name tokens identifying NON-total variants of cards/corners
+# markets (team totals, half markets, handicaps, ...). A line family is only
+# accepted from a bet whose name matches the family AND none of these tokens.
+_LINE_FAMILY_EXCLUDE = (
+    "team", "home", "away", "player", "1st", "2nd", "first half",
+    "second half", " half", "halftime", "handicap", "asian", "race",
+    "exact", "range", "interval",
+)
+
+
+def _extract_line_family(
+    bet_name: str,
+    values: List[Dict[str, Any]],
+    family: str,
+    lines: tuple,
+) -> Dict[str, float]:
+    """Extract over/under odds for a whole line family from ONE bet (#187).
+
+    Pre-#187, cards/corners lines were filled first-come-wins from ANY bet
+    containing the family keyword across ALL bookmakers — mixing total-match
+    markets with team/half/handicap variants and producing impossible ladders
+    (e.g. cards Over 5.5 paying less than Over 3.5 in the same payload).
+
+    Returns {} when the bet looks like a non-total variant or when the
+    extracted ladder is incoherent: over odds must be non-decreasing as the
+    line rises, under odds non-increasing. Incoherence means mixed market
+    semantics (or bad data) — the whole family is discarded, keeping #103's
+    "no odd is better than a wrong odd" philosophy.
+    """
+    name = (bet_name or "").lower()
+    if any(tok in name for tok in _LINE_FAMILY_EXCLUDE):
+        return {}
+
+    cand: Dict[str, float] = {}
+    for v in values or []:
+        val = str(v.get("value", "")).lower()
+        odd = _safe_float(v.get("odd"))
+        if not odd or odd <= 1.0:
+            continue
+        for line in lines:
+            key_sfx = line.replace(".", "")
+            if f"over {line}" in val and f"{family}_over_{key_sfx}" not in cand:
+                cand[f"{family}_over_{key_sfx}"] = odd
+            elif f"under {line}" in val and f"{family}_under_{key_sfx}" not in cand:
+                cand[f"{family}_under_{key_sfx}"] = odd
+
+    if not cand:
+        return {}
+
+    def _ladder(side: str) -> List[float]:
+        out = []
+        for line in lines:
+            key = f"{family}_{side}_{line.replace('.', '')}"
+            if key in cand:
+                out.append(cand[key])
+        return out
+
+    overs = _ladder("over")
+    unders = _ladder("under")
+    if any(nxt < cur - 1e-9 for cur, nxt in zip(overs, overs[1:])) or \
+            any(nxt > cur + 1e-9 for cur, nxt in zip(unders, unders[1:])):
+        logger.warning(
+            "[ODDS-FAMILY] %s ladder incoherent in bet %r — discarded (overs=%s unders=%s)",
+            family, bet_name, overs, unders,
+        )
+        return {}
+
+    return cand
+
 # Canonical alias map: nickname/abbreviation → full canonical name (lowercase).
 # Used by _team_names_match to resolve common short names that fuzzy/token
 # matching cannot handle (e.g. "Wolves" vs "Wolverhampton Wanderers").
@@ -1167,20 +1236,21 @@ class APIFootballClient:
                     # Corners Over/Under (#144) — checked BEFORE goals O/U
                     # because corner bet names commonly contain "over/under"
                     # and would otherwise be miscaptured by the goals branch.
+                    # #187: whole family captured from a SINGLE total-market bet
+                    # (no cross-bet/cross-bookmaker mixing) + ladder coherence.
                     elif "corner" in bet_name:
-                        for v in values:
-                            val = str(v.get("value", "")).lower()
-                            odd = _safe_float(v.get("odd"))
-                            if not odd:
-                                continue
-                            # Scanner #110 needs lines 4.5 – 12.5
-                            for line in ("4.5", "5.5", "6.5", "7.5", "8.5",
-                                         "9.5", "10.5", "11.5", "12.5"):
-                                key_sfx = line.replace(".", "")
-                                if f"over {line}" in val and f"corners_over_{key_sfx}" not in result:
-                                    result[f"corners_over_{key_sfx}"] = odd
-                                elif f"under {line}" in val and f"corners_under_{key_sfx}" not in result:
-                                    result[f"corners_under_{key_sfx}"] = odd
+                        if not any(k.startswith("corners_") for k in result):
+                            cand = _extract_line_family(
+                                bet_name, values, "corners",
+                                ("4.5", "5.5", "6.5", "7.5", "8.5",
+                                 "9.5", "10.5", "11.5", "12.5"),
+                            )
+                            if cand:
+                                result.update(cand)
+                                logger.info(
+                                    "[ODDS-FAMILY] corners captured from bet id=%s %r (%s): %d lines",
+                                    bet_id, bet_name, bk_name, len(cand),
+                                )
 
                     elif ("over/under" in bet_name or "goals" in bet_name) \
                             and "corner" not in bet_name \
@@ -1223,18 +1293,24 @@ class APIFootballClient:
                                 result.setdefault("dc_x2", odd)
 
                     # Cards / Bookings Over/Under (#095)
+                    # #187: pre-#187 this filled each line with the FIRST value
+                    # from ANY bet containing "card"/"booking" — mixing total
+                    # cards with team/half/handicap card markets across
+                    # bookmakers, producing impossible ladders (e.g. Over 5.5
+                    # paying less than Over 3.5). Now the whole family comes
+                    # from a SINGLE coherent total-market bet.
                     elif "booking" in bet_name or "card" in bet_name:
-                        for v in values:
-                            val = str(v.get("value", "")).lower()
-                            odd = _safe_float(v.get("odd"))
-                            if not odd:
-                                continue
-                            for line in ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"):
-                                key_sfx = line.replace(".", "")  # "15", "25", ...
-                                if f"over {line}" in val and f"cards_over_{key_sfx}" not in result:
-                                    result[f"cards_over_{key_sfx}"] = odd
-                                elif f"under {line}" in val and f"cards_under_{key_sfx}" not in result:
-                                    result[f"cards_under_{key_sfx}"] = odd
+                        if not any(k.startswith("cards_") for k in result):
+                            cand = _extract_line_family(
+                                bet_name, values, "cards",
+                                ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"),
+                            )
+                            if cand:
+                                result.update(cand)
+                                logger.info(
+                                    "[ODDS-FAMILY] cards captured from bet id=%s %r (%s): %d lines",
+                                    bet_id, bet_name, bk_name, len(cand),
+                                )
 
                 # #166: checklist break — stop only when all essentials present
                 # (home + over_25 + btts_yes). Legacy flag-off keeps the old

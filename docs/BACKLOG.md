@@ -146,6 +146,40 @@ Validar em CloudWatch: zero "must contain a valid date" após deploy.
 
 ---
 
+### B-014 Recriar scipy Layer — NB2 de cartões degradado para Poisson em produção
+
+**Categoria:** Infra (modelo degradado silenciosamente)
+**Prioridade:** P1
+**Esforço:** M (1-2h)
+**Status:** Open
+**Adicionado:** 2026-07-14
+**Descoberto em:** inspeção do payload da rodada 16-18/07 (todos os jogos com `cardsPredictions.modelSource: "poisson_fallback"`).
+
+**Contexto:** A Layer scipy do Lambda está incompatível com o runtime (evidência: hotfix #182 — `numpy._core.tests` ausente quebrou `from scipy.stats import wilcoxon`). O CLAUDE.md documenta: "Sem Layer compatível, NB2 cai silenciosamente para Poisson (sem erro visível)". Efeito: probabilidades de cartões vêm do Poisson (variância menor) em vez do NB2 calibrado (#122, #170-A) — as odds/probs de cartões exibidas hoje NÃO usam o modelo pretendido.
+
+**Critério de sucesso:**
+- Recriar a layer para o runtime Python atual (procedimento no CLAUDE.md, seção "Lambda Layer (scipy)")
+- `cardsPredictions.modelSource == "nb2"` no payload de produção
+- Smoke: `/metrics/brier` continua respondendo (não regride #182)
+
+**Notas:** Enquanto aberto, o watchlist #174 (Cartões Over 2.5) avalia um modelo que não é o de produção pretendido.
+
+---
+
+### B-015 API_FOOTBALL_KEY do `.env` local inválida (rotacionada?)
+
+**Categoria:** Hygiene (checklist #102b)
+**Prioridade:** P3
+**Esforço:** XS (5 min)
+**Status:** Open
+**Adicionado:** 2026-07-14
+
+**Contexto:** Chamada direta à API-Football com a key do `.env` da raiz do workspace retorna "Invalid API key". Produção funciona (key do Lambda env). Dev local não consegue chamar a API-Football — viola o checklist #102b (item 1: "existe no .env local?").
+
+**Critério de sucesso:** `curl -H "x-apisports-key: $KEY" https://v3.football.api-sports.io/status` retorna a conta ativa com a key do `.env` local.
+
+---
+
 ## P1 — Alta prioridade (Analytics — continuação)
 
 ### B-001 EOS audit re-run com filtros corretos

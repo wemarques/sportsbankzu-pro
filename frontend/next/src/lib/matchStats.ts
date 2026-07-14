@@ -10,6 +10,9 @@ type MatchStats = NonNullable<MatchDetailData["matchStats"]>;
  */
 const MATCH_STATS_KEYS: (keyof MatchStats)[] = [
   "homeWinProb", "drawProb", "awayWinProb", "avgGoals", "bttsProb",
+  // #187: 1X2 provenance — "odds_implied" (espelho de mercado, #028/#064)
+  // ou "ml_ensemble" (modelo próprio quando vence o mercado)
+  "predictionSource",
   "over15Prob", "over25Prob", "over35Prob", "over45Prob",
   "lambdaHome", "lambdaAway",
   "homePossession", "awayPossession", "homeXG", "awayXG",
