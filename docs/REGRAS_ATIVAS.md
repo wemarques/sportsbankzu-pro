@@ -594,3 +594,30 @@ Promoção sem shadow é **bloqueada** — exceções exigem entrada explícita 
 descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 
 **Verificação:** `grep -n "SHADOW_BAND_50_60_V179\|apply_probability_deflation_with_shadow" backend/services/ev_classification.py`
+
+### #186 — API-Football date guard + IDs corretos + transparência de fontes
+
+**Tipo:** Fix + Regra permanente
+**Relacionado:** #003, #120, #155, #166, B-011
+
+1. **Nunca enviar date fora de Y-m-d à API-Football.** `_af_query_dates()` em
+   `routes/fixtures.py` resolve today/tomorrow/week/ISO para datas Y-m-d válidas
+   ("week" → datas derivadas dos records, cap 8). Qualquer novo chamador de
+   `get_fixtures_by_date` DEVE passar por ele.
+2. **IDs de sistemas distintos nunca na mesma variável.** `footystatsId` NÃO é
+   `apiFootballFixtureId` — endpoints API-Football (`/injuries`, `/fixtures/lineups`,
+   `/odds`) só podem ser chamados com o id da própria API-Football, disponível
+   APÓS `_enrich_with_api_football()`. Enrichments que dependem dele vivem em
+   `routes/fixtures.py`, nunca dentro de `build_records_from_matches()`.
+3. **Payload declara as fontes.** Envelope `/fixtures` expõe `_sources`
+   (api_football_matched, flags); `stats` expõe `probSources` + `predictionSource`
+   (`odds_implied` | `ml_ensemble`). Novos campos derivados devem declarar origem.
+4. **Ladder O/U de display com invariantes.** `compute_ou_stats()` garante
+   over+under=100 e monotonicidade O0.5 ≥ … ≥ O4.5 (log `[OU-MONO]` ao clampar);
+   identidade `lambdaTotal = lambdaHome + lambdaAway` via `lambda_stats_block()`.
+5. **Cards tem categoria própria no market_reference_signal** (`cards_engine_default`)
+   — nunca herda metadata do modelo over25 de gols.
+
+**Verificação:** `grep -n "_af_query_dates\|_enrich_context_from_api_football\|_summarize_sources" backend/routes/fixtures.py`
+**Verificação:** `grep -n "compute_ou_stats\|lambda_stats_block\|probSources" backend/services/fixtures_service.py`
+**Verificação:** `grep -n "_CARDS_TOKENS\|cards_engine_default" backend/services/market_reference_signal.py`

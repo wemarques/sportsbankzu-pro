@@ -253,9 +253,64 @@ class TestMarketCategoryDetection:
     def test_detect_corners(self):
         assert _detect_market_category("Escanteios Over 9.5") == "Corners"
 
+    def test_detect_cards(self):
+        # #186: cards contain "over"/"under" and must NOT fall into goals Over/Under
+        assert _detect_market_category("Cartoes Over 3.5") == "Cards"
+        assert _detect_market_category("Cartões Under 4.5") == "Cards"
+        assert _detect_market_category("Cards Over 2.5") == "Cards"
+
     def test_normalize_market_category(self):
         assert _normalize_market_category("1X2") == "1X2"
         assert _normalize_market_category("Over/Under") == "Over/Under"
         assert _normalize_market_category("something with over") == "Over/Under"
         assert _normalize_market_category("btts yes") == "BTTS"
         assert _normalize_market_category("corner over 9.5") == "Corners"
+        assert _normalize_market_category("Cards") == "Cards"
+        assert _normalize_market_category("cartoes over 3.5") == "Cards"
+
+
+# ──────────────────────────────────────────────
+# 6. Cards signal (#186)
+# ──────────────────────────────────────────────
+
+
+class TestCardsSignal:
+
+    @patch("backend.services.market_reference_signal._get_market_model_signal")
+    def test_cards_without_ml_model_uses_engine_default(self, mock_mkt):
+        mock_mkt.return_value = {
+            "signal": NEUTRO,
+            "reason": "No dedicated market model — Poisson fallback (cards)",
+            "source": "fallback_default",
+        }
+        result = get_market_reference_signal("1625", "Cards")
+        mock_mkt.assert_called_once_with("1625", "cards")
+        assert result["signal"] == NEUTRO
+        assert result["source"] == "cards_engine_default"
+        # Reason must name cards, never the goals over25 model (pre-#186 bug)
+        assert "over25" not in result["reason"]
+        assert "cards" in result["reason"].lower()
+
+    @patch("backend.services.market_reference_signal._get_market_model_signal")
+    def test_cards_with_dedicated_ml_model_is_honored(self, mock_mkt):
+        mock_mkt.return_value = {
+            "signal": SAFE,
+            "reason": "Dedicated ML model beats Poisson (cards)",
+            "source": "market_model",
+        }
+        result = get_market_reference_signal("1625", "Cards")
+        assert result["signal"] == SAFE
+        assert result["source"] == "market_model"
+
+    @patch("backend.services.market_reference_signal.get_market_reference_signal")
+    def test_cards_mercado_gets_cards_category_in_capping(self, mock_signal):
+        seen_categories = []
+
+        def side_effect(league_id, market_type):
+            seen_categories.append(market_type)
+            return {"signal": NEUTRO, "reason": "x", "source": "cards_engine_default"}
+
+        mock_signal.side_effect = side_effect
+        mercados = [{"mercado": "Cartoes Over 3.5", "status": "NEUTRO"}]
+        apply_signal_capping(mercados, "1625")
+        assert seen_categories == ["Cards"]
