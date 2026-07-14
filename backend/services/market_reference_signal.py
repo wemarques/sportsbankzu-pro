@@ -29,7 +29,14 @@ _MARKET_CATEGORY_MAP = {
     "BTTS": "BTTS",
     "Double Chance": "Double Chance",
     "Corners": "Corners",
+    "Cards": "Cards",
 }
+
+# Substrings identifying cards markets ("Cartoes Over 3.5", "Cards Under 4.5").
+# Checked BEFORE the over/under patterns — cards names contain "over"/"under"
+# and, pre-#186, fell into the goals Over/Under category, inheriting the goals
+# over25 market-model metadata (misleading reason on cards picks).
+_CARDS_TOKENS = ("cartoes", "cartões", "cartao", "cartão", "cards", "card ")
 
 
 def _get_1x2_signal(league_id: str) -> Dict[str, str]:
@@ -205,6 +212,25 @@ def _get_corners_signal(league_id: str) -> Dict[str, str]:
         }
 
 
+def _get_cards_signal(league_id: str) -> Dict[str, str]:
+    """Compute market_reference_signal for Cards markets (#186).
+
+    Cards predictions come from the NB2/Poisson cards engine (#085/#122);
+    there is no dedicated ML market model today. If one is ever trained under
+    the "cards" key it is honored via market-model metadata; otherwise the
+    signal is NEUTRO — a cards pick can never be SAFE by reference while the
+    #174 watchlist is active — with a reason that names cards, not goals.
+    """
+    result = _get_market_model_signal(league_id, "cards")
+    if result.get("source") == "market_model":
+        return result
+    return {
+        "signal": NEUTRO,
+        "reason": "Cards via engine NB2/Poisson — sem modelo ML dedicado (cards)",
+        "source": "cards_engine_default",
+    }
+
+
 def get_market_reference_signal(
     league_id: str,
     market_type: str,
@@ -213,7 +239,7 @@ def get_market_reference_signal(
 
     Args:
         league_id: League identifier (e.g., "1625", "4759")
-        market_type: Market category ("1X2", "Over/Under", "BTTS", "Double Chance", "Corners")
+        market_type: Market category ("1X2", "Over/Under", "BTTS", "Double Chance", "Corners", "Cards")
 
     Returns:
         Dict with keys: signal, reason, source
@@ -239,6 +265,9 @@ def get_market_reference_signal(
     if category == "Corners":
         return _get_corners_signal(league_id)
 
+    if category == "Cards":
+        return _get_cards_signal(league_id)
+
     # Unknown market type
     return {
         "signal": NEUTRO,
@@ -255,6 +284,8 @@ def _normalize_market_category(market_type: str) -> str:
     mt = market_type.lower()
     if "corner" in mt or "escanteio" in mt:
         return "Corners"
+    if any(tok in mt for tok in _CARDS_TOKENS):
+        return "Cards"
     if "1x2" in mt or "home" in mt or "draw" in mt or "away" in mt:
         return "1X2"
     if "over" in mt or "under" in mt:
@@ -338,6 +369,8 @@ def _detect_market_category(market_name: str) -> str:
     if "over" in name or "under" in name:
         if "escanteio" in name or "corner" in name:
             return "Corners"
+        if any(tok in name for tok in _CARDS_TOKENS):
+            return "Cards"
         return "Over/Under"
     if "btts" in name:
         return "BTTS"

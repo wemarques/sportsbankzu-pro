@@ -9,7 +9,7 @@
 **Itens abertos:** 14 (4 novos do incidente HTTP_ERROR de 29/04)
 **Última conversa:** Sessão de 2026-04-28/29 — fechou #173 (Caminho 1+2 EOS audit + standings snapshot), #174 (Report Card null guards + watchlist cards), #175 (decommission EC2 prognosticos-brasileirao + 3 SGs + key + IPv4). Higiene de repo: `.gitattributes` + `.gitignore` tightening + 31 arquivos untracked.
 
-**Incidente HTTP_ERROR (0s) de 29/04:** causa raiz = degradação upstream (FootyStats 429 + api-football date format bug). 5 hipóteses originais (H1-H5) refutadas. Achado lateral CRÍTICO (secret leak): **resolvido em 2026-05-01 (#176, B-010 ✅)**. Pendentes: B-011 (date format bug), B-012 (backoff/circuit breaker), B-013 (variantes do leak).
+**Incidente HTTP_ERROR (0s) de 29/04:** causa raiz = degradação upstream (FootyStats 429 + api-football date format bug). 5 hipóteses originais (H1-H5) refutadas. Achado lateral CRÍTICO (secret leak): **resolvido em 2026-05-01 (#176, B-010 ✅)**. B-011 (date format bug): **resolvido em 2026-07-14 (#186 ✅)** — era também a causa do payload de produção não exibir nenhum traço de API-Football. Pendentes: B-012 (backoff/circuit breaker), B-013 (variantes do leak).
 
 ---
 
@@ -82,25 +82,25 @@
 
 ## P1 — Alta prioridade (próxima sessão)
 
-### B-011 Bug de date format em api-football fixtures
+### B-011 Bug de date format em api-football fixtures ✅ CONCLUÍDO 2026-07-14 (#186)
 
 **Categoria:** Hygiene (regressão)
 **Prioridade:** P1
 **Esforço:** M (1-2h)
-**Status:** Open
+**Status:** Done — ver `REGISTRO_CORRECOES.md#186`
 **Adicionado:** 2026-04-29
 **Descoberto em:** incidente HTTP_ERROR de 29/04.
 
+**Resolução (2026-07-14):** chamador identificado = `_enrich_with_api_football()` em
+`routes/fixtures.py`, que repassava `date="week"` (vista "Próxima Rodada" do dashboard,
+incluindo o fallback automático today→week) cru para a API-Football. Efeito era maior
+que os logs: matava TODO o enrichment (live overlay, `apiFootballFixtureId`, odds #120,
+injuries/lineups) — foi a causa do diagnóstico externo de 2026-07-14 concluir que
+"API-Football não está integrada". Fix: `_af_query_dates()` com guard Y-m-d + datas
+derivadas dos records; injuries/lineups movidos para pós-matching com o fixture id real.
+Validar em CloudWatch: zero "must contain a valid date" após deploy.
+
 **Contexto:** CloudWatch tem dezenas de erros `[api-football/fixtures] API error: {'date': 'The Date field must contain a valid date: Y-m-d.'}` em 30 min. Algum chamador está passando date inválida (vazia, None, formato errado). Pode ser regressão recente.
-
-**Critério de sucesso:**
-- Identificar local que monta o param `date` para api-football com formato errado
-- `grep -rn "api_football.*fixtures" backend/services/` para mapear chamadores
-- `git log -p backend/services/api_football_client.py | head -200` para ver mudanças recentes
-- Adicionar guard antes de mandar request: se `date is None or date == "" or not re.match(r'^\d{4}-\d{2}-\d{2}$', date)`, omitir parâmetro ou raise descritivo
-- Verificar logs após fix: zero ocorrências de "must contain a valid date"
-
-**Notas:** O sintoma "(0s)" reportado pelo usuário pode ter contribuição parcial deste bug se a rota chamadora retorna erro sem retry.
 
 ---
 
@@ -425,6 +425,7 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 
 Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apenas como contexto rápido para sessões próximas.
 
+- ✅ **#186** (2026-07-14) B-011 resolvido: `_af_query_dates()` guard Y-m-d (date="week" matava todo enrichment API-Football); injuries/lineups movidos para `apiFootballFixtureId` real; `_sources` no envelope + `probSources` em stats; invariantes O/U display + identidade lambda testadas; categoria Cards no market_reference_signal. 352 testes verdes. **Pendente: deploy Lambda + validação CloudWatch.**
 - ✅ **#176** (2026-05-01) FootyStats key rotacionada + `_redact_key` em logs (`footstats_client.py`) + retention temp 7d. Resolve B-010 (P0 — secret leak). 616 leaks/24h → 0.
 - ✅ **#175** (2026-04-29) Decommission EC2 prognosticos-brasileirao + 3 SGs + key. Save $132/ano.
 - ✅ **#174** (2026-04-28) Bug Report Card null guards `safe_accuracy` + política N=11 + watchlist Cartões Over 2.5

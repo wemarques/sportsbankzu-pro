@@ -29,6 +29,78 @@ def _safe_int(val: Any) -> Optional[int]:
 
 
 # ============================================================================
+# #186 — Display-stats invariants (lambda identity + O/U ladder)
+# ============================================================================
+def lambda_stats_block(lam_home: float, lam_away: float) -> Dict[str, float]:
+    """Lambda fields of the stats payload with the identity guaranteed:
+    lambdaTotal == lambdaHome + lambdaAway (rounding tolerance ≤ 0.001).
+
+    lambdas here are post-corrections (audit multipliers + xG blend) and
+    PRE O/U deflation — the deflated total feeds Poisson separately.
+    """
+    return {
+        "lambdaHome": round(lam_home, 3),
+        "lambdaAway": round(lam_away, 3),
+        "lambdaTotal": round(lam_home + lam_away, 3),
+    }
+
+
+def compute_ou_stats(
+    lam_total_ou: float,
+    over15_pct: Optional[float] = None,
+    over25_pct: Optional[float] = None,
+    over35_pct: Optional[float] = None,
+    over45_pct: Optional[float] = None,
+) -> Tuple[Dict[str, float], bool]:
+    """Assemble the display Over/Under ladder for the stats payload.
+
+    Sources (unchanged by #186 — provenance now explicit in probSources):
+    - FootyStats pre-match potentials (over15/25/35/45_percentage_pre_match)
+      take precedence when present;
+    - Poisson on the DEFLATED total lambda (#058/#156) fills the gaps
+      (always over05, usually over45).
+
+    #186 adds two guarantees on the assembled ladder:
+    1. Complement: over_x + under_x == 100 for every line (by construction).
+    2. Monotonicity: Over 0.5 ≥ Over 1.5 ≥ … ≥ Over 4.5. Mixing FootyStats
+       potentials with Poisson values can violate this (incoherent display);
+       violating values are clamped downward to the previous line.
+
+    Returns (fields dict, clamped flag) — callers log when clamped is True.
+    """
+    over05 = (1.0 - poisson_cdf(0, lam_total_ou)) * 100.0
+    over15 = float(over15_pct) if over15_pct is not None else (1.0 - poisson_cdf(1, lam_total_ou)) * 100.0
+    over25 = float(over25_pct) if over25_pct is not None else (1.0 - poisson_cdf(2, lam_total_ou)) * 100.0
+    over35 = float(over35_pct) if over35_pct is not None else (1.0 - poisson_cdf(3, lam_total_ou)) * 100.0
+    over45 = float(over45_pct) if over45_pct is not None else (1.0 - poisson_cdf(4, lam_total_ou)) * 100.0
+
+    ladder = [over05, over15, over25, over35, over45]
+    clamped = False
+    prev = 100.0
+    for i, v in enumerate(ladder):
+        v = min(max(v, 0.0), 100.0)
+        if v > prev:
+            v = prev
+            clamped = True
+        ladder[i] = round(v, 1)
+        prev = ladder[i]
+
+    o05, o15, o25, o35, o45 = ladder
+    fields = {
+        "over05Prob": o05,
+        "over15Prob": o15,
+        "over25Prob": o25,
+        "over35Prob": o35,
+        "over45Prob": o45,
+        "under15Prob": round(100.0 - o15, 1),
+        "under25Prob": round(100.0 - o25, 1),
+        "under35Prob": round(100.0 - o35, 1),
+        "under45Prob": round(100.0 - o45, 1),
+    }
+    return fields, clamped
+
+
+# ============================================================================
 # #141 — League Referees lookup helpers
 # ============================================================================
 def _normalize_referee_name(name: str) -> str:
@@ -1534,6 +1606,25 @@ def build_records_from_matches(
             total_gols = float(total_gols) if total_gols is not None else None
         except Exception:
             total_gols = None
+
+        # #186 — O/U display ladder with complement + monotonicity guarantees
+        _ou_fields, _ou_clamped = compute_ou_stats(
+            lam_total_ou, over15_pct, over25_pct, over35_pct, over45_pct
+        )
+        if _ou_clamped:
+            logger.info(f"[OU-MONO] {home} vs {away}: O/U display ladder clamped for monotonicity (#186)")
+
+        # #186 — probability provenance per field family (API transparency).
+        # Origins BEFORE isotonic calibration (Gap 5) and ML override (Gap 6);
+        # the ML block updates oneXTwo downstream when the ensemble applies.
+        _prob_sources = {
+            "oneXTwo": "odds_implied" if (homeProb or drawProb or awayProb) else "unavailable",
+            "overUnder": "footystats_potential" if over25_pct is not None else "poisson_deflated",
+            "over45": "footystats_potential" if over45_pct is not None else "poisson_deflated",
+            "btts": "fusion:" + "+".join(k for k, _ in _btts_sources),
+            "cornersPotentials": "footystats_potential" if corners_o85_pct is not None else "unavailable",
+        }
+
         records.append({
             "id": f"{league_id}-{home}-{away}-{dt.timestamp()}",
             "footystatsId": int(r.get("id")) if r.get("id") is not None else None,
@@ -1567,20 +1658,12 @@ def build_records_from_matches(
                 "homeWinProb": round(homeProb, 1),
                 "drawProb": round(drawProb, 1),
                 "awayWinProb": round(awayProb, 1),
+                "predictionSource": "odds_implied",
+                "probSources": _prob_sources,
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
                 "bttsProb": btts_final,
-                "over05Prob": round(over05 * 100.0, 1),
-                "over15Prob": float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1),
-                "over25Prob": float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1),
-                "over35Prob": float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1),
-                "over45Prob": float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total_ou)) * 100.0, 1),
-                "under15Prob": 100.0 - (float(over15_pct) if over15_pct is not None else round(over15 * 100.0, 1)),
-                "under25Prob": 100.0 - (float(over25_pct) if over25_pct is not None else round(over25 * 100.0, 1)),
-                "under35Prob": 100.0 - (float(over35_pct) if over35_pct is not None else round(over35 * 100.0, 1)),
-                "under45Prob": 100.0 - (float(over45_pct) if over45_pct is not None else round((1.0 - poisson_cdf(4, lam_total_ou)) * 100.0, 1)),
-                "lambdaHome": round(lam_home, 3),
-                "lambdaAway": round(lam_away, 3),
-                "lambdaTotal": round(lam_total_raw, 3),
+                **_ou_fields,
+                **lambda_stats_block(lam_home, lam_away),
                 "leagueAvgGoals": league_avgs["avg_goals"],
                 "totalGoals": total_gols,
                 "leagueRegime": league_regime,
@@ -1686,40 +1769,12 @@ def build_records_from_matches(
             "dataSource": data_source,
             "lastUpdated": datetime.utcnow().isoformat(),
         })
-        # --- API-Football enrichment (injuries, lineups) ---
-        # Odds enrichment moved to fixtures.py:_enrich_odds_from_api_football (#120)
-        # — requires apiFootballFixtureId which is set AFTER build_records.
-        _afc = None
-        try:
-            from backend.services.api_football_client import APIFootballClient
-            _afc = APIFootballClient()
-            _current_record = records[-1]
-            footystats_id = r.get("id")
-            if footystats_id and _afc:
-                # 2.2 — Enrich with pre-match injuries
-                try:
-                    injuries = _afc.get_injuries_sync(int(footystats_id), ttl_minutes=240)
-                    if injuries:
-                        injury_data = {
-                            "home": [inj for inj in injuries if inj.get("team", {}).get("name") == home],
-                            "away": [inj for inj in injuries if inj.get("team", {}).get("name") == away],
-                        }
-                        _current_record["injuries"] = injury_data
-                        _current_record.setdefault("source_flags", []).append("api_football_injuries")
-                except Exception as e:
-                    logger.debug(f"[API-Football] Injuries enrichment skipped: {e}")
-
-                # 2.3 — Enrich with lineups (available 30-60 min before kickoff)
-                try:
-                    if status == "incomplete":
-                        lineups = _afc.get_fixture_lineups(int(footystats_id), ttl_minutes=30)
-                        if lineups:
-                            _current_record["lineups"] = lineups
-                            _current_record.setdefault("source_flags", []).append("api_football_lineups")
-                except Exception as e:
-                    logger.debug(f"[API-Football] Lineups enrichment skipped: {e}")
-        except Exception as e:
-            logger.debug(f"[API-Football] Client init skipped: {e}")
+        # --- API-Football enrichment (odds #120, injuries/lineups #186) ---
+        # All moved to fixtures.py (_enrich_odds_from_api_football /
+        # _enrich_context_from_api_football): they require apiFootballFixtureId,
+        # which only exists AFTER _enrich_with_api_football matches the fixture.
+        # The pre-#186 block here queried /injuries and /fixtures/lineups with
+        # the FootyStats match id — a different ID space — so it never worked.
 
         # Calculate market predictions (mercados) for this match
         try:
@@ -1775,9 +1830,12 @@ def build_records_from_matches(
                             record["stats"]["drawProb"] = _final.get("draw", record["stats"]["drawProb"])
                             record["stats"]["awayWinProb"] = _final.get("away_win", record["stats"]["awayWinProb"])
                             record["stats"]["predictionSource"] = "ml_ensemble"
+                            record["stats"].setdefault("probSources", {})["oneXTwo"] = "ml_ensemble"
                             logger.info(f"[Gap6] ML prediction applied to {home} vs {away}")
                         else:
-                            record["stats"]["predictionSource"] = "poisson"
+                            # Champion = odds-implied 1X2 (implied_probs), not Poisson —
+                            # label truthfully (#186; frontend does not consume this field)
+                            record["stats"]["predictionSource"] = "odds_implied"
                         # Market models (Over/Under + BTTS) from ML
                         try:
                             from backend.ml.market_models import predict_all_markets

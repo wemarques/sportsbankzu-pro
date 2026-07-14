@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from typing import Dict, Any, List, Optional
 import os
+import re
 import logging
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -434,6 +435,9 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     # so that apiFootballFixtureId is available on each record.
     _enrich_odds_from_api_football(records)
 
+    # API-Football injuries/lineups (#186) — same ordering requirement as odds.
+    _enrich_context_from_api_football(records)
+
     # Final deduplication: remove duplicate matches that slipped through
     # team-name matching (e.g. "Wolves" vs "Wolverhampton Wanderers")
     records = _deduplicate_records(records)
@@ -562,11 +566,121 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> None:
         logger.info(f"[odds-enrich] Enriched {enriched_count}/{len(records)} records with API-Football odds")
 
 
+def _enrich_context_from_api_football(records: List[Dict[str, Any]]) -> None:
+    """Enrich fixture records with API-Football injuries and lineups (#186).
+
+    Replaces the pre-#186 block inside build_records_from_matches that queried
+    /injuries and /fixtures/lineups with the FootyStats match id — a different
+    ID space from API-Football fixture ids — so it never hit the real fixture
+    (and its team filter assumed a nested dict where _parse_injuries returns a
+    flat name, raising silently). Runs AFTER _enrich_with_api_football() so the
+    genuine apiFootballFixtureId is available.
+
+    Only touches records matched on API-Football; failures degrade silently
+    per-record (isolation pattern of #V3.3.1).
+    """
+    if not _afc.is_configured:
+        return
+    injuries_count = 0
+    lineups_count = 0
+    for rec in records:
+        af_id = rec.get("apiFootballFixtureId")
+        if not af_id:
+            continue
+        _ht = rec.get("homeTeam")
+        _at = rec.get("awayTeam")
+        home = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")
+        away = _at.get("name", "") if isinstance(_at, dict) else str(_at or "")
+        try:
+            injuries = _afc.get_injuries_sync(int(af_id), ttl_minutes=240)
+            if injuries:
+                home_inj = [i for i in injuries if _afc._team_names_match(home, str(i.get("team", "")))]
+                away_inj = [i for i in injuries if _afc._team_names_match(away, str(i.get("team", "")))]
+                if home_inj or away_inj:
+                    rec["injuries"] = {"home": home_inj, "away": away_inj}
+                    rec.setdefault("source_flags", []).append("api_football_injuries")
+                    injuries_count += 1
+        except Exception as e:
+            logger.debug(f"[context-enrich] injuries af_id={af_id} skipped: {e}")
+        try:
+            # Lineups are published ~30-60 min before kickoff; only relevant pre-match
+            if rec.get("status") == "scheduled":
+                lineups = _afc.get_fixture_lineups(int(af_id), ttl_minutes=30)
+                if lineups:
+                    rec["lineups"] = lineups
+                    rec.setdefault("source_flags", []).append("api_football_lineups")
+                    lineups_count += 1
+        except Exception as e:
+            logger.debug(f"[context-enrich] lineups af_id={af_id} skipped: {e}")
+    if injuries_count or lineups_count:
+        logger.info(
+            f"[context-enrich] API-Football context: injuries on {injuries_count}, "
+            f"lineups on {lineups_count} of {len(records)} records"
+        )
+
+
 def _current_season() -> int:
     """Infer the current football season year."""
     from datetime import timezone as _tz
     now = datetime.now(_tz.utc)
     return now.year if now.month >= 7 else now.year - 1
+
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Bound on distinct dates queried on API-Football per league request.
+# A "week" round never spans more than ~8 calendar days.
+_AF_MAX_DATES = 8
+
+
+def _af_query_dates(date_str: str, records: List[Dict[str, Any]]) -> List[str]:
+    """Resolve which Y-m-d dates to query on API-Football /fixtures (#186, B-011).
+
+    API-Football only accepts date=YYYY-MM-DD. The frontend also sends
+    date="week" (Próxima Rodada) — before #186 that value leaked verbatim
+    into the AF query, failing with "The Date field must contain a valid
+    date: Y-m-d" and silently disabling ALL API-Football enrichment
+    (live overlay, apiFootballFixtureId, odds #120, injuries/lineups).
+
+    Resolution:
+    - "today" / "tomorrow"  → single BRT calendar date
+    - "YYYY-MM-DD"          → itself
+    - "week" / anything else → distinct dates of the records already built
+      (bounded to _AF_MAX_DATES); for "week" with no records, the next 7
+      BRT days (fallback path where FootyStats returned nothing).
+
+    Every returned value is guaranteed to match Y-m-d — invalid inputs are
+    dropped and logged instead of being sent upstream.
+    """
+    from datetime import timezone as _tz
+    BRT = _tz(timedelta(hours=-3))
+    now_brt = datetime.now(BRT)
+
+    if date_str == "today":
+        return [now_brt.strftime("%Y-%m-%d")]
+    if date_str == "tomorrow":
+        return [(now_brt + timedelta(days=1)).strftime("%Y-%m-%d")]
+    if date_str and _ISO_DATE_RE.match(date_str):
+        return [date_str]
+
+    # "week" or unrecognized: derive from the records themselves
+    dates: set = set()
+    for rec in records or []:
+        dt_str = str(rec.get("datetime") or "")
+        candidate = dt_str[:10]
+        if _ISO_DATE_RE.match(candidate):
+            dates.add(candidate)
+    if dates:
+        return sorted(dates)[:_AF_MAX_DATES]
+
+    if date_str == "week":
+        return [(now_brt + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+
+    logger.warning(
+        f"[fixtures] date='{date_str}' is not Y-m-d and no record dates available "
+        f"— skipping API-Football query (#186/B-011 guard)"
+    )
+    return []
 
 
 def _enrich_with_api_football(
@@ -591,24 +705,26 @@ def _enrich_with_api_football(
     # CASE 1: Records exist — enrich with live data overlay
     if records:
         try:
-            # Determine the actual date for API-Football query
-            from datetime import timezone as _tz
-            BRT = _tz(timedelta(hours=-3))
-            now_brt = datetime.now(BRT)
-            if date_str == "tomorrow":
-                af_date = (now_brt + timedelta(days=1)).strftime("%Y-%m-%d")
-            elif date_str == "today":
-                af_date = now_brt.strftime("%Y-%m-%d")
-            else:
-                af_date = date_str
+            # #186 (B-011): resolve valid Y-m-d dates (handles "week" without
+            # leaking invalid values into the API-Football query).
+            af_dates = _af_query_dates(date_str, records)
+            if not af_dates:
+                return records
 
-            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=30)
+            af_fixtures: List[Dict[str, Any]] = []
+            for _af_date in af_dates:
+                af_fixtures.extend(
+                    _afc.get_fixtures_by_date(af_league_id, season, _af_date, ttl_minutes=30) or []
+                )
             if not af_fixtures:
                 # Season fallback: try season+1 or season-1 in case our convention is wrong.
                 # Handles leagues where API-Football season param differs from our calculation
                 # (e.g., some Middle Eastern leagues may use calendar year instead of start year).
                 alt_season = season + 1
-                af_fixtures = _afc.get_fixtures_by_date(af_league_id, alt_season, af_date, ttl_minutes=30)
+                for _af_date in af_dates:
+                    af_fixtures.extend(
+                        _afc.get_fixtures_by_date(af_league_id, alt_season, _af_date, ttl_minutes=30) or []
+                    )
                 if af_fixtures:
                     logger.warning(
                         f"[fixtures] {lid}: season={season} returned 0, but season={alt_season} "
@@ -618,14 +734,14 @@ def _enrich_with_api_football(
                 else:
                     logger.info(
                         f"[fixtures] {lid}: API-Football returned 0 fixtures "
-                        f"(league={af_league_id}, season={season}, date={af_date}, "
+                        f"(league={af_league_id}, season={season}, dates={af_dates}, "
                         f"also tried season={alt_season})"
                     )
                     return records
 
             logger.info(
                 f"[fixtures] {lid}: API-Football returned {len(af_fixtures)} fixtures "
-                f"(league={af_league_id}, season={season}, date={af_date})"
+                f"(league={af_league_id}, season={season}, dates={af_dates})"
             )
             enriched = 0
             for rec in records:
@@ -712,20 +828,22 @@ def _enrich_with_api_football(
     # CASE 2: No records and not found via any API — use API-Football as fallback
     if not found_via_api:
         try:
-            from datetime import timezone as _tz
-            BRT = _tz(timedelta(hours=-3))
-            now_brt = datetime.now(BRT)
-            if date_str == "tomorrow":
-                af_date = (now_brt + timedelta(days=1)).strftime("%Y-%m-%d")
-            elif date_str == "today":
-                af_date = now_brt.strftime("%Y-%m-%d")
-            else:
-                af_date = date_str
+            # #186 (B-011): "week" with no records resolves to the next 7 BRT days
+            af_dates = _af_query_dates(date_str, records)
+            if not af_dates:
+                return records
 
-            af_fixtures = _afc.get_fixtures_by_date(af_league_id, season, af_date, ttl_minutes=30)
+            af_fixtures = []
+            for _af_date in af_dates:
+                af_fixtures.extend(
+                    _afc.get_fixtures_by_date(af_league_id, season, _af_date, ttl_minutes=30) or []
+                )
             if not af_fixtures:
                 # Season fallback
-                af_fixtures = _afc.get_fixtures_by_date(af_league_id, season + 1, af_date, ttl_minutes=30)
+                for _af_date in af_dates:
+                    af_fixtures.extend(
+                        _afc.get_fixtures_by_date(af_league_id, season + 1, _af_date, ttl_minutes=30) or []
+                    )
             if af_fixtures:
                 records = _afc.fixtures_to_records(af_fixtures, lid)
                 logger.info(f"[fixtures] {lid}: API-Football fallback provided {len(records)} records")
@@ -1185,19 +1303,43 @@ def _safe_float(val) -> float:
         return 0.0
 
 
+def _summarize_sources(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate per-record source provenance for the response envelope (#186).
+
+    Answers "which upstream APIs actually contributed to this payload?" —
+    previously only inferable from CloudWatch logs, which hid silent
+    API-Football failures (e.g. B-011) from API consumers.
+    """
+    flag_counts: Dict[str, int] = {}
+    af_enriched = 0
+    for r in records:
+        flags = r.get("source_flags") or []
+        for f in flags:
+            key = str(f)
+            flag_counts[key] = flag_counts.get(key, 0) + 1
+        if r.get("apiFootballFixtureId") or any(str(f).startswith("api_football") for f in flags):
+            af_enriched += 1
+    return {
+        "primary": "footystats",
+        "api_football_matched": af_enriched,
+        "total_matches": len(records),
+        "flags": flag_counts,
+    }
+
+
 @router.get("/fixtures")
 def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, Any]:
     from backend.main import get_data_dir
     league_ids = [lid.strip() for lid in leagues.split(",") if lid.strip()]
     if not league_ids:
-        return {"matches": []}
+        return {"matches": [], "_sources": _summarize_sources([])}
 
     base = get_data_dir()
 
     # Single league: process directly (no thread overhead)
     if len(league_ids) == 1:
         records = _process_single_league(league_ids[0], date, base)
-        result: Dict[str, Any] = {"matches": records}
+        result: Dict[str, Any] = {"matches": records, "_sources": _summarize_sources(records)}
         if not records:
             _add_api_warnings(result)
         return result
@@ -1223,7 +1365,7 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     league_order = {lid: i for i, lid in enumerate(league_ids)}
     out.sort(key=lambda r: (league_order.get(r.get("leagueId", ""), 999), r.get("datetime", "")))
 
-    result = {"matches": out}
+    result = {"matches": out, "_sources": _summarize_sources(out)}
     if not out:
         _add_api_warnings(result)
     return result
