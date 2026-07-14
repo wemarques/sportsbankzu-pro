@@ -45,36 +45,29 @@ def lambda_stats_block(lam_home: float, lam_away: float) -> Dict[str, float]:
     }
 
 
-def compute_ou_stats(
-    lam_total_ou: float,
-    over15_pct: Optional[float] = None,
-    over25_pct: Optional[float] = None,
-    over35_pct: Optional[float] = None,
-    over45_pct: Optional[float] = None,
-) -> Tuple[Dict[str, float], bool]:
-    """Assemble the display Over/Under ladder for the stats payload.
+def compute_ou_stats(lam_total_ou: float) -> Tuple[Dict[str, float], bool]:
+    """Assemble the display Over/Under ladder for the stats payload (#187).
 
-    Sources (unchanged by #186 — provenance now explicit in probSources):
-    - FootyStats pre-match potentials (over15/25/35/45_percentage_pre_match)
-      take precedence when present;
-    - Poisson on the DEFLATED total lambda (#058/#156) fills the gaps
-      (always over05, usually over45).
+    All lines derive from Poisson on ``lam_total_ou`` — the payload lambda
+    total times the per-league O/U deflation (#058), exposed as
+    ``stats.lambdaTotalOU`` / ``stats.ouDeflation`` so any consumer can verify
+    ``overXXProb == (1 - poisson_cdf(X, lambdaTotalOU)) * 100`` directly.
 
-    #186 adds two guarantees on the assembled ladder:
-    1. Complement: over_x + under_x == 100 for every line (by construction).
-    2. Monotonicity: Over 0.5 ≥ Over 1.5 ≥ … ≥ Over 4.5. Mixing FootyStats
-       potentials with Poisson values can violate this (incoherent display);
-       violating values are clamped downward to the previous line.
+    Pre-#187 these fields preferred FootyStats pre-match potentials, which
+    (a) diverged from the payload's own lambdas (Achado 4, diagnóstico
+    2026-07-14) and (b) silently bypassed the audit loop's per-league lambda
+    corrections in the goals picks — ev_classification reads these fields as
+    the picks' raw probability. Potentials are preserved separately in
+    ``stats.fsPotentials``.
+
+    Guarantees (critérios de aceite):
+    1. Complement: over_x + under_x == 100 for every line.
+    2. Monotonicity: Over 0.5 ≥ Over 1.5 ≥ … ≥ Over 4.5 (structural for
+       Poisson; guard kept as a safety net for future source changes).
 
     Returns (fields dict, clamped flag) — callers log when clamped is True.
     """
-    over05 = (1.0 - poisson_cdf(0, lam_total_ou)) * 100.0
-    over15 = float(over15_pct) if over15_pct is not None else (1.0 - poisson_cdf(1, lam_total_ou)) * 100.0
-    over25 = float(over25_pct) if over25_pct is not None else (1.0 - poisson_cdf(2, lam_total_ou)) * 100.0
-    over35 = float(over35_pct) if over35_pct is not None else (1.0 - poisson_cdf(3, lam_total_ou)) * 100.0
-    over45 = float(over45_pct) if over45_pct is not None else (1.0 - poisson_cdf(4, lam_total_ou)) * 100.0
-
-    ladder = [over05, over15, over25, over35, over45]
+    ladder = [(1.0 - poisson_cdf(k, lam_total_ou)) * 100.0 for k in range(5)]
     clamped = False
     prev = 100.0
     for i, v in enumerate(ladder):
@@ -92,12 +85,26 @@ def compute_ou_stats(
         "over25Prob": o25,
         "over35Prob": o35,
         "over45Prob": o45,
+        "under05Prob": round(100.0 - o05, 1),
         "under15Prob": round(100.0 - o15, 1),
         "under25Prob": round(100.0 - o25, 1),
         "under35Prob": round(100.0 - o35, 1),
         "under45Prob": round(100.0 - o45, 1),
     }
     return fields, clamped
+
+
+def compute_btts_from_lambdas(lam_home: float, lam_away: float) -> float:
+    """BTTS probability (0-100) derived from the payload lambdas (#187).
+
+    BTTS = P(home scores) × P(away scores) under independent Poisson:
+    (1 - e^-λh)(1 - e^-λa), using the same lambdas exposed in the payload
+    (lambdaHome/lambdaAway) so the value is externally verifiable. The legacy
+    40/30/30 fusion (#055) is preserved as ``stats.bttsFusionProb``.
+    """
+    p_home_scores = 1.0 - poisson_pmf(0, lam_home)
+    p_away_scores = 1.0 - poisson_pmf(0, lam_away)
+    return round(min(100.0, max(0.0, p_home_scores * p_away_scores * 100.0)), 1)
 
 
 # ============================================================================
@@ -1607,22 +1614,36 @@ def build_records_from_matches(
         except Exception:
             total_gols = None
 
-        # #186 — O/U display ladder with complement + monotonicity guarantees
-        _ou_fields, _ou_clamped = compute_ou_stats(
-            lam_total_ou, over15_pct, over25_pct, over35_pct, over45_pct
-        )
+        # #187 (Achado 4) — O/U ladder and BTTS derived from the payload
+        # lambdas; complement + monotonicity guaranteed. These fields are also
+        # the raw-probability inputs of the goals/BTTS picks (ev_classification
+        # reads them first), which reconnects the audit loop's per-league
+        # lambda corrections to the goals markets.
+        _ou_fields, _ou_clamped = compute_ou_stats(lam_total_ou)
         if _ou_clamped:
-            logger.info(f"[OU-MONO] {home} vs {away}: O/U display ladder clamped for monotonicity (#186)")
+            logger.info(f"[OU-MONO] {home} vs {away}: O/U display ladder clamped for monotonicity (#187)")
+        btts_model = compute_btts_from_lambdas(lam_home, lam_away)
 
-        # #186 — probability provenance per field family (API transparency).
-        # Origins BEFORE isotonic calibration (Gap 5) and ML override (Gap 6);
-        # the ML block updates oneXTwo downstream when the ensemble applies.
+        # #186/#187 — probability provenance per field family (API transparency).
+        # Origins BEFORE ML override (Gap 6); the ML block updates oneXTwo
+        # downstream when the ensemble applies.
         _prob_sources = {
             "oneXTwo": "odds_implied" if (homeProb or drawProb or awayProb) else "unavailable",
-            "overUnder": "footystats_potential" if over25_pct is not None else "poisson_deflated",
-            "over45": "footystats_potential" if over45_pct is not None else "poisson_deflated",
-            "btts": "fusion:" + "+".join(k for k, _ in _btts_sources),
+            "overUnder": "poisson_lambda_ou",
+            "btts": "poisson_lambda",
+            "bttsFusion": "fusion:" + "+".join(k for k, _ in _btts_sources),
+            "fsPotentials": "footystats_prematch",
             "cornersPotentials": "footystats_potential" if corners_o85_pct is not None else "unavailable",
+        }
+
+        # FootyStats pre-match potentials — preserved as auxiliary data (#187);
+        # no longer feed overXXProb/bttsProb (which now derive from lambdas).
+        _fs_potentials = {
+            "over15": over15_pct,
+            "over25": over25_pct,
+            "over35": over35_pct,
+            "over45": over45_pct,
+            "btts": btts_pct,
         }
 
         records.append({
@@ -1661,9 +1682,13 @@ def build_records_from_matches(
                 "predictionSource": "odds_implied",
                 "probSources": _prob_sources,
                 "avgGoals": round(avgGoals if avgGoals > 0 else 2.5, 2),
-                "bttsProb": btts_final,
+                "bttsProb": btts_model,
+                "bttsFusionProb": btts_final,
                 **_ou_fields,
                 **lambda_stats_block(lam_home, lam_away),
+                "lambdaTotalOU": round(lam_total_ou, 3),
+                "ouDeflation": round(_ou_deflation, 3),
+                "fsPotentials": _fs_potentials,
                 "leagueAvgGoals": league_avgs["avg_goals"],
                 "totalGoals": total_gols,
                 "leagueRegime": league_regime,

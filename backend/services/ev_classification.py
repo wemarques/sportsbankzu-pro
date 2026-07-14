@@ -1105,6 +1105,13 @@ def evaluate_match_markets(
                 corner_odd = odds.get(odd_key)
         corner_odd = float(corner_odd) if corner_odd and float(corner_odd) > 1.0 else None
 
+        # #187 (Achado 5): corners above 10.5 require a real book odd —
+        # without one they surfaced as "Odd mín" picks with no market support.
+        # Amends #110: the expanded line is scanned, but only displayed when
+        # real data exists (post API-Football integration reassessment).
+        if float(line_val) > 10.5 and corner_odd is None:
+            continue
+
         gov_line_info = corner_governance.get("lines", {}).get(line_key, {})
         operational_state = gov_line_info.get("operationalState", gov_line.get("operational_state", "RESTRICTED"))
         champion_model = gov_line_info.get("championModel", gov_line.get("champion_model"))
@@ -1180,6 +1187,11 @@ def evaluate_match_markets(
             else:
                 under_odd = None
 
+        # #187 (Achado 5): corners above 10.5 require a real (or over-derived)
+        # book odd — mirrors the Over-side suppression.
+        if float(line_val) > 10.5 and under_odd is None:
+            continue
+
         mo = MarketOutput(
             market_type="Corners",
             selection=f"Corners {threshold_label}",
@@ -1239,6 +1251,12 @@ def evaluate_match_markets(
                 # Cards Over <=2.5: skip low odds (easy line, no value) (#113)
                 if line <= 2.5 and over_odd and over_odd < 1.50:
                     over_odd = None  # force NO_BET by removing odd
+                # #187 (Achado 5): cards above 2.5 require a real book odd —
+                # cards odds come only from API-Football (#095/#187 coherent
+                # single-bet capture); without one, the pick showed as an
+                # unsupported "Odd mín" fallback on virtually every match.
+                if float(line) > 2.5 and over_odd is None:
+                    continue
 
                 mo = MarketOutput(
                     market_type="Cards",
@@ -1258,6 +1276,9 @@ def evaluate_match_markets(
                 calibrated_under = _calibrate_and_deflate(under_prob, f"Cartoes Under {line}", league_id, regime)
                 under_odd = odds.get(f"cards_under_{line}") or odds.get(f"under{str(line).replace('.', '')}Cards")
                 under_odd = float(under_odd) if under_odd and float(under_odd) > 1.0 else None
+                # #187 (Achado 5): mirror of the Over-side suppression.
+                if float(line) > 2.5 and under_odd is None:
+                    continue
 
                 mo = MarketOutput(
                     market_type="Cards",

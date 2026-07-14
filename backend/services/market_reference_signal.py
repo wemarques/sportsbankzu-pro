@@ -91,7 +91,7 @@ def _get_1x2_signal(league_id: str) -> Dict[str, str]:
         return {
             "signal": NEUTRO,
             "reason": "Could not determine ML status",
-            "source": "fallback_default",
+            "source": "indeterminate",
         }
 
 
@@ -143,11 +143,14 @@ def _get_market_model_signal(league_id: str, market_key: str) -> Dict[str, str]:
                             "source": "market_model",
                         }
 
-        # No market model found — Poisson fallback
+        # No dedicated ML market model — predictions come from the
+        # Poisson/Dixon-Coles pipeline (#028). #187: source renamed from
+        # "fallback_default" (misleading: read as "generic fallback
+        # prediction" by external audits) to the true provenance.
         return {
             "signal": NEUTRO,
-            "reason": f"No dedicated market model — Poisson fallback ({market_key})",
-            "source": "fallback_default",
+            "reason": f"Pipeline Poisson/Dixon-Coles (#028) — sem modelo ML dedicado ({market_key})",
+            "source": "poisson_pipeline",
         }
 
     except Exception as e:
@@ -155,7 +158,7 @@ def _get_market_model_signal(league_id: str, market_key: str) -> Dict[str, str]:
         return {
             "signal": NEUTRO,
             "reason": f"Could not determine market model status ({market_key})",
-            "source": "fallback_default",
+            "source": "indeterminate",
         }
 
 
@@ -177,7 +180,7 @@ def _get_corners_signal(league_id: str) -> Dict[str, str]:
             return {
                 "signal": NEUTRO,
                 "reason": "Corners v2 governance unavailable — fallback NEUTRO",
-                "source": "fallback_default",
+                "source": "indeterminate",
             }
 
         state = gov.get("governance_state", "NEUTRAL")
@@ -208,7 +211,7 @@ def _get_corners_signal(league_id: str) -> Dict[str, str]:
         return {
             "signal": NEUTRO,
             "reason": "Corners v2 governance unavailable — fallback NEUTRO",
-            "source": "fallback_default",
+            "source": "indeterminate",
         }
 
 
@@ -272,7 +275,7 @@ def get_market_reference_signal(
     return {
         "signal": NEUTRO,
         "reason": f"Unknown market type: {market_type}",
-        "source": "fallback_default",
+        "source": "indeterminate",
     }
 
 

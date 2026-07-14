@@ -86,15 +86,21 @@ FootyStats + API-Football v3
   → calcular_lambda_jogo (deflation 0.85 #043 + γ home #078)
   → xg_filter bidirecional (#035-M3)
   → chaos_detector + SAFE blocker (#035-M2)
-  → Poisson + Dixon-Coles τ(ρ) — mercados de gols (#028, #078)
-  → BTTS fusion 40/30/30 com deflation 0.80 (#043)
+  → O/U gols: Poisson(lambdaTotalOU) — stats = insumo raw dos picks (#187)
+       + Dixon-Coles τ(ρ) no matrix interno (#028, #078)
+  → BTTS: Poisson dos lambdas exibidos (#187) — fusão 40/30/30 (#043)
+       preservada em bttsFusionProb (não alimenta mais os picks)
   → Corners Engine v2 (4.5–12.5) com redução 20% (#043)
-  → 1X2: implied_probs(odds) [+ ML ensemble]
+  → 1X2: implied_probs(odds) [+ ML ensemble] — espelho de mercado ROTULADO
+       na UI (#187, decisão opção b; #064)
   → selecionar_mercados_v2 (market_service.py — ativo desde #035-M1)
        ev_classification 4 níveis (#028) — SAFE via circuit breaker (#043)
-       market_reference_signal capping por qualidade (#031)
+       linhas altas (cards >2.5, corners >10.5) só com odd real (#187)
+       market_reference_signal capping por qualidade (#031, fontes #187)
        bankroll_engine Quarter Kelly com caps (#028)
        correlation_matrix anti-redundância (#028)
+  → odds enrichment API-Football (#120; famílias de bet único #187)
+       → reclassificação pós-enrichment (#187)
   → Next.js (Vercel)
 ```
 

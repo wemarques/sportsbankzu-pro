@@ -298,18 +298,18 @@ def calibrate_match_stats(
     league_id: str = "",
     regime: str = "",
 ) -> dict:
-    """Calibrate all relevant probabilities in a match stats dict (0-100 scale).
+    """Calibrate corner display probabilities in a match stats dict (0-100 scale).
 
     Modifies stats in-place and returns it.
+
+    #187: restricted to corners. Goals O/U, BTTS and 1X2 display fields are no
+    longer isotonic-mutated here — the acceptance contract requires them to be
+    exactly derivable from the payload lambdas (over+under=100, monotonicity)
+    or, for 1X2, to be the labeled market mirror (#028/#064). Per-league
+    isotonic calibration of PICKS is untouched: it runs inside
+    ev_classification via calibrate_prob (#106).
     """
     _mapping = {
-        "bttsProb": "BTTS",
-        "over25Prob": "Over 2.5",
-        "over35Prob": "Over 3.5",
-        "over45Prob": "Over 4.5",
-        "under15Prob": "Under 1.5",
-        "under35Prob": "Under 3.5",
-        "under45Prob": "Under 4.5",
         "cornerOver85Prob": "Escanteios Over 8.5",
         "cornerOver95Prob": "Escanteios Over 9.5",
         "cornerOver105Prob": "Escanteios Over 10.5",
@@ -323,29 +323,6 @@ def calibrate_match_stats(
         raw_01 = float(raw) / 100.0 if float(raw) > 1.0 else float(raw)
         cal_01 = calibrate_prob(raw_01, market, league_id, regime)
         stats[stat_key] = round(cal_01 * 100.0, 1)
-
-    # Calibrate 1X2 (needs renormalization)
-    h = stats.get("homeWinProb")
-    d = stats.get("drawProb")
-    a = stats.get("awayWinProb")
-    if h is not None and d is not None and a is not None:
-        h01 = float(h) / 100.0 if float(h) > 1.0 else float(h)
-        d01 = float(d) / 100.0 if float(d) > 1.0 else float(d)
-        a01 = float(a) / 100.0 if float(a) > 1.0 else float(a)
-
-        h_cal = calibrate_prob(h01, "1X2_home", league_id, regime)
-        d_cal = calibrate_prob(d01, "1X2_draw", league_id, regime)
-        a_cal = calibrate_prob(a01, "1X2_away", league_id, regime)
-
-        total = h_cal + d_cal + a_cal
-        if total > 0:
-            h_cal /= total
-            d_cal /= total
-            a_cal /= total
-
-        stats["homeWinProb"] = round(h_cal * 100.0, 1)
-        stats["drawProb"] = round(d_cal * 100.0, 1)
-        stats["awayWinProb"] = round(a_cal * 100.0, 1)
 
     return stats
 
