@@ -47,6 +47,10 @@ async def get_match_analysis(
             odds=match_data['odds'],
             context=match_data.get('context') if include_context else None,
             pipeline_picks=match_data.get('pipeline_picks', []),
+            audit_meta={  # #188 Fase 1 — só para o log de medição
+                "match_id": match_id,
+                "league_id": match_data.get('league_id', ''),
+            },
         )
         return analysis
 
@@ -54,12 +58,32 @@ async def get_match_analysis(
         # MISTRAL_API_KEY ausente ou liga nao identificada — retornar fallback
         # em vez de HTTP 400, para que o frontend mostre mensagem amigável (#090)
         logger.warning(f"[ai_analysis] Fallback para {match_id}: {e}")
+        _log_route_fallback(match_id, e)
         from backend.services.mistral_analysis import MistralAnalysisService as _MAS
         return _MAS._get_fallback_static()
     except Exception as e:
         logger.error(f"[ai_analysis] Erro analise match {match_id}: {e}")
+        _log_route_fallback(match_id, e)
         from backend.services.mistral_analysis import MistralAnalysisService as _MAS
         return _MAS._get_fallback_static()
+
+
+def _log_route_fallback(match_id: str, exc: Exception) -> None:
+    """#188 Fase 1 — registra fallback que ocorre ANTES do serviço Mistral
+    (liga não identificada, jogo não encontrado, MISTRAL_API_KEY ausente).
+    Log-only: nunca levanta."""
+    try:
+        from backend.ai.audit_log import STAGE_ROUTE_FALLBACK, log_ai_audit
+        log_ai_audit(
+            provider="mistral",
+            stage=STAGE_ROUTE_FALLBACK,
+            match_id=match_id,
+            valid_json=False,
+            validation_errors=[f"{type(exc).__name__}: {exc}"],
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    except Exception as log_err:
+        logger.debug(f"[ai_analysis] route fallback log skipped: {log_err}")
 
 
 @router.get("/match/{match_id}/analysis/legacy")
@@ -99,6 +123,10 @@ async def get_batch_analysis(
                     match_stats=match['stats'],
                     odds=match['odds'],
                     context=match.get('context'),
+                    audit_meta={  # #188 Fase 1
+                        "match_id": match.get('id', ''),
+                        "league_id": match.get('league_id', league),
+                    },
                 )
                 analyses.append({
                     'match_id': match['id'],
@@ -126,6 +154,20 @@ async def get_batch_analysis(
 # =====================================================================
 # DIAGNOSTIC ENDPOINT (#083)
 # =====================================================================
+
+@router.get("/audit/stats")
+async def get_ai_audit_log_stats(
+    days: int = Query(7, ge=1, le=90, description="Janela em dias"),
+):
+    """#188 — resumo verificável do ai_audit_log (baseline Fase 1 / Fase 4).
+
+    Read-only: volume por liga, hashes de prompt vistos (baseline pré-Fase 2
+    exige UM prompt_sha256 do Mistral com volume), taxa de JSON inválido e
+    jogos pendentes de actual_result. Não toca o fluxo de análise.
+    """
+    from backend.ai.audit_log import get_audit_stats
+    return get_audit_stats(days=days)
+
 
 @router.get("/diagnostic/latest")
 async def get_latest_diagnostic():
@@ -467,6 +509,7 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
         "home_team": home_name,
         "away_team": away_name,
         "league": record.get("leagueName", record.get("leagueId", "")),
+        "league_id": record.get("leagueId", ""),  # #188 — para o log de medição
         "start_time": record.get("datetime", ""),
         "stats": stats,
         "odds": odds,
