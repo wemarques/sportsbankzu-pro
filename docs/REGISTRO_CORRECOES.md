@@ -9425,3 +9425,31 @@ Continuação do #186 seguindo a ORDEM e os CRITÉRIOS DE ACEITE do pedido origi
 
 ### Lição aprendida
 String-matching de nomes de bets em API de odds mistura semânticas de mercado silenciosamente — capturar família inteira de um único bet + validar a coerência da escada transforma dado ruim em dado ausente (que o sistema já trata bem, #103). E quando um campo de display também é insumo do pipeline (stats→picks), "arrumar o display" é mudança de modelo: precisa ser tratada com o rigor de pipeline (testes de invariância + registro + rollback claro).
+
+## 188 — Migração Qwen, Fase 1: logging estruturado + validador de schema da camada de IA (Mistral instrumentado)
+**Data:** 2026-07-15 | **Arquivos:** backend/ai/audit_log.py (novo), backend/services/mistral_analysis.py, backend/routes/ai_analysis.py, scripts/fill_ai_audit_results.py (novo), tests/unit/test_ai_audit_log_188.py (novo) | **Severidade:** N/A (feature de infraestrutura) | **Status:** Fase 1 de 4 — aguardando revisão
+
+### Contexto
+Início da migração da auditoria de IA de Mistral para cascata Qwen (Alibaba ModelStudio, 3 estágios: qwen-flash triagem → qwen-plus produção → qwen3.7-max premium), com Mistral em shadow mode para comparação. Fase 1 cria SOMENTE a infraestrutura de medição — nenhuma troca de modelo, nenhum comportamento de produção alterado, frontend intocado.
+
+### O que foi adicionado
+1. **`backend/ai/audit_log.py`:** log estruturado por jogo auditado — match_id, league_id, timestamp, inputs enviados ao modelo (match_stats/odds/context/pipeline_picks), saída (JSON completo + confidence), provider/model/stage, prompt_version + prompt_sha256 (detecção de mudança de prompt entre fases), valid_json + validation_errors, latency_ms, from_cache, e `actual_result` (JSONB, preenchido pós-jogo) para o backtesting da Fase 4. Storage: PostgreSQL via DATABASE_URL (padrão brier_service #102), fallback SQLite local (padrão ai/cache_manager; /tmp em Lambda). psycopg2 lazy-import (precedente #182). Contrato log-and-degrade: NENHUMA função levanta exceção.
+2. **Validador de schema:** `validate_ai_output()` — confidence numérico 0-100 (obrigatório), explanation string não vazia (mapeada para `resumo_analitico` no schema Mistral v3.0; `auditOdds` NÃO existe no payload do backend — é derivado de confidence no frontend AIReviewDashboard — validado condicionalmente quando presente, já preparado para o schema Qwen via field_map). `get_invalid_json_rate()` agrega a taxa de JSON inválido por provider/stage.
+3. **Hooks no fluxo atual (log-only):** `MistralAnalysisService.analyze_match()` ganhou parâmetro opcional `audit_meta` e grava o registro no sucesso (stage=production) e na exceção (stage=fallback_static, captura taxa de JSON inválido/HTTP/timeout); rotas `/api/ai/match/{id}/analysis` e `/api/ai/batch-analysis` passam audit_meta; fallbacks de rota (liga não identificada, jogo não encontrado, key ausente) logados como stage=route_fallback.
+4. **`scripts/fill_ai_audit_results.py`:** backfill offline de actual_result (reusa `_get_all_finished_matches`; extração espelha cron_handler #085b/#078v — unificar num helper é candidato de refactor na Fase 4). Suporta --dry-run.
+
+### O que NÃO mudou
+Nenhuma resposta de endpoint, nenhum prompt, nenhum threshold, frontend intocado. Mistral continua único provedor em produção. #082 (Mistral exclusivamente narrativa) intocado.
+
+### Testes
+32 novos em `test_ai_audit_log_188.py` (validador; roundtrip SQLite; idempotência do fill; taxa de inválidos; nunca-levanta; extração de resultado; fim-a-fim no analyze_match: timeout→fallback_static, JSON inválido→valid_json=false no caminho de produção, sucesso→production com sha256/latência; PG fora do ar→fallback SQLite; log explodindo não derruba análise; retenção preserva não-resolvidos). Suíte completa: 462 passed.
+
+### Emendas da revisão pré-aprovação (2026-07-15)
+1. **Conexão PG reutilizada entre invocações warm do Lambda** (module-level `_pg_conn` com detecção de conexão fechada, 1 retry com reconexão para drops do RDS, rollback em erro e `_reset_pg_conn()` em todos os handlers — conexão abortada nunca envenena a próxima chamada). DDL roda UMA vez por processo (`_pg_table_ready`). Custo warm no caminho da resposta: 1 INSERT+COMMIT (~3-15ms) vs ~50-200ms da versão inicial (connect+TLS+DDL por chamada).
+2. **JSON inválido no caminho de produção agora é medido:** `_parse_analysis` engole erro de parse e devolve fallback SEM levantar — a versão inicial contaria como sucesso. Marcador `self._last_parse_error` propaga ao log (`valid_json=false`, erro registrado), com teste fim-a-fim provando.
+3. **Retenção:** `purge_old_records(days=90, keep_unresolved=True)` — preserva registros sem actual_result por default; agendamento decidido na Fase 4 (não é mudança de produção da Fase 1). Índice `created_at` adicionado também no SQLite (já existia no PG).
+4. **Thread-safety explícita (pós-aprovação):** conexões psycopg2 não são thread-safe (nível 2) — inócuo no Lambda (1 request/container), mas uvicorn local/scripts podem tocar a conexão module-level de várias threads. Todo acesso PG serializado por `_PG_LOCK` (RLock reentrante) + comentário de contrato no módulo. SQLite: conexão por chamada, dispensa lock. Smoke test de escrita concorrente.
+5. **Endpoint de baseline:** `GET /api/ai/audit/stats?days=N` (read-only) — volume por liga, hashes de prompt (o baseline pré-Fase 2 exige UM `prompt_sha256` do Mistral com volume nas ligas ativas), taxa de JSON inválido, pendências de actual_result. Torna o baseline verificável por HTTP (lição do #186: visível por API, não só CloudWatch).
+
+### Próximas fases (aguardam aprovação por fase)
+Fase 2: enriquecer prompt (Mistral primeiro, para isolar ganho de contexto). Fase 3: cascata Qwen em produção + Mistral shadow + flag de rollback. Fase 4: backtesting, calibração dos cortes CONFIRMED/ADJUSTED/REJECTED por evidência e relatório comparativo. Env vars novas (#102b): DASHSCOPE_API_KEY e QWEN_WORKSPACE_ID entram na Fase 3.

@@ -13,8 +13,10 @@ Changelog v3.0 (vs v2):
 - Input: +40 campos do enriquecimento v3.7
 - Cartões/jogo, faltas, clean sheet %, xG sofrido, médias da liga
 """
+import hashlib
 import os
 import json
+import time
 from typing import Dict, List, Optional
 from datetime import datetime
 import httpx
@@ -134,12 +136,19 @@ class MistralAnalysisService:
         odds: Dict,
         context: Optional[Dict] = None,
         pipeline_picks: Optional[list] = None,
+        audit_meta: Optional[Dict] = None,
     ) -> AIAnalysisResponse:
-        """Gera análise completa v3.0 cobrindo 24 mercados."""
+        """Gera análise completa v3.0 cobrindo 24 mercados.
+
+        audit_meta (#188, opcional): {"match_id", "league_id"} — usado APENAS
+        pelo log de medição da camada de IA; não altera a análise.
+        """
         prompt = self._build_prompt(
             home_team, away_team, league, match_stats, odds, context,
             pipeline_picks=pipeline_picks,
         )
+        _t0 = time.time()
+        self._last_parse_error = None  # #188 — resetado a cada análise
 
         try:
             analysis = await self._call_mistral_api(prompt)
@@ -153,6 +162,17 @@ class MistralAnalysisService:
                 result, pipeline_picks or [],
                 match_label=f"{home_team} vs {away_team}",
             )
+            # #188 Fase 1 — instrumentação (log-only, nunca levanta).
+            # _last_parse_error captura JSON inválido que _parse_analysis
+            # engole devolvendo fallback — sem ele, contaria como sucesso.
+            self._audit_log_safe(
+                result=result, error=getattr(self, "_last_parse_error", None),
+                latency_ms=int((time.time() - _t0) * 1000),
+                prompt=prompt, audit_meta=audit_meta,
+                home_team=home_team, away_team=away_team,
+                match_stats=match_stats, odds=odds, context=context,
+                pipeline_picks=pipeline_picks,
+            )
             return result
         except Exception as e:
             print(f"[MistralV3] Erro ao chamar API: {e}")
@@ -162,7 +182,87 @@ class MistralAnalysisService:
                 track_safety("fallbacks_ativados")
             except Exception:
                 pass
+            # #188 Fase 1 — registra a falha (JSON inválido / HTTP / timeout)
+            self._audit_log_safe(
+                result=None, error=f"{type(e).__name__}: {e}",
+                latency_ms=int((time.time() - _t0) * 1000),
+                prompt=prompt, audit_meta=audit_meta,
+                home_team=home_team, away_team=away_team,
+                match_stats=match_stats, odds=odds, context=context,
+                pipeline_picks=pipeline_picks,
+            )
             return self._get_fallback_analysis()
+
+    def _audit_log_safe(
+        self,
+        *,
+        result: Optional["AIAnalysisResponse"],
+        error: Optional[str],
+        latency_ms: int,
+        prompt: str,
+        audit_meta: Optional[Dict],
+        home_team: str,
+        away_team: str,
+        match_stats: Dict,
+        odds: Dict,
+        context: Optional[Dict],
+        pipeline_picks: Optional[list],
+    ) -> None:
+        """#188 Fase 1 — grava o registro de medição. NUNCA levanta exceção.
+
+        Não altera comportamento de produção: qualquer falha aqui é engolida
+        (o log é observabilidade, não caminho crítico).
+        """
+        try:
+            from backend.ai.audit_log import (
+                STAGE_FALLBACK,
+                STAGE_PRODUCTION,
+                log_ai_audit,
+                validate_ai_output,
+            )
+
+            meta = audit_meta or {}
+            if result is not None:
+                output = result.model_dump()
+                valid, verrors = validate_ai_output(output)
+                confidence = float(result.confidence)
+                stage = STAGE_PRODUCTION
+                if error:  # parse inválido → conteúdo servido é fallback (#188)
+                    valid = False
+                    verrors = [f"invalid model JSON: {error}"] + verrors
+            else:
+                output = None
+                valid, verrors = False, [error or "unknown error"]
+                confidence = None
+                stage = STAGE_FALLBACK
+
+            log_ai_audit(
+                provider="mistral",
+                model=self.model,
+                stage=stage,
+                match_id=meta.get("match_id"),
+                league_id=meta.get("league_id"),
+                home_team=home_team,
+                away_team=away_team,
+                prompt_version=self.VERSION,
+                prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                prompt_chars=len(prompt),
+                inputs={
+                    "match_stats": match_stats,
+                    "odds": odds,
+                    "context": context,
+                    "pipeline_picks": pipeline_picks or [],
+                },
+                output=output,
+                confidence=confidence,
+                valid_json=valid,
+                validation_errors=verrors,
+                latency_ms=latency_ms,
+                error=error,
+            )
+        except Exception as log_err:
+            # Log de medição jamais derruba a análise (#188)
+            print(f"[MistralV3] audit log skipped: {log_err}")
 
     # -----------------------------------------------------------------
     # PROMPT BUILDER — v3.0
@@ -597,6 +697,9 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
         except Exception as e:
             print(f"[MistralV3] Erro parse: {e}")
             print(f"[MistralV3] Resposta bruta: {raw_response[:500]}")
+            # #188 — marca o parse inválido para o log de medição (a resposta
+            # servida continua sendo o fallback, comportamento inalterado)
+            self._last_parse_error = f"{type(e).__name__}: {e}"
             return self._get_fallback_analysis()
 
     # -----------------------------------------------------------------
