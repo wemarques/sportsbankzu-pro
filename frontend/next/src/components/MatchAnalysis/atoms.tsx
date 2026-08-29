@@ -125,6 +125,10 @@ export const StakeRow = ({
 
   if (bankroll <= 0 || pick.classification === "NO_BET") return null;
 
+  // Sem odd real não há EV nem stake — ocultar a linha inteira em vez de
+  // sugerir valor (o card já mostra "Odd sem odd" logo acima).
+  if (pick.bookOdd == null || pick.bookOdd <= 1) return null;
+
   // If oportunidade mode and blocked, show reason
   if (stakeMode === "oportunidade" && oportResult && oportResult.bloqueado && !isCustom) {
     return (

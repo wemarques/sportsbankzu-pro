@@ -9453,3 +9453,30 @@ Nenhuma resposta de endpoint, nenhum prompt, nenhum threshold, frontend intocado
 
 ### Próximas fases (aguardam aprovação por fase)
 Fase 2: enriquecer prompt (Mistral primeiro, para isolar ganho de contexto). Fase 3: cascata Qwen em produção + Mistral shadow + flag de rollback. Fase 4: backtesting, calibração dos cortes CONFIRMED/ADJUSTED/REJECTED por evidência e relatório comparativo. Env vars novas (#102b): DASHSCOPE_API_KEY e QWEN_WORKSPACE_ID entram na Fase 3.
+
+## 189 — Sugestão da Análise AI contradizia a tabela de EV + stake sugerido em pick sem odd
+**Data:** 2026-08-29 | **Arquivos:** backend/ai/mistral_contract.py, backend/services/mistral_analysis.py, frontend/next/src/components/BankrollCard.tsx, frontend/next/src/components/MatchAnalysis/atoms.tsx, tests/unit/test_recommendation_enforcement.py (novo) | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Dois defeitos independentes, ambos fazendo o produto exibir duas verdades contraditórias para o mesmo jogo.
+
+1. **Sugestão vs. tabela (KRC Genk × Waasland-Beveren, 2026-08-28):** o bloco "Sugestão" da Análise AI exibia `Double Chance 1X (odd 1.14). Probabilidade de 87% (EV positivo)` enquanto a tabela de mercados do MESMO jogo listava `DC 1X (KRC/EMP) | 84% raw → 63% cal | EV -29.8%` dentro do bloco NÃO RECOMENDADOS. O operador via um mercado recomendado pela narrativa e rejeitado pelo cálculo, lado a lado.
+2. **Stake sem odd:** picks sem odd real (`bookOdd` nulo/0, situação criada pelo #187 ao suprimir linhas altas sem odd) exibiam "Odd sem odd" no card e, logo abaixo, um stake sugerido em reais.
+
+### Causa raiz
+1. **Brecha combinada de prompt + validação.** O prompt do #096 autorizava explicitamente `"UM DOS picks listados acima ou um mercado complementar"` — a cláusula "mercado complementar" abria a porta para qualquer mercado fora da lista aprovada. A Camada 6 (`_validate_recommendation_vs_pipeline`) só inspeciona direção Over/Under, e DC 1X não tem direção — passava limpo. A validação de contrato do #181 pegaria a menção, mas era **log-only** (sem enforcement) e o `_MARKET_PATTERNS` só cobria as grafias `Dupla chance` e `DC 1X`; a grafia inglesa `Double Chance 1X`, emitida pelo modelo neste jogo, não casava com nenhum padrão. Três camadas, nenhuma bloqueando.
+2. **EV zero tratado como EV neutro.** Em `calcStakeOportunidade`, `evDecimal = odd > 1 ? prob*odd-1 : 0` — com odd 0/null o EV virava `0`, que é **maior** que o `evBloqueio` negativo dos tiers, então nenhum bloqueio disparava e a função devolvia o stake base. Sem odd não existe EV; o valor sentinela 0 mentia como se fosse um EV medido.
+
+### Correções aplicadas (camadas)
+- **Detecção (`mistral_contract.py`):** `_MARKET_PATTERNS` ganhou a grafia inglesa `Double Chance (1X|12|X2)`, a linha opcional em `Dupla chance` e o padrão `1X2 (Home|Away|Casa|Fora)`.
+- **Camada 7 — enforcement (`mistral_analysis.py::_enforce_recommendation_contract`):** roda após a Camada 6. Se a `recomendacao_principal` cita mercado fora da lista aprovada (picks EV+ pós-deflação) ou computa EV numérico no texto, ela é **descartada** e substituída por `aligned_recommendation()`. Fail-open: import ou parse falhando devolve o texto original (a análise nunca cai por causa do enforcement).
+- **Substituição determinística (`mistral_contract.aligned_recommendation`):** monta a recomendação a partir do pick de maior `ev_pct` entre os aprovados, consumindo exatamente `prob_deflated_pct`/`odd`/`ev_pct` — os mesmos valores exibidos na tabela. Sem picks aprovados, devolve "Sem recomendação — nenhum mercado com EV positivo após deflação". Por construção nunca contradiz o display.
+- **Prompt endurecido (#096):** a cláusula "ou um mercado complementar" foi removida — a recomendação DEVE ser exatamente um dos picks listados, e o prompt agora explicita que mercados fora da lista foram rejeitados por EV negativo pós-deflação. Novo ramo `else` para jogos sem nenhum pick aprovado, instruindo a resposta "Sem recomendação". Contrato #082 intocado: Mistral segue exclusivamente narrativa — o enforcement só restringe o que ela pode citar, nunca calcula nem reclassifica.
+- **Stake sem odd (`BankrollCard.tsx`):** guarda antes do piso de 50% — `odd <= 1` devolve `bloqueado: true, motivo: "Sem odd disponível"`, stake 0.
+- **UI (`MatchAnalysis/atoms.tsx`):** `StakeRow` retorna `null` quando `pick.bookOdd == null || <= 1` — a linha inteira some em vez de sugerir valor, já que o card exibe "Odd sem odd" logo acima.
+
+### Testes
+9 novos em `tests/unit/test_recommendation_enforcement.py`: detecção das três grafias (`Double Chance 1X` inglesa, `Dupla chance 1X`, `1X2 Home`); `aligned_recommendation` escolhendo o maior EV entre aprovados e o caso sem picks; enforcement ponta a ponta na regressão real do KRC Genk (substitui), recomendação limpa (preserva byte a byte), sem picks aprovados (bloqueia qualquer mercado) e recomendação vazia (passthrough). Suíte `tests/unit/`: 284 passed, 7 failed — todas as 7 por dependência ausente no contêiner (`bs4` em `data_collector`, e `scipy` fazendo NB2 cair em `poisson_fallback` conforme documentado no CLAUDE.md), nenhuma tocada por esta alteração.
+
+### Lição aprendida
+Uma cláusula de escape em linguagem natural no prompt ("ou um mercado complementar") vale zero como restrição — o modelo a usa exatamente onde ela não deveria valer. Validação log-only não é defesa: o #181 já detectaria a violação por padrão de mercado, mas só a registraria. E regex de contrato precisa cobrir as grafias que o modelo realmente emite, não só as canônicas do produto — a saída saiu em inglês num sistema com UI pt-BR. Corolário do lado do frontend: valor sentinela `0` para "não medido" atravessa comparações numéricas como se fosse medido; ausência de insumo deve ser um ramo explícito, não um zero.

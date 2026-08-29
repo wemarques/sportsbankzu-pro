@@ -653,3 +653,39 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `grep -n "compute_btts_from_lambdas\|lambdaTotalOU\|bttsFusionProb" backend/services/fixtures_service.py`
 **Verificação:** `grep -n "fallback_default" backend/services/market_reference_signal.py` (0 hits em retornos)
 **Verificação:** `pytest tests/unit/test_odds_family_187.py tests/unit/test_fixtures_stats_186.py -q`
+
+### #189 — Recomendação da IA é subordinada à tabela de EV (Camada 7) + sem odd não há stake
+
+**Tipo:** Fix + Regra permanente (Backend AI + UX)
+**Relacionado:** #082, #096 (endurecido), #105, #106, #110, #146, #181 (enforcement), #187
+
+1. **A `recomendacao_principal` DEVE ser exatamente um dos picks aprovados
+   pelo pipeline.** A cláusula "ou um mercado complementar" do #096 está
+   REVOGADA — não reintroduzir. Mercado fora da lista aprovada foi rejeitado
+   pela tabela de EV deflacionado; recomendá-lo contradiz o que o operador vê.
+2. **Camada 7 é enforcement, não observabilidade.** `_enforce_recommendation_contract`
+   roda após a Camada 6 e SUBSTITUI a recomendação violadora por
+   `mistral_contract.aligned_recommendation()`, construída do pick de maior EV
+   entre os aprovados com os mesmos `prob_deflated_pct`/`odd`/`ev_pct` do display.
+   Fail-open por design: falha do próprio enforcement devolve o texto original
+   e nunca derruba a análise.
+3. **Jogo sem pick aprovado → "Sem recomendação".** Nem prompt nem enforcement
+   podem produzir um mercado quando o pipeline não aprovou nenhum, por mais
+   alta que seja a probabilidade.
+4. **#082 permanece intocado.** O enforcement restringe o que a narrativa pode
+   citar; NÃO calcula probabilidade, NÃO reclassifica pick, NÃO altera EV.
+5. **`_MARKET_PATTERNS` cobre as grafias que o modelo emite, não só as
+   canônicas** — inclui a variante inglesa `Double Chance`, linha opcional em
+   `Dupla chance` e `1X2 (Home|Away|Casa|Fora)`. Nova grafia observada em
+   produção entra no padrão.
+6. **Sem odd real não existe EV nem stake.** `calcStakeOportunidade` bloqueia
+   com `odd <= 1` ANTES de qualquer tier (EV `0` como sentinela de "não medido"
+   atravessava os `evBloqueio` negativos) e `StakeRow` oculta a linha inteira
+   quando `bookOdd == null || <= 1`. Complementa o #187-5: linha suprimida por
+   falta de odd nunca sugere valor.
+
+**Verificação:** `grep -n "_enforce_recommendation_contract\|aligned_recommendation" backend/services/mistral_analysis.py backend/ai/mistral_contract.py`
+**Verificação:** `grep -n "ou um mercado complementar" backend/services/mistral_analysis.py`
+(0 hits — a frase só sobrevive negada no prompt e citada na docstring da Camada 7)
+**Verificação:** `grep -n "Sem odd disponível" frontend/next/src/components/BankrollCard.tsx`
+**Verificação:** `pytest tests/unit/test_recommendation_enforcement.py tests/unit/test_mistral_contract_181.py -q`

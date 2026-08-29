@@ -73,6 +73,13 @@ export function calcStakeOportunidade(
   const evDecimal = odd > 1 ? prob * odd - 1 : 0;
   const evPct = evDecimal * 100;
 
+  // Sem odd real não existe EV — nunca sugerir stake. (Bug corrigido:
+  // odd 0/null dava evDecimal 0, que passava pelo evBloqueio negativo
+  // dos tiers e sugeria o stake base mesmo com "sem odd" no display.)
+  if (!odd || odd <= 1) {
+    return { stake: 0, pct: 0, ev: 0, descontoEv: 1, custoPor100: 0, bloqueado: true, motivo: "Sem odd disponível" };
+  }
+
   // Piso 50%
   if (prob < 0.50 || bankroll <= 0) {
     return { stake: 0, pct: 0, ev: evPct, descontoEv: 1, custoPor100: 0, bloqueado: true, motivo: "Prob < 50%" };

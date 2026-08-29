@@ -63,7 +63,11 @@ _MARKET_PATTERNS = [
     r"BTTS\s*[—–-]?\s*(?:SIM|N[AAÃ]O)",
     r"Escanteios?\s+(?:Over|Under)\s+\d+\.?\d*",
     r"Cart[ãa]o?(?:es|oes)?\s+(?:Over|Under)\s+\d+\.?\d*",
-    r"Dupla\s+chance|DC\s*(?:1X|12|X2)",
+    r"Dupla\s+chance(?:\s*(?:1X|12|X2))?|DC\s*(?:1X|12|X2)",
+    # Variante em inglês observada em produção (KRC Genk 2026-08-28):
+    # "Double Chance 1X (odd 1.14)" passou sem detecção pelo padrão "DC".
+    r"Double\s+Chance(?:\s*(?:1X|12|X2))?",
+    r"\b1X2\b(?:\s*(?:Home|Away|Casa|Fora))?",
 ]
 
 # Pattern for "Mistral computed EV" — narrative must NEVER assert EV.
@@ -129,6 +133,27 @@ def log_violations(violations: list[str], match_label: Optional[str] = None) -> 
     prefix = f"[Mistral #181 violation] match={match_label or '?'}"
     for v in violations:
         logger.warning(f"{prefix}: {v}")
+
+
+def aligned_recommendation(approved: List[ApprovedPick]) -> str:
+    """Recomendação determinística construída a partir dos picks aprovados.
+
+    Usada como substituição quando a recomendacao_principal do Mistral
+    viola o contrato (cita mercado fora da lista aprovada, i.e. rejeitado
+    pela tabela de EV deflacionado). Consome exatamente os mesmos valores
+    exibidos na tabela de mercados — nunca contradiz o display.
+    """
+    if not approved:
+        return (
+            "Sem recomendação — nenhum mercado com EV positivo após deflação "
+            "para este jogo. Consulte a tabela de mercados analisados."
+        )
+    top = max(approved, key=lambda p: p.ev_pct)
+    return (
+        f"Recomendação alinhada ao pipeline: {top.market} "
+        f"({top.prob_deflated_pct:.0f}%, odd {top.odd:.2f}, EV {top.ev_pct:+.1f}%) — "
+        f"mercado com maior EV após deflação entre os aprovados pelo sistema."
+    )
 
 
 def fallback_narrative(approved: List[ApprovedPick]) -> str:

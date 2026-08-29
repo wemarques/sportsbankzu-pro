@@ -157,6 +157,15 @@ class MistralAnalysisService:
             result.recomendacao_principal = self._validate_recommendation_vs_pipeline(
                 result.recomendacao_principal, pipeline_picks or []
             )
+            # Camada 7 — enforcement do contrato (#181 era log-only): a
+            # recomendação DEVE consumir o mesmo cálculo deflacionado da
+            # tabela de mercados. Se citar mercado fora da lista aprovada
+            # (ex.: DC 1X com EV negativo pós-deflação), é substituída por
+            # uma recomendação determinística construída dos picks aprovados.
+            result.recomendacao_principal = self._enforce_recommendation_contract(
+                result.recomendacao_principal, pipeline_picks or [],
+                match_label=f"{home_team} vs {away_team}",
+            )
             # #181 — full-text contract validation (observability only, no retry)
             self._log_contract_violations(
                 result, pipeline_picks or [],
@@ -411,12 +420,22 @@ NOTA: Considere APENAS os jogadores listados acima. São titulares confirmados o
 PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles):
 {picks_text}
 
-REGRA DE ALINHAMENTO (#096):
-- Sua recomendacao_principal DEVE ser UM DOS picks listados acima ou um mercado complementar.
+REGRA DE ALINHAMENTO (#096, endurecida):
+- Sua recomendacao_principal DEVE ser EXATAMENTE UM DOS picks listados acima. NENHUM outro mercado e permitido — "mercado complementar" NAO existe.
+- Mercados que NAO estao na lista acima foram REJEITADOS pelo pipeline (EV negativo apos deflacao ou sem odd). Recomenda-los contradiz a tabela exibida ao operador.
 - Se o pipeline selecionou Under 2.5, voce NAO pode recomendar Over 2.5 (sao opostos).
 - Se o pipeline selecionou Over 8.5 escanteios, voce NAO pode recomendar Under 8.5.
 - NUNCA contradiga a direcao (Over/Under) de um pick do pipeline.
 - Use APENAS as probabilidades listadas acima, NAO calcule probabilidades alternativas.
+"""
+        else:
+            prompt += """
+PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles): NENHUM.
+
+REGRA DE ALINHAMENTO (#096, endurecida):
+- O pipeline NAO aprovou nenhum mercado (EV positivo apos deflacao) para este jogo.
+- Sua recomendacao_principal DEVE ser exatamente: "Sem recomendação — nenhum mercado com EV positivo após deflação para este jogo."
+- NAO recomende nenhum mercado, mesmo com probabilidade alta.
 """
 
         # ---- Schema de saída v3.0 ----
@@ -771,6 +790,61 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
                     )
 
         return recommendation
+
+    @staticmethod
+    def _enforce_recommendation_contract(
+        recommendation: str,
+        picks: list,
+        match_label: str = "?",
+    ) -> str:
+        """Enforcement da recomendação vs. tabela de EV deflacionado.
+
+        Caso real (KRC Genk × Waasland-Beveren, 2026-08-28): a Sugestão
+        exibia "Double Chance 1X ... EV positivo, 87%" enquanto a tabela
+        do mesmo jogo listava DC 1X com EV -29.8% (não recomendado após
+        deflação). O prompt (#096) permitia "um mercado complementar" e a
+        Camada 6 só checava direção Over/Under — a brecha exata.
+
+        Regra: se a recomendacao_principal menciona um mercado que NÃO está
+        na lista aprovada (picks EV+ pós-deflação), ou computa EV numérico
+        no texto, ela é descartada e substituída pela recomendação
+        determinística de mistral_contract.aligned_recommendation() —
+        construída dos mesmos valores exibidos na tabela. Nunca recomenda
+        o que a tabela rejeita.
+        """
+        if not recommendation:
+            return recommendation
+        try:
+            from backend.ai.mistral_contract import (
+                ApprovedPick, aligned_recommendation, log_violations,
+                validate_output,
+            )
+        except Exception:
+            return recommendation  # fail open — não derruba a análise
+
+        approved: list = []
+        for p in picks or []:
+            try:
+                approved.append(ApprovedPick(
+                    market=str(p.get("market", "")),
+                    classification=str(p.get("classification", "")),
+                    prob_deflated_pct=float(p.get("prob_pct") or 0),
+                    odd=float(p.get("odd") or 0),
+                    ev_pct=float(p.get("ev_pct") or 0),
+                ))
+            except Exception:
+                continue
+
+        v = validate_output(recommendation, approved)
+        if v["ok"]:
+            return recommendation
+
+        log_violations(
+            [f"recomendacao_principal substituída (enforcement): {viol}"
+             for viol in v["violations"]],
+            match_label=match_label,
+        )
+        return aligned_recommendation(approved)
 
     @staticmethod
     def _log_contract_violations(
