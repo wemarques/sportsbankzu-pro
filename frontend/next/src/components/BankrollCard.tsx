@@ -31,9 +31,12 @@ export function calcQuarterKelly(
 
   let qk = kelly * multiplier;
 
-  // Floor para VIÁVEL: se Kelly ≤ 0 mas prob ≥ 50%
-  if (classification === "NEUTRO" && qk <= 0 && prob >= 0.5) {
-    qk = 0.005; // floor 0.5%
+  // #189-d: Floor para VIÁVEL condicionado a EV >= 0. Kelly <= 0 ocorre
+  // exatamente quando EV < 0 na odd atual — o floor antigo apostava 0,5%
+  // da banca em EV negativo (ex.: 52% @ 1.51 = EV -21%). Com EV < 0 o
+  // stake é 0 e a UI mostra "Aguarde odd ≥ fair" (StakeRow).
+  if (classification === "NEUTRO" && qk <= 0 && prob >= 0.5 && prob * odd - 1 >= 0) {
+    qk = 0.005; // floor 0.5% (só quando a odd está exatamente na fair)
   }
 
   const cappedPct = Math.min(Math.max(qk, 0), cap);
@@ -85,7 +88,15 @@ export function calcStakeOportunidade(
     return { stake: 0, pct: 0, ev: evPct, descontoEv: 1, custoPor100: 0, bloqueado: true, motivo: "Prob < 50%" };
   }
 
-  // Bloqueio EV
+  // #189-d: EV negativo → sem stake em nenhum modo. O antigo "desconto por
+  // EV negativo" ainda apostava com valor esperado negativo. O pick vira
+  // ordem-limite: aguardar a odd atingir a fair (1/prob).
+  if (evDecimal < 0) {
+    return { stake: 0, pct: 0, ev: evPct, descontoEv: 0, custoPor100: 0, bloqueado: true,
+             motivo: `Aguarde odd ≥ ${(1 / prob).toFixed(2)}` };
+  }
+
+  // Bloqueio por tier (relevante para o tier NO_BET, evBloqueio=999)
   if (evDecimal < tier.evBloqueio) {
     return { stake: 0, pct: 0, ev: evPct, descontoEv: 0, custoPor100: 0, bloqueado: true,
              motivo: `EV ${(evDecimal * 100).toFixed(1)}% abaixo do limite` };

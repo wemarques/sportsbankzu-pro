@@ -129,6 +129,34 @@ export const StakeRow = ({
   // sugerir valor (o card já mostra "Odd sem odd" logo acima).
   if (pick.bookOdd == null || pick.bookOdd <= 1) return null;
 
+  // #189-d: EV negativo na odd atual → o pick vira ordem-limite. Em vez de
+  // stake, mostrar a odd mínima (fair) a aguardar. Vale para os dois modos.
+  const evNow = pick.ev ?? (pick.rawProb > 0 ? pick.rawProb * pick.bookOdd - 1 : null);
+  if (evNow != null && evNow < 0 && !isCustom) {
+    const fairOdd = pick.fairOdd ?? (pick.rawProb > 0 ? 1 / pick.rawProb : null);
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderRadius: 5,
+          background: "rgba(245,181,74,0.05)",
+          border: "1px solid rgba(245,181,74,0.2)",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: 10, color: C.gold, fontWeight: 700 }}>
+          Aguarde odd ≥ {fairOdd != null ? fairOdd.toFixed(2) : "—"}
+        </span>
+        <span style={{ fontSize: 10, color: C.t3 }}>
+          EV {(evNow * 100).toFixed(1)}% na odd atual {pick.bookOdd.toFixed(2)} — sem stake
+        </span>
+      </div>
+    );
+  }
+
   // If oportunidade mode and blocked, show reason
   if (stakeMode === "oportunidade" && oportResult && oportResult.bloqueado && !isCustom) {
     return (

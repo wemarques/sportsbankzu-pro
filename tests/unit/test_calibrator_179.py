@@ -1,58 +1,49 @@
-"""Test #179 — band 50-60% shadow recalibration."""
+"""Test #179 — band 50-60% recalibration.
+
+#189-a PROMOVEU o shadow: o valor recalibrado da banda 50-60% (0.05 no
+centro, era 0.12) agora está embutido nos nós da deflação contínua de
+produção (`_band_deflation`). Shadow e produção são idênticos por
+construção — a flag SHADOW_BAND_50_60_V179 tornou-se inerte e o endpoint
+/metrics/shadow_v179 passa a reportar improvement 0 (promoção concluída).
+"""
 import importlib
 import os
 
 
 def _reload_ev():
-    """Re-import ev_classification so the SHADOW_BAND_50_60_V179 module-level
-    constant picks up the current env value.
-    """
+    """Re-import ev_classification so any env flag is re-read."""
     import backend.services.ev_classification as ev
     importlib.reload(ev)
     return ev
 
 
-def test_shadow_disabled_returns_identical():
-    """When env flag is false, shadow output == current output for every band."""
+def test_shadow_identico_ao_live_flag_off():
     os.environ.pop("SHADOW_BAND_50_60_V179", None)
     ev = _reload_ev()
-
     for p in [0.30, 0.45, 0.55, 0.65, 0.75, 0.85]:
         cur, shadow = ev.apply_probability_deflation_with_shadow(p, "")
-        assert abs(cur - shadow) < 1e-9, f"prob={p} expected identical, got cur={cur}, shadow={shadow}"
+        assert abs(cur - shadow) < 1e-9, f"prob={p}: cur={cur}, shadow={shadow}"
 
 
-def test_shadow_enabled_diverges_in_band_50_60():
-    """When enabled, shadow > current for prob in [0.50, 0.60); magnitude matches spec."""
+def test_shadow_identico_ao_live_flag_on():
+    """#189-a: mesmo com a flag ligada, shadow == live (promoção concluída)."""
     os.environ["SHADOW_BAND_50_60_V179"] = "true"
     try:
         ev = _reload_ev()
-
-        cur, shadow = ev.apply_probability_deflation_with_shadow(0.55, "")
-        assert shadow > cur, f"shadow={shadow} should be > current={cur}"
-
-        # Magnitude: shadow uses 0.05 deflation, current uses 0.12.
-        expected_shadow = 0.55 * (1 - 0.05)
-        expected_current = 0.55 * (1 - 0.12)
-        assert abs(shadow - expected_shadow) < 1e-9
-        assert abs(cur - expected_current) < 1e-9
-    finally:
-        os.environ.pop("SHADOW_BAND_50_60_V179", None)
-        _reload_ev()
-
-
-def test_shadow_enabled_identical_outside_band():
-    """For prob >=0.60 or <0.50, shadow == current even when enabled."""
-    os.environ["SHADOW_BAND_50_60_V179"] = "true"
-    try:
-        ev = _reload_ev()
-
-        for p in [0.45, 0.65, 0.75, 0.85]:
+        for p in [0.45, 0.55, 0.65, 0.75, 0.85]:
             cur, shadow = ev.apply_probability_deflation_with_shadow(p, "")
-            assert abs(cur - shadow) < 1e-9, f"prob={p} should be identical (got cur={cur}, shadow={shadow})"
+            assert abs(cur - shadow) < 1e-9, f"prob={p}: cur={cur}, shadow={shadow}"
     finally:
         os.environ.pop("SHADOW_BAND_50_60_V179", None)
         _reload_ev()
+
+
+def test_banda_50_60_promovida_menos_deflacao_que_105():
+    """O centro da banda usa 0.05 (promovido); era 0.12 no #105."""
+    ev = _reload_ev()
+    cur, _ = ev.apply_probability_deflation_with_shadow(0.55, "")
+    assert abs(cur - 0.55 * (1 - 0.05)) < 1e-9
+    assert cur > 0.55 * (1 - 0.12)
 
 
 def test_min_n_floor_in_endpoint():

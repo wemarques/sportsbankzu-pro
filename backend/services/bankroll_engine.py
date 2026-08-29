@@ -282,9 +282,25 @@ def compute_stake(
             }
         raw_kelly = kelly_stake(prob, book_odd, bankroll, kelly_fraction)
         adjusted = raw_kelly * multiplier
-        # Floor: se Kelly dá 0 ou negativo, usar mínimo configurável da banca
+        # #189-d: Floor condicionado a EV >= 0. Kelly <= 0 ocorre exatamente
+        # quando EV < 0 na odd atual — apostar o floor nesse caso é apostar
+        # com valor esperado negativo (auditoria 2026-08-29: NEUTRO 52% @
+        # odd 1.51 recebia stake com EV -21%). Em vez de stake, o pick vira
+        # ordem-limite: "aguarde odd >= min_odd" (min_odd = fair = 1/prob).
+        ev_now = prob * book_odd - 1.0
         if adjusted <= 0:
-            adjusted = bankroll * VIAVEL_FLOOR_PCT
+            if ev_now >= 0:
+                # EV == 0 (odd exatamente na fair): floor mantido (#148)
+                adjusted = bankroll * VIAVEL_FLOOR_PCT
+            else:
+                return {
+                    "stake": 0.0,
+                    "stake_reason": "await_min_odd",
+                    "kelly_raw": 0.0,
+                    "haircut": 1.0,
+                    "min_odd": round(1.0 / prob, 2),
+                    "ev": round(ev_now, 4),
+                }
         # Haircuts
         haircut = calculate_haircut(market_output, reason_codes)
         adjusted *= haircut
@@ -378,12 +394,18 @@ def compute_stake_oportunidade(
     # 2. EV deflacionado
     ev = prob * book_odd - 1.0  # EV como decimal (-0.10 = -10%)
 
-    # 3. Bloqueio por EV
-    if ev < tier["ev_bloqueio"]:
+    # 3. #189-d: EV negativo → sem stake em NENHUM modo. O antigo "desconto
+    # por EV negativo" apostava com valor esperado negativo (custo/R$100
+    # exibido não muda o sinal do EV). O pick vira ordem-limite: aguarde
+    # a odd atingir a fair (1/prob). Substitui também o ev_bloqueio
+    # negativo dos tiers para este caso.
+    if ev < 0:
         return {
             "stake": 0.0, "stake_pct": 0.0,
-            "stake_reason": f"ev_{ev:.2%}_below_{tier['ev_bloqueio']:.0%}",
+            "stake_reason": "await_min_odd",
             "mode": "oportunidade", "desconto_ev": 0, "custo_por_100": 0,
+            "min_odd": round(1.0 / prob, 2),
+            "ev": round(ev, 4),
         }
 
     # 4. Stake base

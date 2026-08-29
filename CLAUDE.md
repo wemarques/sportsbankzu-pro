@@ -145,7 +145,7 @@ FootyStats + API-Football v3
 7. **Threshold change > 15% BLOQUEADO** sem dados.
 8. **MIN_N_BRIER = 20** (#079) — auditorias com N<20 são apenas diagnósticas, nunca decisórias.
 9. **Complementares > 105% BLOQUEADOS** (#098).
-10. **Deflação progressiva por banda (#105)** — NÃO reverter para uniforme.
+10. **Deflação progressiva contínua por nós (#105, contínua desde #189-a)** — NÃO reverter para uniforme nem para degrau por banda.
 11. **Classificação usa prob raw; EV usa prob deflacionada** (#106).
 
 ## Finalização obrigatória pós-alteração

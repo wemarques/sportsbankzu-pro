@@ -9480,3 +9480,28 @@ Dois defeitos independentes, ambos fazendo o produto exibir duas verdades contra
 
 ### Lição aprendida
 Uma cláusula de escape em linguagem natural no prompt ("ou um mercado complementar") vale zero como restrição — o modelo a usa exatamente onde ela não deveria valer. Validação log-only não é defesa: o #181 já detectaria a violação por padrão de mercado, mas só a registraria. E regex de contrato precisa cobrir as grafias que o modelo realmente emite, não só as canônicas do produto — a saída saiu em inglês num sistema com UI pt-BR. Corolário do lado do frontend: valor sentinela `0` para "não medido" atravessa comparações numéricas como se fosse medido; ausência de insumo deve ser um ramo explícito, não um zero.
+
+## 189-a/b/d — Pacote de cálculos: deflação contínua (promove #179) + cross simétrico de cartões + floor condicionado a EV
+**Data:** 2026-08-29 | **Arquivos:** backend/services/ev_classification.py, backend/modeling/cards_engine.py, backend/services/bankroll_engine.py, frontend/next/src/components/BankrollCard.tsx, frontend/next/src/components/MatchAnalysis/atoms.tsx, frontend/next/src/components/MatchDetailCard.tsx, tests/unit/test_deflation_continuous_189.py (novo), tests/unit/test_cards_cross_189.py (novo), tests/unit/test_viavel_floor_ev_189.py (novo), tests/unit/test_calibrator_179.py | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Auditoria de cálculos de 2026-08-29 encontrou três defeitos independentes:
+
+1. **(#189-a) Deflação em degrau não-monotônica nas fronteiras.** A função por bandas do #105 fazia um pick de raw 60.0% exibir prob deflacionada 51.0% enquanto raw 59.9% exibia 52.7% — o pick MELHOR mostrava prob e EV piores (quedas de até 4pp nas fronteiras 0.70/0.80), e com o floor de EV a classificação podia inverter.
+2. **(#189-b) Cross de cartões assimétrico.** `cards_engine.predict_cards` dividia os termos "against" por 2 individualmente — `(hf + aa/2 + af + ha/2)/2` — contradizendo o próprio comentário e o padrão do corners_engine, viesando λ em ~-10% (-0.4 cartões num jogo típico de 4): Under inflado, Over deflacionado. Além disso, `against` ausente virava 0.0 via `_safe_float` e o cross com zeros arrastava λ para 0.8λ sem dado real.
+3. **(#189-d) Floor apostando com EV negativo.** O floor #148 dava 0,5%/0,1% da banca sempre que Kelly ≤ 0 — que ocorre exatamente quando EV < 0 na odd atual (caso verificado: NEUTRO 52% @ odd 1.51 recebia stake com EV -21%). O modo Oportunidade tinha o mesmo defeito via "desconto por EV negativo" e `evBloqueio` negativo dos tiers.
+
+### Causa raiz
+(a) Degrau por banda é descontínuo por construção — d(p) salta em cada fronteira e p·(1-d(p)) cai junto. (b) Erro de transcrição da fórmula simétrica + sentinela 0.0 tratada como dado medido (mesma família do bug de stake sem odd do #189 original). (c) O floor foi pensado para "Kelly conservador demais", mas Kelly ≤ 0 ⟺ EV ≤ 0 — o floor cobria exatamente o caso em que não se deve apostar.
+
+### Correções aplicadas (camadas)
+- **Deflação contínua (`_DEFLATION_KNOTS` + interpolação linear):** cada nó ancora o valor da antiga banda no ponto médio dela; constante fora dos extremos (0.10 abaixo de 0.45, 0.25 acima de 0.85). Progressividade preservada (não é reversão a uniforme — proibição 10). Monotonicidade de p·(1-d(p)) provada: f'(p) ≥ 0.20 > 0 em todo o domínio; verificada numericamente em passo 1e-4 nos testes.
+- **Promoção do #179:** nó de 0.55 usa 0.05 (era 0.12). Base: UNBLOCK_REPORT — banda 50-60% subconfiante em -12.7pp (previsto 54.8%, real 67.5%, N=1796), gap ≈ exatamente a deflação aplicada. `_band_deflation_v179_shadow` agora delega para a produção (flag `SHADOW_BAND_50_60_V179` inerte; `/metrics/shadow_v179` passa a reportar improvement 0 = promoção concluída). `test_calibrator_179.py` reescrito para o estado promovido.
+- **Cross simétrico de cartões:** `(hf + aa + af + ha)/2` — λ_time ≈ média(própria média, cartões que o adversário provoca) — e guarda `against > 0` (não apenas `is not None`) para não arrastar λ com zeros de feed.
+- **Floor condicionado a EV ≥ 0 + estado ordem-limite:** `compute_stake` e `compute_stake_oportunidade` com EV < 0 devolvem stake 0, `stake_reason="await_min_odd"` e `min_odd = 1/prob` (fair). EV = 0 exato (odd na fair) mantém o floor #148. Espelhado no frontend: `calcQuarterKelly` (floor só com EV ≥ 0), `calcStakeOportunidade` (EV < 0 bloqueia com "Aguarde odd ≥ fair"), `StakeRow` e `MatchDetailCard` exibem a odd mínima a aguardar em vez de stake.
+
+### Testes
+21 novos (test_deflation_continuous_189: monotonicidade em varredura 1e-4, continuidade, nós, extremos, fronteiras antigas, shadow≡live, piso e fator liga preservados; test_cards_cross_189: neutralidade com dados simétricos, caso da auditoria 4.04 vs 3.62 antigo, against ausente/zero neutro; test_viavel_floor_ev_189: await_min_odd nos dois modos, EV=0 mantém floor, EV+ inalterado, sem-odd continua no_real_odds) + test_calibrator_179 reescrito. Suíte `tests/unit/` completa: **303 passed, 0 failed** (com bs4/scipy instalados no contêiner).
+
+### Lição aprendida
+Função-degrau sobre score contínuo cria inversões de ordenação nas fronteiras — interpolar entre nós preserva a intenção das bandas sem as descontinuidades. Kelly ≤ 0 não é "Kelly conservador", é EV ≤ 0 — floor sobre Kelly ≤ 0 é aposta garantidamente perdedora no agregado; o substituto correto é o estado ordem-limite (aguardar a odd atingir a fair). E a mesma lição do #189 original: sentinela numérica (0.0 de `_safe_float`) atravessa aritmética como se fosse dado medido.

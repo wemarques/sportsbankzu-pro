@@ -36,40 +36,55 @@ _LEAGUE_DEFLATION = {
 }
 
 
+# #189-a: nós da deflação contínua. Cada nó ancora o valor da antiga banda
+# no PONTO MÉDIO da banda (a banda [0.60, 0.70) valia 0.15 → nó em 0.65);
+# entre nós a deflação é interpolada linearmente. Isso elimina as
+# descontinuidades das fronteiras de banda do #105, onde um pick de raw
+# 60.0% exibia prob/EV PIORES que um de 59.9% (quedas de até 4pp em
+# 0.70/0.80) — violação de monotonicidade confirmada numericamente na
+# auditoria de 2026-08-29.
+# O nó de 0.55 usa 0.05 (era 0.12): promoção da recalibração #179 — o
+# UNBLOCK_REPORT mostrou a banda 50-60% subconfiante em -12.7pp
+# (previsto 54.8%, real 67.5%, N=1796), gap ≈ exatamente a deflação de
+# 0.12 então aplicada.
+# Monotonicidade de p*(1-d(p)): d'(p) máximo = 1.0 (trecho 0.55→0.65);
+# f'(p) = 1 - d - p*d' >= 1 - 0.15 - 0.65 = 0.20 > 0 em todo o domínio.
+_DEFLATION_KNOTS = [
+    (0.45, 0.10),
+    (0.55, 0.05),  # #179 promovido (era 0.12 na banda 50-60%)
+    (0.65, 0.15),
+    (0.75, 0.20),
+    (0.85, 0.25),
+]
+
+
 def _band_deflation(prob: float) -> float:
-    """Progressive deflation by probability band."""
-    if prob >= 0.80:
-        return 0.25
-    if prob >= 0.70:
-        return 0.20
-    if prob >= 0.60:
-        return 0.15
-    if prob >= 0.50:
-        return 0.12
-    return 0.10
+    """Deflação progressiva CONTÍNUA por interpolação linear entre nós (#189-a).
+
+    Substitui a função-degrau do #105 (não-monotônica nas fronteiras).
+    Fora dos nós extremos, o valor é constante (0.10 abaixo de 0.45;
+    0.25 acima de 0.85).
+    """
+    knots = _DEFLATION_KNOTS
+    if prob <= knots[0][0]:
+        return knots[0][1]
+    if prob >= knots[-1][0]:
+        return knots[-1][1]
+    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):
+        if prob <= x1:
+            t = (prob - x0) / (x1 - x0)
+            return y0 + t * (y1 - y0)
+    return knots[-1][1]  # inalcançável; segurança
 
 
 def _band_deflation_v179_shadow(prob: float) -> float:
-    """#179 SHADOW: reduced deflation for 50-60% band.
-
-    UNBLOCK_REPORT 2026-05-04 showed band 50-60% sub-confident by -12.7pp
-    (predicted 54.8%, actual 67.5%, N=1796 = 68% of volume). Current 12%
-    deflation matches the observed gap almost exactly — strong evidence
-    the deflation itself is the cause.
-
-    Shadow change: reduce 50-60% deflation from 0.12 to 0.05 (~60% less
-    aggressive). Other bands unchanged. Promotion gate: 2 weeks shadow
-    + improvement_pct >= 3% on /metrics/shadow_v179.
+    """#179 — PROMOVIDO (#189-a): o valor shadow da banda 50-60% agora é o
+    valor de produção, embutido nos nós de `_band_deflation`. Shadow e
+    produção são idênticos; a função permanece para compatibilidade com
+    /metrics/shadow_v179 e cron_handler (a comparação passa a reportar
+    improvement 0, sinalizando a promoção concluída).
     """
-    if prob >= 0.80:
-        return 0.25
-    if prob >= 0.70:
-        return 0.20
-    if prob >= 0.60:
-        return 0.15
-    if prob >= 0.50:
-        return 0.05  # #179: was 0.12
-    return 0.10
+    return _band_deflation(prob)
 
 
 def apply_probability_deflation(prob: float, league_id: str = "") -> float:

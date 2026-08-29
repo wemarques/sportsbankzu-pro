@@ -915,7 +915,12 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                       </div>
                                     );
                                   }
-                                  return <div className="stake-no-value">Sem EV positivo — stake nao recomendado</div>;
+                                  {/* #189-d: EV negativo na odd atual → ordem-limite, nao stake */}
+                                  return (
+                                    <div className="stake-no-value">
+                                      Aguarde odd &ge; {prob > 0 ? (1 / prob).toFixed(2) : "—"} — EV negativo na odd atual ({pred.book_odd!.toFixed(2)})
+                                    </div>
+                                  );
                                 })()}
                               </div>
                             );

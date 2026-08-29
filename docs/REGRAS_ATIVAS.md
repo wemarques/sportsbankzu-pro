@@ -689,3 +689,34 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 (0 hits — a frase só sobrevive negada no prompt e citada na docstring da Camada 7)
 **Verificação:** `grep -n "Sem odd disponível" frontend/next/src/components/BankrollCard.tsx`
 **Verificação:** `pytest tests/unit/test_recommendation_enforcement.py tests/unit/test_mistral_contract_181.py -q`
+
+### #189-a/b/d — Deflação contínua por nós + cross simétrico de cartões + floor condicionado a EV ≥ 0
+
+**Tipo:** Fix + Regra permanente (Modelo + Bankroll + UX)
+**Relacionado:** #105 (evoluído), #106, #148 (emendado), #165, #179 (PROMOVIDO), #189
+
+1. **Deflação é contínua por interpolação linear entre nós (`_DEFLATION_KNOTS`).**
+   Substitui a função-degrau do #105 preservando a progressividade — NÃO
+   reverter nem para uniforme (proibição 10) nem para degrau por banda:
+   o degrau é não-monotônico em p·(1-d(p)) nas fronteiras (raw 60.0% exibia
+   prob/EV piores que 59.9%). Novo nó só entra ancorado em auditoria e com a
+   prova de monotonicidade refeita (d' máximo tal que 1 - d - p·d' > 0).
+2. **#179 está PROMOVIDO:** nó de 0.55 = 0.05 (era 0.12 na banda 50-60%).
+   Base: UNBLOCK_REPORT, banda subconfiante em -12.7pp com N=1796.
+   `SHADOW_BAND_50_60_V179` é flag inerte; `/metrics/shadow_v179` reporta
+   improvement 0 por construção (shadow ≡ live). Não remover a função shadow
+   sem migrar o endpoint e o cron_handler.
+3. **Cross de cartões é SIMÉTRICO:** `(hf + aa + af + ha)/2`, o mesmo padrão
+   do corners_engine. Termos "against" exigem valor > 0 — sentinela 0.0 de
+   feed não entra no blend (não arrastar λ para 0.8λ sem dado real).
+4. **Floor do VIÁVEL (#148) só com EV ≥ 0.** Kelly ≤ 0 ⟺ EV ≤ 0 na odd atual;
+   EV < 0 NUNCA recebe stake em NENHUM modo (Kelly ou Oportunidade) — o pick
+   vira ordem-limite: `stake_reason="await_min_odd"`, `min_odd = 1/prob`
+   (fair), UI exibe "Aguarde odd ≥ fair". EV = 0 exato mantém o floor.
+   O "desconto por EV negativo" do modo Oportunidade está REVOGADO para
+   EV < 0 (desconto não muda o sinal do valor esperado).
+
+**Verificação:** `grep -n "_DEFLATION_KNOTS" backend/services/ev_classification.py`
+**Verificação:** `grep -n "await_min_odd" backend/services/bankroll_engine.py frontend/next/src/components/BankrollCard.tsx` (backend; frontend usa "Aguarde odd")
+**Verificação:** `grep -n "home_cards_against and away_cards_against" backend/modeling/cards_engine.py`
+**Verificação:** `pytest tests/unit/test_deflation_continuous_189.py tests/unit/test_cards_cross_189.py tests/unit/test_viavel_floor_ev_189.py tests/unit/test_calibrator_179.py -q`

@@ -72,11 +72,19 @@ def predict_cards(
     away_cards_against = _safe_float(away_stats.get("awayCardsAgainstPerMatch",
                          away_stats.get("cardsAgainstAVG_away",
                          away_stats.get("cards_against_per_match"))))
-    if home_cards_against is not None and away_cards_against is not None:
-        # Cross: home_for + away_against + away_for + home_against / 2
+    # #189-b: exigir valor > 0 (não apenas "is not None"): um 0.0 explícito
+    # no feed entraria no cross e arrastaria λ para baixo
+    # (blend 0.6λ + 0.4·λ/2 = 0.8λ) sem dado real de cartões sofridos.
+    if home_cards_against and away_cards_against:
+        # #189-b: fórmula SIMÉTRICA — λ_casa ≈ média(própria média, cartões
+        # que o adversário provoca) e idem fora: (hf+aa)/2 + (af+ha)/2 =
+        # (hf + aa + af + ha) / 2. A versão anterior dividia os termos
+        # "against" por 2 individualmente (contradizendo este comentário e o
+        # padrão do corners_engine), viesando λ em ~-10% (-0.4 cartões num
+        # jogo típico de 4) e inflando sistematicamente os "Under".
         home_for = lambda_home
         away_for = lambda_away
-        cross = (home_for + away_cards_against / 2 + away_for + home_cards_against / 2) / 2
+        cross = (home_for + away_cards_against + away_for + home_cards_against) / 2
         lambda_raw = 0.6 * lambda_raw + 0.4 * cross
 
     # Step 3: Referee factor — ONLY legitimate external adjustment
