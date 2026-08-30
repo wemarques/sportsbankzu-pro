@@ -1874,6 +1874,18 @@ def build_records_from_matches(
                 except Exception as _ml_err:
                     logger.debug(f"[Gap6] ML prediction skipped for {home} vs {away}: {_ml_err}")
 
+            # #189-f: arbitro ANTES da selecao de mercados — evaluate_match_markets
+            # le record["refereeAvgCards"] e passa ao predict_cards dos picks.
+            # (O lookup #141 rodava depois, alimentando apenas o display.)
+            try:
+                _ref_name_pre = r.get("referee") if hasattr(r, "get") else None
+                _ref_avg_pre = _lookup_referee_avg(_ref_name_pre, _referee_lookup)
+                if _ref_avg_pre is not None and _ref_name_pre:
+                    record["refereeName"] = _ref_name_pre
+                    record["refereeAvgCards"] = round(_ref_avg_pre, 2)
+            except Exception as _ref_err:
+                logger.debug(f"[#189-f] referee pre-lookup skipped: {_ref_err}")
+
             mercados = selecionar_mercados_v2(record, _regime, _volatilidade, league_id=league_id)
             # Safety hard constraint (#098): block complementary markets >105%
             try:
@@ -1926,8 +1938,10 @@ def build_records_from_matches(
                 # #141 — look up referee avg cards/game from FootyStats league-referees.
                 # Falls back to None when no referee on the match or no lookup hit;
                 # cards engine treats None as "no adjustment" (referee_factor=1.0).
-                _ref_name = r.get("referee") if hasattr(r, "get") else None
-                _ref_avg = _lookup_referee_avg(_ref_name, _referee_lookup)
+                _ref_name = record.get("refereeName") or (r.get("referee") if hasattr(r, "get") else None)
+                _ref_avg = record.get("refereeAvgCards")
+                if _ref_avg is None:
+                    _ref_avg = _lookup_referee_avg(_ref_name, _referee_lookup)
                 _cards_result = predict_cards(
                     home_stats=record["stats"],
                     away_stats=record["stats"],

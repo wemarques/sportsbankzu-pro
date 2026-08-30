@@ -1066,9 +1066,14 @@ def evaluate_match_markets(
         8.5: "cornerOver85Prob", 9.5: "cornerOver95Prob",
         10.5: "cornerOver105Prob", 11.5: "cornerOver115Prob",
     }
+    # #189-f: mapa completo 4.5-12.5 — só 8.5-11.5 eram lidas, o resto das
+    # linhas nunca encontrava a odd mesmo quando o enrichment a gravava.
     _FOOTYSTATS_ODD_MAP = {
+        4.5: "cornersOver45", 5.5: "cornersOver55",
+        6.5: "cornersOver65", 7.5: "cornersOver75",
         8.5: "cornersOver85", 9.5: "cornersOver95",
         10.5: "cornersOver105", 11.5: "cornersOver115",
+        12.5: "cornersOver125",
     }
 
     # Iterate ALL v2 lines (4.5-12.5) for Over markets
@@ -1249,11 +1254,16 @@ def evaluate_match_markets(
     try:
         from backend.modeling.cards_engine import predict_cards, CARD_LINES
 
+        # #189-f: arbitro entra nos PICKS. O fator #141 só alimentava o
+        # display (cardsPredictions em fixtures_service); os picks chamavam
+        # predict_cards sem referee_avg_cards — a única covariável de
+        # cartões que o mercado precifica mal ficava fora da probabilidade.
         cards_result = predict_cards(
             home_stats=stats,
             away_stats=stats,
             league_id=league_id,
             league_stats=league_stats if isinstance(league_stats, dict) else None,
+            referee_avg_cards=match_data.get("refereeAvgCards"),
         )
 
         # Adaptive data_quality_score based on model source (#085b)

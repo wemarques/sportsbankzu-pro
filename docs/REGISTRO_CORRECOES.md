@@ -9530,3 +9530,27 @@ Decomposição de 5.505 picks auditados (29-30/08/2026), Δ Brier vs mercado por
 
 ### Lição aprendida
 Volume de picks não é evidência de edge — a família com mais volume era a única sem vantagem mensurável; medir Δ Brier vs mercado por família ANTES de permitir stake. Células de treino esparsas pedem pooling hierárquico, não threshold menor. E chaves de dicionário por id de liga exigem canonicalização na fronteira — o alias #185 resolvido só em um dos caminhos deixou o fator de liga morto por meses.
+
+## 189-f — Odds de escanteios no enrichment + árbitro nos picks de cartões + telemetria [ODDS-COVERAGE]
+**Data:** 2026-08-31 | **Arquivos:** backend/routes/fixtures.py, backend/services/ev_classification.py, backend/services/fixtures_service.py, tests/unit/test_odds_referee_189f.py (novo) | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Auditoria de 31/08/2026 (item 2.3 do plano) — três gargalos que esvaziavam a cobertura de odds e a qualidade dos picks de cartões:
+1. **Todo pick de Escanteios nascia "sem odd".** `extract_best_odds` devolve `corners_over/under_45..125` desde o #144, mas `_enrich_odds_from_api_football` copiava gols/1X2/BTTS/DC/cartões para `odds_dict` e DESCARTAVA escanteios — a odd real estava no payload e nunca chegava ao record. Consequência em cadeia: sem `book_odd` não há EV nem stake (#189-d), e as linhas extremas — as únicas com stake permitido pelo gate #189-e — ficavam inoperantes.
+2. **`_FOOTYSTATS_ODD_MAP` só cobria Over 8.5–11.5** — mesmo quando o enrichment gravasse a odd, as linhas 4.5–7.5 e 12.5 nunca a encontravam no lookup.
+3. **Fator de árbitro (#141) só no display.** O lookup de `referee_avg_cards` rodava DEPOIS da seleção de mercados e alimentava apenas `cardsPredictions` (display); os picks chamavam `predict_cards` sem o árbitro — a única covariável de cartões que o mercado precifica mal ficava fora da probabilidade dos picks. Bloqueava a re-medição exigida para reativar stake de cartões (#189-e).
+
+### Causa raiz
+(1) Enrichment #120 construído por família e nunca estendido quando o #144 passou a extrair escanteios — integração pela metade sem teste de cobertura. (2) Mapa criado quando só existiam as linhas centrais e não acompanhou a expansão 4.5–12.5 do Corners v2. (3) O #141 foi implementado no ponto do display, não no caminho dos picks — mesma classe do #187: display e picks divergindo silenciosamente.
+
+### Correções aplicadas (camadas)
+- **Enrichment (`fixtures.py`):** loop de cópia `corners_{side}_{45..125}` → `odds_dict["corners{Over|Under}<linha>"]`, mesmo padrão das demais famílias; FootyStats continua vencendo quando a odd já existe.
+- **Mapa completo (`ev_classification.py`):** `_FOOTYSTATS_ODD_MAP` cobre 4.5–12.5.
+- **Árbitro nos picks:** `build_records_from_matches` faz o lookup do árbitro ANTES de `selecionar_mercados_v2`, gravando `refereeName`/`refereeAvgCards` no record; `evaluate_match_markets` repassa `referee_avg_cards` ao `predict_cards`. O bloco #141 do display reusa o valor pré-computado (sem lookup duplicado). Fail-soft: lookup falhando vira debug-log, pipeline segue.
+- **Telemetria `[ODDS-COVERAGE]` (`fixtures.py`):** linha única por liga no CloudWatch com total de mercados, % com odd real e quebra por família (goals/corners/cards/other). Meta do plano: ≥ 70% com odd real. Nunca levanta exceção.
+
+### Testes
+6 novos em `test_odds_referee_189f.py`: enrichment copia odds de escanteios (e não sobrescreve odd FootyStats existente); mapa completo; árbitro rigoroso desloca P(Over 3.5) com `referee_factor` ≈ 1.30; picks recebem `refereeAvgCards` do record; lookup do árbitro precede a seleção de mercados. Suíte `tests/unit/`: **318 passed, 0 failed**.
+
+### Lição aprendida
+Extração e consumo de odds são dois contratos separados — o #144 entregou a extração e ninguém testou o consumo; um teste de cobertura por família no enrichment teria pego o descarte na hora. E covariável que só alimenta o display é covariável desperdiçada: o ponto de injeção correto é antes da seleção de mercados, onde a probabilidade do pick é formada (repetição do padrão display≠picks do #187 — agora com telemetria para flagrar o próximo caso).

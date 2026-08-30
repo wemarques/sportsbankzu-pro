@@ -446,6 +446,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     # team-name matching (e.g. "Wolves" vs "Wolverhampton Wanderers")
     records = _deduplicate_records(records)
 
+    # #189-f: telemetria de cobertura de odds — cada pick sem book_odd é um
+    # pick sem EV nem stake. Meta do plano: >= 70% com odd real.
+    _log_odds_coverage(lid, records)
+
     # FALLBACK: CSV files (skip mock data in production to avoid poisoning batches)
     _is_production = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL"))
     if not found_via_api:
@@ -495,6 +499,46 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                 records = gen_mock2(lid, date)
 
     return records
+
+
+def _log_odds_coverage(lid: str, records: List[Dict[str, Any]]) -> None:
+    """#189-f: mede quantos mercados exibidos tem odd real, por familia.
+
+    Linha unica por liga no CloudWatch:
+    [ODDS-COVERAGE] league=X mercados=N com_odd=M (P%) goals=a/b corners=c/d cards=e/f other=g/h
+    """
+    try:
+        fam_tot: Dict[str, int] = {}
+        fam_odd: Dict[str, int] = {}
+        for rec in records:
+            for m in rec.get("mercados") or []:
+                nome = (m.get("mercado") or "").lower()
+                if "escanteio" in nome or "corner" in nome:
+                    fam = "corners"
+                elif "cart" in nome or "card" in nome:
+                    fam = "cards"
+                elif "gols" in nome or "btts" in nome or "over" in nome or "under" in nome:
+                    fam = "goals"
+                else:
+                    fam = "other"
+                fam_tot[fam] = fam_tot.get(fam, 0) + 1
+                bo = m.get("book_odd")
+                if bo and float(bo) > 1.0:
+                    fam_odd[fam] = fam_odd.get(fam, 0) + 1
+        total = sum(fam_tot.values())
+        if not total:
+            return
+        com_odd = sum(fam_odd.values())
+        parts = " ".join(
+            f"{fam}={fam_odd.get(fam, 0)}/{fam_tot[fam]}"
+            for fam in ("goals", "corners", "cards", "other") if fam in fam_tot
+        )
+        logger.info(
+            "[ODDS-COVERAGE] league=%s mercados=%d com_odd=%d (%.0f%%) %s",
+            lid, total, com_odd, 100.0 * com_odd / total, parts,
+        )
+    except Exception as e:
+        logger.debug(f"[ODDS-COVERAGE] skipped: {e}")
 
 
 def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -560,6 +604,17 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[s
                     af_key = f"cards_{side}_{line_sfx}"
                     line_dot = f"{line_sfx[0]}.{line_sfx[1]}"
                     odds_key = f"cards_{side}_{line_dot}"
+                    if best.get(af_key) and not odds_dict.get(odds_key):
+                        odds_dict[odds_key] = best[af_key]
+                        filled.append(odds_key)
+            # Corners (#189-f) — extract_best_odds devolve corners_over/under_45..125
+            # desde o #144, mas as odds NUNCA eram copiadas para odds_dict: todo
+            # pick de Escanteios nascia "sem odd" mesmo com a odd real no payload.
+            for line_sfx in ("45", "55", "65", "75", "85", "95", "105", "115", "125"):
+                for side in ("over", "under"):
+                    af_key = f"corners_{side}_{line_sfx}"
+                    cap = "Over" if side == "over" else "Under"
+                    odds_key = f"corners{cap}{line_sfx}"
                     if best.get(af_key) and not odds_dict.get(odds_key):
                         odds_dict[odds_key] = best[af_key]
                         filled.append(odds_key)
