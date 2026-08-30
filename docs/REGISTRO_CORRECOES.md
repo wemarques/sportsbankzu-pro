@@ -9597,3 +9597,21 @@ Navegação por `useState` sem espelhamento na URL e sem rotas correspondentes n
 
 ### Lição aprendida
 Navegação por estado local deve nascer espelhada na URL — o custo é um mapa de paths e um listener; o custo de adiar é uma auditoria inteira apontando 404 em seções principais.
+
+## 192 — Prognósticos mudavam a cada refresh: pick ledger congela o prognóstico publicado
+**Data:** 2026-08-30 | **Arquivos:** frontend/next/src/lib/pickLedger.ts (novo), frontend/next/src/lib/leagues.ts, frontend/next/src/app/dashboard/page.tsx | **Severidade:** Crítica | **Status:** Corrigido
+
+### Problema identificado
+Relato do usuário (2026-08-30): Real Madrid x Málaga tinha VALOR DETECTADO em "Under 4.5 gols" antes do jogo; após o fim, um refresh passou a exibir "Under 9.5 escanteios" — e há outros casos. O prognóstico publicado não era estável entre refreshes, o que invalida qualquer track record.
+
+### Causa raiz
+Dupla: (1) recomputação pós-jogo — os insumos FootyStats (stats/odds/potentials) mudam quando o jogo termina, então reexecutar o pipeline gera picks diferentes (o skip de calibração/ML para jogos finished no fixtures_service mitiga, mas os insumos raw já mudaram); (2) enrichment de odds intermitente — os lotes do fan-out falham aleatoriamente com HTTP_ERROR (observado ao vivo: 4 de 5 lotes em 60s), e um refresh sem odds reclassifica mercados de forma diferente do refresh anterior que as tinha.
+
+### Correções aplicadas
+- **Camada 1 — lib/pickLedger.ts**: ledger em localStorage (`sportsbankzu-pick-ledger`, chave home|away|data normalizada, poda de 14 dias / 600 entradas). Antes do kickoff, o snapshot só é substituído se o novo fetch tiver pelo menos tantas odds quanto o anterior (nunca rebaixa para uma recomputação sem odds); a partir do kickoff (live/finished ou horário passado), o snapshot congelado é sempre o que se exibe.
+- **Camada 2 — ingestão**: os dois pontos de normalização do dashboard (merge por lote do fan-out e resultado final) passam por `applyPickLedgerToAll`, então lista, painel de análise, Destaques do Dia e payload das combinadas consomem os mesmos picks congelados.
+- **Camada 3 — UI**: badge com cadeado no painel de análise — "Prognóstico congelado no kickoff" ou "Exibindo o último prognóstico com odds" (refresh degradado descartado). Campos `picksFrozen`/`picksFrozenAt` no tipo Match.
+- 6 testes de unidade da lógica do ledger (cenário Real Madrid x Málaga incluído) passando.
+
+### Lição aprendida
+Prognóstico é publicação, não view derivada: o que o usuário viu antes do jogo precisa ser imutável depois dele. Congelar no cliente resolve a exibição; a persistência server-side (para multi-dispositivo e auditoria oficial) fica como evolução natural sobre o audit_log do #188.

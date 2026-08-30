@@ -148,6 +148,10 @@ export type Match = {
   rejectedInsights?: RejectedInsight[];
   source: "footystats";
   lastUpdated: string;
+  /** #192: set by the pick ledger when the rendered prognosis is a frozen snapshot
+   *  ("kickoff" = match started; "degraded" = fresh recompute lost its odds). */
+  picksFrozen?: "kickoff" | "degraded";
+  picksFrozenAt?: string;
 };
 
 export type RejectedInsight = {

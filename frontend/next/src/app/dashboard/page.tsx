@@ -30,6 +30,7 @@ import DestaquesDoDia from "@/components/DestaquesDoDia";
 import { fmtMercado, getClassificationDisplay, getPickDisplay } from "@/lib/classifications";
 import { useRole } from "@/hooks/useRole";
 import { getBankroll, setBankroll as persistBankroll, subscribeBankroll } from "@/lib/bankrollStore";
+import { applyPickLedgerToAll } from "@/lib/pickLedger";
 import {
   Star,
   ChevronLeft,
@@ -62,6 +63,7 @@ import {
   Link2,
   Layers,
   RefreshCw,
+  Lock,
 } from "lucide-react";
 const VERSION_FALLBACK = "pro V4.0";
 
@@ -1096,10 +1098,10 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
       const onBatchReady = (batch: MatchesResponse) => {
         const raw = batch.matches ?? [];
         if (raw.length === 0) return;
-        const normalized = raw.map((item: any, idx: number) => {
+        const normalized = applyPickLedgerToAll(raw.map((item: any, idx: number) => {
           const lid = item.leagueId ?? item.league ?? "unknown";
           return normalizeMatch(item, lid, idx);
-        });
+        }));
         setAllMatches((prev) => deduplicateMatches([...prev, ...normalized]));
         setDataSource((prev) => batch._dataSource ?? prev);
         setIsMockData((m) => m || !!batch._isMockData);
@@ -1150,11 +1152,11 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
           }
         }
 
-        const normalized = raw.map((item: any, idx: number) => {
+        const normalized = applyPickLedgerToAll(raw.map((item: any, idx: number) => {
           // Use "unknown" instead of first league — avoids wrongly assigning to Premier League
           const lid = item.leagueId ?? item.league ?? "unknown";
           return normalizeMatch(item, lid, idx);
-        });
+        }));
         // Deduplicate: same match from different sources (e.g. "Wolves" vs "Wolverhampton Wanderers")
         const deduped = deduplicateMatches(normalized);
         setAllMatches(deduped);
@@ -2660,6 +2662,22 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   />
                 );
               })()}
+              {/* #192: the rendered prognosis is a frozen snapshot — say so */}
+              {selectedMatch?.picksFrozen && (
+                <div
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, margin: "10px 0 2px",
+                    padding: "7px 12px", borderRadius: 8, fontSize: "0.68rem",
+                    background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)",
+                    color: "#93c5fd",
+                  }}
+                >
+                  <Lock size={12} style={{ flex: "none" }} />
+                  {selectedMatch.picksFrozen === "kickoff"
+                    ? "Prognóstico congelado no kickoff — atualizar a página não altera os picks publicados."
+                    : "Exibindo o último prognóstico com odds — a atualização mais recente veio sem odds e foi descartada."}
+                </div>
+              )}
               {(() => {
                 const mapped = mapToMatchAnalysis(detailData);
                 return (
