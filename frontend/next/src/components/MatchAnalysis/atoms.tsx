@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C, CLS } from "./constants";
-import { calcQuarterKelly, calcStakeOportunidade } from "@/components/BankrollCard";
+import { calcQuarterKelly, calcStakeOportunidade, familyGateReason, familyStakePolicy } from "@/components/BankrollCard";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { ClassificationKey, PickData, PickResult } from "./types";
 
@@ -124,6 +124,24 @@ export const StakeRow = ({
   const stakeValue = Math.max(Math.round(bankroll * (activePct / 100) * 100) / 100, 0);
 
   if (bankroll <= 0 || pick.classification === "NO_BET") return null;
+
+  // #189-e: gate por família — cartões informativo; escanteios só extremas
+  if (familyStakePolicy(pick.label) === "none") {
+    return (
+      <div
+        style={{
+          padding: "6px 10px",
+          borderRadius: 5,
+          background: "rgba(255,255,255,0.02)",
+          border: `1px solid ${C.border}`,
+          fontSize: 10,
+          color: C.t3,
+        }}
+      >
+        {familyGateReason(pick.label)}
+      </div>
+    );
+  }
 
   // Sem odd real não há EV nem stake — ocultar a linha inteira em vez de
   // sugerir valor (o card já mostra "Odd sem odd" logo acima).

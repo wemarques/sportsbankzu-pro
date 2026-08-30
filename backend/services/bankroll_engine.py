@@ -241,6 +241,16 @@ def compute_stake(
             "haircut": 1.0,
         }
 
+    # #189-e: gate por familia — cartoes informativo, escanteios so extremas
+    _allowed, _fam = family_stake_allowed(_gate_market_label(market_output))
+    if not _allowed:
+        return {
+            "stake": 0.0,
+            "stake_reason": f"family_gate_{_fam}",
+            "kelly_raw": 0.0,
+            "haircut": 1.0,
+        }
+
     # No stake for NO_BET or plain NEUTRO
     try:
         cls = MarketClassification(classification)
@@ -391,6 +401,15 @@ def compute_stake_oportunidade(
             "mode": "oportunidade", "desconto_ev": 1.0, "custo_por_100": 0,
         }
 
+    # #189-e: gate por familia
+    _allowed, _fam = family_stake_allowed(_gate_market_label(market_output))
+    if not _allowed:
+        return {
+            "stake": 0.0, "stake_pct": 0.0,
+            "stake_reason": f"family_gate_{_fam}",
+            "mode": "oportunidade", "desconto_ev": 1.0, "custo_por_100": 0,
+        }
+
     # 2. EV deflacionado
     ev = prob * book_odd - 1.0  # EV como decimal (-0.10 = -10%)
 
@@ -478,6 +497,50 @@ def apply_daily_cap(
         s["daily_capped"] = True
 
     return all_stakes
+
+
+# ─── #189-e: Gate de stake por FAMÍLIA de mercado ───
+# Base: decomposição de 5.505 picks auditados (29-30/08/2026):
+#   gols/BTTS  → Δ Brier vs mercado POSITIVO em toda liga onde opera
+#   cartões    → Δ ≈ -0,2% uniforme no mundo todo (modelo = consenso - vig)
+#   escanteios → edge só em linhas extremas (Over >= 10.5 / Under <= 9.5)
+# Cartões ficam INFORMATIVOS (pick visível, stake 0) até a re-medição
+# pós #189-b + fator de árbitro (janela de 60 dias). Vale para TODAS as
+# ligas — o Brasileirão A permanece ativo sob esta mesma política.
+FAMILY_STAKE_POLICY = {
+    "goals": "full",
+    "1x2": "full",
+    "corners": "extreme_lines",
+    "cards": "none",
+}
+CORNER_EXTREME_OVER_MIN = 10.5
+CORNER_EXTREME_UNDER_MAX = 9.5
+
+
+def family_stake_allowed(market_label: str) -> "tuple[bool, str]":
+    """(permitido, familia) para o rótulo de mercado dado (#189-e)."""
+    import re
+    fam = _market_family(market_label)
+    policy = FAMILY_STAKE_POLICY.get(fam, "full")
+    if policy == "full":
+        return True, fam
+    if policy == "none":
+        return False, fam
+    # extreme_lines (escanteios)
+    m = re.search(r"(over|under)\s*(\d+\.?\d*)", (market_label or "").lower())
+    if not m:
+        return False, fam
+    line = float(m.group(2))
+    if m.group(1) == "over" and line >= CORNER_EXTREME_OVER_MIN:
+        return True, fam
+    if m.group(1) == "under" and line <= CORNER_EXTREME_UNDER_MAX:
+        return True, fam
+    return False, fam
+
+
+def _gate_market_label(market_output: Dict[str, Any]) -> str:
+    return (market_output.get("market_type") or market_output.get("selection")
+            or market_output.get("mercado") or market_output.get("display_label") or "")
 
 
 def _market_family(market_type: str) -> str:

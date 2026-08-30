@@ -62,7 +62,50 @@ CALIBRATED_MARKETS = [
     "Escanteios Under 10.5",
     "Escanteios Under 11.5",
     "Escanteios Under 12.5",
+    # #189-e: cartões entram no loop de aprendizado. Era a família com mais
+    # volume (ex.: 59% dos picks do Brasileirão A) e a ÚNICA fora do
+    # CALIBRATED_MARKETS — o retrain diário nunca a tocava.
+    "Cartoes Over 1.5",
+    "Cartoes Over 2.5",
+    "Cartoes Over 3.5",
+    "Cartoes Over 4.5",
+    "Cartoes Over 5.5",
+    "Cartoes Under 2.5",
+    "Cartoes Under 3.5",
+    "Cartoes Under 4.5",
+    "Cartoes Under 5.5",
+    "Cartoes Under 6.5",
 ]
+
+# ─── #189-e: Calibração hierárquica FAMÍLIA → LIGA ───
+# As células (mercado × liga) quase nunca atingem MIN_SAMPLES_LEAGUE=50
+# (~200 picks/liga espalhados por 12-17 mercados) — o retrain girava em
+# falso e caía em passthrough. A hierarquia poola por família de mercado:
+#   mercado|liga → família|liga → família|global → passthrough
+# A liga só desvia do global quando acumula evidência própria.
+
+_FAMILY_PREFIX = "family"
+
+
+def _market_family_label(market: str) -> str:
+    """Classifica um rótulo de mercado do audit_results em família."""
+    ml = (market or "").lower()
+    if "escanteio" in ml or "corner" in ml:
+        return "escanteios"
+    if "cart" in ml or "card" in ml:
+        return "cartoes"
+    if "btts" in ml or "ambas" in ml:
+        return "btts"
+    if "over" in ml or "under" in ml:
+        return "gols"
+    if "1x2" in ml or "double" in ml or "dupla" in ml or "dc" in ml:
+        return "x1x2_dc"
+    return "outros"
+
+
+def _family_markets(family: str) -> list:
+    """Mercados do CALIBRATED_MARKETS pertencentes à família."""
+    return [m for m in CALIBRATED_MARKETS if _market_family_label(m) == family]
 
 # Approximate season-start months per league (Aug for most European, Feb for SA)
 _SEASON_STARTS: Dict[str, int] = {
@@ -269,14 +312,20 @@ def calibrate_prob(
 ) -> float:
     """Calibrate a single probability using a persisted Isotonic model.
 
-    Falls back: league model → regime model → passthrough.
+    #189-e — cadeia hierárquica de fallback:
+        mercado|liga → mercado|regime → mercado|global
+        → família|liga → família|global → passthrough
     Expects prob in 0-1 scale; returns 0-1 scale.
     """
-    # Try league-specific model first
+    family = _market_family_label(market)
+    fam_market = f"{_FAMILY_PREFIX} {family}"
+    # Try league-specific model first, then family pools (#189-e)
     for key in [
         _model_key(market, league_id, ""),
         _model_key(market, "", regime),
         _model_key(market, "", ""),
+        _model_key(fam_market, league_id, ""),
+        _model_key(fam_market, "", ""),
     ]:
         model_path = _MODELS_DIR / f"{key}.pkl"
         if model_path.exists():
@@ -327,6 +376,74 @@ def calibrate_match_stats(
     return stats
 
 
+def train_family_calibrator(family: str, league_id: str = "") -> Optional[dict]:
+    """#189-e: treina um calibrador POOL por família de mercado.
+
+    Junta as amostras de todos os mercados da família (numa liga, ou
+    global quando league_id="") — células gordas que atingem o mínimo
+    de amostras mesmo onde as células mercado×liga morriam de fome.
+    Mesmo protocolo do train_calibrator: TimeSeriesSplit + aceita só se
+    o Brier calibrado não piora.
+    """
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.model_selection import TimeSeriesSplit
+
+    markets = _family_markets(family)
+    if not markets:
+        return None
+
+    xs, ys = [], []
+    for m in markets:
+        X_m, y_m = _load_training_data(m, league_id=league_id)
+        if len(X_m):
+            xs.append(X_m)
+            ys.append(y_m)
+    if not xs:
+        return None
+    X = np.concatenate(xs)
+    y = np.concatenate(ys)
+
+    label = f"{_FAMILY_PREFIX} {family}|{league_id or 'global'}"
+    min_needed = MIN_SAMPLES_LEAGUE if league_id else MIN_SAMPLES_REGIME
+    if len(X) < min_needed:
+        logger.info(f"[Calibrator] {label}: only {len(X)} samples — skipped")
+        return None
+
+    tscv = TimeSeriesSplit(n_splits=min(N_SPLITS, max(2, len(X) // 20)))
+    brier_raw_all, brier_cal_all = [], []
+    for train_idx, test_idx in tscv.split(X):
+        iso = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
+        iso.fit(X[train_idx], y[train_idx])
+        cal_test = iso.predict(X[test_idx])
+        brier_raw_all.append(_brier_score(X[test_idx], y[test_idx]))
+        brier_cal_all.append(_brier_score(cal_test, y[test_idx]))
+
+    brier_raw = float(np.mean(brier_raw_all))
+    brier_cal = float(np.mean(brier_cal_all))
+    if brier_cal > brier_raw + BRIER_IMPROVEMENT_THRESHOLD:
+        logger.info(
+            f"[Calibrator] {label}: rejected — raw Brier={brier_raw:.4f}, "
+            f"calibrated={brier_cal:.4f}"
+        )
+        return {"label": label, "accepted": False, "brier_raw": round(brier_raw, 4),
+                "brier_calibrated": round(brier_cal, 4), "n_samples": len(X)}
+
+    iso_final = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
+    iso_final.fit(X, y)
+    _MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    key = _model_key(f"{_FAMILY_PREFIX} {family}", league_id, "")
+    model_path = _MODELS_DIR / f"{key}.pkl"
+    with open(model_path, "wb") as f:
+        pickle.dump(iso_final, f)
+    logger.info(
+        f"[Calibrator] {label}: accepted — raw Brier={brier_raw:.4f}, "
+        f"calibrated={brier_cal:.4f}, n={len(X)}"
+    )
+    return {"label": label, "accepted": True, "brier_raw": round(brier_raw, 4),
+            "brier_calibrated": round(brier_cal, 4), "n_samples": len(X),
+            "model_path": str(model_path)}
+
+
 def retrain_all_calibrators() -> list:
     """Retrain calibrators for all markets and leagues with enough data.
 
@@ -358,7 +475,32 @@ def retrain_all_calibrators() -> list:
             logger.warning(f"[Calibrator] Error training {market}|{league}: {e}")
             results.append({"label": f"{market}|{league}", "error": str(e)})
 
-    logger.info(f"[Calibrator] retrain_all completed: {len(results)} calibrators processed")
+    # #189-e: treina os pools por família — global e por liga observada.
+    families = ["gols", "btts", "escanteios", "cartoes", "x1x2_dc"]
+    leagues_seen = sorted({row[1] for row in rows if row[1]})
+    for fam in families:
+        try:
+            r = train_family_calibrator(fam)  # global
+            if r:
+                results.append(r)
+        except Exception as e:
+            results.append({"label": f"{_FAMILY_PREFIX} {fam}|global", "error": str(e)})
+        for lg in leagues_seen:
+            try:
+                r = train_family_calibrator(fam, league_id=lg)
+                if r:
+                    results.append(r)
+            except Exception as e:
+                results.append({"label": f"{_FAMILY_PREFIX} {fam}|{lg}", "error": str(e)})
+
+    # #189-e: telemetria do retrain — falha de aprendizado vira número, não silêncio.
+    accepted = sum(1 for r in results if r.get("accepted"))
+    rejected = sum(1 for r in results if r.get("accepted") is False)
+    errors = sum(1 for r in results if "error" in r)
+    logger.info(
+        f"[Calibrator] retrain_all completed: {len(results)} processed | "
+        f"accepted={accepted} rejected={rejected} errors={errors}"
+    )
     return results
 
 

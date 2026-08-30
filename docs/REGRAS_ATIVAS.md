@@ -720,3 +720,32 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `grep -n "await_min_odd" backend/services/bankroll_engine.py frontend/next/src/components/BankrollCard.tsx` (backend; frontend usa "Aguarde odd")
 **Verificação:** `grep -n "home_cards_against and away_cards_against" backend/modeling/cards_engine.py`
 **Verificação:** `pytest tests/unit/test_deflation_continuous_189.py tests/unit/test_cards_cross_189.py tests/unit/test_viavel_floor_ev_189.py tests/unit/test_calibrator_179.py -q`
+
+### #189-e — Stake por família com edge comprovado + calibração hierárquica + alias de liga
+
+**Tipo:** Fix + Regra permanente (Bankroll + Modelo + Dados)
+**Relacionado:** #056, #094, #148, #171 (reusa _market_family), #185 (alias), #189-a/b/d
+
+1. **Stake segue `FAMILY_STAKE_POLICY` (bankroll_engine):** goals/1x2 = full;
+   corners = só linhas extremas (Over ≥ 10.5 / Under ≤ 9.5); cards = none
+   (INFORMATIVO: pick visível, stake 0, `stake_reason="family_gate_cards"`).
+   Base: Δ Brier vs mercado em 5.505 picks (29-30/08/2026). Reativar stake de
+   cartões EXIGE re-medição pós #189-b + fator de árbitro (janela 60 dias) com
+   Δ positivo e nova entrada aqui. Frontend espelha via `familyStakePolicy()`.
+2. **Calibração é hierárquica:** `mercado|liga → mercado|regime →
+   mercado|global → família|liga → família|global → passthrough`. Pools por
+   família treinados em `retrain_all_calibrators` com o mesmo protocolo
+   anti-piora de Brier. Cartões pertencem a CALIBRATED_MARKETS — não remover.
+3. **Lookup de `_LEAGUE_DEFLATION` passa por `_league_deflation_factor()`**
+   (resolve alias #185 antes do get). Novo fator de liga = nova entrada com o
+   id CANÔNICO.
+4. **IDs de liga no audit_results são canônicos** — merges em
+   `migrate_189e_unify_league_ids.py` (idempotente; rodar após deploy).
+   Novo alias observado = adicionar ao LEAGUE_LABEL_MERGES e re-rodar.
+5. **Fetch diário usa `ACTIVE_LEAGUES()`** (13 ligas; 9 inativas com
+   `active: false` em leagues.ts). Reativar liga = flag + entrada aqui.
+
+**Verificação:** `grep -n "FAMILY_STAKE_POLICY\|family_stake_allowed" backend/services/bankroll_engine.py`
+**Verificação:** `grep -n "train_family_calibrator\|_FAMILY_PREFIX" backend/modeling/calibrator.py`
+**Verificação:** `grep -n "_league_deflation_factor" backend/services/ev_classification.py`
+**Verificação:** `pytest tests/unit/test_family_gate_189e.py -q`

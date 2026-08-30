@@ -2,6 +2,35 @@
 
 import React from "react";
 
+/* ── #189-e: gate de stake por família de mercado ──
+   Base: decomposição de 5.505 picks auditados — gols/BTTS com edge em toda
+   liga; cartões Δ≈-0,2% uniforme (informativo, sem stake); escanteios só
+   linhas extremas (Over ≥ 10.5 / Under ≤ 9.5). */
+export type FamilyPolicy = "full" | "none";
+export function familyStakePolicy(label: string): FamilyPolicy {
+  const ml = (label || "").toLowerCase();
+  const isCorner = ml.includes("escante") || ml.includes("corner");
+  const isCard = ml.includes("cart") || ml.includes("card") || ml.includes("booking");
+  if (isCard) return "none";
+  if (isCorner) {
+    const m = ml.match(/(over|under)\s*(\d+\.?\d*)/);
+    if (!m) return "none";
+    const line = parseFloat(m[2]);
+    if (m[1] === "over" && line >= 10.5) return "full";
+    if (m[1] === "under" && line <= 9.5) return "full";
+    return "none";
+  }
+  return "full"; // gols, BTTS, 1X2/DC
+}
+
+export function familyGateReason(label: string): string {
+  const ml = (label || "").toLowerCase();
+  if (ml.includes("cart") || ml.includes("card")) {
+    return "Cartões: informativo — família sem edge comprovado vs mercado";
+  }
+  return "Escanteios: stake apenas em linhas extremas (≥10.5 / ≤9.5)";
+}
+
 /* ── Quarter Kelly calculation (#148) ── */
 export function calcQuarterKelly(
   prob: number,

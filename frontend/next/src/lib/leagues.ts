@@ -10,6 +10,10 @@ export type League = {
   apiEndpoints: {
     footystats: string;
   };
+  /** #189-e: ligas inativas ficam listadas mas fora do fetch/portfolio.
+   *  Base: analise de 5.505 picks (Wilson + Δ Brier vs mercado, 29/08/2026).
+   *  Brasileirao A permanece ATIVO em modo correcao (decisao 30/08). */
+  active?: boolean;
 };
 
 export type Match = {
@@ -250,6 +254,12 @@ export type MatchPrediction = {
   marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
 };
 
+/** #189-e: ligas com fetch/stake habilitados (13 = nucleo 8 + observacao 4
+ *  + Brasileirao A em modo correcao). As demais ficam visiveis em
+ *  Campeonatos mas fora do dashboard diario. */
+export const ACTIVE_LEAGUES = (): League[] =>
+  AVAILABLE_LEAGUES.filter((l) => l.active !== false);
+
 export const AVAILABLE_LEAGUES: League[] = [
   {
     id: "premier-league",
@@ -305,6 +315,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "a-league",
+    active: false,
     name: "A-League",
     country: "Austrália",
     countryFlag: "🇦🇺",
@@ -318,6 +329,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "pro-league",
+    active: false,
     name: "Pro League",
     country: "Bélgica",
     countryFlag: "🇧🇪",
@@ -357,6 +369,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "denmark-superliga",
+    active: false,
     name: "Superliga",
     country: "Dinamarca",
     countryFlag: "🇩🇰",
@@ -370,6 +383,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "france-ligue-1",
+    active: false,
     name: "Ligue 1",
     country: "França",
     countryFlag: "🇫🇷",
@@ -383,6 +397,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "germany-bundesliga",
+    active: false,
     name: "Bundesliga",
     country: "Alemanha",
     countryFlag: "🇩🇪",
@@ -422,6 +437,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "italy-serie-b",
+    active: false,
     name: "Serie B",
     country: "Itália",
     countryFlag: "🇮🇹",
@@ -461,6 +477,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "scotland-premiership",
+    active: false,
     name: "Premiership",
     country: "Escócia",
     countryFlag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
@@ -487,6 +504,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "turkey-super-lig",
+    active: false,
     name: "Süper Lig",
     country: "Turquia",
     countryFlag: "🇹🇷",
@@ -513,6 +531,7 @@ export const AVAILABLE_LEAGUES: League[] = [
   },
   {
     id: "colombia-primera-a",
+    active: false,
     name: "Campeonato Colombiano",
     country: "Colômbia",
     countryFlag: "🇨🇴",

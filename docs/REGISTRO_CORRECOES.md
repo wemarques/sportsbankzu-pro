@@ -9505,3 +9505,28 @@ Auditoria de cálculos de 2026-08-29 encontrou três defeitos independentes:
 
 ### Lição aprendida
 Função-degrau sobre score contínuo cria inversões de ordenação nas fronteiras — interpolar entre nós preserva a intenção das bandas sem as descontinuidades. Kelly ≤ 0 não é "Kelly conservador", é EV ≤ 0 — floor sobre Kelly ≤ 0 é aposta garantidamente perdedora no agregado; o substituto correto é o estado ordem-limite (aguardar a odd atingir a fair). E a mesma lição do #189 original: sentinela numérica (0.0 de `_safe_float`) atravessa aritmética como se fosse dado medido.
+
+## 189-e — Gate de stake por família + calibração hierárquica família→liga + alias de liga na deflação + unificação de IDs no audit + ligas ativas
+**Data:** 2026-08-30 | **Arquivos:** backend/services/bankroll_engine.py, backend/modeling/calibrator.py, backend/services/ev_classification.py, backend/migrations/migrate_189e_unify_league_ids.py (novo), frontend/next/src/components/BankrollCard.tsx, frontend/next/src/components/MatchAnalysis/atoms.tsx, frontend/next/src/components/MatchDetailCard.tsx, frontend/next/src/app/dashboard/page.tsx, frontend/next/src/lib/leagues.ts, tests/unit/test_family_gate_189e.py (novo) | **Severidade:** Alta | **Status:** Implementado
+
+### Problema identificado
+Decomposição de 5.505 picks auditados (29-30/08/2026), Δ Brier vs mercado por família e liga:
+1. **Cartões sem edge:** Δ ≈ -0,2% uniforme no mundo todo (modelo ≈ consenso - vig), e era a família de MAIOR volume (ex.: 59% dos picks do Brasileirão A) — apostava-se em escala na única família comprovadamente sem vantagem.
+2. **Escanteios com edge só em linhas extremas** (Over ≥ 10.5 / Under ≤ 9.5); linhas médias sem vantagem.
+3. **Calibrador girando em falso:** células mercado×liga quase nunca atingem MIN_SAMPLES_LEAGUE=50 (~200 picks/liga em 12-17 mercados) → retrain caía em passthrough. Cartões nem estavam em CALIBRATED_MARKETS — a maior família NUNCA entrava no loop de aprendizado.
+4. **Fator de deflação de liga nunca aplicado via dashboard:** o fluxo passa ids de frontend ('brazil-serie-a') e `_LEAGUE_DEFLATION` é chaveado pelo canônico ('brasileirao-serie-a') — lookup sempre falhava (alias #185 não resolvido antes do get).
+5. **Histórico de liga fragmentado no audit_results:** "Brasileirao Serie A" (n=396) + "Brazil Serie A" (n=24) contados como ligas distintas (idem League One/Two), diluindo células de treino.
+
+### Correções aplicadas (camadas)
+- **`FAMILY_STAKE_POLICY` + `family_stake_allowed()` (bankroll_engine):** goals/1x2 = full; corners = extreme_lines (Over ≥ 10.5, Under ≤ 9.5); cards = none. Gate aplicado em `compute_stake` E `compute_stake_oportunidade` (`stake_reason="family_gate_<fam>"`); pick continua VISÍVEL (informativo), stake 0. Vale para TODAS as ligas; Brasileirão A permanece ativo sob a mesma política (modo correção, decisão 30/08). Cartões voltam a valer stake somente após re-medição pós #189-b + fator de árbitro (janela 60 dias) com Δ Brier positivo.
+- **Frontend espelhado:** `familyStakePolicy()`/`familyGateReason()` em BankrollCard; StakeRow e MatchDetailCard mostram o motivo em vez de stake; dashboard exclui família "none" do portfólio Kelly.
+- **Calibração hierárquica (calibrator):** cadeia de fallback `mercado|liga → mercado|regime → mercado|global → família|liga → família|global → passthrough`; `train_family_calibrator()` poola amostras por família (mesmo protocolo: TimeSeriesSplit + aceita só se Brier não piora); `retrain_all_calibrators` treina os pools global e por liga observada e loga accepted/rejected/errors. Cartões (Over 1.5–5.5, Under 2.5–6.5) adicionados a CALIBRATED_MARKETS.
+- **Alias na deflação:** `_league_deflation_factor()` resolve `_canonical_league` (#185) antes do lookup em `_LEAGUE_DEFLATION` — fator 0.90 do Brasileirão passa a ser aplicado de fato nos dois caminhos (live e shadow).
+- **Migração `migrate_189e_unify_league_ids.py`:** unifica os rótulos fragmentados no audit_results (PG + SQLite, idempotente). Rodar 1x após deploy: `python -m backend.migrations.migrate_189e_unify_league_ids`.
+- **Ligas ativas (`leagues.ts`):** flag `active` + `ACTIVE_LEAGUES()`; 9 ligas fora do fetch diário (a-league, pro-league, denmark-superliga, france-ligue-1, germany-bundesliga, italy-serie-b, scotland-premiership, turkey-super-lig, colombia-primera-a), restantes 13 = núcleo 8 + observação 4 + Brasileirão A em correção. Inativas seguem visíveis em Campeonatos.
+
+### Testes
+9 novos em `test_family_gate_189e.py` (política por família incl. fronteiras de linha; gate bloqueando cartões com EV+ nos dois modos; escanteio linha média vs extrema; gols pleno; alias de deflação; fallback para modelo de família e precedência da célula específica). Suíte `tests/unit/`: **312 passed, 0 failed**.
+
+### Lição aprendida
+Volume de picks não é evidência de edge — a família com mais volume era a única sem vantagem mensurável; medir Δ Brier vs mercado por família ANTES de permitir stake. Células de treino esparsas pedem pooling hierárquico, não threshold menor. E chaves de dicionário por id de liga exigem canonicalização na fronteira — o alias #185 resolvido só em um dos caminhos deixou o fator de liga morto por meses.

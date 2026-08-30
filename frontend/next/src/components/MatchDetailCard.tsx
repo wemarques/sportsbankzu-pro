@@ -17,7 +17,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
-import { calcQuarterKelly } from "./BankrollCard";
+import { calcQuarterKelly, familyGateReason, familyStakePolicy } from "./BankrollCard";
 import ClassificationBadge from "./ClassificationBadge";
 import { getClassificationDisplay } from "@/lib/classifications";
 import "../styles/match-detail-card.css";
@@ -898,6 +898,10 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                 )}
                                 {/* Stake suggestion (#094) */}
                                 {(() => {
+                                  // #189-e: gate por familia de mercado
+                                  if (familyStakePolicy(pred.mercado ?? "") === "none") {
+                                    return <div className="stake-no-value">{familyGateReason(pred.mercado ?? "")}</div>;
+                                  }
                                   const hasRealOdd = pred.book_odd != null && pred.book_odd > 1;
                                   if (!hasRealOdd) {
                                     return <div className="stake-no-value">Sem odd real — stake nao calculavel</div>;

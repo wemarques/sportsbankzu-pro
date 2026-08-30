@@ -36,6 +36,19 @@ _LEAGUE_DEFLATION = {
 }
 
 
+def _league_deflation_factor(league_id: str) -> float:
+    """#189-e: resolve o alias (#185) ANTES do lookup no dicionário estático.
+
+    O fluxo do dashboard passa ids de frontend ('brazil-serie-a'); o
+    dicionário é chaveado pelo id canônico ('brasileirao-serie-a').
+    Sem esta resolução, o fator 0.90 do Brasileirão nunca era aplicado.
+    """
+    if not league_id:
+        return 1.0
+    lid = _canonical_league(league_id) or league_id
+    return _LEAGUE_DEFLATION.get(lid, 1.0)
+
+
 # #189-a: nós da deflação contínua. Cada nó ancora o valor da antiga banda
 # no PONTO MÉDIO da banda (a banda [0.60, 0.70) valia 0.15 → nó em 0.65);
 # entre nós a deflação é interpolada linearmente. Isso elimina as
@@ -100,9 +113,9 @@ def apply_probability_deflation(prob: float, league_id: str = "") -> float:
     deflation = _band_deflation(prob)
     deflated = prob * (1.0 - deflation)
 
-    # Per-league factor (never below 0.85)
+    # Per-league factor (never below 0.85) — alias-aware (#189-e)
     if league_id:
-        factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+        factor = _league_deflation_factor(league_id)
         deflated *= max(factor, 0.85)
 
     return max(deflated, 0.05)
@@ -131,7 +144,7 @@ def apply_probability_deflation_with_shadow(prob: float, league_id: str = "") ->
     shadow = prob * (1.0 - shadow_def)
 
     if league_id:
-        factor = _LEAGUE_DEFLATION.get(league_id, 1.0)
+        factor = _league_deflation_factor(league_id)  # alias-aware (#189-e)
         f_capped = max(factor, 0.85)
         current *= f_capped
         shadow *= f_capped
@@ -163,7 +176,7 @@ def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str)
     # Applying full band deflation on top causes double-penalty (~64% → ~44%).
     # #152: halve band deflation for BTTS to prevent excessive cumulative deflation.
     deflation_band = _band_deflation(calibrated)
-    per_league_factor = _LEAGUE_DEFLATION.get(league_id, 1.0) if league_id else 1.0
+    per_league_factor = _league_deflation_factor(league_id) if league_id else 1.0  # alias-aware (#189-e)
     if market.upper() == "BTTS":
         half_deflation = deflation_band / 2.0
         result = calibrated * (1.0 - half_deflation)
@@ -201,7 +214,7 @@ def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str)
     # Kill-switch signal: if Lambda Error Médio > 1.0 in next audit, revisit.
     extra_under_applied = False
     if "under" in market.lower() and "2.5" in market:
-        if _DEFAULT_OU_DEFLATION >= 1.0 and league_id not in _LEAGUE_DEFLATION:
+        if _DEFAULT_OU_DEFLATION >= 1.0 and (_canonical_league(league_id) or league_id) not in _LEAGUE_DEFLATION:
             # Legacy path: no lambda-level deflation → apply #113 safety penalty.
             result *= 0.90
             extra_under_applied = True

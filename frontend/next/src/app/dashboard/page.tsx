@@ -11,14 +11,14 @@ import MatchDetailCard, {
 } from "@/components/MatchDetailCard";
 import { MatchAnalysis } from "@/components/MatchAnalysis";
 import { mapToMatchAnalysis } from "@/lib/matchDataMapper";
-import { AVAILABLE_LEAGUES, type Match, type MatchPrediction } from "@/lib/leagues";
+import { ACTIVE_LEAGUES, AVAILABLE_LEAGUES, type Match, type MatchPrediction } from "@/lib/leagues";
 import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
 import { runLocalAudit, fetchMistralEvaluation } from "@/lib/localAudit";
 import BatchAuditPanel from "@/components/BatchAuditPanel";
 import LeagueConfidenceBadge, { ConfidenceLegend } from "@/components/LeagueConfidenceBadge";
-import BankrollCard, { calcQuarterKelly } from "@/components/BankrollCard";
+import BankrollCard, { calcQuarterKelly, familyStakePolicy } from "@/components/BankrollCard";
 import type { StakeMode } from "@/components/BankrollCard";
 import ReliabilityCard from "@/components/ReliabilityCard";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
@@ -1041,7 +1041,7 @@ export default function Dashboard() {
       // (e.g. "week" data persisting when switching back to "today")
       setAllMatches([]);
 
-      const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+      const allLeagueIds = ACTIVE_LEAGUES().map((l) => l.id).join(","); // #189-e: só ligas ativas
 
       /** Backend espera "today" | "tomorrow" | "week" (timezone BRT), não YYYY-MM-DD */
       function dateParamFor(mode: DateMode): string {
@@ -1491,7 +1491,7 @@ export default function Dashboard() {
     setErrorCode(null);
     setDataSource(null);
     setAllMatches([]);
-    const allLeagueIds = AVAILABLE_LEAGUES.map((l) => l.id).join(",");
+    const allLeagueIds = ACTIVE_LEAGUES().map((l) => l.id).join(","); // #189-e: só ligas ativas
 
     const onBatchReady = (batch: MatchesResponse) => {
       const raw = batch.matches ?? [];
@@ -2589,7 +2589,7 @@ export default function Dashboard() {
               )}
               {/* Bankroll Card (#094) */}
               {detailData.predictions && detailData.predictions.length > 0 && (() => {
-                const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && p.book_odd != null && p.book_odd > 1);
+                const evPicks = detailData.predictions.filter((p) => (p.ev ?? 0) > 0 && p.book_odd != null && p.book_odd > 1 && familyStakePolicy((p as any).mercado ?? "") !== "none"); // #189-e
                 const stakes = evPicks.map((p) => calcQuarterKelly(
                   (p.calibrated_probability ?? (p.prob_max ?? 50) / 100),
                   p.book_odd!,
