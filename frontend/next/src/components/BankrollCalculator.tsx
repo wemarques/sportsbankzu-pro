@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   DollarSign,
   TrendingUp,
@@ -46,6 +46,7 @@ import {
   KELLY_MULTIPLIERS,
   MAX_STAKE_PCT,
 } from "@/lib/kelly";
+import { getBankroll, subscribeBankroll } from "@/lib/bankrollStore";
 
 /* ── Types from combinadas API ── */
 interface CombinadaLeg {
@@ -1404,10 +1405,27 @@ export default function BankrollCalculator() {
     setBankrollInput(saved.bankroll.toString());
   }, []);
 
-  // Save settings on change
+  // Save settings on change (#190: skip the first pass so DEFAULT_SETTINGS never
+  // overwrites the persisted bankroll before the load effect above lands)
+  const skipFirstSave = useRef(true);
   useEffect(() => {
+    if (skipFirstSave.current) {
+      skipFirstSave.current = false;
+      return;
+    }
     saveSettings(settings);
   }, [settings]);
+
+  // #190: reflect bankroll changes made on the dashboard / other tabs live
+  useEffect(
+    () =>
+      subscribeBankroll(() => {
+        const v = getBankroll();
+        setSettings((s) => (s.bankroll === v ? s : { ...s, bankroll: v }));
+        setBankrollInput((prev) => (parseFloat(prev) === v ? prev : v.toString()));
+      }),
+    []
+  );
 
   // Fetch combinadas
   const fetchData = useCallback(async () => {

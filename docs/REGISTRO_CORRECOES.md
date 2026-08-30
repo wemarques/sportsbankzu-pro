@@ -9560,3 +9560,40 @@ Extração e consumo de odds são dois contratos separados — o #144 entregou a
 
 ### Resumo
 Camada visual do #189-e, sem mudança de cálculo: (1) pick de família sem stake (gate #189-e) veste badge cinza **INFO** com tooltip, em vez do azul "VIÁVEL" que contradizia o "sem stake" — `getPickDisplay()`/`INFO_DISPLAY` em classifications.ts, ProbBar dessaturada; (2) AICard em carregamento mostra "analisando…" pulsante em vez de "5%" inventado (`aiLoading` propagado via toDetailData/matchDataMapper); (3) loading do dashboard exibe contagem real de ligas carregadas (`X/ACTIVE_LEAGUES`) em vez de spinner mudo; (4) bloco "MERCADOS ANALISADOS — NÃO RECOMENDADOS" relegibilizado: mercado em t1, números tabulares em t2, motivo vira chip compacto (`shortReason`, texto completo no title); (5) `fmtMercado()` acentua rótulos só no display ("Cartões") — backend mantém ASCII como chave.
+
+## 190 — Banca unificada: fonte única de verdade entre dashboard e Gestão de Banca
+**Data:** 2026-08-30 | **Arquivos:** frontend/next/src/lib/bankrollStore.ts (novo), frontend/next/src/lib/kelly.ts, frontend/next/src/app/dashboard/page.tsx, frontend/next/src/components/BankrollCalculator.tsx | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Auditoria de produto de 2026-08-28 ("Estado não sincronizado entre telas"): a banca vivia em dois stores independentes do localStorage — `sportsbankzu-bankroll` (número puro, dashboard/Destaques, default 250) e `sportsbankzu_bankroll_settings` (JSON da Gestão de Banca via kelly.ts, default 1000). Alterar a banca numa tela nunca refletia na outra; os valores só coincidiam por acaso.
+
+### Causa raiz
+Dois pontos de persistência criados em momentos diferentes (#094 dashboard, Gestão de Banca depois) sem contrato comum; nenhum evento de sincronização entre telas/abas.
+
+### Correções aplicadas
+- **Camada 1 — store canônico** (`bankrollStore.ts`): `sportsbankzu-bankroll` vira o valor canônico; `getBankroll()` migra o valor legado do JSON quando o canônico não existe; `setBankroll()` grava o canônico, mantém o JSON coerente e notifica assinantes (CustomEvent na mesma aba, evento `storage` entre abas); `useBankroll()` via `useSyncExternalStore`.
+- **Camada 2 — kelly.ts**: `loadSettings()` passa a compor o bankroll a partir do store canônico (o JSON guarda apenas percentuais e modo Kelly); `saveSettings()` propaga para o canônico.
+- **Camada 3 — telas**: dashboard inicializa e persiste via store e assina mudanças externas; `BankrollCalculator` idem, e o efeito de auto-save pula a primeira passada para `DEFAULT_SETTINGS` nunca sobrescrever o valor persistido antes do load (bug latente pré-existente).
+- Default unificado em 1000 (era 250 no dashboard e 1000 na Gestão).
+
+### Lição aprendida
+Estado compartilhado entre telas precisa de um único dono com API de assinatura desde o primeiro uso — o segundo ponto de persistência deveria ter reutilizado o primeiro, não criado uma chave nova.
+
+## 191 — Rotas com URL para as seções do dashboard (deep links compartilháveis)
+**Data:** 2026-08-30 | **Arquivos:** frontend/next/src/app/dashboard/page.tsx, frontend/next/src/app/{campeonatos,ferramentas,destaques,duplas,glossario}/page.tsx (novos) | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Auditoria de produto de 2026-08-28 ("Navegação sem URLs"): as seções eram apenas estado local (`navView`) — `/destaques` devolvia 404, nada era compartilhável ou favoritável, e o botão Voltar do navegador saía do app em vez de voltar de seção.
+
+### Causa raiz
+Navegação por `useState` sem espelhamento na URL e sem rotas correspondentes no App Router.
+
+### Correções aplicadas
+- Mapa `VIEW_PATHS`/`PATH_TO_VIEW` (`/dashboard`, `/campeonatos`, `/ferramentas`, `/destaques`, `/duplas`, `/glossario`).
+- `changeView()` troca a seção e sincroniza a URL com `history.pushState` nativo (router-aware desde o Next 14.2) — a navegação interna não remonta o dashboard nem refaz o fetch dos jogos.
+- Listener de `popstate`: Voltar/Avançar do navegador troca de seção sem remontar.
+- Rotas wrapper (server components) renderizam o dashboard com `initialView`, tornando cada seção deep-linkável com metadata própria; deep link em `/duplas` dispara `fetchCombinadas` assim que os jogos carregam.
+- `/bankroll` (Gestão de Banca) permanece página própria, agora sincronizada via #190.
+
+### Lição aprendida
+Navegação por estado local deve nascer espelhada na URL — o custo é um mapa de paths e um listener; o custo de adiar é uma auditoria inteira apontando 404 em seções principais.

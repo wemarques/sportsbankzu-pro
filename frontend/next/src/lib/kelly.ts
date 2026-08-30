@@ -8,6 +8,8 @@
  * and scenario-based return calculations.
  */
 
+import { getBankroll, setBankroll } from "./bankrollStore";
+
 /** Maximum fraction of bankroll allowed on a single bet (safety cap) */
 export const MAX_STAKE_PCT = 0.05; // 5% hard cap per bet
 
@@ -587,18 +589,23 @@ export const DEFAULT_SETTINGS: BankrollSettings = {
 
 export function loadSettings(): BankrollSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  let settings = DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_SETTINGS;
+    settings = DEFAULT_SETTINGS;
   }
+  // #190: the bankroll amount is owned by the shared store (single source of truth
+  // with the dashboard); this JSON keeps only allocation percentages and Kelly mode.
+  return { ...settings, bankroll: getBankroll() };
 }
 
 export function saveSettings(settings: BankrollSettings): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  // #190: propagate to the canonical store so the dashboard sees the change live.
+  setBankroll(settings.bankroll);
 }
 
 export const KELLY_MULTIPLIERS: Record<BankrollSettings["kellyMode"], number> = {

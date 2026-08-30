@@ -29,6 +29,7 @@ import Glossary from "@/components/Glossary";
 import DestaquesDoDia from "@/components/DestaquesDoDia";
 import { fmtMercado, getClassificationDisplay, getPickDisplay } from "@/lib/classifications";
 import { useRole } from "@/hooks/useRole";
+import { getBankroll, setBankroll as persistBankroll, subscribeBankroll } from "@/lib/bankrollStore";
 import {
   Star,
   ChevronLeft,
@@ -134,6 +135,24 @@ function CombinadaCardDash({ c }: { c: Combinada }) {
 const SHARE_TEXT = "Confira os jogos e picks gerados no SportsBankZU Pro.";
 
 type NavView = "matches" | "campeonatos" | "ferramentas" | "recomendadas" | "duplas" | "glossario";
+
+/**
+ * #191: every section has a shareable URL (audit 2026-08-28 — "navegacao sem URLs").
+ * Section switches use native history.pushState (router-aware since Next 14.2), so
+ * in-app navigation never remounts the dashboard nor refetches matches; the wrapper
+ * routes (src/app/destaques, /duplas, ...) make each path directly linkable.
+ */
+const VIEW_PATHS: Record<NavView, string> = {
+  matches: "/dashboard",
+  campeonatos: "/campeonatos",
+  ferramentas: "/ferramentas",
+  recomendadas: "/destaques",
+  duplas: "/duplas",
+  glossario: "/glossario",
+};
+const PATH_TO_VIEW: Record<string, NavView> = Object.fromEntries(
+  (Object.entries(VIEW_PATHS) as [NavView, string][]).map(([view, path]) => [path, view])
+);
 type ShareFeedbackTone = "success" | "error" | "info";
 
 type OddsTab = "1x2" | "double-chance" | "btts" | "goals" | "cards" | "corners";
@@ -665,7 +684,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
 
 /* ── COMPONENT ── */
 
-export default function Dashboard() {
+export default function Dashboard({ initialView = "matches" }: { initialView?: NavView } = {}) {
   const { canSeeAudit, canSeeReasonCodes, canRegenMistral, canSeeFerramentas, canSeeConfiabilidade } = useRole();
   const [mounted, setMounted] = useState(false);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
@@ -679,7 +698,15 @@ export default function Dashboard() {
   const [oddsTab, setOddsTab] = useState<OddsTab>("1x2");
   const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
   const [dateMode, setDateMode] = useState<DateMode>("today");
-  const [navView, setNavView] = useState<NavView>("matches");
+  const [navView, setNavViewState] = useState<NavView>(initialView);
+
+  // #191: switch section and keep the URL in sync without remounting the page.
+  const changeView = useCallback((view: NavView) => {
+    setNavViewState(view);
+    if (typeof window !== "undefined" && window.location.pathname !== VIEW_PATHS[view]) {
+      window.history.pushState(null, "", VIEW_PATHS[view]);
+    }
+  }, []);
   const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => {
     if (typeof window !== "undefined") {
@@ -704,13 +731,8 @@ export default function Dashboard() {
   const [reliabilityData, setReliabilityData] = useState<any>(null);
   const [reliabilityLoading, setReliabilityLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [bankroll, setBankroll] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sportsbankzu-bankroll");
-      if (saved) { const v = parseFloat(saved); if (!isNaN(v) && v > 0) return v; }
-    }
-    return 250;
-  });
+  // #190: bankroll comes from the shared store (single source of truth with Gestao de Banca)
+  const [bankroll, setBankroll] = useState<number>(() => getBankroll());
   const [stakeMode, setStakeMode] = useState<StakeMode>(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("sportsbankzu-stake-mode") as StakeMode) || "kelly";
@@ -852,6 +874,25 @@ export default function Dashboard() {
       setCombindasLoading(false);
     }
   }, [allMatches]);
+
+  // #191: browser back/forward switches the section without remounting the page.
+  useEffect(() => {
+    const onPopState = () => {
+      const view = PATH_TO_VIEW[window.location.pathname] ?? "matches";
+      setNavViewState(view);
+      if (view === "duplas" && !combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [combinadas, combinadasLoading, fetchCombinadas, combinadasMinStatus]);
+
+  // #191: deep link directly on /duplas — load the combinadas as soon as matches arrive.
+  useEffect(() => {
+    if (navView === "duplas" && !combinadas && !combinadasLoading && allMatches.length > 0) {
+      fetchCombinadas(combinadasMinStatus);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMatches.length]);
 
   const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
 
@@ -1249,11 +1290,14 @@ export default function Dashboard() {
     });
   }, []);
 
-  // Persist bankroll to localStorage (#094)
+  // Persist bankroll via the shared store (#094, unified in #190)
   const handleBankrollChange = useCallback((v: number) => {
     setBankroll(v);
-    try { localStorage.setItem("sportsbankzu-bankroll", v.toString()); } catch {}
+    persistBankroll(v);
   }, []);
+
+  // #190: reflect bankroll changes made on Gestao de Banca / other tabs live
+  useEffect(() => subscribeBankroll(() => setBankroll(getBankroll())), []);
 
   // Persist stakeMode to localStorage (#149)
   const handleStakeModeChange = useCallback((mode: StakeMode) => {
@@ -1798,21 +1842,21 @@ export default function Dashboard() {
           sports<span>bankzu</span>
         </div>
         <div className="st-nav__links">
-          <button className={`st-nav__link ${navView === "campeonatos" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "campeonatos" ? "matches" : "campeonatos")}>
+          <button className={`st-nav__link ${navView === "campeonatos" ? "st-nav__link--active" : ""}`} onClick={() => changeView(navView === "campeonatos" ? "matches" : "campeonatos")}>
             <Trophy size={14} />
             Campeonatos
           </button>
           {canSeeFerramentas && (
-          <button className={`st-nav__link ${navView === "ferramentas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "ferramentas" ? "matches" : "ferramentas")}>
+          <button className={`st-nav__link ${navView === "ferramentas" ? "st-nav__link--active" : ""}`} onClick={() => changeView(navView === "ferramentas" ? "matches" : "ferramentas")}>
             <Wrench size={14} />
             Ferramentas
           </button>
           )}
-          <button className={`st-nav__link ${navView === "recomendadas" ? "st-nav__link--active" : ""}`} onClick={() => setNavView(navView === "recomendadas" ? "matches" : "recomendadas")}>
+          <button className={`st-nav__link ${navView === "recomendadas" ? "st-nav__link--active" : ""}`} onClick={() => changeView(navView === "recomendadas" ? "matches" : "recomendadas")}>
             <Sparkles size={14} />
             Destaques do Dia
           </button>
-          <button className={`st-nav__link ${navView === "duplas" ? "st-nav__link--active" : ""}`} onClick={() => { const next = navView === "duplas" ? "matches" : "duplas"; setNavView(next); if (next === "duplas" && !combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
+          <button className={`st-nav__link ${navView === "duplas" ? "st-nav__link--active" : ""}`} onClick={() => { const next = navView === "duplas" ? "matches" : "duplas"; changeView(next); if (next === "duplas" && !combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
             <Layers size={14} />
             Duplas
           </button>
@@ -1850,7 +1894,7 @@ export default function Dashboard() {
             {navView === "campeonatos" && (
               <div className="st-view-panel">
                 <div className="st-view-header">
-                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <button className="st-view-back" onClick={() => changeView("matches")}><ArrowLeft size={14} /> Voltar</button>
                   <h2 className="st-view-title"><Trophy size={16} /> Campeonatos</h2>
                 </div>
                 <div className="st-view-content">
@@ -1860,7 +1904,7 @@ export default function Dashboard() {
                       <div
                         key={league.id}
                         className="st-league-card"
-                        onClick={() => { setSelectedLeague(league.id); setNavView("matches"); }}
+                        onClick={() => { setSelectedLeague(league.id); changeView("matches"); }}
                       >
                         <span className="st-league-card__flag">{league.countryFlag}</span>
                         <div className="st-league-card__info">
@@ -1884,7 +1928,7 @@ export default function Dashboard() {
             {navView === "ferramentas" && (
               <div className="st-view-panel">
                 <div className="st-view-header">
-                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <button className="st-view-back" onClick={() => changeView("matches")}><ArrowLeft size={14} /> Voltar</button>
                   <h2 className="st-view-title"><Wrench size={16} /> Ferramentas</h2>
                 </div>
                 <div className="st-view-content">
@@ -1896,7 +1940,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </a>
-                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("goals"); }}>
+                  <div className="st-tool-card" onClick={() => { changeView("matches"); setOddsTab("goals"); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(255,187,51,0.1)" }}><BarChart3 size={20} style={{ color: "#ffbb33" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Comparativo de Gols</span>
@@ -1904,7 +1948,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
-                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("btts"); }}>
+                  <div className="st-tool-card" onClick={() => { changeView("matches"); setOddsTab("btts"); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Target size={20} style={{ color: "#9d50ff" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Analise BTTS</span>
@@ -1912,7 +1956,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
-                  <div className="st-tool-card" onClick={() => { setNavView("matches"); setOddsTab("corners"); }}>
+                  <div className="st-tool-card" onClick={() => { changeView("matches"); setOddsTab("corners"); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(0,187,255,0.1)" }}><Zap size={20} style={{ color: "#00bbff" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Escanteios & Cartoes</span>
@@ -1920,7 +1964,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
-                  <div className="st-tool-card" onClick={() => setNavView("recomendadas")}>
+                  <div className="st-tool-card" onClick={() => changeView("recomendadas")}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(255,68,68,0.1)" }}><Sparkles size={20} style={{ color: "#ff4444" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Recomendadas do Dia</span>
@@ -1928,7 +1972,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
-                  <div className="st-tool-card" onClick={() => { setNavView("duplas"); if (!combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
+                  <div className="st-tool-card" onClick={() => { changeView("duplas"); if (!combinadas && !combinadasLoading) fetchCombinadas(combinadasMinStatus); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Layers size={20} style={{ color: "#c4a0ff" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Duplas (Intra/Inter)</span>
@@ -1944,7 +1988,7 @@ export default function Dashboard() {
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </a>
-                  <div className="st-tool-card" onClick={() => setNavView("glossario")}>
+                  <div className="st-tool-card" onClick={() => changeView("glossario")}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(74,158,255,0.1)" }}><Search size={20} style={{ color: "#4a9eff" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Glossario</span>
@@ -1960,7 +2004,7 @@ export default function Dashboard() {
             {navView === "glossario" && (
               <div className="st-view-panel">
                 <div className="st-view-header">
-                  <button className="st-view-back" onClick={() => setNavView("ferramentas")}><ArrowLeft size={14} /> Voltar</button>
+                  <button className="st-view-back" onClick={() => changeView("ferramentas")}><ArrowLeft size={14} /> Voltar</button>
                   <h2 className="st-view-title"><Search size={16} /> Glossario</h2>
                 </div>
                 <div className="st-view-content">
@@ -1974,12 +2018,9 @@ export default function Dashboard() {
               <DestaquesDoDia
                 matches={allMatches}
                 bankroll={bankroll}
-                onBankrollChange={(v) => {
-                  setBankroll(v);
-                  if (typeof window !== "undefined") localStorage.setItem("sportsbankzu-bankroll", v.toString());
-                }}
-                onBack={() => setNavView("matches")}
-                onSelectMatch={(id) => { setSelectedMatchId(id); setNavView("matches"); }}
+                onBankrollChange={handleBankrollChange}
+                onBack={() => changeView("matches")}
+                onSelectMatch={(id) => { setSelectedMatchId(id); changeView("matches"); }}
               />
             )}
 
@@ -1987,7 +2028,7 @@ export default function Dashboard() {
             {navView === "duplas" && (
               <div className="st-view-panel">
                 <div className="st-view-header">
-                  <button className="st-view-back" onClick={() => setNavView("matches")}><ArrowLeft size={14} /> Voltar</button>
+                  <button className="st-view-back" onClick={() => changeView("matches")}><ArrowLeft size={14} /> Voltar</button>
                   <h2 className="st-view-title"><Layers size={16} /> Duplas</h2>
                 </div>
                 <div className="st-view-subtitle">Combinadas intra-jogo e inter-jogo com maior probabilidade</div>
