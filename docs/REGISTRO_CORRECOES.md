@@ -9621,3 +9621,23 @@ Prognóstico é publicação, não view derivada: o que o usuário viu antes do 
 
 ### Resumo
 A branch `fix/190-191-banca-unificada-rotas-url` (banca unificada #190, rotas com URL #191, pick ledger #192) foi rebaseada sobre a main que já continha o #189-g (UX do gate de família) — as duas frentes reescreviam `dashboard/page.tsx` em regiões próximas. Conflito textual só no REGISTRO (aditivo, entradas preservadas em ordem); o dashboard auto-mergeou e foi verificado semanticamente: dos #189-g sobrevivem `getPickDisplay`/`fmtMercado` na lista de picks, os dois loaders com contagem real `X/ACTIVE_LEAGUES()` e o `aiLoading` no `toDetailData`; da branch sobrevivem `VIEW_PATHS`/`changeView` (zero `setNavView(` órfão), banca 100% via `bankrollStore` (zero acesso direto ao localStorage) e `applyPickLedgerToAll` nos dois pontos de ingestão. Validação: `tsc --noEmit` limpo + suíte backend 318 passed. Merge fast-forward na main.
+
+## 194 — Live: relógio fiel ao feed + contrato do overlay + crash que congelava o /live-scores
+**Data:** 2026-08-31 | **Arquivos:** frontend/next/src/lib/liveClock.ts (novo), frontend/next/src/hooks/useLiveTick.ts (novo), frontend/next/src/app/dashboard/page.tsx, frontend/next/src/app/api/matches/live/route.ts, frontend/next/src/components/{MatchDetailCard,MatchAnalysis/*}, frontend/next/src/lib/{leagues,matchDataMapper}.ts, backend/routes/fixtures.py, tests/unit/test_live_scores_contract_190.py (novo) | **Severidade:** Alta | **Status:** Corrigido
+*(Nota: os commits de origem rotulam "(#190)" — numeração da sessão que gerou o patch; nesta série o #190 é a banca unificada, então a entrada canônica é esta, #194.)*
+
+### Problema identificado
+1. **Relógio do card inventava tempo de jogo:** `computeLiveInfo` fazia `Math.max(minuto do feed, estimativa pelo kickoff)` assumindo 45+15+45 cravado — Osasuna x Getafe exibia 2T 59' com o feed reportando 2T 49'. Acréscimos saturavam em 45'/90' e o intervalo mostrava "45' restantes".
+2. **Um jogo ruim congelava o live de todos:** no `/live-scores`, o log de diagnóstico lia `detail_candidate.home` ANTES do guard de None — quando o /match individual do FootyStats falhava, a AttributeError subia até o except da rota e a resposta inteira caía para cache/vazio.
+3. **Matching frágil e contrato ambíguo:** o campo `id` ora era FootyStats, ora API-Football — a comparação por ID nunca batia e tudo caía no casamento por nome de time; `nextUpdate` divergia por caminho de retorno e o front o ignorava.
+
+### Correções aplicadas
+- **`liveClock.ts`:** o feed é a única fonte do minuto; kickoff só entra sem minuto nenhum; interpolação entre polls ancorada em `minuteUpdatedAt` com teto de 3 min (feed travado congela e exibe "~"); acréscimos (45+2') e INT exibidos como tais; `minutesLeft` substitui `90 - minute`. `useLiveTick`: um setInterval global de 10s no lugar do re-render forçado de 30s.
+- **Contrato do overlay (fixtures.py):** guard de None ANTES do log (com teste de regressão); `footystatsId`/`apiFootballId` canônicos por registro; `observedAtUnix` + `serverTimeUnix` para ancorar o relógio pela idade real do dado (a rota pode servir do cache de resiliência de 5 min); `minuteSource` distingue cronômetro real de minuto estimado; `_LIVE_NEXT_UPDATE = 20s` unificado.
+- **Cliente:** casa por ID canônico primeiro (nome como último recurso, compatível com payload antigo); âncora desconta idade do dado; minuto estimado exibido atenuado; intervalo de polling vem do backend com clamp 15–60s.
+
+### Testes
+4 novos em `test_live_scores_contract_190.py` (regressão do crash de None incluída). Suíte `tests/unit/`: **322 passed**. `tsc --noEmit` e `lint:accents` limpos.
+
+### Lição aprendida
+Cliente nunca deve "melhorar" dado de feed com estimativa própria — `Math.max(real, estimado)` é o anti-padrão exato: quando divergem, o errado vence por construção. E log de diagnóstico é código de produção: acessar o objeto antes do guard transformou observabilidade em ponto único de falha da rota inteira.
