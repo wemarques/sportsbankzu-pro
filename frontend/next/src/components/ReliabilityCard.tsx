@@ -309,6 +309,12 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           <p><strong style={{ color: "#cbd5e1" }}>Fallback:</strong> Ativacao de caminho alternativo quando fonte primaria falha.</p>
         </div>
       </details>
+      <a
+        href="/performance-stats"
+        style={{ display: "block", textAlign: "center", marginTop: 14, fontSize: "0.72rem", fontWeight: 600, color: "#4ade80", textDecoration: "none" }}
+      >
+        Ver painel completo com gráficos → /performance-stats
+      </a>
     </div>
   );
 }

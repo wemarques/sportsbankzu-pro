@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { C, CLS } from "./constants";
+import { probColor } from "@/lib/chartTokens";
 import { calcQuarterKelly, calcStakeOportunidade, familyGateReason, familyStakePolicy } from "@/components/BankrollCard";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { ClassificationKey, PickData, PickResult } from "./types";
@@ -287,7 +288,8 @@ export const ProbBar = ({
 }) => {
   const pct = Math.round(prob * 100);
   const h = size === "sm" ? 4 : 5;
-  const color = muted ? "#9ca3af" /* #189-h: era #6b7280 (3,9:1) */ : pct >= 70 ? C.green : pct >= 50 ? C.gold : C.orange;
+  // #189-i: fonte única de cor semântica (chartTokens) — mesmos cortes, um só lugar
+  const color = probColor(prob, muted);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div
