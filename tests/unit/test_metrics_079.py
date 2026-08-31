@@ -52,7 +52,9 @@ def test_hit_rate_by_ev_band_correct_bands():
         {"ev_pct": 25.0, "outcome": False},
     ]
     result = compute_hit_rate_by_ev_band(picks)
-    assert len(result) == 4
+    # #196: passaram a existir duas faixas negativas — antes o EV entrava em
+    # valor absoluto e um pick de -25% era contado como +25%.
+    assert len(result) == 6
 
     band_0_5 = next(b for b in result if b["band"] == "0-5%")
     assert band_0_5["total"] == 2

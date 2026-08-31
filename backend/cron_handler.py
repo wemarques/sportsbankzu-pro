@@ -243,9 +243,23 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             if is_correct:
                 market_stats[market_key]["correct"] += 1
 
-            # Calculate EV for each pick
+            # #196: EV e odd do PROPRIO pick.
+            #
+            # Antes isto recalculava EV a partir de prob_max x odd_minima, que
+            # nao sao os insumos do EV exibido no card: o card usa a
+            # probabilidade calibrada (pos-deflacao) contra a odd real da casa,
+            # enquanto prob_max e o topo da faixa exibida e odd_minima cai para
+            # a odd justa (1/prob) quando nao ha odd real — nesse caso o EV
+            # recalculado dava exatamente zero. Resultado: a auditoria media um
+            # EV que ninguem viu na tela.
+            _odds_reais = merc.get("book_odd")
             odd_pick = merc.get("odd_minima", 0) or 0
-            prob_pick = merc.get("prob_max", 0) / 100.0 if merc.get("prob_max") else 0
+            _cal_prob = merc.get("calibrated_probability")
+            prob_pick = (
+                float(_cal_prob)
+                if _cal_prob is not None
+                else (merc.get("prob_max", 0) / 100.0 if merc.get("prob_max") else 0)
+            )
 
             # #195: Brier do proprio pick (probabilidade declarada vs desfecho)
             _cal = merc.get("calibrated_probability")
@@ -264,8 +278,16 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             if _p is not None and 0 < _p <= 1:
                 pick_brier_scores.append((_p - (1 if is_correct else 0)) ** 2)
             ev_pick = None
-            if odd_pick > 0 and prob_pick > 0:
+            _ev_field = merc.get("ev")  # fracao (0.213 = +21,3%), quando o pipeline v2 rodou
+            if _ev_field is not None:
+                try:
+                    ev_pick = float(_ev_field)
+                except (TypeError, ValueError):
+                    ev_pick = None
+            if ev_pick is None and odd_pick > 0 and prob_pick > 0:
+                # Fallback para mercados do caminho legado, que nao carregam `ev`.
                 ev_pick = (prob_pick * (odd_pick - 1)) - (1 - prob_pick)
+            if ev_pick is not None:
                 ev_values.append(ev_pick)
 
             # #083: collect for diagnostic engine
@@ -276,7 +298,11 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                 "acertou": is_correct,
                 "prob": prob_pick * 100 if prob_pick else 50,
                 "ev": (ev_pick or 0) * 100 if ev_pick else 0,
-                "odd": odd_pick,
+                # #196: ROI so faz sentido com a odd que existia de verdade;
+                # odd_minima vira a odd justa quando nao ha mercado, e isso
+                # inflava o retorno simulado.
+                "odd": float(_odds_reais) if _odds_reais else None,
+                "odd_display": odd_pick,
                 "lambda_home": stats.get("lambdaHome"),
                 "lambda_away": stats.get("lambdaAway"),
                 "draw_prob": stats.get("drawProb", 0),
@@ -316,7 +342,13 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                         "prob_shadow_v179": _shadow_v179,  # #179
                         "market": _norm_market,
                         "odd": odd_pick if odd_pick > 0 else None,
-                        "book_odd": odd_pick if odd_pick > 0 else None,
+                        # #196: `book_odd` so quando a odd e REAL. Antes gravava
+                        # odd_minima, que vira a odd justa (1/prob) quando nao ha
+                        # mercado — entao brier_implied, a "casa" na comparacao
+                        # modelo-vs-casa do /metrics/brier, era a propria
+                        # probabilidade do modelo nesses picks. Eles entravam com
+                        # delta zero e diluiam a vantagem medida.
+                        "book_odd": float(_odds_reais) if _odds_reais else None,
                     },
                     pick_type=merc_status,
                     ev=ev_pick,
@@ -565,7 +597,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
 
     # Hit Rate by EV band
     ev_band_picks = [
-        {"ev_pct": p.get("ev", 0), "outcome": p.get("acertou", False)}
+        {"ev_pct": p.get("ev", 0), "outcome": p.get("acertou", False), "odd": p.get("odd")}
         for p in all_evaluated_picks
     ]
     batch_summary["hit_rate_by_ev"] = compute_hit_rate_by_ev_band(ev_band_picks)
@@ -667,6 +699,16 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                 "brier_picks_n": len(pick_brier_scores),
                 "avg_lambda_error": avg_lambda_error,
                 "avg_ev": avg_ev,
+                # #196: estas quatro ja eram calculadas todo dia em
+                # batch_summary e morriam com o processo — o registro guardava
+                # 10 campos e nenhum deles. Sem historico de ROI e de acerto
+                # por faixa de EV nao ha como responder "os picks de VALOR
+                # DETECTADO se pagam?", que e a pergunta que importa: com odd
+                # longa, errar a maioria e lucrar sao compativeis.
+                "hit_rate_by_ev": batch_summary.get("hit_rate_by_ev", []),
+                "roi": batch_summary.get("roi", {}),
+                "ev_metrics": batch_summary.get("ev_metrics", {}),
+                "sharpe_ratio": batch_summary.get("sharpe_ratio"),
                 "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
             },
             match_status="cron_batch_audit",
@@ -770,6 +812,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "calibrators_retrained": len(calibrator_results),
         "diagnostic": diagnostic_report,
         "ev_metrics": batch_summary.get("ev_metrics", {}),
+        "hit_rate_by_ev": batch_summary.get("hit_rate_by_ev", []),
+        "roi": batch_summary.get("roi", {}),
         "weighted_accuracy": batch_summary.get("weighted_accuracy", {}),
     }
 

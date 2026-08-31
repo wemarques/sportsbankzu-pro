@@ -367,32 +367,58 @@ def compute_hit_rate_by_ev_band(
     picks: list[dict],
     bands: list[tuple] | None = None,
 ) -> list[dict]:
-    """Hit rate segmented by EV bands.
+    """Hit rate e ROI segmentados por faixa de EV.
 
-    picks: list of {"ev_pct": float, "outcome": bool}
-    bands: list of (low, high) tuples. Default: [(0,5), (5,10), (10,20), (20,100)]
-    Returns list of {"band": str, "total": int, "correct": int, "accuracy": float}
+    #196: o EV agora entra COM SINAL. A versao anterior fazia
+    `ev_val = abs(float(ev))`, entao um pick de EV -35% caia na mesma faixa
+    "20-100%" de um de +35% — justamente a faixa que a gente consulta para
+    saber se os "VALOR DETECTADO" se pagam. Como os mercados rejeitados
+    aparecem com EV bem negativo (-20% a -36%), a faixa alta vivia poluida
+    pelos piores picks do dia e a tabela nao respondia nada.
+
+    #196: faixas negativas passam a existir (antes um pick de EV negativo
+    era silenciosamente contado como positivo) e cada faixa devolve ROI,
+    que e a metrica que decide: com odd longa da para errar a maioria e
+    ainda lucrar, entao acuracia sozinha engana.
+
+    picks: {"ev_pct": float com sinal, "outcome": bool, "odd": float|None}
+    Retorna {band, total, correct, accuracy, roi, n_with_odds}.
     """
     if bands is None:
-        bands = [(0, 5), (5, 10), (10, 20), (20, 100)]
+        bands = [(-100, -10), (-10, 0), (0, 5), (5, 10), (10, 20), (20, 100)]
 
     band_data: dict[str, dict] = {}
     for low, high in bands:
-        label = f"{low}-{high}%"
-        band_data[label] = {"total": 0, "correct": 0}
+        band_data[f"{low}-{high}%"] = {
+            "total": 0, "correct": 0, "staked": 0.0, "returned": 0.0, "n_with_odds": 0,
+        }
 
     for pick in picks:
         ev = pick.get("ev_pct")
         outcome = pick.get("outcome")
         if ev is None or outcome is None:
             continue
-        ev_val = abs(float(ev))
+        try:
+            ev_val = float(ev)
+        except (TypeError, ValueError):
+            continue
         for low, high in bands:
             if low <= ev_val < high:
-                label = f"{low}-{high}%"
-                band_data[label]["total"] += 1
-                if bool(outcome):
-                    band_data[label]["correct"] += 1
+                d = band_data[f"{low}-{high}%"]
+                d["total"] += 1
+                hit = bool(outcome)
+                if hit:
+                    d["correct"] += 1
+                odd = pick.get("odd")
+                try:
+                    odd = float(odd) if odd is not None else None
+                except (TypeError, ValueError):
+                    odd = None
+                if odd and odd > 1:
+                    d["n_with_odds"] += 1
+                    d["staked"] += 1.0
+                    if hit:
+                        d["returned"] += odd
                 break
 
     result = []
@@ -400,7 +426,15 @@ def compute_hit_rate_by_ev_band(
         label = f"{low}-{high}%"
         d = band_data[label]
         acc = round(d["correct"] / d["total"], 4) if d["total"] > 0 else 0.0
-        result.append({"band": label, "total": d["total"], "correct": d["correct"], "accuracy": acc})
+        roi = round((d["returned"] - d["staked"]) / d["staked"], 4) if d["staked"] > 0 else None
+        result.append({
+            "band": label,
+            "total": d["total"],
+            "correct": d["correct"],
+            "accuracy": acc,
+            "roi": roi,
+            "n_with_odds": d["n_with_odds"],
+        })
     return result
 
 
