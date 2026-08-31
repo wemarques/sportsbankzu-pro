@@ -23,7 +23,7 @@ export default function RegisterPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao cadastrar"); setLoading(false); return; }
       router.push("/login?registered=true");
-    } catch { setError("Erro de conexao"); setLoading(false); }
+    } catch { setError("Erro de conexão"); setLoading(false); }
   }
 
   return (

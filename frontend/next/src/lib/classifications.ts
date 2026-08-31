@@ -16,25 +16,25 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     label: "ALTA CONFIANCA",
     color: "#00ff88",
     bgColor: "rgba(0,255,136,0.15)",
-    description: "Probabilidade alta, EV positivo, dados confiaveis, edge suficiente",
+    description: "Probabilidade alta, EV positivo, dados confiáveis, edge suficiente",
     tooltip:
-      "Classificacao maxima do modelo. Todos os criterios atingidos: probabilidade acima do threshold, valor esperado positivo, qualidade de dados alta e margem de vantagem significativa.",
+      "Classificação máxima do modelo. Todos os critérios atingidos: probabilidade acima do threshold, valor esperado positivo, qualidade de dados alta e margem de vantagem significativa.",
   },
   NEUTRO_QUALIFICADO: {
     label: "VALOR DETECTADO",
     color: "#ffd700",
     bgColor: "rgba(255,215,0,0.15)",
-    description: "EV positivo mas nao atinge todos os criterios SAFE — elegivel para combinadas",
+    description: "EV positivo mas nao atinge todos os critérios SAFE — elegível para combinadas",
     tooltip:
-      "O modelo detectou valor matematico (EV+), mas nem todos os criterios de alta confianca foram atingidos. Elegivel para duplas e combinadas.",
+      "O modelo detectou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegivel para duplas e combinadas.",
   },
   NEUTRO: {
     label: "VIÁVEL",
     color: "#60a5fa",
     bgColor: "rgba(96,165,250,0.12)",
-    description: "Mercado com chance real de acerto neste jogo, mas sem valor matematico de longo prazo",
+    description: "Mercado com chance real de acerto neste jogo, mas sem valor matemático de longo prazo",
     tooltip:
-      "O modelo identifica probabilidade razoavel para este jogo especifico. Nao atinge criterios de EV+ para recomendacao de aposta sistematica, mas e viavel como pick pontual.",
+      "O modelo identifica probabilidade razoável para este jogo específico. Nao atinge critérios de EV+ para recomendação de aposta sistematica, mas e viavel como pick pontual.",
   },
   NO_BET: {
     label: "BLOQUEADO",

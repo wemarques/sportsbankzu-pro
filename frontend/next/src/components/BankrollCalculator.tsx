@@ -1435,7 +1435,7 @@ export default function BankrollCalculator() {
       const res = await fetch("/api/combinadas?tipos=intra,inter&min_status=NEUTRO&limite_intra=15&limite_inter=15");
       if (!res.ok) throw new Error("Erro ao carregar dados");
       const data = await res.json();
-      if (data._error) throw new Error(data._error.message || "Backend indisponivel");
+      if (data._error) throw new Error(data._error.message || "Backend indisponível");
       setCombinadas(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
@@ -1560,7 +1560,7 @@ export default function BankrollCalculator() {
             </div>
             <div>
               <h1 className="text-xl font-black text-[var(--color-text-primary)] tracking-tight">
-                Gestao de Banca
+                Gestão de Banca
               </h1>
               <p className="text-[0.72rem] text-[var(--color-text-muted)]">
                 Distribuicao inteligente com criterio de Kelly
@@ -2127,7 +2127,7 @@ export default function BankrollCalculator() {
         {/* ── Footer disclaimer ── */}
         <div className="text-center pb-4">
           <p className="text-[0.62rem] text-[var(--color-text-muted)] leading-relaxed max-w-md mx-auto">
-            Gestao de banca baseada no criterio de Kelly fracionario. Os valores sao
+            Gestão de banca baseada no criterio de Kelly fracionario. Os valores sao
             sugestoes matematicas e nao garantem resultados. Aposte com responsabilidade.
           </p>
         </div>

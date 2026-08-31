@@ -15,21 +15,21 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "ALTA CONFIANCA",
     category: "classificacao",
     definition:
-      "Classificacao maxima — probabilidade alta, EV positivo, dados confiaveis e edge suficiente. Todos os criterios do modelo foram atingidos.",
+      "Classificação máxima — probabilidade alta, EV positivo, dados confiáveis e edge suficiente. Todos os critérios do modelo foram atingidos.",
     example: "Over 2.5 gols com prob 72%, EV +8.3%, edge 6.1%",
   },
   {
     term: "VALOR DETECTADO",
     category: "classificacao",
     definition:
-      "O modelo encontrou valor matematico (EV+), mas nem todos os criterios de alta confianca foram atingidos. Elegivel para combinadas e duplas.",
+      "O modelo encontrou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegivel para combinadas e duplas.",
     example: "BTTS Sim com prob 58%, EV +4.2%",
   },
   {
     term: "VIÁVEL",
     category: "classificacao",
     definition:
-      "Mercado com chance real de acerto neste jogo especifico, mas sem valor matematico (EV+) para aposta sistematica. Viavel como pick pontual.",
+      "Mercado com chance real de acerto neste jogo específico, mas sem valor matemático (EV+) para aposta sistematica. Viavel como pick pontual.",
   },
   {
     term: "BLOQUEADO",
@@ -43,7 +43,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Brier Score",
     category: "metrica",
     definition:
-      "Mede a precisao das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possivel). Quanto menor, melhor a calibracao do modelo.",
+      "Mede a precisão das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possivel). Quanto menor, melhor a calibracao do modelo.",
     example: "Brier 0.18 = boa calibracao; Brier 0.30 = precisa ajuste",
   },
   {
@@ -62,7 +62,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "EV (Expected Value)",
     category: "metrica",
     definition:
-      "Valor esperado do retorno por unidade apostada. EV positivo indica vantagem matematica a longo prazo.",
+      "Valor esperado do retorno por unidade apostada. EV positivo indica vantagem matemática a longo prazo.",
     example: "EV +5.2% = para cada R$100 apostados, espera-se ganhar R$5,20",
   },
   {
@@ -115,7 +115,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Lambda (L)",
     category: "modelo",
     definition:
-      "Media de gols esperados por time. Base do calculo Poisson. Combina dados da temporada, jogos recentes e xG com pesos calibrados.",
+      "Média de gols esperados por time. Base do calculo Poisson. Combina dados da temporada, jogos recentes e xG com pesos calibrados.",
   },
   {
     term: "Rho (r)",
@@ -133,8 +133,8 @@ export const GLOSSARY: GlossaryEntry[] = [
 
 export const GLOSSARY_CATEGORIES = {
   todos: "Todos",
-  classificacao: "Classificacoes",
-  metrica: "Metricas",
+  classificacao: "Classificações",
+  metrica: "Métricas",
   mercado: "Mercados",
   modelo: "Modelo",
 } as const;

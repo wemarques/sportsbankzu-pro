@@ -204,7 +204,7 @@ export default function BankrollCard({
               {stakeMode === "kelly" ? "Quarter Kelly \u00B7 Cap 5%" : "Stake por Confian\u00E7a \u00B7 Cap vari\u00E1vel"}
             </span>
           </div>
-          <span className="bkr-badge">EDITAVEL</span>
+          <span className="bkr-badge">EDITÁVEL</span>
         </div>
       </div>
 
@@ -288,7 +288,7 @@ export default function BankrollCard({
       )}
 
       <div className="bkr-disclaimer">
-        Gestao de risco: nunca aposte mais do que pode perder. O stake sugerido e matematico, nao garantia de lucro.
+        Gestão de risco: nunca aposte mais do que pode perder. O stake sugerido é matemático, não uma garantia de lucro.
       </div>
     </div>
   );

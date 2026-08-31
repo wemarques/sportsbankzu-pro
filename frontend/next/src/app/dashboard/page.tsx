@@ -640,7 +640,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
   // #189-g: sem porcentagem falsa durante o loading — o AICard mostra estado
   // indeterminado ("analisando…") via aiLoading; confidence 0 nunca e exibida.
   const ai: AIAnalysis | undefined = isAiLoading
-    ? { summary: "Carregando analise Mistral...", key_points: ["Buscando insights..."], recommendation: "Aguardando.", confidence: 0, last_updated: new Date().toLocaleString("pt-BR") }
+    ? { summary: "Carregando análise Mistral...", key_points: ["Buscando insights..."], recommendation: "Aguardando.", confidence: 0, last_updated: new Date().toLocaleString("pt-BR") }
     : aiData ?? undefined;
   return {
     id: match.id,
@@ -662,7 +662,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
       const li = computeLiveInfo(match);
       return li?.minute ?? match.minute;
     })(),
-    venue: { name: match.venue || "Estadio nao informado" },
+    venue: { name: match.venue || "Estádio não informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
       homeOrDraw: parseFloat((1 / (1 / h + 1 / d)).toFixed(2)),
@@ -733,7 +733,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   const [reliabilityData, setReliabilityData] = useState<any>(null);
   const [reliabilityLoading, setReliabilityLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
-  // #190: bankroll comes from the shared store (single source of truth with Gestao de Banca)
+  // #190: bankroll comes from the shared store (single source of truth with Gestão de Banca)
   const [bankroll, setBankroll] = useState<number>(() => getBankroll());
   const [stakeMode, setStakeMode] = useState<StakeMode>(() => {
     if (typeof window !== "undefined") {
@@ -864,10 +864,10 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
       if (!res.ok) {
         const errObj = data?._error;
         const errKind = errObj?.kind;
-        if (errKind === "NOT_CONFIGURED") throw new Error("Backend nao configurado. Verifique a variavel PY_BACKEND_URL.");
+        if (errKind === "NOT_CONFIGURED") throw new Error("O serviço de análise ainda não foi configurado neste ambiente. Fale com o administrador do site.");
         if (errKind === "TIMEOUT") throw new Error("Timeout ao conectar com o backend. Tente novamente.");
-        if (errKind === "CONNECTION_ERROR") throw new Error("Backend indisponivel. Verifique se o servidor esta rodando.");
-        throw new Error((errObj?.message as string) || `Servidor indisponivel (HTTP ${res.status}). Tente novamente em instantes.`);
+        if (errKind === "CONNECTION_ERROR") throw new Error("Não foi possível conectar ao serviço de análise. Verifique sua internet e tente novamente em instantes.");
+        throw new Error((errObj?.message as string) || `Não conseguimos carregar os dados agora (código ${res.status}). Tente novamente em instantes.`);
       }
       setCombinadas(data);
     } catch (err) {
@@ -1298,7 +1298,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
     persistBankroll(v);
   }, []);
 
-  // #190: reflect bankroll changes made on Gestao de Banca / other tabs live
+  // #190: reflect bankroll changes made on Gestão de Banca / other tabs live
   useEffect(() => subscribeBankroll(() => setBankroll(getBankroll())), []);
 
   // Persist stakeMode to localStorage (#149)
@@ -1402,7 +1402,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
         audit_confidence: 0,
         validation: {
           probabilities: { status: "UNKNOWN", notes: `Erro ao executar auditoria: ${errMsg}` },
-          lambdas: { status: "UNKNOWN", notes: "O backend pode estar indisponivel ou em cold start." },
+          lambdas: { status: "UNKNOWN", notes: "O serviço de análise pode estar iniciando. Aguarde alguns segundos e atualize." },
           ev: { status: "UNKNOWN", notes: "Use 'Auditar Rodada' para auditoria instantanea sem depender do backend." },
         },
         audit_type: "error",
@@ -1695,7 +1695,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
     { key: "double-chance", label: "Dupla Chance" },
     { key: "btts", label: "BTTS" },
     { key: "goals", label: "Gols" },
-    { key: "cards", label: "Cartoes" },
+    { key: "cards", label: "Cartões" },
     { key: "corners", label: "Escanteios" },
   ];
 
@@ -1729,7 +1729,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   async function captureLeftPanelBlob() {
     const panel = capturePanelRef.current;
     if (!panel) {
-      throw new Error("Painel de captura nao encontrado.");
+      throw new Error("Não foi possível preparar a captura da tela. Recarregue a página e tente de novo.");
     }
     const target = navView === "matches"
       ? panel.querySelector<HTMLElement>("[data-capture-target='true']")
@@ -1778,14 +1778,14 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
       const blob = await captureLeftPanelBlob();
       const copied = await copyBlobToClipboard(blob);
       if (copied) {
-        setShareMessage("Tela copiada. Agora voce pode colar no WhatsApp (Ctrl+V).", "success");
+        setShareMessage("Tela copiada! Cole no WhatsApp com Ctrl+V.", "success");
         return;
       }
       const filename = buildScreenshotName();
       downloadBlob(blob, filename);
-      setShareMessage("Clipboard indisponivel. Imagem baixada automaticamente.", "info");
+      setShareMessage("Não foi possível copiar a imagem — ela foi baixada no seu dispositivo.", "info");
     } catch (error: any) {
-      setShareMessage(error?.message || "Nao foi possivel capturar a tela agora.", "error");
+      setShareMessage(error?.message || "Não foi possível capturar a tela agora. Tente de novo.", "error");
     } finally {
       setShareBusy(null);
     }
@@ -1829,7 +1829,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
       if (error?.name === "AbortError") {
         setShareMessage("Compartilhamento cancelado.", "info");
       } else {
-        setShareMessage(error?.message || "Nao foi possivel compartilhar no WhatsApp agora.", "error");
+        setShareMessage(error?.message || "Não foi possível compartilhar no WhatsApp agora. Tente de novo.", "error");
       }
     } finally {
       setShareBusy(null);
@@ -1881,7 +1881,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
             Buscar
             <kbd>Ctrl+K</kbd>
           </button>
-          <button className="st-nav__link" aria-label="Notificacoes">
+          <button className="st-nav__link" aria-label="Notificações">
             <Bell size={16} />
           </button>
         </div>
@@ -1940,7 +1940,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                     <div className="st-tool-card__icon" style={{ background: "rgba(0,255,136,0.1)" }}><Brain size={20} style={{ color: "#00ff88" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Auditoria AI (Mistral)</span>
-                      <span className="st-tool-card__desc">Analise inteligente com recomendacoes de apostas</span>
+                      <span className="st-tool-card__desc">Análise inteligente com recomendações de apostas</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </a>
@@ -1955,7 +1955,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   <div className="st-tool-card" onClick={() => { changeView("matches"); setOddsTab("btts"); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(157,80,255,0.1)" }}><Target size={20} style={{ color: "#9d50ff" }} /></div>
                     <div className="st-tool-card__info">
-                      <span className="st-tool-card__name">Analise BTTS</span>
+                      <span className="st-tool-card__name">Análise BTTS</span>
                       <span className="st-tool-card__desc">Both Teams To Score — probabilidades e odds</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
@@ -1963,7 +1963,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   <div className="st-tool-card" onClick={() => { changeView("matches"); setOddsTab("corners"); }}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(0,187,255,0.1)" }}><Zap size={20} style={{ color: "#00bbff" }} /></div>
                     <div className="st-tool-card__info">
-                      <span className="st-tool-card__name">Escanteios & Cartoes</span>
+                      <span className="st-tool-card__name">Escanteios & Cartões</span>
                       <span className="st-tool-card__desc">Medias de escanteios e cartoes por equipe</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
@@ -1972,7 +1972,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                     <div className="st-tool-card__icon" style={{ background: "rgba(255,68,68,0.1)" }}><Sparkles size={20} style={{ color: "#ff4444" }} /></div>
                     <div className="st-tool-card__info">
                       <span className="st-tool-card__name">Recomendadas do Dia</span>
-                      <span className="st-tool-card__desc">Jogos com maior confianca da analise AI</span>
+                      <span className="st-tool-card__desc">Jogos com maior confiança da análise AI</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
@@ -1987,7 +1987,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   <a href="/bankroll" className="st-tool-card">
                     <div className="st-tool-card__icon" style={{ background: "rgba(34,197,94,0.1)" }}><Calculator size={20} style={{ color: "#22c55e" }} /></div>
                     <div className="st-tool-card__info">
-                      <span className="st-tool-card__name">Gestao de Banca</span>
+                      <span className="st-tool-card__name">Gestão de Banca</span>
                       <span className="st-tool-card__desc">Distribua sua banca com criterio de Kelly entre simples e duplas</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
@@ -1995,8 +1995,8 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   <div className="st-tool-card" onClick={() => changeView("glossario")}>
                     <div className="st-tool-card__icon" style={{ background: "rgba(74,158,255,0.1)" }}><Search size={20} style={{ color: "#4a9eff" }} /></div>
                     <div className="st-tool-card__info">
-                      <span className="st-tool-card__name">Glossario</span>
-                      <span className="st-tool-card__desc">Termos, metricas e classificacoes explicados</span>
+                      <span className="st-tool-card__name">Glossário</span>
+                      <span className="st-tool-card__desc">Termos, métricas e classificações explicados</span>
                     </div>
                     <ChevronRight size={14} style={{ color: "var(--st-text-muted)" }} />
                   </div>
@@ -2009,7 +2009,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
               <div className="st-view-panel">
                 <div className="st-view-header">
                   <button className="st-view-back" onClick={() => changeView("ferramentas")}><ArrowLeft size={14} /> Voltar</button>
-                  <h2 className="st-view-title"><Search size={16} /> Glossario</h2>
+                  <h2 className="st-view-title"><Search size={16} /> Glossário</h2>
                 </div>
                 <div className="st-view-content">
                   <Glossary />
@@ -2179,7 +2179,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                     type="button"
                     className={`st-filter-btn ${reliabilityOpen ? "st-filter-btn--active" : ""}`}
                     onClick={handleReliabilityClick}
-                    title="Metricas de confiabilidade do sistema (Princeton framework)"
+                    title="Métricas de confiabilidade do sistema"
                     style={reliabilityOpen ? { borderColor: "rgba(96,165,250,0.5)", color: "#60a5fa" } : undefined}
                   >
                     {reliabilityLoading ? <Loader2 size={12} className="st-spin-icon" /> : <ShieldCheck size={12} />}
@@ -2709,13 +2709,13 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
             {reliabilityLoading ? (
               <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 40, textAlign: "center", color: "#64748b", border: "1px solid rgba(96,165,250,0.15)" }}>
                 <Loader2 size={20} className="st-spin-icon" style={{ marginBottom: 8 }} />
-                <div style={{ fontSize: "0.7rem" }}>Carregando metricas...</div>
+                <div style={{ fontSize: "0.7rem" }}>Carregando métricas…</div>
               </div>
             ) : reliabilityData ? (
               <ReliabilityCard data={reliabilityData} onClose={() => setReliabilityOpen(false)} />
             ) : (
               <div style={{ background: "rgba(10,15,26,0.97)", borderRadius: 12, padding: 30, textAlign: "center", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}>
-                <div style={{ fontSize: "0.7rem", marginBottom: 10 }}>Dados indisponiveis</div>
+                <div style={{ fontSize: "0.7rem", marginBottom: 10 }}>Não foi possível carregar as métricas. Tente de novo em instantes.</div>
                 <button onClick={handleReliabilityClick} style={{ fontSize: "0.6rem", padding: "5px 14px", borderRadius: 6, border: "1px solid rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)", color: "#60a5fa", cursor: "pointer" }}>Tentar novamente</button>
               </div>
             )}

@@ -93,7 +93,7 @@ function ModelBeatsHouseRow() {
 
   let value: React.ReactNode = <EmptyVal text="Carregando..." />;
   if (err) {
-    value = <EmptyVal text="Indisponivel" />;
+    value = <EmptyVal text="Indisponível" />;
   } else if (ci) {
     if (ci.below_min_n) {
       value = (
@@ -110,7 +110,7 @@ function ModelBeatsHouseRow() {
     } else {
       value = (
         <span style={{ color: "#f59e0b", fontWeight: 600, fontFamily: "monospace" }}>
-          Sem significancia (delta {ci.delta?.toFixed(4) ?? "?"}, p={ci.p_value?.toFixed(3) ?? "?"}, N={ci.n})
+          Sem significância (delta {ci.delta?.toFixed(4) ?? "?"}, p={ci.p_value?.toFixed(3) ?? "?"}, N={ci.n})
         </span>
       );
     }
@@ -167,10 +167,10 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
       `  Amostra (N): ${pred.n_total ?? 0} (min: 20)`,
       "",
       "\ud83d\udee1\ufe0f SEGURANCA",
-      `  Compliance: ${p(saf.compliance_rate ?? 1)}`,
+      `  Conformidade: ${p(saf.compliance_rate ?? 1)}`,
       `  Complementares bloqueados: ${saf.complementares_bloqueados ?? 0}`,
-      `  Contradicoes Mistral: ${saf.mistral_contradicoes ?? 0}`,
-      `  Acoes auditoria filtradas: ${saf.acoes_bloqueadas ?? 0}`,
+      `  Contradições da IA corrigidas: ${saf.mistral_contradicoes ?? 0}`,
+      `  Ações bloqueadas pela auditoria: ${saf.acoes_bloqueadas ?? 0}`,
       "",
       "\u26a1 ROBUSTEZ",
       `  API-Football: ${p(rob.api_football_success_rate)}`,
@@ -179,8 +179,8 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
       `  Fallbacks: ${rob.fallbacks_ativados ?? 0}`,
       "",
       "\ud83d\udd04 CONSISTENCIA",
-      `  Lambda avg: ${con.lambda_duration_avg_ms != null ? (con.lambda_duration_avg_ms / 1000).toFixed(1) + "s" : "N/A"}`,
-      `  Lambda p95: ${con.lambda_duration_p95_ms != null ? (con.lambda_duration_p95_ms / 1000).toFixed(1) + "s" : "N/A"}`,
+      `  Tempo de análise (média): ${con.lambda_duration_avg_ms != null ? (con.lambda_duration_avg_ms / 1000).toFixed(1) + "s" : "N/A"}`,
+      `  Tempo de análise (p95): ${con.lambda_duration_p95_ms != null ? (con.lambda_duration_p95_ms / 1000).toFixed(1) + "s" : "N/A"}`,
       `  CV: ${con.lambda_duration_cv?.toFixed(2) ?? "N/A"}`,
       "",
       `Gerado: ${new Date().toLocaleDateString("pt-BR")}, ${new Date().toLocaleTimeString("pt-BR")}`,
@@ -221,8 +221,8 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           borderRadius: 10, padding: "12px 16px", marginBottom: 16,
           fontSize: "0.75rem", color: "#93c5fd", lineHeight: 1.6,
         }}>
-          As metricas sao coletadas durante o uso do sistema.
-          Robustez e Consistencia resetam no cold start da Lambda.
+          As métricas sao coletadas durante o uso do sistema.
+          Robustez e Consistência resetam no cold start da Lambda.
           Previsibilidade vem do relatorio de auditoria de rodada.
         </div>
       )}
@@ -243,11 +243,11 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
         </DimCard>
 
         {/* Safety */}
-        <DimCard icon={"\ud83d\udee1\ufe0f"} title="Seguranca" color="#ef4444"
+        <DimCard icon={"\ud83d\udee1\ufe0f"} title="Segurança" color="#ef4444"
           score={displayRate(saf.compliance_rate ?? 1)} sub="compliance">
           <Row label="Complementares bloqueados" value={saf.complementares_bloqueados ?? 0} />
-          <Row label="Contradicoes Mistral" value={saf.mistral_contradicoes ?? 0} />
-          <Row label="Acoes auditoria filtradas" value={saf.acoes_bloqueadas ?? 0} />
+          <Row label="Contradições da IA corrigidas" value={saf.mistral_contradicoes ?? 0} />
+          <Row label="Ações bloqueadas pela auditoria" value={saf.acoes_bloqueadas ?? 0} />
         </DimCard>
 
         {/* Robustness */}
@@ -263,14 +263,14 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           <ApiBar label="API-Football" rate={rob.api_football_success_rate ?? 0} />
           <ApiBar label="FootyStats" rate={rob.footystats_success_rate ?? 0} />
           <ApiBar label="Mistral AI" rate={rob.mistral_success_rate ?? 0} />
-          <Row label="Fallbacks ativados" value={rob.fallbacks_ativados ?? 0} />
+          <Row label="Fontes alternativas acionadas" value={rob.fallbacks_ativados ?? 0} />
         </DimCard>
 
         {/* Consistency */}
-        <DimCard icon={"\ud83d\udd04"} title="Consistencia" color="#a78bfa"
-          score={con.lambda_duration_cv != null ? con.lambda_duration_cv.toFixed(2) : <EmptyVal />} sub="CV duration">
-          <Row label="Lambda avg" value={con.lambda_duration_avg_ms != null ? `${(con.lambda_duration_avg_ms / 1000).toFixed(1)}s` : null} />
-          <Row label="Lambda p95" value={con.lambda_duration_p95_ms != null ? `${(con.lambda_duration_p95_ms / 1000).toFixed(1)}s` : null} />
+        <DimCard icon={"\ud83d\udd04"} title="Consistência" color="#a78bfa"
+          score={con.lambda_duration_cv != null ? con.lambda_duration_cv.toFixed(2) : <EmptyVal />} sub="consistência do tempo de análise (CV)">
+          <Row label="Tempo de análise (média)" value={con.lambda_duration_avg_ms != null ? `${(con.lambda_duration_avg_ms / 1000).toFixed(1)}s` : null} />
+          <Row label="Tempo de análise (p95)" value={con.lambda_duration_p95_ms != null ? `${(con.lambda_duration_p95_ms / 1000).toFixed(1)}s` : null} />
           <Row label="Picks/jogo" value={con.picks_por_jogo_avg != null ? con.picks_por_jogo_avg.toFixed(1) : null} />
           {con.lambda_duration_avg_ms == null && (
             <div style={{ fontSize: "0.72rem", color: "#64748b", fontStyle: "italic", padding: "6px 0" }}>Dados acumulam durante o uso (reset no cold start)</div>
@@ -296,16 +296,16 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
         ))}
       </div>
 
-      {/* Glossario */}
+      {/* Glossário */}
       <details style={{ marginTop: 14 }} open={glossaryOpen} onToggle={(e) => setGlossaryOpen((e.target as HTMLDetailsElement).open)}>
         <summary style={{ fontSize: "0.75rem", color: "#94a3b8", cursor: "pointer", padding: "6px 0", fontWeight: 600 }}>
-          {glossaryOpen ? "\u25bc" : "\u25b6"} Glossario de termos
+          {glossaryOpen ? "\u25bc" : "\u25b6"} Glossário de termos
         </summary>
         <div style={{ fontSize: "0.68rem", color: "#94a3b8", lineHeight: 1.7, marginTop: 6 }}>
           <p><strong style={{ color: "#cbd5e1" }}>Brier Score:</strong> Erro quadratico medio das probabilidades (0 = perfeito, 1 = pessimo). Target: &lt; 0.22.</p>
           <p><strong style={{ color: "#cbd5e1" }}>ECE:</strong> Expected Calibration Error — mede se &quot;70% previsto = 70% real&quot;.</p>
-          <p><strong style={{ color: "#cbd5e1" }}>Compliance:</strong> Taxa de conformidade com regras operacionais (100% = zero violacoes).</p>
-          <p><strong style={{ color: "#cbd5e1" }}>CV (Coef. Variacao):</strong> Desvio padrao / media. CV &lt; 0.3 indica consistencia aceitavel.</p>
+          <p><strong style={{ color: "#cbd5e1" }}>Conformidade:</strong> Taxa de cumprimento das regras operacionais (100% = nenhuma violação).</p>
+          <p><strong style={{ color: "#cbd5e1" }}>CV (Coef. Variação):</strong> Desvio padrão / media. CV &lt; 0.3 indica consistencia aceitavel.</p>
           <p><strong style={{ color: "#cbd5e1" }}>Fallback:</strong> Ativacao de caminho alternativo quando fonte primaria falha.</p>
         </div>
       </details>

@@ -110,7 +110,7 @@ export default function ReliabilityPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ color: "#94a3b8", padding: 40, textAlign: "center" }}>Carregando metricas de confiabilidade...</div>;
+  if (loading) return <div style={{ color: "#94a3b8", padding: 40, textAlign: "center" }}>Carregando métricas de confiabilidade...</div>;
   if (error) return <div style={{ color: "#ef4444", padding: 40, textAlign: "center" }}>Erro: {error}</div>;
   if (!data) return null;
 
@@ -145,13 +145,13 @@ export default function ReliabilityPage() {
         <MetricRow label="Amostra (N)" value={pred.n_total ?? 0} target={20} sub="min: 20 (#079)" />
         {!pred.suficiente && (
           <div style={{ fontSize: "0.6rem", color: "#f59e0b", padding: "6px 0" }}>
-            {"\u26a0\ufe0f"} Amostra insuficiente (N={pred.n_total}). Metricas nao confiaveis.
+            {"\u26a0\ufe0f"} Amostra insuficiente (N={pred.n_total}). Métricas nao confiáveis.
           </div>
         )}
       </DimensionCard>
 
       {/* SAFETY */}
-      <DimensionCard icon={"\ud83d\udee1\ufe0f"} title="Seguranca" color="#ef4444"
+      <DimensionCard icon={"\ud83d\udee1\ufe0f"} title="Segurança" color="#ef4444"
         score={pct(saf.compliance_rate ?? 1)}
         scoreLabel="compliance"
       >
@@ -160,13 +160,13 @@ export default function ReliabilityPage() {
           border: "1px solid rgba(34,197,94,0.2)",
         }}>
           <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#4ade80" }}>
-            {"\u2705"} Zero violacoes ativas
+            {"\u2705"} Zero violações ativas
           </span>
         </div>
         <div style={{ fontSize: "0.52rem", color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>Bloqueios preventivos</div>
         <SafetyCounter label="Complementares bloqueados" count={saf.complementares_bloqueados ?? 0} />
-        <SafetyCounter label="Contradicoes Mistral bloqueadas" count={saf.mistral_contradicoes ?? 0} />
-        <SafetyCounter label="Acoes de auditoria filtradas" count={saf.acoes_bloqueadas ?? 0} />
+        <SafetyCounter label="Contradições Mistral bloqueadas" count={saf.mistral_contradicoes ?? 0} />
+        <SafetyCounter label="Ações de auditoria filtradas" count={saf.acoes_bloqueadas ?? 0} />
       </DimensionCard>
 
       {/* ROBUSTNESS */}
@@ -189,7 +189,7 @@ export default function ReliabilityPage() {
       </DimensionCard>
 
       {/* CONSISTENCY */}
-      <DimensionCard icon={"\ud83d\udd04"} title="Consistencia" color="#a78bfa"
+      <DimensionCard icon={"\ud83d\udd04"} title="Consistência" color="#a78bfa"
         score={con.lambda_duration_cv?.toFixed(2) ?? "\u2014"}
         scoreLabel="CV duration"
       >
@@ -218,7 +218,7 @@ export default function ReliabilityPage() {
       <DimensionCard icon={"\u2699\ufe0f"} title="Defesas Ativas" color="#94a3b8">
         <DefenseRow label="Anti-alucinacao Mistral" value={`${def.anti_alucinacao_mistral ?? 6} camadas`} />
         <DefenseRow label="Circuit breaker SAFE" value={def.circuit_breaker_safe ? "ATIVO" : "OFF"} regra="#043" />
-        <DefenseRow label="Amostra minima Brier" value={`N>=${def.min_n_brier ?? 20}`} regra="#079" />
+        <DefenseRow label="Amostra mínima Brier" value={`N>=${def.min_n_brier ?? 20}`} regra="#079" />
         <DefenseRow label="Contrato Mistral narrativa" value="ATIVO" regra="#082" />
         <DefenseRow label="Validacao complementares" value="ATIVO" regra="#098" />
         <DefenseRow label="Filtro acoes auditoria" value="ATIVO" regra="#099" />

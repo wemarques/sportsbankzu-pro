@@ -3,7 +3,7 @@
 import { AlertTriangle, WifiOff, Calendar, Trophy, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 export type EmptyStateVariant =
-  | "backend-offline"    // Backend indisponivel (503, timeout, etc.)
+  | "backend-offline"    // Backend indisponível (503, timeout, etc.)
   | "no-games-date"      // Sem jogos para esta data (backend OK, 0 matches)
   | "no-games-league"    // Liga sem jogos para esta data
   | "mock-dev"           // Mock data em desenvolvimento
@@ -104,7 +104,7 @@ export function MockDataBanner() {
       <AlertTriangle size={14} />
       <span>
         <strong>Ambiente de desenvolvimento</strong> — Exibindo dados simulados (mock).
-        Dados reais disponiveis apenas em producao.
+        Dados reais disponíveis apenas em produção.
       </span>
     </div>
   );
@@ -120,23 +120,23 @@ function getConfig(
     case "backend-offline":
       return {
         icon: <WifiOff size={48} strokeWidth={1.5} />,
-        title: "Servidor indisponivel",
-        message: errorMessage ?? "O servidor de dados esta temporariamente indisponivel.",
-        suggestion: "Isso pode acontecer apos uma atualizacao. Aguarde alguns minutos e tente novamente.",
+        title: "Não conseguimos carregar os jogos",
+        message: errorMessage ?? "O serviço de dados está temporariamente fora do ar.",
+        suggestion: "Isso costuma durar poucos minutos — normalmente logo após uma atualização. Tente de novo em instantes.",
       };
     case "no-games-date":
       return {
         icon: <Calendar size={48} strokeWidth={1.5} />,
         title: `Sem jogos para ${dateLabel ?? "esta data"}`,
-        message: "Nenhum jogo agendado para o periodo selecionado.",
+        message: "Nenhum jogo agendado para o período selecionado.",
         suggestion: "Use as setas para navegar entre datas ou selecione outra liga.",
       };
     case "no-games-league":
       return {
         icon: <Trophy size={48} strokeWidth={1.5} />,
         title: `${leagueName ?? "Liga"} sem jogos`,
-        message: `Nenhum jogo encontrado para ${leagueName ?? "esta liga"} neste periodo.`,
-        suggestion: "Tente outra data ou verifique se a liga esta em pausa.",
+        message: `Nenhum jogo encontrado para ${leagueName ?? "esta liga"} neste período.`,
+        suggestion: "Tente outra data — a liga pode estar em pausa ou entre rodadas.",
       };
     case "mock-dev":
       return {
@@ -148,15 +148,15 @@ function getConfig(
     case "client-error":
       return {
         icon: <WifiOff size={48} strokeWidth={1.5} />,
-        title: "Erro de conexao",
-        message: errorMessage ?? "Nao foi possivel conectar ao servidor.",
-        suggestion: "Verifique sua conexao com a internet e tente novamente.",
+        title: "Sem conexão",
+        message: errorMessage ?? "Não foi possível carregar os dados.",
+        suggestion: "Verifique sua conexão com a internet e tente novamente.",
       };
     default:
       return {
         icon: <Calendar size={48} strokeWidth={1.5} />,
-        title: "Sem dados",
-        message: "Nenhum dado disponivel no momento.",
+        title: "Nada por aqui ainda",
+        message: "Nenhum dado disponível no momento. Volte em instantes ou troque a data.",
         suggestion: undefined,
       };
   }

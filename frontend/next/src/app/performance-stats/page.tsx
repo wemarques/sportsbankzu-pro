@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { SERIES, STATUS, CHART, marketFamily, FAMILY_LABEL, MarketFamily } from "@/lib/chartTokens";
+import { fmtMercado } from "@/lib/classifications";
 
 /* ── tipos do snapshot (backend/services/brier_service.py) ── */
 interface Segment {
@@ -153,8 +154,8 @@ function BrierChart({ markets }: { markets: Record<string, Segment> }) {
       const yRow = y;
       nodes.push(
         <g key={`${g.fam}-${name}`}>
-          <title>{`${name}: Brier modelo ${bm.toFixed(4)} vs casa ${bi.toFixed(4)} · n=${v.n}`}</title>
-          <text x={0} y={yRow + 4} fontSize={12} fontWeight={600} fill={T.t1}>{name.length > 20 ? name.slice(0, 19) + "…" : name}</text>
+          <title>{`${fmtMercado(name)}: Brier modelo ${bm.toFixed(4)} vs casa ${bi.toFixed(4)} · n=${v.n}`}</title>
+          <text x={0} y={yRow + 4} fontSize={12} fontWeight={600} fill={T.t1}>{(() => { const d = fmtMercado(name); return d.length > 20 ? d.slice(0, 19) + "…" : d; })()}</text>
           <text x={0} y={yRow + 18} fontSize={10} fill={T.t3} style={mono}>n={v.n.toLocaleString("pt-BR")}</text>
           <line x1={xm} y1={yRow} x2={xh} y2={yRow} stroke={CHART.connector} strokeWidth={2} />
           <circle cx={xh} cy={yRow} r={5} fill={T.card} stroke={SERIES.s2} strokeWidth={2.5} />

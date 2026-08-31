@@ -1,9 +1,9 @@
-// #191: shareable URL for the Glossario section (same dashboard, deep-linked view).
+// #191: shareable URL for the Glossário section (same dashboard, deep-linked view).
 import Dashboard from "../dashboard/page";
 
 export const metadata = {
-  title: "Glossario | SportsBankZU Pro",
-  description: "Termos, metricas e classificacoes do SportsBankZU Pro explicados.",
+  title: "Glossário | SportsBankZU Pro",
+  description: "Termos, métricas e classificacoes do SportsBankZU Pro explicados.",
 };
 
 export default function GlossarioPage() {

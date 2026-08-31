@@ -534,7 +534,7 @@ export default function AuditReportCard({ data }: Props) {
         </Section>
 
         {/* ACTIONS */}
-        <Section title="Acoes Recomendadas" open={sections.actions} onToggle={() => toggle("actions")}>
+        <Section title="Ações Recomendadas" open={sections.actions} onToggle={() => toggle("actions")}>
           {d.modelActions.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 11, color: "#00ff88", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Modelo</div>

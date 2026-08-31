@@ -297,7 +297,7 @@ export default function DestaquesDoDia({
               color: "#f8fafc",
             }}
           >
-            Gestao de risco: nunca aposte mais do que pode perder. O stake sugerido e matematico, nao garantia de lucro.
+            Gestão de risco: nunca aposte mais do que pode perder. O stake sugerido é matemático, não uma garantia de lucro.
           </div>
         </section>
       )}
@@ -313,7 +313,7 @@ export default function DestaquesDoDia({
         />
       )}
 
-      {/* ── SECTION: Apenas Analise ── */}
+      {/* ── SECTION: Apenas Análise ── */}
       {analysisOnly.length > 0 && (
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -329,7 +329,7 @@ export default function DestaquesDoDia({
                 margin: 0,
               }}
             >
-              Destaques do dia — apenas analise
+              Destaques do dia — apenas análise
             </h2>
           </div>
 
@@ -427,7 +427,7 @@ export default function DestaquesDoDia({
         >
           <div style={{ fontSize: 40, marginBottom: 8 }} aria-hidden>&#9917;</div>
           {matches.length === 0
-            ? "Carregando jogos para analise..."
+            ? "Carregando jogos para análise..."
             : "Nenhum destaque encontrado para hoje."}
         </div>
       )}
@@ -515,10 +515,10 @@ export default function DestaquesDoDia({
                   }}
                 >
                   <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#374151" }} />
-                  Apenas Analise
+                  Apenas Análise
                 </span>
                 <p style={{ fontSize: 12, color: "#4b5563", lineHeight: 1.6, marginTop: 6 }}>
-                  O modelo concorda com a casa. Sem vantagem matematica para aposta.
+                  O modelo concorda com a casa. Sem vantagem matemática para aposta.
                 </p>
               </div>
             </div>

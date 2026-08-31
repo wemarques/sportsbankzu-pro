@@ -80,9 +80,9 @@ const GLOSSARY = [
   { term: "In\u00EDcio Temp.", description: "Dados de in\u00EDcio de temporada \u2014 calibra\u00E7\u00E3o usa fallback por amostra insuficiente de jogos" },
   { term: "Fair (Odd Justa)", description: "Cota\u00E7\u00E3o justa calculada pelo modelo \u2014 se a odd da casa for maior, h\u00E1 valor na aposta" },
   { term: "Odd (Cota\u00E7\u00E3o)", description: "Cota\u00E7\u00E3o oferecida pela casa de apostas \u2014 quanto voc\u00EA recebe por cada R$1 apostado" },
-  { term: "ALTA CONFIANCA (SAFE)", description: "Classificacao maxima \u2014 probabilidade alta, EV positivo, dados confiaveis, edge suficiente" },
-  { term: "VALOR DETECTADO (NEUTRO-Q)", description: "Valor matematico detectado \u2014 elegivel para combinadas e duplas, tem EV positivo mas nao atinge Alta Confianca" },
-  { term: "VIÁVEL (NEUTRO)", description: "Mercado com chance real de acerto no jogo, sem valor matematico (EV+) para aposta sistematica" },
+  { term: "ALTA CONFIANCA (SAFE)", description: "Classificação máxima \u2014 probabilidade alta, EV positivo, dados confiáveis, edge suficiente" },
+  { term: "VALOR DETECTADO (NEUTRO-Q)", description: "Valor matemático detectado \u2014 elegível para combinadas e duplas, tem EV positivo, mas não atinge Alta Confiança" },
+  { term: "VIÁVEL (NEUTRO)", description: "Mercado com chance real de acerto no jogo, sem valor matemático (EV+) para aposta sistematica" },
   { term: "RESTRITO", description: "Liga com dados limitados ou modelo ML n\u00E3o ativo \u2014 progn\u00F3sticos com cautela" },
   { term: "Overround", description: "Margem da casa de apostas \u2014 a soma das probabilidades impl\u00EDcitas excede 100% (tipicamente 5-6%)" },
   { term: "Lambda (\u03BB)", description: "M\u00E9dia de gols esperados por time \u2014 base do c\u00E1lculo Poisson para probabilidades de placares" },
@@ -173,7 +173,7 @@ export interface AuditResult {
 export type MatchDetail = MatchDetailData;
 
 export interface MatchDetailData {
-  /** #189-g: true enquanto a analise Mistral carrega (sem % falsa) */
+  /** #189-g: true enquanto a análise Mistral carrega (sem % falsa) */
   aiLoading?: boolean;
   id: string;
   league: string;
@@ -574,7 +574,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   .catch(() => setShowStandings(false))
                   .finally(() => setStandingsLoading(false));
               }}
-            >{showStandings ? "Fechar classificacao" : "Ver classificacao"}</span>
+            >{showStandings ? "Fechar classificação" : "Ver classificação"}</span>
           )}
 
           {showStandings && (
@@ -618,7 +618,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   </tbody>
                 </table>
               ) : (
-                <div style={{ textAlign: "center", padding: 12, opacity: 0.6 }}>Classificacao indisponivel</div>
+                <div style={{ textAlign: "center", padding: 12, opacity: 0.6 }}>Classificação indisponível</div>
               )}
             </div>
           )}
@@ -748,7 +748,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 <button className="mdc-collapsible-header" onClick={() => setIsAIExpanded(!isAIExpanded)}>
                   <div className="mdc-collapsible-header__left">
                     <Sparkles className="mdc-ai-icon" size={20} />
-                    <span className="mdc-collapsible-title">Analise AI (MISTRAL)</span>
+                    <span className="mdc-collapsible-title">Análise AI (MISTRAL)</span>
                     <span className="mdc-badge-pro" style={{ marginLeft: 8 }}>{version}</span>
                   </div>
                   {isAIExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -759,7 +759,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                     {aiLoading && (
                       <div className="mdc-loading">
                         <Loader2 size={16} className="mdc-loading-spinner" />
-                        Gerando analise AI...
+                        Gerando análise AI...
                       </div>
                     )}
 
@@ -937,7 +937,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
                     {!aiLoading && match.aiAnalysis && match.aiAnalysis.confidence === 0 && (match.aiAnalysis.summary ?? "").toLowerCase().includes("indispon") && (
                       <div style={{ padding: 12, color: "#888", fontSize: "0.75rem", textAlign: "center" }}>
-                        <span style={{ color: "#ffd700" }}>&#9888;</span> Analise narrativa temporariamente indisponivel.
+                        <span style={{ color: "#ffd700" }}>&#9888;</span> Análise narrativa temporariamente indisponível.
                         <br />
                         <span style={{ fontSize: "0.65rem" }}>
                           Os prognosticos e probabilidades NAO sao afetados — sao calculados pelo motor Dixon-Coles.
@@ -950,7 +950,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         {/* Confidence Bar */}
                         <div className="mdc-confidence">
                           <div className="mdc-confidence__header">
-                            <span>Confianca da Analise</span>
+                            <span>Confiança da Análise</span>
                             <span className="mdc-confidence__value">{match.aiAnalysis.confidence}%</span>
                           </div>
                           <div className="mdc-confidence__bar">
@@ -972,10 +972,10 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                               <p className="mdc-ai-text">{fixAiPercentages(match.aiAnalysis.summary ?? "")}</p>
                             </div>
                             <div className="mdc-ai-recommendation">
-                              <h4 className="mdc-ai-section-title">Recomendacao</h4>
+                              <h4 className="mdc-ai-section-title">Recomendação</h4>
                               <div className="mdc-ai-recommendation-box">
                                 <Sparkles size={16} className="mdc-ai-recommendation-icon" />
-                                <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendacao indisponivel. Consulte as estatisticas e odds para tomar sua decisao.")}</p>
+                                <p className="mdc-ai-recommendation-text">{fixAiPercentages(match.aiAnalysis.recommendation || "Recomendação indisponível. Consulte as estatísticas e odds para tomar sua decisao.")}</p>
                               </div>
                             </div>
                           </>
@@ -995,7 +995,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           </div>
                         )}
 
-                        {/* Tab: Glossario */}
+                        {/* Tab: Glossário */}
                         {aiTab === "glossario" && (
                           <div className="mdc-glossary">
                             <input
@@ -1162,7 +1162,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           className={`mdc-comparative__tab ${comparativeTab === tab ? "mdc-comparative__tab--active" : ""}`}
                           onClick={() => setComparativeTab(tab)}
                         >
-                          {tab === "gols" ? "Gols" : tab === "perfil" ? "Perfil" : tab === "btts" ? "BTTS" : tab === "escanteios" ? "Escanteios" : tab === "chutes" ? "Chutes ao Gol" : tab === "finalizacoes" ? "Finalizacoes" : tab === "faltas" ? "Faltas" : "Cartoes"}
+                          {tab === "gols" ? "Gols" : tab === "perfil" ? "Perfil" : tab === "btts" ? "BTTS" : tab === "escanteios" ? "Escanteios" : tab === "chutes" ? "Chutes ao Gol" : tab === "finalizacoes" ? "Finalizações" : tab === "faltas" ? "Faltas" : "Cartões"}
                         </button>
                       ))}
                     </div>
@@ -1172,7 +1172,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           <ComparativeBar label="Lambda (Gols Esperados)" homeVal={match.matchStats.lambdaHome ?? 0} awayVal={match.matchStats.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <ComparativeBar label="xG (Gols Esperados)" homeVal={match.matchStats.homeXG ?? 0} awayVal={match.matchStats.awayXG ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "0.75rem", color: "#ccc" }}>
-                            <span>Media de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
+                            <span>Média de Gols: {match.matchStats.avgGoals?.toFixed(2) ?? "-"}</span>
                             <span>Over 2.5: {formatProbValue(match.matchStats.over25Prob)}</span>
                           </div>
                         </div>
@@ -1200,7 +1200,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                 <ComparativeBar label="xG Sofrido por Jogo" homeVal={ms.homeXgAgainstAvg ?? 0} awayVal={ms.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               )}
                               {(ms.homeAvgTotalGoals != null || ms.awayAvgTotalGoals != null) && (
-                                <ComparativeBar label="Media Gols Total/Jogo" homeVal={ms.homeAvgTotalGoals ?? 0} awayVal={ms.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                                <ComparativeBar label="Média Gols Total/Jogo" homeVal={ms.homeAvgTotalGoals ?? 0} awayVal={ms.awayAvgTotalGoals ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               )}
                               <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
                                 {ms.homeWinPercentage != null && (
@@ -1250,7 +1250,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {!hasTeamData && hasModelData && (
                             <>
                               {/* #187: lambdas vem do modelo Poisson; as prob. 1X2 sao de mercado (odds) */}
-                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Analise estatistica (lambdas do modelo + prob. 1X2 de mercado)</div>
+                              <div style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", marginBottom: 8 }}>Análise estatística (gols esperados pelo modelo + probabilidades 1X2 do mercado)</div>
                               <ComparativeBar label="Lambda (Gols Esperados)" homeVal={ms.lambdaHome ?? 0} awayVal={ms.lambdaAway ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0", fontSize: "0.75rem", flexWrap: "wrap", gap: 8 }}>
                                 {ms.homeWinProb != null && ms.homeWinProb > 0 && (
@@ -1281,7 +1281,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                 )}
                                 {ms.avgGoals != null && ms.avgGoals > 0 && (
                                   <div style={{ textAlign: "center" }}>
-                                    <div style={{ color: "#888", marginBottom: 2 }}>Media Gols</div>
+                                    <div style={{ color: "#888", marginBottom: 2 }}>Média Gols</div>
                                     <span style={{ color: "#ccc" }}>{ms.avgGoals?.toFixed(2)}</span>
                                   </div>
                                 )}
@@ -1315,7 +1315,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         <div className="mdc-comparative-data">
                           <ComparativeBar label="Escanteios por Jogo" homeVal={match.matchStats.homeCornersPerMatch ?? 0} awayVal={match.matchStats.awayCornersPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
-                            <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCorners?.toFixed(1) ?? "-"}</span></span>
+                            <span style={{ color: "#888" }}>Média da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCorners?.toFixed(1) ?? "-"}</span></span>
                           </div>
                           {/* V2 Corner Engine Projection */}
                           {match.cornerPredictions?.projectedTotalFT != null && (
@@ -1408,16 +1408,16 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       )}
                       {comparativeTab === "cartoes" && match.matchStats && (
                         <div className="mdc-comparative-data">
-                          <ComparativeBar label="Cartoes por Jogo" homeVal={match.matchStats.homeCardsPerMatch ?? 0} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                          <ComparativeBar label="Cartões por Jogo" homeVal={match.matchStats.homeCardsPerMatch ?? 0} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
-                            <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCards?.toFixed(1) ?? "-"}</span></span>
+                            <span style={{ color: "#888" }}>Média da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgCards?.toFixed(1) ?? "-"}</span></span>
                           </div>
                           {match.cardsPredictions?.projectedTotalCards != null && (
                             <div style={{ marginTop: 12, padding: 12, background: "rgba(255,107,53,0.08)",
                               borderRadius: 8, border: "1px solid rgba(255,107,53,0.15)" }}>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                                 <span style={{ fontSize: "0.7rem", color: "#ff6b35", fontWeight: 600 }}>
-                                  Projecao Cartoes
+                                  Projecao Cartões
                                 </span>
                                 <span style={{ fontSize: "0.6rem", padding: "2px 6px", borderRadius: 4,
                                   background: "rgba(255,107,53,0.15)", color: "#ff6b35" }}>
@@ -1429,7 +1429,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   {match.cardsPredictions.projectedTotalCards?.toFixed(1)}
                                 </div>
                                 <div style={{ fontSize: "0.6rem", color: "#888", marginTop: 2 }}>
-                                  Total Cartoes Projetados
+                                  Total Cartões Projetados
                                 </div>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-around", marginTop: 8, fontSize: "0.65rem" }}>
@@ -1466,7 +1466,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             <>
                               <ComparativeBar label="Finalizacoes por Jogo" homeVal={match.matchStats.homeShotsPerMatch ?? 0} awayVal={match.matchStats.awayShotsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
-                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgShots?.toFixed(1) ?? "-"}</span></span>
+                                <span style={{ color: "#888" }}>Média da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgShots?.toFixed(1) ?? "-"}</span></span>
                               </div>
                             </>
                           ) : (
@@ -1480,7 +1480,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             <>
                               <ComparativeBar label="Faltas por Jogo" homeVal={match.matchStats.homeFoulsPerMatch ?? 0} awayVal={match.matchStats.awayFoulsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", fontSize: "0.75rem" }}>
-                                <span style={{ color: "#888" }}>Media da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgFouls?.toFixed(1) ?? "-"}</span></span>
+                                <span style={{ color: "#888" }}>Média da Liga: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.matchStats.leagueAvgFouls?.toFixed(1) ?? "-"}</span></span>
                               </div>
                             </>
                           ) : (
@@ -1515,7 +1515,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                       title={
                         match.matchStats.predictionSource === "ml_ensemble"
                           ? "Probabilidades do modelo ML proprio (ensemble venceu o mercado nesta liga)"
-                          : "Probabilidades implicitas nas odds do mercado (de-vig) — nao sao uma previsao independente do modelo"
+                          : "Probabilidades implícitas nas odds do mercado (sem a margem da casa) — não são uma previsão independente do modelo"
                       }
                     >
                       {match.matchStats.predictionSource === "ml_ensemble" ? "(modelo ML)" : "(mercado)"}
@@ -1529,7 +1529,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
                   <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Gols</h4>
                   <div className="mdc-stats-grid">
-                    <StatRow label="Media de Gols" value={match.matchStats.avgGoals?.toFixed(2) ?? "-"} />
+                    <StatRow label="Média de Gols" value={match.matchStats.avgGoals?.toFixed(2) ?? "-"} />
                     <StatRow label="Lambda Casa" value={match.matchStats.lambdaHome?.toFixed(2) ?? "-"} />
                     <StatRow label="Lambda Fora" value={match.matchStats.lambdaAway?.toFixed(2) ?? "-"} />
                   </div>
@@ -1553,7 +1553,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
 
                   {(match.matchStats.homeCornersPerMatch != null || match.matchStats.homeCardsPerMatch != null || match.matchStats.cornerOver85Prob != null) && (
                     <>
-                      <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Escanteios & Cartoes</h4>
+                      <h4 className="mdc-section-title" style={{ marginTop: 16 }}>Escanteios & Cartões</h4>
                       {match.matchStats.homeCornersPerMatch != null && (
                         <ComparativeBar label="Escanteios/Jogo" homeVal={match.matchStats.homeCornersPerMatch} awayVal={match.matchStats.awayCornersPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                       )}
@@ -1565,7 +1565,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         </div>
                       )}
                       {match.matchStats.homeCardsPerMatch != null && (
-                        <ComparativeBar label="Cartoes/Jogo" homeVal={match.matchStats.homeCardsPerMatch} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                        <ComparativeBar label="Cartões/Jogo" homeVal={match.matchStats.homeCardsPerMatch} awayVal={match.matchStats.awayCardsPerMatch ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                       )}
                     </>
                   )}
@@ -1633,7 +1633,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   )}
 
                   <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16, fontSize: "0.75rem" }}>
-                    <span style={{ color: "#888" }}>Media de Gols: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.h2h.avgGoals?.toFixed(2) ?? "-"}</span></span>
+                    <span style={{ color: "#888" }}>Média de Gols: <span style={{ color: "#ccc", fontWeight: 600 }}>{match.h2h.avgGoals?.toFixed(2) ?? "-"}</span></span>
                   </div>
                 </div>
               ) : (
@@ -1781,7 +1781,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
         <ShieldCheck size={18} style={{ color: "#ffbb33" }} />
         <span className="mdc-audit-title">Resultado da Auditoria</span>
         <span className="mdc-audit-confidence">
-          Confianca: <strong>{confidenceNum}%</strong>
+          Confiança: <strong>{confidenceNum}%</strong>
         </span>
       </div>
 
@@ -1867,7 +1867,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       {/* AI Analysis Accuracy */}
       {auditResult.ai_analysis_accuracy && (
         <div className="mdc-audit-block">
-          <h4 className="mdc-audit-block-title">Precisao da Analise Mistral</h4>
+          <h4 className="mdc-audit-block-title">Precisão da Análise Mistral</h4>
           <p className="mdc-audit-text">{safeStr(auditResult.ai_analysis_accuracy)}</p>
         </div>
       )}
@@ -1875,7 +1875,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
       {/* Accuracy Summary */}
       {auditResult.accuracy_summary && (
         <div className="mdc-audit-block">
-          <h4 className="mdc-audit-block-title">Resumo de Precisao</h4>
+          <h4 className="mdc-audit-block-title">Resumo de Precisão</h4>
           <p className="mdc-audit-text">{safeStr(auditResult.accuracy_summary)}</p>
         </div>
       )}
@@ -1929,7 +1929,7 @@ function AuditResultsSection({ auditResult, onApplyCorrection }: { auditResult: 
                   </div>
                   <p className="mdc-audit-correction-reason">{safeStr(corr.reason)}</p>
                   <div className="mdc-audit-correction-footer">
-                    <span style={{ fontSize: "0.65rem", color: "#888" }}>Confianca: {corrConfidence}%</span>
+                    <span style={{ fontSize: "0.65rem", color: "#888" }}>Confiança: {corrConfidence}%</span>
                     {onApplyCorrection && (
                       <button
                         className="mdc-audit-apply-btn"
