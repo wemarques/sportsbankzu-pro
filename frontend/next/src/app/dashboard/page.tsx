@@ -2290,13 +2290,13 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
 
               {/* #119a — initial fetch before first batch arrives */}
               {loading && allMatches.length === 0 && !hasError && (
-                <div style={{ textAlign: "center", padding: "48px 24px", color: "#666" }}>
+                <div style={{ textAlign: "center", padding: "48px 24px", color: "#9ca3af" /* #189-h: era #666 */ }}>
                   <Loader2 size={28} className="st-spin-icon" style={{ display: "inline-block", marginBottom: 10 }} />
                   {/* #189-g: progresso real por lote de ligas, nao spinner mudo */}
                   <div style={{ fontSize: "0.78rem" }} role="status" aria-live="polite">
                     Carregando ligas… 0/{ACTIVE_LEAGUES().length}
                   </div>
-                  <div style={{ fontSize: "0.65rem", color: "#555", marginTop: 4 }}>
+                  <div style={{ fontSize: "0.65rem", color: "#8b95a0", marginTop: 4 /* #189-h: era #555 */ }}>
                     Os jogos aparecem por lote conforme cada liga responde
                   </div>
                 </div>
