@@ -145,7 +145,7 @@ export default function ReliabilityPage() {
         <MetricRow label="Amostra (N)" value={pred.n_total ?? 0} target={20} sub="min: 20 (#079)" />
         {!pred.suficiente && (
           <div style={{ fontSize: "0.6rem", color: "#f59e0b", padding: "6px 0" }}>
-            {"\u26a0\ufe0f"} Amostra insuficiente (N={pred.n_total}). Métricas nao confiáveis.
+            {"\u26a0\ufe0f"} Amostra insuficiente (N={pred.n_total}). Métricas não confiáveis.
           </div>
         )}
       </DimensionCard>
@@ -175,7 +175,7 @@ export default function ReliabilityPage() {
           const avg = ((rob.api_football_success_rate ?? 0) + (rob.footystats_success_rate ?? 0) + (rob.mistral_success_rate ?? 0)) / 3;
           return (avg * 100).toFixed(0) + "%";
         })()}
-        scoreLabel="media APIs"
+        scoreLabel="média das APIs"
       >
         <ApiBar label="API-Football v3" rate={rob.api_football_success_rate ?? 0} />
         <ApiBar label="FootyStats" rate={rob.footystats_success_rate ?? 0} />

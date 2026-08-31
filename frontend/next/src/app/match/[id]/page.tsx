@@ -160,7 +160,7 @@ export default function MatchDetailPage() {
   if (error || !match) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 text-white">
-        <div className="text-lg text-red-400">{error || "Jogo nao encontrado"}</div>
+        <div className="text-lg text-red-400">{error || "Jogo não encontrado"}</div>
         <Link
           href="/dashboard"
           className="flex items-center gap-2 text-[#00ff88] hover:underline"

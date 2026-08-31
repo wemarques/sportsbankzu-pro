@@ -336,7 +336,7 @@ function checkBreakEven(
 
   const minScenario = scenarios.find((s) => s.hitsRequired === minHits);
   if (!minScenario) {
-    return { passes: false, reason: "Cenario minimo nao encontrado" };
+    return { passes: false, reason: "Cenário mínimo não encontrado" };
   }
 
   // Calculate average odds of selections
@@ -345,7 +345,7 @@ function checkBreakEven(
   if (!minScenario.coversInvestment) {
     return {
       passes: false,
-      reason: `Odds medias baixas (${avgOdd.toFixed(2)}). Com ${minHits} de ${n} acertos, o retorno estimado (R$ ${minScenario.estimatedReturn.toFixed(2)}) nao cobre o investimento total (R$ ${totalStake.toFixed(2)}). Recomendamos apostas simples individuais.`,
+      reason: `Odds médias baixas (${avgOdd.toFixed(2)}). Com ${minHits} de ${n} acertos, o retorno estimado (R$ ${minScenario.estimatedReturn.toFixed(2)}) nao cobre o investimento total (R$ ${totalStake.toFixed(2)}). Recomendamos apostas simples individuais.`,
     };
   }
 
@@ -437,7 +437,7 @@ export function suggestSystemBet(
   // Build headline
   const headline = recommended
     ? `Encontramos ${n} jogos de grande valor hoje. Para proteger sua banca contra ${n <= 3 ? "1 erro" : "ate 2 erros"}, sugerimos um ${formatDef.label} (${combos.length} linhas). Invista R$ ${stakePerLine.toFixed(2)} em cada combinacao.`
-    : `${n} jogos +EV encontrados, mas as odds medias sao baixas para sistema. Recomendamos apostas simples individuais.`;
+    : `${n} jogos +EV encontrados, mas as odds médias são baixas para sistema. Recomendamos apostas simples individuais.`;
 
   return {
     format: formatDef.format,

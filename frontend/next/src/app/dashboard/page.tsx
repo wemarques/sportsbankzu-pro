@@ -896,7 +896,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMatches.length]);
 
-  const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanha" : "Proxima Rodada";
+  const dateLabel = dateMode === "today" ? "Hoje" : dateMode === "tomorrow" ? "Amanhã" : "Próxima Rodada";
 
   // Shared function: fetch live scores from backend and merge into allMatches
   // Ref to track live league IDs for fallback query without re-creating the callback
@@ -2507,7 +2507,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsYes) > 0 ? safeOdd(match.odds?.bttsYes).toFixed(2) : "-"}</span>
                               </div>
                               <div className={`st-match-row__odd ${hlSet.has("Nao") ? "st-match-row__odd--highlight" : ""}`}>
-                                <span className="st-match-row__odd-label">Nao</span>
+                                <span className="st-match-row__odd-label">Não</span>
                                 <span className="st-match-row__odd-value">{safeOdd(match.odds?.bttsNo) > 0 ? safeOdd(match.odds?.bttsNo).toFixed(2) : "-"}</span>
                               </div>
                               <div className="st-match-row__odd" style={{ opacity: 0.7 }}>

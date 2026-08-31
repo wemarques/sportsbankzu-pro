@@ -24,7 +24,7 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     label: "VALOR DETECTADO",
     color: "#ffd700",
     bgColor: "rgba(255,215,0,0.15)",
-    description: "EV positivo mas nao atinge todos os critérios SAFE — elegível para combinadas",
+    description: "EV positivo, mas não atinge todos os critérios SAFE — elegível para combinadas",
     tooltip:
       "O modelo detectou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegivel para duplas e combinadas.",
   },
@@ -34,7 +34,7 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     bgColor: "rgba(96,165,250,0.12)",
     description: "Mercado com chance real de acerto neste jogo, mas sem valor matemático de longo prazo",
     tooltip:
-      "O modelo identifica probabilidade razoável para este jogo específico. Nao atinge critérios de EV+ para recomendação de aposta sistematica, mas e viavel como pick pontual.",
+      "O modelo identifica probabilidade razoável para este jogo específico. Não atinge critérios de EV+ para recomendação de aposta sistematica, mas e viavel como pick pontual.",
   },
   NO_BET: {
     label: "BLOQUEADO",

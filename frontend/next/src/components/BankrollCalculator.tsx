@@ -1725,7 +1725,7 @@ export default function BankrollCalculator() {
                 <AlertTriangle size={14} />
                 {totalPct > 100
                   ? `Alocacao excede 100% em ${totalPct - 100}%. Ajuste os sliders.`
-                  : `${100 - totalPct}% da banca nao sera alocado.`}
+                  : `${100 - totalPct}% da banca não será alocada.`}
               </div>
             )}
           </div>

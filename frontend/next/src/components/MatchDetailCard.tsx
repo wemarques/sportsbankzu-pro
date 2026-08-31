@@ -117,7 +117,7 @@ export class SafeErrorBoundary extends Component<
       return (
         <div style={{ padding: 16, background: "rgba(255,68,68,0.1)", borderRadius: 8, margin: "8px 0" }}>
           <p style={{ color: "#ff4444", fontSize: "0.8rem", margin: 0 }}>
-            {this.props.fallbackMessage ?? "Erro ao exibir este conteudo. Tente recarregar a pagina."}
+            {this.props.fallbackMessage ?? "Erro ao exibir este conteúdo. Tente recarregar a página."}
           </p>
         </div>
       );
@@ -400,7 +400,7 @@ type Props = {
 
 export default function MatchDetailCard(props: Props) {
   return (
-    <SafeErrorBoundary section="MatchDetailCard" fallbackMessage="Erro ao exibir detalhes do jogo. Tente recarregar a pagina.">
+    <SafeErrorBoundary section="MatchDetailCard" fallbackMessage="Erro ao exibir detalhes do jogo. Tente recarregar a página.">
       <MatchDetailCardInner {...props} />
     </SafeErrorBoundary>
   );
@@ -713,7 +713,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                   <span className="mdc-odd-secondary__value">{match.btts.yes?.toFixed(2) ?? "-"}</span>
                 </div>
                 <div className="mdc-odd-secondary">
-                  <span className="mdc-odd-secondary__label">Nao</span>
+                  <span className="mdc-odd-secondary__label">Não</span>
                   <span className="mdc-odd-secondary__value">{match.btts.no?.toFixed(2) ?? "-"}</span>
                 </div>
               </div>
@@ -906,7 +906,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   }
                                   const hasRealOdd = pred.book_odd != null && pred.book_odd > 1;
                                   if (!hasRealOdd) {
-                                    return <div className="stake-no-value">Sem odd real — stake nao calculavel</div>;
+                                    return <div className="stake-no-value">Sem odd real — não dá para calcular o stake</div>;
                                   }
                                   const prob = pred.calibrated_probability ?? (pred.prob_max ?? 50) / 100;
                                   const k = calcQuarterKelly(prob, pred.book_odd!, bankroll);
@@ -1307,7 +1307,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-around", padding: "8px 0", fontSize: "0.75rem" }}>
                             <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Sim</span><br /><span style={{ color: "#00ff88" }}>{match.btts?.yes?.toFixed(2) ?? "-"}</span></div>
-                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Nao</span><br /><span style={{ color: "#ff4444" }}>{match.btts?.no?.toFixed(2) ?? "-"}</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ color: "#888" }}>Não</span><br /><span style={{ color: "#ff4444" }}>{match.btts?.no?.toFixed(2) ?? "-"}</span></div>
                           </div>
                         </div>
                       )}
@@ -1402,7 +1402,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             </div>
                           )}
                           {(!match.matchStats.homeCornersPerMatch && !match.matchStats.awayCornersPerMatch && !match.matchStats.cornerOver85Prob) && (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de escanteios nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de escanteios não disponíveis para este jogo.</div>
                           )}
                         </div>
                       )}
@@ -1447,7 +1447,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                             </div>
                           )}
                           {(!match.matchStats.homeCardsPerMatch && !match.matchStats.awayCardsPerMatch) && (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de cartoes nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de cartões não disponíveis para este jogo.</div>
                           )}
                         </div>
                       )}
@@ -1456,7 +1456,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {(match.matchStats.homeShotsOnTarget != null || match.matchStats.awayShotsOnTarget != null) ? (
                             <ComparativeBar label="Chutes ao Gol por Jogo" homeVal={match.matchStats.homeShotsOnTarget ?? 0} awayVal={match.matchStats.awayShotsOnTarget ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                           ) : (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes ao gol nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de chutes ao gol não disponíveis para este jogo.</div>
                           )}
                         </div>
                       )}
@@ -1470,7 +1470,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                               </div>
                             </>
                           ) : (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de finalizacoes nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de finalizações não disponíveis para este jogo.</div>
                           )}
                         </div>
                       )}
@@ -1484,13 +1484,13 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                               </div>
                             </>
                           ) : (
-                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de faltas nao disponiveis para este jogo.</div>
+                            <div style={{ textAlign: "center", padding: "8px 0", fontSize: "0.7rem", color: "#666" }}>Dados de faltas não disponíveis para este jogo.</div>
                           )}
                         </div>
                       )}
                       {comparativeTab === "gols" && !match.matchStats && (
                         <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.75rem", color: "#666" }}>
-                          Dados estatisticos nao disponiveis para este jogo.
+                          Dados estatisticos não disponíveis para este jogo.
                         </div>
                       )}
                     </div>
@@ -1586,7 +1586,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 </div>
               ) : (
                 <div style={{ textAlign: "center", padding: "24px 0", fontSize: "0.8rem", color: "#666" }}>
-                  Dados estatisticos nao disponiveis para este jogo.
+                  Dados estatisticos não disponíveis para este jogo.
                 </div>
               )}
             </div>
@@ -1638,7 +1638,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 </div>
               ) : (
                 <div style={{ textAlign: "center", padding: "24px 0", fontSize: "0.8rem", color: "#666" }}>
-                  Dados de confronto direto nao disponiveis.
+                  Dados de confronto direto não disponíveis.
                 </div>
               )}
             </div>
@@ -1654,7 +1654,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
               </div>
               {(!match.homeForm || match.homeForm.length === 0) && (!match.awayForm || match.awayForm.length === 0) && (
                 <div style={{ textAlign: "center", padding: "16px 0", fontSize: "0.8rem", color: "#666" }}>
-                  Dados de forma recente nao disponiveis.
+                  Dados de forma recente não disponíveis.
                 </div>
               )}
             </div>

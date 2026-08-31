@@ -43,7 +43,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Brier Score",
     category: "metrica",
     definition:
-      "Mede a precisão das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possivel). Quanto menor, melhor a calibracao do modelo.",
+      "Mede a precisão das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possível). Quanto menor, melhor a calibracao do modelo.",
     example: "Brier 0.18 = boa calibracao; Brier 0.30 = precisa ajuste",
   },
   {
