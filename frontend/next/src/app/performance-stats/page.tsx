@@ -187,13 +187,17 @@ function BrierChart({ markets }: { markets: Record<string, Segment> }) {
 
 /* ── gráfico 3: acurácia por liga ── */
 function LeagueChart({ leagues, overall }: { leagues: Record<string, Segment>; overall: number }) {
-  const rows = Object.entries(leagues)
+  const isCorrecao = (name: string) => /brasileir.{0,2}o\s*serie\s*a(?!.*b)/i.test(name) && !/serie\s*b/i.test(name);
+  const elig = Object.entries(leagues)
     .filter(([, v]) => v.n >= 100)
-    .sort((a, b) => b[1].accuracy - a[1].accuracy)
-    .slice(0, 10);
+    .sort((a, b) => b[1].accuracy - a[1].accuracy);
+  // #189-i adendo: top 10 + SEMPRE as ligas em modo correção (a Série A a
+  // 69,9% ficava fora do corte por acurácia — o placar do plano #189 sumia).
+  const top = elig.slice(0, 10);
+  const extras = elig.slice(10).filter(([name]) => isCorrecao(name));
+  const rows = [...top, ...extras];
   if (!rows.length) return null;
   const LX = 150, x = (v: number) => LX + (v / 85) * (600 - LX);
-  const isCorrecao = (name: string) => /brasileir.{0,2}o\s*serie\s*a/i.test(name);
   let y = 30;
   const nodes: React.ReactNode[] = [];
   rows.forEach(([name, v]) => {
