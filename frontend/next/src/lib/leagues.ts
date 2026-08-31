@@ -1,3 +1,4 @@
+// deploy: força build após merge 190/191/192 — #193 docs-only cancelou o Ignored Build Step
 export type League = {
   id: string;
   name: string;
