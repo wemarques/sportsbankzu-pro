@@ -9615,3 +9615,9 @@ Dupla: (1) recomputação pós-jogo — os insumos FootyStats (stats/odds/potent
 
 ### Lição aprendida
 Prognóstico é publicação, não view derivada: o que o usuário viu antes do jogo precisa ser imutável depois dele. Congelar no cliente resolve a exibição; a persistência server-side (para multi-dispositivo e auditoria oficial) fica como evolução natural sobre o audit_log do #188.
+
+## 193 — Integração 190/191/192 × 189-g: rebase na main com reconciliação semântica
+**Data:** 2026-08-31 | **Arquivos:** frontend/next/src/app/dashboard/page.tsx, docs/REGISTRO_CORRECOES.md | **Severidade:** N/A (integração) | **Status:** Concluído
+
+### Resumo
+A branch `fix/190-191-banca-unificada-rotas-url` (banca unificada #190, rotas com URL #191, pick ledger #192) foi rebaseada sobre a main que já continha o #189-g (UX do gate de família) — as duas frentes reescreviam `dashboard/page.tsx` em regiões próximas. Conflito textual só no REGISTRO (aditivo, entradas preservadas em ordem); o dashboard auto-mergeou e foi verificado semanticamente: dos #189-g sobrevivem `getPickDisplay`/`fmtMercado` na lista de picks, os dois loaders com contagem real `X/ACTIVE_LEAGUES()` e o `aiLoading` no `toDetailData`; da branch sobrevivem `VIEW_PATHS`/`changeView` (zero `setNavView(` órfão), banca 100% via `bankrollStore` (zero acesso direto ao localStorage) e `applyPickLedgerToAll` nos dois pontos de ingestão. Validação: `tsc --noEmit` limpo + suíte backend 318 passed. Merge fast-forward na main.
