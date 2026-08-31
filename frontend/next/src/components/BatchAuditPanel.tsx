@@ -505,8 +505,21 @@ export default function BatchAuditPanel({ result, onClose, onApplyCorrections }:
 
               {/* Brier + Lambda */}
               <div className="mdc-batch-audit__metrics-row">
+                {/* #195: o tile antigo dizia "Brier Score Médio" mas media so
+                    Over 2.5 gols — aparecia 0.11 ao lado de 36.8% de acerto,
+                    dois numeros que nao podem coexistir. Agora o destaque e o
+                    Brier dos picks auditados; o de Over 2.5 fica ao lado, com
+                    o nome certo. */}
                 <div className="mdc-batch-audit__metric">
-                  <span className="mdc-batch-audit__metric-label">Brier Score Médio</span>
+                  <span className="mdc-batch-audit__metric-label">Brier dos picks</span>
+                  <span className="mdc-batch-audit__metric-value">
+                    {result.brier_picks != null
+                      ? `${result.brier_picks.toFixed(4)}${result.brier_picks_n ? ` (${result.brier_picks_n})` : ""}`
+                      : "N/A"}
+                  </span>
+                </div>
+                <div className="mdc-batch-audit__metric">
+                  <span className="mdc-batch-audit__metric-label">Brier Over 2.5</span>
                   <span className="mdc-batch-audit__metric-value">{result.avg_brier_score.toFixed(4)}</span>
                 </div>
                 <div className="mdc-batch-audit__metric">

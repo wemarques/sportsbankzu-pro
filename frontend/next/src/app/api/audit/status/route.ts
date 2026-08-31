@@ -25,12 +25,15 @@ export async function GET(req: NextRequest) {
   const base = backend.replace(/\/+$/, "");
   const { searchParams } = new URL(req.url);
   const days = searchParams.get("days") || "3";
+  // #195: repassa `limit` — sem ele o backend trunca em 10 registros e a
+  // serie diaria nunca passa de ~4 dias, por mais que `days` cresca.
+  const limit = searchParams.get("limit") || "10";
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
 
-    const res = await fetch(`${base}/api/audit/status?days=${days}`, {
+    const res = await fetch(`${base}/api/audit/status?days=${days}&limit=${limit}`, {
       cache: "no-store",
       signal: controller.signal,
     });

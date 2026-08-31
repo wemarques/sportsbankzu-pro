@@ -106,6 +106,10 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     market_stats = {}
     lambda_errors = []
     brier_scores = []
+    # #195: Brier sobre os picks auditados — mesmo conjunto que alimenta a
+    # acuracia. brier_scores mede apenas Over 2.5 gols, um valor por jogo,
+    # entao 81% de acerto convivia com "Brier 0.18" sem relacao entre si.
+    pick_brier_scores = []
     ev_values = []
     match_results = []
     ou_predictions = []  # #079: for Log-Loss computation
@@ -242,6 +246,23 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             # Calculate EV for each pick
             odd_pick = merc.get("odd_minima", 0) or 0
             prob_pick = merc.get("prob_max", 0) / 100.0 if merc.get("prob_max") else 0
+
+            # #195: Brier do proprio pick (probabilidade declarada vs desfecho)
+            _cal = merc.get("calibrated_probability")
+            _pmin, _pmax = merc.get("prob_min"), merc.get("prob_max")
+            _p = None
+            if _cal is not None:
+                try:
+                    _p = float(_cal)
+                except (TypeError, ValueError):
+                    _p = None
+            elif _pmin is not None and _pmax is not None:
+                try:
+                    _p = (float(_pmin) + float(_pmax)) / 200.0
+                except (TypeError, ValueError):
+                    _p = None
+            if _p is not None and 0 < _p <= 1:
+                pick_brier_scores.append((_p - (1 if is_correct else 0)) ** 2)
             ev_pick = None
             if odd_pick > 0 and prob_pick > 0:
                 ev_pick = (prob_pick * (odd_pick - 1)) - (1 - prob_pick)
@@ -456,6 +477,9 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     safe_accuracy_pct = (safe_correct / safe_total * 100.0) if safe_total > 0 else None  # #162: None when 0/0
     neutro_accuracy_pct = (neutro_correct / neutro_total * 100.0) if neutro_total > 0 else None  # #162
     avg_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.0
+    avg_pick_brier = (
+        sum(pick_brier_scores) / len(pick_brier_scores) if pick_brier_scores else None
+    )
     avg_lambda_error = sum(lambda_errors) / len(lambda_errors) if lambda_errors else 0.0
     avg_ev = sum(ev_values) / len(ev_values) if ev_values else 0.0
 
@@ -501,6 +525,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "neutro_total": neutro_total,
         "neutro_accuracy_pct": neutro_accuracy_pct,
         "avg_brier_score": avg_brier,
+        "brier_picks": avg_pick_brier,
+        "brier_picks_n": len(pick_brier_scores),
         "avg_lambda_error": avg_lambda_error,
         "avg_ev": avg_ev,
         "market_accuracy_text": "\n".join(market_accuracy_list) or "Sem dados",
@@ -637,6 +663,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                 "neutro_accuracy": neutro_accuracy_pct,
                 "total_matches": len(match_results),
                 "avg_brier_score": avg_brier,
+                "brier_picks": avg_pick_brier,
+                "brier_picks_n": len(pick_brier_scores),
                 "avg_lambda_error": avg_lambda_error,
                 "avg_ev": avg_ev,
                 "model_evaluation_summary": model_evaluation.get("overall_assessment", "") if model_evaluation else "",
@@ -728,6 +756,8 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "safe_accuracy": round(safe_accuracy_pct, 1) if safe_accuracy_pct is not None else None,
         "neutro_accuracy": round(neutro_accuracy_pct, 1) if neutro_accuracy_pct is not None else None,
         "avg_brier_score": round(avg_brier, 4),
+        "brier_picks": round(avg_pick_brier, 4) if avg_pick_brier is not None else None,
+        "brier_picks_n": len(pick_brier_scores),
         "avg_ev": round(avg_ev, 4),
         "model_assessment": model_evaluation.get("overall_assessment", "") if model_evaluation else "N/A",
         "dupla_intra_accuracy": round(intra_acc, 1),

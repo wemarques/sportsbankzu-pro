@@ -437,6 +437,22 @@ async def get_brier_metrics():
         return {"error": str(e), "total_picks": 0}
 
 
+@router.get("/metrics/brier/daily")
+async def get_brier_daily(days: int = 30):
+    """#195: serie diaria de acuracia/Brier — uma linha por dia.
+
+    O snapshot cumulativo (/metrics/brier) nao serve para detectar regressao
+    recente: um dia ruim vira ruido dentro de milhares de picks. Esta rota
+    devolve o dia a dia para comparar antes/depois de um deploy.
+    """
+    try:
+        from backend.services.brier_service import daily_series
+        series = daily_series(days)
+        return {"series": series, "count": len(series), "days": days}
+    except Exception as e:
+        return {"series": [], "count": 0, "days": days, "error": str(e)}
+
+
 @router.get("/metrics/brier/history")
 async def get_brier_history(limit: int = 30):
     """Brier trend over time."""

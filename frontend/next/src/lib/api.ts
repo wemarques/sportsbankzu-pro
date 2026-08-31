@@ -449,7 +449,16 @@ export interface BatchAuditResult {
   safe_total: number;
   neutro_correct: number;
   neutro_total: number;
+  /**
+   * #195: Brier calculado SO sobre Over 2.5 gols, um valor por jogo — nunca
+   * sobre os picks auditados. Mantido por compatibilidade (as regras de
+   * diagnostico em AuditReportCard ainda leem este campo), mas rotulado
+   * corretamente na interface.
+   */
   avg_brier_score: number;
+  /** #195: Brier sobre os picks efetivamente auditados (mede o que a acuracia mede) */
+  brier_picks?: number | null;
+  brier_picks_n?: number;
   avg_lambda_error: number;
   market_accuracy: BatchAuditMarketAccuracy[];
   match_results: BatchAuditMatchResult[];

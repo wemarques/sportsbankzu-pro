@@ -137,14 +137,48 @@ def _segment(picks):
     }
 
 
-def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
-    """Calculate complete Brier snapshot from all picks."""
+def _row_to_pick(market, league, result, pp_raw, ctx_raw, ptype) -> Optional[Dict]:
+    """Normaliza uma linha de audit_results num pick comparavel. None = descartar."""
+    outcome = 1 if result == "hit" else (0 if result == "miss" else None)
+    if outcome is None:
+        return None
+    pp = json.loads(pp_raw) if isinstance(pp_raw, str) else (pp_raw or {})
+    ctx = json.loads(ctx_raw) if isinstance(ctx_raw, str) else (ctx_raw or {})
+    prob = pp.get("prob")
+    if prob is None:
+        return None
+    prob = float(prob)
+    if prob > 1:
+        prob /= 100
+    odd = pp.get("book_odd") or pp.get("odd")
+    odd = float(odd) if odd and float(odd) > 1 else None
+    cls = ctx.get("pick_classification", ptype or "?")
+    return {"prob": prob, "odd": odd, "out": outcome, "league": league, "market": market, "cls": cls}
+
+
+def _load_picks(audit_date: str = None, since_days: int = None) -> Optional[List[Dict]]:
+    """Le picks resolvidos de audit_results.
+
+    #195: `audit_date` passa a filtrar de verdade. Antes `calculate_snapshot`
+    aceitava o parametro e o unico uso era ecoa-lo no retorno — a query lia a
+    tabela inteira, entao nao havia como fatiar o Brier por dia.
+    """
+    where = ["pick_type != 'AUDIT'"]
+    params: list = []
+    if audit_date:
+        where.append('DATE("timestamp") = %s')
+        params.append(audit_date)
+    elif since_days:
+        where.append('"timestamp" >= NOW() - MAKE_INTERVAL(days => %s)')
+        params.append(int(since_days))
     try:
         conn = _conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT market, league, actual_result, predicted_probs, context, pick_type "
-            "FROM audit_results WHERE pick_type != 'AUDIT'"
+            'SELECT market, league, actual_result, predicted_probs, context, pick_type, '
+            'DATE("timestamp") AS d '
+            "FROM audit_results WHERE " + " AND ".join(where),
+            tuple(params),
         )
         rows = cur.fetchall()
         cur.close()
@@ -154,23 +188,42 @@ def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
         return None
 
     picks = []
-    for market, league, result, pp_raw, ctx_raw, ptype in rows:
-        outcome = 1 if result == "hit" else (0 if result == "miss" else None)
-        if outcome is None:
+    for market, league, result, pp_raw, ctx_raw, ptype, day in rows:
+        pk = _row_to_pick(market, league, result, pp_raw, ctx_raw, ptype)
+        if pk is None:
             continue
-        pp = json.loads(pp_raw) if isinstance(pp_raw, str) else (pp_raw or {})
-        ctx = json.loads(ctx_raw) if isinstance(ctx_raw, str) else (ctx_raw or {})
-        prob = pp.get("prob")
-        if prob is None:
-            continue
-        prob = float(prob)
-        if prob > 1:
-            prob /= 100
-        odd = pp.get("book_odd") or pp.get("odd")
-        odd = float(odd) if odd and float(odd) > 1 else None
-        cls = ctx.get("pick_classification", ptype or "?")
-        picks.append({"prob": prob, "odd": odd, "out": outcome, "league": league, "market": market, "cls": cls})
+        pk["day"] = str(day) if day else None
+        picks.append(pk)
+    return picks
 
+
+def daily_series(days: int = 30) -> List[Dict]:
+    """#195: serie diaria de acuracia e Brier — uma linha por dia.
+
+    E o que faltava para responder "a queda comecou no deploy X?": o snapshot
+    cumulativo dilui qualquer degrau recente em milhares de picks antigos.
+    """
+    picks = _load_picks(since_days=days)
+    if not picks:
+        return []
+    by_day = defaultdict(list)
+    for p in picks:
+        if p.get("day"):
+            by_day[p["day"]].append(p)
+    out = []
+    for day in sorted(by_day.keys()):
+        seg = _segment(by_day[day])
+        if seg:
+            out.append({"date": day, **seg})
+    return out
+
+
+def calculate_snapshot(audit_date: str = None) -> Optional[Dict]:
+    """Calculate complete Brier snapshot.
+
+    #195: com `audit_date` o snapshot cobre so aquele dia; sem ele, tudo.
+    """
+    picks = _load_picks(audit_date=audit_date)
     if not picks:
         return None
 

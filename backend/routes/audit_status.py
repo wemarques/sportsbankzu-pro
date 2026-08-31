@@ -20,10 +20,17 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 @router.get("/status")
 async def audit_status(
     days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
+    limit: int = Query(10, ge=1, le=500, description="Max audit rows to return"),
 ):
-    """Return recent audit results, corrections, and summary."""
+    """Return recent audit results, corrections, and summary.
+
+    #195: `limit` passa a ser exposto e repassado. Antes a rota aceitava
+    `days` mas nunca encaminhava `limit`, entao o default 10 de
+    get_recent_audit_results truncava tudo: `days=90` devolvia os mesmos
+    10 registros que `days=7`, e a serie diaria parava em ~4 dias.
+    """
     try:
-        audits = get_recent_audit_results(days=days)
+        audits = get_recent_audit_results(days=days, limit=limit)
     except Exception as e:
         logger.warning(f"Failed to fetch audit results: {e}")
         audits = []

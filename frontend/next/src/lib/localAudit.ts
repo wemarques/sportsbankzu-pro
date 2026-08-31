@@ -648,6 +648,8 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
       neutro_correct: 0,
       neutro_total: 0,
       avg_brier_score: 0,
+      brier_picks: null,
+      brier_picks_n: 0,
       avg_lambda_error: 0,
       market_accuracy: [],
       match_results: [],
@@ -663,6 +665,9 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
   const marketStats = new Map<string, { correct: number; total: number }>();
   const lambdaErrors: number[] = [];
   const brierScores: number[] = [];
+  // #195: Brier sobre os picks auditados — o mesmo conjunto que alimenta a
+  // acuracia. brierScores mede apenas Over 2.5 gols, um valor por jogo.
+  const pickBrierScores: number[] = [];
   const matchResults: BatchAuditMatchResult[] = [];
 
   // Market reference signal capping counters
@@ -714,6 +719,16 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
 
       matchTotal++;
       if (isCorrect) matchCorrect++;
+
+      // #195: probabilidade declarada do pick, na escala 0-1.
+      const pickProb =
+        pick.calibrated_probability ??
+        (pick.prob_min != null && pick.prob_max != null
+          ? (pick.prob_min + pick.prob_max) / 200
+          : null);
+      if (pickProb != null && pickProb > 0 && pickProb <= 1) {
+        pickBrierScores.push((pickProb - (isCorrect ? 1 : 0)) ** 2);
+      }
 
       if (effectiveStatus === "SAFE" || effectiveStatus === "SAFE*") {
         safeTotal++;
@@ -783,6 +798,9 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
   const safeAcc = safeTotal > 0
     ? Math.round((safeCorrect / safeTotal) * 1000) / 10
     : null;  // #162: null when 0/0
+  const avgPickBrier = pickBrierScores.length > 0
+    ? pickBrierScores.reduce((a, b) => a + b, 0) / pickBrierScores.length
+    : null;
   const avgBrier = brierScores.length > 0
     ? brierScores.reduce((a, b) => a + b, 0) / brierScores.length
     : 0;
@@ -855,6 +873,8 @@ export function runLocalAudit(allMatches: Match[]): BatchAuditResult {
     neutro_correct: neutroCorrect,
     neutro_total: neutroTotal,
     avg_brier_score: avgBrier,
+    brier_picks: avgPickBrier,
+    brier_picks_n: pickBrierScores.length,
     avg_lambda_error: avgLambda,
     market_accuracy: marketAccuracy,
     league_accuracy: leagueAccuracy,
