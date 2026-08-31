@@ -436,7 +436,7 @@ export function suggestSystemBet(
 
   // Build headline
   const headline = recommended
-    ? `Encontramos ${n} jogos de grande valor hoje. Para proteger sua banca contra ${n <= 3 ? "1 erro" : "ate 2 erros"}, sugerimos um ${formatDef.label} (${combos.length} linhas). Invista R$ ${stakePerLine.toFixed(2)} em cada combinacao.`
+    ? `Encontramos ${n} jogos de grande valor hoje. Para proteger sua banca contra ${n <= 3 ? "1 erro" : "até 2 erros"}, sugerimos um ${formatDef.label} (${combos.length} linhas). Invista R$ ${stakePerLine.toFixed(2)} em cada combinação.`
     : `${n} jogos +EV encontrados, mas as odds médias são baixas para sistema. Recomendamos apostas simples individuais.`;
 
   return {

@@ -648,7 +648,7 @@ function BankSlider({
               }}
             >
               <AlertTriangle size={10} />
-              Alocacao excede o limite em{" "}
+              Alocação excede o limite em{" "}
               <strong>{formatCurrency(totalStaked - catBudget)}</strong>. Ajuste as stakes ou aumente o %.
             </div>
           )}
@@ -1724,7 +1724,7 @@ export default function BankrollCalculator() {
               >
                 <AlertTriangle size={14} />
                 {totalPct > 100
-                  ? `Alocacao excede 100% em ${totalPct - 100}%. Ajuste os sliders.`
+                  ? `Alocação excede 100% em ${totalPct - 100}%. Ajuste os sliders.`
                   : `${100 - totalPct}% da banca não será alocada.`}
               </div>
             )}

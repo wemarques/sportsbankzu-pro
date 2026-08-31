@@ -42,7 +42,7 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     bgColor: "rgba(239,68,68,0.15)",
     description: "Bloqueado por risco alto, dados insuficientes ou regime restritivo",
     tooltip:
-      "Mercado bloqueado pelo sistema. Razoes possiveis: risco muito alto, dados insuficientes, EV negativo ou regime restritivo da liga.",
+      "Mercado bloqueado pelo sistema. Razoes possíveis: risco muito alto, dados insuficientes, EV negativo ou regime restritivo da liga.",
   },
 };
 

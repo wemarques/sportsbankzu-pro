@@ -305,7 +305,7 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           <p><strong style={{ color: "#cbd5e1" }}>Brier Score:</strong> Erro quadratico medio das probabilidades (0 = perfeito, 1 = pessimo). Target: &lt; 0.22.</p>
           <p><strong style={{ color: "#cbd5e1" }}>ECE:</strong> Expected Calibration Error — mede se &quot;70% previsto = 70% real&quot;.</p>
           <p><strong style={{ color: "#cbd5e1" }}>Conformidade:</strong> Taxa de cumprimento das regras operacionais (100% = nenhuma violação).</p>
-          <p><strong style={{ color: "#cbd5e1" }}>CV (Coef. Variação):</strong> Desvio padrão / média. CV &lt; 0.3 indica consistencia aceitavel.</p>
+          <p><strong style={{ color: "#cbd5e1" }}>CV (Coef. Variação):</strong> Desvio padrão / média. CV &lt; 0.3 indica consistência aceitável.</p>
           <p><strong style={{ color: "#cbd5e1" }}>Fallback:</strong> Ativacao de caminho alternativo quando fonte primaria falha.</p>
         </div>
       </details>

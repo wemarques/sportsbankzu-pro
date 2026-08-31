@@ -43,8 +43,8 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Brier Score",
     category: "metrica",
     definition:
-      "Mede a precisão das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possível). Quanto menor, melhor a calibracao do modelo.",
-    example: "Brier 0.18 = boa calibracao; Brier 0.30 = precisa ajuste",
+      "Mede a precisão das probabilidades previstas. Varia de 0 (perfeito) a 1 (pior possível). Quanto menor, melhor a calibração do modelo.",
+    example: "Brier 0.18 = boa calibração; Brier 0.30 = precisa ajuste",
   },
   {
     term: "Log-Loss",
@@ -56,7 +56,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Sharpe Ratio",
     category: "metrica",
     definition:
-      "Retorno medio dividido pela volatilidade. Mede eficiencia do retorno ajustado ao risco. Acima de 1.0 e considerado bom.",
+      "Retorno medio dividido pela volatilidade. Mede eficiência do retorno ajustado ao risco. Acima de 1.0 e considerado bom.",
   },
   {
     term: "EV (Expected Value)",
@@ -69,7 +69,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "ECE (Expected Calibration Error)",
     category: "metrica",
     definition:
-      "Erro medio de calibracao — quao distante as probabilidades previstas estao da frequencia real observada.",
+      "Erro medio de calibração — quão distantes as probabilidades previstas estão da frequência real observada.",
   },
 
   // ── Markets ──
@@ -101,7 +101,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Escanteios",
     category: "mercado",
     definition:
-      "Total de escanteios na partida. Linhas de 4.5 a 12.5. Motor v2 bidirecional com calibracao per-league.",
+      "Total de escanteios na partida. Linhas de 4.5 a 12.5. Motor v2 bidirecional com calibração per-league.",
   },
 
   // ── Model ──
@@ -109,7 +109,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Dixon-Coles",
     category: "modelo",
     definition:
-      "Extensao do modelo Poisson que adiciona correlacao entre gols dos dois times via parametro rho (rho). Corrige o fato de que placares baixos (0-0, 1-0, 0-1, 1-1) tem frequencia diferente do Poisson puro.",
+      "Extensao do modelo Poisson que adiciona correlacao entre gols dos dois times via parametro rho (rho). Corrige o fato de que placares baixos (0-0, 1-0, 0-1, 1-1) tem frequência diferente do Poisson puro.",
   },
   {
     term: "Lambda (L)",

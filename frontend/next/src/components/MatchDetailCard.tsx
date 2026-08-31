@@ -1026,7 +1026,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                         <div className="mdc-ai-timestamp" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <Clock size={14} />
-                            <span>Ultima atualizacao: {match.aiAnalysis.last_updated}</span>
+                            <span>Última atualização: {match.aiAnalysis.last_updated}</span>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                             {onAudit && (
