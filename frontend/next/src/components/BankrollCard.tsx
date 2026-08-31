@@ -199,7 +199,7 @@ export default function BankrollCard({
       <div className="bkr-header">
         <div className="bkr-title-row">
           <div>
-            <span className="bkr-title">Banca Disponível</span>
+            <h2 className="bkr-title">Banca Disponível</h2>
             <span className="bkr-subtitle">
               {stakeMode === "kelly" ? "Quarter Kelly \u00B7 Cap 5%" : "Stake por Confian\u00E7a \u00B7 Cap vari\u00E1vel"}
             </span>
@@ -213,6 +213,7 @@ export default function BankrollCard({
         <input
           type="number"
           className="bkr-input"
+          aria-label="Valor da banca em reais"
           value={bankroll}
           min={1}
           step={10}

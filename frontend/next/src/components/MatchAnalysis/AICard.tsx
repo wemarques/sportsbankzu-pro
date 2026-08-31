@@ -46,9 +46,9 @@ export const AICard = ({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 700, color: C.t1, margin: 0 }}>
             Análise AI
-          </span>
+          </h2>
           <span
             style={{
               fontSize: 9,
@@ -76,7 +76,9 @@ export const AICard = ({
         </div>
         {analysis.loading ? (
           /* #189-g: progresso indeterminado honesto — nada de "5%" inventado */
+          /* #189-h: role=status para leitores de tela anunciarem (WCAG 4.1.3) */
           <span
+            role="status"
             style={{
               fontSize: 10,
               fontWeight: 600,

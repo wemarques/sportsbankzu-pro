@@ -745,7 +745,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<string | null>(null);
-  const mainContentRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLElement>(null); // #189-h: st-main agora e <main>
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const auditResultRef = useRef<HTMLDivElement>(null);
 
@@ -1887,7 +1887,9 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
         </div>
       </nav>
 
-      <div className="st-main" ref={mainContentRef}>
+      {/* #189-h: landmark <main> + h1 para navegacao por AT (WCAG 1.3.1) */}
+      <main className="st-main" ref={mainContentRef}>
+        <h1 className="sr-only">SportsBankZU Pro — análise de apostas com EV</h1>
         {/* LEFT PANEL - Em mobile, esconder quando um jogo está selecionado */}
         {(!isMobile || !selectedMatchId) && (
           <div className="st-panel-left" ref={capturePanelRef}>
@@ -2254,8 +2256,8 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                   }}
                 >
                   <Loader2 size={14} className="st-spin-icon" aria-hidden />
-                  {/* #189-g: contagem real de ligas ja carregadas */}
-                  Carregando ligas… {new Set(allMatches.map((m) => m.leagueId)).size}/{ACTIVE_LEAGUES().length}
+                  {/* #189-g: contagem real de ligas ja carregadas · #189-h: anunciado (WCAG 4.1.3) */}
+                  <span role="status" aria-live="polite">Carregando ligas… {new Set(allMatches.map((m) => m.leagueId)).size}/{ACTIVE_LEAGUES().length}</span>
                 </div>
               )}
 
@@ -2291,7 +2293,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                 <div style={{ textAlign: "center", padding: "48px 24px", color: "#666" }}>
                   <Loader2 size={28} className="st-spin-icon" style={{ display: "inline-block", marginBottom: 10 }} />
                   {/* #189-g: progresso real por lote de ligas, nao spinner mudo */}
-                  <div style={{ fontSize: "0.78rem" }}>
+                  <div style={{ fontSize: "0.78rem" }} role="status" aria-live="polite">
                     Carregando ligas… 0/{ACTIVE_LEAGUES().length}
                   </div>
                   <div style={{ fontSize: "0.65rem", color: "#555", marginTop: 4 }}>
@@ -2697,7 +2699,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
             )}
           </section>
         )}
-      </div>
+      </main>
 
       {/* Reliability Panel (#101) */}
       {reliabilityOpen && (

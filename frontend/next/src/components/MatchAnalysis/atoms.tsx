@@ -220,6 +220,7 @@ export const StakeRow = ({
         <input
           type="number"
           inputMode="decimal"
+          aria-label="Stake personalizado em % da banca"
           placeholder={suggestedPct != null ? suggestedPct.toFixed(1) : "0"}
           value={customPct}
           onChange={(e) => setCustomPct(e.target.value)}
@@ -234,7 +235,7 @@ export const StakeRow = ({
             fontWeight: 700,
             fontVariantNumeric: "tabular-nums",
             textAlign: "right",
-            outline: "none",
+            /* #189-h: outline devolvido ao navegador — foco visivel (WCAG 2.4.7) */
           }}
           min={0}
           max={100}
@@ -286,7 +287,7 @@ export const ProbBar = ({
 }) => {
   const pct = Math.round(prob * 100);
   const h = size === "sm" ? 4 : 5;
-  const color = muted ? "#6b7280" : pct >= 70 ? C.green : pct >= 50 ? C.gold : C.orange;
+  const color = muted ? "#9ca3af" /* #189-h: era #6b7280 (3,9:1) */ : pct >= 70 ? C.green : pct >= 50 ? C.gold : C.orange;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div

@@ -8,13 +8,15 @@ export const EVHelp = () => {
     <div style={{ marginTop: 4 }}>
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         style={{
           background: "transparent",
           border: "none",
           color: C.t3,
           fontSize: 11,
           cursor: "pointer",
-          padding: 0,
+          /* #189-h: alvo de toque maior (WCAG 2.5.5) */
+          padding: "8px 8px 8px 0",
         }}
       >
         {open ? "▾" : "▸"} O que significa EV?

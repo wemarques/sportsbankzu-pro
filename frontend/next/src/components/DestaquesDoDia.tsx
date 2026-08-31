@@ -420,8 +420,12 @@ export default function DestaquesDoDia({
 
       {/* Empty state */}
       {valueBets.length === 0 && analysisOnly.length === 0 && (
-        <div style={{ textAlign: "center", padding: "48px 16px", color: "#6b7280" }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>&#9917;</div>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ textAlign: "center", padding: "48px 16px", color: "#9ca3af" /* #189-h: era #6b7280 */ }}
+        >
+          <div style={{ fontSize: 40, marginBottom: 8 }} aria-hidden>&#9917;</div>
           {matches.length === 0
             ? "Carregando jogos para analise..."
             : "Nenhum destaque encontrado para hoje."}

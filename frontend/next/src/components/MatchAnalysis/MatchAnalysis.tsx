@@ -151,14 +151,15 @@ export default function MatchAnalysis({
               marginBottom: 10,
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>Mercados</span>
+            <h2 style={{ fontSize: 13, fontWeight: 700, color: C.t1, margin: 0 }}>Mercados</h2>
             <div style={{ display: "flex", gap: 3 }}>
               {filters.map((f) => (
                 <button
                   key={f.id}
                   onClick={() => setFilter(f.id)}
                   style={{
-                    padding: "3px 9px",
+                    /* #189-h: alvo de toque maior (WCAG 2.5.5) */
+                    padding: "8px 11px",
                     borderRadius: 4,
                     fontSize: 10,
                     fontWeight: 600,

@@ -13,7 +13,7 @@
   --st-border-light: #333333;
   --st-text: #e8e8e8;
   --st-text-secondary: #888888;
-  --st-text-muted: #666666;
+  --st-text-muted: #9ca3af; /* #189-h: era #666 (3,0:1) — WCAG 1.4.3 */
   --st-gold: #ffd700;
   --st-gold-dim: #b8960f;
   --st-primary: #00ff88;
@@ -132,6 +132,15 @@
 
 .st-nav__link:hover {
   color: var(--st-text);
+}
+
+/* #189-h: alvo de toque >=44px nos controles do topo (WCAG 2.5.5) */
+.st-nav__right .st-nav__link,
+.st-nav__right .st-nav__search {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 6px 8px;
 }
 
 .st-nav__right {

@@ -7,7 +7,7 @@ export const C = {
   bHi: "#2a2a2a",
   t1: "#e8e8e8",
   t2: "#888",
-  t3: "#555",
+  t3: "#8b95a0", // #189-h: era #555 (2,5:1) — reprovava WCAG 1.4.3
   green: "#00df82",
   gS: "rgba(0,223,130,0.10)",
   gB: "rgba(0,223,130,0.22)",
