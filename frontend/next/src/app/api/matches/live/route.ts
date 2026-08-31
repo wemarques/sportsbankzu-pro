@@ -9,18 +9,32 @@ export async function GET(req: NextRequest) {
 
   if (!backendBase) {
     console.warn("[live-scores] PY_BACKEND_URL not configured — returning empty");
-    return NextResponse.json({ matches: [], nextUpdate: 60 });
+    return NextResponse.json({ matches: [], nextUpdate: 20 });
   }
 
   // 1. Try the dedicated /live-scores endpoint first
   const result = await fetchBackend("/live-scores", { timeoutMs: 20_000 });
 
   if (result.ok) {
-    const data = result.data as { matches?: unknown[]; nextUpdate?: number };
+    const data = result.data as {
+      matches?: unknown[];
+      nextUpdate?: number;
+      serverTimeUnix?: number;
+      stale?: boolean;
+      cacheAge?: number;
+    };
     const matches = data.matches ?? [];
     if (matches.length > 0) {
       console.log(`[live-scores] OK — ${matches.length} matches (${result.durationMs}ms)`);
-      return NextResponse.json({ matches, nextUpdate: data.nextUpdate ?? 60 });
+      // #190: serverTimeUnix/stale seguem para o cliente para que ele ancore o
+      // relogio pela idade real do dado, e nao pela hora em que a resposta chegou.
+      return NextResponse.json({
+        matches,
+        nextUpdate: data.nextUpdate ?? 20,
+        serverTimeUnix: data.serverTimeUnix,
+        stale: data.stale,
+        cacheAge: data.cacheAge,
+      });
     }
   }
 
@@ -39,18 +53,28 @@ export async function GET(req: NextRequest) {
           .filter((m) => m.status === "live" || m.status === "finished")
           .map((m) => ({
             id: m.footystatsId ?? m.id,
+            // #190: IDs nomeados, para o cliente casar o overlay por ID em vez
+            // de depender do nome do time.
+            footystatsId: m.footystatsId ?? null,
+            apiFootballId: m.apiFootballFixtureId ?? null,
             homeTeam: typeof m.homeTeam === "string" ? m.homeTeam : (m.homeTeam as Record<string, unknown>)?.name ?? "",
             awayTeam: typeof m.awayTeam === "string" ? m.awayTeam : (m.awayTeam as Record<string, unknown>)?.name ?? "",
             status: m.status,
             score: m.score,
             period: m.period,
             minute: m.minute,
+            observedAtUnix: Math.floor(Date.now() / 1000),
+            minuteSource: m.minuteSource ?? null,
             ...(m.currentCorners != null ? { currentCorners: m.currentCorners } : {}),
             ...(m.currentCards != null ? { currentCards: m.currentCards } : {}),
           }));
         if (fbMatches.length > 0) {
           console.log(`[live-scores] Fallback via /fixtures — ${fbMatches.length} live/finished matches (${fbResult.durationMs}ms)`);
-          return NextResponse.json({ matches: fbMatches, nextUpdate: 60 });
+          return NextResponse.json({
+            matches: fbMatches,
+            nextUpdate: 20,
+            serverTimeUnix: Math.floor(Date.now() / 1000),
+          });
         }
       }
     } catch {
@@ -61,5 +85,5 @@ export async function GET(req: NextRequest) {
   if (!result.ok) {
     console.error(`[live-scores] ${result.error?.kind}: ${result.error?.message}`);
   }
-  return NextResponse.json({ matches: [], nextUpdate: 60 });
+  return NextResponse.json({ matches: [], nextUpdate: 20 });
 }

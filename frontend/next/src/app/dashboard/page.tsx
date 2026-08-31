@@ -333,6 +333,29 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
+/** #190: item do overlay de /api/matches/live. */
+type LiveOverlayItem = {
+  id: number;
+  /** IDs canonicos (#190) — `id` sozinho era ambiguo entre provedores */
+  footystatsId?: number | null;
+  apiFootballId?: number | null;
+  homeTeam: string;
+  awayTeam: string;
+  status: string;
+  score: { home: number; away: number; halftime?: { home: number; away: number } };
+  period?: string;
+  minute?: number;
+  /** epoch (s) de quando o backend observou este minuto */
+  observedAtUnix?: number;
+  /**
+   * De onde veio o minuto: "api_football" = cronometro real;
+   * "kickoff_estimate" = o backend estimou pelo horario de inicio.
+   */
+  minuteSource?: "api_football" | "kickoff_estimate" | null;
+  currentCorners?: number;
+  currentCards?: number;
+};
+
 /**
  * #190 — o relogio ao vivo agora vive em @/lib/liveClock.
  * A versao antiga fazia Math.max(minutoDoFeed, estimativaPeloKickoff), o que
@@ -477,6 +500,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   return {
     id: item.id ?? `${resolvedLeagueId}-${resolveTeamAlias(home)}-${resolveTeamAlias(away)}`,
     footystatsId: item.footystatsId ?? undefined,
+    apiFootballId: item.apiFootballFixtureId ?? item.apiFootballId ?? undefined,
     leagueId: resolvedLeagueId,
     leagueName: league?.name ?? resolvedLeagueId,
     homeTeam: { name: home, logo: item.homeTeam?.logo ?? "", form: item.homeTeam?.form ?? item.homeForm ?? [], rating: item.homeTeam?.rating || item.ratings?.home || 0 },
@@ -891,6 +915,9 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   // Track consecutive live-score failures for retry backoff (#071 Camada 3)
   const liveScoreFailCountRef = useRef(0);
 
+  // #190: cadencia do overlay, ditada pelo backend (nextUpdate) com clamp.
+  const [liveIntervalMs, setLiveIntervalMs] = useState(20_000);
+
   const fetchLiveScores = useCallback(async () => {
     try {
       // Pass live league IDs so the API route can fallback to /fixtures when /live-scores is empty
@@ -912,7 +939,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
           if (retryList.length > 0) {
             liveScoreFailCountRef.current = 0;
             // Fall through to merge logic below via recursive-like pattern
-            mergeLiveOverlay(retryList);
+            mergeLiveOverlay(retryList, retryData.serverTimeUnix);
             return;
           }
         }
@@ -921,7 +948,13 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
 
       liveScoreFailCountRef.current = 0;
       const data = await res.json();
-      const liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number; currentCards?: number }> = data.matches ?? [];
+      // #190: o backend define a cadencia via nextUpdate; o clamp evita que um
+      // valor ruim derrube a UI (muito rapido) ou congele o placar (muito lento).
+      if (typeof data.nextUpdate === "number" && Number.isFinite(data.nextUpdate)) {
+        const ms = Math.min(Math.max(data.nextUpdate * 1000, 15_000), 60_000);
+        setLiveIntervalMs((prev) => (prev === ms ? prev : ms));
+      }
+      const liveList: LiveOverlayItem[] = data.matches ?? [];
 
       // Camada 2 (#071, #122): when liveList is empty, do NOT auto-finish.
       // Empty list may be caused by API rate limit, not actual match completion.
@@ -934,7 +967,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
       if (process.env.NODE_ENV === "development" || liveList.some((lm) => (lm.score?.home ?? 0) > 0 || (lm.score?.away ?? 0) > 0)) {
         console.log(`[live-scores] Overlay: ${liveList.length} matches`, liveList.map((lm) => `${lm.homeTeam} ${lm.score?.home}-${lm.score?.away} ${lm.awayTeam} (id=${lm.id})`));
       }
-      mergeLiveOverlay(liveList);
+      mergeLiveOverlay(liveList, data.serverTimeUnix);
 
       // Camada 2b (#122): auto-finish matches missing from a NON-EMPTY live list.
       // If live-scores returned data for some matches but NOT this one, and
@@ -946,15 +979,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
           const elapsed = elapsedMinutes(m.datetime);
           if (elapsed === null || elapsed <= 100) return m;
           // Check if this match was in the live list
-          const inLiveList = liveList.some((lm) => {
-            if (m.footystatsId != null && lm.id != null && Number(m.footystatsId) === Number(lm.id)) return true;
-            const mH = resolveTeamAlias(m.homeTeam.name);
-            const lH = resolveTeamAlias(lm.homeTeam);
-            const mA = resolveTeamAlias(m.awayTeam.name);
-            const lA = resolveTeamAlias(lm.awayTeam);
-            return (mH === lH || (mH && lH && (mH.includes(lH) || lH.includes(mH)))) &&
-                   (mA === lA || (mA && lA && (mA.includes(lA) || lA.includes(mA))));
-          });
+          const inLiveList = liveList.some((lm) => overlayMatches(m, lm));
           if (!inLiveList) {
             console.log(`[live-scores] Auto-finish: ${m.homeTeam.name} vs ${m.awayTeam.name} (elapsed=${elapsed}min, absent from ${liveList.length} live matches)`);
             changed = true;
@@ -970,8 +995,48 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
     }
   }, []);
 
+  /**
+   * #190: casamento do overlay. A ordem importa — ID canonico primeiro,
+   * nome so como ultimo recurso. Antes so o ramo por nome funcionava: o `id`
+   * do overlay ora vinha do FootyStats, ora do API-Football, e a comparacao
+   * contra footystatsId nunca batia.
+   */
+  function overlayMatches(m: Match, lm: LiveOverlayItem): boolean {
+    if (m.apiFootballId != null && lm.apiFootballId != null) {
+      return Number(m.apiFootballId) === Number(lm.apiFootballId);
+    }
+    if (m.footystatsId != null && lm.footystatsId != null) {
+      return Number(m.footystatsId) === Number(lm.footystatsId);
+    }
+    // Compatibilidade com payloads antigos, sem os IDs nomeados.
+    if (m.footystatsId != null && lm.footystatsId === undefined && lm.id != null) {
+      if (Number(m.footystatsId) === Number(lm.id)) return true;
+    }
+    const mHome = resolveTeamAlias(m.homeTeam.name);
+    const mAway = resolveTeamAlias(m.awayTeam.name);
+    const lHome = resolveTeamAlias(lm.homeTeam);
+    const lAway = resolveTeamAlias(lm.awayTeam);
+    if (mHome === lHome && mAway === lAway) return true;
+    return Boolean(
+      lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
+      lAway && mAway && (mAway.includes(lAway) || lAway.includes(mAway)),
+    );
+  }
+
+  /**
+   * #190: ha quanto tempo o backend observou este minuto, em ms. Usa o relogio
+   * do servidor nas duas pontas para nao sofrer com desvio de horario do
+   * cliente. Limitado a 10 min para nunca produzir uma ancora absurda.
+   */
+  function overlayAgeMs(lm: LiveOverlayItem, serverTimeUnix?: number): number {
+    if (lm.observedAtUnix == null || serverTimeUnix == null) return 0;
+    const ageSec = serverTimeUnix - lm.observedAtUnix;
+    if (!Number.isFinite(ageSec) || ageSec <= 0) return 0;
+    return Math.min(ageSec, 600) * 1000;
+  }
+
   /** Merge live overlay data into allMatches state */
-  function mergeLiveOverlay(liveList: Array<{ id: number; homeTeam: string; awayTeam: string; status: string; score: { home: number; away: number; halftime?: { home: number; away: number } }; period?: string; minute?: number; currentCorners?: number; currentCards?: number }>) {
+  function mergeLiveOverlay(liveList: LiveOverlayItem[], serverTimeUnix?: number) {
     setAllMatches((prev) => {
       let changed = false;
       let matched = 0;
@@ -984,20 +1049,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
             const today = new Date().toISOString().slice(0, 10);
             if (matchDate !== today) return false;
           }
-          // Match by FootyStats ID (coerce to number for safe comparison)
-          if (m.footystatsId != null && lm.id != null) {
-            if (Number(m.footystatsId) === Number(lm.id)) return true;
-          }
-          // Fallback: alias-resolved + normalized team name comparison
-          const mHome = resolveTeamAlias(m.homeTeam.name);
-          const mAway = resolveTeamAlias(m.awayTeam.name);
-          const lHome = resolveTeamAlias(lm.homeTeam);
-          const lAway = resolveTeamAlias(lm.awayTeam);
-          if (mHome === lHome && mAway === lAway) return true;
-          // Partial match: one name contains the other (handles "FC Barcelona" vs "Barcelona")
-          if (lHome && mHome && (mHome.includes(lHome) || lHome.includes(mHome)) &&
-              lAway && mAway && (mAway.includes(lAway) || lAway.includes(mAway))) return true;
-          return false;
+          return overlayMatches(m, lm);
         });
         if (!live) return m;
         matched++;
@@ -1043,8 +1095,16 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
           // #190: ancora do relogio. So re-carimba quando o feed realmente
           // avancou o tempo — assim o interpolador sabe ha quanto tempo o
           // ultimo minuto real chegou e congela se o feed travar.
+          // A ancora desconta a idade do dado (observedAtUnix vs serverTimeUnix),
+          // senao um payload servido do cache de resiliencia entraria como se
+          // tivesse acabado de ser observado.
           minuteUpdatedAt:
-            periodChanged || minuteChanged ? Date.now() : m.minuteUpdatedAt ?? Date.now(),
+            periodChanged || minuteChanged
+              ? Date.now() - overlayAgeMs(live, serverTimeUnix)
+              : m.minuteUpdatedAt ?? Date.now() - overlayAgeMs(live, serverTimeUnix),
+          // #190: minuto estimado pelo backend nao vale como cronometro real —
+          // o relogio o exibe atenuado, com a mesma marca de estimativa.
+          minuteIsEstimated: live.minuteSource === "kickoff_estimate",
           ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
           ...(live.currentCards != null ? { currentCards: live.currentCards } : {}),
         };
@@ -1171,9 +1231,8 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   const { lastUpdated: liveLastUpdated } = useLivePolling(fetchLiveScores, {
     hasMatches,
     hasLiveMatches,
-    // #190: 20s acompanha o TTL de ~60s do /live-scores sem estourar rate limit
-    // e reduz a janela em que o placar fica velho na tela.
-    liveIntervalMs: 20_000,
+    // #190: cadencia vinda do backend (nextUpdate), com clamp de 15-60s.
+    liveIntervalMs,
     idleIntervalMs: 120_000,
   });
 

@@ -20,6 +20,8 @@ export type League = {
 export type Match = {
   id: string;
   footystatsId?: number;
+  /** #190: fixture id do API-Football — chave canonica do overlay ao vivo */
+  apiFootballId?: number;
   leagueId: string;
   leagueName: string;
   homeTeam: {
@@ -46,6 +48,8 @@ export type Match = {
   minute?: number | null;
   /** epoch ms de quando `minute` chegou do feed — ancora a interpolacao do relogio */
   minuteUpdatedAt?: number | null;
+  /** #190: true quando o minuto foi estimado pelo backend, nao medido */
+  minuteIsEstimated?: boolean;
   currentCorners?: number | null;
   currentCards?: number | null;
   odds: {

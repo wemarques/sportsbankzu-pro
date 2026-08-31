@@ -1501,6 +1501,13 @@ def _add_api_warnings(result: Dict[str, Any]) -> None:
 _LIVE_CACHE_TTL = 300  # seconds
 _last_live_scores: Dict[str, Any] = {"matches": [], "ts": 0}
 
+# ── Cadencia do overlay ao vivo (#190) ───────────────────────────────
+# Antes cada caminho de retorno devolvia um nextUpdate diferente (30 ou 60)
+# e o front ignorava o valor, usando um intervalo fixo. Agora existe um
+# unico numero, o front o respeita (com clamp) e a cadencia passa a ser
+# controlada aqui.
+_LIVE_NEXT_UPDATE = 20  # segundos
+
 
 @router.get("/live-scores")
 def live_scores() -> Dict[str, Any]:
@@ -1520,7 +1527,8 @@ def live_scores() -> Dict[str, Any]:
                 )
                 return {
                     "matches": _last_live_scores["matches"],
-                    "nextUpdate": 30,
+                    "nextUpdate": _LIVE_NEXT_UPDATE,
+                    "serverTimeUnix": _now_fail,
                     "stale": True,
                     "cacheAge": _age_fail,
                 }
@@ -1598,7 +1606,11 @@ def live_scores() -> Dict[str, Any]:
                                 logger.info(f"[live-scores] corners fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
 
                         entry: Dict[str, Any] = {
+                            # `id` fica por compatibilidade; quem casa registro
+                            # deve usar os IDs nomeados abaixo (#190).
                             "id": ld["fixture_id"],
+                            "apiFootballId": ld["fixture_id"],
+                            "footystatsId": None,
                             "homeTeam": home_name,
                             "awayTeam": away_name,
                             "status": status,
@@ -1606,6 +1618,11 @@ def live_scores() -> Dict[str, Any]:
                             "period": period_map.get(fx_status),
                             "minute": ld["minute"],
                             "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                            # Quando este minuto foi observado. Permite ao
+                            # cliente ancorar o relogio mesmo quando a resposta
+                            # vem do cache de resiliencia (#190).
+                            "observedAtUnix": int(_time.time()),
+                            "minuteSource": "api_football",
                         }
                         if current_corners is not None:
                             entry["currentCorners"] = current_corners
@@ -1620,7 +1637,11 @@ def live_scores() -> Dict[str, Any]:
                         # Cache successful result (#060)
                         _last_live_scores["matches"] = af_result
                         _last_live_scores["ts"] = int(_time.time())
-                        return {"matches": af_result, "nextUpdate": 30}
+                        return {
+                            "matches": af_result,
+                            "nextUpdate": _LIVE_NEXT_UPDATE,
+                            "serverTimeUnix": int(_time.time()),
+                        }
             except Exception as _af_err:
                 logger.warning(f"[live-scores] API-Football primary fallback failed: {_af_err}")
 
@@ -1635,7 +1656,8 @@ def live_scores() -> Dict[str, Any]:
                 )
                 return {
                     "matches": _last_live_scores["matches"],
-                    "nextUpdate": 30,
+                    "nextUpdate": _LIVE_NEXT_UPDATE,
+                    "serverTimeUnix": _now,
                     "stale": True,
                     "cacheAge": _age,
                 }
@@ -1798,7 +1820,7 @@ def live_scores() -> Dict[str, Any]:
                 logger.info(
                     f"[live-scores][diag] {_match_label} | "
                     f"todays={todays_candidate.home}-{todays_candidate.away} "
-                    f"detail={detail_candidate.home}-{detail_candidate.away if detail_candidate else 'N/A'} "
+                    f"detail={f'{detail_candidate.home}-{detail_candidate.away}' if detail_candidate else 'N/A'} "
                     f"merge={merge_result.home}-{merge_result.away} "
                     f"source={merge_result.source} "
                     f"conflict={merge_result.conflict_detected} "
@@ -1827,6 +1849,11 @@ def live_scores() -> Dict[str, Any]:
             # Determine period and approximate minute for live matches
             period = None
             minute = None
+            # #190: o minuto abaixo e estimado pelo horario do kickoff (o
+            # todays-matches do FootyStats nao traz cronometro). O cliente
+            # precisa saber disso para nao exibir como se fosse tempo real —
+            # a marca vira "api_football" no passo de enriquecimento.
+            _minute_source = None
             if status == "live":
                 kickoff_ts = m.get("date_unix")
                 if kickoff_ts:
@@ -1846,6 +1873,8 @@ def live_scores() -> Dict[str, Any]:
                 # Override: if halftime data exists, at least 2nd half
                 if has_ht and period == "1T":
                     period = "2T"
+                if period is not None:
+                    _minute_source = "kickoff_estimate"
 
             # Normalize team names: strip whitespace for reliable frontend matching
             home_name = team_name(m.get("home_name") or m.get("homeTeam") or "").strip()
@@ -1865,8 +1894,15 @@ def live_scores() -> Dict[str, Any]:
                 except (ValueError, TypeError):
                     pass
 
+            _fs_id = int(_raw_id) if _raw_id is not None else None
             _rec: Dict[str, Any] = {
-                "id": int(_raw_id) if _raw_id is not None else None,
+                # `id` fica por compatibilidade; quem casa registro deve usar
+                # os IDs nomeados abaixo (#190). Antes o front comparava
+                # footystatsId contra este campo, que ora carrega ID do
+                # FootyStats, ora do API-Football — a comparacao nunca batia.
+                "id": _fs_id,
+                "footystatsId": _fs_id,
+                "apiFootballId": None,
                 "homeTeam": home_name,
                 "awayTeam": away_name,
                 "status": status,
@@ -1874,6 +1910,9 @@ def live_scores() -> Dict[str, Any]:
                 "period": period,
                 "minute": minute,
                 "dateUnix": m.get("date_unix"),
+                # Quando este minuto foi observado, e de onde ele veio (#190).
+                "observedAtUnix": now_ts,
+                "minuteSource": _minute_source,
                 # Observability fields
                 "scoreSourceFinal": _score_source,
                 "scoreConflictDetected": _score_conflict,
@@ -1946,7 +1985,11 @@ def live_scores() -> Dict[str, Any]:
                             except Exception as _stat_err:
                                 logger.info(f"[live-scores] corners/cards fallback failed fixture_id={ld['fixture_id']}: {_stat_err}")
                         entry: Dict[str, Any] = {
+                            # `id` fica por compatibilidade; quem casa registro
+                            # deve usar os IDs nomeados abaixo (#190).
                             "id": ld["fixture_id"],
+                            "apiFootballId": ld["fixture_id"],
+                            "footystatsId": None,
                             "homeTeam": home_name,
                             "awayTeam": away_name,
                             "status": _af_status,
@@ -1954,6 +1997,11 @@ def live_scores() -> Dict[str, Any]:
                             "period": period_map.get(fx_status),
                             "minute": ld["minute"],
                             "dateUnix": fx.get("fixture", {}).get("timestamp"),
+                            # Quando este minuto foi observado. Permite ao
+                            # cliente ancorar o relogio mesmo quando a resposta
+                            # vem do cache de resiliencia (#190).
+                            "observedAtUnix": int(_time.time()),
+                            "minuteSource": "api_football",
                         }
                         if current_corners is not None:
                             entry["currentCorners"] = current_corners
@@ -2076,9 +2124,21 @@ def live_scores() -> Dict[str, Any]:
                             f"conflict={af_merge.conflict_detected}"
                         )
 
+                        # #190: guarda o fixture id do API-Football no registro.
+                        # Sem isso o cliente so tinha o nome dos times para casar
+                        # o overlay ("CA Osasuna" vs "Osasuna").
+                        _matched_fx_id = matched_fx.get("fixture", {}).get("id")
+                        if _matched_fx_id is not None:
+                            rec["apiFootballId"] = int(_matched_fx_id)
+
                         # Always update minute/period from API-Football (more accurate)
                         if ld["minute"] is not None:
                             rec["minute"] = ld["minute"]
+                            # #190: o minuto passou a vir do API-Football agora —
+                            # re-carimba a observacao para o cliente ancorar certo
+                            # e marca a origem como cronometro real.
+                            rec["observedAtUnix"] = int(_time.time())
+                            rec["minuteSource"] = "api_football"
                         af_status = ld["status"]
                         period_map = {"1H": "1T", "HT": "HT", "2H": "2T"}
                         if af_status in period_map:
@@ -2154,7 +2214,11 @@ def live_scores() -> Dict[str, Any]:
             f"[live-scores] Returned {len(result)} matches (from {len(raw_list)} raw) "
             f"| scores: {[(r['homeTeam'][:12], r['score']['home'] if r.get('score') else '?', r['score']['away'] if r.get('score') else '?') for r in result[:5]]}"
         )
-        return {"matches": result, "nextUpdate": 60}
+        return {
+            "matches": result,
+            "nextUpdate": _LIVE_NEXT_UPDATE,
+            "serverTimeUnix": int(_time.time()),
+        }
     except Exception as e:
         logger.error(f"[live-scores] Error: {e}")
         # Serve cached data on exception too (#060)
@@ -2168,7 +2232,7 @@ def live_scores() -> Dict[str, Any]:
             )
             return {
                 "matches": _last_live_scores["matches"],
-                "nextUpdate": 30,
+                "nextUpdate": _LIVE_NEXT_UPDATE,
                 "stale": True,
                 "cacheAge": _age,
                 "error": str(e),

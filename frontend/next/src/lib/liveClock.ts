@@ -40,6 +40,12 @@ export interface LiveClockSource {
   minute?: number | null;
   /** epoch ms de quando `minute` chegou do feed (carimbado no merge do overlay) */
   minuteUpdatedAt?: number | null;
+  /**
+   * true quando o backend derivou o minuto do horário de início em vez de ler
+   * um cronômetro (o todays-matches do FootyStats não tem tempo de jogo).
+   * Esse valor ainda é usado, mas nunca se apresenta como tempo real.
+   */
+  minuteIsEstimated?: boolean;
 }
 
 export interface LiveClock {
@@ -135,7 +141,13 @@ export function getLiveClock(
         : nowMs;
     const driftMin = Math.max(0, Math.floor((nowMs - anchor) / 60_000));
     const stale = driftMin > MAX_DRIFT_MIN;
-    return build(feedPeriod, feedMinute + Math.min(driftMin, MAX_DRIFT_MIN), true, stale);
+    const measured = m.minuteIsEstimated !== true;
+    return build(
+      feedPeriod,
+      feedMinute + Math.min(driftMin, MAX_DRIFT_MIN),
+      measured,
+      stale,
+    );
   }
 
   // 3) Último recurso: sem minuto do feed, estima pelo horário do kickoff.
