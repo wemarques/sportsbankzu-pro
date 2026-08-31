@@ -277,13 +277,16 @@ export const StakeRow = ({
 export const ProbBar = ({
   prob,
   size = "md",
+  muted = false,
 }: {
   prob: number;
   size?: "sm" | "md";
+  /** #189-g: barra dessaturada para picks informativos (gate #189-e) */
+  muted?: boolean;
 }) => {
   const pct = Math.round(prob * 100);
   const h = size === "sm" ? 4 : 5;
-  const color = pct >= 70 ? C.green : pct >= 50 ? C.gold : C.orange;
+  const color = muted ? "#6b7280" : pct >= 70 ? C.green : pct >= 50 ? C.gold : C.orange;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div

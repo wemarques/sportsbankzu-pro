@@ -2,6 +2,8 @@ import { C, CLS } from "./constants";
 import { Badge, Ev, Odd, ProbBar, ResultBadge, StakeRow } from "./atoms";
 import { LiveProgress } from "./LiveProgress";
 import { calcQuarterKelly, calcStakeOportunidade } from "@/components/BankrollCard";
+import { familyStakePolicy } from "@/components/BankrollCard";
+import { fmtMercado, INFO_DISPLAY } from "@/lib/classifications";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { MatchContext, PickData } from "./types";
 
@@ -194,6 +196,9 @@ export const PickCard = ({
   if (pick.isCorridorBet)
     return <CorridorCard pick={pick} match={match} bankroll={bankroll} stakeMode={stakeMode} />;
   const noBet = pick.classification === "NO_BET";
+  // #189-g: pick de familia sem stake (gate #189-e) veste INFO cinza — o
+  // badge azul "VIAVEL" + barra dourada contradiziam o "sem stake" do gate.
+  const infoGated = familyStakePolicy(pick.label) === "none";
   const st = CLS[pick.classification] ?? CLS.NEUTRO;
   return (
     <div
@@ -211,12 +216,30 @@ export const PickCard = ({
       <div
         style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
       >
-        <Badge cls={pick.classification} />
+        {infoGated ? (
+          <span
+            title={INFO_DISPLAY.tooltip}
+            style={{
+              padding: "2px 8px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              background: INFO_DISPLAY.bgColor,
+              border: "1px solid rgba(154,163,173,0.28)",
+              color: INFO_DISPLAY.color,
+            }}
+          >
+            {INFO_DISPLAY.label}
+          </span>
+        ) : (
+          <Badge cls={pick.classification} />
+        )}
         <ResultBadge result={pick.result} />
-        <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>{pick.label}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>{fmtMercado(pick.label)}</span>
       </div>
       <LiveProgress pick={pick} match={match} />
-      <ProbBar prob={pick.rawProb} />
+      <ProbBar prob={pick.rawProb} muted={infoGated} />
       <div
         style={{
           display: "flex",

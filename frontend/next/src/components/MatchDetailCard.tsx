@@ -173,6 +173,8 @@ export interface AuditResult {
 export type MatchDetail = MatchDetailData;
 
 export interface MatchDetailData {
+  /** #189-g: true enquanto a analise Mistral carrega (sem % falsa) */
+  aiLoading?: boolean;
   id: string;
   league: string;
   leagueId?: string;

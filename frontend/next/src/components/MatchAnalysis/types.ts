@@ -68,4 +68,6 @@ export interface AIAnalysisData {
   keyPoints: string[];
   confidence: number;
   recommendation: string;
+  /** #189-g: analise em carregamento — AICard mostra estado indeterminado */
+  loading?: boolean;
 }

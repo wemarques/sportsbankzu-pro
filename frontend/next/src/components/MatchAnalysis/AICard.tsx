@@ -74,6 +74,32 @@ export const AICard = ({
             NARRATIVA
           </span>
         </div>
+        {analysis.loading ? (
+          /* #189-g: progresso indeterminado honesto — nada de "5%" inventado */
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: C.t2,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: C.gold,
+                animation: "sbz-pulse 1.2s ease-in-out infinite",
+              }}
+            />
+            analisando…
+            <style>{`@keyframes sbz-pulse{0%,100%{opacity:.25}50%{opacity:1}}`}</style>
+          </span>
+        ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div
             style={{
@@ -103,6 +129,7 @@ export const AICard = ({
             {analysis.confidence}%
           </span>
         </div>
+        )}
       </div>
 
       {match.isLive && (

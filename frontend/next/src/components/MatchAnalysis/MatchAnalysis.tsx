@@ -7,6 +7,17 @@ import { EVHelp } from "./EVHelp";
 import type { StakeMode } from "@/components/BankrollCard";
 import type { AIAnalysisData, MatchContext, PickData } from "./types";
 import type { RejectedInsightUI } from "@/lib/matchDataMapper";
+import { fmtMercado } from "@/lib/classifications";
+
+/** #189-g: motivo compacto para o chip; texto completo fica no title. */
+function shortReason(reason: string): string {
+  const r = (reason || "").toLowerCase();
+  if (r.includes("ev negativo")) return "EV\u2212";
+  if (r.includes("sem odd")) return "sem odd";
+  if (r.includes("prob insuficiente") || r.includes("prob <")) return "prob abaixo do corte";
+  if (r.includes("deflac")) return "EV\u2212 p\u00f3s-defla\u00e7\u00e3o";
+  return reason.length > 28 ? reason.slice(0, 26) + "\u2026" : reason;
+}
 
 type FilterId = "all" | "viable" | "value";
 
@@ -189,6 +200,9 @@ export default function MatchAnalysis({
             <div style={{ fontSize: 10, fontWeight: 700, color: "#ff6b35", letterSpacing: "0.04em", marginBottom: 6 }}>
               MERCADOS ANALISADOS — NÃO RECOMENDADOS
             </div>
+            {/* #189-g: o bloco mais honesto do produto merece ser legivel —
+                nome do mercado em t1, numeros em t2 (>=4.5:1 sobre o fundo),
+                e o motivo vira CHIP em vez de texto vermelho sobre vinho. */}
             {rejectedInsights.map((r, i) => (
               <div
                 key={i}
@@ -196,19 +210,36 @@ export default function MatchAnalysis({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  padding: "4px 0",
-                  borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                  gap: 8,
+                  flexWrap: "wrap",
+                  padding: "5px 0",
+                  borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : undefined,
                 }}
               >
-                <span style={{ fontSize: 11, color: C.t2 }}>{r.market}</span>
-                <span style={{ fontSize: 10, color: C.t3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: C.t1 }}>{fmtMercado(r.market)}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: C.t2, fontVariantNumeric: "tabular-nums" }}>
                   {r.rawProb.toFixed(0)}% raw → {r.deflatedProb.toFixed(0)}% cal
                   {r.ev != null && (
-                    <span style={{ color: r.ev < 0 ? "#ff4444" : "#00ff88", marginLeft: 4 }}>
+                    <span style={{ color: r.ev < 0 ? "#ff8a80" : C.green, fontWeight: 700 }}>
                       EV {r.ev > 0 ? "+" : ""}{r.ev.toFixed(1)}%
                     </span>
                   )}
-                  <span style={{ marginLeft: 4, color: "#ff6b35" }}>— {r.reason}</span>
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: "0.03em",
+                      padding: "1px 7px",
+                      borderRadius: 999,
+                      background: "rgba(255,107,53,0.12)",
+                      border: "1px solid rgba(255,107,53,0.3)",
+                      color: "#ffb08a",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={r.reason}
+                  >
+                    {shortReason(r.reason)}
+                  </span>
                 </span>
               </div>
             ))}

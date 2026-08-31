@@ -308,6 +308,7 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
     keyPoints: detail.aiAnalysis?.key_points ?? [],
     confidence: detail.aiAnalysis?.confidence ?? 0,
     recommendation: detail.aiAnalysis?.recommendation ?? "",
+    loading: detail.aiLoading ?? false,
   };
 
   const rejectedInsights: RejectedInsightUI[] = (detail.rejectedInsights ?? []).map((r) => ({

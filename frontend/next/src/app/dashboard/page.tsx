@@ -27,7 +27,7 @@ import EmptyState, { MockDataBanner } from "@/components/EmptyState";
 import type { EmptyStateVariant } from "@/components/EmptyState";
 import Glossary from "@/components/Glossary";
 import DestaquesDoDia from "@/components/DestaquesDoDia";
-import { getClassificationDisplay } from "@/lib/classifications";
+import { fmtMercado, getClassificationDisplay, getPickDisplay } from "@/lib/classifications";
 import { useRole } from "@/hooks/useRole";
 import {
   Star,
@@ -616,8 +616,10 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
   const d = safeOdd(match.odds?.draw, 3.1);
   const a = safeOdd(match.odds?.away, 3.8);
   const league = AVAILABLE_LEAGUES.find((l) => l.id === match.leagueId);
+  // #189-g: sem porcentagem falsa durante o loading — o AICard mostra estado
+  // indeterminado ("analisando…") via aiLoading; confidence 0 nunca e exibida.
   const ai: AIAnalysis | undefined = isAiLoading
-    ? { summary: "Carregando analise Mistral...", key_points: ["Buscando insights..."], recommendation: "Aguardando.", confidence: 5, last_updated: new Date().toLocaleString("pt-BR") }
+    ? { summary: "Carregando analise Mistral...", key_points: ["Buscando insights..."], recommendation: "Aguardando.", confidence: 0, last_updated: new Date().toLocaleString("pt-BR") }
     : aiData ?? undefined;
   return {
     id: match.id,
@@ -653,6 +655,7 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     awayForm: match.stats?.awayForm ?? match.awayTeam.form,
     round: match.stats?.regime ?? "-",
     aiAnalysis: ai,
+    aiLoading: isAiLoading,
     predictions: match.predictions,
     currentCorners: match.currentCorners ?? null,
     currentCards: match.currentCards ?? null,
@@ -2208,7 +2211,8 @@ export default function Dashboard() {
                   }}
                 >
                   <Loader2 size={14} className="st-spin-icon" aria-hidden />
-                  Carregando mais ligas...
+                  {/* #189-g: contagem real de ligas ja carregadas */}
+                  Carregando ligas… {new Set(allMatches.map((m) => m.leagueId)).size}/{ACTIVE_LEAGUES().length}
                 </div>
               )}
 
@@ -2243,7 +2247,13 @@ export default function Dashboard() {
               {loading && allMatches.length === 0 && !hasError && (
                 <div style={{ textAlign: "center", padding: "48px 24px", color: "#666" }}>
                   <Loader2 size={28} className="st-spin-icon" style={{ display: "inline-block", marginBottom: 10 }} />
-                  <div style={{ fontSize: "0.78rem" }}>Carregando jogos...</div>
+                  {/* #189-g: progresso real por lote de ligas, nao spinner mudo */}
+                  <div style={{ fontSize: "0.78rem" }}>
+                    Carregando ligas… 0/{ACTIVE_LEAGUES().length}
+                  </div>
+                  <div style={{ fontSize: "0.65rem", color: "#555", marginTop: 4 }}>
+                    Os jogos aparecem por lote conforme cada liga responde
+                  </div>
                 </div>
               )}
 
@@ -2522,15 +2532,15 @@ export default function Dashboard() {
                             <div className="st-match-row__predictions">
                               {match.predictions.map((pred, pidx) => (
                                 <div key={pidx} className="st-prediction-badge">
-                                  <span className={`st-prediction-status st-prediction-status--${(pred.classification || pred.status).toLowerCase().replace("*", "-star")}`} style={{ color: getClassificationDisplay(pred.classification || pred.status).color, backgroundColor: getClassificationDisplay(pred.classification || pred.status).bgColor }}>
-                                    {getClassificationDisplay(pred.classification || pred.status).label}
+                                  <span className={`st-prediction-status st-prediction-status--${(pred.classification || pred.status).toLowerCase().replace("*", "-star")}`} style={{ color: getPickDisplay(pred.mercado ?? "", pred.classification || pred.status).color, backgroundColor: getPickDisplay(pred.mercado ?? "", pred.classification || pred.status).bgColor }} title={getPickDisplay(pred.mercado ?? "", pred.classification || pred.status).tooltip}>
+                                    {getPickDisplay(pred.mercado ?? "", pred.classification || pred.status).label}
                                   </span>
                                   {/* #130b: Sub-badge for direction-natural picks without EV */}
                                   {pred.reason_codes?.includes("DIRECTION_NATURAL_NO_EV") && (
                                     <span style={{ fontSize: "0.6em", color: "#60a5fa", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", borderRadius: 4, padding: "1px 5px", marginLeft: 3, whiteSpace: "nowrap" as const, fontWeight: 500 }} title="O modelo aponta nesta direção, mas sem valor de aposta (EV negativo)">↗ Direção</span>
                                   )}
                                   <span className="st-prediction-sep" aria-hidden="true">|</span>
-                                  <span className="st-prediction-market">{pred.mercado}</span>
+                                  <span className="st-prediction-market">{fmtMercado(pred.mercado)}</span>
                                   <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
                                   {/* EV display — show real EV% when available, fallback to odd_minima */}

@@ -52,3 +52,33 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
 export function getClassificationDisplay(internal: string): ClassificationDisplay {
   return CLASSIFICATION_DISPLAY[internal] ?? CLASSIFICATION_DISPLAY.NEUTRO;
 }
+
+/**
+ * #189-g: estado visual proprio para picks INFORMATIVOS (gate #189-e).
+ * Um pick de familia sem stake (cartoes; escanteios de linha media) nao pode
+ * vestir o badge azul "VIAVEL" — o badge e o que o olho le; o motivo em
+ * texto e complemento. Cinza, sem cor de acao.
+ */
+export const INFO_DISPLAY: ClassificationDisplay = {
+  label: "INFO",
+  color: "#9aa3ad",
+  bgColor: "rgba(154,163,173,0.12)",
+  description: "Pick informativo — família sem edge comprovado vs mercado; sem stake sugerido",
+  tooltip:
+    "O modelo analisa este mercado e mostra a leitura do jogo, mas a família não tem edge comprovado contra as odds (auditoria #189-e). Nenhum stake é sugerido.",
+};
+
+import { familyStakePolicy } from "@/components/BankrollCard";
+
+/** Display do pick considerando o gate por família (#189-e/g). */
+export function getPickDisplay(marketLabel: string, internal: string): ClassificationDisplay {
+  if (familyStakePolicy(marketLabel || "") === "none") return INFO_DISPLAY;
+  return getClassificationDisplay(internal);
+}
+
+/** #189-g: acentuação display-only dos rótulos de mercado (backend mantém ASCII como chave). */
+export function fmtMercado(label: string): string {
+  return (label || "")
+    .replace(/\bCartoes\b/g, "Cartões")
+    .replace(/\bCartao\b/g, "Cartão");
+}

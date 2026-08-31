@@ -9554,3 +9554,9 @@ Auditoria de 31/08/2026 (item 2.3 do plano) — três gargalos que esvaziavam a 
 
 ### Lição aprendida
 Extração e consumo de odds são dois contratos separados — o #144 entregou a extração e ninguém testou o consumo; um teste de cobertura por família no enrichment teria pego o descarte na hora. E covariável que só alimenta o display é covariável desperdiçada: o ponto de injeção correto é antes da seleção de mercados, onde a probabilidade do pick é formada (repetição do padrão display≠picks do #187 — agora com telemetria para flagrar o próximo caso).
+
+## 189-g — UX: picks com gate vestem INFO, loading honesto e bloco de não-recomendados legível
+**Data:** 2026-08-31 | **Arquivos:** frontend/next/src/lib/classifications.ts, frontend/next/src/app/dashboard/page.tsx, frontend/next/src/components/MatchAnalysis/{AICard,MatchAnalysis,PickCard,atoms,types}.tsx|ts, frontend/next/src/components/MatchDetailCard.tsx, frontend/next/src/lib/matchDataMapper.ts | **Severidade:** Baixa (display-only) | **Status:** Implementado
+
+### Resumo
+Camada visual do #189-e, sem mudança de cálculo: (1) pick de família sem stake (gate #189-e) veste badge cinza **INFO** com tooltip, em vez do azul "VIÁVEL" que contradizia o "sem stake" — `getPickDisplay()`/`INFO_DISPLAY` em classifications.ts, ProbBar dessaturada; (2) AICard em carregamento mostra "analisando…" pulsante em vez de "5%" inventado (`aiLoading` propagado via toDetailData/matchDataMapper); (3) loading do dashboard exibe contagem real de ligas carregadas (`X/ACTIVE_LEAGUES`) em vez de spinner mudo; (4) bloco "MERCADOS ANALISADOS — NÃO RECOMENDADOS" relegibilizado: mercado em t1, números tabulares em t2, motivo vira chip compacto (`shortReason`, texto completo no title); (5) `fmtMercado()` acentua rótulos só no display ("Cartões") — backend mantém ASCII como chave.
