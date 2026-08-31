@@ -12,7 +12,7 @@ export interface GlossaryEntry {
 export const GLOSSARY: GlossaryEntry[] = [
   // ── Classifications ──
   {
-    term: "ALTA CONFIANCA",
+    term: "ALTA CONFIANÇA",
     category: "classificacao",
     definition:
       "Classificação máxima — probabilidade alta, EV positivo, dados confiáveis e edge suficiente. Todos os critérios do modelo foram atingidos.",
@@ -22,7 +22,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "VALOR DETECTADO",
     category: "classificacao",
     definition:
-      "O modelo encontrou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegivel para combinadas e duplas.",
+      "O modelo encontrou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegível para combinadas e duplas.",
     example: "BTTS Sim com prob 58%, EV +4.2%",
   },
   {
@@ -56,7 +56,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Sharpe Ratio",
     category: "metrica",
     definition:
-      "Retorno medio dividido pela volatilidade. Mede eficiência do retorno ajustado ao risco. Acima de 1.0 e considerado bom.",
+      "Retorno médio dividido pela volatilidade. Mede eficiência do retorno ajustado ao risco. Acima de 1.0 e considerado bom.",
   },
   {
     term: "EV (Expected Value)",
@@ -69,7 +69,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "ECE (Expected Calibration Error)",
     category: "metrica",
     definition:
-      "Erro medio de calibração — quão distantes as probabilidades previstas estão da frequência real observada.",
+      "Erro médio de calibração — quão distantes as probabilidades previstas estão da frequência real observada.",
   },
 
   // ── Markets ──
@@ -109,7 +109,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Dixon-Coles",
     category: "modelo",
     definition:
-      "Extensao do modelo Poisson que adiciona correlacao entre gols dos dois times via parametro rho (rho). Corrige o fato de que placares baixos (0-0, 1-0, 0-1, 1-1) tem frequência diferente do Poisson puro.",
+      "Extensão do modelo Poisson que adiciona correlação entre gols dos dois times via parâmetro rho (rho). Corrige o fato de que placares baixos (0-0, 1-0, 0-1, 1-1) tem frequência diferente do Poisson puro.",
   },
   {
     term: "Lambda (L)",
@@ -121,7 +121,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Rho (r)",
     category: "modelo",
     definition:
-      "Parametro de correlacao Dixon-Coles. Calibrado per-league. Ajusta probabilidade de placares baixos para refletir a realidade.",
+      "Parâmetro de correlação Dixon-Coles. Calibrado per-league. Ajusta probabilidade de placares baixos para refletir a realidade.",
   },
   {
     term: "Deflacao",

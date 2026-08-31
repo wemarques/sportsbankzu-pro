@@ -345,7 +345,7 @@ function checkBreakEven(
   if (!minScenario.coversInvestment) {
     return {
       passes: false,
-      reason: `Odds médias baixas (${avgOdd.toFixed(2)}). Com ${minHits} de ${n} acertos, o retorno estimado (R$ ${minScenario.estimatedReturn.toFixed(2)}) nao cobre o investimento total (R$ ${totalStake.toFixed(2)}). Recomendamos apostas simples individuais.`,
+      reason: `Odds médias baixas (${avgOdd.toFixed(2)}). Com ${minHits} de ${n} acertos, o retorno estimado (R$ ${minScenario.estimatedReturn.toFixed(2)}) não cobre o investimento total (R$ ${totalStake.toFixed(2)}). Recomendamos apostas simples individuais.`,
     };
   }
 

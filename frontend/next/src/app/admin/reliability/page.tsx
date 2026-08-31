@@ -221,7 +221,7 @@ export default function ReliabilityPage() {
         <DefenseRow label="Amostra mínima Brier" value={`N>=${def.min_n_brier ?? 20}`} regra="#079" />
         <DefenseRow label="Contrato Mistral narrativa" value="ATIVO" regra="#082" />
         <DefenseRow label="Validacao complementares" value="ATIVO" regra="#098" />
-        <DefenseRow label="Filtro acoes auditoria" value="ATIVO" regra="#099" />
+        <DefenseRow label="Filtro de ações da auditoria" value="ATIVO" regra="#099" />
       </DimensionCard>
 
       <div style={{ textAlign: "center", marginTop: 16, fontSize: "0.48rem", color: "#334155" }}>

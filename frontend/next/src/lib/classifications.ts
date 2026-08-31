@@ -13,7 +13,7 @@ export interface ClassificationDisplay {
 
 export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
   SAFE: {
-    label: "ALTA CONFIANCA",
+    label: "ALTA CONFIANÇA",
     color: "#00ff88",
     bgColor: "rgba(0,255,136,0.15)",
     description: "Probabilidade alta, EV positivo, dados confiáveis, edge suficiente",
@@ -26,7 +26,7 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     bgColor: "rgba(255,215,0,0.15)",
     description: "EV positivo, mas não atinge todos os critérios SAFE — elegível para combinadas",
     tooltip:
-      "O modelo detectou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegivel para duplas e combinadas.",
+      "O modelo detectou valor matemático (EV+), mas nem todos os critérios de alta confiança foram atingidos. Elegível para duplas e combinadas.",
   },
   NEUTRO: {
     label: "VIÁVEL",
@@ -42,7 +42,7 @@ export const CLASSIFICATION_DISPLAY: Record<string, ClassificationDisplay> = {
     bgColor: "rgba(239,68,68,0.15)",
     description: "Bloqueado por risco alto, dados insuficientes ou regime restritivo",
     tooltip:
-      "Mercado bloqueado pelo sistema. Razoes possíveis: risco muito alto, dados insuficientes, EV negativo ou regime restritivo da liga.",
+      "Mercado bloqueado pelo sistema. Razões possíveis: risco muito alto, dados insuficientes, EV negativo ou regime restritivo da liga.",
   },
 };
 

@@ -195,17 +195,17 @@ function formatReport(d: AuditReportData) {
   l.push("");
   l.push("Modelo: " + d.modelSeverity);
   if (d.mistralSeverity) {
-    l.push("Avaliacao Mistral AI: " + d.mistralSeverity);
+    l.push("Avaliação Mistral AI: " + d.mistralSeverity);
     if (d.modelSeverity !== d.mistralSeverity)
       l.push("\u26A0 Divergência: Modelo=" + d.modelSeverity + ", Mistral=" + d.mistralSeverity);
   }
   l.push("");
   l.push(div);
-  l.push("METRICAS GLOBAIS");
+  l.push("MÉTRICAS GLOBAIS");
   l.push(div);
   l.push("Brier Score: " + d.brierScore.toFixed(4) + " (ideal < 0.22)");
   l.push("SAFE Acuracia: " + (d.safeAccuracy != null ? d.safeAccuracy.toFixed(1) + "%" : "N/A (circuit breaker)") + " (meta > 65%)");
-  if (d.lambdaError != null) l.push("Lambda Erro Medio: " + d.lambdaError.toFixed(2) + " gols (limite < 0.5)");
+  if (d.lambdaError != null) l.push("Lambda Erro Médio: " + d.lambdaError.toFixed(2) + " gols (limite < 0.5)");
   l.push("");
   l.push(div);
   l.push("LIGAS ANALISADAS");
@@ -237,7 +237,7 @@ function formatReport(d: AuditReportData) {
   }
   l.push("");
   l.push(div);
-  l.push("ACOES RECOMENDADAS");
+  l.push("AÇÕES RECOMENDADAS");
   l.push(div);
   if (d.modelActions.length > 0) {
     l.push("Modelo:");
@@ -248,7 +248,7 @@ function formatReport(d: AuditReportData) {
     d.mistralActions.forEach((a) => l.push("  \u2192 " + a));
   }
   l.push("");
-  if (d.retrainDeadline) l.push("Proximo re-treino: " + d.retrainDeadline);
+  if (d.retrainDeadline) l.push("Próximo re-treino: " + d.retrainDeadline);
   l.push(div);
   l.push("Gerado por SportsBank Pro \u2022 " + new Date().toLocaleString("pt-BR"));
   return l.join("\n");

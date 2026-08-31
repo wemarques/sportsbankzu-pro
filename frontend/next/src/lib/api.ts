@@ -39,7 +39,7 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
       _isMockData: false,
       _error: {
         kind: "NETWORK_ERROR",
-        message: "Erro de conexao com o servidor. Verifique sua internet e tente novamente.",
+        message: "Erro de conexão com o servidor. Verifique sua internet e tente novamente.",
       },
     };
   }
@@ -309,9 +309,9 @@ export async function postMatchAudit(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.audit) return { ok: true, audit: data.audit };
-    return { ok: false, message: data.message || "Servico de auditoria indisponivel." };
+    return { ok: false, message: data.message || "Serviço de auditoria indisponível. Tente novamente em instantes." };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : "Erro de conexao." };
+    return { ok: false, message: err instanceof Error ? err.message : "Erro de conexão. Verifique sua internet." };
   }
 }
 

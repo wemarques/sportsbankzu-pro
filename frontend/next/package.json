@@ -3,6 +3,7 @@
   "version": "4.0.0",
   "private": true,
   "scripts": {
+    "lint:accents": "node scripts/check-accents.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

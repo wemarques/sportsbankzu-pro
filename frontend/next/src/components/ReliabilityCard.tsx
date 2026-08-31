@@ -166,7 +166,7 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
       `  Brier Score: ${pred.brier_score?.toFixed(4) ?? "N/A"} (target < 0.22)`,
       `  Amostra (N): ${pred.n_total ?? 0} (min: 20)`,
       "",
-      "\ud83d\udee1\ufe0f SEGURANCA",
+      "\ud83d\udee1\ufe0f SEGURANÇA",
       `  Conformidade: ${p(saf.compliance_rate ?? 1)}`,
       `  Complementares bloqueados: ${saf.complementares_bloqueados ?? 0}`,
       `  Contradições da IA corrigidas: ${saf.mistral_contradicoes ?? 0}`,
@@ -178,7 +178,7 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
       `  Mistral AI: ${p(rob.mistral_success_rate)}`,
       `  Fallbacks: ${rob.fallbacks_ativados ?? 0}`,
       "",
-      "\ud83d\udd04 CONSISTENCIA",
+      "\ud83d\udd04 CONSISTÊNCIA",
       `  Tempo de análise (média): ${con.lambda_duration_avg_ms != null ? (con.lambda_duration_avg_ms / 1000).toFixed(1) + "s" : "N/A"}`,
       `  Tempo de análise (p95): ${con.lambda_duration_p95_ms != null ? (con.lambda_duration_p95_ms / 1000).toFixed(1) + "s" : "N/A"}`,
       `  CV: ${con.lambda_duration_cv?.toFixed(2) ?? "N/A"}`,
@@ -286,7 +286,7 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           { label: "Circuit breaker SAFE", value: def.circuit_breaker_safe ? "ATIVO" : "OFF" },
           { label: "Contrato Mistral narrativa", value: "ATIVO" },
           { label: "Validacao complementares", value: "ATIVO" },
-          { label: "Filtro acoes auditoria", value: "ATIVO" },
+          { label: "Filtro de ações da auditoria", value: "ATIVO" },
         ].map((d, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.02)" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", flexShrink: 0 }} />
@@ -302,11 +302,11 @@ export default function ReliabilityCard({ data, onClose }: { data: any; onClose:
           {glossaryOpen ? "\u25bc" : "\u25b6"} Glossário de termos
         </summary>
         <div style={{ fontSize: "0.68rem", color: "#94a3b8", lineHeight: 1.7, marginTop: 6 }}>
-          <p><strong style={{ color: "#cbd5e1" }}>Brier Score:</strong> Erro quadratico medio das probabilidades (0 = perfeito, 1 = pessimo). Target: &lt; 0.22.</p>
+          <p><strong style={{ color: "#cbd5e1" }}>Brier Score:</strong> Erro quadrático médio das probabilidades (0 = perfeito, 1 = péssimo). Target: &lt; 0.22.</p>
           <p><strong style={{ color: "#cbd5e1" }}>ECE:</strong> Expected Calibration Error — mede se &quot;70% previsto = 70% real&quot;.</p>
           <p><strong style={{ color: "#cbd5e1" }}>Conformidade:</strong> Taxa de cumprimento das regras operacionais (100% = nenhuma violação).</p>
           <p><strong style={{ color: "#cbd5e1" }}>CV (Coef. Variação):</strong> Desvio padrão / média. CV &lt; 0.3 indica consistência aceitável.</p>
-          <p><strong style={{ color: "#cbd5e1" }}>Fallback:</strong> Ativacao de caminho alternativo quando fonte primaria falha.</p>
+          <p><strong style={{ color: "#cbd5e1" }}>Fallback:</strong> Ativação de caminho alternativo quando fonte primária falha.</p>
         </div>
       </details>
       <a

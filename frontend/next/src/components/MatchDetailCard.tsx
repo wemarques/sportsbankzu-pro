@@ -80,7 +80,7 @@ const GLOSSARY = [
   { term: "In\u00EDcio Temp.", description: "Dados de in\u00EDcio de temporada \u2014 calibra\u00E7\u00E3o usa fallback por amostra insuficiente de jogos" },
   { term: "Fair (Odd Justa)", description: "Cota\u00E7\u00E3o justa calculada pelo modelo \u2014 se a odd da casa for maior, h\u00E1 valor na aposta" },
   { term: "Odd (Cota\u00E7\u00E3o)", description: "Cota\u00E7\u00E3o oferecida pela casa de apostas \u2014 quanto voc\u00EA recebe por cada R$1 apostado" },
-  { term: "ALTA CONFIANCA (SAFE)", description: "Classificação máxima \u2014 probabilidade alta, EV positivo, dados confiáveis, edge suficiente" },
+  { term: "ALTA CONFIANÇA (SAFE)", description: "Classificação máxima \u2014 probabilidade alta, EV positivo, dados confiáveis, edge suficiente" },
   { term: "VALOR DETECTADO (NEUTRO-Q)", description: "Valor matemático detectado \u2014 elegível para combinadas e duplas, tem EV positivo, mas não atinge Alta Confiança" },
   { term: "VIÁVEL (NEUTRO)", description: "Mercado com chance real de acerto no jogo, sem valor matemático (EV+) para aposta sistematica" },
   { term: "RESTRITO", description: "Liga com dados limitados ou modelo ML n\u00E3o ativo \u2014 progn\u00F3sticos com cautela" },
@@ -1194,7 +1194,7 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                           {hasTeamData && (
                             <>
                               {(ms.homeXgForAvg != null || ms.awayXgForAvg != null) && (
-                                <ComparativeBar label="xG Medio por Jogo" homeVal={ms.homeXgForAvg ?? 0} awayVal={ms.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
+                                <ComparativeBar label="xG Médio por Jogo" homeVal={ms.homeXgForAvg ?? 0} awayVal={ms.awayXgForAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
                               )}
                               {(ms.homeXgAgainstAvg != null || ms.awayXgAgainstAvg != null) && (
                                 <ComparativeBar label="xG Sofrido por Jogo" homeVal={ms.homeXgAgainstAvg ?? 0} awayVal={ms.awayXgAgainstAvg ?? 0} homeTeam={match.homeTeam} awayTeam={match.awayTeam} />
