@@ -111,7 +111,9 @@ export default function MatchAnalysis({
                   {match.score.home} - {match.score.away}
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: C.red }}>
-                  {match.period} {match.minute}'
+                  {match.period === "HT"
+                    ? "INTERVALO"
+                    : `${match.period} ${match.clockLabel ?? `${match.minute}'`}`}
                 </div>
               </div>
             ) : (

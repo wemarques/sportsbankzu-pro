@@ -44,6 +44,8 @@ export type Match = {
   };
   period?: "1T" | "HT" | "2T" | null;
   minute?: number | null;
+  /** epoch ms de quando `minute` chegou do feed — ancora a interpolacao do relogio */
+  minuteUpdatedAt?: number | null;
   currentCorners?: number | null;
   currentCards?: number | null;
   odds: {

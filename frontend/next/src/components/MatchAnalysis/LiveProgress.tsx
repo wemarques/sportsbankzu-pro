@@ -9,7 +9,9 @@ export const LiveProgress = ({
   match: MatchContext;
 }) => {
   if (!match.isLive || !pick.liveTarget) return null;
-  const minLeft = Math.max(0, 90 - match.minute);
+  // #190: minutesLeft ja considera intervalo e acrescimos; 90 - minute
+  // mostrava "45' restantes" com o jogo parado no intervalo.
+  const minLeft = match.minutesLeft ?? Math.max(0, 90 - match.minute);
 
   if (pick.liveDir === "corridor") {
     const min = pick.liveTarget.min ?? 0;

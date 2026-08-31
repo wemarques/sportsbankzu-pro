@@ -187,6 +187,12 @@ export interface MatchDetailData {
   status?: "scheduled" | "live" | "finished";
   score?: { home: number; away: number; halftime?: { home: number; away: number } };
   period?: "1T" | "HT" | "2T" | null;
+  /** #190: texto pronto do relogio ("58'", "45+2'", "INT") */
+  clockLabel?: string;
+  /** #190: minutos regulamentares restantes */
+  minutesLeft?: number;
+  /** #190: true quando o feed travou e o tempo esta congelado */
+  clockStale?: boolean;
   minute?: number | null;
   venue?: {
     name: string;
@@ -513,10 +519,15 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                 <span className="mdc-live-score__dot" />
                 <span className="mdc-live-score__label">AO VIVO</span>
                 {match.period && (
-                  <span className="mdc-live-score__period">{match.period}</span>
+                  <span className="mdc-live-score__period">{match.period === "HT" ? "INTERVALO" : match.period}</span>
                 )}
-                {match.minute != null && match.period !== "HT" && (
-                  <span className="mdc-live-score__minute">{match.minute}&apos;</span>
+                {match.period !== "HT" && (match.clockLabel || match.minute != null) && (
+                  <span
+                    className="mdc-live-score__minute"
+                    style={match.clockStale ? { opacity: 0.6 } : undefined}
+                  >
+                    {match.clockLabel ?? `${match.minute}'`}
+                  </span>
                 )}
               </div>
               <div className="mdc-live-score__value">

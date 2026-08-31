@@ -59,6 +59,10 @@ export interface MatchContext {
   isLive: boolean;
   minute: number;
   period: string;
+  /** #190: texto pronto do relogio, ja com acrescimos ("45+2'") */
+  clockLabel?: string;
+  /** #190: minutos regulamentares restantes, ciente do intervalo */
+  minutesLeft?: number;
   score: { home: number; away: number };
   liveStats: LiveStats;
 }

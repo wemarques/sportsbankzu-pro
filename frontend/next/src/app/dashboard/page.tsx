@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useLivePolling } from "@/hooks/useLivePolling";
+import { useLiveTick } from "@/hooks/useLiveTick";
+import { getLiveClock, type LiveClock } from "@/lib/liveClock";
 import MatchDetailCard, {
   type MatchDetailData,
   type AIAnalysis,
@@ -331,47 +333,13 @@ function formatProb(value?: number | null): string {
   return `${pct.toFixed(1)}%`;
 }
 
-type LivePeriod = "1T" | "HT" | "2T";
-
-/** Compute live period from kickoff time when backend hasn't supplied it yet.
- * When backend provides period/minute, use max(backend, estimated) so stale
- * backend data (e.g. 68' when real time is 90') doesn't freeze the display.
- * #155: HT from backend has absolute priority — never show minute during halftime. */
-function computeLiveInfo(match: Match): { period: LivePeriod; minute: number | null } | null {
-  if (match.status !== "live") return null;
-  try {
-    // #155: If backend explicitly says HT, trust it unconditionally
-    if (match.period === "HT") {
-      return { period: "HT", minute: null };
-    }
-    const kickoff = new Date(match.datetime).getTime();
-    const elapsed = Math.floor((Date.now() - kickoff) / 60_000);
-    if (elapsed < 0) return null;
-    let period = match.period ?? "";
-    let minute: number | null = match.minute ?? null;
-    if (elapsed <= 47) {
-      const est = { period: "1T" as const, minute: Math.min(elapsed, 45) };
-      if (!period) period = est.period;
-      if (minute == null) minute = est.minute;
-      else minute = Math.max(minute, est.minute);
-    } else if (elapsed <= 62) {
-      // #155: During HT window, if backend says 1T/2T trust the period but null minute
-      if (period === "1T" || period === "2T") {
-        return { period: period as LivePeriod, minute };
-      }
-      if (!period) period = "HT";
-      minute = null;
-    } else {
-      const estMin = Math.min(elapsed - 15, 90);
-      if (!period) period = "2T";
-      if (minute == null) minute = estMin;
-      else minute = Math.max(minute, estMin);
-    }
-    return { period: period as LivePeriod, minute };
-  } catch {
-    return match.period ? { period: match.period as LivePeriod, minute: match.minute ?? null } : null;
-  }
-}
+/**
+ * #190 — o relogio ao vivo agora vive em @/lib/liveClock.
+ * A versao antiga fazia Math.max(minutoDoFeed, estimativaPeloKickoff), o que
+ * empurrava o tempo de jogo para frente (59' exibido contra 49' reais do
+ * api_football). O feed passou a ser a unica fonte; o horario de kickoff so
+ * entra quando nao ha minuto nenhum vindo do backend.
+ */
 
 /** Minutes elapsed since kickoff (null if in the future or invalid). */
 function elapsedMinutes(datetime: string): number | null {
@@ -538,6 +506,7 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
     })(),
     period: item.period ?? undefined,
     minute: item.minute ?? undefined,
+    minuteUpdatedAt: item.minute != null ? Date.now() : undefined,
     odds: {
       home: item.odds?.home ?? 0,
       draw: item.odds?.draw ?? 0,
@@ -632,7 +601,8 @@ function normalizeMatch(item: any, leagueId: string, idx: number): Match {
   };
 }
 
-function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: boolean): MatchDetailData {
+function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: boolean, nowMs: number = Date.now()): MatchDetailData {
+  const clock = getLiveClock(match, nowMs);
   const h = safeOdd(match.odds?.home, 1.7);
   const d = safeOdd(match.odds?.draw, 3.1);
   const a = safeOdd(match.odds?.away, 3.8);
@@ -654,14 +624,11 @@ function toDetailData(match: Match, aiData: AIAnalysis | null, isAiLoading: bool
     startTime: match.datetime,
     status: match.status === "postponed" ? "scheduled" : match.status,
     score: match.score,
-    period: (() => {
-      const li = computeLiveInfo(match);
-      return (li?.period ?? match.period) as "1T" | "HT" | "2T" | undefined;
-    })(),
-    minute: (() => {
-      const li = computeLiveInfo(match);
-      return li?.minute ?? match.minute;
-    })(),
+    period: (clock?.period ?? match.period) as "1T" | "HT" | "2T" | undefined,
+    minute: clock ? clock.minute : match.minute,
+    clockLabel: clock?.label,
+    minutesLeft: clock?.minutesLeft,
+    clockStale: clock?.stale ?? false,
     venue: { name: match.venue || "Estádio não informado" },
     odds: { home: h, draw: d, away: a },
     doubleChance: {
@@ -904,7 +871,19 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   useEffect(() => {
     const liveLeagues = new Set<string>();
     for (const m of allMatches) {
-      if (m.status === "live") liveLeagues.add(m.leagueId);
+      // #190: nao basta olhar status === "live". Um jogo que acabou de comecar
+      // ainda esta como "scheduled" no snapshot local, e a liga dele ficava de
+      // fora do fallback do /api/matches/live — o placar so aparecia no proximo
+      // refetch completo. Passa a incluir qualquer liga com jogo na janela de
+      // bola rolando (kickoff ate 130 min atras).
+      if (m.status === "live") {
+        liveLeagues.add(m.leagueId);
+        continue;
+      }
+      if (m.status === "scheduled") {
+        const elapsed = elapsedMinutes(m.datetime);
+        if (elapsed !== null && elapsed >= 0 && elapsed <= 130) liveLeagues.add(m.leagueId);
+      }
     }
     liveLeagueIdsRef.current = Array.from(liveLeagues).join(",");
   }, [allMatches]);
@@ -1061,6 +1040,11 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
           score: liveScore,
           period: live.period as Match["period"],
           minute: live.minute,
+          // #190: ancora do relogio. So re-carimba quando o feed realmente
+          // avancou o tempo — assim o interpolador sabe ha quanto tempo o
+          // ultimo minuto real chegou e congela se o feed travar.
+          minuteUpdatedAt:
+            periodChanged || minuteChanged ? Date.now() : m.minuteUpdatedAt ?? Date.now(),
           ...(live.currentCorners != null ? { currentCorners: live.currentCorners } : {}),
           ...(live.currentCards != null ? { currentCards: live.currentCards } : {}),
         };
@@ -1187,19 +1171,16 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
   const { lastUpdated: liveLastUpdated } = useLivePolling(fetchLiveScores, {
     hasMatches,
     hasLiveMatches,
-    liveIntervalMs: 30_000,
+    // #190: 20s acompanha o TTL de ~60s do /live-scores sem estourar rate limit
+    // e reduz a janela em que o placar fica velho na tela.
+    liveIntervalMs: 20_000,
     idleIntervalMs: 120_000,
   });
 
-  // Force re-render every 30s when live matches exist — computeLiveInfo uses Date.now()
-  // so the minute display updates even when backend polling returns cached data.
-  useEffect(() => {
-    if (!hasLiveMatches) return;
-    const tick = setInterval(() => {
-      setAllMatches((prev) => (prev.length ? [...prev] : prev));
-    }, 30_000);
-    return () => clearInterval(tick);
-  }, [hasLiveMatches]);
+  // #190: tique de 10s so para re-renderizar o relogio interpolado.
+  // Substitui o antigo setAllMatches(prev => [...prev]) de 30s, que reescrevia
+  // o estado inteiro apenas para forcar render.
+  const liveNowMs = useLiveTick(hasLiveMatches);
 
   // Camada 1 (#071): safety timeout — if a match stays "live" for > 120min
   // since kickoff, mark as finished locally. Checks every 60s.
@@ -1261,8 +1242,8 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
 
   const detailData = useMemo<MatchDetailData | null>(() => {
     if (!selectedMatch) return null;
-    return toDetailData(selectedMatch, aiAnalysis, aiLoading);
-  }, [selectedMatch, aiAnalysis, aiLoading]);
+    return toDetailData(selectedMatch, aiAnalysis, aiLoading, liveNowMs);
+  }, [selectedMatch, aiAnalysis, aiLoading, liveNowMs]);
 
   const toggleLeague = useCallback((lid: string) => {
     setCollapsedLeagues((prev) => {
@@ -2371,33 +2352,28 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                       const a = safeOdd(match.odds?.away);
                       const hlSet = getHighlightedOddPositions(match.predictions, oddsTab);
                       const isSelected = match.id === selectedMatchId;
-                      const liveInfo = computeLiveInfo(match);
                       const minsToKick = match.status === "scheduled" ? minutesToKickoff(match.datetime) : null;
 
-                      // Safety net: infer live/finished when kickoff passed but overlay didn't update
+                      // #190: um unico relogio. Quando o jogo esta "live" o
+                      // getLiveClock usa o minuto do feed (interpolado); quando
+                      // o kickoff ja passou mas o overlay ainda nao chegou, a
+                      // estimativa pelo horario entra so como rede de seguranca.
                       let displayStatus = match.status;
-                      let inferredLiveInfo: { period: string; minute: number | null } | null = null;
+                      let clock: LiveClock | null = getLiveClock(match, liveNowMs);
                       if (match.status === "scheduled" && minsToKick === null) {
-                        try {
-                          const elapsed = Math.floor((Date.now() - new Date(match.datetime).getTime()) / 60_000);
-                          if (elapsed >= 0 && elapsed < 120) {
-                            displayStatus = "live";
-                            if (elapsed <= 47) inferredLiveInfo = { period: "1T", minute: Math.min(elapsed, 45) };
-                            else if (elapsed <= 62) inferredLiveInfo = { period: "HT", minute: null };
-                            else inferredLiveInfo = { period: "2T", minute: Math.min(elapsed - 15, 90) };
-                          } else if (elapsed >= 120) {
-                            displayStatus = "finished";
-                          }
-                        } catch { /* invalid datetime — keep scheduled */ }
-                      }
-                      // Normalize: "live" without liveInfo means match hasn't started
-                      if (match.status === "live" && !liveInfo) {
-                        const mk = minutesToKickoff(match.datetime);
-                        if (mk !== null && mk > 0) {
-                          displayStatus = "scheduled";
+                        const elapsed = elapsedMinutes(match.datetime);
+                        if (elapsed !== null && elapsed < 120) {
+                          displayStatus = "live";
+                          clock = getLiveClock({ ...match, status: "live" }, liveNowMs);
+                        } else if (elapsed !== null && elapsed >= 120) {
+                          displayStatus = "finished";
                         }
                       }
-                      const effectiveLiveInfo = liveInfo ?? inferredLiveInfo;
+                      // "live" sem relogio significa que a bola ainda nao rolou.
+                      if (match.status === "live" && !clock) {
+                        const mk = minutesToKickoff(match.datetime);
+                        if (mk !== null && mk > 0) displayStatus = "scheduled";
+                      }
 
                       return (
                         <div
@@ -2406,12 +2382,18 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                           onClick={() => setSelectedMatchId(match.id)}
                         >
                           <div className="st-match-row__status">
-                            {displayStatus === "live" && effectiveLiveInfo ? (
+                            {displayStatus === "live" && clock ? (
                               <>
                                 <div className="st-match-row__status-tag st-match-row__status-tag--live">VIVO</div>
-                                <div className="st-match-row__status-period">{effectiveLiveInfo.period}</div>
-                                {effectiveLiveInfo.minute != null && effectiveLiveInfo.period !== "HT" && (
-                                  <div className="st-match-row__status-minute">{effectiveLiveInfo.minute}&apos;</div>
+                                <div className="st-match-row__status-period">{clock.period === "HT" ? "INT" : clock.period}</div>
+                                {clock.period !== "HT" && (
+                                  <div
+                                    className="st-match-row__status-minute"
+                                    title={clock.fromFeed ? undefined : "Tempo estimado pelo horário de início"}
+                                    style={clock.fromFeed && !clock.stale ? undefined : { opacity: 0.6 }}
+                                  >
+                                    {clock.label}
+                                  </div>
                                 )}
                               </>
                             ) : displayStatus === "finished" ? (

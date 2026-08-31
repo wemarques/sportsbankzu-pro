@@ -244,6 +244,8 @@ export function mapToMatchAnalysis(detail: MatchDetailData): {
     isLive: detail.status === "live",
     minute: detail.minute ?? 0,
     period: detail.period ?? "",
+    clockLabel: detail.clockLabel,
+    minutesLeft: detail.minutesLeft,
     score,
     liveStats,
   };
