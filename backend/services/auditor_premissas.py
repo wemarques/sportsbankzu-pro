@@ -326,6 +326,30 @@ def premissa_ev_alto_e_raro(jogos, corte_ev=0.08, fracao_max=0.20, minimo=10):
         )
 
 
+def premissa_manifesto_footystats_em_dia(jogos):
+    """#210 - premissa ESTRUTURAL: roda sobre o codigo, nao sobre a saida.
+
+    As outras oito perguntam se a saida obedece o modelo. Esta pergunta se o
+    sistema esta lendo os dados que diz ler. Em 01/09/2026, 128 dos 230 campos
+    mapeados da FootyStats nao tinham consumidor - inclusive as ancoras de
+    vantagem de mando e de BTTS por lado, que passamos semanas derivando por
+    outros caminhos.
+    """
+    try:
+        from backend.config.footystats_manifest import verificar
+    except Exception as e:
+        yield Violacao(
+            "manifesto_footystats_em_dia", SEV_MEDIO, "-", "-",
+            f"manifesto indisponivel: {type(e).__name__}: {e}",
+        )
+        return
+    r = verificar()
+    for linha in r["bloqueia"]:
+        yield Violacao("manifesto_footystats_em_dia", SEV_CRITICO, "-", "-", linha)
+    for linha in r["avisa"]:
+        yield Violacao("manifesto_footystats_em_dia", SEV_MEDIO, "-", "-", linha)
+
+
 PREMISSAS: List[Callable] = [
     premissa_over_bate_com_lambda,
     premissa_btts_bate_com_lambda,
@@ -336,6 +360,7 @@ PREMISSAS: List[Callable] = [
     premissa_ev_so_com_odd_real,
     premissa_vantagem_de_mando_existe,
     premissa_ev_alto_e_raro,
+    premissa_manifesto_footystats_em_dia,
 ]
 
 

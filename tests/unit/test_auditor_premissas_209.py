@@ -46,7 +46,7 @@ def test_rodada_coerente_nao_acusa_nada():
     rel = ap.auditar(rodada)
     assert rel.violacoes == [], [v.linha() for v in rel.violacoes]
     assert rel.ok
-    assert len(rel.premissas_rodadas) == len(ap.PREMISSAS)
+    assert len(rel.premissas_rodadas) == len(ap.PREMISSAS) == 10
 
 
 # ── os defeitos reais ────────────────────────────────────────────────
@@ -149,6 +149,28 @@ def test_jogo_sem_lambda_e_ignorado_em_silencio():
     incompleto = {"leagueId": "x", "homeTeam": {"name": "A"}, "awayTeam": {"name": "B"},
                   "stats": {}, "mercados": []}
     assert ap.auditar([incompleto]).violacoes == []
+
+
+def test_premissa_estrutural_do_manifesto_roda(monkeypatch):
+    """#210 - a decima premissa olha o codigo, nao a saida."""
+    import backend.config.footystats_manifest as mf
+    monkeypatch.setattr(mf, "verificar", lambda: {
+        "bloqueia": ["campo_x: mapeado e ausente do manifesto."],
+        "avisa": ["campo_y: ganhou consumidor."],
+    })
+    rel = ap.auditar([], premissas=[ap.premissa_manifesto_footystats_em_dia])
+    assert sorted(v.severidade for v in rel.violacoes) == [ap.SEV_CRITICO, ap.SEV_MEDIO]
+    assert not rel.ok
+
+
+def test_premissa_estrutural_no_estado_atual_nao_bloqueia():
+    rel = ap.auditar([], premissas=[ap.premissa_manifesto_footystats_em_dia])
+    assert rel.ok, [v.linha() for v in rel.violacoes]
+
+
+def test_rodada_coerente_nao_acusa_nada_inclui_o_manifesto():
+    """A premissa estrutural entra no conjunto padrao."""
+    assert ap.premissa_manifesto_footystats_em_dia in ap.PREMISSAS
 
 
 def test_relatorio_serializa():
