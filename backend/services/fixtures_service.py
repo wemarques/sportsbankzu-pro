@@ -1168,6 +1168,33 @@ def build_records_from_matches(
         away_over105_corners_pct = _team_stat(away, "over105_corners_percentage")
         away_over115_corners_pct = _team_stat(away, "over115_corners_percentage")
         away_over145_corners_pct = _team_stat(away, "over145_corners_percentage")
+        # #215 - ancoras empiricas de CARTOES. Os campos existiam no data_mapper
+        # desde sempre e nunca tinham consumidor (eram 9 dos 128 orfaos do #210).
+        # Sao a contagem do que aconteceu - a unica terceira opiniao disponivel
+        # para julgar se o calibrador aproxima ou afasta da realidade (#215).
+        # Os nomes vao LITERAIS aqui de proposito: o verificador do #210 procura o
+        # campo entre aspas, e nome montado por f-string passaria despercebido -
+        # foi o proprio manifesto que pegou isso quando tentei declarar consumo.
+        _CAMPOS_ANCORA_CARTOES = (
+            "over15_cards_percentage", "over25_cards_percentage",
+            "over35_cards_percentage", "over45_cards_percentage",
+            "over55_cards_percentage", "over65_cards_percentage",
+            "over75_cards_percentage",
+        )
+        _LINHAS_CARTOES = tuple(c[4:-len("_cards_percentage")] for c in _CAMPOS_ANCORA_CARTOES)
+        _cartoes_casa = {
+            n: _team_stat(home, f"over{n}_cards_percentage") for n in _LINHAS_CARTOES
+        }
+        _cartoes_fora = {
+            n: _team_stat(away, f"over{n}_cards_percentage") for n in _LINHAS_CARTOES
+        }
+
+        def _media_ancora(n: str):
+            """A ancora do JOGO e a media dos dois times, como a FootyStats publica."""
+            a, b = _cartoes_casa.get(n), _cartoes_fora.get(n)
+            vals = [float(v) for v in (a, b) if v is not None]
+            return round(sum(vals) / len(vals), 1) if vals else None
+
         # #131: Corner TOTAL averages (per-team historical average of total corners in their games)
         home_corners_total_avg = _team_stat(home, "corners_total_avg_home") or _team_stat(home, "corners_total_avg_overall")
         away_corners_total_avg = _team_stat(away, "corners_total_avg_away") or _team_stat(away, "corners_total_avg_overall")
@@ -1188,6 +1215,17 @@ def build_records_from_matches(
             vals = subset[col_name].dropna()
             vals = vals[vals >= 0]
             return round(float(vals.mean()), 1) if len(vals) > 0 else None
+
+        def _avg_cartoes_todos_os_jogos(team_name: str) -> Optional[float]:
+            """#215 - cartoes do time somando casa E fora, na mesma base da FootyStats."""
+            vals = []
+            for col, tcol in (("home_team_yellow_cards", home_col),
+                              ("away_team_yellow_cards", away_col)):
+                if col not in matches.columns or not tcol:
+                    continue
+                sub = matches[matches[tcol] == team_name][col].dropna()
+                vals.extend(float(v) for v in sub if v >= 0)
+            return round(sum(vals) / len(vals), 2) if vals else None
 
         # Corners fallback from match history
         if home_corners_pm is None:
@@ -1211,10 +1249,17 @@ def build_records_from_matches(
             away_cards_against = _avg_from_history("home_team_yellow_cards", away, False)
 
         # Cards fallback from match history (yellow_cards mapped from API)
+        # #215 - o fallback historico so olhava um lado do time.
+        # Medido em 01/09/2026, Londrina x Juventude: a FootyStats publica
+        # Londrina 2,45 e Juventude 2,27 (soma 4,72). O sistema calculava
+        # Londrina 2,46 (bateu por acaso, o time faz em casa quase o que faz no
+        # geral) e Juventude 1,88 - porque media so os jogos do Juventude FORA.
+        # A distribuicao empirica da FootyStats e sobre TODOS os jogos do time,
+        # entao o lambda tem de vir da mesma base, ou as duas nao se comparam.
         if home_cards_pm is None:
-            home_cards_pm = _avg_from_history("home_team_yellow_cards", home, True)
+            home_cards_pm = _avg_cartoes_todos_os_jogos(home)
         if away_cards_pm is None:
-            away_cards_pm = _avg_from_history("away_team_yellow_cards", away, False)
+            away_cards_pm = _avg_cartoes_todos_os_jogos(away)
 
         # Shots fallback from match history
         if home_shots_pm is None:
@@ -1845,6 +1890,10 @@ def build_records_from_matches(
                 "away_over105_corners_percentage": away_over105_corners_pct,
                 "away_over115_corners_percentage": away_over115_corners_pct,
                 "away_over145_corners_percentage": away_over145_corners_pct,
+                # #215: ancora empirica de cartoes, media dos dois times por linha
+                **{f"over{n}_cards_percentage": _media_ancora(n) for n in _LINHAS_CARTOES},
+                **{f"home_over{n}_cards_percentage": _cartoes_casa.get(n) for n in _LINHAS_CARTOES},
+                **{f"away_over{n}_cards_percentage": _cartoes_fora.get(n) for n in _LINHAS_CARTOES},
                 "homeCardsAgainstPerMatch": home_cards_against,  # #124
                 "awayCardsAgainstPerMatch": away_cards_against,  # #124
                 "homeLeaguePosition": home_league_pos,
