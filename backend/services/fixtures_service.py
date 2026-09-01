@@ -546,12 +546,18 @@ def build_records_from_matches(
                 )
                 status = "scheduled"
         # Promote scheduled → live when kickoff has passed (same heuristic as /live-scores)
+        # #213: guarda se a promocao foi NOSSA. Quando e, o placar desta linha NAO
+        # e observacao: a FootyStats so preenche homeGoalCount quando a partida
+        # termina, entao a linha traz 0 como marcador de lugar. Sem esta marca, um
+        # jogo em andamento aparece como 0-0 real.
+        _placar_promovido = False
         if status == "scheduled" and _elapsed_min is not None and 0 <= _elapsed_min < 150:
             logger.info(
                 f"[fixtures_service] Promoting 'scheduled' → 'live' for {home} vs {away} "
                 f"(elapsed={_elapsed_min}min, raw_status={r.get('status')!r})"
             )
             status = "live"
+            _placar_promovido = True
         # Skip postponed / cancelled matches — do not generate predictions for them
         if status in ("postponed", "cancelled"):
             logger.info(f"[fixtures_service] Skipping {home} vs {away} — status: {status}")
@@ -622,6 +628,21 @@ def build_records_from_matches(
                     pass 
                 except Exception:
                     pass
+
+        # #213 - a linha de league-matches nao observa jogo em andamento.
+        # O guard antigo so pegava campo AUSENTE; aqui o campo esta presente e
+        # vale 0. Medido em 01/09/2026: 15 de 15 jogos de Championship e League
+        # One exibidos como 0-0 aos 80 minutos, com /live-scores devolvendo
+        # lista vazia. A chance disso ser real e de 1 em 300 trilhoes.
+        if status == "live" and _placar_promovido and _has_goals_fb:
+            if (_home_goals or 0) == 0 and (_away_goals or 0) == 0:
+                logger.warning(
+                    f"[#213] {home} vs {away}: 0-0 vindo da linha de temporada num "
+                    f"jogo que NOS promovemos a 'live' (raw_status={r.get('status')!r}). "
+                    f"Marcador de lugar, nao placar — devolvendo score=null."
+                )
+                _home_goals = _away_goals = None
+                _has_goals_fb = False
 
         if status in ("finished", "live") and _has_goals_fb:
             _ht = None

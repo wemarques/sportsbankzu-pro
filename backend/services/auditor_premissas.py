@@ -387,6 +387,39 @@ def premissa_ligas_do_frontend_resolvem(jogos):
             )
 
 
+def premissa_placar_ao_vivo_e_observado(jogos, minimo=5, minuto_min=25):
+    """#213 - uma rodada inteira 0-0 ao vivo nao e resultado, e falta de dado.
+
+    Em 01/09/2026 o dashboard exibiu 15 de 15 jogos de Championship e League One
+    como 0-0 aos 80 minutos, enquanto /live-scores devolvia lista vazia. Com a
+    media de 2,5 gols da liga, P(0-0 aos 80') = 10,8% por jogo; para 15 jogos
+    independentes, 1 em 300 trilhoes.
+
+    A origem: a linha de `league-matches` traz homeGoalCount=0 ate a partida
+    terminar, e o sistema promove o jogo a 'live' pelo relogio. O zero e
+    marcador de lugar, e estava sendo exibido como observacao.
+    """
+    ao_vivo = [
+        j for j in jogos
+        if j.get("status") == "live"
+        and isinstance(j.get("minute"), (int, float))
+        and j["minute"] >= minuto_min
+    ]
+    if len(ao_vivo) < minimo:
+        return
+    zerados = [
+        j for j in ao_vivo
+        if (j.get("score") or {}).get("home") == 0 and (j.get("score") or {}).get("away") == 0
+    ]
+    if len(zerados) == len(ao_vivo):
+        yield Violacao(
+            "placar_ao_vivo_e_observado", SEV_CRITICO,
+            f"{len(ao_vivo)} jogos ao vivo", "-",
+            f"todos com 0-0 depois do minuto {minuto_min} — marcador de lugar servido como placar",
+            "algum jogo com gol", "0-0 em 100% deles",
+        )
+
+
 PREMISSAS: List[Callable] = [
     premissa_over_bate_com_lambda,
     premissa_btts_bate_com_lambda,
@@ -399,6 +432,7 @@ PREMISSAS: List[Callable] = [
     premissa_ev_alto_e_raro,
     premissa_manifesto_footystats_em_dia,
     premissa_ligas_do_frontend_resolvem,
+    premissa_placar_ao_vivo_e_observado,
 ]
 
 
