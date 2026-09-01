@@ -9935,3 +9935,34 @@ Cada invocação da Lambda é um processo próprio: o paralelismo real está em 
 
 ### Lição aprendida
 Parâmetro de tuning carrega a premissa do ambiente em que foi calibrado. O agrupamento de 3 era correto sob um teto de 30s por requisição e passou a ser prejudicial quando o teto virou 55s por requisição com invocações independentes — a mesma constante, o mesmo código, efeito invertido. Ao remover um limite de infraestrutura, revisar o que foi dimensionado *para* ele.
+
+## 207 — Cliente FootyStats único por processo + medição do /lastx
+**Data:** 2026-09-01 | **Arquivos:** backend/services/footstats_client.py, backend/services/fixtures_service.py, tests/unit/test_lastx_cliente_unico_207.py (novo) | **Severidade:** Alta (performance) | **Status:** Corrigido (1 causa) + instrumentado (causa restante)
+
+### Problema identificado
+Medido em produção (Function URL, 1 liga por pedido — pós #203/#206):
+
+| Jogos | Tempo |
+|---|---|
+| 0 | 1,8–2,9s |
+| 1 | 6,0s |
+| 7 (league-one) | 30,0s |
+| 8 (championship) | 35,2s / 37,6s |
+
+São **~4,5s por jogo, e a curva é linear MESMO com o paralelismo de 3 vias do #115 ligado**. Como uma chamada isolada de `/lastx` custa ~1,8s (o caso de 1 jogo), a conta só fecha com contenção: com os 3 workers ativos, cada chamada passa a custar ~6s.
+
+### Causa corrigida
+`_fetch_lastx_for_team` instanciava um `FootyStatsClient` **novo por chamada** — 16 por pedido do championship (8 jogos × 2 times). Cada `__init__` roda `_init_db()`, que abre o SQLite do `/tmp`, executa `CREATE TABLE IF NOT EXISTS` e dá commit: **uma transação de ESCRITA**. São 16 escritas concorrentes disputando o mesmo arquivo, além das escritas legítimas do cache.
+
+O cliente não guarda estado por chamada (a chave vem do ambiente, o cache é o arquivo), então `get_shared_client()` — instância única por processo, thread-safe por double-checked locking — resolve. As 6 instanciações diretas que restam no backend são de escopo único (módulo, calibração, health), nenhuma em laço por jogo.
+
+### Causa restante, agora medível
+Throttle do próprio FootyStats não dá para separar de fora. Por isso entra a linha `[#207 lastx]`, **uma por liga**, com times buscados, memoizados, soma, média e pior chamada. Logger `sportsbankzu` — visível no CloudWatch sem depender do `LOG_LEVEL_MODELOS` (#204). **Leitura:** média ~1800ms aponta para a API; muito acima disso, para o SQLite.
+
+**Não mexer no paralelismo antes dessa leitura.**
+
+### Testes
+5 novos em `test_lastx_cliente_unico_207.py` (mesma instância; thread-safety com 8 threads e barreira; 16 chamadas → 1 cliente; log sai uma vez por liga com a média correta; não sai quando nada foi buscado). Suíte: **388 passed**.
+
+### Lição aprendida
+Construtor barato em teste unitário pode ser caro em produção: `FootyStatsClient()` parecia inofensivo porque o custo real não está no objeto, está no `_init_db()` que ele dispara — uma escrita em SQLite compartilhado, multiplicada por 16 e paralelizada por 3. Antes de otimizar concorrência, contar quantas vezes o caminho quente **constrói** o que poderia reusar. E instrumentar antes de ajustar: a segunda causa possível (throttle da API) só se separa da primeira com número, não com raciocínio.
