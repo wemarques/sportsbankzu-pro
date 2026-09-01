@@ -10073,3 +10073,45 @@ Manifesto FootyStats: 230 campos (102 consumidos, 96 planejados, 32 descartados)
 
 ### Lição aprendida
 Dado não usado é indistinguível de dado inexistente até alguém fazer o inventário — e o custo não é a oportunidade perdida, é derivar mal o que já vinha pronto. `avg_goals_scored_by_home_teams` chegava no payload enquanto o λ usava `average_goals_per_match/2` e contava a vantagem de mando duas vezes (#201). A lista tem de existir como código verificável, não como conhecimento de quem leu a API uma vez.
+
+## 207 (adendo) — A leitura chegou e falsificou os dois critérios
+**Data:** 2026-09-01 | **Arquivos:** (nenhum — correção de registro) | **Severidade:** — | **Status:** Medido
+
+O #207 previa dois desfechos para a linha `[#207 lastx]`: média ~1800ms ⇒ API da FootyStats; muito acima ⇒ SQLite do `/tmp`. **O real foi um terceiro caso, que nenhum dos dois previa.**
+
+```
+[#207 lastx] championship: 8 jogos, 16 times buscados (0 memoizados), soma=5.8s media=364ms pior=653ms
+[#207 lastx] league-one:   7 jogos, 14 times buscados (0 memoizados), soma=4.6s media=332ms pior=577ms
+```
+
+Média **364ms** e soma de **5,8s** numa requisição de **42,1s** — o `/lastx` é menos de 14% do total. **Nem throttle da API, nem contenção de SQLite.** Se o paralelismo tivesse sido ajustado com base na suspeita, teria otimizado 5,8s de 42s.
+
+### Correção de um fato registrado errado no #206
+O #206 afirmou que **o cache SQLite do `/tmp` não sobrevive entre invocações**, baseado em três medições de championship que não se beneficiavam umas das outras (35,5s / 35,2s / 37,6s). **Isso está errado.** Os logs de 01/09 mostram o cache quente:
+
+```
+18:39:12  championship: 16 times buscados, soma=6.1s media=378ms   ← frio
+18:44:01  championship: 16 times buscados, soma=0.3s media=21ms    ← 100% cache, 4 min depois
+18:31:37  league-one:   14 times buscados, soma=0.5s media=37ms    ← idem
+```
+
+O cache **sobrevive quando o container é reaproveitado**. As três medições anteriores caíram em containers diferentes (fan-out do #206 = 1 liga por invocação, e a AWS distribui). A premissa "cache morto" era uma inferência a partir de três amostras sem controle de container, não uma observação.
+
+### O que a medição revelou de fato
+Com o cache 100% quente (`soma=0.3s`), o padrão de rajadas **não muda**:
+
+```
+18:43:47.9 → 48.2   6 hits       18:28 (frio): 6 chamadas
+       48.2 → 52.8   4,6s parado                5,7s parado
+       52.8 → 53.7   6 hits                     6 chamadas
+       53.7 → 57.9   4,3s parado                4,2s parado
+       57.9 → 58.5   4 hits                     4 chamadas
+             → 44:01.6  resumo
+```
+
+8 jogos ÷ 3 workers = lotes de 3+3+2, e as rajadas são de **6, 6 e 4** chamadas = 2 times × (3, 3, 2 jogos). Cada worker busca os dois times de um jogo, **para 4–6s processando**, e só então vai ao próximo. **O custo por jogo é processamento, não busca** — e é idêntico com cache frio ou quente.
+
+**Decomposição dos 42,1s:** ~14s de build (da 1ª chamada `/lastx` ao resumo) e **~28s antes disso**, na busca dos dados da liga (matches, teams, teams2, players), que é serial e roda uma vez.
+
+### Lição aprendida
+Um critério de leitura escrito antes da medição enumera os desfechos que o autor conseguiu imaginar — e o mundo não se limita a eles. O valor do #207 não foi ter previsto a resposta certa; foi ter produzido um número que **descartou as duas hipóteses de uma vez**, incluindo a que já estava registrada como fato no #206. Amostra pequena sem controle da variável certa (aqui, a identidade do container) produz um "fato" tão convincente quanto errado — é o mesmo erro de forma do #200, onde o gate no log foi confundido com o efeito do gate.
