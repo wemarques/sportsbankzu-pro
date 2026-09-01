@@ -10178,3 +10178,52 @@ Relógio monotônico (`time.time()` anda para trás com ajuste de NTP; medição
 
 ### Lição aprendida
 Duas hipóteses erradas seguidas sobre o mesmo gargalo — o cache do SQLite (#206) e o throttle da API (#207) — têm a mesma origem: raciocinar sobre onde o tempo *deveria* estar em vez de medir onde ele *está*. A decomposição por fases custa duas linhas de log e teria evitado as duas. Instrumentar a fase antes de formular a hipótese, não depois de a hipótese falhar.
+
+## 212 (adendo) — A leitura das fases: o tempo está TODO no laço
+**Data:** 2026-09-01 | **Arquivos:** (nenhum — leitura) | **Severidade:** — | **Status:** Medido
+
+### O que a instrumentação mostrou
+```
+[#212 fases] championship: season_ids=998ms  league_matches=1180ms stats+teams=17ms ate_o_laco=3765ms
+[#212 fases] championship: laco_de_montagem=20822ms (8 jogos)
+```
+
+`ate_o_laco` fica em **1,0–4,4s para TODAS as 22 ligas**, championship inclusive. A busca da liga não é o gargalo — nunca foi.
+
+| Liga | Invocação | `ate_o_laco` | `laco_de_montagem` | Jogos | Por jogo |
+|---|---|---|---|---|---|
+| championship | `bd9ac091` (só ela) | 3,8s | **20,8s** | 8 | 2,60s |
+| championship | `5daffd54` (só ela) | 3,5s | **24,9s** | 8 | 3,11s |
+| championship | `f1fbc515` (+league-one) | 3,7s | **39,8s** | 8 | 4,98s |
+| championship | `88f1f2fd` (+league-one) | 4,0s | **43,3s** | 8 | 5,42s |
+| championship | `99b437ba` (+league-one) | 3,8s | **40,2s** | 8 | 5,03s |
+| league-one | `2fd10aaf` (só ela) | 4,4s | 28,1s | 7 | 4,01s |
+| league-one | `f1fbc515` (+championship) | 3,4s | **39,6s** | 7 | 5,65s |
+| **ligas sem jogos** (17) | — | 1,0–4,1s | **0,3–1,8s** | 0 | — |
+
+### Correção de uma inferência minha
+Eu estimei **"~28s antes do laço"** a partir da distância entre `START` e `parallelizing` no CloudWatch. **Está errado, e o erro é de método:** aquele intervalo inclui cold start da Lambda, import de numpy/pandas/sklearn e boot do FastAPI, nada disso sendo busca de liga. O marco `_t_liga` do #212 começa dentro de `_process_single_league` e mede a coisa certa: **3,5–4,0s**. A tabela do próprio commit do #212 (`antes do split 19,7–44,7s`) carrega a mesma confusão e fica corrigida aqui.
+
+### Onde o tempo está, agora sem inferência
+Ligas com 0 jogos custam **0,3–1,8s** de laço; com 7–8 jogos, **20,8–43,4s**. O custo é **por jogo**, e o `/lastx` (#207) responde por 3,7–6,1s dele. Sobram **~15–37s de cálculo do modelo** por liga.
+
+### O sinal mais forte: duas ligas na mesma invocação dobram o tempo de cada uma
+Três pares independentes, todos com o mesmo `requestId` (mesmo processo):
+
+| Invocação | championship | league-one |
+|---|---|---|
+| `f1fbc515` | 39,8s | 39,6s |
+| `88f1f2fd` | 43,3s | 43,4s |
+| `99b437ba` | 40,2s | 39,2s |
+| *sozinhas* | *20,8–24,9s* | *28,1s* |
+
+**Duas ligas juntas custam ~2× cada uma.** Contenção de I/O não se comporta assim — o `/lastx` custa 0,3s com cache quente e não muda. Escalar assim é a assinatura de trabalho **preso a CPU**: os threads do `ThreadPoolExecutor` (#115) disputam o GIL, então o cálculo do modelo serializa e o paralelismo só vale para o I/O.
+
+### Consequência para o #115 e o #206
+O `_MAX_WORKERS = 3` entrega paralelismo real na fase de rede (as rajadas de 6 chamadas em 0,5s) e **nenhum** na fase de cálculo. Aumentar workers não ajuda; o que ajuda é baratear o cálculo por jogo ou sair de threads. **Não mexer em nenhum dos dois antes de saber qual etapa do cálculo custa os ~2,6s por jogo** — é a terceira vez seguida que uma hipótese sobre este gargalo cai, e as duas anteriores caíram por falta exatamente desta medição.
+
+### Próximo passo definido
+Instrumentar DENTRO do laço, por jogo e por etapa (λ/Poisson, ML dos 20 mercados, calibrador, escanteios v2, cartões NB2). Só então decidir entre baratear etapa, cachear modelo ou trocar threads por processos.
+
+### Lição aprendida
+Medir a fase errada com o instrumento certo dá um número igualmente convincente e igualmente inútil. `START → parallelizing` **é** um intervalo real do CloudWatch — só não é a fase que eu disse que era, porque carrega o cold start junto. O marco tem de nascer dentro do escopo que se quer medir, não num log vizinho que parecia delimitá-lo.
