@@ -51,6 +51,19 @@ logging.basicConfig(level=_LOG_LEVEL)
 logging.getLogger("sportsbankzu").setLevel(_LOG_LEVEL)
 logger = logging.getLogger("sportsbankzu")
 
+# #204: 12 modulos usam getLogger(__name__), o que os coloca na arvore `backend.*`
+# e nao em `sportsbankzu`. Como o #164 (deliberadamente) so elevou o nivel do
+# namespace proprio, todo logger.info desses modulos cai no root da Lambda, que
+# fica em WARNING — sao mudos. Foi por isso que a linha `Base Lado:` do
+# lambda_calculator nunca apareceu no CloudWatch quando fomos verificar o #201.
+#
+# O default e WARNING, ou seja: identico ao comportamento de hoje, custo zero.
+# Para uma investigacao pontual, LOG_LEVEL_MODELOS=INFO liga a arvore inteira
+# (~20 linhas por jogo no pipeline de modelo) e depois volta. Opt-in em vez de
+# ligado para sempre, porque /fixtures ja opera perto do teto de tempo.
+_LOG_LEVEL_MODELOS = os.getenv("LOG_LEVEL_MODELOS", "WARNING").upper()
+logging.getLogger("backend").setLevel(_LOG_LEVEL_MODELOS)
+
 app = FastAPI(title="SportsBankZU Pro Backend", version="4.0.0")
 
 # --- CONFIGURAÇÃO DE CORS (CORREÇÃO) ---
