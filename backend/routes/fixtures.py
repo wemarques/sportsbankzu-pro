@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional
 import os
 import re
 import logging
+import time
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
@@ -153,6 +154,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     from backend.main import resolve_league_dir, generate_mock_fixtures
     from backend.config.leagues_config import LEAGUE_ID_ALIASES
 
+    _t_liga = time.monotonic()                               # #212
     league_config = get_league_config(lid)
     if not league_config:
         # #211 - ID que nao consta do registro devolvia [] sem log e sem campo
@@ -171,11 +173,13 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     if league_config:
         try:
             # #064: resolve up to 2 seasons for prev-season fallback
+            _t_fase = time.monotonic()                       # #212
             _season_ids = footstats.resolve_season_ids(
                 league_config["country"], league_config["name"],
                 alt_names=league_config.get("alt_names"),
                 n_seasons=2,
             )
+            _ms_season = (time.monotonic() - _t_fase) * 1000
             season_id = _season_ids[0][0] if _season_ids else None
             prev_season_id = _season_ids[1][0] if len(_season_ids) > 1 else None
             if season_id:
@@ -186,11 +190,13 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     _f_stats = _pool.submit(footstats.get_league_season_stats, season_id)
                     _f_teams = _pool.submit(footstats.get_league_teams, season_id)
 
+                    _t_fase = time.monotonic()                   # #212
                     try:
                         matches_data = _f_matches.result(timeout=45)  # #154: more time for multi-page fetch
                     except Exception as e:
                         logger.error(f"[fixtures] {lid}: get_all_league_matches failed: {e}")
                         matches_data = {"success": False}
+                    _ms_matches = (time.monotonic() - _t_fase) * 1000
 
                 if matches_data.get("success"):
                     raw_list = matches_data.get("data", [])
@@ -213,6 +219,7 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
 
                     teams_df = None
                     league_season_data = None
+                    _t_aux = time.monotonic()                   # #212
                     try:
                         season_stats = _f_stats.result(timeout=5)
                         if season_stats.get("success"):
@@ -261,6 +268,8 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                                         logger.info(f"[fixtures] {lid}: fallback league-tables loaded {len(teams_df)} teams")
                         except Exception as e:
                             logger.warning(f"[fixtures] {lid}: fallback league-tables also failed: {e}")
+
+                    _ms_aux = (time.monotonic() - _t_aux) * 1000    # #212
 
                     # #064: Load previous season teams as fallback for early-season blending
                     prev_teams_df = None
@@ -331,6 +340,17 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                         except Exception as e:
                             logger.warning(f"[fixtures] {lid}: failed to build league_df: {e}")
 
+                    # #212 - a medicao do /lastx (#207) provou que ele e 10-17%
+                    # do pedido, nao o gargalo. O tempo esta ANTES daqui (busca
+                    # da liga) e DENTRO do laco (calculo do modelo). Esta linha
+                    # separa as duas metades para nao chutarmos de novo.
+                    logger.info(
+                        f"[#212 fases] {lid}: season_ids={_ms_season:.0f}ms "
+                        f"league_matches={_ms_matches:.0f}ms "
+                        f"stats+teams={_ms_aux:.0f}ms "
+                        f"ate_o_laco={(time.monotonic() - _t_liga) * 1000:.0f}ms"
+                    )
+                    _t_laco = time.monotonic()                   # #212
                     try:
                         records = build_records_from_matches(
                             league_id=lid,
@@ -345,6 +365,10 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
                     except Exception as e:
                         logger.error(f"[fixtures] {lid}: build_records_from_matches crashed: {type(e).__name__}: {e}")
                         records = []
+                    logger.info(
+                        f"[#212 fases] {lid}: laco_de_montagem={(time.monotonic() - _t_laco) * 1000:.0f}ms "
+                        f"({len(records)} jogos)"
+                    )
 
                     # #154-diag: log how many matches survived date filter
                     logger.info(
