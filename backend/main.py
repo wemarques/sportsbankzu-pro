@@ -57,11 +57,20 @@ logger = logging.getLogger("sportsbankzu")
 # fica em WARNING — sao mudos. Foi por isso que a linha `Base Lado:` do
 # lambda_calculator nunca apareceu no CloudWatch quando fomos verificar o #201.
 #
-# O default e WARNING, ou seja: identico ao comportamento de hoje, custo zero.
-# Para uma investigacao pontual, LOG_LEVEL_MODELOS=INFO liga a arvore inteira
-# (~20 linhas por jogo no pipeline de modelo) e depois volta. Opt-in em vez de
-# ligado para sempre, porque /fixtures ja opera perto do teto de tempo.
-_LOG_LEVEL_MODELOS = os.getenv("LOG_LEVEL_MODELOS", "WARNING").upper()
+# O default e por ambiente, para que "identico ao comportamento de hoje" valha
+# nos DOIS lados (#204b). Na Lambda o basicConfig acima e no-op e o root fica em
+# WARNING, entao o default WARNING nao muda nada. Fora da Lambda o basicConfig
+# FUNCIONA e poe o root em _LOG_LEVEL (INFO por padrao) — fixar WARNING ali teria
+# apagado logs de `backend.*` que o dev ja via, que e o oposto do objetivo deste
+# patch. Herdar _LOG_LEVEL preserva o local.
+#
+# Para uma investigacao pontual em producao, LOG_LEVEL_MODELOS=INFO liga a arvore
+# inteira (~20 linhas por jogo no pipeline de modelo) e depois volta. Opt-in em
+# vez de ligado para sempre, porque /fixtures ja opera perto do teto de tempo.
+_EM_LAMBDA = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+_LOG_LEVEL_MODELOS = os.getenv(
+    "LOG_LEVEL_MODELOS", "WARNING" if _EM_LAMBDA else _LOG_LEVEL
+).upper()
 logging.getLogger("backend").setLevel(_LOG_LEVEL_MODELOS)
 
 app = FastAPI(title="SportsBankZU Pro Backend", version="4.0.0")
