@@ -420,6 +420,61 @@ def premissa_placar_ao_vivo_e_observado(jogos, minimo=5, minuto_min=25):
         )
 
 
+_MARGENS_REFERENCIA = "Pinnacle 2,7% | bet365 5,5% | William Hill 7,4% | Ladbrokes 7,8%"
+
+
+def _margem(odds) -> Optional[float]:
+    """Sobrerredondo em pontos percentuais. None se alguma odd for invalida."""
+    try:
+        vals = [float(o) for o in odds]
+    except (TypeError, ValueError):
+        return None
+    if any(v <= 1.0 for v in vals):
+        return None
+    return (sum(1.0 / v for v in vals) - 1.0) * 100
+
+
+def premissa_odds_com_margem_plausivel(jogos, minima=1.0, maxima=12.0):
+    """#214 - margem fora da faixa de mercado denuncia odd velha ou errada.
+
+    Medido em 01/09/2026, Londrina x Juventude: o card trazia 2,88 / 2,70 / 2,17
+    no 1X2, margem de 17,8%. A bet365 pagava 3,75 / 2,87 / 2,20 no mesmo
+    momento - margem de 7,0%. Nao existe casa seria operando a 17,8%.
+
+    O que torna o diagnostico preciso e que os OUTROS mercados do MESMO payload
+    estavam em faixa normal: Over/Under 2,5 a 10,6% e BTTS a 8,2%. Nao e a fonte
+    inteira quebrada - e o 1X2 desatualizado, provavelmente a odd de abertura.
+
+    Isso importa porque TODO EV do sistema e calculado contra essas odds. Com a
+    odd errada de 2,88 o EV do mandante dava -3,1%; com a real de 3,75, +26,2%.
+    A mesma probabilidade, sinal invertido.
+    """
+    familias = (
+        ("1X2", ("home", "draw", "away")),
+        ("Over/Under 2.5", ("over25", "under25")),
+        ("BTTS", ("bttsYes", "bttsNo")),
+    )
+    for j in jogos:
+        odds = j.get("odds") or {}
+        for nome, chaves in familias:
+            if not all(k in odds for k in chaves):
+                continue
+            m = _margem(odds[k] for k in chaves)
+            if m is None:
+                continue
+            if m < minima or m > maxima:
+                yield Violacao(
+                    "odds_com_margem_plausivel",
+                    SEV_ALTO if m > maxima else SEV_CRITICO,
+                    _rotulo(j), j.get("leagueId", "?"),
+                    f"margem de {m:.1f}% no {nome} "
+                    + ("(odd provavelmente desatualizada)" if m > maxima
+                       else "(margem abaixo do possivel — odd corrompida)"),
+                    f"entre {minima:.0f}% e {maxima:.0f}% ({_MARGENS_REFERENCIA})",
+                    f"{m:.1f}%",
+                )
+
+
 PREMISSAS: List[Callable] = [
     premissa_over_bate_com_lambda,
     premissa_btts_bate_com_lambda,
@@ -433,6 +488,7 @@ PREMISSAS: List[Callable] = [
     premissa_manifesto_footystats_em_dia,
     premissa_ligas_do_frontend_resolvem,
     premissa_placar_ao_vivo_e_observado,
+    premissa_odds_com_margem_plausivel,
 ]
 
 
