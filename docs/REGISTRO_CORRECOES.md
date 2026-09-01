@@ -9818,3 +9818,27 @@ O gate impede que **novo** dado vazado entre. Ele **não desfaz os `.pkl` já tr
 
 ### Lição aprendida
 Recomputar o prognóstico depois do jogo e chamar isso de histórico é o vazamento em estado puro: o passado passa a ser função do resultado. Foi o mesmo defeito que o #192 corrigiu na exibição — a diferença é que ali o usuário via o prognóstico mudar, e aqui ele alimentava o modelo em silêncio. Todo consumidor de "histórico" precisa saber se lê o que foi **publicado** ou o que foi **recalculado**.
+
+## 203 — PY_BACKEND_URL voltou ao API Gateway: a regressão de config que parecia "liga não carrega"
+**Data:** 2026-09-01 | **Arquivos:** frontend/next/src/lib/backend.ts, frontend/next/src/app/api/matches/fetch/route.ts | **Severidade:** Alta | **Status:** Guarda implementada (config pendente no Vercel)
+
+### Problema identificado
+O API Gateway HTTP API v2 corta a integração em **30s — limite duro, não elevável**. Foi exatamente por isso que o #114 (2026-04-04) moveu `PY_BACKEND_URL` para a Lambda Function URL, que respeita o timeout da própria Lambda (60s). A variável **voltou a apontar para o execute-api**.
+
+O efeito é traiçoeiro porque é seletivo: as ligas **com jogos no dia** — as únicas caras de montar — estouram os 30s e somem da tela, enquanto as ligas **sem jogos** respondem em ~2s e continuam aparecendo. O sintoma se apresenta como "algumas ligas não carregam", nunca como "o backend está atrás do gateway errado".
+
+Medido em produção:
+
+| Backend | championship | league-one |
+|---|---|---|
+| API Gateway | **503 @ 30,2s** | 200 @ 27,4s (7 jogos) |
+| Function URL | **200 @ 34,3s (8 jogos)** | 200 @ 27,9s |
+
+### Correção aplicada
+O patch **não troca a variável** (isso é config no Vercel) — ele impede que a troca volte a ser silenciosa: `isApiGatewayBackend()` detecta o host `execute-api`, loga erro no boot, expõe `backendKind` no payload de debug, e a mensagem de erro nomeia a causa em vez de dizer "cold start". Um 503 em ~30s cravados nunca foi cold start; era o teto do gateway, e a mensagem genérica custava rodadas de investigação em cima de um "reinício" que nunca ia acontecer.
+
+### Ação pendente (config, não código)
+Apontar `PY_BACKEND_URL` para a Function URL (`*.lambda-url.*.on.aws`) nas variáveis de ambiente do projeto na Vercel e redeployar. Enquanto isso não for feito, a guarda apenas **denuncia** o problema.
+
+### Lição aprendida
+Regra de infraestrutura sem guarda executável é regra que regride: o #114 resolveu isso em abril, ficou registrado só no índice, e a configuração voltou ao estado ruim sem nada acusar. Toda decisão de infra que pode ser desfeita por um campo de painel precisa de um detector no código — e o detector tem de aparecer no caminho do erro, não só num log de boot que ninguém lê. Corolário: mensagem de erro genérica ("cold start") aplicada a um sintoma determinístico (503 em exatamente 30s) é pior que nenhuma mensagem, porque direciona a investigação para o lugar errado.

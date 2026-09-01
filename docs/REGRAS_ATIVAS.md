@@ -749,3 +749,22 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `grep -n "train_family_calibrator\|_FAMILY_PREFIX" backend/modeling/calibrator.py`
 **Verificação:** `grep -n "_league_deflation_factor" backend/services/ev_classification.py`
 **Verificação:** `pytest tests/unit/test_family_gate_189e.py -q`
+
+### #114/#203 — O backend fica ATRÁS da Lambda Function URL, nunca do API Gateway
+
+**Tipo:** Regra permanente (Infra)
+**Relacionado:** #114 (origem, 2026-04-04), #203 (guarda, após regressão)
+
+1. **`PY_BACKEND_URL` DEVE apontar para `*.lambda-url.*.on.aws`.** O API Gateway
+   HTTP API v2 corta a integração em **30s — limite duro que não se eleva por
+   configuração**. A Function URL respeita o timeout da própria Lambda (60s).
+2. **O sintoma da violação é enganoso e já custou uma investigação inteira:**
+   ligas COM jogos (caras de montar) estouram 30s e somem da tela; ligas SEM
+   jogos respondem em ~2s e aparecem. Parece "algumas ligas não carregam".
+3. **`isApiGatewayBackend()` é a guarda** — loga no boot, expõe `backendKind`
+   no debug e nomeia a causa na mensagem de erro. Não remover: sem ela a
+   regressão volta a ser silenciosa (foi o que aconteceu entre #114 e #203).
+4. **503 em ~30s cravados nunca é cold start.** É o teto do gateway.
+
+**Verificação:** `grep -n "isApiGatewayBackend" frontend/next/src/lib/backend.ts`
+**Verificação (produção):** `curl -s -o NUL -w "%{http_code} @ %{time_total}s" "$PY_BACKEND_URL/fixtures?leagues=<liga-com-jogos>&date=today"` — 503 em ~30s = gateway errado
