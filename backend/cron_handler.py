@@ -47,7 +47,7 @@ def cron_handler(event, context):
             # Catches Liga MX, MLS, Copa Libertadores etc. that finish after 23:45 BRT
             return _run_late_audit()
         elif action == "retrain_calibrators":
-            return _run_retrain_calibrators()
+            return _run_retrain_calibrators(force=bool(event.get("force")))
         elif action == "adjust_thresholds":
             return _run_threshold_adjustment()
         elif action == "retrain_corners":
@@ -777,17 +777,27 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
     # Improvement #2: auto-trigger calibrator retraining after batch audit
     # when enough new data has been accumulated
     calibrator_results = []
-    try:
-        from backend.modeling.calibrator import retrain_all_calibrators
-        cal_results = retrain_all_calibrators()
-        calibrator_results = [r for r in cal_results if r and r.get("accepted")]
-        if calibrator_results:
-            logger.info(
-                f"[CRON] Auto-retrained {len(calibrator_results)} calibrators "
-                f"after batch audit"
-            )
-    except Exception as e:
-        logger.warning(f"[CRON] Calibrator retraining after audit failed: {e}")
+    calibrator_retrain_status = "disabled_leaked_source"
+    if not _calibrator_retrain_enabled():
+        logger.warning(
+            "[CRON][#200] Auto-retreino de calibradores IGNORADO: a fonte "
+            "(audit_results) contem prognostico recomputado pos-jogo. "
+            "Defina CRON_AUTO_RETRAIN_CALIBRATORS=1 para reabilitar."
+        )
+    else:
+        calibrator_retrain_status = "enabled_by_env"
+        try:
+            from backend.modeling.calibrator import retrain_all_calibrators
+            cal_results = retrain_all_calibrators()
+            calibrator_results = [r for r in cal_results if r and r.get("accepted")]
+            if calibrator_results:
+                logger.info(
+                    f"[CRON] Auto-retrained {len(calibrator_results)} calibrators "
+                    f"after batch audit"
+                )
+        except Exception as e:
+            calibrator_retrain_status = "error"
+            logger.warning(f"[CRON] Calibrator retraining after audit failed: {e}")
 
     result = {
         "status": "success",
@@ -810,6 +820,7 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
         "auto_corrections": auto_applied,
         "rejected_corrections": len(rejected),
         "calibrators_retrained": len(calibrator_results),
+        "calibrator_retrain_status": calibrator_retrain_status,
         "diagnostic": diagnostic_report,
         "ev_metrics": batch_summary.get("ev_metrics", {}),
         "hit_rate_by_ev": batch_summary.get("hit_rate_by_ev", []),
@@ -938,12 +949,40 @@ def _run_late_audit() -> dict:
     return result
 
 
-def _run_retrain_calibrators() -> dict:
+def _calibrator_retrain_enabled() -> bool:
+    """#200 - porta de seguranca do retreino automatico de calibradores.
+
+    Os calibradores sao treinados a partir de `audit_results`, que hoje guarda
+    o prognostico RECOMPUTADO depois do jogo, nao o publicado. Isso e vazamento:
+    picks que erraram trocam de lado no recomputo e somem da amostra, entao a
+    curva de calibracao aprende com um passado que nunca existiu - e ela entra
+    em producao via `calibrate_prob()`, antes da classificacao e do EV.
+
+    Enquanto o ledger de picks publicados nao existir, o retreino fica DESLIGADO
+    por padrao. Ligar exige `CRON_AUTO_RETRAIN_CALIBRATORS=1` explicito.
+    """
+    return os.getenv("CRON_AUTO_RETRAIN_CALIBRATORS", "0").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+
+
+def _run_retrain_calibrators(force: bool = False) -> dict:
     """Retrain Isotonic Regression calibrators for all active leagues (Gap 5).
 
     Scheduled weekly: cron(0 4 ? * MON *) → 04:00 UTC Monday.
     Uses season_start boundary per league (not a fixed 90-day window).
     """
+    if not (force or _calibrator_retrain_enabled()):
+        logger.warning(
+            "[CRON][#200] Retreino semanal de calibradores IGNORADO: fonte "
+            "com vazamento (audit_results recomputado). Use "
+            "CRON_AUTO_RETRAIN_CALIBRATORS=1 ou event={'force': true}."
+        )
+        return {
+            "status": "skipped",
+            "reason": "calibrator_retrain_disabled",
+            "detail": "audit_results contem prognostico recomputado pos-jogo (#200)",
+        }
     try:
         from backend.modeling.calibrator import retrain_all_calibrators
         results = retrain_all_calibrators()
