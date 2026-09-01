@@ -9734,3 +9734,42 @@ O endpoint recalculava o snapshot inteiro a cada carregamento do dashboard — l
 
 ### Lição aprendida
 Cache de leitura precisa carregar a própria validade: `_ageMinutes` no payload transforma "dado velho" de defeito invisível em informação exibível. E ao trocar recálculo por leitura, o que se serve tem de ser o objeto inteiro — reconstruir a partir de colunas normalizadas perde exatamente os campos que ninguém lembrou de colunar (aqui, o CI que a tela consome).
+
+## 201 — Sev 1: mando contado duas vezes no lambda + train/serve skew do ML
+**Data:** 2026-09-01 | **Arquivos:** backend/modeling/lambda_calculator.py, backend/services/data_mapper.py, backend/services/fixtures_service.py, tests/unit/test_sev1_lambda_e_ml_201.py (novo) | **Severidade:** Crítica (Sev 1 × 2) | **Status:** Corrigido
+
+### Problema 1 — lambda: vantagem de mando contada duas vezes
+`calcular_lambda_dinamico` normalizava `goals_scored_avg_home` (só jogos em casa) e `goals_conceded_avg_away` (só jogos fora) contra `average_goals_per_match / 2` — a média **geral** por time. Numerador com vantagem de mando nos dois fatores, denominador sem nenhuma.
+
+O baseline correto já era buscado e mapeado, e nunca chegava ao modelo (doc do League Season Stats): `seasonAVG_home` = "média de gols marcados por mandantes", `seasonAVG_away` = idem visitantes. Em agregado, "gols marcados por mandantes" == "gols sofridos por visitantes", então as duas razões do λ de casa passam a usar `seasonAVG_home` e as duas do λ de fora, `seasonAVG_away`.
+
+**Medição antes/depois (3.750 combinações, 6 perfis de liga × forças de ataque/defesa, código antigo e novo lado a lado):**
+
+| | Antes | Depois |
+|---|---|---|
+| λ casa médio | 1,776 | 1,559 (−12,2%) |
+| λ fora médio | 1,015 | 1,178 (+16,1%) |
+| **razão H/A (mediana)** | **1,742** | **1,320** |
+| total (H+A) | 2,791 | 2,737 (−1,9%) |
+
+No 1X2 do jogo médio: casa 53,8% → 45,3% (**−8,5pp**), empate 24,0% → 25,6%, fora 22,2% → 29,1% (**+6,9pp**) — vitória do mandante estava **+18,8% superestimada**. BTTS +1,5pp. **Over 2.5 muda só −1,1pp**, que é a razão de o bug ter sobrevivido: o total quase se preservava e o mercado mais auditado era o único cego a ele.
+
+Sem o campo (liga nova, cache antigo) ou fora da faixa 0,5–3,5, cai no comportamento anterior e loga — não se inventa um split.
+
+Dois defeitos da mesma função corrigidos junto, porque quebrariam o caminho novo: `_num()` no lugar de `.get(k, default)` (a chave existe com `None` para time sem jogo no recorte e o default nunca era usado — `if gols_temp <= 0` levantava TypeError; padrão #078v) e a regressão de início de temporada passa a olhar `games_played_home/away` em vez do total (10 jogos com 2 em casa agora regride).
+
+### Problema 2 — ML: train/serve skew com interações zeradas
+`fixtures_service` preenchia as features com saídas do Poisson: `home_goals_scored_avg_r5 = lambdaHome`, `away_goals_conceded_avg_r5 = lambdaHome` (**o mesmo número**), e simétrico para o lado de fora. O treino usa `rolling.get_rolling_avg(team, "goals_scored"/"goals_conceded", 5)` — média empírica, outra distribuição, sem os limites [0,5; 4,5] do lambda.
+
+As quatro colapsavam em dois números, e as interações aprendidas viravam constantes: `attack_vs_defense = lambdaHome − lambdaHome = 0` e `defense_vs_attack = lambdaAway − lambdaAway = 0`. Duas features com sinal no treino chegavam **zeradas** em produção, sem aparecer em nenhuma métrica de backtest.
+
+O loop de `_extract_lastx` já tinha os gols do adversário em mãos e nunca os coletava; agora emite `goals_against_last5` e `recent_conceded_list`, com a mesma semântica do treino. **Sem a série real o ensemble é PULADO** e o pipeline segue no Poisson (fallback que já existia) — substituir por saída do Poisson era o próprio bug.
+
+### Comportamento esperado no deploy (não é regressão)
+`goals_against_last5` só existe para jogos cujo `lastx` foi buscado **depois** deste deploy. Enquanto o cache antigo não expirar (**TTL de 120 min**), `_r5_ok` vem falso e o ensemble não roda — o log `[Gap6] ML pulado` diz exatamente isso. Se o `predictionSource` sumir do `ml_ensemble` nas primeiras horas, é o desenho funcionando, não defeito.
+
+### Testes
+18 novos em `test_sev1_lambda_e_ml_201.py`. Suíte: **369 passed**.
+
+### Lição aprendida
+Numerador e denominador têm de viver no mesmo recorte: estatística casa-apenas normalizada por média geral conta a vantagem de mando duas vezes, e o erro é invisível no total (−1,9%) enquanto distorce a partição (−8,5pp na casa). Métrica agregada não detecta viés de composição — por isso Over/Under passou meses validando um λ enviesado. E no ML: preencher feature de serving com saída de outro modelo não é fallback, é skew — quando o dado real falta, o certo é **pular** o modelo, não alimentá-lo com um substituto de outra distribuição.
