@@ -9906,3 +9906,32 @@ O commit toca `vercel.json`, que já está na lista observada, então **ele mesm
 
 ### Lição aprendida
 Terceiro episódio da mesma família (#193 docs-only cancelou o build; #196 comparava só `HEAD^..HEAD`; agora este). O padrão: um guard que decide por **diff de arquivos** é cego a tudo que muda fora do repositório — variável de ambiente, segredo, configuração de painel. Guard de build precisa de uma saída manual explícita, senão a única alternativa vira commit-fantasma para enganar o próprio guard, que foi o que fizemos no #193.
+
+## 206 — Uma liga por requisição no fan-out de /fixtures
+**Data:** 2026-09-01 | **Arquivos:** frontend/next/src/lib/api.ts, frontend/next/src/components/AIReviewDashboard.tsx | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Com o #203 resolvido, o teto de 30s do API Gateway saiu de cena e o novo limite passou a ser o abort da própria rota, 55s. O agrupamento de 3 ligas por pedido — que existia justamente para caber nos 30s do gateway (#119c) — **virou o gargalo**: ligas pesadas não paralelizam entre si dentro de UMA invocação.
+
+Medido em produção:
+
+| Chamada | Tempo |
+|---|---|
+| championship sozinha | 35,5s / 35,2s |
+| league-one sozinha | 30,0s |
+| championship + league-one **no mesmo pedido** | **52,7s** (quase a soma) |
+| as duas em pedidos **separados**, em paralelo | 37,6s e 33,9s |
+| premier-league,championship,league-one | **503 após 110,9s** (55s + retry) |
+
+Cada invocação da Lambda é um processo próprio: o paralelismo real está em separar os pedidos. E uma liga lenta deixa de derrubar as vizinhas — no lote de 3 acima a premier-league sumia junto, sendo que sozinha responde em 1,6s.
+
+### Correção aplicada
+`LEAGUES_PER_BATCH` 3 → 1 e `MAX_CONCURRENT` 2 → 4 (mais pedidos, cada um mais barato). `BATCH_SIZE` do AIReviewDashboard idem.
+
+### O que isto NÃO resolve
+**Conserta o desaparecimento das ligas, não a lentidão.** Cada liga com jogos continua levando ~30-35s; numa rodada de sábado com 12 ligas ativas a tela leva ~2 minutos para encher — mas enche **progressivamente, liga por liga**, em vez de dar 503 em bloco.
+
+**Causa da lentidão, ainda não atacada:** cada jogo dispara duas chamadas `/lastx` (mandante e visitante), e o cache SQLite do `/tmp` da Lambda **não está sobrevivendo entre invocações** — três medições de championship deram 35,5s / 35,2s / 37,6s, nenhuma se beneficiando da anterior. Championship com 8 jogos = 16 chamadas pagas do zero toda vez.
+
+### Lição aprendida
+Parâmetro de tuning carrega a premissa do ambiente em que foi calibrado. O agrupamento de 3 era correto sob um teto de 30s por requisição e passou a ser prejudicial quando o teto virou 55s por requisição com invocações independentes — a mesma constante, o mesmo código, efeito invertido. Ao remover um limite de infraestrutura, revisar o que foi dimensionado *para* ele.
