@@ -115,6 +115,32 @@ def _with_ci(picks, brier_model, brier_implied):
 
 
 def _segment(picks):
+    """Metricas de um recorte de picks.
+
+    #197 — pareamento. A versao anterior fazia:
+
+        odds = [p["odd"] for p in picks if p.get("odd")]
+        bi = _brier([1/o for o in odds], outs[:len(odds)])
+
+    `odds` e filtrado, `outs` nao. Os desfechos usados eram os dos PRIMEIROS
+    len(odds) picks da lista, nao os dos picks que tem odd — comparacao com
+    resultados de outros jogos sempre que algum pick nao tinha odd. Ate agora
+    isso passava batido porque `book_odd` recebia odd_minima e quase todo pick
+    tinha odd (5.844 pareados de 5.915, 1,2% de falta), e por isso o delta do
+    _segment batia com o do _with_ci, que sempre pareou certo.
+
+    O #196 passou a gravar book_odd so quando a odd e REAL — cerca de um terco
+    dos picks fica sem odd. Sem esta correcao, brier_implied, delta e
+    model_beats_house virariam ruido em todos os recortes a partir do proximo
+    batch.
+
+    #197 — comparacao no mesmo conjunto. `delta` agora e modelo-vs-casa sobre
+    os MESMOS picks pareados. Antes comparava o Brier do modelo em todos os
+    picks contra o da casa num subconjunto — grandezas de populacoes
+    diferentes. `brier_model` segue reportado sobre o total (e a nota geral do
+    modelo); quem decide "bate a casa?" e o par (brier_model_paired,
+    brier_implied).
+    """
     n = len(picks)
     if n == 0:
         return None
@@ -122,18 +148,27 @@ def _segment(picks):
     outs = [p["out"] for p in picks]
     bm = _brier(probs, outs)
     acc = sum(outs) / n * 100
-    odds = [p["odd"] for p in picks if p.get("odd")]
-    bi = _brier([1.0 / o for o in odds], outs[: len(odds)]) if len(odds) >= n * 0.5 else None
-    beats = bm < bi if bm is not None and bi is not None else None
-    delta = bi - bm if bm is not None and bi is not None else None
+
+    paired = [p for p in picks if p.get("odd")]
+    if len(paired) >= n * 0.5:
+        bi = _brier([1.0 / p["odd"] for p in paired], [p["out"] for p in paired])
+        bm_paired = _brier([p["prob"] for p in paired], [p["out"] for p in paired])
+    else:
+        bi = None
+        bm_paired = None
+
+    beats = bm_paired < bi if bm_paired is not None and bi is not None else None
+    delta = bi - bm_paired if bm_paired is not None and bi is not None else None
     return {
         "n": n,
         "accuracy": round(acc, 1),
         "brier_model": round(bm, 4) if bm else None,
+        "brier_model_paired": round(bm_paired, 4) if bm_paired else None,
         "brier_implied": round(bi, 4) if bi else None,
+        "n_paired": len(paired),
         "model_beats_house": beats,
         "delta": round(delta, 4) if delta else None,
-        "model_beats_house_ci": _with_ci(picks, bm, bi),
+        "model_beats_house_ci": _with_ci(picks, bm_paired, bi),
     }
 
 
@@ -156,18 +191,48 @@ def _row_to_pick(market, league, result, pp_raw, ctx_raw, ptype) -> Optional[Dic
     return {"prob": prob, "odd": odd, "out": outcome, "league": league, "market": market, "cls": cls}
 
 
+def _normalize_audit_date(value) -> Optional[str]:
+    """Devolve uma data ISO utilizavel na query, ou None.
+
+    #197 — o cron chama run_after_audit(audit_date=date_filter), e date_filter
+    e um ROTULO ("today", "yesterday", "week"), nunca uma data. O #195 passou a
+    injetar esse valor num `DATE("timestamp") = %s`; o Postgres recusa
+    ("invalid input syntax for type date"), o except de _load_picks engolia a
+    excecao, calculate_snapshot devolvia None e persist_snapshot nunca rodava —
+    o snapshot noturno parou de ser gravado sem nenhum sinal na interface.
+
+    Rotulo nao vira filtro: devolve None (snapshot completo, comportamento
+    anterior ao #195) e registra o motivo.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+        return text
+    except ValueError:
+        logger.warning(
+            "[Brier] audit_date=%r nao e uma data ISO — snapshot calculado sobre "
+            "todos os picks (sem filtro de dia).", text
+        )
+        return None
+
+
 def _load_picks(audit_date: str = None, since_days: int = None) -> Optional[List[Dict]]:
     """Le picks resolvidos de audit_results.
 
     #195: `audit_date` passa a filtrar de verdade. Antes `calculate_snapshot`
     aceitava o parametro e o unico uso era ecoa-lo no retorno — a query lia a
     tabela inteira, entao nao havia como fatiar o Brier por dia.
+
+    #197: so filtra quando o valor e uma data ISO (ver _normalize_audit_date).
     """
     where = ["pick_type != 'AUDIT'"]
     params: list = []
-    if audit_date:
+    iso_date = _normalize_audit_date(audit_date)
+    if iso_date:
         where.append('DATE("timestamp") = %s')
-        params.append(audit_date)
+        params.append(iso_date)
     elif since_days:
         where.append('"timestamp" >= NOW() - MAKE_INTERVAL(days => %s)')
         params.append(int(since_days))
@@ -184,7 +249,9 @@ def _load_picks(audit_date: str = None, since_days: int = None) -> Optional[List
         cur.close()
         conn.close()
     except Exception as e:
-        logger.error(f"[Brier] fetch failed: {e}")
+        # #197: era aqui que a regressao morria calada. Mantemos o fail-safe
+        # (nunca derrubar o cron), mas o log passa a nomear a query.
+        logger.error(f"[Brier] fetch failed (audit_date={audit_date!r}, since_days={since_days!r}): {e}")
         return None
 
     picks = []
