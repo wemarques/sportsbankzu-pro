@@ -128,7 +128,7 @@
 | 112 | Corrigido | Perf | Cache EMA goals O(N) single pass |
 | 112b | Corrigido | Infra | Lambda 1024MB + cache warm fix |
 | 113 | **ATIVA** | Fix | Cron live + corredor cartoes + duplas + Under 2.5 |
-| 114 | Corrigido | Infra | Lambda Function URL (elimina timeout 30s) |
+| 114 | **ATIVA** (guarda no 203) | Infra | Lambda Function URL (elimina timeout 30s) — promovida a regra permanente em 2026-09-01 apos regressao silenciosa da config |
 | 115 | Corrigido | Perf | ThreadPoolExecutor paralleliza jogos em batches |
 | 116 | Corrigido | Fix | EV fixo +40.0% em escanteios — null EV when suspicious |
 | 117 | Corrigido | Feature | Redesign aba Destaques — Valor Detectado + Apenas Analise |
