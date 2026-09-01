@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "fluid": true,
-  "ignoreCommand": "if git cat-file -e \"$VERCEL_GIT_PREVIOUS_SHA^{commit}\" 2>/dev/null; then git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- ':(top)frontend/next' ':(top)vercel.json' ':(top)package.json'; else exit 1; fi",
+  "ignoreCommand": "if [ -n \"$VERCEL_FORCE_BUILD\" ]; then exit 1; fi; if git cat-file -e \"$VERCEL_GIT_PREVIOUS_SHA^{commit}\" 2>/dev/null; then git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- ':(top)frontend/next' ':(top)vercel.json' ':(top)package.json'; else exit 1; fi",
   "functions": {
     "app/api/matches/fetch/route.ts": {
       "maxDuration": 120,
