@@ -9861,3 +9861,24 @@ Uma linha em `main.py` cobrindo a árvore inteira, em vez de renomear o logger e
 
 ### Lição aprendida
 Configuração de logging por namespace é um contrato implícito: quem escreve `getLogger(__name__)` num projeto que eleva só `sportsbankzu` está criando um log invisível sem saber. O #164 documentou a decisão mas não a impôs, e o custo apareceu meses depois, na forma de uma verificação que não podia funcionar. Vale a pergunta antes de confiar num log para validar um fix: *esta linha chega mesmo ao CloudWatch?*
+
+## 204b — Default do LOG_LEVEL_MODELOS por ambiente (regressão do #204)
+**Data:** 2026-09-01 | **Arquivos:** backend/main.py, tests/unit/test_log_modelos_204.py | **Severidade:** Média (observabilidade) | **Status:** Corrigido
+
+### Problema identificado
+O #204 afirmou que o default `WARNING` era "idêntico ao comportamento de hoje, custo zero". **Isso vale na Lambda; não vale local** — e o #204 introduziu a regressão no mesmo commit em que dizia o contrário.
+
+A causa é a assimetria do `basicConfig`: na Lambda ele é no-op (o runtime já pôs um handler no root) e o root fica em WARNING, então o default `WARNING` não muda nada. Fora da Lambda o `basicConfig` **funciona** e põe o root em `_LOG_LEVEL` (INFO por padrão) — fixar `WARNING` na árvore `backend.*` apagou logs de INFO que o dev local já via. Exatamente o oposto do que o #204 se propunha a fazer.
+
+Provado antes do patch: `root=INFO` → INFO visível `True`; após `setLevel("WARNING")` → `False`.
+
+### Correção aplicada
+O default passa a ser `WARNING` **apenas quando `AWS_LAMBDA_FUNCTION_NAME` existe**; fora dela herda `_LOG_LEVEL`. `LOG_LEVEL_MODELOS` explícito continua vencendo os dois casos.
+
+Verificado empiricamente nos três cenários: local → árvore INFO, `Base Lado` visível; Lambda → WARNING, invisível (custo zero); Lambda + env → INFO, visível.
+
+### Testes
+5 em `test_log_modelos_204.py` (um novo, cobrindo o caso local). Suíte `tests/unit/`: **383 passed**.
+
+### Lição aprendida
+"Idêntico ao comportamento de hoje" é uma afirmação sobre **todos** os ambientes, e precisa ser verificada em cada um. A armadilha aqui foi específica e vale lembrar: `logging.basicConfig()` é no-op quando o root já tem handler — então o mesmo código produz níveis de root diferentes dentro e fora da Lambda, e qualquer `setLevel` absoluto numa subárvore herda essa divergência. Default relativo ao ambiente, não absoluto.
