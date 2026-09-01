@@ -53,6 +53,13 @@ def _ensure_table():
             ALTER TABLE brier_history
             ADD COLUMN IF NOT EXISTS by_league_market JSONB
         """)
+        # #199: payload completo do snapshot. As colunas soltas nao guardam
+        # model_beats_house_ci (que o ReliabilityCard le) nem os campos novos
+        # do #197 — servir o card a partir das colunas quebraria a tela.
+        cur.execute("""
+            ALTER TABLE brier_history
+            ADD COLUMN IF NOT EXISTS snapshot JSONB
+        """)
         conn.commit()
         cur.close()
         conn.close()
@@ -368,15 +375,15 @@ def persist_snapshot(snapshot: Dict, new_picks: int = 0) -> bool:
         cur.execute(
             "INSERT INTO brier_history (total_picks,brier_model,brier_implied,model_beats_house,"
             "delta,accuracy,by_league,by_market,by_band,by_classification,by_league_market,"
-            "new_picks,audit_date) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "new_picks,audit_date,snapshot) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 snapshot["total_picks"], snapshot.get("brier_model"), snapshot.get("brier_implied"),
                 snapshot.get("model_beats_house"), snapshot.get("delta"), snapshot.get("accuracy"),
                 json.dumps(snapshot.get("by_league", {})), json.dumps(snapshot.get("by_market", {})),
                 json.dumps(snapshot.get("by_band", {})), json.dumps(snapshot.get("by_classification", {})),
                 json.dumps(snapshot.get("by_league_market", {})),
-                new_picks, snapshot.get("audit_date"),
+                new_picks, snapshot.get("audit_date"), json.dumps(snapshot),
             ),
         )
         conn.commit()
@@ -387,6 +394,47 @@ def persist_snapshot(snapshot: Dict, new_picks: int = 0) -> bool:
     except Exception as e:
         logger.error(f"[Brier] persist failed: {e}")
         return False
+
+
+def latest_snapshot() -> Optional[Dict]:
+    """#199: ultimo snapshot gravado, com a idade explicita.
+
+    O /metrics/brier recalculava tudo a cada carregamento do dashboard — le
+    audit_results inteira e segmenta por liga, mercado, banda, classificacao e
+    liga x mercado. Entre um batch e outro o resultado e identico, entao era
+    trabalho jogado fora, e passou a estourar o timeout da rota.
+
+    A idade vai no payload de proposito: se o cron parar, o card mostra dado
+    velho COM a etiqueta de quando foi, em vez de mentir por omissao.
+    """
+    try:
+        conn = _conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT snapshot, timestamp FROM brier_history "
+            "WHERE snapshot IS NOT NULL ORDER BY timestamp DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[Brier] latest_snapshot falhou: {e}")
+        return None
+
+    if not row or not row[0]:
+        return None
+    snap = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    ts = row[1]
+    age_min = None
+    if ts is not None:
+        try:
+            age_min = int((datetime.utcnow() - ts).total_seconds() // 60)
+        except Exception:
+            age_min = None
+    snap["_fromHistory"] = True
+    snap["_snapshotAt"] = str(ts) if ts is not None else None
+    snap["_ageMinutes"] = age_min
+    return snap
 
 
 def run_after_audit(new_picks: int = 0, audit_date: str = None) -> Optional[Dict]:

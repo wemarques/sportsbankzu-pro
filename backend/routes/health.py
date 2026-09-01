@@ -425,13 +425,29 @@ async def get_lambda_error(days: int = Query(30), group_by: str = Query("")):
 
 
 @router.get("/metrics/brier")
-async def get_brier_metrics():
-    """Current Brier snapshot — calculates on demand."""
+async def get_brier_metrics(fresh: bool = False):
+    """Snapshot de Brier.
+
+    #199: por padrao serve o ultimo snapshot gravado pelo cron. Recalcular a
+    cada carregamento do dashboard lia audit_results inteira e segmentava por
+    liga, mercado, banda, classificacao e liga x mercado — entre dois batches o
+    resultado e o mesmo, entao era trabalho jogado fora, e passou a estourar o
+    timeout de 15s da rota do front.
+
+    `fresh=true` forca o recalculo (diagnostico). O fallback tambem recalcula
+    quando ainda nao existe snapshot gravado — cenario da primeira execucao
+    depois do deploy, que se resolve sozinho no primeiro batch.
+    """
     try:
-        from backend.services.brier_service import calculate_snapshot
+        from backend.services.brier_service import calculate_snapshot, latest_snapshot
+        if not fresh:
+            cached = latest_snapshot()
+            if cached:
+                return cached
         snap = calculate_snapshot()
         if not snap:
             return {"error": "No data", "total_picks": 0}
+        snap["_fromHistory"] = False
         return snap
     except Exception as e:
         return {"error": str(e), "total_picks": 0}
