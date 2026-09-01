@@ -226,7 +226,8 @@ def _parse_lastx_response(data: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns a dict with whichever fields could be extracted:
       goals_for_last5, goals_against_last5, cards_for_last5,
-      corners_for_last5, xg_for_last5, recent_goals_list
+      corners_for_last5, xg_for_last5, recent_goals_list,
+      goals_against_last5, recent_conceded_list (#201)
 
     The endpoint returns 3 buckets (last5/last6/last10). We prefer last5
     when present and fall back to last6 / last10 in that order. The
@@ -295,6 +296,7 @@ def _parse_lastx_response(data: Dict[str, Any]) -> Dict[str, Any]:
                 team_id_hint = None
 
         goals_list: List[float] = []
+        conceded_list: List[float] = []  # #201: serie de gols SOFRIDOS
         cards_list: List[float] = []
         corners_list: List[float] = []
         for m in recent_matches:
@@ -320,23 +322,35 @@ def _parse_lastx_response(data: Dict[str, Any]) -> Dict[str, Any]:
                 continue
 
             # Determine which side is "this team" using team_id_hint
+            # #201: os gols do adversario ja estavam em maos neste loop e nunca
+            # eram coletados. Sem essa serie nao havia como montar a feature
+            # `*_goals_conceded_avg_r5` que o modelo de ML foi TREINADO a usar.
             if team_id_hint and home_id == team_id_hint:
                 goals_list.append(home_g)
+                conceded_list.append(away_g)
                 cards_list.append(float(home_y) + float(home_r))
                 corners_list.append(float(home_c))
             elif team_id_hint and away_id == team_id_hint:
                 goals_list.append(away_g)
+                conceded_list.append(home_g)
                 cards_list.append(float(away_y) + float(away_r))
                 corners_list.append(float(away_c))
             else:
                 # Without a hint, just take whichever side is non-zero (best effort)
                 goals_list.append(home_g)
+                conceded_list.append(away_g)
                 cards_list.append(float(home_y) + float(home_r))
                 corners_list.append(float(home_c))
 
         if goals_list:
             out.setdefault("goals_for_last5", sum(goals_list) / len(goals_list))
             out["recent_goals_list"] = goals_list  # most recent first per FootyStats convention
+        if conceded_list:
+            # #201: media empirica de gols sofridos nos ultimos jogos — mesma
+            # semantica do rolling.get_rolling_avg(team, "goals_conceded", 5)
+            # usado no treino (ml/feature_engineering.py).
+            out.setdefault("goals_against_last5", sum(conceded_list) / len(conceded_list))
+            out["recent_conceded_list"] = conceded_list
         if cards_list:
             out.setdefault("cards_for_last5", sum(cards_list) / len(cards_list))
         if corners_list:
@@ -1417,9 +1431,24 @@ def build_records_from_matches(
             "xg_per_game": away_xg_series,
             "goals_per_game": away_goals_series,
         }
+        # #201 — baseline por lado. Sem eles o lambda normaliza estatistica
+        # casa-apenas contra media geral e conta a vantagem de mando duas vezes.
+        _lg_row = league_df.iloc[0] if league_df is not None and len(league_df) else None
+        def _lg(col):
+            if _lg_row is None:
+                return None
+            v = _lg_row.get(col)
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return None
+            return v if v > 0 else None
+
         league_data = {
             "league_name": league_name,
             "average_goals_per_match": league_goal_avg,
+            "avg_goals_scored_by_home_teams": _lg("avg_goals_scored_by_home_teams"),
+            "avg_goals_scored_by_away_teams": _lg("avg_goals_scored_by_away_teams"),
         }
         # Extract real per-match goals for EMA (#108c, optimized #112)
         # #142 — Prefer FootyStats /lastx per-match list when available
@@ -1822,12 +1851,38 @@ def build_records_from_matches(
                 # Uses trained RF + XGBoost models when available; falls back to Poisson.
                 try:
                     from backend.ml.predictor import predict_1x2, is_ml_available, champion_vs_challenger
-                    if is_ml_available(league_id):
+                    # #201 — TRAIN/SERVE SKEW. Estas quatro features eram
+                    # preenchidas com lambdaHome/lambdaAway (saidas do Poisson,
+                    # suavizadas e limitadas a [0.5, 4.5]), enquanto o TREINO
+                    # usa rolling.get_rolling_avg(team, "goals_scored"/"goals_conceded", 5)
+                    # — media empirica dos ultimos 5 jogos.
+                    #
+                    # Pior: as quatro colapsavam em DOIS numeros repetidos, e as
+                    # interacoes aprendidas no treino viravam constantes:
+                    #   attack_vs_defense = home_scored - away_conceded = lambdaHome - lambdaHome = 0
+                    #   defense_vs_attack = away_scored - home_conceded = lambdaAway - lambdaAway = 0
+                    # Duas features com sinal no treino chegavam zeradas em producao,
+                    # sem aparecer em nenhuma metrica de backtest.
+                    _h_sc = _home_lastx.get("goals_for_last5") if isinstance(_home_lastx, dict) else None
+                    _a_sc = _away_lastx.get("goals_for_last5") if isinstance(_away_lastx, dict) else None
+                    _h_cd = _home_lastx.get("goals_against_last5") if isinstance(_home_lastx, dict) else None
+                    _a_cd = _away_lastx.get("goals_against_last5") if isinstance(_away_lastx, dict) else None
+                    _r5_ok = all(v is not None for v in (_h_sc, _a_sc, _h_cd, _a_cd))
+                    if not _r5_ok:
+                        # Sem a serie real, NAO substituimos por saida do Poisson:
+                        # isso e o proprio bug. O ensemble e pulado e o pipeline
+                        # segue no Poisson, que ja e o caminho de fallback.
+                        logger.info(
+                            "[Gap6] ML pulado para %s vs %s — sem serie r5 real "
+                            "(scored h=%s a=%s / conceded h=%s a=%s)",
+                            home, away, _h_sc, _a_sc, _h_cd, _a_cd,
+                        )
+                    if _r5_ok and is_ml_available(league_id):
                         _ml_features = {
-                            "home_goals_scored_avg_r5": record["stats"].get("lambdaHome", 1.3),
-                            "away_goals_scored_avg_r5": record["stats"].get("lambdaAway", 1.0),
-                            "home_goals_conceded_avg_r5": record["stats"].get("lambdaAway", 1.0),
-                            "away_goals_conceded_avg_r5": record["stats"].get("lambdaHome", 1.3),
+                            "home_goals_scored_avg_r5": float(_h_sc),
+                            "away_goals_scored_avg_r5": float(_a_sc),
+                            "home_goals_conceded_avg_r5": float(_h_cd),
+                            "away_goals_conceded_avg_r5": float(_a_cd),
                             "home_xg_avg_r5": xg_home_team or 0.0,
                             "away_xg_avg_r5": xg_away_team or 0.0,
                             "home_possession_avg_r5": home_poss or 50.0,

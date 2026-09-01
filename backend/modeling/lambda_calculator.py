@@ -117,6 +117,23 @@ def half_life_to_weights(half_life_games: float, matches_played: int) -> Tuple[f
     return (round(season_weight, 2), round(recent_weight, 2))
 
 
+def _num(value) -> Optional[float]:
+    """#201 — converte para float tratando chave-presente-com-None.
+
+    `dict.get(k, default)` NAO devolve o default quando a chave existe com valor
+    None — caso comum na FootyStats para time sem jogo no recorte (inicio de
+    temporada, time promovido). Antes isso chegava como None em
+    `if gols_temp <= 0` e levantava TypeError. Padrao #078v do proprio repo.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and abs(v) != float("inf") else None  # descarta NaN/inf
+
+
 def calcular_lambda_dinamico(
     team_data: Dict[str, Any],
     opponent_data: Dict[str, Any],
@@ -144,23 +161,54 @@ def calcular_lambda_dinamico(
     peso_temp = PESOS_LAMBDA[regime]['temporada']
     peso_recente = PESOS_LAMBDA[regime]['ultimos5']
 
-    # Liga baseline
-    media_liga = league_data.get('average_goals_per_match', 2.5)
+    # ── Liga baseline (#201) ────────────────────────────────────────────
+    # ANTES: baseline unico = average_goals_per_match / 2 (media GERAL por time).
+    # Como o numerador do mandante e `goals_scored_avg_home` (so jogos em casa)
+    # e o do adversario e `goals_conceded_avg_away` (so jogos fora), os dois
+    # carregavam a vantagem de mando e o denominador nao carregava nenhuma.
+    # Resultado: mando contado DUAS vezes. Com casa 1.50 / fora 1.15, dois times
+    # medios davam lambda 1.698 x 0.998 (razao 1.70) em vez de 1.50 x 1.15
+    # (razao 1.30) — vitoria do mandante ~19% superestimada.
+    #
+    # AGORA: cada lado normaliza pelo seu proprio baseline. Em agregado,
+    # "gols marcados por mandantes" == "gols sofridos por visitantes", entao as
+    # DUAS razoes do lambda de casa usam seasonAVG_home; as duas do lambda de
+    # fora usam seasonAVG_away.
+    media_liga = _num(league_data.get('average_goals_per_match')) or 2.5
     media_liga_per_team = media_liga / 2.0
-
     if media_liga_per_team <= 0:
         media_liga_per_team = 1.25  # fallback
 
-    # 1. Média de gols do time (temporada, home/away específico)
-    if is_home:
-        gols_temp = team_data.get('goals_scored_avg_home',
-                   team_data.get('goals_scored_avg_overall', media_liga_per_team))
+    _base_casa = _num(league_data.get('avg_goals_scored_by_home_teams'))
+    _base_fora = _num(league_data.get('avg_goals_scored_by_away_teams'))
+    # Sanidade: fora da faixa plausivel, ignora (liga nova, cache antigo, campo
+    # ausente). O fallback e o comportamento anterior — nao inventamos um split.
+    if not (_base_casa and _base_fora and 0.5 <= _base_casa <= 3.5 and 0.5 <= _base_fora <= 3.5):
+        if _base_casa or _base_fora:
+            logger.warning(
+                "[lambda-baseline] seasonAVG_home/away fora da faixa ou incompleto "
+                "(casa=%s fora=%s) — usando baseline geral", _base_casa, _base_fora
+            )
+        _base_casa = _base_fora = media_liga_per_team
+        _baseline_por_lado = False
     else:
-        gols_temp = team_data.get('goals_scored_avg_away',
-                   team_data.get('goals_scored_avg_overall', media_liga_per_team))
+        _baseline_por_lado = True
+
+    # Baseline do lado que estamos calculando.
+    baseline = _base_casa if is_home else _base_fora
+
+    # 1. Média de gols do time (temporada, home/away específico)
+    # #201: _num() em vez de .get(k, default) — a chave existe com None quando o
+    # time ainda nao jogou naquele recorte, e o default nunca era usado.
+    _side_key = 'goals_scored_avg_home' if is_home else 'goals_scored_avg_away'
+    gols_temp = (
+        _num(team_data.get(_side_key))
+        or _num(team_data.get('goals_scored_avg_overall'))
+        or baseline
+    )
 
     # 2. Últimos 5 jogos
-    gols_ult5 = team_data.get('goals_scored_avg_last_5', gols_temp)
+    gols_ult5 = _num(team_data.get('goals_scored_avg_last_5')) or gols_temp
 
     # Fallback
     if gols_temp <= 0 and gols_ult5 <= 0:
@@ -187,14 +235,20 @@ def calcular_lambda_dinamico(
     # 3b. Early season regression to mean (#064)
     # When team has < 5 games, regress attack toward league average
     # to avoid extreme lambdas from insufficient data.
-    games_played = team_data.get('games_played')
+    # #201: o recorte usado e casa-apenas (ou fora-apenas), entao a regressao
+    # tem de olhar os jogos DAQUELE recorte. Com o total, um time de 10 jogos e
+    # 2 em casa passava sem regressao com media de 2 partidas.
+    _gp_key = 'games_played_home' if is_home else 'games_played_away'
+    games_played = team_data.get(_gp_key)
+    if games_played is None:
+        games_played = team_data.get('games_played')
     if games_played is not None:
         try:
             gp = float(games_played)
             if gp < 5:
                 # regress = current season weight: 0.0 = 100% league avg, 1.0 = 100% team data
                 regress = gp / 5.0
-                ataque_ponderado = ataque_ponderado * regress + media_liga_per_team * (1 - regress)
+                ataque_ponderado = ataque_ponderado * regress + baseline * (1 - regress)
                 logger.info(
                     f"[lambda-regress] Early season regression: gp={gp}, "
                     f"regress_weight={regress:.2f}, ataque_adj={ataque_ponderado:.3f}"
@@ -202,25 +256,28 @@ def calcular_lambda_dinamico(
         except (ValueError, TypeError):
             pass
 
-    # 4. FORÇA RELATIVA de ataque (ratio vs liga)
-    ataque_relativo = ataque_ponderado / media_liga_per_team
+    # 4. FORÇA RELATIVA de ataque — contra o baseline DO LADO (#201)
+    ataque_relativo = ataque_ponderado / baseline
 
-    # 5. Defesa adversária - força relativa
-    if is_home:
-        def_adversaria = opponent_data.get('goals_conceded_avg_away',
-                        opponent_data.get('goals_conceded_avg_overall', media_liga_per_team))
-    else:
-        def_adversaria = opponent_data.get('goals_conceded_avg_home',
-                        opponent_data.get('goals_conceded_avg_overall', media_liga_per_team))
+    # 5. Defesa adversária — força relativa contra o MESMO baseline (#201).
+    # "gols marcados por mandantes" e "gols sofridos por visitantes" sao a mesma
+    # grandeza em agregado; normalizar as duas pelo mesmo numero e o que remove
+    # a dupla contagem.
+    _opp_key = 'goals_conceded_avg_away' if is_home else 'goals_conceded_avg_home'
+    def_adversaria = (
+        _num(opponent_data.get(_opp_key))
+        or _num(opponent_data.get('goals_conceded_avg_overall'))
+        or baseline
+    )
 
-    defesa_relativa = def_adversaria / media_liga_per_team if media_liga_per_team > 0 else 1.0
+    defesa_relativa = def_adversaria / baseline if baseline > 0 else 1.0
 
     # Piso para regime hiper-ofensivo
     if regime == 'HIPER-OFENSIVA' and defesa_relativa < FATOR_DEFESA_MIN_HIPER:
         defesa_relativa = FATOR_DEFESA_MIN_HIPER
 
-    # 6. Lambda final = baseline × ataque_relativo × defesa_relativa
-    lambda_final = media_liga_per_team * ataque_relativo * defesa_relativa
+    # 6. Lambda final = baseline DO LADO × ataque_relativo × defesa_relativa
+    lambda_final = baseline * ataque_relativo * defesa_relativa
 
     # Limites de segurança
     lambda_final = max(LAMBDA_MIN, min(LAMBDA_MAX, lambda_final))
@@ -229,7 +286,7 @@ def calcular_lambda_dinamico(
         f"Lambda Final: {lambda_final:.3f} | "
         f"Ataque Rel: {ataque_relativo:.3f} | "
         f"Defesa Rel: {defesa_relativa:.3f} | "
-        f"Base Liga: {media_liga_per_team:.3f} | "
+        f"Base Lado: {baseline:.3f} ({'seasonAVG' if _baseline_por_lado else 'fallback geral'}) | "
         f"Regime: {regime} | "
         f"Mando: {'Casa' if is_home else 'Fora'}"
     )

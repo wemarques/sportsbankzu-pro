@@ -402,8 +402,15 @@ class DataMapper:
                 ["averageTotalGoalsPerMatch_overall", "average_total_goals_per_match_overall"],
                 None,
             ),
+            # #201 — nome anterior estava errado. A doc do League Season Stats diz
+            # seasonAVG_home = "Media de gols MARCADOS POR MANDANTES" (um lado),
+            # nao o total da partida em jogos de casa. Os antigos ficam por
+            # compatibilidade (nao tinham consumidor), e entram os corretos, que
+            # sao o baseline por lado do modelo de Poisson.
             "average_total_goals_per_match_home": _pick(["seasonAVG_home"], default=None),
             "average_total_goals_per_match_away": _pick(["seasonAVG_away"], default=None),
+            "avg_goals_scored_by_home_teams": _pick(["seasonAVG_home"], default=None),
+            "avg_goals_scored_by_away_teams": _pick(["seasonAVG_away"], default=None),
             # Media de gols MARCADOS: canonico = seasonScoredAVG_*
             "goals_scored_per_match_overall": _pick(
                 ["seasonScoredAVG_overall"],
