@@ -3,6 +3,7 @@ import requests
 import os
 import json
 import logging
+import threading
 import sqlite3
 import hashlib
 import time
@@ -436,3 +437,25 @@ class FootyStatsClient:
 
         logger.warning(f"resolve_season_ids: no match for {country} with names {names_to_try}")
         return []
+
+
+# ── Cliente compartilhado (#207) ─────────────────────────────────────
+# `_fetch_lastx_for_team` instanciava um FootyStatsClient NOVO a cada chamada:
+# 16 instancias por pedido do Championship (8 jogos x 2 times). Cada __init__
+# roda _init_db(), que abre o SQLite do /tmp, executa CREATE TABLE IF NOT EXISTS
+# e da commit — uma transacao de ESCRITA. Com os 3 workers do #115 rodando ao
+# mesmo tempo, sao 16 transacoes de escrita disputando o mesmo arquivo, alem das
+# escritas legitimas do cache. O cliente nao guarda estado por chamada (a chave
+# vem do ambiente e o cache e o arquivo), entao uma instancia por processo basta.
+_shared_client: Optional["FootyStatsClient"] = None
+_shared_client_lock = threading.Lock()
+
+
+def get_shared_client() -> "FootyStatsClient":
+    """Instancia unica por processo. Thread-safe (double-checked locking)."""
+    global _shared_client
+    if _shared_client is None:
+        with _shared_client_lock:
+            if _shared_client is None:
+                _shared_client = FootyStatsClient()
+    return _shared_client

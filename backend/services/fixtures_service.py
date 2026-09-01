@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional, Tuple
 import os
 import math
+import time
 import logging
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -129,8 +130,8 @@ def _build_referee_lookup(season_id: Optional[int]) -> Dict[str, float]:
     if not season_id:
         return {}
     try:
-        from backend.services.footstats_client import FootyStatsClient
-        cli = FootyStatsClient()
+        from backend.services.footstats_client import get_shared_client
+        cli = get_shared_client()          # #207
         data = cli.get_league_referees(int(season_id))
     except Exception as e:
         logger.debug(f"[#141] referee lookup fetch failed for season {season_id}: {e}")
@@ -368,13 +369,26 @@ def _fetch_lastx_for_team(team_id: Optional[int]) -> Dict[str, Any]:
     if not team_id:
         return {}
     try:
-        from backend.services.footstats_client import FootyStatsClient
-        cli = FootyStatsClient()
+        from backend.services.footstats_client import get_shared_client
+        cli = get_shared_client()          # #207
         raw = cli.get_team_lastx(int(team_id))
     except Exception as e:
         logger.debug(f"[#142] /lastx fetch failed for team_id={team_id}: {e}")
         return {}
     return _parse_lastx_response(raw)
+
+
+def _log_lastx_stats(league_id: str, n_jogos: int, st: Dict[str, float]) -> None:
+    """#207 - uma linha por liga com o custo real do /lastx."""
+    if not st or not st.get("buscas"):
+        return
+    n = int(st["buscas"])
+    total = st["ms_total"] / 1000.0
+    logger.info(
+        f"[#207 lastx] {league_id}: {n_jogos} jogos, {n} times buscados "
+        f"({int(st.get('memo', 0))} memoizados), soma={total:.1f}s "
+        f"media={st['ms_total']/n:.0f}ms pior={st['ms_pior']:.0f}ms"
+    )
 
 
 def build_records_from_matches(
@@ -390,6 +404,7 @@ def build_records_from_matches(
     _goals_cache_override: Optional[Dict] = None,
     _referee_lookup_override: Optional[Dict[str, float]] = None,
     _lastx_cache_override: Optional[Dict[int, Dict[str, Any]]] = None,
+    _lastx_stats_override: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
     from backend.main import date_range, aggregate_team_xg, expected_goals_v2
     date_col = "date_gmt" if "date_gmt" in matches.columns else "date_GMT" if "date_GMT" in matches.columns else "timestamp"
@@ -434,12 +449,31 @@ def build_records_from_matches(
     else:
         _lastx_cache = {}
 
+    # #207 - contador de custo do /lastx, compartilhado entre os batches do #115.
+    # Uma linha por liga no fim, em vez de N linhas soltas: diz quantos times
+    # foram buscados de fato, quanto tempo somaram e qual foi a chamada mais
+    # lenta. E o que separa "a API do FootyStats e lenta" de "estamos brigando
+    # com o SQLite do /tmp" sem precisar ler centenas de linhas de log.
+    if _lastx_cache_override is None:
+        _lastx_stats = {"buscas": 0, "ms_total": 0.0, "ms_pior": 0.0, "memo": 0}
+    else:
+        _lastx_stats = _lastx_stats_override if _lastx_stats_override is not None else {
+            "buscas": 0, "ms_total": 0.0, "ms_pior": 0.0, "memo": 0
+        }
+
     def _get_lastx_cached(team_id: Optional[int]) -> Dict[str, Any]:
         if not team_id:
             return {}
         if team_id in _lastx_cache:
+            _lastx_stats["memo"] += 1
             return _lastx_cache[team_id]
+        _t0 = time.monotonic()
         parsed = _fetch_lastx_for_team(team_id)
+        _ms = (time.monotonic() - _t0) * 1000
+        _lastx_stats["buscas"] += 1
+        _lastx_stats["ms_total"] += _ms
+        if _ms > _lastx_stats["ms_pior"]:
+            _lastx_stats["ms_pior"] = _ms
         _lastx_cache[team_id] = parsed
         return parsed
 
@@ -470,6 +504,7 @@ def build_records_from_matches(
                     _goals_cache_override=_goals_cache,
                     _referee_lookup_override=_referee_lookup,
                     _lastx_cache_override=_lastx_cache,
+                    _lastx_stats_override=_lastx_stats,
                 )
                 for batch in batches
             ]
@@ -479,6 +514,7 @@ def build_records_from_matches(
                 except Exception as e:
                     logger.warning(f"[fixtures] Parallel batch failed for {league_id}: {e}")
         all_records.sort(key=lambda r: r.get("date_unix", 0))
+        _log_lastx_stats(league_id, len(rows), _lastx_stats)
         return all_records
     # ── End parallel (#115) ──────────────────────────────────────────
 
@@ -2040,4 +2076,6 @@ def build_records_from_matches(
         _match_label = f"{r.get('team_a_name', r.get('home_team', '?'))} vs {r.get('team_b_name', r.get('away_team', '?'))}"
         logger.error(f"[fixtures_service] Skipping match {_match_label}: {type(e).__name__}: {e}", exc_info=True)
         continue
+    if _rows_override is None:          # #207 - so no topo, nao por batch
+        _log_lastx_stats(league_id, len(rows), _lastx_stats)
     return records
