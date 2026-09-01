@@ -46,18 +46,32 @@ async function _fetchMatchesBatch(leagues: string, date?: string): Promise<Match
 }
 
 /**
- * Max leagues per batch — aligns with Lambda ThreadPoolExecutor (4 workers)
- * so each request can fill internal parallelism (#119c).
- * FootyStats ~12-19s/league; 3 leagues × 4 workers = single parallel round ≤ 20s
- * within API Gateway 30s limit.
+ * Uma liga por requisicao (#206).
+ *
+ * O agrupamento de 3 vinha dimensionado para o teto de 30s do API Gateway
+ * (#119c). Com o backend de volta na Function URL (#203) o teto passou a ser o
+ * proprio abort desta rota, 55s — e ai o agrupamento virou o problema: as ligas
+ * pesadas NAO paralelizam entre si dentro de uma invocacao. Medido em producao:
+ *
+ *   championship sozinha .................... 35,5s / 35,2s
+ *   league-one sozinha ...................... 30,0s
+ *   championship + league-one no MESMO pedido 52,7s   (quase a soma)
+ *   as duas em pedidos SEPARADOS, em paralelo 37,6s e 33,9s
+ *
+ * Cada invocacao da Lambda e um processo proprio; o paralelismo real esta em
+ * separar os pedidos, nao em empilhar ligas dentro de um. Alem disso, uma liga
+ * lenta deixa de derrubar as vizinhas: o lote
+ * premier-league,championship,league-one dava 503 e sumia com as tres, sendo que
+ * a premier-league sozinha responde em 1,6s.
  */
-const LEAGUES_PER_BATCH = 3;
+const LEAGUES_PER_BATCH = 1;
 
 /**
- * Max concurrent batch requests — fewer simultaneous Lambda cold starts /
- * less SQLite contention in FootyStats client (#119c).
+ * Com 1 liga por pedido sao mais requisicoes, entao a concorrencia sobe para
+ * compensar (#206). A maioria das ligas nao tem jogo no dia e volta em 1-2s;
+ * quem dita o tempo total sao as poucas pesadas, que agora rodam lado a lado.
  */
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 4;
 
 /**
  * Run async tasks with a concurrency limit (semaphore pattern).
