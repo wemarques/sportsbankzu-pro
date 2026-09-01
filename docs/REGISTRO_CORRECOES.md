@@ -9882,3 +9882,27 @@ Verificado empiricamente nos três cenários: local → árvore INFO, `Base Lado
 
 ### Lição aprendida
 "Idêntico ao comportamento de hoje" é uma afirmação sobre **todos** os ambientes, e precisa ser verificada em cada um. A armadilha aqui foi específica e vale lembrar: `logging.basicConfig()` é no-op quando o root já tem handler — então o mesmo código produz níveis de root diferentes dentro e fora da Lambda, e qualquer `setLevel` absoluto numa subárvore herda essa divergência. Default relativo ao ambiente, não absoluto.
+
+## 205 — Escotilha VERCEL_FORCE_BUILD no Ignored Build Step
+**Data:** 2026-09-01 | **Arquivos:** vercel.json | **Severidade:** Média (deploy) | **Status:** Corrigido
+
+### Problema identificado
+O Ignored Build Step só sabe responder **"o frontend mudou?"**. Ele não tem como saber que uma **variável de ambiente** mudou — e variável de ambiente só entra em vigor em deploy novo. Resultado: os dois redeploys feitos para aplicar o novo `PY_BACKEND_URL` (#203) foram **cancelados pelo próprio guard**, avaliados contra `a06c75e`, que é docs-only:
+
+```
+Running "if git cat-file -e ... git diff --quiet ..."
+The Deployment has been canceled as a result of running the command
+defined in the "Ignored Build Step" setting.
+```
+
+A produção seguiu servindo o build anterior, com o valor antigo da variável embutido — por isso o debug continuava mostrando `backendKind=api-gateway` mesmo depois do redeploy.
+
+### Correção aplicada
+Saída explícita: com `VERCEL_FORCE_BUILD` definida, o comando sai 1 (constrói) **antes** de qualquer diff. Sem ela, o comportamento é byte a byte o de hoje.
+
+Verificado nos quatro caminhos: `FORCE=1` → constrói; `FORCE=""` (vazia) → cancela, ou seja o `-n` não força por acidente; sem FORCE com `vercel.json` alterado → constrói; sem `VERCEL_GIT_PREVIOUS_SHA` → constrói (fallback do #196 preservado).
+
+O commit toca `vercel.json`, que já está na lista observada, então **ele mesmo destrava o build pendente** — não é preciso setar a variável desta vez.
+
+### Lição aprendida
+Terceiro episódio da mesma família (#193 docs-only cancelou o build; #196 comparava só `HEAD^..HEAD`; agora este). O padrão: um guard que decide por **diff de arquivos** é cego a tudo que muda fora do repositório — variável de ambiente, segredo, configuração de painel. Guard de build precisa de uma saída manual explícita, senão a única alternativa vira commit-fantasma para enganar o próprio guard, que foi o que fizemos no #193.
