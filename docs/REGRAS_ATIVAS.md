@@ -768,3 +768,50 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 
 **Verificação:** `grep -n "isApiGatewayBackend" frontend/next/src/lib/backend.ts`
 **Verificação (produção):** `curl -s -o NUL -w "%{http_code} @ %{time_total}s" "$PY_BACKEND_URL/fixtures?leagues=<liga-com-jogos>&date=today"` — 503 em ~30s = gateway errado
+
+### #208 — O encolhimento de amostra pequena vale para os DOIS lados da conta
+
+**Tipo:** Regra permanente (Modelo)
+**Relacionado:** #064 (origem da regressão), #201 (baseline por lado), #208
+
+1. **`λ = baseline × ataque_relativo × defesa_relativa` — os dois fatores vêm da
+   mesma fonte e da mesma amostra, logo recebem o MESMO encolhimento.** Aplicar
+   regressão à média só no ataque é um viés estrutural, não uma simplificação.
+2. **Limiar: 8 jogos DAQUELE recorte** (casa-apenas ou fora-apenas, via
+   `_jogos_do_recorte`), peso linear `n/8`. Ajustável por
+   `LAMBDA_SHRINK_MIN_GAMES` sem deploy — **não alterar o default sem medição
+   contra o mercado por faixa de rodadas jogadas**, que foi como o viés apareceu.
+3. **Acima do limiar o λ é byte a byte o de antes** (|Δλ| = 0,000 verificado em
+   5.625 combinações). O #208 não toca no regime que já funciona.
+4. **Contagem AUSENTE devolve peso 1,0. Amostra vazia CONHECIDA (0) devolve 0,0.**
+   Não unificar os dois casos: a FootyStats nem sempre manda `games_played`, e
+   encolher por ausência de campo apagaria o time inteiro — trocaria um viés por
+   um apagamento.
+
+**Verificação:** `pytest tests/unit/test_encolhimento_simetrico_208.py -q`
+**Verificação (limite):** amostra 0 jogos deve devolver exatamente os baselines
+`avg_goals_scored_by_home/away_teams` da liga.
+
+### #209/#210 — O contrato do modelo é executável, e roda sobre a SAÍDA MONTADA
+
+**Tipo:** Regra permanente (QA)
+**Relacionado:** #209 (auditor), #210 (manifesto), #187/#189-f/#201 (o buraco que motivou)
+
+1. **Teste unitário verde não é sistema correto.** Cada etapa pode cumprir a
+   própria promessa e a composição estar errada — foi #201 (dupla contagem entre
+   duas etapas corretas) e #189-f (extração correta, cópia ausente). O auditor
+   verifica o artefato que o `/fixtures` devolve, não as funções.
+2. **A matemática de referência do auditor é reimplementada de propósito.** Um
+   auditor que importa a função auditada concorda com ela inclusive quando ela
+   está errada. **Não "deduplicar" `p_over25`/`p_btts`/`lambda_minimo_para` de
+   `auditor_premissas.py` contra as do pipeline** — a duplicação é o mecanismo.
+3. **Premissa nova entra como afirmação falsificável com o número que a
+   falsifica**, e com severidade (CRÍTICO = número impossível, o sistema está
+   mentindo; ALTO = premissa do modelo violada; MÉDIO = diagnóstico degradado).
+4. **Campo novo da FootyStats consumido no código entra no manifesto (#210)** —
+   CONSUMIDO / PLANEJADO / DESCARTADO. Campo consumido fora do manifesto, ou
+   campo do manifesto que perdeu o consumidor, falha a premissa estrutural.
+
+**Verificação:** `python3 scripts/verificar_manifesto.py` (exit 0 = de acordo)
+**Verificação:** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
+(exit 1 com violação crítica, 0 sem — serve de gate de CI direto)

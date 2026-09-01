@@ -9966,3 +9966,110 @@ Throttle do próprio FootyStats não dá para separar de fora. Por isso entra a 
 
 ### Lição aprendida
 Construtor barato em teste unitário pode ser caro em produção: `FootyStatsClient()` parecia inofensivo porque o custo real não está no objeto, está no `_init_db()` que ele dispara — uma escrita em SQLite compartilhado, multiplicada por 16 e paralelizada por 3. Antes de otimizar concorrência, contar quantas vezes o caminho quente **constrói** o que poderia reusar. E instrumentar antes de ajustar: a segunda causa possível (throttle da API) só se separa da primeira com número, não com raciocínio.
+
+## 208 — Encolhimento de amostra pequena nos dois lados da conta
+**Data:** 2026-09-01 | **Arquivos:** backend/modeling/lambda_calculator.py, tests/unit/test_encolhimento_simetrico_208.py (novo), tests/unit/test_sev1_lambda_e_ml_201.py | **Severidade:** Alta (modelo) | **Status:** Corrigido
+
+### Problema identificado
+A regressão à média do #064 só agia **abaixo de 5 jogos**, com peso `gp/5`, e **só no ataque**. A defesa do adversário — que é uma média de amostra exatamente igual à do ataque — entrava crua com um jogo ou com trinta.
+
+Medido em produção em 01/09/2026 sobre a rodada inteira (17 jogos), comparando o 1X2 recalculado do λ contra o 1X2 do card (que vem de `odds_implied`):
+
+| Liga | Rodadas jogadas | Modelo vs mercado (casa) |
+|---|---|---|
+| Championship | 3 | **−14,0pp** |
+| League One | 3 | **−13,5pp** |
+| Brasileirão B | 24 | −4,9pp |
+| Colômbia | 25 | −0,7pp |
+
+Com amostra, o modelo acompanha o mercado; sem amostra, ele pende para o visitante. **O defeito não está na fórmula do #201 — está na amostra que a alimenta.** Um visitante com dois jogos sem sofrer gol derrubava a defesa relativa e inflava o λ do mandante sem nada segurando; simetricamente, um mandante com 3 jogos fracos não era puxado de volta ao baseline com força suficiente.
+
+### Causa raiz
+Assimetria de tratamento entre dois termos da mesma multiplicação. `ataque_ponderado` passava pela regressão; `def_adversaria` não. O limiar de 5 também era baixo demais para a variância real de uma média de gols por jogo.
+
+### Correções aplicadas
+1. `_peso_amostra(jogos)` — peso linear `n/JOGOS_AMOSTRA_CHEIA` abaixo do limiar, 1.0 acima.
+2. Limiar 5 → **8** (`JOGOS_AMOSTRA_CHEIA`, ajustável por `LAMBDA_SHRINK_MIN_GAMES` sem deploy).
+3. O mesmo encolhimento passa a valer para a **defesa do adversário**, via `_jogos_do_recorte(opponent_data, not is_home)`.
+4. **Decisão explícita:** contagem **AUSENTE** devolve peso **1,0**, não 0,0. A FootyStats nem sempre manda `games_played`, e encolher nesse caso apagaria o time inteiro — seria trocar um viés por um apagamento. Amostra vazia **conhecida** (0) encolhe até o baseline.
+
+### Medição antes/depois (5.625 combinações, grade de gols marcados × sofridos × jogos)
+Carregando o `lambda_calculator` pré-#208 (HEAD~3) e o atual lado a lado:
+
+| Jogos no recorte | Razão λ casa/fora | P(casa) Poisson | \|Δλ\| mediano |
+|---|---|---|---|
+| 1 | 0,943 → **1,213** | 36,6% → 43,3% | 0,410 |
+| 2 | 0,891 → 1,132 | 35,4% → 41,4% | 0,364 |
+| 3 | 0,847 → **1,060** | 34,2% → **39,5%** | 0,305 |
+| 4 | 0,808 → 0,994 | 33,3% → 37,8% | 0,252 |
+| 5 | 0,767 → 0,932 | 32,5% → 36,2% | 0,222 |
+| 6 | 0,767 → 0,872 | 32,5% → 34,8% | 0,150 |
+| **8, 12, 19** | 0,767 → **0,767** | 32,5% → **32,5%** | **0,000** |
+
+**Acima do limiar o comportamento é byte a byte o de hoje** (|Δλ| exatamente 0,000) — é o regime que já funciona, e não há motivo para mexer nele. A +5,3pp de P(casa) com 3 rodadas jogadas é da mesma ordem e do mesmo sinal que os −14,0pp medidos em produção para Championship/League One.
+
+**Limites verificados diretamente:**
+- Amostra vazia conhecida (0 jogos) → λ = **1,50 / 1,15**, exatamente os baselines `avg_goals_scored_by_home/away_teams` da liga. Sem dado, o modelo devolve a vantagem de mando média da liga (razão 1,30) e nada mais.
+- Contagem ausente (sem `games_played*`) → λ = 1,12 / 1,46, o dado do time passando cru. Nenhum encolhimento, como projetado.
+
+### Testes
+9 novos em `test_encolhimento_simetrico_208.py`; `test_sev1_lambda_e_ml_201.py` atualizado para o novo limiar. Suíte: **429 passed** (era 388).
+
+### Lição aprendida
+Quando dois termos de uma mesma multiplicação vêm da mesma fonte e da mesma amostra, tratá-los de forma diferente é um viés que não aparece em teste unitário — cada função continua cumprindo a própria promessa. O #201 corrigiu o *denominador* do λ e ficou certo; o que restava errado era o *numerador de um dos lados*, e só uma comparação com o mercado por faixa de rodadas jogadas separou os dois efeitos.
+
+## 209 — Auditor de premissas do modelo
+**Data:** 2026-09-01 | **Arquivos:** backend/services/auditor_premissas.py (novo), scripts/auditar_premissas.py (novo), tests/unit/test_auditor_premissas_209.py (novo) | **Severidade:** Média (QA estrutural) | **Status:** Implementado
+
+### Problema identificado
+Toda análise deste sistema terminou do mesmo jeito: achando um lugar onde ele não faz o que se supõe que faz, ou onde lê um dado e não usa (#187, #189-f, #197, #201, #204, #208). O padrão não é falta de cuidado — é **falta de um contrato executável**. Os 429 testes unitários provam que cada função cumpre a própria promessa isoladamente; **ninguém verificava se a SAÍDA MONTADA obedece às premissas do modelo.**
+
+### Correção aplicada
+`auditar_premissas.py` recebe a lista de jogos do `/fixtures` e devolve as violações. Não chama API, não depende de resultado de jogo, roda em milissegundos — serve no CI, no cron e sob demanda. Nove premissas, cada uma escrita como afirmação falsificável com o número exato que a falsifica:
+
+| Premissa | Severidade |
+|---|---|
+| `over_bate_com_lambda` | CRÍTICO |
+| `btts_bate_com_lambda` | CRÍTICO |
+| `safe_tem_lambda_que_sustente` | CRÍTICO |
+| `fusao_nao_ultrapassa_o_lambda` | ALTO |
+| `lambda_longe_do_grampo` | ALTO |
+| `vantagem_de_mando_existe` | ALTO |
+| `ev_so_com_odd_real` | ALTO |
+| `ev_alto_e_raro` | MÉDIO |
+| `early_season_desliga` | MÉDIO |
+
+**A matemática de referência é reimplementada de propósito** (Poisson, τ de Dixon-Coles, `lambda_minimo_para` por bisseção). Um auditor que chama a função auditada não audita nada — concordaria com ela inclusive quando ela está errada.
+
+### Verificação executada
+Payload sintético com 8 jogos coerentes + 1 com `over25Prob` plantado em 78,0% para λ 1,40+1,10:
+```
+9 jogos, 10 premissas, 1 violacoes (1 critico).
+  [CRITICO] over_bate_com_lambda | Incoerente FC x Mentira EC | (esperado 45.6%, observado 78.0%)  → exit 1
+8 jogos, 10 premissas, nenhuma violacao.                                                            → exit 0
+```
+O exit code separa os dois casos, então serve como gate de CI sem wrapper.
+
+### Lição aprendida
+Cobertura de teste unitário e correção do sistema são grandezas diferentes. Um pipeline de 12 etapas pode ter cada etapa provada e a composição errada — e foi exatamente isso em #201 (dupla contagem entre duas etapas corretas) e #189-f (extração correta, cópia ausente). O contrato que faltava era sobre o **artefato**, não sobre as funções.
+
+## 210 — Manifesto dos campos da FootyStats + premissa estrutural
+**Data:** 2026-09-01 | **Arquivos:** backend/config/footystats_manifest.py (novo), scripts/verificar_manifesto.py (novo), backend/services/auditor_premissas.py, tests/unit/test_manifesto_footystats_210.py (novo) | **Severidade:** Média (dívida de dados) | **Status:** Implementado
+
+### Problema identificado
+A FootyStats entrega **230 campos** por time/liga. **128 não tinham nenhum consumidor no código** — e não eram campos irrelevantes: `home_advantage_*` e `btts_percentage_home/away` estavam entre eles, dados que o sistema passou semanas derivando por outro caminho (e, no caso do split casa/fora, errando — foi a causa do #201). Ninguém sabia disso porque ninguém tinha a lista.
+
+### Correção aplicada
+`footystats_manifest.py` classifica os 230 campos em três estados explícitos: **CONSUMIDO (102) / PLANEJADO (96) / DESCARTADO (32)**. `verificar()` compara o manifesto com o código real; `fila_de_trabalho()` devolve os planejados por prioridade.
+
+Entra também como **10ª premissa do auditor (#209)** — a única estrutural, que roda sobre o *código* e não sobre a saída: `manifesto_footystats_em_dia`. Um campo novo consumido sem entrar no manifesto, ou um campo do manifesto que perdeu o consumidor, falha a auditoria.
+
+### Verificação executada
+```
+$ python3 scripts/verificar_manifesto.py
+Manifesto FootyStats: 230 campos (102 consumidos, 96 planejados, 32 descartados)
+  manifesto e codigo estao de acordo.
+```
+
+### Lição aprendida
+Dado não usado é indistinguível de dado inexistente até alguém fazer o inventário — e o custo não é a oportunidade perdida, é derivar mal o que já vinha pronto. `avg_goals_scored_by_home_teams` chegava no payload enquanto o λ usava `average_goals_per_match/2` e contava a vantagem de mando duas vezes (#201). A lista tem de existir como código verificável, não como conhecimento de quem leu a API uma vez.

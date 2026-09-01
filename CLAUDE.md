@@ -147,6 +147,8 @@ FootyStats + API-Football v3
 9. **Complementares > 105% BLOQUEADOS** (#098).
 10. **Deflação progressiva contínua por nós (#105, contínua desde #189-a)** — NÃO reverter para uniforme nem para degrau por banda.
 11. **Classificação usa prob raw; EV usa prob deflacionada** (#106).
+12. **Encolhimento de amostra pequena nos DOIS lados do λ (#208)** — ataque e defesa adversária recebem o mesmo peso `n/8`; contagem ausente não encolhe, amostra 0 encolhe.
+13. **Auditor de premissas reimplementa a matemática de referência (#209)** — NÃO deduplicar contra o pipeline; a duplicação é o mecanismo. Campo novo da FootyStats entra no manifesto (#210).
 
 ## Finalização obrigatória pós-alteração
 
