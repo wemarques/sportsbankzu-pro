@@ -9641,3 +9641,45 @@ A branch `fix/190-191-banca-unificada-rotas-url` (banca unificada #190, rotas co
 
 ### Lição aprendida
 Cliente nunca deve "melhorar" dado de feed com estimativa própria — `Math.max(real, estimado)` é o anti-padrão exato: quando divergem, o errado vence por construção. E log de diagnóstico é código de produção: acessar o objeto antes do guard transformou observabilidade em ponto único de falha da rota inteira.
+
+## 195 — Instrumentação da auditoria: série diária de Brier, `limit` repassado e Brier dos picks
+**Data:** 2026-08-31 | **Arquivos:** backend/services/brier_service.py, backend/routes/audit_status.py, backend/routes/health.py, backend/cron_handler.py, frontend/next/src/app/api/audit/status/route.ts, frontend/next/src/app/api/metrics/brier/daily/route.ts (novo), frontend/next/src/components/BatchAuditPanel.tsx, frontend/next/src/lib/{api,localAudit}.ts, tests/unit/test_audit_metrics_195.py (novo) | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Uma rodada de 36,8% de acerto contra ~81% dos quatro dias anteriores levantou a pergunta "a queda começou no deploy X?" — e os três defeitos abaixo impediam respondê-la.
+1. **`/api/audit/status` aceitava `days` mas nunca repassava `limit`:** o default 10 de `get_recent_audit_results` truncava tudo — `days=90` devolvia os mesmos 10 registros de `days=7` e a série parava em ~4 dias.
+2. **`calculate_snapshot(audit_date)` ignorava o parâmetro:** o único uso era ecoá-lo no retorno; a query lia `audit_results` inteira. Snapshot cumulativo não detecta regressão recente — um dia ruim vira ruído dentro de milhares de picks antigos.
+3. **"Brier Score Médio" media só Over 2.5 gols**, um valor por jogo, nunca os picks avaliados — por isso 36,8% de acerto convivia com "Brier 0.1137" na mesma tela, dois números sem relação entre si.
+
+### Correções aplicadas
+- `limit` vira parâmetro da rota (1..500) e é repassado; o default 10 do banco fica intacto. Passthrough no route handler do Next.
+- `_load_picks()` extraído com filtro real por `DATE(timestamp)`; nova `daily_series(days)` + rota `/metrics/brier/daily` (com proxy no front) devolvendo uma linha por dia.
+- `brier_picks` (probabilidade declarada vs desfecho, mesmo conjunto que alimenta a acurácia) no `localAudit` e no cron. O tile antigo continua exibido com o nome correto "Brier Over 2.5". **`avg_brier_score` fica intacto de propósito:** as regras de diagnóstico do `AuditReportCard` leem esse campo e mudar seu significado sem histórico novo trocaria os veredictos.
+
+### Testes
+7 novos em `test_audit_metrics_195.py`. Suíte: 329 passed (na aplicação conjunta com #196: **336 passed**).
+
+### Lição aprendida
+Parâmetro aceito e não repassado é pior que parâmetro ausente: a API respondia 200 com dados truncados, então a série parecia terminar — o defeito se disfarçava de "não há mais dados". E métrica com nome genérico ("Brier Score Médio") sobre um recorte específico (Over 2.5) é armadilha: o número é correto e a leitura é falsa.
+
+## 196 — Faixa de EV com sinal, ROI por faixa e EV do próprio pick
+**Data:** 2026-08-31 | **Arquivos:** backend/services/backtesting.py, backend/cron_handler.py, tests/unit/test_ev_band_roi_196.py (novo), tests/unit/test_metrics_079.py | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+"Por que os picks de VALOR DETECTADO não batem na maioria?" não tinha como ser respondida com os dados guardados.
+1. **`compute_hit_rate_by_ev_band` fazia `abs(float(ev))`:** um pick de EV -35% caía na mesma faixa "20-100%" de um de +35% — justamente a faixa consultada para saber se os EV altos se pagam. Como os mercados rejeitados aparecem com EV de -20% a -36%, a faixa alta vivia poluída pelos piores picks do dia.
+2. **Sem ROI por faixa:** taxa de acerto sozinha engana no contexto de EV — 40% de acerto a odd 3.00 rende +20% por unidade. Julgar a badge por acerto leva à conclusão oposta da correta.
+3. **A auditoria recalculava EV de `prob_max × odd_minima`**, que não são os insumos do EV exibido (o card usa probabilidade calibrada contra odd real). Pior: `odd_minima` cai para a odd justa (1/prob) quando não há mercado — nesses picks o EV auditado dava exatamente zero e o `book_odd` gravado virava a probabilidade do próprio modelo, então a "casa" na comparação modelo-vs-casa do `/metrics/brier` **era o modelo**, com delta zero diluindo a vantagem medida.
+4. **`hit_rate_by_ev`, `roi`, `ev_metrics` e `sharpe_ratio` morriam com o processo:** calculados todo dia em `batch_summary`, nunca persistidos — o registro `cron_batch` gravava 10 campos e nenhum era esses.
+
+### Correções aplicadas
+- EV entra **com sinal** e passam a existir faixas negativas (`-100--10%`, `-10-0%`).
+- Cada faixa devolve `roi` e `n_with_odds`; ROI é `None` (não zero) quando não há odd real — sem odd não há retorno simulável.
+- O cron usa `merc["ev"]` e `calibrated_probability`, com fallback ao cálculo legado só para mercados sem `ev`; `book_odd` só é gravado quando a odd é real.
+- As quatro métricas passam a ser persistidas no registro e expostas no retorno da rota.
+
+### Testes
+7 novos em `test_ev_band_roi_196.py` (incluindo o caso 40% de acerto @ odd 3.00 = ROI +20%); `test_metrics_079` ajustado de 4 para 6 faixas. Suíte: **336 passed**.
+
+### Lição aprendida
+`abs()` sobre uma grandeza cujo sinal É a informação apaga exatamente o que se quer medir — e o erro é silencioso, porque a tabela continua bem formada. No mesmo espírito do #189-d: sentinela e valor medido não podem compartilhar representação — `odd_minima` servindo de odd real fez a casa virar o modelo na comparação que existe para separar os dois.
