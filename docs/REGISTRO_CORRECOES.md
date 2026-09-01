@@ -9702,3 +9702,35 @@ Duas regressões introduzidas pelos próprios #195/#196, encontradas em red team
 
 ### Lição aprendida
 Duas lições, ambas sobre defeito silencioso. Primeira: `except` genérico que devolve `None` num caminho de escrita transforma falha em no-op — o snapshot parou de gravar e nada na interface mudou, porque a rota de leitura não usa o parâmetro quebrado. Fail-safe precisa de log que nomeie o input, ou vira fail-silent. Segunda: uma correção correta (#196, gravar `book_odd` só com odd real) pode **armar** um bug latente — o pareamento errado existia desde sempre e era mascarado por 98,8% de cobertura de odds. Ao mudar a densidade de um dado, revisar quem assume que ele é quase sempre presente.
+
+## 198 — 503 do /api/metrics/brier passa a dizer o que aconteceu
+**Data:** 2026-09-01 | **Arquivos:** frontend/next/src/app/api/metrics/brier/route.ts | **Severidade:** Média (observabilidade) | **Status:** Corrigido
+
+### Problema identificado
+503 "Backend indisponível" em 15,2s, reproduzível em 4 tentativas, enquanto `/api/metrics/brier/daily?days=90` respondia em 3,4s sobre a mesma tabela e `/api/backend/health` em 263ms. A rota devolvia só `{error, total_picks: 0}` — sem duração, sem `kind`: timeout do snapshot, backend fora e erro de query eram indistinguíveis.
+
+### Correções aplicadas
+Loga a falha e expõe `_error.kind` e `_latencyMs` no corpo do 503.
+
+**O timeout fica em 15s de propósito.** Uma versão anterior deste fix subia para 25s "porque o vercel.json declara maxDuration 30" — premissa que não se sustenta: a Vercel constrói a partir de `frontend/next` (build log: sportsbank-pro@4.0.0, Next 15.5.15 — o package.json de lá, não o da raiz) e as rotas vivem em `src/app/api/**`, enquanto os globs de `functions` são `app/api/**`, sem o prefixo `src/`. Subir o teto sem confirmar isso trocaria um 503 **com corpo** por um 504 de plataforma **sem corpo**, matando o diagnóstico que o commit existe para dar.
+
+### Lição aprendida
+Erro genérico em rota de proxy é dívida de diagnóstico: o sintoma (503) é o mesmo para causas que exigem ações opostas. E teto de timeout só se mexe depois de confirmar de onde a plataforma lê a configuração — glob que não casa é configuração que não existe.
+
+## 199 — /metrics/brier serve o último snapshot em vez de recalcular
+**Data:** 2026-09-01 | **Arquivos:** backend/services/brier_service.py, backend/routes/health.py, frontend/next/src/app/api/metrics/brier/history/route.ts (novo), tests/unit/test_brier_from_history_199.py (novo) | **Severidade:** Alta | **Status:** Implementado
+
+### Problema identificado
+O endpoint recalculava o snapshot inteiro a cada carregamento do dashboard — lê `audit_results` inteira e segmenta por liga, mercado, banda, classificação e liga×mercado. Entre dois batches do cron o resultado é **idêntico**, então era trabalho jogado fora; e passou a estourar o timeout de 15s da rota do front (o 503 do #198).
+
+### Correções aplicadas
+- `brier_history` ganha coluna JSONB `snapshot` com o payload completo. **As colunas soltas não guardam `model_beats_house_ci`** — que o `ReliabilityCard` lê — nem `brier_model_paired`/`n_paired` do #197; servir o card a partir delas quebraria a tela. O `ADD COLUMN IF NOT EXISTS` roda dentro de `_ensure_table()`, chamado por `persist_snapshot` antes do INSERT: **não há migração manual nem ordem de deploy a respeitar**.
+- `latest_snapshot()` devolve o último gravado com `_fromHistory`, `_snapshotAt` e `_ageMinutes`. A idade é explícita de propósito: se o cron parar, o card mostra dado velho **com etiqueta**, em vez de mentir por omissão.
+- `/metrics/brier` serve do histórico por padrão; `?fresh=true` recalcula, e o fallback também recalcula quando ainda não há snapshot gravado — o caso da primeira execução pós-deploy, que se resolve sozinho no primeiro batch.
+- Passthrough `/api/metrics/brier/history`: a rota existia no backend desde sempre e nunca teve caminho pelo front — sem ela não havia como verificar se o cron voltou a gravar snapshot depois do #197.
+
+### Testes
+5 novos em `test_brier_from_history_199.py` (CI preservado no payload, idade explícita, ausência de snapshot → None, falha de banco não derruba a rota, persist grava o payload completo). Suíte: **351 passed**.
+
+### Lição aprendida
+Cache de leitura precisa carregar a própria validade: `_ageMinutes` no payload transforma "dado velho" de defeito invisível em informação exibível. E ao trocar recálculo por leitura, o que se serve tem de ser o objeto inteiro — reconstruir a partir de colunas normalizadas perde exatamente os campos que ninguém lembrou de colunar (aqui, o CI que a tela consome).
