@@ -10251,3 +10251,68 @@ Entra também como **12ª premissa do auditor** (#209): rodada inteira 0-0 depoi
 
 ### Lição aprendida
 Um guard escrito contra o caso que apareceu na época cobre aquele caso, não o defeito. `None` e `0` chegam pelo mesmo caminho e significam a mesma coisa aqui — "não observei" —, mas só o primeiro tinha sido tratado, e o comentário do guard antigo descrevia exatamente a intenção certa que a condição não implementava. Quando a intenção documentada é mais ampla que a condição, a diferença é um defeito esperando o dado certo.
+
+## 214 — Premissa de margem de odds + registro do λ de cartões
+**Data:** 2026-09-01 | **Arquivos:** backend/services/auditor_premissas.py, backend/config/footystats_manifest.py, tests/unit/test_margem_de_odds_214.py (novo) | **Severidade:** Alta (contamina todo EV) | **Status:** Implementado (premissa) + registrado (λ de cartões)
+
+### Problema identificado — margem de odds
+Medido em 01/09/2026, Londrina × Juventude. O card trazia no 1X2 **2,88 / 2,70 / 2,17 → margem 17,8%**. A bet365 pagava no mesmo momento **3,75 / 2,87 / 2,20 → margem 7,0%**. Não existe casa séria operando a 17,8%.
+
+O que torna o diagnóstico preciso é que **os outros mercados do MESMO payload estão em faixa normal**: Over/Under 2.5 a 10,6% e BTTS a 8,2%. Não é a fonte inteira quebrada — é o 1X2 desatualizado, provavelmente a odd de abertura.
+
+**O efeito é o que importa: todo EV do sistema é calculado contra essas odds.**
+
+| | odd | EV do mandante (p = 33,65%) |
+|---|---|---|
+| card | 2,88 | **−3,1%** |
+| bet365 | 3,75 | **+26,2%** |
+
+Mesma probabilidade, **sinal invertido pela odd** — e isso contamina os +31% e +34% dos escanteios de ontem tanto quanto este. (Verificado: as quatro margens e os dois EV batem no dígito, e os dois EV saem da mesma probabilidade.)
+
+### Correção aplicada
+13ª premissa do auditor (#209): margem fora de **1% a 12%** acusa. Acima é **ALTO** (odd velha); abaixo é **CRÍTICO** (odd corrompida — somar menos de 100% seria arbitragem garantida). Referência no texto da violação: Pinnacle 2,7% · bet365 5,5% · William Hill 7,4% · Ladbrokes 7,8%. Cada família (1X2, O/U 2.5, BTTS) é examinada separadamente, que foi o que tornou o achado preciso.
+
+### λ de cartões — registrado, não corrigido no escuro
+O modelo está **internamente coerente**: NB2 com λ 4,172 e overdispersion 1,3 devolve **P(Over 2.5) = 74,7%**, exatamente o que o card publica como prob crua (verificado; Poisson puro daria 78,6%, então a overdispersion é o que fecha a conta). O λ também fecha: (2,46 + 1,88) × 0,95 = 4,12.
+
+**O que não fecha é a entrada.** O sistema usa 4,94 cartões/jogo como média da Série B; a liga é reportada com 5,57 amarelos por jogo, a quarta que mais dá cartão no mundo. E o λ soma médias **gerais** dos times, ignorando o recorte casa/fora — `cards_per_match_home/away` estão mapeados e sem consumidor desde sempre. Ficam registrados no manifesto com o motivo, na fila do #210, em vez de corrigidos sem medição.
+
+### Testes
+9 novos em `test_margem_de_odds_214.py`. Suíte: **473 passed**.
+
+### Lição aprendida
+O sistema media a própria crença com precisão e nunca perguntou se o preço contra o qual a compara era real. Margem de mercado é um invariante barato e forte: não depende de modelo, não depende de resultado, e distingue "fonte quebrada" de "um mercado desatualizado" porque as famílias são independentes.
+
+## 215 — Âncora empírica da FootyStats como juiz do calibrador
+**Data:** 2026-09-01 | **Arquivos:** backend/services/comparador_ancora.py (novo), scripts/comparar_ancora.py (novo), backend/services/fixtures_service.py, backend/config/footystats_manifest.py, tests/unit/test_ancora_empirica_215.py (novo) | **Severidade:** Alta (decisão pendente do #200) | **Status:** Implementado (instrumento) — decisão da quarentena segue humana
+
+### Problema identificado
+A pergunta aberta desde o #200 era: **os `.pkl` treinados sobre o `audit_results` vazado ajudam ou atrapalham?** Até agora, opinião. A FootyStats publica a distribuição empírica por linha — quantos por cento dos jogos daqueles dois times passaram de cada linha. **É contagem, não modelo**, e serve de terceira opinião independente das outras duas.
+
+Londrina × Juventude, 01/09/2026, cartões:
+
+| Linha | Empírico | Crua | Calibrada | |
+|---|---|---|---|---|
+| Over 2.5 | 82% | 74,7% | **59,9%** | calibrador **afastou 22pp** |
+| Under 4.5 | 54% | 60,9% | 53,0% | calibrador aproximou |
+
+| | viés médio | erro absoluto médio |
+|---|---|---|
+| crua | −0,2pp | **7,1pp** |
+| calibrada | **−11,6pp** | **11,6pp** |
+
+**Viés de −11,6pp em duas linhas de sentidos opostos é a assinatura: não está calibrando, está deflacionando.** Numa linha o erro do λ e o do calibrador se cancelaram; na outra se somaram. **Duas linhas não decidem nada** — por isso o módulo mede sobre N jogos e devolve os desvios, sem decidir a quarentena.
+
+### Três partes
+1. `comparador_ancora.py` + `scripts/comparar_ancora.py`: confronta crua × calibrada × empírico por linha. Cobre escanteios (as âncoras já chegavam) e agora cartões.
+2. **As 7 âncoras de cartões** (`over15..over75_cards_percentage`) passam a ser consumidas — eram 7 dos 128 órfãos do #210, e sem elas o comparador não tinha o que comparar. Manifesto: **102 → 109 consumidos**, verificado de acordo com o código.
+3. **O fallback histórico de cartões só olhava um lado do time.** A FootyStats publica Londrina 2,45 e Juventude 2,27 (soma 4,72); o sistema calculava 2,46 e 1,88 (soma 4,34). O Londrina bateu **por acaso** — em casa ele faz quase o que faz no geral; o Juventude não. Passa a somar casa E fora, que é a base sobre a qual a distribuição empírica é construída.
+
+### O manifesto do #210 pegou um erro durante este patch
+Os campos foram declarados CONSUMIDO enquanto o consumo era montado por f-string, e o verificador acusou *"nenhum consumidor o lê mais"*. Os nomes vão literais no código agora. **É a primeira vez que a premissa estrutural do #210 pega algo em vez de só passar** — e pegou contra quem a escreveu.
+
+### Testes
+11 novos em `test_ancora_empirica_215.py`. Suíte: **473 passed** (era 453). `verificar_manifesto.py`: 230 campos (109/89/32), de acordo.
+
+### Lição aprendida
+Duas opiniões que discordam não dizem qual está certa. O sistema tinha probabilidade crua e calibrada e nenhum árbitro — e o árbitro estava no payload desde sempre, entre os 128 campos que ninguém lia. A terceira opinião não precisa ser melhor que as outras duas: precisa ser **independente** delas, e contagem de frequência é isso.
