@@ -438,9 +438,24 @@ def latest_snapshot() -> Optional[Dict]:
 
 
 def run_after_audit(new_picks: int = 0, audit_date: str = None) -> Optional[Dict]:
-    """Full cycle: calculate + persist. Called by cron."""
-    snap = calculate_snapshot(audit_date)
+    """Ciclo do cron: calcula o snapshot CUMULATIVO e persiste.
+
+    #202 — `audit_date` e ETIQUETA, nao recorte.
+
+    O cron chama isto com date_filter, que ora e rotulo ("today"/"yesterday"),
+    ora e data ISO ("2026-08-30", quando roda para um dia especifico). Depois do
+    #197 a data ISO passou a FILTRAR de verdade, e o batch das 05:01 gravou em
+    brier_history um snapshot de 170 picks (so os do dia) onde as linhas
+    anteriores tinham 5.951 (acumulado). O #199 entao passou a servir esse
+    snapshot diario como se fosse o global, e o ReliabilityCard exibiu 170.
+
+    brier_history sempre foi cumulativo — quem fatia por dia e o daily_series.
+    Aqui o snapshot volta a ser calculado sem recorte; a etiqueta e so gravada.
+    """
+    snap = calculate_snapshot()          # cumulativo, sempre
     if snap:
+        if audit_date:
+            snap["audit_date"] = str(audit_date)   # etiqueta preservada
         persist_snapshot(snap, new_picks)
     return snap
 
