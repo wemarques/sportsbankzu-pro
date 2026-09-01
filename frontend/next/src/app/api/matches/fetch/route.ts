@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { fetchBackend, getBackendUrl, maskUrl } from "@/lib/backend";
+import { fetchBackend, getBackendUrl, isApiGatewayBackend, maskUrl } from "@/lib/backend";
 
 /** Allow up to 60 s on Vercel for Lambda cold starts + multi-league fetches. */
 export const maxDuration = 120;
@@ -196,6 +196,7 @@ export async function GET(req: NextRequest) {
         _debug: debug ? {
           error: result.error,
           backendConfigured: true,
+          backendKind: isApiGatewayBackend() ? "api-gateway (30s cap)" : "function-url",
           backendUrl: maskUrl(backendBase),
           durationMs: result.durationMs,
         } : undefined,
@@ -270,6 +271,12 @@ function _friendlyErrorMessage(kind: string, durationMs?: number, rawMessage?: s
         return `Erro interno no servidor${dur}. Pode indicar bug ou dados corrompidos — tente novamente.`;
       }
       if (httpStatus && httpStatus >= 502 && httpStatus <= 504) {
+        // #203 - 503 em ~30s cravados nao e cold start: e o teto de integracao
+        // do API Gateway. Nomear a causa evita que se perca outra rodada
+        // esperando um "reinicio" que nunca vai acontecer.
+        if (isApiGatewayBackend() && (durationMs ?? 0) >= 29_000) {
+          return `Backend atras do API Gateway, que corta em 30s${dur}. Aponte PY_BACKEND_URL para a Lambda Function URL (regra #114).`;
+        }
         return `Servidor reiniciando (cold start)${dur}. Tente novamente em 10-15 segundos.`;
       }
       return `O servidor retornou HTTP ${httpStatus ?? "erro"}${dur}. Tente novamente em instantes.`;

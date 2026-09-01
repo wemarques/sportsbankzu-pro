@@ -17,6 +17,29 @@ export function getBackendUrl(): string | null {
   return PY_BACKEND ? PY_BACKEND.replace(/\/+$/, "") : null;
 }
 
+/**
+ * #203 - o backend TEM de estar atras da Lambda Function URL.
+ *
+ * O API Gateway HTTP API v2 corta a integracao em 30s, limite duro que nao se
+ * eleva. Foi exatamente por isso que o #114 (2026-04-04) criou a Function URL,
+ * que respeita o timeout da propria Lambda (60s). Quando PY_BACKEND_URL volta a
+ * apontar para o execute-api, as ligas COM jogos no dia (as unicas caras de
+ * montar) estouram os 30s e somem da tela; as ligas sem jogos respondem em ~2s
+ * e continuam aparecendo. O sintoma parece "o site nao carrega algumas ligas",
+ * nunca "o backend caiu".
+ */
+export function isApiGatewayBackend(): boolean {
+  const u = getBackendUrl();
+  return !!u && /\.execute-api\.[a-z0-9-]+\.amazonaws\.com/i.test(u);
+}
+
+if (isApiGatewayBackend()) {
+  console.error(
+    "[backend] #203 PY_BACKEND_URL aponta para o API Gateway (limite duro de " +
+      "30s). Use a Lambda Function URL (*.lambda-url.*.on.aws) - ver regra #114.",
+  );
+}
+
 /** Masks a URL for safe inclusion in logs (hides path & query). */
 export function maskUrl(raw: string): string {
   try {
