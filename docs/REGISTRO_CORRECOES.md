@@ -9773,3 +9773,20 @@ O loop de `_extract_lastx` já tinha os gols do adversário em mãos e nunca os 
 
 ### Lição aprendida
 Numerador e denominador têm de viver no mesmo recorte: estatística casa-apenas normalizada por média geral conta a vantagem de mando duas vezes, e o erro é invisível no total (−1,9%) enquanto distorce a partição (−8,5pp na casa). Métrica agregada não detecta viés de composição — por isso Over/Under passou meses validando um λ enviesado. E no ML: preencher feature de serving com saída de outro modelo não é fallback, é skew — quando o dado real falta, o certo é **pular** o modelo, não alimentá-lo com um substituto de outra distribuição.
+
+## 202 — Snapshot do brier_history volta a ser cumulativo (card exibia 170 no lugar de 5.951)
+**Data:** 2026-09-01 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_snapshot_cumulativo_202.py (novo) | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Combinação de duas mudanças da mesma série. O **#197** fez `audit_date` filtrar de verdade (era o objetivo), mas o cron chama `run_after_audit(audit_date=date_filter)` e `date_filter` **às vezes é uma data ISO** — quando roda para um dia específico. Resultado: o batch das 05:01 gravou em `brier_history` um snapshot de **170 picks** (só os do dia) numa tabela cujas linhas anteriores tinham **5.951** (acumulado). O **#199**, que passou a servir o último snapshot gravado como global, então exibiu 170 no ReliabilityCard.
+
+`brier_history` é cumulativo por contrato — quem fatia por dia é o `daily_series` do #195.
+
+### Correção aplicada
+`run_after_audit` calcula sempre o snapshot **cumulativo** (`calculate_snapshot()` sem recorte); `audit_date` vira apenas etiqueta gravada no registro, preservando a referência do histórico. `calculate_snapshot(audit_date)` continua fatiável sob demanda — só não é o que o cron persiste.
+
+### Testes
+3 novos em `test_snapshot_cumulativo_202.py` (recorte não repassado, etiqueta preservada tanto para data ISO quanto para rótulo, fatiamento sob demanda intacto). Suíte: **372 passed**.
+
+### Lição aprendida
+Terceiro defeito seguido nascido do mesmo parâmetro (`audit_date`): #197 porque o cron manda rótulo, #202 porque às vezes manda data. Um parâmetro cujo significado muda conforme o chamador é armadilha — o correto seria o cron nunca passar recorte para uma função que alimenta tabela cumulativa. E o #199 amplificou: cache de leitura herda silenciosamente qualquer defeito do que foi gravado, então erro de escrita vira erro de exibição sem etapa intermediária que denuncie.
