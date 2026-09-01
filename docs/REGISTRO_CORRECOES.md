@@ -10115,3 +10115,66 @@ Com o cache 100% quente (`soma=0.3s`), o padrão de rajadas **não muda**:
 
 ### Lição aprendida
 Um critério de leitura escrito antes da medição enumera os desfechos que o autor conseguiu imaginar — e o mundo não se limita a eles. O valor do #207 não foi ter previsto a resposta certa; foi ter produzido um número que **descartou as duas hipóteses de uma vez**, incluindo a que já estava registrada como fato no #206. Amostra pequena sem controle da variável certa (aqui, a identidade do container) produz um "fato" tão convincente quanto errado — é o mesmo erro de forma do #200, onde o gate no log foi confundido com o efeito do gate.
+
+## 211 — Liga desconhecida deixa de responder em silêncio
+**Data:** 2026-09-01 | **Arquivos:** backend/routes/fixtures.py, backend/services/auditor_premissas.py, tests/unit/test_liga_desconhecida_211.py (novo), tests/unit/test_auditor_premissas_209.py | **Severidade:** Média (diagnóstico) | **Status:** Corrigido
+
+### Problema identificado
+O `/fixtures` devolvia **HTTP 200 com zero jogos** para um ID fora do registro — sem log e sem campo no payload, indistinguível de "não há jogos hoje". Medido lado a lado na Function URL:
+
+| ID | Resposta |
+|---|---|
+| `championship` | 200 em 35,4s → **8 jogos** |
+| `england-championship` (nunca existiu) | 200 em **0,6s** → 0 jogos |
+
+Os 0,6s foram lidos como rodada vazia e a medição do #207 se perdeu por uma rodada. A mesma armadilha já havia custado uma rodada com `brasileirao-serie-a`.
+
+### Causa raiz
+Não é deslize de digitação: **a lista do frontend mistura ID nu com ID prefixado.** `championship` e `premier-league` são nus; `england-league-one` e `brazil-serie-a` são prefixados (`leagues.ts:289` vs `:302`). Presumir simetria é o erro natural, e o sistema não tinha como avisar.
+
+### Correções aplicadas
+1. **Runtime:** `WARNING` no log e campo `_ligas_desconhecidas` no payload, nos dois caminhos (liga única e lote paralelo).
+2. **Estrutural:** premissa `ligas_do_frontend_resolvem` no auditor do #209 (a 11ª), lendo `AVAILABLE_LEAGUES` do `leagues.ts` contra `LEAGUES_CONFIG`/`LEAGUE_ID_ALIASES`. Hoje os 22 IDs resolvem; a premissa impede que uma liga nova entre na tela com o prefixo errado e nunca carregue.
+
+### Achado colateral (correção separada)
+**Fora de produção o ID inválido não devolve vazio — devolve MOCK** (`Team A x Team B`). O `_is_production` corta antes do dashboard, mas quem roda local vê dado falso de liga inexistente. Fica registrado em teste; a correção é separada para não misturar com a sinalização.
+
+### Testes
+10 novos em `test_liga_desconhecida_211.py`; o teste do #209 deixa de fixar o número de premissas em 10. Auditor: `8 jogos, 11 premissas, nenhuma violacao`. Suíte: **444 passed** (era 429).
+
+### Lição aprendida
+Resposta bem-sucedida e vazia é a pior forma de erro de entrada: ela não custa nada a quem errou e custa uma rodada inteira a quem lê. O sintoma (`200` rápido) é idêntico ao caso legítimo, e o único jeito de separar os dois é o próprio sistema dizer que não reconheceu o pedido.
+
+## 212 — Instrumentação das fases do /fixtures
+**Data:** 2026-09-01 | **Arquivos:** backend/routes/fixtures.py, tests/unit/test_fases_do_fixtures_212.py (novo) | **Severidade:** Média (observabilidade) | **Status:** Implementado
+
+### Problema identificado
+A medição do #207 respondeu e **derrubou a hipótese que a motivou** (previsão: ~6000ms por chamada de `/lastx` sob os 3 workers do #115). Medido em produção, championship com 8 jogos: média **234–378ms**, soma de 3,7–6,1s, **10 a 17% do pedido**; com cache quente, 0,3s e média 20ms.
+
+Decompondo os `REPORT` do CloudWatch pelo marco `parallelizing`:
+
+| Pedido | Total | Antes do split | No laço | `/lastx` | Laço sem `/lastx` |
+|---|---|---|---|---|---|
+| 3a2445e9 | 62,7s | **44,7s** | 18,0s | 6,1s | 11,9s |
+| 4f338c6d | 41,1s | **24,6s** | 16,5s | 4,0s | 12,5s |
+| c78d5b3b | 34,8s | **19,7s** | 15,1s | **0,3s** | **14,8s** |
+
+O tempo está em **dois lugares que nunca foram medidos**: a busca de liga ANTES do split (`resolve_season_ids` + league-matches paginado + season-stats + teams) e o cálculo do modelo DENTRO do laço. Na execução com cache quente as 16 chamadas somam 0,3s mas se espalham por ~10,6s de relógio — os ~10s restantes são Poisson, ML, calibrador, escanteios v2 e cartões.
+
+### Correção aplicada
+Duas linhas novas, sem mudança de comportamento:
+
+```
+[#212 fases] <liga>: season_ids=Xms league_matches=Yms stats+teams=Zms ate_o_laco=Wms
+[#212 fases] <liga>: laco_de_montagem=Vms (N jogos)
+```
+
+Relógio monotônico (`time.time()` anda para trás com ajuste de NTP; medição de fase, não). Logger `sportsbankzu` — visível no CloudWatch sem depender do `LOG_LEVEL_MODELOS` (#204).
+
+**Não mexer em paralelismo nem em cache antes desta leitura.** Foi assim que o #206 virou gargalo e que o alvo do #207 saiu errado.
+
+### Testes
+5 novos em `test_fases_do_fixtures_212.py` (marcos presentes, duas linhas emitidas, ordem dos marcos, relógio monotônico, instrumentação não altera o retorno). Suíte: **444 passed**.
+
+### Lição aprendida
+Duas hipóteses erradas seguidas sobre o mesmo gargalo — o cache do SQLite (#206) e o throttle da API (#207) — têm a mesma origem: raciocinar sobre onde o tempo *deveria* estar em vez de medir onde ele *está*. A decomposição por fases custa duas linhas de log e teria evitado as duas. Instrumentar a fase antes de formular a hipótese, não depois de a hipótese falhar.
