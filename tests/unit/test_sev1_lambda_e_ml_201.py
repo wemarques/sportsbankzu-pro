@@ -99,13 +99,23 @@ def test_num_normaliza(v, esperado):
 
 def test_regressao_usa_jogos_do_recorte():
     """2 jogos em casa (10 no total) tem de regredir para a média da liga."""
-    src = inspect.getsource(calcular_lambda_dinamico)
-    assert "games_played_home" in src and "games_played_away" in src
+    # #208 moveu a escolha do recorte para _jogos_do_recorte(); a invariante e a
+    # mesma, entao ela passa a ser verificada pelo COMPORTAMENTO e nao pelo texto
+    # do fonte — que era fragil a qualquer refatoracao.
+    import backend.modeling.lambda_calculator as _lc
+    assert _lc._jogos_do_recorte({"games_played_home": 2, "games_played": 10}, True) == 2
+    assert _lc._jogos_do_recorte({"games_played_away": 7, "games_played": 10}, False) == 7
+
     time = {"goals_scored_avg_home": 3.0, "goals_scored_avg_overall": 1.5,
             "games_played": 10, "games_played_home": 2}
     lam = calcular_lambda_dinamico(time, _medio_fora(), LIGA, "NORMAL", is_home=True)
     sem_regressao = 3.0
     assert lam < sem_regressao * 0.85, f"λ={lam} — deveria estar regredido"
+
+    # e o total de 10 jogos nao pode ser usado no lugar dos 2 do recorte
+    time_cheio = dict(time, games_played_home=12)
+    lam_cheio = calcular_lambda_dinamico(time_cheio, _medio_fora(), LIGA, "NORMAL", is_home=True)
+    assert lam_cheio > lam, "o recorte de 2 jogos tem de regredir mais que o de 12"
 
 
 # ── 2. ML serving skew ───────────────────────────────────────────────

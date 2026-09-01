@@ -14,6 +14,7 @@ Correções por liga via audit DB (REGRAS #052).
 from typing import Dict, Any, Optional, Tuple, List
 import logging
 import math
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,21 @@ PESOS_LAMBDA = {
 LAMBDA_MIN = 0.5  # #063: no real team scores < 0.5 goals/game on average
 LAMBDA_MAX = 4.5
 FATOR_DEFESA_MIN_HIPER = 0.90
+
+# #208 - encolhimento de amostra pequena.
+# Ate aqui a regressao a media so agia abaixo de 5 jogos, com peso gp/5, e SO no
+# ataque. A defesa do adversario entrava crua com um jogo ou com trinta. Medido
+# em producao em 01/09/2026, com a rodada inteira (17 jogos):
+#   Championship (3 rodadas) ..... modelo 14,0pp abaixo do mercado na casa
+#   League One   (3 rodadas) ..... modelo 13,5pp abaixo do mercado na casa
+#   Brasileirao B (24 rodadas) ...  -4,9pp
+#   Colombia      (25 rodadas) ...  -0,7pp
+# Com amostra o modelo acompanha o mercado; sem amostra ele pende para o
+# visitante. Por isso o encolhimento sobe de 5 para 8 jogos e passa a valer para
+# os dois lados da conta. Acima do limiar nada muda - e o regime que hoje
+# funciona, e nao ha motivo para mexer nele.
+JOGOS_AMOSTRA_CHEIA = int(os.getenv("LAMBDA_SHRINK_MIN_GAMES", "8"))
+
 
 
 def _get_home_advantage_gamma(league_id: str) -> float:
@@ -132,6 +148,29 @@ def _num(value) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return v if v == v and abs(v) != float("inf") else None  # descarta NaN/inf
+
+
+def _peso_amostra(jogos: Any) -> float:
+    """Peso do dado do time contra o baseline da liga. 1.0 = sem encolhimento."""
+    n = _num(jogos)
+    if n is None:
+        # Contagem AUSENTE nao e o mesmo que amostra vazia. A FootyStats nem
+        # sempre devolve games_played, e encolher para o baseline nesse caso
+        # apagaria o time inteiro. Sem informacao, nao se encolhe.
+        return 1.0
+    if n <= 0:
+        return 0.0
+    if n >= JOGOS_AMOSTRA_CHEIA:
+        return 1.0
+    return float(n) / float(JOGOS_AMOSTRA_CHEIA)
+
+
+def _jogos_do_recorte(dados: Dict[str, Any], em_casa: bool) -> Any:
+    """Jogos daquele recorte (casa-apenas ou fora-apenas), com queda para o total."""
+    chave = 'games_played_home' if em_casa else 'games_played_away'
+    v = dados.get(chave)
+    return v if v is not None else dados.get('games_played')
+
 
 
 def calcular_lambda_dinamico(
@@ -238,23 +277,10 @@ def calcular_lambda_dinamico(
     # #201: o recorte usado e casa-apenas (ou fora-apenas), entao a regressao
     # tem de olhar os jogos DAQUELE recorte. Com o total, um time de 10 jogos e
     # 2 em casa passava sem regressao com media de 2 partidas.
-    _gp_key = 'games_played_home' if is_home else 'games_played_away'
-    games_played = team_data.get(_gp_key)
-    if games_played is None:
-        games_played = team_data.get('games_played')
-    if games_played is not None:
-        try:
-            gp = float(games_played)
-            if gp < 5:
-                # regress = current season weight: 0.0 = 100% league avg, 1.0 = 100% team data
-                regress = gp / 5.0
-                ataque_ponderado = ataque_ponderado * regress + baseline * (1 - regress)
-                logger.info(
-                    f"[lambda-regress] Early season regression: gp={gp}, "
-                    f"regress_weight={regress:.2f}, ataque_adj={ataque_ponderado:.3f}"
-                )
-        except (ValueError, TypeError):
-            pass
+    _gp_ataque = _jogos_do_recorte(team_data, is_home)
+    _peso_ataque = _peso_amostra(_gp_ataque)
+    if _peso_ataque < 1.0:
+        ataque_ponderado = ataque_ponderado * _peso_ataque + baseline * (1 - _peso_ataque)
 
     # 4. FORÇA RELATIVA de ataque — contra o baseline DO LADO (#201)
     ataque_relativo = ataque_ponderado / baseline
@@ -270,7 +296,24 @@ def calcular_lambda_dinamico(
         or baseline
     )
 
+    # #208 - a defesa do adversario passa pelo MESMO encolhimento. Ela e uma media
+    # de amostra igual a do ataque; deixa-la crua era o que permitia a um visitante
+    # com dois jogos sem sofrer gol derrubar a defesa relativa e inflar o lambda do
+    # mandante sem nada segurando.
+    _gp_defesa = _jogos_do_recorte(opponent_data, not is_home)
+    _peso_defesa = _peso_amostra(_gp_defesa)
+    if _peso_defesa < 1.0:
+        def_adversaria = def_adversaria * _peso_defesa + baseline * (1 - _peso_defesa)
+
     defesa_relativa = def_adversaria / baseline if baseline > 0 else 1.0
+
+    if _peso_ataque < 1.0 or _peso_defesa < 1.0:
+        logger.info(
+            f"[#208 encolhimento] jogos ataque={_gp_ataque} peso={_peso_ataque:.2f} | "
+            f"jogos defesa={_gp_defesa} peso={_peso_defesa:.2f} | "
+            f"limiar={JOGOS_AMOSTRA_CHEIA} | ataque={ataque_ponderado:.3f} "
+            f"defesa={def_adversaria:.3f}"
+        )
 
     # Piso para regime hiper-ofensivo
     if regime == 'HIPER-OFENSIVA' and defesa_relativa < FATOR_DEFESA_MIN_HIPER:
