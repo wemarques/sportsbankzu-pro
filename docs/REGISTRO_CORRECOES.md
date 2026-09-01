@@ -9683,3 +9683,22 @@ Parâmetro aceito e não repassado é pior que parâmetro ausente: a API respond
 
 ### Lição aprendida
 `abs()` sobre uma grandeza cujo sinal É a informação apaga exatamente o que se quer medir — e o erro é silencioso, porque a tabela continua bem formada. No mesmo espírito do #189-d: sentinela e valor medido não podem compartilhar representação — `odd_minima` servindo de odd real fez a casa virar o modelo na comparação que existe para separar os dois.
+
+## 197 — Snapshot noturno voltou a gravar + pareamento odds × desfecho no Brier
+**Data:** 2026-09-01 | **Arquivos:** backend/services/brier_service.py, tests/unit/test_brier_regressions_197.py (novo) | **Severidade:** Crítica | **Status:** Corrigido
+
+### Problema identificado
+Duas regressões introduzidas pelos próprios #195/#196, encontradas em red team.
+
+1. **PRODUÇÃO PARADA (regressão do #195).** O cron chama `run_after_audit(audit_date=date_filter)` e `date_filter` é um **rótulo do agendador** ("today"/"yesterday"/"week"), nunca uma data. O #195 passou a injetar esse valor num `DATE("timestamp") = %s`; o Postgres recusa com *invalid input syntax for type date*, o `except` de `_load_picks` engolia a exceção, `calculate_snapshot` devolvia `None` e **`persist_snapshot` nunca rodava**. O `brier_history` parou de crescer desde o deploy, sem nenhum sinal na interface — `/metrics/brier` continua respondendo porque a rota chama sem argumento.
+2. **BOMBA ARMADA PELO #196.** `_segment` fazia `odds = [p["odd"] for p in picks if p.get("odd")]` e depois `_brier([1/o for o in odds], outs[:len(odds)])`: **`odds` filtrado, `outs` não** — os desfechos eram os dos PRIMEIROS `len(odds)` picks, não os dos picks que têm odd. Passava batido porque `book_odd` recebia `odd_minima` e 98,8% dos picks tinham odd (5.844 pareados de 5.915), por isso o delta do `_segment` batia com o do `_with_ci`, que sempre pareou certo. Como o #196 passou a gravar `book_odd` só com odd real (~1/3 fica sem), a partir do próximo batch `brier_implied`, `delta` e `model_beats_house` virariam ruído em **todos** os recortes.
+
+### Correções aplicadas
+- `_normalize_audit_date()`: só aceita data ISO; rótulo devolve `None` (snapshot completo, comportamento anterior ao #195) e loga o motivo. O log de falha de query passa a nomear os parâmetros — era ali que a regressão morria calada.
+- `_segment` pareia odds e desfechos pelos **mesmos** picks; `delta` compara modelo e casa no mesmo conjunto (`brier_model_paired` × `brier_implied`), em vez de modelo-em-tudo contra casa-no-subconjunto. `brier_model` segue reportado sobre o total (é a nota geral do modelo) e `n_paired` fica exposto.
+
+### Testes
+10 novos em `test_brier_regressions_197.py` — **verificado: 9 deles falham contra o código anterior** (só o de data ISO passa, por já existir o comportamento). Suíte: **346 passed**.
+
+### Lição aprendida
+Duas lições, ambas sobre defeito silencioso. Primeira: `except` genérico que devolve `None` num caminho de escrita transforma falha em no-op — o snapshot parou de gravar e nada na interface mudou, porque a rota de leitura não usa o parâmetro quebrado. Fail-safe precisa de log que nomeie o input, ou vira fail-silent. Segunda: uma correção correta (#196, gravar `book_odd` só com odd real) pode **armar** um bug latente — o pareamento errado existia desde sempre e era mascarado por 98,8% de cobertura de odds. Ao mudar a densidade de um dado, revisar quem assume que ele é quase sempre presente.
