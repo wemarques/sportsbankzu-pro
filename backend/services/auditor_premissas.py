@@ -350,6 +350,43 @@ def premissa_manifesto_footystats_em_dia(jogos):
         yield Violacao("manifesto_footystats_em_dia", SEV_MEDIO, "-", "-", linha)
 
 
+def premissa_ligas_do_frontend_resolvem(jogos):
+    """#211 - premissa ESTRUTURAL: todo ID oferecido na tela tem de existir aqui.
+
+    O /fixtures devolvia HTTP 200 com zero jogos para um ID que nao consta do
+    registro - indistinguivel de "nao ha jogos hoje". Isso ja custou duas
+    leituras erradas: 'england-championship', que nunca existiu, foi lido como
+    rodada vazia (0,6s) quando o 'championship' correto trazia 8 jogos em 35s.
+
+    A lista do frontend mistura ID nu ('championship', 'premier-league') com ID
+    prefixado ('england-league-one', 'brazil-serie-a'), entao a simetria que se
+    supoe nao existe. Uma liga nova adicionada a tela com o prefixo errado
+    simplesmente nunca carregaria, sem erro nenhum.
+    """
+    import os
+    import re
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ts = os.path.join(raiz, "frontend", "next", "src", "lib", "leagues.ts")
+    if not os.path.exists(ts):
+        return
+    try:
+        from backend.config.leagues_config import get_league_config
+    except Exception as e:
+        yield Violacao("ligas_do_frontend_resolvem", SEV_MEDIO, "-", "-",
+                       f"registro de ligas indisponivel: {type(e).__name__}: {e}")
+        return
+    with open(ts, encoding="utf-8") as f:
+        ids = re.findall(r'^\s+id: "([a-z0-9-]+)",', f.read(), re.M)
+    for lid in ids:
+        if get_league_config(lid) is None:
+            yield Violacao(
+                "ligas_do_frontend_resolvem", SEV_CRITICO, "-", lid,
+                f"'{lid}' esta em AVAILABLE_LEAGUES e nao resolve no backend; "
+                f"a liga nunca carregaria, e o /fixtures devolveria 200 com zero jogos",
+                "presente em LEAGUES_CONFIG ou LEAGUE_ID_ALIASES", "ausente",
+            )
+
+
 PREMISSAS: List[Callable] = [
     premissa_over_bate_com_lambda,
     premissa_btts_bate_com_lambda,
@@ -361,6 +398,7 @@ PREMISSAS: List[Callable] = [
     premissa_vantagem_de_mando_existe,
     premissa_ev_alto_e_raro,
     premissa_manifesto_footystats_em_dia,
+    premissa_ligas_do_frontend_resolvem,
 ]
 
 

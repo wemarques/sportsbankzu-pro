@@ -154,6 +154,15 @@ def _process_single_league(lid: str, date: str, base: str) -> List[Dict[str, Any
     from backend.config.leagues_config import LEAGUE_ID_ALIASES
 
     league_config = get_league_config(lid)
+    if not league_config:
+        # #211 - ID que nao consta do registro devolvia [] sem log e sem campo
+        # no payload, ficando indistinguivel de "nao ha jogos hoje". Foi assim
+        # que 'england-championship' (que nunca existiu) foi lido como rodada
+        # vazia, e antes dele 'brasileirao-serie-a' custou uma rodada inteira.
+        logger.warning(
+            f"[fixtures][#211] liga desconhecida: '{lid}'. Nao consta de "
+            f"LEAGUES_CONFIG nem de LEAGUE_ID_ALIASES - nenhum jogo sera buscado."
+        )
     # Resolve alias so match IDs always use the canonical league_id (#091)
     lid = LEAGUE_ID_ALIASES.get(lid, lid)
     records: List[Dict[str, Any]] = []
@@ -1442,9 +1451,13 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     base = get_data_dir()
 
     # Single league: process directly (no thread overhead)
+    desconhecidas = [l for l in league_ids if get_league_config(l) is None]   # #211
+
     if len(league_ids) == 1:
         records = _process_single_league(league_ids[0], date, base)
         result: Dict[str, Any] = {"matches": records, "_sources": _summarize_sources(records)}
+        if desconhecidas:
+            result["_ligas_desconhecidas"] = desconhecidas
         if not records:
             _add_api_warnings(result)
         return result
@@ -1471,6 +1484,8 @@ def fixtures(leagues: str = Query(""), date: str = Query("today")) -> Dict[str, 
     out.sort(key=lambda r: (league_order.get(r.get("leagueId", ""), 999), r.get("datetime", "")))
 
     result = {"matches": out, "_sources": _summarize_sources(out)}
+    if desconhecidas:
+        result["_ligas_desconhecidas"] = desconhecidas
     if not out:
         _add_api_warnings(result)
     return result

@@ -46,7 +46,7 @@ def test_rodada_coerente_nao_acusa_nada():
     rel = ap.auditar(rodada)
     assert rel.violacoes == [], [v.linha() for v in rel.violacoes]
     assert rel.ok
-    assert len(rel.premissas_rodadas) == len(ap.PREMISSAS) == 10
+    assert len(rel.premissas_rodadas) == len(ap.PREMISSAS)
 
 
 # ── os defeitos reais ────────────────────────────────────────────────
