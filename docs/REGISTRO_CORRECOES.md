@@ -10227,3 +10227,27 @@ Instrumentar DENTRO do laço, por jogo e por etapa (λ/Poisson, ML dos 20 mercad
 
 ### Lição aprendida
 Medir a fase errada com o instrumento certo dá um número igualmente convincente e igualmente inútil. `START → parallelizing` **é** um intervalo real do CloudWatch — só não é a fase que eu disse que era, porque carrega o cold start junto. O marco tem de nascer dentro do escopo que se quer medir, não num log vizinho que parecia delimitá-lo.
+
+## 213 — 0-0 presumido deixa de ser servido como placar
+**Data:** 2026-09-01 | **Arquivos:** backend/services/fixtures_service.py, backend/services/auditor_premissas.py, tests/unit/test_placar_ao_vivo_falso_213.py (novo) | **Severidade:** Alta (dado exibido como fato) | **Status:** Corrigido
+
+### Problema identificado
+Em 01/09/2026 às 20h20 UTC, com a rodada em andamento, o dashboard exibia **15 de 15 jogos** de Championship e League One como **0-0 aos 80 minutos**, enquanto o `/live-scores` devolvia lista vazia.
+
+Com a média de 2,5 gols do Championship, o λ restante aos 80' é 2,222 e **P(0-0) = 10,8% por jogo**. Para os 15 jogos independentes: **3,3×10⁻¹⁵, ou 1 em 300 trilhões** (verificado). Não era resultado — era falta de dado exibida como fato, e o usuário não tinha como distinguir.
+
+### Causa raiz
+A linha de `league-matches` traz `homeGoalCount=0` **enquanto a partida não termina**; o sistema promove o jogo a `live` pelo relógio (o kickoff passou) e lê aquele zero como placar. Já existia um guard, com o comentário *"Do NOT default live matches to 0-0"* e a lembrança de Lanús × Boca 0-3 exibido como 0-0 — **mas ele só cobre campo AUSENTE.** Com o campo presente valendo 0, não dispara.
+
+### Correção aplicada
+Estreita, e por isso segura: `_placar_promovido` marca quando a promoção a `live` foi **nossa** (o status bruto não dizia `live`). Nesse caso um 0-0 daquela linha não é observação e vira `score=null`. Preservados: placar com gol, 0-0 vindo de fonte que declara `live`, e 0-0 de jogo encerrado.
+
+**O relógio sobrevive** — verificado diretamente: `status: live | score: None | minute: 65`. E o guard antigo dispara logo em seguida (`Live match has no goal data — NOT defaulting to 0-0`), então as duas camadas compõem em vez de competir.
+
+Entra também como **12ª premissa do auditor** (#209): rodada inteira 0-0 depois do minuto 25, com 5+ jogos ao vivo, é **CRÍTICO**. As três chaves que ela lê — `status`, `score`, `minute` — são as que o record produz (`fixtures_service.py:1744-1747`), então dispara em dado de produção e não só no sintético.
+
+### Testes
+9 novos em `test_placar_ao_vivo_falso_213.py` (0-0 promovido vira nulo; gol preservado; 0-0 declarado pela fonte mantido; 0-0 de jogo encerrado mantido; a premissa acusa a rodada zerada, ignora rodada com gol, ignora início de jogo, ignora amostra pequena, está no conjunto padrão). Suíte: **453 passed** (era 444).
+
+### Lição aprendida
+Um guard escrito contra o caso que apareceu na época cobre aquele caso, não o defeito. `None` e `0` chegam pelo mesmo caminho e significam a mesma coisa aqui — "não observei" —, mas só o primeiro tinha sido tratado, e o comentário do guard antigo descrevia exatamente a intenção certa que a condição não implementava. Quando a intenção documentada é mais ampla que a condição, a diferença é um defeito esperando o dado certo.

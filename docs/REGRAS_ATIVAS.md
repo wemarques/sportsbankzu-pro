@@ -815,3 +815,22 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `python3 scripts/verificar_manifesto.py` (exit 0 = de acordo)
 **Verificação:** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
 (exit 1 com violação crítica, 0 sem — serve de gate de CI direto)
+
+### #213 — Placar exibido é observação, nunca preenchimento
+
+**Tipo:** Regra permanente (Live)
+**Relacionado:** #194 (relógio fiel ao feed), #213
+
+1. **Quando a promoção a `live` foi NOSSA** (status bruto não dizia `live`), o
+   placar daquela linha **não é observação** — a FootyStats só preenche
+   `homeGoalCount` quando a partida termina. 0-0 nesse caso vira `score=null`.
+2. **Preservados sempre:** placar com gol, 0-0 vindo de fonte que declara
+   `live`, e 0-0 de jogo encerrado. A correção é estreita de propósito.
+3. **Ausência e zero são o mesmo caso aqui.** Um guard que só trata `None`
+   deixa passar o `0` pelo mesmo caminho — foi exatamente o defeito.
+4. **O relógio não depende do placar.** `score=null` com `minute` preenchido é
+   o estado correto de um jogo em andamento sem dado de gol.
+
+**Verificação:** `pytest tests/unit/test_placar_ao_vivo_falso_213.py -q`
+**Verificação (produção):** rodada inteira 0-0 após o minuto 25 dispara a
+premissa `placar_ao_vivo_e_observado` do auditor (#209) como CRÍTICO.
