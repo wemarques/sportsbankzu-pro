@@ -9842,3 +9842,22 @@ Apontar `PY_BACKEND_URL` para a Function URL (`*.lambda-url.*.on.aws`) nas vari�
 
 ### Lição aprendida
 Regra de infraestrutura sem guarda executável é regra que regride: o #114 resolveu isso em abril, ficou registrado só no índice, e a configuração voltou ao estado ruim sem nada acusar. Toda decisão de infra que pode ser desfeita por um campo de painel precisa de um detector no código — e o detector tem de aparecer no caminho do erro, não só num log de boot que ninguém lê. Corolário: mensagem de erro genérica ("cold start") aplicada a um sintoma determinístico (503 em exatamente 30s) é pior que nenhuma mensagem, porque direciona a investigação para o lugar errado.
+
+## 204 — LOG_LEVEL_MODELOS: os módulos de modelo estavam mudos no CloudWatch
+**Data:** 2026-09-01 | **Arquivos:** backend/main.py, tests/unit/test_log_modelos_204.py (novo) | **Severidade:** Média (observabilidade) | **Status:** Implementado
+
+### Problema identificado
+12 módulos usam `getLogger(__name__)`, o que os coloca na árvore `backend.*` e não em `sportsbankzu`. O #164 elevou o nível **apenas do namespace próprio** — deliberadamente, para manter boto3/urllib3/mangum fora do CloudWatch —, então esses 12 herdam o root da Lambda, que fica em WARNING: **todo `logger.info` deles é descartado**.
+
+Foi exatamente por isso que a linha `Base Lado:` do `lambda_calculator` nunca apareceu quando fomos verificar o #201: o log não estava errado, estava mudo. Custou várias rodadas de investigação — inclusive tentativas de gerar tráfego e ajustar janela de busca — atrás de uma linha que nunca teria saído.
+
+### Correção aplicada
+Uma linha em `main.py` cobrindo a árvore inteira, em vez de renomear o logger em 12 arquivos: `logging.getLogger("backend").setLevel(_LOG_LEVEL_MODELOS)`.
+
+**Default WARNING** — comportamento idêntico ao de hoje, custo zero. Para investigação pontual, `LOG_LEVEL_MODELOS=INFO` liga a árvore (~20 linhas por jogo no pipeline de modelo) e depois volta. Opt-in em vez de permanente porque `/fixtures` já opera perto do teto de tempo.
+
+### Testes
+4 novos em `test_log_modelos_204.py` (default não muda nada; env liga a árvore e o módulo filho herda; não afeta o namespace próprio; `lambda_calculator` está mesmo em `backend.*`). Suíte `tests/unit/`: **382 passed**.
+
+### Lição aprendida
+Configuração de logging por namespace é um contrato implícito: quem escreve `getLogger(__name__)` num projeto que eleva só `sportsbankzu` está criando um log invisível sem saber. O #164 documentou a decisão mas não a impôs, e o custo apareceu meses depois, na forma de uma verificação que não podia funcionar. Vale a pergunta antes de confiar num log para validar um fix: *esta linha chega mesmo ao CloudWatch?*
