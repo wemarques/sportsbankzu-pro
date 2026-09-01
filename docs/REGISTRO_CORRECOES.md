@@ -9790,3 +9790,31 @@ Combinação de duas mudanças da mesma série. O **#197** fez `audit_date` filt
 
 ### Lição aprendida
 Terceiro defeito seguido nascido do mesmo parâmetro (`audit_date`): #197 porque o cron manda rótulo, #202 porque às vezes manda data. Um parâmetro cujo significado muda conforme o chamador é armadilha — o correto seria o cron nunca passar recorte para uma função que alimenta tabela cumulativa. E o #199 amplificou: cache de leitura herda silenciosamente qualquer defeito do que foi gravado, então erro de escrita vira erro de exibição sem etapa intermediária que denuncie.
+
+## 200 — Retreino automático de calibradores desligado: fonte com vazamento
+**Data:** 2026-09-01 | **Arquivos:** backend/cron_handler.py, tests/unit/test_stop_leaked_training_200.py (novo) | **Severidade:** Crítica (Sev 1) | **Status:** Corrigido (mitigação; causa raiz pendente)
+
+### Problema identificado
+`retrain_all_calibrators()` aprende a curva de calibração a partir de `audit_results`, que guarda o prognóstico **recomputado depois do jogo**, não o publicado. Picks que erram **trocam de lado no recomputo e somem da amostra**; os que acertam permanecem — a curva aprende com um passado que nunca existiu.
+
+Comprovado empiricamente: **Lecce × Roma (0-4)** publicou "Under 2.5" e recomputou "Over 2.5"; **Atalanta × Bologna (1-0)** publicou "Escanteios Over 10.5" e recomputou "Under 8.5".
+
+O agravante é onde a curva desemboca: não fica no diagnóstico — entra em produção por `calibrate_prob()`, **antes da classificação e do cálculo de EV**. E rodava a cada auditoria, silenciosamente.
+
+### Correção aplicada (mitigação)
+Os dois caminhos de retreino passam por `_calibrator_retrain_enabled()`, que só abre com `CRON_AUTO_RETRAIN_CALIBRATORS=1` explícito:
+- **Pós-batch:** desligado por padrão, com WARNING no CloudWatch.
+- **Semanal** (`action: retrain_calibrators`, segunda 04:00 UTC): retorna `status: skipped`, e aceita `{"force": true}` no evento para uma execução deliberada sem mexer em variável de ambiente.
+
+O resultado do batch passa a expor `calibrator_retrain_status` — o estado vira linha de log em vez de silêncio.
+
+### O que esta correção NÃO faz
+O gate impede que **novo** dado vazado entre. Ele **não desfaz os `.pkl` já treinados** em `$DATA_ROOT/.calibrators`, que continuam sendo lidos por `calibrate_prob()` normalmente. Decisão pendente: medir o impacto dos calibradores existentes antes de eventual quarentena — jogá-los fora agora destruiria a linha de base de comparação. Com o retreino parado, **o conjunto está congelado e não muda mais debaixo da medição**; isso torna a decisão menos urgente, não menos necessária.
+
+**Causa raiz pendente:** enquanto `audit_results` guardar prognóstico recomputado em vez do publicado, o retreino continua sem fonte confiável. A saída estrutural é o ledger de picks publicados (o #192 fez isso no cliente; falta o equivalente server-side, evolução natural sobre o audit_log do #188).
+
+### Testes
+6 novos em `test_stop_leaked_training_200.py` (gate fechado por padrão, aceita só valores explícitos, semanal pulado/forçado/habilitado, dispatch repassa `force`). Suíte: **378 passed**.
+
+### Lição aprendida
+Recomputar o prognóstico depois do jogo e chamar isso de histórico é o vazamento em estado puro: o passado passa a ser função do resultado. Foi o mesmo defeito que o #192 corrigiu na exibição — a diferença é que ali o usuário via o prognóstico mudar, e aqui ele alimentava o modelo em silêncio. Todo consumidor de "histórico" precisa saber se lê o que foi **publicado** ou o que foi **recalculado**.
