@@ -35,7 +35,8 @@ Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
 | Rota correta | Errado |
 |---|---|
 | `/health` | `/api/health` (404) |
-| `/api/fixtures/...` | |
+| `/fixtures` | `/api/fixtures` (404) |
+| `/live-scores`, `/standings` | `/api/...` (404) |
 | `/api/backtesting/...` | |
 | `POST /api/backtesting/calibrate?league=X` | `?league_id=X` |
 | `/api/backtesting/calibration-status` | |

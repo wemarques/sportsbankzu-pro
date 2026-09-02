@@ -11,10 +11,15 @@ saida, e por isso pode rodar antes da bola rolar.
 """
 import argparse
 import json
+import os
 import sys
 import urllib.request
 
-sys.path.insert(0, __file__.rsplit("/scripts/", 1)[0])
+# #220 - o rsplit("/scripts/") nao casa com barra invertida: no Windows o
+# sys.path recebia o caminho do ARQUIVO e o import de `backend` falhava.
+# O #216 corrigiu comparar_ancora.py e verificar_manifesto.py e passou
+# por este. dirname duas vezes funciona nos dois sistemas.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.services.auditor_premissas import auditar, SEV_CRITICO  # noqa: E402
 

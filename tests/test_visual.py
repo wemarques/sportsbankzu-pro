@@ -11,7 +11,16 @@ _skip = not os.path.exists(_secrets_path) or not os.path.exists(_config_path)
 
 pytestmark = pytest.mark.skipif(_skip, reason="Requer .streamlit/secrets.toml + config.yaml (indisponivel no CI)")
 
-from streamlit.testing.v1 import AppTest
+# #220: `pytestmark = skipif` NAO impede o import do modulo — a coleta
+# importa o arquivo antes de olhar as marcas. Com streamlit ausente (a
+# interface saiu do projeto), o ModuleNotFoundError aqui derrubava a coleta
+# da arvore tests/ INTEIRA: `pytest tests/` terminava em erro sem rodar um
+# teste sequer. importorskip pula no lugar de explodir.
+#
+# Apagar o arquivo continua sendo a decisao certa se a interface Streamlit
+# nao for voltar — mas isso e escolha de produto, e desbloquear a suite nao
+# pode depender dela.
+AppTest = pytest.importorskip("streamlit.testing.v1", reason="streamlit descontinuado no projeto").AppTest
 
 
 def test_app_loads():
