@@ -279,6 +279,8 @@ from backend.services.data_governance import (
     calculate_data_quality_score,
     detect_early_season,
     check_odds_availability,
+    season_data_state,                    # #217
+    ESTADO_TEMPORADA_DESCONHECIDO,        # #217
 )
 
 logger = logging.getLogger("sportsbankzu.ev_classification")
@@ -474,6 +476,86 @@ def _get_thresholds(market_category: str, league_id: str | None = None) -> Dict[
         pass
 
     return base
+
+
+# ── #217: o veto do motor de escanteios ganha um consumidor ─────────────
+# `predict_corners` marca `decision["no_bet"]` em quatro situacoes
+# (insufficient_data, h2h_avg_corners, league_avg_corners, restricted_market)
+# e ate agora NENHUM leitor existia: um `grep no_bet` em ev_classification
+# devolvia zero. O classificador lia `operationalState` como metadado e
+# publicava o pick assim mesmo — foi o que colocou no ar Preston e Sheffield
+# com EV +31,3% e +34,7% carregando RESTRICTED e dataQualityTier LOW.
+# Mesma familia do #189-f: extracao correta, consumo ausente.
+#
+# O pick vetado NAO desaparece: vira NO_BET com reason code visivel, senao a
+# linha some do dashboard e ninguem consegue auditar quantos foram vetados.
+_VETOS_DA_FAMILIA = {"insufficient_data", "restricted_market"}
+
+
+def _linha_e_lado_do_rotulo(selection: str):
+    """'Corners Over 9.5' -> (9.5, 'OVER'). Devolve (None, None) se nao casar."""
+    partes = (selection or "").split()
+    if len(partes) < 3:
+        return None, None
+    lado = partes[-2].upper()
+    try:
+        linha = float(partes[-1])
+    except (TypeError, ValueError):
+        return None, None
+    return linha, (lado if lado in ("OVER", "UNDER") else None)
+
+
+def aplicar_veto_do_motor_de_escanteios(markets, governed_corners) -> int:
+    """#217 - rebaixa a NO_BET todo pick de escanteio que o motor vetou.
+
+    Devolve quantos picks foram vetados (para o log e para o ledger do #218).
+    """
+    if not isinstance(governed_corners, dict):
+        return 0
+    decision = governed_corners.get("decision") or {}
+    if not decision.get("no_bet"):
+        return 0
+
+    motivo = str(decision.get("no_bet_reason") or "no_bet")
+    codigos = [str(c) for c in (decision.get("reason_codes") or [])]
+    estado = decision.get("governance_state")
+
+    # Veto da familia inteira x veto de uma linha/lado especifico.
+    familia = motivo in _VETOS_DA_FAMILIA
+    linha_vetada = decision.get("line")
+    lado_vetado = (decision.get("side") or "").upper() or None
+
+    vetados = 0
+    for m in markets:
+        if (getattr(m, "market_type", "") or "") != "Corners":
+            continue
+        if not familia:
+            linha, lado = _linha_e_lado_do_rotulo(getattr(m, "selection", ""))
+            if linha is None or linha_vetada is None:
+                continue
+            if abs(linha - float(linha_vetada)) > 1e-9:
+                continue
+            if lado_vetado and lado != lado_vetado:
+                continue
+        m.classification = MarketClassification.NO_BET
+        if ReasonCode.CORNER_ENGINE_NO_BET not in m.reason_codes:
+            m.reason_codes.append(ReasonCode.CORNER_ENGINE_NO_BET)
+        m.corner_veto = {
+            "noBet": True,
+            "reason": motivo,
+            "engineReasonCodes": codigos,
+            "governanceState": estado,
+            "scope": "family" if familia else "line",
+        }
+        vetados += 1
+
+    if vetados:
+        logger.info(
+            "[#217] motor de escanteios vetou %d pick(s): motivo=%s escopo=%s "
+            "governanca=%s codigos=%s",
+            vetados, motivo, "familia" if familia else "linha", estado, codigos,
+        )
+    return vetados
 
 
 def classify_market(
@@ -779,6 +861,7 @@ def evaluate_match_markets(
     # ─── Data quality ───
     quality = calculate_data_quality_score(stats, odds, league_stats)
     early_season = detect_early_season(league_stats)
+    _estado_temporada = season_data_state(league_stats)  # #217
 
     # ─── Derive probabilities from Poisson matrix when lambdas available ───
     lambda_home = stats.get("lambdaHome")
@@ -1412,6 +1495,15 @@ def evaluate_match_markets(
 
     except Exception as e:
         logger.debug(f"[cards] Card market evaluation failed: {e}")
+
+    # ─── #217: veto do motor de escanteios (antes de qualquer outro gate) ───
+    aplicar_veto_do_motor_de_escanteios(markets, governed_corners)
+
+    # ─── #217: ausencia de contagem de jogos sai rotulada como tal ───
+    if _estado_temporada == ESTADO_TEMPORADA_DESCONHECIDO:
+        for m in markets:
+            if ReasonCode.DATA_MISSING not in m.reason_codes:
+                m.reason_codes.append(ReasonCode.DATA_MISSING)
 
     # ─── Apply early season penalty ───
     if early_season:

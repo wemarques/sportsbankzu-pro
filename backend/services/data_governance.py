@@ -9,6 +9,7 @@ Responsibilities:
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger("sportsbankzu.governance")
@@ -81,19 +82,69 @@ def calculate_data_quality_score(
     return round(min(1.0, max(0.0, normalized)), 3)
 
 
+# #217: "nao sei quantos jogos foram" e "foram poucos jogos" sao estados
+# diferentes e ate agora eram o mesmo. O `mp is None -> True` fazia o
+# EARLY_SEASON_FALLBACK disparar na rodada 24 nao porque a contagem era
+# baixa, mas porque o campo nao chegava. E a mesma forma que o #208
+# corrigiu no lambda: ausencia de informacao nao e informacao de ausencia.
+#
+# A mudanca aqui e de ROTULO, nao de numero: por padrao o estado
+# desconhecido continua contando como inicio de temporada, para nao mexer
+# no corte de stake de um site em producao sem medicao. Ligar
+# EARLY_SEASON_REQUIRES_COUNT=1 faz o desconhecido parar de encolher a
+# aposta - so depois que o ledger (#218) tiver linhas para comparar.
+ESTADO_TEMPORADA_OK = "OK"
+ESTADO_TEMPORADA_INICIO = "EARLY"
+ESTADO_TEMPORADA_DESCONHECIDO = "UNKNOWN"
+
+
+def _exige_contagem_explicita() -> bool:
+    return os.getenv("EARLY_SEASON_REQUIRES_COUNT", "0").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+
+
+def _jogos_disputados(
+    league_stats: Optional[Dict[str, Any]] = None,
+    matches_played: Optional[int] = None,
+) -> Optional[int]:
+    mp = matches_played
+    if mp is None and league_stats:
+        mp = league_stats.get("matchesCompleted") or league_stats.get("matches_played")
+    if mp is None:
+        return None
+    try:
+        return int(mp)
+    except (TypeError, ValueError):
+        return None
+
+
+def season_data_state(
+    league_stats: Optional[Dict[str, Any]] = None,
+    matches_played: Optional[int] = None,
+) -> str:
+    """#217 - qual dos tres estados a liga esta, sem colapsar dois deles."""
+    mp = _jogos_disputados(league_stats, matches_played)
+    if mp is None:
+        return ESTADO_TEMPORADA_DESCONHECIDO
+    return ESTADO_TEMPORADA_INICIO if mp < MIN_MATCHES_RELIABLE else ESTADO_TEMPORADA_OK
+
+
 def detect_early_season(
     league_stats: Optional[Dict[str, Any]] = None,
     matches_played: Optional[int] = None,
 ) -> bool:
-    """Detect if we're in early season with insufficient data."""
-    mp = matches_played
-    if mp is None and league_stats:
-        mp = league_stats.get("matchesCompleted") or league_stats.get("matches_played")
+    """Detect if we're in early season with insufficient data.
 
-    if mp is None:
-        return True  # No data = treat as early season
-
-    return int(mp) < MIN_MATCHES_RELIABLE
+    #217: o estado DESCONHECIDO continua respondendo True por padrao (nenhuma
+    mudanca de numero em producao) e passa a responder False quando
+    EARLY_SEASON_REQUIRES_COUNT=1. Quem precisa saber QUAL dos dois motivos
+    chama `season_data_state`.
+    """
+    estado = season_data_state(league_stats, matches_played)
+    if estado == ESTADO_TEMPORADA_DESCONHECIDO:
+        return not _exige_contagem_explicita()
+    return estado == ESTADO_TEMPORADA_INICIO
 
 
 def check_odds_availability(

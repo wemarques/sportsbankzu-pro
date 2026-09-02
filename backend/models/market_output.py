@@ -41,6 +41,8 @@ class ReasonCode(str, Enum):
     DIRECTION_NATURAL_MATCH = "DIRECTION_NATURAL_MATCH"  # #126
     DIRECTION_NATURAL_NO_EV = "DIRECTION_NATURAL_NO_EV"  # #130: direction OK but EV < 0
     EV_FLOOR_DROP = "EV_FLOOR_DROP"  # #165: EV < 1% is statistical noise, not edge
+    CORNER_ENGINE_NO_BET = "CORNER_ENGINE_NO_BET"  # #217: o motor de escanteios vetou a linha
+    DATA_MISSING = "DATA_MISSING"  # #217: contagem de jogos ausente (nao e inicio de temporada)
 
 
 class MarketOutput(BaseModel):
@@ -94,6 +96,14 @@ class MarketOutput(BaseModel):
         validation_alias=AliasChoices("corner_governance", "_corner_governance"),
     )
 
+    # #217: veto do motor de escanteios. Fica no payload para o pick vetado
+    # continuar visivel e auditavel no dashboard em vez de sumir em silencio.
+    corner_veto: Optional[dict] = Field(
+        None,
+        exclude=True,
+        validation_alias=AliasChoices("corner_veto", "_corner_veto"),
+    )
+
     def compute_display(self) -> None:
         """Compute display helpers from probabilities."""
         prob = self.calibrated_probability or self.raw_probability
@@ -141,6 +151,8 @@ class MarketOutput(BaseModel):
         # Add corner governance metadata if available
         if self.corner_governance:
             result["corner_governance"] = self.corner_governance
+        if self.corner_veto:                     # #217
+            result["corner_veto"] = self.corner_veto
         return result
 
     def _legacy_status(self) -> str:
