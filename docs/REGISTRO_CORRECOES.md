@@ -10373,3 +10373,40 @@ Under 2.5 gols              0.6982  0.6982  0.6374  meia
 
 ### Lição aprendida
 Quatro hipóteses caíram neste sistema em dois dias — cache de SQLite (#206), throttle de API (#207), pré-build (#212) e agora calibrador (#215) — e as quatro pelo mesmo motivo: **a medida agregava dois efeitos e foi lida como se medisse um.** O padrão não é falta de rigor na conclusão; é instrumento de granularidade menor que a pergunta. Antes de atribuir causa, verificar se o número consegue distinguir as causas candidatas — se não consegue, o passo seguinte é o instrumento, não a conclusão.
+
+## 216 (adendo) — A leitura em produção: os `.pkl` do #200 estão inertes
+**Data:** 2026-09-02 | **Arquivos:** (nenhum — leitura) | **Severidade:** — | **Status:** Medido — fecha a pergunta aberta do #200
+
+### O veredito
+25 linhas em produção (championship, league-one, Brasileirão B), pós-deploy do #216:
+
+```
+crua       vies  -8.9pp | erro absoluto medio 16.8pp | n=25
+isotonica  vies  -8.9pp | erro absoluto medio 16.8pp | n=25
+calibrada  vies -20.7pp | erro absoluto medio 24.4pp | n=25
+banda de deflacao: inteira=25
+
+=> o isotonico esta INERTE nas 25 linhas (iso == crua)
+```
+
+**`iso` é idêntico a `crua` dígito a dígito nas 25 linhas.** Os `.pkl` que o #200 congelou **não estão agindo sobre nenhuma probabilidade publicada**. A decisão de quarentena que estava pendente desde o #200 **não tem objeto**: não há o que quarentenar. O gate do #200 continua valendo como **prevenção** — impede que dado vazado volte a treinar —, mas o conjunto existente é inerte, não nocivo.
+
+### A previsão do #216 se confirmou
+O #216 foi escrito a partir da leitura anterior, argumentando que um ajuste afim com r≈0,997 não podia ser obra de um isotônico. A nova leitura, agora com o passo separado:
+
+| | previsto no #216 | medido em produção |
+|---|---|---|
+| ajuste | `calibrada = 29,0 + 0,411 × crua` | **`29,2 + 0,408 × crua`** |
+| r | 0,997 | **0,9974** |
+
+Os **−20,7pp de viés são inteiramente a deflação #105**, que é projetada para deflacionar (proibição #11: EV usa prob deflacionada).
+
+### Duas ressalvas que limitam o alcance desta leitura
+1. **As 25 linhas são todas de banda inteira** (`inteira=25`) — só cartões e escanteios. Gols e BTTS levam meia banda e **não têm âncora empírica** nesta comparação. O que foi medido é o regime de corte maior, não o sistema inteiro.
+2. **A âncora continua frágil:** média 78,2%, mediana 87,5%, e **15 das 25 linhas em 87,5% ou 100%** — 7/8 e 8/8 sobre ~4 jogos por time. Com a régua enviesada para cima por amostra pequena, o viés de −8,9pp da crua é o que se espera de qualquer previsor razoável, **não evidência de que a crua erre para baixo**.
+
+### O que NÃO se conclui daqui
+**Nada sobre o tamanho da banda inteira.** Um viés de −20,7pp na família que alimenta o EV é grande, mas mexer nele é mudança de threshold, e as proibições #2 e #7 exigem auditoria. Uma âncora de n≈4 por time não é auditoria. O caminho é acumular a comparação por algumas rodadas — com temporada avançando, a âncora ganha n e a régua para de ser o fator limitante.
+
+### Lição aprendida
+Uma pergunta aberta por dois dias ("os `.pkl` vazados ajudam ou atrapalham?") tinha resposta "nenhum dos dois", e nenhuma quantidade de raciocínio sobre a saída agregada chegaria lá — porque o efeito procurado era **exatamente zero** e estava somado a um efeito grande de outra origem. Instrumento que não separa causas não distingue "não é isso" de "é isso e algo mais": as duas hipóteses produzem o mesmo número.
