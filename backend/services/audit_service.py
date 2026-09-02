@@ -24,6 +24,18 @@ def log_pick_service(
     brier_score = None
     if actual_result and actual_result in predicted_probs:
         brier_score = calculate_brier(float(predicted_probs.get(actual_result, 0.0)), True)
+    # ATENCAO (#218): `INSERT OR REPLACE` e a origem mecanica do vazamento
+    # temporal que o #200 teve de conter com um gate. Cada reprocessamento
+    # pos-jogo sobrescreve a linha, entao `audit_results` guarda o prognostico
+    # RECOMPUTADO com o placar ja conhecido — nao o que foi publicado antes.
+    # Treinar calibrador nisso e aprender com dados do futuro.
+    #
+    # A semantica NAO muda aqui de proposito: varios leitores (backtesting,
+    # brier_service, audit_status) esperam uma linha por (jogo, mercado) e
+    # troca-la agora quebraria as telas sem que ninguem tivesse medido nada.
+    # A fonte limpa e `prediction_ledger` (#218), append-only, escrita no
+    # momento da publicacao. Quando o ledger tiver rodadas suficientes, esta
+    # tabela vira historico e este INSERT OR REPLACE sai.
     cursor.execute(
         """
         INSERT OR REPLACE INTO audit_results

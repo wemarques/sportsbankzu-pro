@@ -1608,6 +1608,19 @@ def evaluate_match_markets(
     if early_season:
         bundle.reason_codes.append(ReasonCode.EARLY_SEASON_FALLBACK)
 
+    # ─── #218: ledger imutavel. So observa, nunca decide. ───
+    # Desligado por padrao (PREDICTION_LEDGER_ENABLED=0) e falha aberto: se a
+    # escrita quebrar, o pedido segue. E o unico registro do que o sistema
+    # publicou ANTES do jogo — `audit_results` guarda o recomputado depois.
+    try:
+        from backend.services.prediction_ledger import (
+            ledger_habilitado, linhas_do_bundle, registrar,
+        )
+        if ledger_habilitado():
+            registrar(linhas_do_bundle(bundle, match_data, stats))
+    except Exception as _e:                                   # noqa: BLE001
+        logger.debug("[#218] ledger nao registrou: %s", _e)
+
     return bundle
 
 
