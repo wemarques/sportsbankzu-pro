@@ -69,6 +69,19 @@ class MarketOutput(BaseModel):
     odds_available: bool = Field(False, description="Whether real book odds were found")
     source_flags: List[str] = Field(default_factory=list, description="e.g. ['footystats', 'api_football']")
 
+    # #216 - separacao entre calibrador e deflacao.
+    # `calibrated_probability` e o PRODUTO de dois passos: o isotonico
+    # (`calibrate_prob`, os .pkl do #200) e a deflacao progressiva por bandas
+    # (#105). Medir so o produto nao responde a pergunta do #200 - foi o que a
+    # primeira leitura do #215 mostrou, com a compressao inteira parecendo obra
+    # do calibrador quando o `calib_iso` do log estava identico ao raw.
+    iso_probability: Optional[float] = Field(
+        None, description="#216: probabilidade DEPOIS do isotonico e ANTES da deflacao"
+    )
+    deflation_band_type: Optional[str] = Field(
+        None, description="#216: 'inteira' | 'meia' | 'meia-btts' | 'nenhuma'"
+    )
+
     # Display helpers
     display_label: str = ""
     prob_min_pct: int = 0
@@ -120,6 +133,10 @@ class MarketOutput(BaseModel):
             "book_odd": self.book_odd,
             "calibrated_probability": round(self.calibrated_probability, 4) if self.calibrated_probability else None,
             "raw_probability": round(self.raw_probability, 4) if self.raw_probability else None,
+            # #216: os dois passos separados, para o comparador do #215 poder
+            # dizer QUAL deles afasta da ancora empirica.
+            "iso_probability": round(self.iso_probability, 4) if self.iso_probability else None,
+            "banda": self.deflation_band_type,
         }
         # Add corner governance metadata if available
         if self.corner_governance:

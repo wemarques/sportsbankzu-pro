@@ -11,10 +11,14 @@ medida, nao com opiniao.
 """
 import argparse
 import json
+import os
 import sys
 import urllib.request
 
-sys.path.insert(0, __file__.rsplit("/scripts/", 1)[0])
+# #216 - `__file__.rsplit("/scripts/")` nao casa com barra invertida, entao no
+# Windows o sys.path recebia o caminho do ARQUIVO em vez da raiz do repo e o
+# import de `backend` falhava. dirname duas vezes funciona nos dois sistemas.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.services.comparador_ancora import comparar  # noqa: E402
 
@@ -44,6 +48,8 @@ def main():
     c = comparar(jogos)
     if a.json:
         print(json.dumps({"resumo": c.resumo(), "veredito": c.veredito(),
+                          "veredito_isotonico": c.veredito_isotonico(),
+                          "por_banda": c.por_banda(),
                           "linhas": [vars(l) for l in c.linhas]},
                          ensure_ascii=False, indent=2, default=str))
         return 0
@@ -52,12 +58,16 @@ def main():
         print("  " + l.linha())
     r = c.resumo()
     print(f"\n{r['linhas']} linhas comparadas ({r['sem_ancora']} mercados sem ancora empirica)")
-    for nome in ("crua", "calibrada"):
-        b = r[nome]
+    bandas = c.por_banda()
+    if bandas:
+        print("  banda de deflacao: " + ", ".join(f"{k}={v}" for k, v in bandas.items()))
+    for nome in ("crua", "isotonica", "calibrada"):
+        b = r.get(nome)
         if b:
             print(f"  {nome:<10} vies medio {b['vies_medio']:+6.1f}pp | "
                   f"erro absoluto medio {b['erro_absoluto_medio']:5.1f}pp | n={b['n']}")
     print(f"\n=> {c.veredito()}")
+    print(f"=> {c.veredito_isotonico()}")
     return 0
 
 

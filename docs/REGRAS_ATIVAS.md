@@ -397,7 +397,7 @@ v2 poderá usar EV ou (book_odd - fair_odd) como peso.
 
 Under-2.5 extra ×0.90 (#113) redundante quando `_DEFAULT_OU_DEFLATION < 1.0` (#156) ou `league_id in _LEAGUE_DEFLATION`.
 Gate em `_calibrate_and_deflate()`: penalty só aplica no path legado sem deflação lambda.
-5 hooks de diagnóstico: GOLS-TRACE, GOLS-CLASSIFY, FLOOR-DROP, CORRIDOR-DROPPED, V2-BUNDLES.
+6 hooks de diagnóstico: GOLS-TRACE, **CALIB-TRACE (#216)**, GOLS-CLASSIFY, FLOOR-DROP, CORRIDOR-DROPPED, V2-BUNDLES. O #216 estendeu o trace às famílias que não tinham nenhum (1X2, Double Chance, escanteios, cartões) — justamente as que levam banda **inteira**. Os dois prefixos carregam `calib_iso=` e `tipo=`, então **`grep calib_iso` cobre todas as famílias**.
 Kill switch: se Lambda Error > 1.0, revisitar.
 
 **Verificação:** `grep -n "extra_under_applied\|GOLS-TRACE" backend/services/ev_classification.py`
@@ -834,3 +834,29 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
 **Verificação:** `pytest tests/unit/test_placar_ao_vivo_falso_213.py -q`
 **Verificação (produção):** rodada inteira 0-0 após o minuto 25 dispara a
 premissa `placar_ao_vivo_e_observado` do auditor (#209) como CRÍTICO.
+
+### #216 — Isotônico e deflação são passos distintos e devem ser medidos separados
+
+**Tipo:** Regra permanente (Calibração / QA)
+**Relacionado:** #105 (deflação por nós), #106 (proibição #11), #200 (`.pkl` vazados), #215 (âncora)
+
+1. **`calibrated_probability` é o PRODUTO de dois passos:** `calibrate_prob()`
+   (o isotônico, os `.pkl` que o #200 congelou) **e** a deflação progressiva por
+   bandas (#105) mais o fator por liga. Medir só o produto atribui a um o que é
+   do outro — quase aconteceu na primeira leitura do #215.
+2. **`iso_probability` e `banda` viajam no payload** (`to_legacy_mercado`), e o
+   comparador do #215 reporta os dois. **Não remover:** sem eles a pergunta do
+   #200 volta a ser inrespondível.
+3. **A prob deflacionada é deliberadamente conservadora** (proibição #11: EV usa
+   deflacionada). Compará-la com frequência empírica e concluir "calibra pior" é
+   erro de categoria — a comparação válida contra a âncora é a **isotônica**.
+4. **`iso == raw` significa calibrador INERTE**, não calibrador bom. Nesse caso
+   a discussão de quarentena dos `.pkl` perde o objeto.
+5. **Todo mercado deixa rastro.** Antes do #216, 1X2, Double Chance, escanteios
+   e cartões passavam pelo mesmo caminho sem log — e são exatamente os que levam
+   banda **inteira**, o corte maior (medido: `Cartoes Over 1.5` 0,8767 → 0,6575).
+
+**Verificação:** `pytest tests/unit/test_separacao_calibrador_216.py -q`
+**Verificação (produção):** `--filter-pattern calib_iso` no CloudWatch cobre as
+duas famílias de prefixo; `python scripts/comparar_ancora.py` imprime o veredito
+do isotônico separado do veredito do produto.

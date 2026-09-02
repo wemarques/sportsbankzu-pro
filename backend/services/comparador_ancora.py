@@ -44,20 +44,42 @@ class Linha:
     empirico: float      # 0-100
     crua: Optional[float]
     calibrada: Optional[float]
+    # #216 - o passo do meio. `calibrada` sempre foi isotonico X deflacao (#105);
+    # sem separar os dois, a compressao de um era lida como obra do outro.
+    iso: Optional[float] = None
+    banda: Optional[str] = None      # 'inteira' | 'meia' | 'meia-btts'
 
     @property
     def erro_cru(self) -> Optional[float]:
         return None if self.crua is None else self.crua - self.empirico
 
     @property
+    def erro_iso(self) -> Optional[float]:
+        return None if self.iso is None else self.iso - self.empirico
+
+    @property
     def erro_calibrado(self) -> Optional[float]:
         return None if self.calibrada is None else self.calibrada - self.empirico
 
+    @property
+    def isotonico_inerte(self) -> Optional[bool]:
+        """#216 - o isotonico mexeu nesta linha? None quando nao ha dado.
+
+        Se for True em todas as linhas, os .pkl que o #200 congelou nao estao
+        agindo, e a discussao de quarentena perde o objeto: o que comprime a
+        saida e a deflacao do #105, que e projetada para isso.
+        """
+        if self.iso is None or self.crua is None:
+            return None
+        return abs(self.iso - self.crua) < 0.05      # <0,05pp = nao mexeu
+
     def linha(self) -> str:
-        c = "  -  " if self.crua is None else f"{self.crua:5.1f}%"
-        k = "  -  " if self.calibrada is None else f"{self.calibrada:5.1f}%"
-        return (f"{self.jogo[:34]:<34} {self.mercado[:24]:<24} "
-                f"emp={self.empirico:5.1f}%  crua={c}  calib={k}")
+        def pct(v):
+            return "  -  " if v is None else f"{v:5.1f}%"
+        b = f" [{self.banda}]" if self.banda else ""
+        return (f"{self.jogo[:30]:<30} {self.mercado[:22]:<22} "
+                f"emp={self.empirico:5.1f}%  crua={pct(self.crua)}  "
+                f"iso={pct(self.iso)}  calib={pct(self.calibrada)}{b}")
 
 
 @dataclass
@@ -79,8 +101,35 @@ class Comparacao:
                 "erro_absoluto_medio": round(statistics.mean(abs(x) for x in v), 1),
                 "mediana": round(statistics.median(v), 1),
             }
+        iso = self._erros("erro_iso")
         return {"linhas": len(self.linhas), "sem_ancora": self.sem_ancora,
-                "crua": bloco(cru), "calibrada": bloco(cal)}
+                "crua": bloco(cru), "isotonica": bloco(iso), "calibrada": bloco(cal)}
+
+    def veredito_isotonico(self) -> str:
+        """#216 - responde a pergunta do #200: os .pkl agem, e para que lado?"""
+        marcas = [l.isotonico_inerte for l in self.linhas if l.isotonico_inerte is not None]
+        if not marcas:
+            return ("sem dado de isotonico nas linhas — payload anterior ao #216, "
+                    "ou nenhum mercado trouxe iso_probability")
+        inertes = sum(1 for m in marcas if m)
+        if inertes == len(marcas):
+            return (f"o isotonico esta INERTE nas {len(marcas)} linhas (iso == crua). "
+                    f"Os .pkl congelados pelo #200 nao estao agindo: o que afasta da "
+                    f"ancora e a deflacao do #105, que existe para isso (proibicao #11)")
+        r = self.resumo()
+        if not r["crua"] or not r["isotonica"]:
+            return "amostra insuficiente para veredito sobre o isotonico"
+        c, i = r["crua"]["erro_absoluto_medio"], r["isotonica"]["erro_absoluto_medio"]
+        lado = "APROXIMA" if i < c else ("AFASTA" if i > c else "empata com")
+        return (f"o isotonico agiu em {len(marcas) - inertes} de {len(marcas)} linhas e "
+                f"{lado} da ancora ({i:.1f}pp contra {c:.1f}pp da crua)")
+
+    def por_banda(self) -> Dict[str, int]:
+        """#216 - quantas linhas levaram banda inteira, meia ou meia-btts."""
+        out: Dict[str, int] = {}
+        for l in self.linhas:
+            out[l.banda or "desconhecida"] = out.get(l.banda or "desconhecida", 0) + 1
+        return dict(sorted(out.items()))
 
     def veredito(self) -> str:
         r = self.resumo()
@@ -141,10 +190,13 @@ def comparar(jogos: Iterable[Dict[str, Any]]) -> Comparacao:
             empirico = emp_over if lado == "over" else 100.0 - emp_over
             crua = mk.get("raw_probability")
             cal = mk.get("calibrated_probability")
+            iso = mk.get("iso_probability")          # #216
             out.linhas.append(Linha(
                 jogo=rot, liga=j.get("leagueId", "?"), mercado=nome, lado=lado,
                 empirico=empirico,
                 crua=None if crua is None else float(crua) * 100,
                 calibrada=None if cal is None else float(cal) * 100,
+                iso=None if iso is None else float(iso) * 100,
+                banda=mk.get("banda"),               # #216
             ))
     return out

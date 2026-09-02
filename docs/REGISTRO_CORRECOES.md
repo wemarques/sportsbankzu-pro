@@ -10316,3 +10316,60 @@ Os campos foram declarados CONSUMIDO enquanto o consumo era montado por f-string
 
 ### Lição aprendida
 Duas opiniões que discordam não dizem qual está certa. O sistema tinha probabilidade crua e calibrada e nenhum árbitro — e o árbitro estava no payload desde sempre, entre os 128 campos que ninguém lia. A terceira opinião não precisa ser melhor que as outras duas: precisa ser **independente** delas, e contagem de frequência é isso.
+
+## 216 — Separar o isotônico da deflação antes de decidir a quarentena
+**Data:** 2026-09-02 | **Arquivos:** backend/services/ev_classification.py, backend/models/market_output.py, backend/services/comparador_ancora.py, scripts/comparar_ancora.py, scripts/verificar_manifesto.py, docs/REGRAS_ATIVAS.md, tests/unit/test_separacao_calibrador_216.py (novo), tests/unit/test_scripts_multiplataforma_216.py (novo) | **Severidade:** Alta (decisão do #200 dependia disto) | **Status:** Implementado
+
+### Problema identificado
+A primeira leitura do #215 rodou em produção sobre 25 linhas (championship, league-one, Brasileirão B) e deu o veredito **"o calibrador AFASTA da âncora"** — 25,1pp contra 16,7pp da crua. Lido de forma direta, isso incriminaria os `.pkl` que o #200 congelou.
+
+**A saída dizia outra coisa.** Analisada:
+
+| | amplitude | desvio-padrão |
+|---|---|---|
+| empírico | 75,0pp | 18,93pp |
+| crua | 29,0pp | 8,22pp |
+| **calibrada** | **11,4pp** | **3,38pp** |
+
+```
+calibrada = 29,0 + 0,411 × crua       r = 0,997
+```
+
+Um ajuste **afim com r = 0,997** não é um isotônico que aprendeu alguma coisa — isotônico aprendido é escada irregular, não reta. É a assinatura de um encolhimento suave e monotônico, que é o que a **deflação progressiva por nós (#105) faz por construção**. E o log de produção da mesma noite já dizia isso literalmente:
+
+```
+[GOLS-TRACE] championship Under 3.5 raw=0.8219 calib_iso=0.8219 band=0.213 → final=0.7249
+```
+
+`calib_iso` **idêntico ao `raw`**: o isotônico não agiu; a queda inteira foi da banda.
+
+### Causa raiz
+`_calibrate_and_deflate` (`ev_classification.py`) sempre fez **duas coisas** e devolveu **um número**. `calibrated_probability` é o produto de `calibrate_prob()` (isotônico) com a deflação #105 + fator por liga. Nenhum consumidor conseguia separá-los, então qualquer medida sobre o produto era atribuível a qualquer um dos dois.
+
+Agrava: o hook de trace cobria **só gols e BTTS**. 1X2, Double Chance, escanteios e cartões passavam pelo mesmo caminho **sem deixar rastro** — e são justamente os que levam banda **inteira**, ou seja, o corte maior. Medido no smoke: `Cartoes Over 1.5` 0,8767 → **0,6575** (22pp, banda 0,25 inteira), que é a mesma magnitude da "compressão do calibrador" do #215.
+
+### Correções aplicadas
+1. **`DetalheCalibracao`** — `_calibrar_com_detalhe()` devolve `raw / iso / banda / tipo_banda / per_league / ou_defl / under25_extra / final`. `_calibrate_and_deflate()` vira fachada de uma linha, e um teste trava que o número final não mudou em 6 famílias.
+2. **`iso_probability` e `deflation_band_type`** em `MarketOutput`, publicados por `to_legacy_mercado` como `iso_probability` e `banda`. Ligados nos **11** pontos de construção.
+3. **Trace estendido** às 4 famílias que não tinham nenhum. O prefixo `GOLS-TRACE` é preservado para gols/BTTS porque `REGRAS_ATIVAS` documenta o grep por ele; as demais saem como `CALIB-TRACE`. Os dois carregam `calib_iso=` e agora `tipo=`, então **`grep calib_iso` cobre todas as famílias**.
+4. **Comparador (#215)** ganha coluna `iso`, contagem por tipo de banda, bloco `isotonica` no resumo e um **veredito próprio para o isotônico** — que distingue "inerte" (`iso == raw`) de "agiu e aproximou/afastou".
+5. **`rsplit("/scripts/")` corrigido** nos dois scripts. Não casava com barra invertida: no Windows o `sys.path` recebia o caminho do **arquivo** em vez da raiz, e o `import backend` falhava — o comparador do #215 só rodou com `PYTHONPATH` definido na mão.
+
+### Verificação executada
+Trace cobrindo as 4 famílias novas, com `calib_iso == raw` nas 30 linhas (localmente não há `.pkl`), e `tipo=meia` para gols, `meia-btts` para BTTS, `inteira` para 1X2/DC/escanteios/cartões. Payload publicado carrega os quatro campos:
+
+```
+mercado                        raw     iso   calib  banda
+Under 2.5 gols              0.6982  0.6982  0.6374  meia
+```
+
+`verificar_manifesto.py` roda sem `PYTHONPATH` a partir de outro diretório (teste com `subprocess`, `cwd=/`, ambiente sem a variável).
+
+### Testes
+16 novos (12 em `test_separacao_calibrador_216.py`, 4 em `test_scripts_multiplataforma_216.py`). Suíte: **489 passed** (era 473).
+
+### O que isto NÃO decide
+**Não quarentena `.pkl` nenhum.** Entrega o instrumento que faltava. A leitura em produção depois do deploy é que responde: se `veredito_isotonico` disser INERTE, os `.pkl` congelados não estão agindo e a discussão perde o objeto; se disser que agiram e afastaram, aí há dado para decidir.
+
+### Lição aprendida
+Quatro hipóteses caíram neste sistema em dois dias — cache de SQLite (#206), throttle de API (#207), pré-build (#212) e agora calibrador (#215) — e as quatro pelo mesmo motivo: **a medida agregava dois efeitos e foi lida como se medisse um.** O padrão não é falta de rigor na conclusão; é instrumento de granularidade menor que a pergunta. Antes de atribuir causa, verificar se o número consegue distinguir as causas candidatas — se não consegue, o passo seguinte é o instrumento, não a conclusão.

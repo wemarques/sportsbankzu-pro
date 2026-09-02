@@ -9,9 +9,13 @@ Sai com codigo 1 quando algo bloqueia: campo mapeado sem declaracao, ou campo
 declarado CONSUMIDO que perdeu o consumidor. Serve como passo de CI.
 """
 import argparse
+import os
 import sys
 
-sys.path.insert(0, __file__.rsplit("/scripts/", 1)[0])
+# #216 - `__file__.rsplit("/scripts/")` nao casa com barra invertida, entao no
+# Windows o sys.path recebia o caminho do ARQUIVO em vez da raiz do repo e o
+# import de `backend` falhava. dirname duas vezes funciona nos dois sistemas.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.config.footystats_manifest import (  # noqa: E402
     verificar, resumo, fila_de_trabalho, CAMPOS, PLANEJADO,
