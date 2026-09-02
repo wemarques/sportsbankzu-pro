@@ -6,6 +6,29 @@
 
 Ler nesta ordem: `docs/BACKLOG.md` (P0/P1) → `docs/REGRAS_ATIVAS.md` → `docs/INDICE_REGRAS.md`. Consultar `docs/REGISTRO_CORRECOES.md` quando precisar do histórico de um fix `#N`.
 
+## Protocolo SDD (Spec-Driven Development) — Obrigatório para qualquer alteração
+
+Toda tarefa de ajuste de cálculo, modelo, pipeline ou tela deve seguir rigorosamente as 4 etapas antes de qualquer commit:
+
+### 1. Especificação Prévia (Spec)
+Antes de alterar qualquer código, descrever explicitamente:
+- **Objetivo e Contexto**: Qual comportamento ou anomalia está sendo tratado.
+- **Rastreabilidade de Dados (Origem → Destino)**: Identificar o produtor do dado, os intermediários que transportam o payload e o consumidor final. Confirmar se o dado existe em todo o trajeto (sem inferir).
+- **Critérios de Aceite Mensuráveis**: Definir em formato factual (ex: `Entrada X -> Saída esperada Y`, ou antes/depois esperado nos rótulos/valores).
+- **Cenários de Borda e Fallback**: O que acontece se a chave faltar, a liga for nova ou a amostra for 0?
+
+### 2. Validação de Contrato (Auditoria de Payload)
+- É proibido adicionar `.get("chave")` em um consumidor sem inspecionar e provar que o produtor e a rota de fixtures/pipeline serializam essa chave no dicionário.
+- Proibido criar contratos de ordem invisíveis (como `.pop()` pós-consumo).
+
+### 3. Implementação Guiada
+- Implementar estritamente o que foi delimitado na Spec. Não adicionar refatorações paralelas ou suposições não documentadas.
+
+### 4. Prova Empírica Obrigatória (Definition of Done)
+- **Proibido declarar sucesso com base apenas na leitura do código escrito.**
+- Executar teste unitário ou script de validação comparando o estado **ANTES** e **DEPOIS** com um payload real ou fixture completa.
+- Se o teste de saída apresentar resultados idênticos (como no caso do `EARLY_SEASON_FALLBACK`), a entrega está **rejeitada** e deve-se rastrear o elo faltante na cadeia de dados.
+
 ## Comandos
 
 ```bash
@@ -150,6 +173,7 @@ FootyStats + API-Football v3
 11. **Classificação usa prob raw; EV usa prob deflacionada** (#106).
 12. **Encolhimento de amostra pequena nos DOIS lados do λ (#208)** — ataque e defesa adversária recebem o mesmo peso `n/8`; contagem ausente não encolhe, amostra 0 encolhe.
 13. **Auditor de premissas reimplementa a matemática de referência (#209)** — NÃO deduplicar contra o pipeline; a duplicação é o mecanismo. Campo novo da FootyStats entra no manifesto (#210).
+14. **Proibido afirmar efeito ou concluir patch sem medição empírica (SDD)** — Alterações de cálculo, filtro ou classificação exigem diff de execução real (antes vs. depois). Hipóteses teóricas não substituem teste de payload ponta a ponta.
 
 ## Finalização obrigatória pós-alteração
 

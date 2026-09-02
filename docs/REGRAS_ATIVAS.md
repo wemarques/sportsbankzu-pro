@@ -900,3 +900,30 @@ do isotônico separado do veredito do produto.
 **Verificação:** `pytest tests/test_219_devig.py tests/test_220_inclinacao.py -q`
 **Verificação (suíte):** `pytest tests/ -q` deve coletar **753** testes — se
 voltar a 489, a coleta quebrou de novo em algum import de nível de módulo.
+
+
+### #222 — Protocolo SDD: proibido afirmar efeito sem prova no payload montado
+
+**Tipo:** Regra permanente (Engenharia / QA)
+**Relacionado:** #189-f (extração sem cópia), #209/#210 (saída montada e manifesto), #217 (veto sem leitor), #221
+
+1. **A intenção do código não é o comportamento do sistema.** É terminantemente
+   proibido afirmar em prompt, PR ou commit que um patch "remove flag X",
+   "corrige cálculo Y" ou "reativa Z" com base na leitura do código escrito.
+   Toda afirmação de efeito exige **medição empírica antes/depois** sobre o payload
+   real de fixtures/partida.
+2. **Auditoria obrigatória dos 4 Elos de Dados:**
+   Toda nova chave consumida via `.get("chave")` exige a comprovação na Spec:
+   - *Elo 1 (Origem):* Onde o dado bruto nasce (ex: FootyStats client / DB).
+   - *Elo 2 (Montagem):* Onde a chave é explicitamente inserida no record em `routes/fixtures.py` ou `fixtures_service.py`.
+   - *Elo 3 (Consumo):* As linhas exatas que leem a chave.
+   - *Elo 4 (Impacto Real):* Diff comprovado no payload que o endpoint devolve.
+3. **Critério de Aceite Falsificável Pré-Implementação (SDD):**
+   Antes de editar arquivos, o plano deve declarar o critério de aceite com um
+   teste que falhe antes e passe depois (ex: `season_data_state` mudar de
+   `EARLY_SEASON_FALLBACK` para `OK` em liga com N rodadas).
+4. **Se o teste antes/depois for idêntico, o patch está rejeitado** — indica
+   elo quebrado na esteira de dados, mesmo que a função consumidora esteja perfeita.
+
+**Verificação:** Execução de script de diff antes/depois com payload real (ex: `python scripts/testar_payload_diff.py`).
+**Verificação (CI/Gate):** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
