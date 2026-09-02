@@ -10550,3 +10550,61 @@ O rollback continua íntegro através da linha nova, porque `league_avgs` só ca
 
 ### Lição aprendida
 Um dado com **três** nomes ao longo do caminho já é frágil; o que o tornou invisível por meses foi ter **quatro** elos e nenhum teste que atravessasse os quatro. Cada camada estava certa isoladamente — o produtor extraía, o consumidor procurava, o portador era coerente consigo mesmo — e o defeito vivia exatamente nas juntas. Teste de ponta a ponta não é luxo em pipeline de N camadas: é o único que olha as juntas.
+
+## 223 — Contrato das chaves do record: ler não prova que chega
+**Data:** 2026-09-02 | **Arquivos:** backend/config/contrato_record.py (novo), backend/services/prediction_ledger.py, tests/test_223_contrato_record.py (novo), tests/test_218_prediction_ledger.py | **Severidade:** Alta (mecanismo) | **Status:** Implementado + 6 defeitos corrigidos
+
+### O defeito de método, nomeado
+`dict.get("X")` devolve `None` **em silêncio**. É isso, e só isso, que permite olhar o consumidor, ver a chave sendo lida, e concluir que o dado chega — sem nunca inspecionar quem escreve. Quatro casos numa semana, nas duas direções:
+
+| direção | casos |
+|---|---|
+| lê sem que alguém escreva | #221 (`league_stats`), #216 (4ª coluna), **#218 (6 das 10 entradas do ledger)** |
+| escreve sem que alguém leia | #217 (`no_bet`), #189-f (odds de escanteios) |
+
+O #222 proibiu concluir sem prova. **Proibição é prosa: não impede ninguém.** Este módulo transforma a proibição em falha de teste.
+
+### Como o contrato funciona
+1. Varre uma **lista fechada** de consumidores do record por `.get("chave")` sobre `match_data`/`record`/`stats`/`league_stats`.
+2. Monta records de referência **reais** (`build_records_from_matches` em 3 cenários: liga madura, início de temporada, sem contagem) e coleta a união das chaves que existem de fato.
+3. Chave lida e nunca escrita **BLOQUEIA**, salvo se declarada em `OPCIONAIS` **com o motivo**.
+
+`mistral_analysis.py` e `ai_analysis.py` ficam fora de propósito: consomem um dicionário de contexto com outra forma, e varrê-los produziria dezenas de falsos positivos até alguém desligar o teste — que é como um gate morre.
+
+### O que ele encontrou ao ser ligado
+```
+29 chaves lidas | 173 escritas | 9 bloqueios
+```
+
+**Três eram falso positivo:** nome legado lido só como fallback encadeado — `match_data.get("awayTeam", match_data.get("away_team", ""))`. O varredor passou a reconhecer o padrão em vez de exigir declaração à mão, porque cobrar o fallback como leitura primária vira ruído.
+
+**Os seis restantes eram todos do ledger do #218** — o patch escrito para "registrar o erro permitindo explicá-lo":
+
+| lida | realidade |
+|---|---|
+| `homeMatchesPlayed` / `awayMatchesPlayed` | o nome é `matchesPlayed_home` / `_away` |
+| `leagueMatchesCompleted` | vive em `league_stats`, não em `stats` |
+| `cardsLambda` · `expectedTotalCorners` | **não existem em lugar nenhum** |
+| `dataAgeHours` | não existe; lacuna real |
+
+Medido contra um record real, **antes: 6 de 10 entradas nulas**. O ledger gravaria `None` exatamente nas entradas que explicam o número — a lacuna que o próprio #218 dizia estar fechando. Terceira vez que o defeito passou, desta vez **dentro do patch escrito para corrigir essa classe de defeito**.
+
+### Correções aplicadas ao ledger
+Nomes reais para os que existem; **componentes** para os que não existem (`cards_home_pm`/`cards_away_pm`/`cards_league_avg` em vez de um `cards_lambda` sempre nulo — gravar `None` com nome de medida é pior que não gravar); `data_age_hours` **fora**, com a lacuna documentada.
+
+```
+ANTES: 6 de 10 nulas  →  DEPOIS: 2 de 14 nulas
+```
+As duas restantes têm a **chave presente** (`matchesPlayed_home`), nulas só no cenário sintético sem dados de time.
+
+### O teste do #218 também estava errado, e é o achado mais fino
+Ele afirmava os nomes errados usando um `stats` sintético que continha exatamente aquelas chaves. **Concordava com a suposição do código em vez de conferi-la** — e passava enquanto a produção gravava nulos. Teste que constrói a própria entrada não testa o contrato; testa a si mesmo. Corrigido para os nomes reais, com a prova em `test_223_contrato_record.py`, que monta um record de verdade.
+
+### Guarda contra o gate morrer em silêncio
+`test_o_contrato_esta_lendo_alguma_coisa` exige ≥20 leituras e ≥100 escritas. Se a lista de consumidores quebrar (arquivo renomeado, regex furada), o contrato passaria a não ler nada e o teste principal ficaria verde para sempre — exatamente a forma de defeito que ele existe para pegar.
+
+### Testes
+7 novos; `test_218` atualizado. Suíte: **792 passed, 1 skipped**. Entra no CI sem alterar `ci.yml` — o `pytest -q` do workflow já varre a árvore inteira.
+
+### Lição aprendida
+O #222 e o #223 são a mesma regra em dois formatos, e a diferença entre eles é toda a diferença. O #222 pede que a pessoa não presuma; o #223 faz o build falhar quando ela presume. Uma semana de defeitos idênticos mostrou que a primeira forma não segura — inclusive quando quem escreve o patch é quem acabou de documentar a regra.

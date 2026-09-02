@@ -52,16 +52,24 @@ def test_linha_carrega_as_entradas_que_explicam_o_numero():
             reason_codes=[ReasonCode.CORNER_ENGINE_NO_BET],
         )],
     )
-    stats = {"lambdaHome": 1.4, "lambdaAway": 1.1, "cardsLambda": 4.7,
-             "homeMatchesPlayed": 24, "awayMatchesPlayed": 25,
-             "dataAgeHours": 6.5}
-    linhas = L.linhas_do_bundle(bundle, {"id": "m9"}, stats)
+    # #223: este `stats` sintetico usava os nomes que o LEDGER lia
+    # (`cardsLambda`, `homeMatchesPlayed`, `dataAgeHours`) — nomes que o record
+    # real nunca teve. O teste concordava com a suposicao do codigo em vez de
+    # conferi-la, e por isso passava enquanto 6 das 10 entradas vinham nulas em
+    # producao. Agora usa os nomes que o record publica de fato; a prova de que
+    # eles sao os certos esta em test_223_contrato_record.py, que monta um
+    # record de verdade em vez de um dicionario de conveniencia.
+    stats = {"lambdaHome": 1.4, "lambdaAway": 1.1, "lambdaTotal": 2.5,
+             "matchesPlayed_home": 24, "matchesPlayed_away": 25,
+             "homeCardsPerMatch": 2.4, "awayCardsPerMatch": 2.3,
+             "leagueAvgCards": 4.7}
+    linhas = L.linhas_do_bundle(bundle, {"id": "m9", "league_stats": {"matches_completed": 25}}, stats)
     assert len(linhas) == 1
     e = linhas[0]["inputs"]
     assert e["lambda_home"] == 1.4 and e["lambda_away"] == 1.1
-    assert e["cards_lambda"] == 4.7
+    assert e["cards_home_pm"] == 2.4 and e["cards_league_avg"] == 4.7
     assert e["home_matches"] == 24 and e["away_matches"] == 25
-    assert e["data_age_hours"] == 6.5
+    assert e["league_matches_completed"] == 25
     assert e["data_quality_score"] == 0.61
     # os dois passos da calibracao entram separados (#216)
     assert linhas[0]["iso_prob"] == 0.80

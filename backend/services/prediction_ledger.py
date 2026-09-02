@@ -275,15 +275,41 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
     """
     stats = stats or {}
     match_data = match_data or {}
+    # #223 - MEDIDO contra um record real: 6 destas 10 entradas vinham NULAS.
+    # O ledger existe para "registrar o erro permitindo explica-lo", e estava
+    # gravando `None` justamente nas entradas que explicam. As chaves lidas nao
+    # existiam com aquele nome:
+    #
+    #   homeMatchesPlayed/awayMatchesPlayed -> matchesPlayed_home/_away
+    #   leagueMatchesCompleted              -> vive em league_stats, nao em stats
+    #   cardsLambda / expectedTotalCorners  -> nao existem em lugar nenhum;
+    #                                          gravamos os componentes que existem
+    #   dataAgeHours                        -> nao existe; lacuna real, ver abaixo
+    #
+    # Foi a terceira vez que o mesmo defeito passou — desta vez DENTRO do patch
+    # escrito para corrigir essa classe de defeito. Por isso o contrato do #223
+    # e um teste, nao um paragrafo.
+    _ls = (match_data.get("league_stats") or {}) if isinstance(match_data, dict) else {}
     entradas_comuns = {
         "lambda_home": stats.get("lambdaHome"),
         "lambda_away": stats.get("lambdaAway"),
-        "cards_lambda": stats.get("cardsLambda"),
-        "corners_expected": stats.get("expectedTotalCorners"),
-        "home_matches": stats.get("homeMatchesPlayed"),
-        "away_matches": stats.get("awayMatchesPlayed"),
-        "league_matches_completed": stats.get("leagueMatchesCompleted"),
-        "data_age_hours": stats.get("dataAgeHours"),
+        "lambda_total": stats.get("lambdaTotal"),
+        # Nao ha lambda de cartoes nem total esperado de escanteios no record;
+        # o que existe sao os componentes de onde eles sairiam. Gravar os
+        # componentes e verdadeiro; gravar um None chamado "cards_lambda" seria
+        # registrar uma ausencia com nome de medida.
+        "cards_home_pm": stats.get("homeCardsPerMatch"),
+        "cards_away_pm": stats.get("awayCardsPerMatch"),
+        "cards_league_avg": stats.get("leagueAvgCards"),
+        "corners_home_pm": stats.get("homeCornersPerMatch"),
+        "corners_away_pm": stats.get("awayCornersPerMatch"),
+        "corners_league_avg": stats.get("leagueAvgCorners"),
+        "home_matches": stats.get("matchesPlayed_home"),
+        "away_matches": stats.get("matchesPlayed_away"),
+        "league_matches_completed": _ls.get("matches_completed"),
+        # LACUNA CONHECIDA: a idade do dado nao e registrada em lugar nenhum do
+        # record. Fica fora do ledger ate existir de verdade — um campo sempre
+        # nulo e pior que campo ausente, porque parece medicao.
         "chaos_detected": stats.get("chaosDetected"),
         "data_quality_score": getattr(bundle, "data_quality_score", None),
     }
