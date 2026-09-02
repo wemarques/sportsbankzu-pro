@@ -558,6 +558,37 @@ def aplicar_veto_do_motor_de_escanteios(markets, governed_corners) -> int:
     return vetados
 
 
+# ── #219: a margem suposta vira margem medida (atras de flag) ───────────
+def _overround_para_derivar(odds, padrao: float) -> float:
+    """Margem a usar ao derivar a odd Under a partir da Over.
+
+    `OVERROUND = 1.05` e `1.06` eram constantes: uma margem SUPOSTA. Isso tem
+    duas consequencias. A primeira e que a odd derivada carrega uma margem que
+    ninguem cotou. A segunda e pior: de-vigar depois um par derivado assim
+    devolve exatamente a suposicao que foi injetada, e o de-vig parece
+    funcionar sem nunca ter tocado num preco real.
+
+    Com o #219 ligado, se o payload tiver um 1X2 de duas ou tres pernas com
+    margem dentro da faixa de mercado, usamos ESSA margem — que e do mesmo
+    livro, no mesmo instante. Fora disso, a constante antiga, para nao mexer
+    em numero de producao sem medicao.
+    """
+    try:
+        from backend.services.devig import devig_habilitado, odds_utilizaveis
+        if not devig_habilitado() or not isinstance(odds, dict):
+            return padrao
+        pernas = [odds.get(k) for k in ("home", "draw", "away")]
+        pernas = [float(p) for p in pernas if p and float(p) > 1.0]
+        if len(pernas) < 2:
+            return padrao
+        ok, margem, _motivo = odds_utilizaveis(pernas)
+        if not ok or margem is None:
+            return padrao
+        return 1.0 + margem / 100.0
+    except Exception:                                        # noqa: BLE001
+        return padrao
+
+
 def classify_market(
     output: MarketOutput,
     thresholds: Optional[Dict[str, float]] = None,
@@ -974,6 +1005,15 @@ def evaluate_match_markets(
     ]:
         # When odds available: skip derived_key so _prob uses stats (odds-implied)
         # When no odds: use Poisson-derived as fallback
+        #
+        # #219 (CIRCULARIDADE CONHECIDA, ainda nao corrigida): quando ha odds,
+        # a probabilidade do 1X2 VEM da odd (predictionSource="odds_implied",
+        # fixtures_service.py:1762). O EV entao compara a odd com uma
+        # probabilidade derivada da propria odd: por construcao o sistema nunca
+        # consegue apontar valor no 1X2, e de-vigar isso e de-vigar duas vezes o
+        # mesmo preco. Corrigir exige decidir se o 1X2 passa a sair do
+        # Dixon-Coles — mudanca de produto, nao de calculo, entao fica marcada
+        # aqui e medida pelo ledger (#218) antes de qualquer troca.
         raw = _prob(stat_key) if _1x2_has_odds else _prob(stat_key, derived_key)
         if raw is None:
             continue
@@ -1065,7 +1105,13 @@ def evaluate_match_markets(
 
             if under_odd is None and book_odd and book_odd > 1.0:
                 # Derive from Over: implied_under = OVERROUND - implied_over
-                OVERROUND = 1.05
+                # #219: a constante e uma margem SUPOSTA. Derivar a odd Under
+                # com ela e depois de-vigar o par devolve exatamente o que foi
+                # injetado — o de-vig fica circular e parece funcionar.
+                # Com DEVIG_ENABLED=1 usamos a margem medida do par 1X2 do
+                # proprio payload quando ela e de mercado; senao, a suposicao
+                # antiga, sem mudar numero em producao.
+                OVERROUND = _overround_para_derivar(odds, 1.05)
                 implied_over = 1.0 / book_odd
                 implied_under = OVERROUND - implied_over
                 under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
@@ -1367,7 +1413,7 @@ def evaluate_match_markets(
             over_odd = odds.get(over_odd_key) if over_odd_key else None
             if over_odd and float(over_odd) > 1.0:
                 # Derive from Over: implied_under = OVERROUND - implied_over
-                OVERROUND = 1.06
+                OVERROUND = _overround_para_derivar(odds, 1.06)   # #219
                 implied_over = 1.0 / float(over_odd)
                 implied_under = OVERROUND - implied_over
                 under_odd = round(1.0 / implied_under, 2) if implied_under > 0.01 else None
