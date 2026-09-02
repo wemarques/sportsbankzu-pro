@@ -10410,3 +10410,91 @@ Os **−20,7pp de viés são inteiramente a deflação #105**, que é projetada 
 
 ### Lição aprendida
 Uma pergunta aberta por dois dias ("os `.pkl` vazados ajudam ou atrapalham?") tinha resposta "nenhum dos dois", e nenhuma quantidade de raciocínio sobre a saída agregada chegaria lá — porque o efeito procurado era **exatamente zero** e estava somado a um efeito grande de outra origem. Instrumento que não separa causas não distingue "não é isso" de "é isso e algo mais": as duas hipóteses produzem o mesmo número.
+
+## 217 — O veto do motor de escanteios ganha consumidor
+**Data:** 2026-09-02 | **Arquivos:** backend/services/ev_classification.py, backend/services/data_governance.py, backend/models/market_output.py, tests/test_217_veto_escanteios.py (novo) | **Severidade:** Alta (publicava pick vetado) | **Status:** Corrigido
+
+### Problema identificado
+`predict_corners` marca `decision["no_bet"]` em quatro situações — `insufficient_data`, `h2h_avg_corners` abaixo da linha, `league_avg_corners` abaixo da linha e `restricted_market` — e **nenhum leitor existia**. Um `grep no_bet` em `ev_classification.py` devolvia zero: o classificador lia `operationalState` como metadado (linha 1217) e publicava o pick assim mesmo.
+
+Foi o que colocou no ar **Preston e Sheffield com EV +31,3% e +34,7%** carregando `RESTRICTED` e `dataQualityTier` LOW. Mesma família do #189-f: extração correta, consumo ausente.
+
+### Correções aplicadas
+1. `aplicar_veto_do_motor_de_escanteios` rebaixa a NO_BET, **distinguindo escopo**: `insufficient_data` e `restricted_market` vetam a família inteira; os filtros de H2H e média de liga vetam só a linha e o lado que o motor selecionou.
+2. **O pick vetado não some** — sai com `CORNER_ENGINE_NO_BET` e um bloco `corner_veto` no payload. Sumir da tela impediria auditar quantos foram vetados.
+3. **Segundo consumo ausente, mesma forma:** `detect_early_season` devolvia `True` quando `matchesCompleted` era `None`, então o `EARLY_SEASON_FALLBACK` disparava na rodada 24 **não por contagem baixa** (`MIN_MATCHES_RELIABLE = 5`) **mas por campo ausente** — a mesma confusão que o #208 corrigiu no λ. `season_data_state` separa os três estados (OK / EARLY / UNKNOWN).
+
+**Mudança de rótulo, não de número:** o estado desconhecido continua encolhendo stake por padrão e só para com `EARLY_SEASON_REQUIRES_COUNT=1`.
+
+### Verificação executada
+`governed_corners` é ligado na linha 933 e o veto chamado na 1546 — escopo correto. Smoke de ponta a ponta: o payload sai com `DATA_MISSING` **junto de** `EARLY_SEASON_FALLBACK`, como projetado.
+
+**Atenção operacional: o #217 não tem flag.** Ao contrário do #218 e #219, ele muda comportamento no deploy — picks de escanteio em liga RESTRICTED passam a sair NO_BET imediatamente.
+
+### Testes
+14 novos. Suíte: **753 passed, 1 skipped**.
+
+## 218 — Ledger imutável de prognósticos
+**Data:** 2026-09-02 | **Arquivos:** backend/services/prediction_ledger.py (novo), backend/services/ev_classification.py, backend/services/audit_service.py, tests/test_218_prediction_ledger.py (novo) | **Severidade:** Alta (fonte limpa que faltava) | **Status:** Implementado (desligado por padrão)
+
+### Problema identificado
+`audit_results` é escrita com `INSERT OR REPLACE` (`audit_service.py:29`). Cada reprocessamento pós-jogo sobrescreve a linha, então a tabela guarda o prognóstico **recomputado com o placar já conhecido**, não o que foi publicado antes dele. **É a origem mecânica do vazamento temporal que o #200 conteve com um gate** — o gate impede o retreino, mas não cria a fonte limpa.
+
+### Correção aplicada
+`prediction_ledger` (Postgres, não SQLite — o `/tmp` da Lambda morre com o container). Duas regras: **só insere**, e **grava as entradas junto da saída** (os dois λ, o de cartões, amostra de cada lado, idade do dado). Essa é exatamente a lacuna que obrigou o #216 a abrir uma quarta coluna para descobrir que a isotônica estava inerte. O desfecho vai em `ledger_outcomes`, tabela separada, e as métricas saem de um JOIN.
+
+**Unicidade por conteúdo**, não por (jogo, mercado): republicar o mesmo pick idêntico não cria linha (o `/fixtures` é chamado dezenas de vezes por dia); republicar com qualquer número diferente cria. O hash exclui `published_at` de propósito — senão o ledger vira log de acesso.
+
+Não decide nada, nenhum caminho de publicação o lê, **falha aberto**, e está desligado por padrão (`PREDICTION_LEDGER_ENABLED=0`). Um teste verifica por inspeção de fonte que o módulo não contém `UPDATE`/`DELETE`/`DO UPDATE` — append-only como propriedade do código, não promessa de README.
+
+### Testes
+12 novos.
+
+## 219 — Remoção de margem das odds + margem como detector
+**Data:** 2026-09-02 | **Arquivos:** backend/services/devig.py (novo), backend/services/ev_classification.py, tests/test_219_devig.py (novo) | **Severidade:** Alta (todo EV comparava contra 1/odd) | **Status:** Implementado (desligado por padrão)
+
+### Problema identificado
+`backtesting.py:317` diz no próprio código: *"Implied probability = 1/odd (no overround normalization)"*. **Todo EV e todo Brier relativo comparam a probabilidade do modelo com `1/odd`, que não é uma probabilidade** — soma mais que 1. O modelo pode estar perdendo para a margem da casa e não para a probabilidade real, e não havia como distinguir.
+
+### Correção aplicada
+Três métodos lado a lado: proporcional, **Shin (1992)** e potência. Medido nas odds reais do Londrina × Juventude, Shin e proporcional divergem **0,74pp** no favorito com a margem podre de 17,8% e **0,47pp** com os 7,0% da bet365 — a sessão de origem havia estimado "2-3pp" e o teste corrigiu para 0,74. Pouco, mas sistemático e sempre no mesmo sentido.
+
+**Mata a circularidade silenciosa:** `OVERROUND = 1.05` e `1.06` eram margens **supostas** usadas para derivar a odd Under a partir da Over. De-vigar depois um par derivado assim devolve exatamente a suposição injetada — o de-vig pareceria funcionar sem nunca ter tocado num preço real. Com `DEVIG_ENABLED=1` a derivação passa a usar a margem medida do 1X2 do mesmo payload, e só quando ela está na faixa de mercado.
+
+**Fica marcada, sem correção, a circularidade maior:** com odds disponíveis a probabilidade do 1X2 **vem da odd** (`predictionSource="odds_implied"`), então o EV compara a odd com uma probabilidade derivada dela mesma e o sistema **nunca pode apontar valor em 1X2**. Corrigir é decisão de produto.
+
+Desligado por padrão (`DEVIG_ENABLED=0`): nenhum número de produção muda.
+
+### Testes
+26 novos.
+
+## 220 — Inclinação de calibração como métrica de confiabilidade
+**Data:** 2026-09-02 | **Arquivos:** backend/services/calibracao_slope.py (novo), scripts/medir_inclinacao.py (novo), scripts/auditar_premissas.py, tests/test_visual.py, CLAUDE.md, tests/test_220_inclinacao.py (novo) | **Severidade:** Média (instrumento) | **Status:** Implementado
+
+### Problema identificado
+A decomposição de Murphy precisa de binning, e com n entre 25 e 200 por célula o termo de confiabilidade fica dominado por ruído de bin. A **inclinação de calibração** não precisa de bin: é a regressão logística do desfecho sobre `logit(p)`.
+
+```
+b ~ 1  forma certa | b < 1  a previsão varia mais que a realidade (falta RESOLUÇÃO) | b < 0  previsão mais alta acerta menos
+```
+
+Nos dois pontos disponíveis — previu 54,9% e aconteceu 71,5%; previu 83,6% e aconteceu 76,4% — a previsão varia **28,7pp** e a realidade **4,9pp**: inclinação **0,178** (verificado).
+
+**Se confirmar com n de verdade, a conclusão não é "calibrar melhor".** Isotônica, Platt e Beta são todas transformações monótonas de UMA dimensão: aplicadas a um sinal de inclinação 0,17 devolvem um sinal igualmente cego, só que honestamente rotulado — as probabilidades colapsam perto da média da liga, o EV vai a zero e o sistema para de publicar. Convém saber que esse é o resultado esperado.
+
+### Duas armadilhas evitadas de propósito
+1. **Bootstrap por bloco, e o bloco é o jogo.** Over 2.5 e BTTS do mesmo jogo compartilham o placar; reamostrar pick a pick estreitaria o IC artificialmente. Há teste comparando as duas larguras.
+2. **Benjamini-Hochberg** — 22 ligas × ~20 mercados = 440 células, e a 95% ~22 saem "significativas" por acaso.
+
+IRLS próprio, sem scipy (o #182 registra que o import quebrou a Lambda), com meio-passo e detecção **geométrica** de separação completa — devolver um número enorme seria pior que devolver nada.
+
+### Três pendências antigas resolvidas junto
+- **`tests/test_visual.py` importava streamlit no nível do módulo DEPOIS do `pytestmark`.** `skipif` não impede o import na coleta, então o `ModuleNotFoundError` derrubava a árvore `tests/` inteira. Com `importorskip`, a suíte passa a rodar completa: **753 testes, não os 489 que vinham sendo contados — 264 nunca haviam rodado.**
+- `scripts/auditar_premissas.py` ainda tinha o `rsplit("/scripts/")` que o #216 corrigiu nos outros dois.
+- `CLAUDE.md` dizia `/api/fixtures`; o router não tem prefixo, é `/fixtures`.
+
+### Testes
+20 novos. **Suíte total: 753 passed, 1 skipped** (era 489 contados, com 264 invisíveis).
+
+### Lição aprendida
+Um arquivo de teste quebrado não estava só falhando — estava **escondendo o tamanho da suíte**. Durante semanas "489 testes passando" foi lido como cobertura, quando 35% dos testes nem eram coletados. Erro de coleta é diferente de erro de teste: o primeiro não aparece como falha, aparece como ausência.

@@ -860,3 +860,43 @@ premissa `placar_ao_vivo_e_observado` do auditor (#209) como CRÍTICO.
 **Verificação (produção):** `--filter-pattern calib_iso` no CloudWatch cobre as
 duas famílias de prefixo; `python scripts/comparar_ancora.py` imprime o veredito
 do isotônico separado do veredito do produto.
+
+### #217/#218 — Todo veto tem consumidor; toda publicação vira linha de ledger
+
+**Tipo:** Regra permanente (Publicação / QA)
+**Relacionado:** #189-f (extração sem consumo), #200 (vazamento), #208 (ausência ≠ zero), #216
+
+1. **Sinal de veto sem leitor é defeito, não redundância.** `predict_corners`
+   marcava `no_bet` em 4 situações e ninguém lia. Ao adicionar qualquer sinal de
+   bloqueio, o teste que importa é o do **consumidor**, não o do produtor.
+2. **Pick vetado não some — vira NO_BET com reason code visível.** Sumir da tela
+   impede auditar quantos foram vetados e por quê.
+3. **Escopo do veto é explícito:** `insufficient_data` e `restricted_market`
+   valem para a família; filtros de linha valem só para a linha e o lado.
+4. **Ausência de contagem não é início de temporada** (`season_data_state`:
+   OK / EARLY / UNKNOWN). Mesma regra do #208 no λ.
+5. **`audit_results` NÃO é fonte de treino** — `INSERT OR REPLACE` guarda o
+   recomputado pós-jogo. A fonte limpa é `prediction_ledger`, append-only, com
+   as **entradas** gravadas junto da saída. Não introduzir UPDATE/DELETE nele.
+
+**Verificação:** `pytest tests/test_217_veto_escanteios.py tests/test_218_prediction_ledger.py -q`
+
+### #219/#220 — EV se compara com probabilidade, e resolução vem antes de calibração
+
+**Tipo:** Regra permanente (Odds / Calibração)
+
+1. **`1/odd` não é probabilidade** — soma mais que 1. Comparar EV contra ela
+   confunde "perder para a margem" com "perder para a realidade".
+2. **Margem é detector, não só viés a remover.** Fora de 1–12% a odd é velha ou
+   corrompida (#214), e não deve derivar preço de outro mercado.
+3. **Margem suposta gera de-vig circular.** Derivar a odd Under de uma constante
+   e depois de-vigar o par devolve exatamente a constante.
+4. **Inclinação antes de calibrador.** Nenhum método de calibração cria
+   resolução: todos são transformações monótonas de uma dimensão. Com
+   inclinação perto de zero, a pergunta deixa de ser "como calibrar" e passa a
+   ser "quais mercados têm resolução para publicar".
+5. **Bootstrap por jogo, nunca por pick**, e Benjamini-Hochberg nas 440 células.
+
+**Verificação:** `pytest tests/test_219_devig.py tests/test_220_inclinacao.py -q`
+**Verificação (suíte):** `pytest tests/ -q` deve coletar **753** testes — se
+voltar a 489, a coleta quebrou de novo em algum import de nível de módulo.
