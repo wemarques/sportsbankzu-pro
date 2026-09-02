@@ -18,6 +18,24 @@ from backend.services.market_service import selecionar_mercados_v2
 logger = logging.getLogger("sportsbankzu")
 
 
+def _contagem_de_jogos_habilitada() -> bool:
+    """#221 - interruptor de emergencia da contagem de jogos da liga.
+
+    Ligado por padrao, ao contrario de todo patch recente, porque aqui o estado
+    ATUAL e que e o errado: sem a contagem, `detect_early_season` responde True
+    em toda liga desde sempre, nenhum pick consegue ser SAFE e a nota de
+    qualidade fica deprimida a ponto de a governanca de escanteios ficar
+    RESTRICTED. Manter desligado seria preservar o defeito.
+
+    Mas a correcao muda MUITO numero de uma vez num site em producao, entao ela
+    tem volta em uma variavel: LEAGUE_MATCH_COUNT_ENABLED=0 devolve o
+    comportamento de antes sem redeploy de codigo.
+    """
+    return os.getenv("LEAGUE_MATCH_COUNT_ENABLED", "1").strip().lower() not in (
+        "0", "false", "no", "off"
+    )
+
+
 def _safe_int(val: Any) -> Optional[int]:
     """Convert to int if possible, return None for missing/invalid values."""
     if val is None or val == -1:
@@ -1078,6 +1096,14 @@ def build_records_from_matches(
             "avg_fouls": None, "avg_shots": None,
             "home_advantage_pct": None, "avg_goals_home": None, "avg_goals_away": None,
             "clean_sheets_pct": None, "over25_pct": None, "xg_avg": None,
+            # #221: a contagem de jogos da temporada. O produtor SEMPRE a
+            # extraiu (routes/fixtures.py:334, coluna `matches_completed`) e o
+            # consumidor SEMPRE a procurou (data_governance.py:113,
+            # `matchesCompleted`/`matches_played`) — mas este dicionario, que e
+            # o que viaja entre os dois como `league_stats`, nunca teve a
+            # chave. Tres camadas, tres nomes, nenhum acordo.
+            "matches_completed": None, "matchesCompleted": None,
+            "matches_played": None, "total_matches": None,
         }
         if league_df is not None:
             _lg = league_df.iloc[0]
@@ -1086,6 +1112,35 @@ def build_records_from_matches(
             league_avgs["avg_cards"] = float(_lg.get("average_cards_per_match", 4.0) or 4.0)
             league_avgs["avg_fouls"] = float(_lg.get("average_fouls_per_match", 22.0) or 22.0)
             league_avgs["avg_shots"] = float(_lg.get("average_shots_per_match", 24.0) or 24.0)
+            # #221 - le qualquer um dos nomes que as duas rotas de league_df
+            # produzem (a de API monta `matches_completed`; a de CSV pode
+            # trazer outro rotulo) e publica os tres que os consumidores
+            # procuram, para o proximo leitor nao precisar adivinhar.
+            _jogos = None
+            for _c in ("matches_completed", "matchesCompleted", "matches_played",
+                       "matchesPlayed", "games_played"):
+                _v = _lg.get(_c)
+                if _v is None:
+                    continue
+                try:
+                    _jogos = int(float(_v))
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if _jogos is not None and _jogos >= 0 and _contagem_de_jogos_habilitada():
+                league_avgs["matches_completed"] = _jogos
+                league_avgs["matchesCompleted"] = _jogos
+                league_avgs["matches_played"] = _jogos
+            _tot = _lg.get("total_matches")
+            if _tot is not None:
+                try:
+                    league_avgs["total_matches"] = int(float(_tot))
+                except (TypeError, ValueError):
+                    pass
+            logger.info(
+                "[#221] %s: matches_completed=%s total_matches=%s",
+                league_id, league_avgs["matches_completed"], league_avgs["total_matches"],
+            )
             # Extended league stats (League CSV: 49 cols)
             _ha = _lg.get("home_advantage_percentage")
             if _ha is not None:

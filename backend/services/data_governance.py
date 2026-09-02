@@ -71,7 +71,7 @@ def calculate_data_quality_score(
     # 6. Season maturity (weight: 10%)
     max_score += 10
     if league_stats:
-        matches_played = league_stats.get("matchesCompleted") or league_stats.get("matches_played", 0)
+        matches_played = _jogos_disputados(league_stats) or 0   # #221
         if matches_played and int(matches_played) >= MIN_MATCHES_FULL_CONFIDENCE:
             score += 10
         elif matches_played and int(matches_played) >= MIN_MATCHES_RELIABLE:
@@ -104,19 +104,35 @@ def _exige_contagem_explicita() -> bool:
     )
 
 
+# #221: o consumidor perguntava por dois nomes e o produtor entregava um
+# terceiro (`matches_completed`, snake_case, em routes/fixtures.py:334). Como o
+# league_stats vem de duas rotas diferentes (API e CSV), a lista aqui e
+# deliberadamente tolerante: e mais barato aceitar cinco rotulos do que
+# descobrir daqui a seis meses que o EARLY_SEASON voltou a disparar sozinho.
+_ALIAS_JOGOS = (
+    "matchesCompleted", "matches_completed", "matches_played",
+    "matchesPlayed", "games_played",
+)
+
+
 def _jogos_disputados(
     league_stats: Optional[Dict[str, Any]] = None,
     matches_played: Optional[int] = None,
 ) -> Optional[int]:
     mp = matches_played
     if mp is None and league_stats:
-        mp = league_stats.get("matchesCompleted") or league_stats.get("matches_played")
+        for chave in _ALIAS_JOGOS:
+            v = league_stats.get(chave)
+            if v is not None:
+                mp = v
+                break
     if mp is None:
         return None
     try:
-        return int(mp)
+        n = int(float(mp))
     except (TypeError, ValueError):
         return None
+    return n if n >= 0 else None
 
 
 def season_data_state(
