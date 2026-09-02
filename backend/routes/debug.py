@@ -64,6 +64,113 @@ def _require_debug_key(header_key: Optional[str]) -> None:
         raise HTTPException(401, "invalid X-Debug-Key")
 
 
+@router.get("/historico-odds")
+def historico_odds(
+    league_id: str = "championship",
+    n: int = 5,
+    x_debug_key: Optional[str] = Header(default=None, alias="X-Debug-Key"),
+) -> dict:
+    """#225-a - o historico do league-matches traz odds pre-jogo preenchidas?
+
+    Instrumento DESCARTAVEL. Existe para responder UMA pergunta e sair.
+
+    A pergunta: o `get_all_league_matches` devolve, por partida, estatistica
+    completa (placar, cartoes, escanteios) e o manifesto lista `odds_ft_*`
+    como CONSUMIDO. Se essas colunas vierem preenchidas no historico, da para
+    reconstruir prognostico E EV de temporadas inteiras filtrando os jogos
+    anteriores a cada data - milhares de observacoes limpas, sem esperar o
+    ledger acumular. Se vierem nulas, sobra so a probabilidade.
+
+    O manifesto diz que os campos EXISTEM. Nao diz que estao POPULADOS nos
+    jogos passados, e muitas APIs zeram odds antigas. Sem esta leitura, o
+    escopo do #225 seria escolhido por suposicao.
+
+    Query: ?league_id=championship&n=5
+    Header: X-Debug-Key: <ODDS_DEBUG_KEY>
+
+    Nao devolve credencial nenhuma - so estatistica de futebol.
+    """
+    _require_debug_key(x_debug_key)
+
+    from backend.config.leagues_config import LEAGUES_CONFIG
+    cfg = next((l for l in LEAGUES_CONFIG if l.get("id") == league_id), None)
+    if cfg is None:
+        raise HTTPException(404, f"liga desconhecida: {league_id}")
+
+    fsc = _get_fsc()
+    t0 = time.time()
+    season_ids = fsc.resolve_season_ids(
+        cfg.get("country", ""), cfg.get("name", ""),
+        alt_names=cfg.get("alt_names"), n_seasons=1,
+    )
+    if not season_ids:
+        raise HTTPException(503, f"sem season_id para {league_id}")
+    sid = season_ids[0][0]
+
+    resp = fsc.get_all_league_matches(sid) or {}
+    jogos = resp.get("data") or []
+
+    # Só jogos finalizados: odd de jogo futuro estar preenchida nao prova nada
+    # sobre o historico, que e o que o backfill vai usar.
+    finalizados = [
+        j for j in jogos
+        if str(j.get("status", "")).lower() in ("complete", "finished", "ft")
+    ]
+
+    _CAMPOS_ODDS = [
+        "odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win",
+        "odds_ft_over25", "odds_ft_over35", "odds_btts_yes",
+        "odds_corners_over_85", "odds_corners_over_95",
+    ]
+    _CAMPOS_STATS = [
+        "date_unix", "homeGoalCount", "awayGoalCount",
+        "team_a_yellow_cards", "team_b_yellow_cards",
+        "home_team_corner_count", "away_team_corner_count",
+    ]
+
+    def _preenchido(v) -> bool:
+        try:
+            return v is not None and float(v) > 1.0
+        except (TypeError, ValueError):
+            return False
+
+    # Cobertura sobre TODOS os finalizados, nao so sobre a amostra exibida:
+    # cinco jogos podem mentir sobre a temporada inteira nos dois sentidos.
+    cobertura = {
+        c: {
+            "preenchidos": sum(1 for j in finalizados if _preenchido(j.get(c))),
+            "total": len(finalizados),
+        }
+        for c in _CAMPOS_ODDS
+    }
+    for c in cobertura.values():
+        c["pct"] = round(100.0 * c["preenchidos"] / c["total"], 1) if c["total"] else 0.0
+
+    amostra = [
+        {**{k: j.get(k) for k in _CAMPOS_STATS},
+         **{k: j.get(k) for k in _CAMPOS_ODDS},
+         "chaves_odds_presentes": sorted(
+             k for k in j.keys() if k.startswith("odds_")
+         )[:25]}
+        for j in finalizados[:max(1, min(int(n), 20))]
+    ]
+
+    return {
+        "league_id": league_id,
+        "season_id": sid,
+        "jogos_na_temporada": len(jogos),
+        "finalizados": len(finalizados),
+        "cobertura_odds": cobertura,
+        "amostra": amostra,
+        "veredito": (
+            "odds historicas PREENCHIDAS — backfill reconstroi prob + EV"
+            if cobertura.get("odds_ft_home_team_win", {}).get("pct", 0) >= 50
+            else "odds historicas AUSENTES — backfill reconstroi so a probabilidade"
+        ),
+        "elapsed_ms": int((time.time() - t0) * 1000),
+    }
+
+
 @router.get("/odds-coverage")
 def odds_coverage(
     fixture_id: int,
