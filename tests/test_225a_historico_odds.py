@@ -88,15 +88,19 @@ def test_cobertura_parcial_nao_vira_veredito_positivo(_sem_chave, monkeypatch):
 
 
 # ── so jogos finalizados ────────────────────────────────────────────────
-def test_jogo_futuro_nao_conta_na_cobertura():
+def test_jogo_futuro_nao_conta_na_cobertura(_sem_chave, monkeypatch):
     """Odd de jogo que ainda vai acontecer nao prova nada sobre o historico —
-    e o historico e o que o backfill vai usar."""
-    import os
-    os.environ["ODDS_DEBUG_KEY"] = "segredo"
-    jogos = [_jogo(status="incomplete", odd=2.1) for _ in range(9)] + [_jogo(status="complete", odd=None)]
-    import backend.routes.debug as d
-    d._get_fsc = lambda: _FSC(jogos)
-    r = d.historico_odds(x_debug_key="segredo")
+    e o historico e o que o backfill vai usar.
+
+    Este teste escrevia direto em `os.environ` e em `d._get_fsc`, sem
+    monkeypatch: as duas mutacoes VAZAVAM para o resto da sessao (verificado —
+    depois dele `_get_fsc` deixava de ser o real e `ODDS_DEBUG_KEY` ficava no
+    ambiente). Teste que suja estado global e a mesma familia do defeito que o
+    #223 nomeou: passa verde e muda a condicao de quem roda depois.
+    """
+    jogos = ([_jogo(status="incomplete", odd=2.1) for _ in range(9)]
+             + [_jogo(status="complete", odd=None)])
+    r = _rodar(monkeypatch, jogos)
     assert r["finalizados"] == 1
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["total"] == 1
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["preenchidos"] == 0

@@ -10608,3 +10608,31 @@ Ele afirmava os nomes errados usando um `stats` sintético que continha exatamen
 
 ### Lição aprendida
 O #222 e o #223 são a mesma regra em dois formatos, e a diferença entre eles é toda a diferença. O #222 pede que a pessoa não presuma; o #223 faz o build falhar quando ela presume. Uma semana de defeitos idênticos mostrou que a primeira forma não segura — inclusive quando quem escreve o patch é quem acabou de documentar a regra.
+
+## 225-a — Rota de diagnóstico do histórico de odds
+**Data:** 2026-09-02 | **Arquivos:** backend/routes/debug.py, tests/test_225a_historico_odds.py (novo) | **Severidade:** — (instrumento) | **Status:** Implementado — descartável
+
+### A pergunta
+`get_all_league_matches` devolve, por partida, estatística completa (placar, cartões, escanteios) — as mesmas colunas que `_avg_from_history` já lê. Isso torna a reconstrução do estado pré-jogo de qualquer partida passada **aritmética local**, não chamada de API: filtra a temporada para `data < D` e calcula as médias só com o que existia antes.
+
+Falta saber se as colunas `odds_ft_*` — que o manifesto (#210) lista como CONSUMIDO — vêm **populadas** no histórico. O manifesto diz que os campos existem; não diz que estão preenchidos em jogos passados, e muitas APIs zeram odds antigas. Sem essa leitura, o escopo do #225 seria escolhido por suposição — o que o #222 proíbe.
+
+### Três decisões de desenho, cada uma vinda de um erro desta semana
+1. **Cobertura sobre TODOS os finalizados**, não sobre a amostra exibida — cinco jogos podem mentir nos dois sentidos (é a régua de n≈4 do #215/#216 de novo).
+2. **Só jogos finalizados** — odd preenchida em jogo futuro não prova nada sobre o histórico, e é o histórico que o backfill vai usar. Sem o filtro a rota diria PREENCHIDAS olhando para a rodada de amanhã.
+3. **A amostra lista as chaves `odds_*` que de fato existem no registro** — se o nome for outro, a rota denuncia em vez de devolver tudo nulo e parecer resposta. É a lição do #223 aplicada ao próprio instrumento.
+
+Odd `0` ou `1.0` conta como ausente: não é preço, é campo vazio com disfarce.
+
+### Higiene do teste — defeito encontrado e corrigido na verificação
+`test_jogo_futuro_nao_conta_na_cobertura` escrevia direto em `os.environ["ODDS_DEBUG_KEY"]` e em `d._get_fsc`, **sem `monkeypatch`**. Verificado: as duas mutações vazavam para o resto da sessão — depois dele `_get_fsc` deixava de ser o real e a variável ficava no ambiente. Como os outros testes usam `monkeypatch`, que restaura o valor *vigente no momento*, eles passariam a restaurar para o dublê vazado.
+
+É a mesma família do que o #223 nomeou, um nível acima: teste que passa verde **e muda a condição de quem roda depois**. Convertido para a fixture e o helper que os demais já usavam; confirmado que `_get_fsc` volta ao real ao fim da suíte.
+
+### Testes
+12 novos. Suíte: **804 passed, 1 skipped**.
+
+### Nota operacional
+A rota é `GET /api/debug/historico-odds` (o router tem `prefix="/api/debug"`). Chamá-la pelo API Gateway funciona porque o custo é uma chamada de liga-temporada já cacheada (~3-5s pelas medições do #212), bem abaixo do teto de 30s — mas pela regra #114/#203 a Function URL continua sendo o endereço correto por padrão.
+
+**Instrumento descartável:** sai depois de responder.
