@@ -918,12 +918,42 @@ voltar a 489, a coleta quebrou de novo em algum import de nível de módulo.
    - *Elo 2 (Montagem):* Onde a chave é explicitamente inserida no record em `routes/fixtures.py` ou `fixtures_service.py`.
    - *Elo 3 (Consumo):* As linhas exatas que leem a chave.
    - *Elo 4 (Impacto Real):* Diff comprovado no payload que o endpoint devolve.
+
+   Para chaves do **record** (`match_data`/`record`/`stats`/`league_stats`), os
+   elos 2 e 3 sao provados por maquina: `pytest tests/test_223_contrato_record.py`
+   — chave lida e nunca escrita **bloqueia**. Pedir prova em prosa para algo que
+   um teste decide e convidar o teatro. A comprovacao escrita fica restrita ao
+   que o contrato ainda nao cobre: o dicionario de contexto do
+   `mistral_analysis.py`/`ai_analysis.py`, que tem outra forma e merece contrato
+   proprio.
 3. **Critério de Aceite Falsificável Pré-Implementação (SDD):**
    Antes de editar arquivos, o plano deve declarar o critério de aceite com um
    teste que falhe antes e passe depois (ex: `season_data_state` mudar de
    `EARLY_SEASON_FALLBACK` para `OK` em liga com N rodadas).
-4. **Se o teste antes/depois for idêntico, o patch está rejeitado** — indica
-   elo quebrado na esteira de dados, mesmo que a função consumidora esteja perfeita.
+4. **Patch que AFIRMA efeito e produz payload idêntico está rejeitado** —
+   indica elo quebrado na esteira de dados, mesmo com a função consumidora
+   perfeita. **A recíproca não vale:** patch que declara na Spec que *não* altera
+   número — instrumentação (#212), ou funcionalidade atrás de flag desligada
+   (#218 `PREDICTION_LEDGER_ENABLED=0`, #219 `DEVIG_ENABLED=0`) — tem o critério
+   invertido: payload idêntico é o **aceite**, e qualquer diferença é regressão.
+   A versão anterior desta regra, sem essa ressalva, reprovaria os três patches
+   citados, que estão corretos e nasceram desligados justamente por prudência.
+5. **O contrato vale nas DUAS direções.** Sinal produzido sem leitor é defeito,
+   não redundância: `predict_corners` marcava `no_bet` em quatro situações e um
+   `grep no_bet` no classificador devolvia zero (#217) — o veto existia e não
+   vetava, publicando EV de +31,3% e +34,7% em mercado que o próprio motor havia
+   rejeitado. Ao adicionar qualquer sinal de bloqueio ou campo novo no payload,
+   o teste que importa é o do **consumidor**, não o do produtor.
+6. **Teste que constrói a própria entrada não testa o contrato — testa a si
+   mesmo.** Ao validar consumo de chave, a entrada tem de vir do produtor real
+   (`build_records_from_matches`), nunca de um dicionário de conveniência montado
+   dentro do teste. O caso: o teste do #218 fabricava um `stats` contendo
+   exatamente as chaves erradas que o ledger lia (`cardsLambda`,
+   `homeMatchesPlayed`, `dataAgeHours` — nenhuma existe no record), então
+   **concordava com a suposição do código** e ficava verde enquanto a produção
+   gravaria 6 de 10 entradas nulas. Um dicionário escrito por quem escreveu o
+   consumidor sempre contém as chaves que o consumidor espera.
 
-**Verificação:** Execução de script de diff antes/depois com payload real (ex: `python scripts/testar_payload_diff.py`).
-**Verificação (CI/Gate):** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
+**Verificação:** `python3 scripts/testar_payload_diff.py --antes a.json --depois d.json` (exit 1 quando idêntico)
+**Verificação (gate automático):** `pytest tests/test_223_contrato_record.py -q` — roda no CI sem configuração adicional, porque o `pytest -q` do workflow já varre `tests/`.
+**Verificação (premissas da saída):** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
