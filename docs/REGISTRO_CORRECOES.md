@@ -10636,3 +10636,45 @@ Odd `0` ou `1.0` conta como ausente: não é preço, é campo vazio com disfarce
 A rota é `GET /api/debug/historico-odds` (o router tem `prefix="/api/debug"`). Chamá-la pelo API Gateway funciona porque o custo é uma chamada de liga-temporada já cacheada (~3-5s pelas medições do #212), bem abaixo do teto de 30s — mas pela regra #114/#203 a Function URL continua sendo o endereço correto por padrão.
 
 **Instrumento descartável:** sai depois de responder.
+
+## 225-a (adendo) — O veredito de um campo condenava oito famílias
+**Data:** 2026-09-02 | **Arquivos:** backend/routes/debug.py, tests/test_225a_historico_odds.py | **Severidade:** Alta (mandaria o escopo do #225 para o lado errado) | **Status:** Corrigido
+
+### A leitura em produção (championship, 48 finalizados)
+```
+odds_ft_home_team_win / draw / away_team_win ....   0%
+odds_ft_over25 / over35 ......................... 100%
+odds_btts_yes ................................... 100%
+odds_corners_over_85 / over_95 .................. 100%
+
+veredito da rota: "odds historicas AUSENTES"
+```
+
+**Cinco das oito famílias estão 100% preenchidas**, e o veredito — calculado a partir de **um único campo**, `odds_ft_home_team_win` — condenava as oito. É a mesma falácia de amostra pequena que a rota foi escrita para evitar, num eixo diferente: **um campo mentindo sobre oito**. Aceitar esse veredito mandaria o escopo do #225 para o lado errado.
+
+E a leitura correta é quase o oposto: o backfill reconstrói prob **e** EV para gols e BTTS, e perde só o 1X2 — que é justamente a família onde o EV já era circular pelo #219 (a probabilidade vem da própria odd, logo o sistema nunca poderia apontar valor ali).
+
+### O segundo sinal: odd sem desfecho não mede nada
+`home_team_corner_count` e `away_team_corner_count` vieram **nulos** na amostra, enquanto as odds de escanteios estavam em 100%. **Odd sem desfecho é inútil para backfill** — não dá para saber se o pick acertou. A rota não media isso: media a oferta e não a possibilidade de pontuá-la.
+
+### Correções
+1. **Veredito por família**, com a regra `odd ≥50% E desfecho ≥50%`. Quatro estados: `prob + EV`, `so prob (sem odd)`, `INUTIL (odd sem desfecho)`, `sem dado`.
+2. **`cobertura_desfechos`** — mede `homeGoalCount`, cartões e contagem de escanteios em todos os finalizados. `0` conta como presente (0 escanteios é resultado, não ausência); só `None` é ausência.
+3. **`chaves_odds_presentes` deixa de esconder o que a rota investiga** — a lista ordenada e cortada em 25 mostrava só chaves de 1º e 2º tempo, e nenhuma `odds_ft_*`. As relevantes vêm primeiro agora.
+
+### Verificação
+Repetindo os números reais de 02/09 contra a rota corrigida:
+```
+familia          odd%  desfecho%   backfill
+1X2                 0        100   so prob (sem odd)
+gols_ou           100        100   prob + EV
+btts              100        100   prob + EV
+escanteios        100          0   INUTIL (odd sem desfecho)
+```
+**Ressalva:** a linha de escanteios usa o único jogo que a amostra exibiu, replicado 48× — é hipótese, não medição. A rota corrigida mede a contagem nos 48 de verdade; a releitura decide.
+
+### Testes
+16 (era 12): veredito por família, odd sem desfecho, desfecho zero como presente, e chaves relevantes antes do corte. Suíte: **808 passed, 1 skipped**.
+
+### Lição aprendida
+O instrumento carregava a decisão que deveria delegar. Medir oito famílias e resumir em um veredito derivado de uma delas descarta a informação que custou a medição — e o resumo é o que a pessoa lê. Quando um diagnóstico agrega dimensões heterogêneas, o agregado é opinião embutida: a saída tem de mostrar as dimensões e deixar a conclusão para quem decide o escopo.

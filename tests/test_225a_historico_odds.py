@@ -66,13 +66,49 @@ def test_liga_desconhecida(_sem_chave):
 def test_odds_preenchidas(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=2.10) for _ in range(10)])
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 100.0
-    assert "PREENCHIDAS" in r["veredito"]
+    assert r["por_familia"]["1X2"]["backfill"] == "prob + EV"
+    assert "1X2" in r["veredito"]
 
 
 def test_odds_ausentes(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=None) for _ in range(10)])
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 0.0
-    assert "AUSENTES" in r["veredito"]
+    assert r["por_familia"]["1X2"]["backfill"] == "so prob (sem odd)"
+
+
+def test_veredito_e_por_familia_nao_por_um_campo(_sem_chave, monkeypatch):
+    """O defeito medido em 02/09: 1X2 em 0% e gols/BTTS/escanteios em 100%, e o
+    veredito unico chamava tudo de AUSENTES a partir de UM campo. Um campo
+    mentindo sobre oito — a mesma falacia de amostra pequena, noutro eixo."""
+    jogos = [_jogo(odd=None, odds_ft_over25=1.85, odds_ft_over35=3.10,
+                   odds_btts_yes=1.67) for _ in range(10)]
+    r = _rodar(monkeypatch, jogos)
+    assert r["por_familia"]["1X2"]["backfill"] == "so prob (sem odd)"
+    assert r["por_familia"]["gols_ou"]["backfill"] == "prob + EV"
+    assert r["por_familia"]["btts"]["backfill"] == "prob + EV"
+    assert "gols_ou" in r["veredito"] and "btts" in r["veredito"]
+
+
+def test_odd_sem_desfecho_e_inutil(_sem_chave, monkeypatch):
+    """Escanteios com odd em 100% e contagem nula: nao da para saber se acertou.
+
+    Foi o segundo sinal da leitura de 02/09 — `home_team_corner_count` nulo na
+    amostra. Odd sem desfecho nao mede resolucao nenhuma, e chamar isso de
+    'backfill possivel' seria prometer numero que nao existe.
+    """
+    jogos = [_jogo(odd=None, odds_corners_over_85=1.42, odds_corners_over_95=1.77,
+                   home_team_corner_count=None, away_team_corner_count=None)
+             for _ in range(10)]
+    r = _rodar(monkeypatch, jogos)
+    assert r["cobertura_desfechos"]["home_team_corner_count"]["pct"] == 0.0
+    assert r["por_familia"]["escanteios"]["backfill"] == "INUTIL (odd sem desfecho)"
+
+
+def test_desfecho_zero_conta_como_presente(_sem_chave, monkeypatch):
+    """0 escanteios e 0 cartoes sao resultados legitimos — so None e ausencia."""
+    r = _rodar(monkeypatch, [_jogo(odd=None, home_team_corner_count=0,
+                                   away_team_corner_count=0) for _ in range(5)])
+    assert r["cobertura_desfechos"]["home_team_corner_count"]["pct"] == 100.0
 
 
 def test_zero_e_ausente_nao_preenchido(_sem_chave, monkeypatch):
@@ -84,7 +120,7 @@ def test_zero_e_ausente_nao_preenchido(_sem_chave, monkeypatch):
 def test_cobertura_parcial_nao_vira_veredito_positivo(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=2.1) for _ in range(3)] + [_jogo(odd=None) for _ in range(7)])
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 30.0
-    assert "AUSENTES" in r["veredito"]
+    assert r["por_familia"]["1X2"]["backfill"] == "so prob (sem odd)"
 
 
 # ── so jogos finalizados ────────────────────────────────────────────────
@@ -127,6 +163,18 @@ def test_lista_as_chaves_odds_que_existem(_sem_chave, monkeypatch):
     j["odds_1x2_home"] = 2.5
     r = _rodar(monkeypatch, [j])
     assert "odds_1x2_home" in r["amostra"][0]["chaves_odds_presentes"]
+
+
+def test_chaves_relevantes_vem_antes_do_corte(_sem_chave, monkeypatch):
+    """A lista ordenada e cortada em 25 escondia justamente as `odds_ft_*`:
+    na leitura real so apareceram chaves de 1o e 2o tempo."""
+    j = _jogo(odd=2.1)
+    for i in range(40):
+        j[f"odds_1st_half_x{i:02d}"] = 1.5
+    r = _rodar(monkeypatch, [j])
+    presentes = r["amostra"][0]["chaves_odds_presentes"]
+    assert "odds_ft_home_team_win" in presentes
+    assert "odds_btts_yes" in presentes
 
 
 def test_temporada_sem_jogos_nao_divide_por_zero(_sem_chave, monkeypatch):

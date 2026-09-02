@@ -127,6 +127,15 @@ def historico_odds(
         "team_a_yellow_cards", "team_b_yellow_cards",
         "home_team_corner_count", "away_team_corner_count",
     ]
+    # #225-a (adendo): odd sem DESFECHO nao serve para backfill — nao da para
+    # saber se o pick acertou. A primeira leitura mostrou escanteios com odd em
+    # 100% dos jogos e `home_team_corner_count` nulo na amostra: se a contagem
+    # faltar no historico, a odd de escanteios e inutil para medir resolucao.
+    _CAMPOS_DESFECHO = [
+        "homeGoalCount", "awayGoalCount",
+        "team_a_yellow_cards", "team_b_yellow_cards",
+        "home_team_corner_count", "away_team_corner_count",
+    ]
 
     def _preenchido(v) -> bool:
         try:
@@ -146,12 +155,73 @@ def historico_odds(
     for c in cobertura.values():
         c["pct"] = round(100.0 * c["preenchidos"] / c["total"], 1) if c["total"] else 0.0
 
+    def _tem_valor(v) -> bool:
+        """Desfecho: 0 e valor legitimo (0 escanteios, 0 cartoes). So None nao e."""
+        return v is not None
+
+    cobertura_desfechos = {
+        c: {
+            "preenchidos": sum(1 for j in finalizados if _tem_valor(j.get(c))),
+            "total": len(finalizados),
+        }
+        for c in _CAMPOS_DESFECHO
+    }
+    for c in cobertura_desfechos.values():
+        c["pct"] = round(100.0 * c["preenchidos"] / c["total"], 1) if c["total"] else 0.0
+
+    # #225-a (adendo): o veredito unico saia de UM campo e condenava os oito.
+    # Medido em 02/09 na championship: 1X2 em 0%, mas Over 2.5, Over 3.5, BTTS e
+    # os dois de escanteios em 100%. Chamar isso de "AUSENTES" mandaria o escopo
+    # do #225 para o lado errado — a mesma falacia de amostra pequena que a rota
+    # existia para evitar, num eixo diferente: um campo mentindo sobre oito.
+    _FAMILIAS = {
+        "1X2": ["odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win"],
+        "gols_ou": ["odds_ft_over25", "odds_ft_over35"],
+        "btts": ["odds_btts_yes"],
+        "escanteios": ["odds_corners_over_85", "odds_corners_over_95"],
+    }
+    _DESFECHO_DA_FAMILIA = {
+        "1X2": ["homeGoalCount", "awayGoalCount"],
+        "gols_ou": ["homeGoalCount", "awayGoalCount"],
+        "btts": ["homeGoalCount", "awayGoalCount"],
+        "escanteios": ["home_team_corner_count", "away_team_corner_count"],
+    }
+
+    def _min_pct(campos, fonte):
+        vals = [fonte.get(c, {}).get("pct", 0.0) for c in campos]
+        return min(vals) if vals else 0.0
+
+    por_familia = {}
+    for fam, campos in _FAMILIAS.items():
+        odd_pct = _min_pct(campos, cobertura)
+        desf_pct = _min_pct(_DESFECHO_DA_FAMILIA[fam], cobertura_desfechos)
+        # Backfill de EV exige odd E desfecho. So um dos dois nao mede nada.
+        if odd_pct >= 50 and desf_pct >= 50:
+            estado = "prob + EV"
+        elif desf_pct >= 50:
+            estado = "so prob (sem odd)"
+        elif odd_pct >= 50:
+            estado = "INUTIL (odd sem desfecho)"
+        else:
+            estado = "sem dado"
+        por_familia[fam] = {"odd_pct": odd_pct, "desfecho_pct": desf_pct, "backfill": estado}
+
+    _com_ev = sorted(f for f, v in por_familia.items() if v["backfill"] == "prob + EV")
+    _so_prob = sorted(f for f, v in por_familia.items() if v["backfill"] == "so prob (sem odd)")
+
     amostra = [
         {**{k: j.get(k) for k in _CAMPOS_STATS},
          **{k: j.get(k) for k in _CAMPOS_ODDS},
-         "chaves_odds_presentes": sorted(
-             k for k in j.keys() if k.startswith("odds_")
-         )[:25]}
+         # #225-a (adendo): a lista ordenada e cortada em 25 mostrava so as
+         # chaves de 1o/2o tempo e escondia justamente as `odds_ft_*` que a rota
+         # investiga. As relevantes vem primeiro agora.
+         "chaves_odds_presentes": (
+             sorted(k for k in j.keys()
+                    if k.startswith(("odds_ft_", "odds_btts", "odds_corners")))
+             + sorted(k for k in j.keys()
+                      if k.startswith("odds_")
+                      and not k.startswith(("odds_ft_", "odds_btts", "odds_corners")))[:15]
+         )}
         for j in finalizados[:max(1, min(int(n), 20))]
     ]
 
@@ -161,11 +231,13 @@ def historico_odds(
         "jogos_na_temporada": len(jogos),
         "finalizados": len(finalizados),
         "cobertura_odds": cobertura,
+        "cobertura_desfechos": cobertura_desfechos,
+        "por_familia": por_familia,
         "amostra": amostra,
         "veredito": (
-            "odds historicas PREENCHIDAS — backfill reconstroi prob + EV"
-            if cobertura.get("odds_ft_home_team_win", {}).get("pct", 0) >= 50
-            else "odds historicas AUSENTES — backfill reconstroi so a probabilidade"
+            (f"backfill com prob + EV em: {', '.join(_com_ev)}" if _com_ev
+             else "nenhuma familia tem odd E desfecho")
+            + (f" | so probabilidade em: {', '.join(_so_prob)}" if _so_prob else "")
         ),
         "elapsed_ms": int((time.time() - t0) * 1000),
     }
