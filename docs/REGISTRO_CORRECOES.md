@@ -10498,3 +10498,55 @@ IRLS próprio, sem scipy (o #182 registra que o import quebrou a Lambda), com me
 
 ### Lição aprendida
 Um arquivo de teste quebrado não estava só falhando — estava **escondendo o tamanho da suíte**. Durante semanas "489 testes passando" foi lido como cobertura, quando 35% dos testes nem eram coletados. Erro de coleta é diferente de erro de teste: o primeiro não aparece como falha, aparece como ausência.
+
+## 221 — A contagem de jogos da liga chega ao consumidor
+**Data:** 2026-09-02 | **Arquivos:** backend/services/data_governance.py, backend/services/fixtures_service.py, tests/test_221_contagem_de_jogos.py (novo) | **Severidade:** Alta (freava o sistema inteiro) | **Status:** Corrigido (com adendo #221-a)
+
+### Problema identificado
+**Três camadas, três nomes, nenhum acordo:**
+
+| | onde | nome |
+|---|---|---|
+| produtor | `routes/fixtures.py:335` | monta `matches_completed` |
+| portador | `fixtures_service.py:1096` | dicionário de 11 chaves, **sem nenhuma delas** |
+| consumidor | `data_governance.py:113` | pede `matchesCompleted`/`matches_played` |
+
+O produtor sempre extraiu o campo e o consumidor sempre o procurou; **ninguém nunca o pôs no meio.** Resultado: `mp is None` em toda liga, desde sempre.
+
+Medido em produção: `DATA_MISSING` em 100% dos mercados, `EARLY_SEASON_FALLBACK` em todo pick e **zero picks SAFE ou NEUTRO_QUALIFICADO** no payload inteiro — porque o EARLY_SEASON rebaixa SAFE (`ev_classification:1421`). O #217 não causou isso; o `DATA_MISSING` que ele adicionou é o que tornou legível.
+
+### Correção aplicada
+O portador publica os três rótulos que os consumidores procuram, lendo qualquer um dos cinco que as duas rotas de `league_df` produzem. O consumidor fica tolerante a nome pela mesma razão — é mais barato aceitar cinco rótulos do que descobrir daqui a seis meses que o EARLY_SEASON voltou a disparar sozinho. `calculate_data_quality_score` tinha a **própria** lista de nomes; agora as duas funções leem pelo mesmo `_jogos_disputados`.
+
+**`LEAGUE_MATCH_COUNT_ENABLED` nasce LIGADO**, ao contrário dos patches recentes, porque aqui **o estado atual é que é o errado** — manter desligado preservaria o defeito. Mas muda muito número de uma vez num site em produção, então tem volta numa variável, sem redeploy.
+
+### 221-a — a QUARTA camada, encontrada na verificação
+O patch original corrige o portador, e com isso a contagem passa a chegar ao `predict_corners` e ao `predict_cards` (que já recebiam `league_stats=league_avgs`, linhas 2128/2165). **Mas o consumidor que decide o EARLY_SEASON lê `match_data.get("league_stats")` (`ev_classification.py:884`) — e o record nunca teve essa chave.**
+
+Verificado antes da correção, com e sem a contagem no `league_df`:
+
+```
+COM contagem (25 rodadas):  Under 2.5 gols  ['DATA_MISSING', 'EARLY_SEASON_FALLBACK']
+SEM contagem:               Under 2.5 gols  ['DATA_MISSING', 'EARLY_SEASON_FALLBACK']
+```
+
+**Idênticos.** O #221 sozinho não produziria o efeito que seu próprio commit anuncia. Com `"league_stats": league_avgs` no record:
+
+```
+COM contagem (25 rodadas):  Under 2.5 gols  sem marca de dado ausente
+SEM contagem:               Under 2.5 gols  ['DATA_MISSING', 'EARLY_SEASON_FALLBACK']
+flag desligada:             Under 2.5 gols  ['DATA_MISSING', 'EARLY_SEASON_FALLBACK']
+```
+
+A chave **fica no payload de propósito**, em vez de ser removida após a seleção de mercados: um `pop` depois do consumo criaria um contrato de **ordem** invisível, que é a forma de defeito que este sistema mais repete. Mesmo princípio do #217 — o pick vetado não some.
+
+O rollback continua íntegro através da linha nova, porque `league_avgs` só carrega a contagem com a flag ligada.
+
+### O que este patch NÃO resolve
+**O veto de escanteios.** O tier do motor (`corners/data_quality.py:189`) sai de `coverage_score` e `sample_adequacy`; verificado que `sample_adequacy = min(min_sample / MIN_CORNER_SAMPLE_GOOD, 1.0)` é **porta dura em cada nível** (HIGH ≥0.8, MEDIUM ≥0.5, LOW ≥0.2) e vem da amostra de escanteios **por time**, não da contagem da liga. A contagem entra só no componente `league_risk`, com peso **0,15** no `coverage_score` — não decide o RESTRICTED. *Por que a amostra por time está baixa com 25 rodadas jogadas é a próxima investigação.*
+
+### Testes
+32 em `test_221_contagem_de_jogos.py` (28 do patch + 4 do #221-a, de ponta a ponta). Suíte: **785 passed, 1 skipped**.
+
+### Lição aprendida
+Um dado com **três** nomes ao longo do caminho já é frágil; o que o tornou invisível por meses foi ter **quatro** elos e nenhum teste que atravessasse os quatro. Cada camada estava certa isoladamente — o produtor extraía, o consumidor procurava, o portador era coerente consigo mesmo — e o defeito vivia exatamente nas juntas. Teste de ponta a ponta não é luxo em pipeline de N camadas: é o único que olha as juntas.

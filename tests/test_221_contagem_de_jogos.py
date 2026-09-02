@@ -84,3 +84,67 @@ def test_rollback_de_uma_variavel(monkeypatch, v):
 def test_qualquer_outro_valor_mantem_ligado(monkeypatch, v):
     monkeypatch.setenv("LEAGUE_MATCH_COUNT_ENABLED", v)
     assert _contagem_de_jogos_habilitada() is True
+
+
+# ── #221-a: a quarta camada ─────────────────────────────────────────────
+# O #221 corrigiu o portador (`league_avgs`), e com isso a contagem passou a
+# chegar ao predict_corners e ao predict_cards, que ja recebiam
+# `league_stats=league_avgs`. Mas o consumidor que decide o EARLY_SEASON le
+# `match_data.get("league_stats")` (ev_classification.py:884) — e o record
+# NUNCA teve essa chave. Medido antes do #221-a: com e sem a contagem, o
+# payload saia igual, com DATA_MISSING e EARLY_SEASON_FALLBACK nos dois.
+import time
+
+import pandas as pd
+
+from backend.services.fixtures_service import build_records_from_matches
+
+_BASE_LIGA = {
+    "average_goals_per_match": 2.65, "average_corners_per_match": 10.2,
+    "average_cards_per_match": 4.9, "average_fouls_per_match": 22.0,
+    "average_shots_per_match": 24.0,
+}
+
+
+def _monta(league_df):
+    ts = int(time.time()) + 3600
+    return build_records_from_matches(
+        league_id="championship",
+        matches=pd.DataFrame([{"timestamp": ts}]), teams=None,
+        league_df=league_df,
+        _rows_override=[{"id": 1, "home_team_name": "Casa FC",
+                         "away_team_name": "Fora FC", "date_unix": ts,
+                         "timestamp": ts, "status": "incomplete"}],
+        date_filter="today",
+    )[0]
+
+
+def _codigos(record):
+    return {c for m in record["mercados"] for c in (m.get("reason_codes") or [])}
+
+
+def test_o_record_publica_league_stats():
+    """A chave que ev_classification.py:884 le. Sem ela o #221 nao tem efeito."""
+    r = _monta(pd.DataFrame([{**_BASE_LIGA, "matches_completed": 25}]))
+    assert "league_stats" in r
+    assert r["league_stats"]["matches_completed"] == 25
+
+
+def test_com_contagem_o_early_season_some():
+    r = _monta(pd.DataFrame([{**_BASE_LIGA, "matches_completed": 25}]))
+    cods = _codigos(r)
+    assert "EARLY_SEASON_FALLBACK" not in cods
+    assert "DATA_MISSING" not in cods
+
+
+def test_sem_contagem_o_estado_continua_desconhecido():
+    """O #221 nao revoga o #217: sem dado, o rotulo de ausencia permanece."""
+    cods = _codigos(_monta(pd.DataFrame([_BASE_LIGA])))
+    assert "DATA_MISSING" in cods and "EARLY_SEASON_FALLBACK" in cods
+
+
+def test_rollback_desliga_o_efeito_de_ponta_a_ponta(monkeypatch):
+    """LEAGUE_MATCH_COUNT_ENABLED=0 devolve o comportamento antigo."""
+    monkeypatch.setenv("LEAGUE_MATCH_COUNT_ENABLED", "0")
+    cods = _codigos(_monta(pd.DataFrame([{**_BASE_LIGA, "matches_completed": 25}])))
+    assert "DATA_MISSING" in cods and "EARLY_SEASON_FALLBACK" in cods

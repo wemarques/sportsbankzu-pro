@@ -1837,6 +1837,22 @@ def build_records_from_matches(
             "footystatsId": int(r.get("id")) if r.get("id") is not None else None,
             "leagueId": league_id,
             "leagueName": league_id.replace("-", " ").title(),
+            # #221-a - a QUARTA camada. O #221 fez o `league_avgs` carregar a
+            # contagem de jogos, e ela passou a chegar ao predict_corners e ao
+            # predict_cards (que ja recebiam `league_stats=league_avgs`). Mas o
+            # consumidor que importa para o EARLY_SEASON le
+            # `match_data.get("league_stats")` (ev_classification.py:884) — e o
+            # record NUNCA teve essa chave. Sem esta linha o #221 corrige o
+            # portador e o efeito prometido (SAFE voltar, EARLY_SEASON sumir)
+            # nao acontece: medido, DATA_MISSING e EARLY_SEASON_FALLBACK saem
+            # iguais com e sem a contagem.
+            #
+            # Fica no payload de proposito, em vez de ser removido apos a
+            # selecao de mercados: um `pop` depois do consumo criaria um
+            # contrato de ORDEM invisivel, que e a forma de defeito que este
+            # sistema mais repete. Melhor um payload alguns bytes maior e
+            # auditavel — mesmo principio do #217 (o pick vetado nao some).
+            "league_stats": league_avgs,
             "homeTeam": {"name": home, "logo": "", "form": [], "rating": 0},
             "awayTeam": {"name": away, "logo": "", "form": [], "rating": 0},
             "datetime": dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt.tzinfo else dt.isoformat() + "Z",
