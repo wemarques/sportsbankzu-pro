@@ -205,6 +205,16 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
             "total_cards": total_cards,
         }
 
+        # #228: pontua no ledger (#218) o que foi publicado ANTES deste jogo.
+        # Mesmo `actual_result` que a auditoria usa; mesmo `id` sintetico que
+        # o bundle gravou (build_records_from_matches monta os dois). Falha
+        # aberta e desligado por padrao junto com o ledger.
+        try:
+            from backend.services.prediction_ledger import registrar_desfechos_do_jogo
+            registrar_desfechos_do_jogo(m.get("id", ""), actual_result)
+        except Exception as _e:                              # noqa: BLE001
+            logger.debug("[#228] desfechos nao registrados: %s", _e)
+
         picks_eval = []
         match_correct = 0
         match_total = 0

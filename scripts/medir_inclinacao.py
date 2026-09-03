@@ -32,10 +32,14 @@ def _do_ledger(desde: str, campo: str):
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT l.match_id, l.league_id, l.market, l.{campo}, o.outcome
+        SELECT l.match_id, l.league_id,
+               l.market || ' ' || COALESCE(l.selection, '') AS market,
+               l.{campo}, o.outcome
           FROM prediction_ledger l
           JOIN ledger_outcomes o
-            ON o.match_id = l.match_id AND o.market = l.market
+            ON o.match_id = l.match_id
+           AND o.market = l.market
+           AND o.selection = COALESCE(l.selection, '')   -- #228: por selecao
          WHERE l.published_at >= %s AND l.{campo} IS NOT NULL
         """,
         (desde,),

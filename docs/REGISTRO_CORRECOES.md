@@ -11364,3 +11364,37 @@ Igual ao #227-c, agora com 22 ligas de peso atrás: não recalibrar (devolve o p
 
 ### Lição aprendida
 Duas previsões certas e uma errada, todas escritas antes. A errada — Bundesliga — é a que mais vale: eu tinha um *mecanismo* em mente (mais gols → piso mais baixo → modelo menos abaixo) e o dado disse que o mecanismo não existe. Sem a previsão escrita, a Bundesliga em segundo pior lugar seria só mais uma linha da tabela; com ela, é a informação de que a minha intuição sobre o que governa a skill do modelo está errada, e isso vale mais que as duas certas.
+
+---
+
+## 228 — O ledger podia gravar picks, mas nunca poderia pontuá-los
+**Data:** 2026-09-03 | **Arquivos:** backend/services/prediction_ledger.py, backend/cron_handler.py, scripts/medir_inclinacao.py, scripts/lambda_env.py (novo), tests/test_228_ledger_desfechos.py (novo) | **Severidade:** Crítica (a única medição de produção não podia existir) | **Status:** Corrigido
+
+### Por que abrir o ledger agora
+O #227-e provou, em 22 ligas, que o modelo alimentado por médias móveis não carrega informação por jogo. O único buraco que sobrou é "produção usa outros insumos" — e a única forma de medir produção é o ledger (#218), que grava a probabilidade **publicada**. A tarefa era ligar `PREDICTION_LEDGER_ENABLED=1`. Ao ler o caminho inteiro antes de ligar, achei três coisas que fariam a flag ligar um registro que nunca poderia ser medido.
+
+### O que faltava — e por que nada disso aparecia como erro
+1. **`garantir_tabelas()` nunca era chamado** — por ninguém. Num banco novo o primeiro `INSERT` falharia por tabela inexistente, e a "falha aberta" do ledger engoliria o erro em `DEBUG`. O ledger ficaria *ligado gravando nada*, para sempre, com a flag dizendo que sim.
+2. **`registrar_desfecho()` nunca era chamado** — por ninguém. `ledger_outcomes` ficaria vazia e o `JOIN` do `medir_inclinacao --ledger` devolveria zero linhas. Picks sem desfecho não se medem.
+3. **`UNIQUE (match_id, market)` com `market` = TIPO.** O ledger grava `market="Over/Under"` e `selection="Over 2.5"`. Um jogo tem Over 1.5, Over 2.5 e Under 2.5 do mesmo tipo com desfechos diferentes — a tabela guardava **um desfecho por tipo**, e o `JOIN` (também só por tipo) daria o mesmo resultado a todas as linhas do tipo. Mesmo com 1 e 2 resolvidos, o ledger **nunca poderia ter pontuado um pick corretamente**. Ninguém notou porque nada escrevia na tabela.
+
+Os três são a mesma forma: código que existe, compila, tem teste — e não está ligado a nada. O #226 achou o mesmo no retrain de escanteios.
+
+### Correções
+- `_garantir_uma_vez()`: cria/migra as tabelas uma vez por processo, chamado de `registrar` e `registrar_desfecho`. Migração idempotente (`ADD COLUMN IF NOT EXISTS selection`, `DROP CONSTRAINT IF EXISTS` da unicidade antiga, índice único novo em `(match_id, market, selection)`).
+- `registrar_desfechos_do_jogo(match_id, actual_result)`: **lê do próprio ledger** quais `(market, selection)` foram publicados para o jogo — não enumera mercados possíveis, porque o ledger é a lista do que existe — e grava um desfecho por seleção.
+- **Gancho no batch audit**, logo depois de montar `actual_result`: mesmo placar/escanteios/cartões que a auditoria já valida, mesmo `id` sintético que o bundle gravou (`build_records_from_matches` monta os dois). Falha aberta, desligado junto com a flag.
+- `desfecho_do_pick` delega ao `_evaluate_pick_deterministic` (a única verdade sobre acertou/errou — checklist #006 item 7), traduzindo o par do ledger para o rótulo que ele entende. Dois casos que sem tradução dariam **errado em silêncio**: `Cards` com `selection="Over 3.5"` seria lido como **gols** (mesmo texto); `1X2` com `"Home"` não casa em nada (o avaliador aceita `"1"`, `"HOME WIN"`, `"CASA"` — não `"HOME"`). Teste parametrizado cobre as seis famílias.
+- `medir_inclinacao --ledger`: `JOIN` passa a incluir `selection`, e o rótulo da célula vira `market + selection`.
+
+### `scripts/lambda_env.py`
+`aws lambda update-function-configuration --environment Variables={K=V}` **substitui o bloco inteiro**: sobe uma variável e apaga `MISTRAL_API_KEY`, `DATABASE_URL` e o resto. O script lê, mescla, mostra o diff com valores mascarados, confere `State=Active`/`LastUpdateStatus=Successful` antes de gravar (a lição do `ResourceConflictException`) e grava via `file://` — o parser inline de `Variables={}` quebra com vírgula e `=` dentro de valor, e `DATABASE_URL` tem os dois. Validado com um `aws` dublê: `DATABASE_URL` com `?x=1,y=2` saiu intacta.
+
+### O que ainda não sei, e como vai aparecer
+Não consigo verificar daqui que `psycopg2` está no pacote da Lambda nem que `DATABASE_URL` aponta para um Postgres alcançável. Se qualquer um faltar, a falha aberta segura o pedido do usuário e o ledger grava nada — **e a flag continuará dizendo que está ligado.** O sinal de que gravou de verdade é a linha `[#218] ledger: N de M linha(s) novas` no CloudWatch, e depois de um dia de auditoria, `[#228] desfechos: N/M selecoes do jogo`. Sem essas duas linhas, ligado não significa nada.
+
+### Testes
+14 novos, sem Postgres: a conexão é um dublê que grava o SQL, e `psycopg2.extras` é substituído no `sys.modules` — sem isso o teste **passaria ou falharia conforme a máquina tivesse psycopg2**, porque a falha aberta transforma `ImportError` em `return 0`, igual ao defeito que o arquivo existe para pegar. Suíte: **889 passed, 1 skipped**.
+
+### Lição aprendida
+Três funções escritas, testadas e documentadas no #218, nenhuma conectada ao fluxo. "Existe e tem teste" não é "está ligado" — e a falha aberta, que é a decisão certa para não derrubar o pedido do usuário, é também o que torna "ligado gravando nada" indistinguível de "ligado gravando". Toda flag que liga telemetria precisa de um número que só aparece quando a telemetria de fato gravou.

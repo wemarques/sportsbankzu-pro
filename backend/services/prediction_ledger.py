@@ -96,17 +96,35 @@ _DDL_INDICES = [
     "ON prediction_ledger (league_id, market, published_at)",
 ]
 
+# #228 - o desfecho e por SELECAO, nao por tipo de mercado. `market` aqui e o
+# tipo ("Over/Under", "Corners"), e um jogo tem Over 1.5, Over 2.5 e Under 2.5
+# do mesmo tipo com desfechos diferentes. A versao anterior tinha
+# UNIQUE (match_id, market): guardava UM desfecho por tipo e o JOIN do
+# medir_inclinacao daria o mesmo resultado a todas as linhas do tipo — o ledger
+# nunca poderia ter pontuado um pick corretamente. Ninguem notou porque nada
+# escrevia em ledger_outcomes.
 _DDL_OUTCOMES = """
 CREATE TABLE IF NOT EXISTS ledger_outcomes (
     id            BIGSERIAL PRIMARY KEY,
     recorded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     match_id      TEXT NOT NULL,
     market        TEXT NOT NULL,
+    selection     TEXT NOT NULL DEFAULT '',
     outcome       INTEGER NOT NULL,
-    detail        JSONB,
-    UNIQUE (match_id, market)
+    detail        JSONB
 );
 """
+
+# Migracao idempotente para a tabela criada pela versao do #218: acrescenta a
+# coluna, derruba a unicidade antiga (que impediria o segundo Over do mesmo
+# jogo) e cria a nova. ADD COLUMN IF NOT EXISTS e DROP CONSTRAINT IF EXISTS
+# existem no Postgres desde 9.6 / 9.0.
+_DDL_OUTCOMES_MIGRACAO = [
+    "ALTER TABLE ledger_outcomes ADD COLUMN IF NOT EXISTS selection TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE ledger_outcomes DROP CONSTRAINT IF EXISTS ledger_outcomes_match_id_market_key",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_outcomes_selecao "
+    "ON ledger_outcomes (match_id, market, selection)",
+]
 
 
 def garantir_tabelas() -> bool:
@@ -118,6 +136,8 @@ def garantir_tabelas() -> bool:
         for ddl in _DDL_INDICES:
             cur.execute(ddl)
         cur.execute(_DDL_OUTCOMES)
+        for ddl in _DDL_OUTCOMES_MIGRACAO:
+            cur.execute(ddl)
         conn.commit()
         cur.close()
         conn.close()
@@ -125,6 +145,19 @@ def garantir_tabelas() -> bool:
     except Exception as e:                                   # noqa: BLE001
         logger.debug("[#218] garantir_tabelas: %s", e)
         return False
+
+
+# #228 - ninguem chamava garantir_tabelas(). Com a flag ligada num banco novo,
+# o primeiro INSERT falharia por tabela inexistente e a falha aberta engoliria
+# o erro em DEBUG: o ledger ficaria "ligado" gravando nada, para sempre. Uma
+# vez por processo (a Lambda reaproveita o container) e barato o bastante.
+_tabelas_ok = False
+
+
+def _garantir_uma_vez() -> None:
+    global _tabelas_ok
+    if not _tabelas_ok:
+        _tabelas_ok = garantir_tabelas()
 
 
 def _hash(linha: Dict[str, Any]) -> str:
@@ -214,6 +247,7 @@ def registrar(linhas: List[Dict[str, Any]]) -> int:
     try:
         from psycopg2.extras import Json, execute_values
 
+        _garantir_uma_vez()
         valores = [
             tuple(
                 Json(l.get(c)) if c in ("reason_codes", "governance", "inputs")
@@ -242,18 +276,21 @@ def registrar(linhas: List[Dict[str, Any]]) -> int:
 
 
 def registrar_desfecho(match_id: str, market: str, outcome: int,
-                       detail: Optional[Dict[str, Any]] = None) -> bool:
-    """Anexa o desfecho real. Tabela separada, nunca toca o ledger."""
+                       detail: Optional[Dict[str, Any]] = None,
+                       selection: str = "") -> bool:
+    """Anexa o desfecho real de UMA selecao. Tabela separada, nunca toca o ledger."""
     if not ledger_habilitado():
         return False
     try:
         from psycopg2.extras import Json
+        _garantir_uma_vez()
         conn = _conn()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO ledger_outcomes (match_id, market, outcome, detail) "
-            "VALUES (%s, %s, %s, %s) ON CONFLICT (match_id, market) DO NOTHING",
-            (str(match_id), market, int(outcome), Json(detail or {})),
+            "INSERT INTO ledger_outcomes (match_id, market, selection, outcome, detail) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (match_id, market, selection) DO NOTHING",
+            (str(match_id), market, selection or "", int(outcome), Json(detail or {})),
         )
         conn.commit()
         cur.close()
@@ -262,6 +299,72 @@ def registrar_desfecho(match_id: str, market: str, outcome: int,
     except Exception as e:                                   # noqa: BLE001
         logger.debug("[#218] registrar_desfecho falhou: %s", e)
         return False
+
+
+# #228 - o rotulo que o avaliador deterministico entende, montado a partir do
+# par (market, selection) que o ledger grava. O avaliador e a unica verdade
+# sobre "acertou ou errou" (checklist #006, item 7); aqui so se traduz.
+#
+#   Over/Under  "Over 2.5"          -> "Over 2.5"           (acha 2.5 + OVER)
+#   Cards       "Over 3.5"          -> "Cartoes Over 3.5"   (sem prefixo viraria GOLS)
+#   Corners     "Corners Over 9.5"  -> como esta            (acha CORNER)
+#   1X2         "Home"/"Draw"/"Away"-> "1"/"X"/"2"          ("HOME" sozinho nao casa)
+#   BTTS, DC    como estao
+_1X2 = {"home": "1", "draw": "X", "away": "2", "1": "1", "x": "X", "2": "2"}
+
+
+def rotulo_para_avaliador(market: str, selection: str) -> str:
+    m = (market or "").strip()
+    s = (selection or "").strip()
+    if m == "1X2":
+        return _1X2.get(s.lower(), s)
+    if m == "Cards" and not s.lower().startswith(("cart", "card")):
+        return f"Cartoes {s}"
+    return s
+
+
+def desfecho_do_pick(market: str, selection: str, actual_result: Dict[str, Any]) -> int:
+    from backend.routes.ai_analysis import _evaluate_pick_deterministic
+    return int(_evaluate_pick_deterministic(
+        {"mercado": rotulo_para_avaliador(market, selection)}, actual_result))
+
+
+def registrar_desfechos_do_jogo(match_id: str, actual_result: Dict[str, Any]) -> int:
+    """Pontua TODAS as selecoes que o ledger tem para este jogo.
+
+    Le do proprio ledger quais (market, selection) foram publicados — nao
+    enumera mercados possiveis, porque o ledger e a lista do que existe. Chamado
+    pelo batch audit depois de montar o `actual_result` (a unica fonte de
+    placar/escanteios/cartoes que o sistema ja valida). Falha aberta.
+    """
+    if not ledger_habilitado():
+        return 0
+    try:
+        _garantir_uma_vez()
+        conn = _conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT market, COALESCE(selection, '') FROM prediction_ledger "
+            "WHERE match_id = %s",
+            (str(match_id),),
+        )
+        pares = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:                                   # noqa: BLE001
+        logger.debug("[#228] leitura das selecoes falhou: %s", e)
+        return 0
+
+    gravados = 0
+    for market, selection in pares:
+        outcome = desfecho_do_pick(market, selection, actual_result)
+        if registrar_desfecho(match_id, market, outcome,
+                              detail=actual_result, selection=selection):
+            gravados += 1
+    if pares:
+        logger.info("[#228] desfechos: %d/%d selecoes do jogo %s",
+                    gravados, len(pares), match_id)
+    return gravados
 
 
 def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
