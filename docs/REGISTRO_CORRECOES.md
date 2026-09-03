@@ -11122,3 +11122,68 @@ E os 8% de zeros que sobram **não são bug**: `predictor.py:313` faz `if corner
 
 ### Lição aprendida
 Duas leituras opostas do mesmo instrumento, na mesma semana. No #226-b um campo em 0% virou "não há dado" quando era "nome errado". Aqui um exemplo `0` virou "campo é enchimento" quando 92% eram valores reais. Nos dois casos o erro foi **concluir a partir de uma célula** — e nos dois a correção foi a mesma: uma coluna a mais, medida sobre a população inteira. Instrumento que mostra exemplo precisa mostrar distribuição ao lado, senão o exemplo vira a conclusão.
+
+---
+
+## 227-a — 7860 picks reais, zero resolução em 15 células — e a referência que faltava
+**Data:** 2026-09-03 | **Arquivos:** backend/services/backfill_historico.py, scripts/backfill_historico.py, tests/test_227_backfill_historico.py | **Severidade:** Crítica (se confirmado, atinge a premissa do produto) | **Status:** Medido — falta a referência de mercado
+
+### O que foi medido (championship, dado real)
+```
+605 finalizadas -> 524 usadas -> 7860 picks (gols 3144, escanteios 2620, cartoes 2096)
+4184 com odd e EV
+
+GERAL: inclinacao 0.7783  IC95 [0.7206, 0.8431]
+
+POR CELULA (n=524 em todas):
+  Over 0.5 gols        -0.246  [-0.73, 0.23]        Escanteios Over 8.5  -0.122  [-0.44, 0.26]
+  Escanteios Over 9.5  -0.235  [-0.56, 0.12]        Cartoes Over 4.5     -0.118  [-0.39, 0.15]
+  Escanteios Over 10.5 -0.171  [-0.52, 0.17]        Over 2.5 gols        -0.065  [-0.39, 0.25]
+  Escanteios Over 7.5  -0.159  [-0.54, 0.22]        Over 3.5 gols        -0.038  [-0.36, 0.30]
+  Cartoes Over 3.5     -0.144  [-0.40, 0.16]        Over 1.5 gols        -0.031  [-0.38, 0.31]
+  Escanteios Over 11.5 -0.030  [-0.36, 0.33]        BTTS Yes             -0.001  [-0.40, 0.46]
+  Cartoes Over 2.5      0.013  [-0.26, 0.30]        Cartoes Over 5.5      0.055  [-0.24, 0.36]
+  Over 4.5 gols         0.218  [-0.21, 0.65]
+
+15 celulas sem resolucao demonstravel.
+```
+
+**A inclinação geral de 0.78 é artefato de agregação, não boa notícia.** Ela mistura mercados com taxas-base muito diferentes (Over 0.5 acontece quase sempre; Over 4.5 quase nunca), e essa separação entre mercados vira "inclinação" no pooled. Dentro de cada célula, onde a pergunta é honesta, não sobra nada.
+
+### O que isso NÃO autoriza concluir ainda
+Três explicações continuam vivas, e elas levam a decisões opostas:
+
+1. **A reconstrução é mais pobre que a produção.** O backfill monta o estado das partidas anteriores; produção come `stats` da FootyStats com xG, calibração per-liga, Dixon-Coles, deflação. Está declarado no topo do módulo desde o #227, e é o limite conhecido do instrumento.
+2. **O desfecho é pouco previsível neste n.** Com 524 por célula o IC tem meia-largura ~0.35. Isso **exclui resolução forte** (inclinação ≥ ~0.4) e **não exclui resolução modesta** (0.2–0.3). O veredito impresso diz "SEM RESOLUÇÃO"; a leitura correta é "sem resolução **demonstrável** com este n".
+3. **O instrumento erra em dado real** de um jeito que o controle sintético não pega.
+
+### A referência que separa as três
+Faltava comparar com um previsor que **sabidamente** tem resolução: a casa de apostas, nos **mesmos** picks. Se o mercado também der zero, o problema não está no modelo — está no dado ou no instrumento. Se o mercado der ~1 e nós zero, a hipótese 3 morre e sobram 1 e 2.
+
+Cada pick passa a carregar `prob_mercado`: **de-vig de verdade** (#219) quando existe o par over/under — e para escanteios a escada está completa, over e under de 7.5 a 11.5, medidos em 99% no #226-c — ou `1/odd` marcado como `implicita` quando só há a perna over (o caso de gols e BTTS). `--prob-de mercado` troca a fonte e descarta o que não tem preço.
+
+### Validação do caminho de mercado, e o poder do teste
+O gerador sintético passou a precificar a partir do λ **verdadeiro** que gerou o jogo, mais 6% de margem — então o caminho de mercado tem controle positivo próprio:
+
+```
+MERCADO, controle positivo:
+  Over 2.5 gols   n=534   incl 0.973   IC95 [0.80, 1.17]   forma adequada
+  Over 3.5 gols   n=539   incl 0.906   IC95 [0.74, 1.11]   forma adequada
+  BTTS Yes        n=539   incl 0.990   IC95 [0.72, 1.28]   forma adequada
+```
+
+Isso calibra o **poder**: com n desta ordem, uma inclinação de 1 aparece com IC de meia-largura ~0.2. Ou seja, o zero medido no dado real não é falta de amostra para achar sinal forte — é ausência de sinal forte.
+
+### Próximo passo, definido antes de rodar
+```
+python scripts/backfill_historico.py --liga championship --prob-de mercado --saida mercado.json
+python scripts/medir_inclinacao.py --arquivo mercado.json
+```
+
+Previsão registrada, para o resultado não ser lido depois de conhecido: **espero inclinação de mercado entre 0.7 e 1.1 nas células de escanteios** (par completo, de-vig limpo) e algo mais baixo e mais incerto em gols e BTTS (`1/odd` com margem embutida achata a inclinação). Se escanteios der perto de zero também, a suspeita vira o instrumento e não o modelo.
+
+### Testes
+4 novos (de-vig do par, marcação de `implicita`, ausência de preço, e o controle positivo de mercado). Suíte: **861 passed, 1 skipped**.
+
+### Lição aprendida
+"Nenhuma célula tem resolução" é um resultado grande demais para ser aceito sem uma referência que sabidamente teria. O controle positivo sintético do #227 provou que o instrumento **pode** achar sinal; só um previsor com resolução conhecida sobre os **mesmos dados reais** prova que ele **acha aqui**. A diferença entre as duas provas é a diferença entre "meu código funciona" e "minha medição vale".

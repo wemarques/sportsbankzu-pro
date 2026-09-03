@@ -189,3 +189,53 @@ def test_formato_e_o_que_medir_inclinacao_consome():
     assert 0.0 <= p["prob"] <= 1.0
     assert p["outcome"] in (0, 1)
     assert p["league_id"] == "championship"
+
+
+# ── #227-a: a probabilidade do mercado como referencia ───────────────────
+def test_mercado_com_par_over_under_usa_devig():
+    from backend.services.backfill_historico import prob_do_mercado
+
+    p, metodo = prob_do_mercado(
+        {"odds_ft_over25": 1.90, "odds_ft_under25": 1.90}, "odds_ft_over25")
+    assert metodo == "devig"
+    assert p == pytest.approx(0.5, abs=0.02), "par simetrico devigado da 50%"
+    assert p < 1 / 1.90 + 1e-9, "de-vig tem de tirar margem, nao adicionar"
+
+
+def test_mercado_so_com_a_perna_over_e_marcado_como_implicita():
+    from backend.services.backfill_historico import prob_do_mercado
+
+    p, metodo = prob_do_mercado({"odds_ft_over25": 2.00}, "odds_ft_over25")
+    assert (p, metodo) == (0.5, "implicita")
+
+
+def test_mercado_sem_preco_utilizavel():
+    from backend.services.backfill_historico import prob_do_mercado
+
+    assert prob_do_mercado({}, "odds_ft_over25") == (None, "sem_odd")
+    assert prob_do_mercado({"odds_ft_over25": 1.0}, "odds_ft_over25") == (None, "sem_odd")
+
+
+def test_a_casa_de_apostas_tem_resolucao_no_controle_positivo():
+    """Referencia do instrumento: se nem o mercado marca resolucao, o problema
+    nao esta no modelo.
+
+    Com precos derivados do lambda que gerou o jogo, a inclinacao do mercado
+    tem de ficar perto de 1. E isto tambem calibra o PODER do teste: mostra que
+    n desta ordem detecta inclinacao 1 com folga, entao "zero" nos dados reais
+    nao e falta de amostra para achar sinal forte.
+    """
+    from backend.services.calibracao_slope import inclinacao_com_ic
+
+    partidas = _gerador()(500, com_sinal=True, semente=227)
+    picks = [p for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]
+             if p["market"] == "Over 2.5 gols" and p["prob_mercado"] is not None]
+    assert len(picks) > 200
+
+    r = inclinacao_com_ic([{**p, "prob": p["prob_mercado"]} for p in picks],
+                          reamostras=120)
+    ic_baixo, ic_alto = r["ic95"]
+    assert ic_baixo > 0.5, (
+        f"preco derivado do lambda verdadeiro tem de mostrar resolucao clara, "
+        f"deu incl={r['inclinacao']:.3f} IC=[{ic_baixo:.2f}, {ic_alto:.2f}]"
+    )

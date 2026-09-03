@@ -56,6 +56,44 @@ _LINHAS_ESCANTEIOS = [7.5, 8.5, 9.5, 10.5, 11.5]
 _LINHAS_CARTOES = [2.5, 3.5, 4.5, 5.5]
 
 
+# #227-a - a probabilidade do MERCADO, para servir de referencia.
+#
+# Sem uma referencia, "inclinacao zero" nao distingue tres coisas: o modelo nao
+# tem resolucao, o desfecho e imprevisivel neste n, ou o instrumento esta
+# quebrado. A casa de apostas tem resolucao — se ela tambem der zero nos MESMOS
+# picks, o problema nao esta no modelo.
+#
+# Par over/under quando existe: de-vig de verdade (#219). So a perna over:
+# `1/odd`, que carrega a margem e e marcada como tal.
+_PAR_ODD = {
+    "odds_ft_over25": "odds_ft_under25",
+    "odds_ft_over35": "odds_ft_under35",
+    "odds_btts_yes": "odds_btts_no",
+    "odds_corners_over_75": "odds_corners_under_75",
+    "odds_corners_over_85": "odds_corners_under_85",
+    "odds_corners_over_95": "odds_corners_under_95",
+    "odds_corners_over_105": "odds_corners_under_105",
+    "odds_corners_over_115": "odds_corners_under_115",
+}
+
+
+def prob_do_mercado(odds: Dict[str, Any], chave: str) -> Tuple[Optional[float], str]:
+    """(probabilidade, metodo). `None` quando nao ha preco utilizavel."""
+    over = odds.get(chave)
+    if not over or over <= 1.0:
+        return None, "sem_odd"
+    under = odds.get(_PAR_ODD.get(chave, ""))
+    if under and under > 1.0:
+        try:
+            from backend.services.devig import prob_justa
+            p = prob_justa([over, under], 0)
+            if p is not None and 0.0 < p < 1.0:
+                return p, "devig"
+        except Exception:
+            pass
+    return 1.0 / over, "implicita"
+
+
 # ── leitura da linha crua ────────────────────────────────────────────────
 def _num(valor: Any) -> Optional[float]:
     """Float quando der, `None` quando nao.
@@ -358,8 +396,10 @@ def reconstruir(
                 logger.warning("[#227] %s falhou em %s: %s", nome, partida["match_id"], e)
                 continue
             for p in brutos:
-                odd = partida["odds"].get(p.pop("chave_odd") or "", None)
+                chave_odd = p.pop("chave_odd") or ""
+                odd = partida["odds"].get(chave_odd, None)
                 odd = odd if odd and odd > 1.0 else None
+                p_mercado, metodo = prob_do_mercado(partida["odds"], chave_odd)
                 picks.append({
                     "match_id": partida["match_id"],
                     "league_id": league_id,
@@ -371,6 +411,8 @@ def reconstruir(
                     "lambda": p["lambda"],
                     "odd": odd,
                     "ev": round(p["prob"] * odd - 1.0, 6) if odd else None,
+                    "prob_mercado": round(p_mercado, 6) if p_mercado else None,
+                    "mercado_metodo": metodo,
                 })
 
         rast.registrar(partida)
@@ -388,6 +430,10 @@ def reconstruir(
         "picks_com_ev": com_odd,
         "por_familia": {
             n: sum(1 for p in picks if p["familia"] == n) for n, _ in MERCADOS
+        },
+        "prob_mercado": {
+            m: sum(1 for p in picks if p["mercado_metodo"] == m)
+            for m in ("devig", "implicita", "sem_odd")
         },
     }
     return {"picks": picks, "resumo": resumo}

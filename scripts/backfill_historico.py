@@ -66,12 +66,45 @@ def partidas_sinteticas(n: int, com_sinal: bool = True,
         p["totalCornerCount"] = p["team_a_corners"] + p["team_b_corners"]
         p["team_a_yellow_cards"] = gerador._poisson(rng, 2.2)
         p["team_b_yellow_cards"] = gerador._poisson(rng, 2.4)
-        p["odds_ft_over25"] = round(rng.uniform(1.6, 2.3), 2)
-        p["odds_ft_over35"] = round(rng.uniform(2.5, 4.0), 2)
-        p["odds_btts_yes"] = round(rng.uniform(1.6, 2.2), 2)
-        for linha in ("75", "85", "95", "105", "115"):
-            p[f"odds_corners_over_{linha}"] = round(rng.uniform(1.2, 3.0), 2)
+        _precificar(p, ataque, defesa, com_sinal, rng)
     return partidas
+
+
+def _precificar(p: Dict[str, Any], ataque, defesa, com_sinal: bool, rng) -> None:
+    """Odds coerentes com a probabilidade que GEROU o jogo, mais margem.
+
+    Com `com_sinal`, o preco sai do lambda verdadeiro — entao o caminho
+    `--prob-de mercado` tem controle positivo proprio: a casa sabe, e a
+    inclinacao dela tem de dar perto de 1. Sem sinal, o preco e ruido, como o
+    resto.
+    """
+    import math
+
+    def _par(chave_over: str, chave_under: str, prob: float, margem: float = 1.06) -> None:
+        prob = min(max(prob, 0.02), 0.98)
+        p[chave_over] = round(1.0 / (prob * margem), 2)
+        p[chave_under] = round(1.0 / ((1.0 - prob) * margem), 2)
+
+    if com_sinal:
+        lam_c = ataque[p["homeTeam"]] * defesa[p["awayTeam"]] * 1.15
+        lam_f = ataque[p["awayTeam"]] * defesa[p["homeTeam"]] * 0.95
+        lam = lam_c + lam_f
+        def _over(linha: int) -> float:
+            acum = sum(math.exp(-lam) * lam ** k / math.factorial(k)
+                       for k in range(linha + 1))
+            return 1.0 - acum
+        _par("odds_ft_over25", "odds_ft_under25", _over(2))
+        _par("odds_ft_over35", "odds_ft_under35", _over(3))
+        _par("odds_btts_yes", "odds_btts_no",
+             (1 - math.exp(-lam_c)) * (1 - math.exp(-lam_f)))
+    else:
+        _par("odds_ft_over25", "odds_ft_under25", rng.uniform(0.35, 0.65))
+        _par("odds_ft_over35", "odds_ft_under35", rng.uniform(0.20, 0.45))
+        _par("odds_btts_yes", "odds_btts_no", rng.uniform(0.35, 0.65))
+
+    for linha in ("75", "85", "95", "105", "115"):
+        _par(f"odds_corners_over_{linha}", f"odds_corners_under_{linha}",
+             rng.uniform(0.25, 0.75))
 
 
 def main() -> int:
@@ -84,6 +117,12 @@ def main() -> int:
     ap.add_argument("--temporadas", type=int, default=2)
     ap.add_argument("--min-jogos", type=int, default=5)
     ap.add_argument("--familias", help="ex: gols,escanteios (padrao: todas)")
+    ap.add_argument("--prob-de", choices=["modelo", "mercado"], default="modelo",
+                    help="#227-a: 'mercado' usa a probabilidade da casa (de-vig "
+                         "quando ha par over/under, 1/odd quando so ha a perna "
+                         "over) no lugar da do modelo. E a referencia: se o "
+                         "mercado tambem der inclinacao zero nos mesmos picks, o "
+                         "problema nao esta no modelo.")
     ap.add_argument("--saida", default="picks_historicos.json")
     ap.add_argument("--verboso", action="store_true")
     args = ap.parse_args()
@@ -114,13 +153,22 @@ def main() -> int:
     familias = [f.strip() for f in args.familias.split(",")] if args.familias else None
     saida = reconstruir(linhas, liga, min_jogos=args.min_jogos, familias=familias)
 
+    picks = saida["picks"]
+    if args.prob_de == "mercado":
+        # Troca a fonte da probabilidade e descarta o que nao tem preco: medir
+        # o mercado onde nao ha mercado nao mede nada.
+        picks = [{**p, "prob": p["prob_mercado"], "prob_modelo": p["prob"]}
+                 for p in picks if p["prob_mercado"] is not None]
+        saida["resumo"]["picks_com_prob_de_mercado"] = len(picks)
+
     with open(args.saida, "w", encoding="utf-8") as f:
-        json.dump(saida["picks"], f, ensure_ascii=False)
+        json.dump(picks, f, ensure_ascii=False)
 
     print(json.dumps(saida["resumo"], indent=2, ensure_ascii=False))
-    print(f"\n{len(saida['picks'])} picks -> {args.saida}")
+    print(f"\nfonte da probabilidade: {args.prob_de}")
+    print(f"{len(picks)} picks -> {args.saida}")
     print(f"proximo passo: python scripts/medir_inclinacao.py --arquivo {args.saida}")
-    return 0 if saida["picks"] else 1
+    return 0 if picks else 1
 
 
 if __name__ == "__main__":
