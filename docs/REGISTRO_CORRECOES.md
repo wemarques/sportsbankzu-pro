@@ -10918,3 +10918,47 @@ Duas, e a segunda é minha.
 A primeira: um `try/except ImportError` em volta de dois imports transforma qualquer erro de nome numa mensagem sobre disponibilidade de módulo. O job não falhou — ele **relatou sucesso parcial** ("skipped") por anos, e ninguém olha um `skipped` semanal.
 
 A segunda: no #225-c eu deixei este arquivo de fora com um motivo técnico que soava bom e não tinha sido verificado. Bastava um `find -name "*.pkl"`. A regra #222 diz para provar efeito antes de afirmar; vale igual para provar **impedimento** antes de alegar. Justificativa de escopo é afirmação sobre o sistema e precisa da mesma medição que o resto.
+
+---
+
+## 226 (adendo) — A primeira execução real: 605/1110, e a minha previsão estava errada
+**Data:** 2026-09-03 | **Arquivos:** scripts/diagnostico_chaves_escanteios.py (novo) | **Severidade:** Alta (reabre o escopo fechado no #225-a) | **Status:** Medido — uma pergunta em aberto
+
+### O que foi medido
+Primeira execução do retrain de escanteios com chave real, na championship:
+
+```
+[Corners][coleta] championship: 1110 partidas em 2 temporada(s)   (17184: 552, 14930: 558)
+Corner features: 553 samples, 45 features
+Retrain complete for championship: champion=negative_binomial, states={'NEUTRAL': 9}
+
+{"status": "completed", "n_matches": 1110, "n_valid_corners": 605,
+ "n_feature_samples": 553, "n_features": 45,
+ "training_results": {"negative_binomial": "trained", "poisson": "trained",
+                      "ml_regression": "trained"},
+ "champion": "negative_binomial"}
+```
+
+Campeão por linha: NB de over_5.5 a over_9.5; poisson em over_4.5; over_10.5/11.5/12.5 sem campeão elegível (usou o melhor inelegível). Todas as 9 linhas em `NEUTRAL` — `force_shadow=True` funcionando.
+
+### Eu previ o resultado errado
+Escrevi, antes da execução: *"minha expectativa honesta é a B"* — `insufficient_data` com `n_valid_corners=0`, porque o #225-a mediu `home_team_corner_count` em **0/48** na championship. Veio **605 de 1110**. A previsão estava errada, e o motivo importa mais que o erro.
+
+### A contradição, e a hipótese
+As duas medições falam da mesma liga e não podem estar as duas certas. A diferença provável está em **qual chave cada uma leu**:
+
+- `debug.py` (#225-a) mede `cobertura_desfechos` sobre `home_team_corner_count` / `away_team_corner_count` — **só esses dois nomes**.
+- `retrain._extract_total_corners` lê, nesta ordem: `totalCorners`, `total_corners`, depois `team_a_corners` → `homeCorners` → `home_team_corner_count`.
+
+Se a FootyStats publica a contagem em `team_a_corners`/`team_b_corners` e deixa `*_corner_count` nula neste endpoint, as duas medições são consistentes: o campo que o #225-a olhou está mesmo vazio, e a contagem existe com outro nome. É a **mesma classe de erro** que o #225-a já tinha corrigido num eixo (um campo condenando oito famílias) reaparecendo noutro: um campo negando a existência do dado.
+
+**Isto ainda é hipótese.** `scripts/diagnostico_chaves_escanteios.py` a resolve sem chutar nome: varre **todas** as chaves da linha de partida que contenham "corner", conta preenchimento sobre as finalizadas (`0` conta — zero escanteio é resultado; `None` e `-1` são ausência) e mostra quanto `_extract_total_corners` de fato aproveita.
+
+### O que isto reabre
+Fechei o escopo do #225 com *"escanteios estão fora — 0/48 contagens"*. Se a hipótese se confirmar, **escanteios voltam para dentro**: com contagem e odd (o #225-a mediu odd de escanteios em 100%), a família ganha probabilidade **e** EV no backfill, como gols e BTTS.
+
+### O que a execução NÃO decidiu
+Os artefatos (`.corner_artifacts/`, `.corner_models/championship/corner_regressor.pkl`) estão só na máquina local. Não estão no `.gitignore`, então **podem** ser versionados — e é assim que chegariam à Lambda, onde `DATA_ROOT` não setado resolve para o diretório do pacote. Mas commitar artefato treinado muda o comportamento do `predictor` em produção (hoje `load_artifact` devolve `None` e ele segue sem campeão), e isso é decisão de governança, não efeito colateral de um retrain. Fica em aberto, deliberadamente.
+
+### Lição aprendida
+Uma previsão explícita antes da execução é barata e vale muito: eu disse qual resultado esperava, veio o outro, e a diferença apontou direto para a chave. Se eu não tivesse previsto nada, o `605` teria passado como sucesso e a contradição com o #225-a ficaria sem ninguém para notar.
