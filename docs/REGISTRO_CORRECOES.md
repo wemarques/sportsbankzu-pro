@@ -11307,3 +11307,60 @@ Nenhum novo — não houve alteração de lógica. Suíte: **865 passed, 1 skipp
 
 ### Lição aprendida
 A sequência inteira — #225-a mediu o nome errado, #226 achou um job morto, #226-b reabriu escanteios, #227 construiu o instrumento com controles, #227-a pôs a referência, #227-b consertou o veredito — existiu para que este número fosse **acreditável**. Sem os controles, "−7,26% contra a taxa-base" seria mais um resultado para desconfiar; com eles, é o primeiro número sobre o modelo que não depende de ninguém acreditar em ninguém. O custo de chegar aqui foi sete correções; o custo de não chegar seria continuar calibrando um sinal que não tem o que calibrar.
+
+---
+
+## 227-e — 22 ligas, 64.718 picks: a championship era a regra
+**Data:** 2026-09-03 | **Arquivos:** (nenhum — medição) | **Severidade:** Crítica (resultado sobre o modelo, replicado em todas as ligas) | **Status:** Medido
+
+### O que foi medido
+Coleta **22/22 ligas**, duas temporadas cada, 127.775 picks reconstruídos, **64.718 com odd de-vigada** (`implicita: 8`). Modelo e mercado nos mesmos picks, bootstrap emparelhado por jogo.
+
+```
+TODAS (64.718)   Brier modelo 0.2383 | mercado 0.2238 | dif +0.0145  IC95 [+0.0130, +0.0160]
+                 log-loss     0.6747 |         0.6385 | dif +0.0362  IC95 [+0.0323, +0.0400]
+                 piso 0.2249  ->  modelo -5.97%   mercado +0.47%
+
+Por mercado: MERCADO melhor em 9/9, IC excluindo zero em todos (n ~8.000 cada).
+
+Por liga (skill do modelo sobre o piso da propria liga):
+  ligue-1        -10.23%    premier-league   -6.98%    primera-division  -5.07%
+  bundesliga      -7.95%    a-league         -6.89%    serie-b           -5.02%
+  primeira-liga   -7.83%    liga-mx          -6.65%    league-one        -4.25%
+  2-bundesliga    -7.60%    pro-league       -6.61%    super-lig         -3.15%
+  serie-a         -7.31%    mls              -6.17%    la-liga           -1.41%
+  superliga       -7.30%    colombian-a      -5.88%    premiership       +0.15%  (empate, IC cobre 0)
+  championship    -7.26%    brasileirao-a    -5.84%
+  brasileirao-b   -7.01%    eredivisie       -5.11%
+
+22 ligas: modelo abaixo do piso em 21; mercado melhor (IC exclui 0) em 21.
+```
+
+### Leitura
+1. **A championship era a regra.** 21 de 22 ligas com o modelo abaixo do piso, e a 22ª (premiership, n=1.736, a segunda menor amostra) é empate com IC cobrindo zero — "não dá para distinguir", não "o modelo se defende". Nenhuma liga com o modelo acima do piso e IC excluindo zero. A hipótese "peculiaridade de uma liga" morreu.
+
+2. **O IC agora é estreito o bastante para dizer o tamanho:** −5,97% sobre o piso, com meia-largura de 0,0015 no Brier. Isso permite uma leitura mecânica. Brier do modelo − Brier do piso ≈ 0,0134 — com inclinação ≈ 0, esse excesso é aproximadamente a **variância das probabilidades do modelo em torno da taxa-base**. Raiz: **~0,116**. O modelo reconstruído publica, em média, **±12 pontos percentuais de variação por pick que não acompanham o desfecho**. É ruído com precisão de duas casas.
+
+3. **O mercado fica a ±1% do piso em toda liga** (de −0,87% a +2,71%, média +0,47%). O piso é o melhor constante *desta amostra*, que ninguém conheceria antes; ficar colado nele é o que um previsor bem calibrado e com pouca informação por jogo faz. Em totais e escanteios, a informação por jogo é pequena mesmo para quem precifica profissionalmente. **O prêmio em disputa nessas famílias é da ordem de 1% de Brier**, e o modelo está 6% do lado errado dele.
+
+### Previsões registradas antes, conferidas depois
+- *"A championship é regra, não exceção; modelo abaixo do piso na maioria; mercado melhor em quase todas."* **Confirmado** (21/22 nas duas).
+- *"Bundesliga e Eredivisie devem ficar menos abaixo, por terem mais gols."* **Errado pela metade:** Eredivisie ficou de fato acima da mediana (−5,11%), mas a Bundesliga é a **segunda pior** (−7,95%). Média de gols da liga não é o que governa isso — a previsão tinha um mecanismo suposto que o dado não sustenta.
+- *"Uma liga com modelo acima do piso e IC cobrindo zero é a liga para olhar primeiro."* Apareceu uma: premiership. Mas com +0,15% e n=1.736 é o retrato de "sem informação suficiente", não de sinal. Não é para olhar primeiro; é para não olhar.
+
+### Um padrão que fica registrado como pergunta, não como achado
+As ligas onde o modelo fica **menos** abaixo do piso (la-liga −1,4%, premiership +0,2%, super-lig −3,2%) são também ligas onde o mercado tem skill **maior** (+2,7%, +1,0%, +0,7%). Sugeriria "onde há informação a captar, o modelo capta um pouco". Mas a ligue-1 tem mercado em +1,64% e o modelo em −10,23%, a pior de todas. Com 22 pontos e um contraexemplo forte, não é padrão; é coincidência até prova em contrário.
+
+### O que segue provado, e o único buraco que sobra
+Provado, em 22 ligas e 64 mil picks com IC estreito: **o modelo desta família, alimentado por médias móveis das partidas anteriores, não carrega informação por jogo em gols, BTTS e escanteios** — e a variação que produz custa ~6% de Brier sobre não saber nada.
+
+O buraco é o mesmo do #227-c, e agora é o único: **produção usa outros insumos**. A reconstrução prova algo sobre os **motores alimentados por médias móveis**; não prova o que os motores fazem com `stats` da FootyStats, xG, calibração per-liga e γ de mando. Dois caminhos para fechar, e não são excludentes:
+
+- **O ledger (#218)** grava a probabilidade **publicada**. É a única medição de produção de verdade. Custo: ligar `PREDICTION_LEDGER_ENABLED=1` (leitura-mesclagem-escrita do ambiente da Lambda) e esperar algumas rodadas — a inclinação precisa de centenas por célula, o Brier emparelhado bem menos.
+- **Isolar o motor do insumo, offline e agora:** rodar, nos mesmos jogos, um Poisson **ingênuo** (λ = média de gols do mandante + do visitante, sem motor nenhum) e comparar com o motor. Se o ingênuo tiver a mesma skill (~−6%), o limite está no insumo e o motor não adiciona nem tira; se o ingênuo for **melhor**, o motor está destruindo sinal; se o ingênuo for pior, o motor extrai algo do pouco que há. É uma tarde de trabalho e responde a uma pergunta que o ledger não responde.
+
+### O que NÃO fazer
+Igual ao #227-c, agora com 22 ligas de peso atrás: não recalibrar (devolve o piso com outro nome), não concluir que o produto perde dinheiro (classificação, deflação e caps não estão aqui), e **não** aceitar a premiership como evidência de nada.
+
+### Lição aprendida
+Duas previsões certas e uma errada, todas escritas antes. A errada — Bundesliga — é a que mais vale: eu tinha um *mecanismo* em mente (mais gols → piso mais baixo → modelo menos abaixo) e o dado disse que o mecanismo não existe. Sem a previsão escrita, a Bundesliga em segundo pior lugar seria só mais uma linha da tabela; com ela, é a informação de que a minha intuição sobre o que governa a skill do modelo está errada, e isso vale mais que as duas certas.
