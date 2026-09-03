@@ -239,3 +239,83 @@ def test_a_casa_de_apostas_tem_resolucao_no_controle_positivo():
         f"preco derivado do lambda verdadeiro tem de mostrar resolucao clara, "
         f"deu incl={r['inclinacao']:.3f} IC=[{ic_baixo:.2f}, {ic_alto:.2f}]"
     )
+
+
+# ── #227-b: inconclusivo nao e o mesmo que sem resolucao ─────────────────
+def test_veredito_separa_falta_de_precisao_de_falta_de_resolucao():
+    """O caso real: mercado com inclinacao 0.983 e IC [-0.06, 2.23].
+
+    O IC cobre 0, mas cobre 1 tambem — o ponto esta em cima de 1. Chamar isso
+    de "SEM RESOLUCAO" leu imprecisao como cegueira, e quase fez a casa de
+    apostas passar por previsor que nao separa nada.
+    """
+    from backend.services.calibracao_slope import veredito
+
+    mercado = {"inclinacao": 0.983, "n": 523, "abaixo_de_min_n": False,
+               "ic95": [-0.06, 2.23], "difere_de_0": False, "difere_de_1": False}
+    assert "INCONCLUSIVO" in veredito(mercado)
+
+    # modelo: IC cobre 0 e EXCLUI 1 -> ai sim e evidencia contra resolucao
+    modelo = {"inclinacao": -0.065, "n": 523, "abaixo_de_min_n": False,
+              "ic95": [-0.39, 0.25], "difere_de_0": False, "difere_de_1": True}
+    assert "SEM RESOLUCAO" in veredito(modelo)
+
+
+# ── #227-b: modelo contra mercado, sem depender de variancia ─────────────
+def _comparador():
+    caminho = _RAIZ / "scripts" / "comparar_com_mercado.py"
+    spec = importlib.util.spec_from_file_location("_cmp", caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def test_brier_e_logloss_em_valores_conhecidos():
+    cmp = _comparador()
+    picks = [{"prob": 1.0, "outcome": 1}, {"prob": 0.0, "outcome": 0}]
+    assert cmp._brier(picks, "prob") == 0.0
+    assert cmp._logloss(picks, "prob") == pytest.approx(1.4e-5, abs=1e-4)
+
+    meio = [{"prob": 0.5, "outcome": 1}, {"prob": 0.5, "outcome": 0}]
+    assert cmp._brier(meio, "prob") == 0.25
+    assert cmp._logloss(meio, "prob") == pytest.approx(0.6931, abs=1e-3)
+
+
+def test_diferenca_emparelhada_acha_quem_tem_informacao():
+    """No sintetico, o preco de GOLS sai do lambda verdadeiro e o de ESCANTEIOS
+    e sorteado. A comparacao tem de apontar mercado nos gols e modelo nos
+    escanteios — se apontar o mesmo lado nos dois, nao esta medindo nada.
+    """
+    cmp = _comparador()
+    partidas = _gerador()(400, com_sinal=True, semente=227)
+    todos = reconstruir(partidas, "sintetica")["picks"]
+    picks = [{**p, "prob_modelo": p["prob"], "prob": p["prob_mercado"]}
+             for p in todos if p["prob_mercado"] is not None]
+
+    def dif(mercado):
+        grupo = [p for p in picks if p["market"] == mercado]
+        assert len(grupo) > 100, mercado
+        return cmp._ic_da_diferenca(grupo, cmp._brier, reamostras=150)
+
+    d_gols, lo_gols, _ = dif("Over 2.5 gols")
+    assert lo_gols > 0, (
+        f"preco de gols vem do lambda verdadeiro; o mercado tem de ganhar, "
+        f"deu dif={d_gols:+.4f}"
+    )
+
+    d_esc, _, hi_esc = dif("Escanteios Over 8.5")
+    assert hi_esc < 0, (
+        f"preco de escanteios e sorteado; o modelo tem de ganhar, "
+        f"deu dif={d_esc:+.4f}"
+    )
+
+
+def test_so_com_odd_deixa_modelo_e_mercado_no_mesmo_conjunto():
+    """Medir o modelo em 7860 picks e o mercado em 4184 compara conjuntos, nao
+    previsores."""
+    linhas = [_linha(i, f"T{i % 4}", f"T{(i + 1) % 4}", odds_corners_over_95=1.77,
+                     odds_corners_under_95=2.10) for i in range(40)]
+    picks = reconstruir(linhas, "x")["picks"]
+    com_odd = [p for p in picks if p["prob_mercado"] is not None]
+    assert 0 < len(com_odd) < len(picks), "o recorte tem de ser um subconjunto real"
+    assert all(p["mercado_metodo"] == "devig" for p in com_odd)

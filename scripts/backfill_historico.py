@@ -117,6 +117,11 @@ def main() -> int:
     ap.add_argument("--temporadas", type=int, default=2)
     ap.add_argument("--min-jogos", type=int, default=5)
     ap.add_argument("--familias", help="ex: gols,escanteios (padrao: todas)")
+    ap.add_argument("--so-com-odd", action="store_true",
+                    help="#227-b: mantem so os picks que tem preco. E o que "
+                         "torna modelo e mercado comparaveis — medir o modelo "
+                         "em 7860 e o mercado em 4184 compara conjuntos "
+                         "diferentes, nao previsores.")
     ap.add_argument("--prob-de", choices=["modelo", "mercado"], default="modelo",
                     help="#227-a: 'mercado' usa a probabilidade da casa (de-vig "
                          "quando ha par over/under, 1/odd quando so ha a perna "
@@ -154,6 +159,9 @@ def main() -> int:
     saida = reconstruir(linhas, liga, min_jogos=args.min_jogos, familias=familias)
 
     picks = saida["picks"]
+    if args.so_com_odd:
+        picks = [p for p in picks if p["prob_mercado"] is not None]
+        saida["resumo"]["picks_apos_so_com_odd"] = len(picks)
     if args.prob_de == "mercado":
         # Troca a fonte da probabilidade e descarta o que nao tem preco: medir
         # o mercado onde nao ha mercado nao mede nada.

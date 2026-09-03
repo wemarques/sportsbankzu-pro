@@ -268,6 +268,20 @@ def veredito(r: Dict[str, Any]) -> str:
     if r.get("abaixo_de_min_n"):
         return f"n={r['n']} insuficiente (min {MIN_N})"
     if r.get("difere_de_0") is False:
+        # #227-b: "IC inclui zero" nao e uma coisa, sao duas.
+        #
+        # Se o IC inclui 0 E TAMBEM 1, a medicao nao distingue previsor
+        # perfeito de previsor cego — falta precisao, nao resolucao. Foi o que
+        # aconteceu com o mercado na championship: inclinacao 0.983 com IC
+        # [-0.06, 2.23] saiu rotulada "SEM RESOLUCAO", quando o ponto estava
+        # em cima de 1. A casa de apostas nao e cega; o IC e largo porque as
+        # probabilidades dela variam pouco, e inclinacao se estima com a
+        # variancia de logit(p).
+        #
+        # Evidencia CONTRA resolucao exige o IC excluir 1: ai o dado esta
+        # dizendo que a forma nao e a de um previsor com resolucao.
+        if r.get("difere_de_1") is False:
+            return "INCONCLUSIVO — IC cobre 0 e 1, nao da para distinguir"
         return "SEM RESOLUCAO — a previsao nao separa o que acontece"
     if b < 0:
         return "INVERTIDA — previsao mais alta acerta menos"

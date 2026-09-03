@@ -92,11 +92,21 @@ def main() -> int:
         print(f"{r['liga'][:21]:<22}{r['mercado'][:21]:<22}{r['n']:>5}"
               f"{r['inclinacao']:>8.3f}{ics:>20}  {veredito(r)}")
 
-    sem_resolucao = [r for r in linhas
-                     if r.get("difere_de_0") is False and not r["abaixo_de_min_n"]]
+    # #227-b: separar as duas leituras que antes vinham somadas. IC que cobre
+    # 0 E 1 nao e evidencia contra resolucao — e ausencia de precisao, e
+    # tratar as duas como a mesma coisa foi o que quase fez o mercado (ponto
+    # em cima de 1) ser lido como previsor cego.
+    validas = [r for r in linhas if not r["abaixo_de_min_n"]]
+    sem_resolucao = [r for r in validas
+                     if r.get("difere_de_0") is False and r.get("difere_de_1") is True]
+    inconclusivas = [r for r in validas
+                     if r.get("difere_de_0") is False and r.get("difere_de_1") is False]
     if sem_resolucao:
-        print(f"\n{len(sem_resolucao)} celula(s) sem resolucao demonstravel. "
+        print(f"\n{len(sem_resolucao)} celula(s) SEM RESOLUCAO (o IC exclui 1). "
               "Calibrar nao resolve nenhuma delas.")
+    if inconclusivas:
+        print(f"{len(inconclusivas)} celula(s) INCONCLUSIVAS (o IC cobre 0 e 1) — "
+              "falta precisao, nao resolucao. Mais jogos estreitam; calibrar nao.")
     return 0
 
 

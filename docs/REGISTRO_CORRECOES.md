@@ -11187,3 +11187,68 @@ Previsão registrada, para o resultado não ser lido depois de conhecido: **espe
 
 ### Lição aprendida
 "Nenhuma célula tem resolução" é um resultado grande demais para ser aceito sem uma referência que sabidamente teria. O controle positivo sintético do #227 provou que o instrumento **pode** achar sinal; só um previsor com resolução conhecida sobre os **mesmos dados reais** prova que ele **acha aqui**. A diferença entre as duas provas é a diferença entre "meu código funciona" e "minha medição vale".
+
+---
+
+## 227-b — O "zero" do mercado não era zero: era imprecisão, e o veredito somava as duas
+**Data:** 2026-09-03 | **Arquivos:** backend/services/calibracao_slope.py, scripts/medir_inclinacao.py, scripts/backfill_historico.py, scripts/comparar_com_mercado.py (novo), tests/test_227_backfill_historico.py | **Severidade:** Crítica (o veredito rotulava previsor certo como cego) | **Status:** Corrigido
+
+### O que foi medido (championship, probabilidade do mercado)
+4184 picks, **todos com de-vig de verdade** — `implicita: 0`. Isso já corrige uma previsão minha: eu esperava `1/odd` em gols e BTTS por falta do par, mas `odds_ft_under25`, `odds_ft_under35` e `odds_btts_no` existem. O par está completo nas três famílias.
+
+```
+GERAL: inclinacao 1.0096  IC95 [0.9026, 1.1216]  -> forma adequada
+
+POR CELULA (n=523):
+  Escanteios Over 9.5    0.591  [-0.39, 1.84]
+  Over 2.5 gols          0.605  [-0.10, 1.46]
+  Escanteios Over 11.5   0.821  [-0.03, 1.85]
+  Escanteios Over 7.5    0.887  [-0.05, 1.86]
+  BTTS Yes               0.983  [-0.06, 2.23]
+  Escanteios Over 10.5   0.984  [-0.09, 2.34]
+  Over 3.5 gols          1.023  [ 0.30, 1.84]  forma adequada
+  Escanteios Over 8.5    1.028  [ 0.13, 1.94]  forma adequada
+```
+
+### O defeito: "IC inclui zero" não é uma coisa, são duas
+Seis dessas células saíram rotuladas **"SEM RESOLUÇÃO — a previsão não separa o que acontece"** com a inclinação pontual em **0.98, 0.98, 0.89, 0.82**. É absurdo na cara: a casa de apostas não é cega.
+
+A causa é o teste `difere_de_0`, que só pergunta se o IC exclui zero. Para o mercado o IC é largo — **inclinação se estima pela variância de `logit(p)`, e as probabilidades do mercado variam pouco** justamente porque ele é bem calibrado e fica perto da taxa real. Modelo com espalhamento grande dá IC estreito; mercado com espalhamento pequeno dá IC largo. O IC do mercado cobre 0 **e cobre 1**.
+
+`veredito` passa a separar:
+
+- IC cobre 0 **e** 1 → **`INCONCLUSIVO — IC cobre 0 e 1, não dá para distinguir`**. Falta precisão. Mais jogos estreitam; calibrar não muda nada.
+- IC cobre 0 e **exclui** 1 → **`SEM RESOLUÇÃO`**. Aí é evidência de que a forma não é de um previsor com resolução.
+
+**Com o critério corrigido, as 15 células do modelo continuam SEM RESOLUÇÃO** — todas excluem 1 (o teto mais alto era 0.65, em Over 4.5). O achado do #227-a sobrevive; o do mercado era rótulo errado.
+
+### O que ainda estava comparando conjuntos, não previsores
+O modelo foi medido em 7860 picks e o mercado em 4184 — os 4184 são os que têm preço. `--so-com-odd` recorta o modelo ao mesmo subconjunto.
+
+### O instrumento que fecha a conta
+A inclinação não decide entre os dois neste n, e nenhum ajuste de amostra muda isso: ela depende de espalhamento. **Brier e log-loss não dependem.** E como os dois previsores olham as mesmas partidas, a comparação é **emparelhada** — reamostra-se o jogo e os dois vão juntos, então o ruído comum se cancela e o IC da diferença fica muito mais estreito que os dois IC separados.
+
+`scripts/comparar_com_mercado.py` lê o arquivo de `--prob-de mercado` (que guarda `prob` = mercado e `prob_modelo`) e devolve Brier e log-loss dos dois, a diferença emparelhada com IC por bloco-jogo, e um **piso**: prever sempre a taxa-base da célula. Quem não bate o piso não está usando informação nenhuma sobre o jogo.
+
+### Validação: o comparador aponta lados diferentes conforme quem tem a informação
+No sintético, gols são precificados a partir do λ **verdadeiro** e escanteios com preço **sorteado**:
+
+```
+celula                    n   modelo  mercado      dif        IC95 da dif  leitura
+Over 2.5 gols           534   0.2009   0.1868  +0.0141  [+0.0034, +0.0247]  MERCADO melhor
+Over 3.5 gols           539   0.2145   0.1975  +0.0170  [+0.0071, +0.0282]  MERCADO melhor
+Escanteios Over 8.5     539   0.2036   0.2708  -0.0672  [-0.0894, -0.0454]  MODELO melhor
+Escanteios Over 11.5    539   0.2251   0.2788  -0.0537  [-0.0723, -0.0339]  MODELO melhor
+
+piso (taxa-base) 0.2276 | modelo 0.2129 | mercado 0.2460
+  modelo   skill score vs piso: +6.48%
+  mercado  skill score vs piso: -8.08%   <- pior que nao saber nada
+```
+
+Aponta **mercado** onde o preço carrega a verdade e **modelo** onde o preço é ruído. Um comparador que apontasse o mesmo lado nos dois não estaria medindo nada — é teste, não observação de passagem.
+
+### Testes
+8 novos (o veredito com os dois casos reais, Brier/log-loss em valores conhecidos, a diferença emparelhada achando lados opostos, e o recorte `--so-com-odd`). Suíte: **865 passed, 1 skipped**.
+
+### Lição aprendida
+Duas previsões minhas caíram nesta rodada: o de-vig de gols/BTTS ia ser `1/odd` (o par existe) e a inclinação de mercado ia ficar entre 0.7 e 1.1 nas células de escanteios (o **ponto** ficou — 0.59 a 1.03 —, mas o IC virou o resultado). Registrar a previsão antes valeu de novo, e por um motivo diferente: o que ela expôs não foi o dado, foi o **veredito**. Uma inclinação de 0.98 rotulada "não separa o que acontece" só chama atenção quando existe uma expectativa escrita contra a qual bater.
