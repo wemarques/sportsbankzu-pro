@@ -42,7 +42,7 @@ logger = logging.getLogger("sportsbankzu.ledger")
 
 # Versao do conjunto de regras que produziu a linha. Sobe quando o calculo muda,
 # para que o walk-forward do #221 nao misture geracoes do modelo.
-LEDGER_MODEL_VERSION = os.getenv("LEDGER_MODEL_VERSION", "2026.09.02+217")
+LEDGER_MODEL_VERSION = os.getenv("LEDGER_MODEL_VERSION", "2026.09.03+230")
 
 _MAX_LINHAS_POR_LOTE = 500
 
@@ -81,9 +81,26 @@ CREATE TABLE IF NOT EXISTS prediction_ledger (
     reason_codes    JSONB,
     governance      JSONB,
     inputs          JSONB,
-    payload_hash    TEXT NOT NULL
+    payload_hash    TEXT NOT NULL,
+    prob_mercado    DOUBLE PRECISION,
+    mercado_metodo  TEXT,
+    odd_par         DOUBLE PRECISION,
+    margem_pp       DOUBLE PRECISION,
+    frescor         TEXT
 );
 """
+
+# #230 - a ancora de mercado gravada AO LADO da probabilidade publicada, no
+# mesmo instante. E o que permite medir producao contra mercado nos mesmos
+# picks (comparar_com_mercado.py --ledger) sem esperar nada alem do desfecho.
+# Migracao idempotente para a tabela criada pelo #218.
+_DDL_LEDGER_MIGRACAO = [
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS prob_mercado DOUBLE PRECISION",
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS mercado_metodo TEXT",
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS odd_par DOUBLE PRECISION",
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS margem_pp DOUBLE PRECISION",
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS frescor TEXT",
+]
 
 # A unicidade e por CONTEUDO, nao por (jogo, mercado). Republicar o mesmo pick
 # identico nao cria linha nova (o /fixtures e chamado dezenas de vezes por dia);
@@ -133,6 +150,8 @@ def garantir_tabelas() -> bool:
         conn = _conn()
         cur = conn.cursor()
         cur.execute(_DDL_LEDGER)
+        for ddl in _DDL_LEDGER_MIGRACAO:
+            cur.execute(ddl)
         for ddl in _DDL_INDICES:
             cur.execute(ddl)
         cur.execute(_DDL_OUTCOMES)
@@ -171,6 +190,9 @@ def _hash(linha: Dict[str, Any]) -> str:
         "raw_prob", "iso_prob", "calibrated_prob", "band_type",
         "book_odd", "odd_source", "overround", "ev", "classification",
         "stake", "reason_codes", "governance", "inputs",
+        # #230: a odd do par e a prob de mercado entram — preco que mexeu e
+        # informacao nova, e o ledger guarda REVISOES, nao acessos.
+        "odd_par", "prob_mercado",
     )
     bruto = json.dumps(
         {k: linha.get(k) for k in campos}, sort_keys=True, default=str,
@@ -198,6 +220,11 @@ def montar_linha(
     reason_codes: Optional[Iterable[str]] = None,
     governance: Optional[Dict[str, Any]] = None,
     inputs: Optional[Dict[str, Any]] = None,
+    prob_mercado: Optional[float] = None,
+    mercado_metodo: Optional[str] = None,
+    odd_par: Optional[float] = None,
+    margem_pp: Optional[float] = None,
+    frescor: Optional[str] = None,
 ) -> Dict[str, Any]:
     linha = {
         "match_id": str(match_id),
@@ -219,6 +246,11 @@ def montar_linha(
         "reason_codes": sorted(str(c) for c in (reason_codes or [])),
         "governance": governance or {},
         "inputs": inputs or {},
+        "prob_mercado": prob_mercado,
+        "mercado_metodo": mercado_metodo,
+        "odd_par": odd_par,
+        "margem_pp": margem_pp,
+        "frescor": frescor,
     }
     linha["payload_hash"] = _hash(linha)
     return linha
@@ -229,7 +261,89 @@ _COLUNAS = (
     "model_version", "raw_prob", "iso_prob", "calibrated_prob", "band_type",
     "book_odd", "odd_source", "overround", "ev", "classification", "stake",
     "reason_codes", "governance", "inputs", "payload_hash",
+    "prob_mercado", "mercado_metodo", "odd_par", "margem_pp", "frescor",
 )
+
+
+# ── #230 - a ancora de mercado ───────────────────────────────────────────
+# Nomes REAIS do dicionario `odds` do record, depois do enriquecimento #120
+# (routes/fixtures.py): gols `over25`/`under25` (0.5–5.5), BTTS `bttsYes`/
+# `bttsNo`, escanteios `cornersOver95`/`cornersUnder95` (4.5–12.5), cartoes
+# `cards_over_3.5`/`cards_under_3.5`, 1X2 `home`/`draw`/`away`. Medidos, nao
+# presumidos — a licao do #226-b.
+def _linha_do_rotulo(selection: str) -> Optional[str]:
+    import re
+    m = re.search(r"(\d+\.5)", selection or "")
+    return m.group(1) if m else None
+
+
+def par_de_odds(market: str, selection: str, odds: Optional[Dict[str, Any]]
+                ) -> Tuple[Optional[float], Optional[float]]:
+    """(odd da propria selecao, odd da perna oposta) a partir do `odds` do record."""
+    odds = odds or {}
+
+    def _v(k: Optional[str]) -> Optional[float]:
+        if not k:
+            return None
+        try:
+            v = float(odds.get(k) or 0)
+        except (TypeError, ValueError):
+            return None
+        return v if v > 1.0 else None
+
+    m = (market or "").strip()
+    s = (selection or "").strip()
+    sl = s.lower()
+    linha = _linha_do_rotulo(s)
+    if m == "Over/Under" and linha:
+        sfx = linha.replace(".", "")
+        a, b = (f"over{sfx}", f"under{sfx}") if sl.startswith("over") else (f"under{sfx}", f"over{sfx}")
+        return _v(a), _v(b)
+    if m == "BTTS":
+        return (_v("bttsYes"), _v("bttsNo")) if "yes" in sl else (_v("bttsNo"), _v("bttsYes"))
+    if m == "Corners" and linha:
+        sfx = linha.replace(".", "")
+        over, under = f"cornersOver{sfx}", f"cornersUnder{sfx}"
+        return (_v(over), _v(under)) if "over" in sl else (_v(under), _v(over))
+    if m == "Cards" and linha:
+        over, under = f"cards_over_{linha}", f"cards_under_{linha}"
+        return (_v(over), _v(under)) if "over" in sl else (_v(under), _v(over))
+    if m == "1X2":
+        chave = {"home": "home", "draw": "draw", "away": "away"}.get(sl)
+        # 1X2 tem tres pernas; o de-vig precisa das tres. Devolve a propria e
+        # deixa o par vazio: sem par nao ha de-vig de duas pernas, e e assim
+        # que o metodo fica marcado "implicita" (a margem inteira fica dentro).
+        return _v(chave), None
+    return None, None
+
+
+def prob_mercado_do_pick(market: str, selection: str, odds: Optional[Dict[str, Any]]
+                         ) -> Dict[str, Any]:
+    """Probabilidade justa do mercado para a selecao, com o metodo e o frescor.
+
+    devig      — par over/under existe: Shin (#219), margem medida e frescor
+                 pelo detector do #219 (`odds_utilizaveis`).
+    implicita  — so a propria perna: 1/odd, margem inteira embutida.
+    sem_odd    — nada utilizavel.
+    """
+    propria, par = par_de_odds(market, selection, odds)
+    out: Dict[str, Any] = {"prob_mercado": None, "mercado_metodo": "sem_odd",
+                           "odd_par": par, "margem_pp": None, "frescor": None}
+    if propria is None:
+        return out
+    if par is not None:
+        try:
+            from backend.services.devig import odds_utilizaveis, prob_justa
+            ok, margem, motivo = odds_utilizaveis([propria, par])
+            p = prob_justa([propria, par], 0)
+            if p is not None and 0.0 < p < 1.0:
+                out.update({"prob_mercado": round(p, 6), "mercado_metodo": "devig",
+                            "margem_pp": margem, "frescor": motivo})
+                return out
+        except Exception as e:                               # noqa: BLE001
+            logger.debug("[#230] devig falhou: %s", e)
+    out.update({"prob_mercado": round(1.0 / propria, 6), "mercado_metodo": "implicita"})
+    return out
 
 
 def registrar(linhas: List[Dict[str, Any]]) -> int:
@@ -416,8 +530,11 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
         "chaos_detected": stats.get("chaosDetected"),
         "data_quality_score": getattr(bundle, "data_quality_score", None),
     }
+    odds = (match_data.get("odds") or {}) if isinstance(match_data, dict) else {}
     linhas: List[Dict[str, Any]] = []
     for m in getattr(bundle, "markets", []) or []:
+        ancora = prob_mercado_do_pick(getattr(m, "market_type", "") or "",
+                                      getattr(m, "selection", "") or "", odds)
         gov = {}
         if getattr(m, "corner_governance", None):
             gov["corner"] = m.corner_governance
@@ -438,5 +555,6 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
             reason_codes=[getattr(rc, "value", str(rc)) for rc in (getattr(m, "reason_codes", []) or [])],
             governance=gov,
             inputs=entradas_comuns,
+            **ancora,
         ))
     return linhas

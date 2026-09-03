@@ -37,6 +37,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# #230: --ledger precisa de DATABASE_URL; le .env como os outros scripts, sem
+# sobrescrever o ambiente.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    for _nome in (".env", "backend/.env"):
+        _c = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), _nome)
+        if os.path.exists(_c):
+            _load_dotenv(_c, override=False)
+except ImportError:
+    pass
+
 _EPS = 1e-9
 
 
@@ -321,15 +332,73 @@ def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> Non
           f"  [{lo:+.4f}, {hi:+.4f}]  {marca}")
 
 
+def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
+    """#230 - producao contra mercado, nos mesmos picks, com desfecho.
+
+    `prob_modelo` = a probabilidade PUBLICADA (coluna escolhida); `prob` = a
+    do mercado de-vigado que o ledger gravou no mesmo instante (#230). O JOIN
+    por selecao e o do #228. Sem `prob_ingenuo` aqui — a secao MOTOR x
+    INGENUO pula sozinha.
+    """
+    import psycopg2
+    conn = psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT l.match_id, l.league_id,
+               l.market || ' ' || COALESCE(l.selection, '') AS market,
+               l.{campo}, l.prob_mercado, l.mercado_metodo, o.outcome
+          FROM prediction_ledger l
+          JOIN ledger_outcomes o
+            ON o.match_id = l.match_id
+           AND o.market = l.market
+           AND o.selection = COALESCE(l.selection, '')
+         WHERE l.published_at >= %s
+           AND l.{campo} IS NOT NULL
+           AND l.prob_mercado IS NOT NULL
+        """,
+        (desde,),
+    )
+    picks = [{
+        "match_id": r[0], "league_id": r[1], "market": r[2],
+        "prob_modelo": float(r[3]), "prob": float(r[4]),
+        "mercado_metodo": r[5], "outcome": int(r[6]),
+    } for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return picks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arquivo", required=True,
+    ap.add_argument("--arquivo",
                     help="saida de backfill_historico.py --prob-de mercado")
+    ap.add_argument("--ledger", action="store_true",
+                    help="#230: le do prediction_ledger (producao de verdade) em vez "
+                         "de um arquivo — a probabilidade PUBLICADA contra a do "
+                         "mercado de-vigado gravada ao lado dela, com desfecho")
+    ap.add_argument("--desde", default="2026-01-01")
+    ap.add_argument("--campo", default="calibrated_prob",
+                    choices=["raw_prob", "iso_prob", "calibrated_prob"],
+                    help="qual probabilidade publicada comparar (ledger)")
     ap.add_argument("--reamostras", type=int, default=600)
     args = ap.parse_args()
 
-    with open(args.arquivo, encoding="utf-8") as f:
-        picks = json.load(f)
+    if args.ledger:
+        picks = _do_ledger(args.desde, args.campo)
+        if not picks:
+            print("ledger sem pares (pick com prob_mercado E desfecho) desde "
+                  f"{args.desde} — ou o ledger nao gravou, ou o batch audit ainda "
+                  "nao pontuou. Prova de vida: '[#218] ledger:' e '[#228] desfechos:' "
+                  "no CloudWatch.", file=sys.stderr)
+            return 1
+        print(f"fonte: prediction_ledger ({args.campo} x prob_mercado), "
+              f"{len(picks)} picks com desfecho desde {args.desde}\n")
+    elif args.arquivo:
+        with open(args.arquivo, encoding="utf-8") as f:
+            picks = json.load(f)
+    else:
+        ap.error("use --arquivo ou --ledger")
 
     faltando = [p for p in picks if p.get("prob_modelo") is None]
     if faltando:

@@ -1060,3 +1060,36 @@ deles seja visivel.
 
 **Verificacao:** `pytest tests/test_227_backfill_historico.py -q` —
 `test_controle_positivo_e_negativo` e o par.
+
+---
+
+### #230 — Fonte da probabilidade so troca com criterio medido no ledger
+
+**Tipo:** Hard Constraint (decisao de produto com gate empirico)
+**Relacionado:** #219 (de-vig), #218/#228 (ledger), #227-e / #229-b (a medicao), #187 (1X2 ja e espelho de mercado)
+
+Decisao registrada (2026-09-03): a probabilidade publicada passa a ser
+ancorada no mercado de-vigado, com o modelo como ajuste minimo ou nenhum.
+
+A troca da fonte em producao e PROIBIDA ate que, no `prediction_ledger`,
+sobre picks com `mercado_metodo = devig` e desfecho:
+
+1. `Brier(prob_mercado) < Brier(calibrated_prob)` com IC95 emparelhado por
+   jogo excluindo zero;
+2. teto de calibracao da publicada (`sinal^2 / espalhamento`) < 0,25%;
+3. n >= 300 jogos com desfecho.
+
+Peso do modelo no ajuste = o da mistura linear otima MEDIDA no ledger; nunca
+um numero escolhido. Se o teto da publicada ficar acima de 0,25%, o peso
+e medido, nao zerado por decreto.
+
+Consequencias que acompanham a troca e tem de ser tratadas no MESMO patch
+(passo 4): EV passa a ser distancia entre odd oferecida e preco justo (entre
+casas, #120), nunca prob x odd da mesma casa; classificacao SAFE/NEUTRO
+(#028/#042) redefinida em valor + confianca na ancora (margem/frescor #219);
+familias sem odd caem para a taxa-base ROTULADA, nunca para o modelo por
+padrao.
+
+**Verificacao:** `python3 scripts/comparar_com_mercado.py --ledger --desde <data>`
+— imprime Brier emparelhado, piso, decomposicao e o teto de calibracao.
+**Gate automatico:** `pytest tests/test_230_ancora_mercado.py -q`.

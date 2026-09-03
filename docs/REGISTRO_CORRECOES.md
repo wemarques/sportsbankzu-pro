@@ -11552,3 +11552,50 @@ Se o ledger mostrar a produção no mesmo lugar da reconstrução, a camada de p
 
 ### Lição aprendida
 Uma identidade algébrica exata (Brier = piso + espalhamento − 2·sinal) fez em uma linha o que três rodadas de bootstrap não conseguiam: separar *quanto o previsor sabe* de *quanto ele fala*. O modelo sabe tanto quanto o mercado e fala cinco vezes mais alto. Todo o −6% é o volume, não o conteúdo.
+
+---
+
+## 230 — Decisão: ancorar a probabilidade no mercado de-vigado — passo 1, o ledger grava as duas
+**Data:** 2026-09-03 | **Arquivos:** backend/services/prediction_ledger.py, scripts/comparar_com_mercado.py, tests/test_230_ancora_mercado.py (novo) | **Severidade:** Decisão de produto + instrumento | **Status:** Implementado (modo sombra); a troca da fonte fica atrás de critério medido
+
+### A decisão (Welligton, 2026-09-03)
+*"Ancorar no mercado de-vigado (#219) e usar o modelo como ajuste mínimo (ou nenhum) é o caminho mais honesto."*
+
+Base: #227-e (22 ligas, 64.718 picks, modelo −5,97% sobre o piso, mercado +0,47%), #229-b (teto de calibração do modelo +0,07%, do mercado +0,61%; razão sinal/espalhamento 0,10 contra 0,66). O produto já havia tomado essa decisão para o 1X2 no #187 (espelho de mercado rotulado); estende-se às demais famílias.
+
+### A consequência que a decisão carrega
+Com a probabilidade igual à do mercado, **EV contra o mesmo mercado é zero por construção** (negativo contra a odd real, na margem). O sistema deixa de "achar valor" por modelo — porque, medido, não achava; publicava ruído com cara de valor. A única fonte legítima de EV que resta é o **próprio mercado de odds**: a distância entre o preço justo de referência e a odd disponível numa casa específica (o enriquecimento #120 traz várias). A classificação SAFE/NEUTRO (#028, limiares #042) foi calibrada sobre probabilidades do modelo e precisa ser redefinida em dois eixos: **valor** (odd oferecida vs preço justo) e **confiança na âncora** (margem e frescor, #219). Isso é o passo 4, e **não** está neste patch.
+
+### O que este patch faz (passos 1–3 da sequência)
+O ledger (#218, ligado hoje) passa a gravar, **ao lado** de cada probabilidade publicada e no mesmo instante, a probabilidade do mercado:
+
+| coluna | conteúdo |
+|---|---|
+| `prob_mercado` | Shin (#219) sobre o par over/under quando existe; `1/odd` quando só há a própria perna |
+| `mercado_metodo` | `devig` / `implicita` / `sem_odd` |
+| `odd_par` | a odd da perna oposta que entrou no de-vig |
+| `margem_pp`, `frescor` | o detector de frescor do #219 — margem podre fica **rotulada**, não descartada |
+
+Os nomes das odds são os **reais** do `odds` do record depois do #120 (`over25`/`under25`, `bttsYes`/`bttsNo`, `cornersOver95`/`cornersUnder95`, `cards_over_3.5`/`cards_under_3.5`), medidos em `routes/fixtures.py` — não presumidos. Teste parametrizado por família, incluindo o caso `Cards "Over 3.5"` que sem o dicionário certo viraria a âncora de **gols**. 1X2 fica `implicita` (três pernas; o de-vig de duas não se aplica).
+
+A odd do par entra no hash: **preço que mexeu é informação nova**, e o ledger guarda revisões, não acessos. Migração idempotente (`ADD COLUMN IF NOT EXISTS` × 5), `LEDGER_MODEL_VERSION` → `2026.09.03+230`.
+
+`comparar_com_mercado.py --ledger [--desde] [--campo]` lê do Postgres o JOIN por seleção (#228): `prob_modelo` = a probabilidade **publicada**, `prob` = a de mercado gravada junto, com desfecho. É a medição de produção contra mercado nos mesmos picks — o mesmo instrumento validado nos #227-a/b, agora sobre o que o sistema de fato publicou. **Nada é publicado de forma diferente**: modo sombra puro.
+
+### Critério de aceite para o passo 4 (trocar a fonte) — antes de rodar
+A troca só acontece se, no ledger, sobre picks com `mercado_metodo = devig`:
+1. `Brier(prob_mercado) < Brier(calibrated_prob)` com IC95 emparelhado excluindo zero;
+2. teto de calibração da publicada (`sinal²/espalhamento`) abaixo de 0,25% — i.e., não há o que extrair do modelo mesmo calibrando;
+3. **n ≥ 300 jogos com desfecho** (o Brier emparelhado converge bem antes da inclinação; 300 jogos dão IC da diferença da ordem de ±0,005, suficiente para uma diferença de 0,015 como a da reconstrução).
+
+Se (1) valer e (2) **não** valer — a publicada tem teto acima de 0,25% — o modelo ganha peso de ajuste, e o peso é o da mistura linear ótima medida, não um número escolhido. Previsão registrada: (1) e (2) valem, e o peso do modelo sai zero.
+
+### O que ainda falta para medir
+- Prova de vida do ledger no CloudWatch (`[#218] ledger:` e `[#228] desfechos:`). Sem ela, `--ledger` devolve zero pares e diz por quê.
+- O deploy automático leva a migração; a primeira escrita cria as colunas. Se a Lambda não tiver `psycopg2` no pacote, a falha aberta segura o pedido e o ledger grava nada — o único sintoma é a ausência das duas linhas de log.
+
+### Testes
+13 novos. Suíte: **910 passed, 1 skipped**.
+
+### Lição aprendida
+A decisão "ancorar no mercado" parece uma troca de fonte; é uma troca de **promessa**. O EV contra o mesmo mercado some, e o que sobra de valor tem que vir de onde há assimetria real — entre casas, no tempo. Registrar isso antes do código evita descobrir depois que o produto ficou sem o número que o definia.
