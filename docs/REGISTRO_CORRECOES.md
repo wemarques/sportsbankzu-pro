@@ -11398,3 +11398,48 @@ Não consigo verificar daqui que `psycopg2` está no pacote da Lambda nem que `D
 
 ### Lição aprendida
 Três funções escritas, testadas e documentadas no #218, nenhuma conectada ao fluxo. "Existe e tem teste" não é "está ligado" — e a falha aberta, que é a decisão certa para não derrubar o pedido do usuário, é também o que torna "ligado gravando nada" indistinguível de "ligado gravando". Toda flag que liga telemetria precisa de um número que só aparece quando a telemetria de fato gravou.
+
+---
+
+## 229 — Poisson ingênuo como terceiro previsor: isolar o motor do insumo
+**Data:** 2026-09-03 | **Arquivos:** backend/services/backfill_historico.py, scripts/comparar_com_mercado.py, tests/test_227_backfill_historico.py | **Severidade:** Alta (instrumento que separa duas causas com decisões opostas) | **Status:** Implementado — aguarda rodada real
+
+### A pergunta que o #227-e deixou
+"Motor + médias móveis" fica 6% abaixo do piso em 22 ligas. Isso não diz **onde** está o limite: no **insumo** (as médias móveis não carregam informação por jogo) ou no **motor** (as médias carregam e o motor destrói). As duas hipóteses levam a decisões opostas — a primeira pede insumo melhor, a segunda pede mexer no motor — e a mesma medição serve às duas.
+
+### O instrumento
+Um terceiro previsor sobre **as mesmas partidas e as mesmas médias**: Poisson direto, λ = média de gols pró do mandante em casa + do visitante fora, queda para a média geral de cada time, depois para a da liga. Sem força relativa, xG, EMA, encolhimento ou γ. Escanteios e cartões idem. Cada pick passa a carregar `prob_ingenuo` ao lado de `prob` (motor) e `prob_mercado`.
+
+A única diferença entre `prob` e `prob_ingenuo` é **o motor**. A diferença emparelhada de Brier entre os dois tem três leituras, e o comparador imprime qual:
+
+| motor − ingênuo | leitura |
+|---|---|
+| IC > 0 | **motor pior**: o motor destrói sinal que o insumo tinha |
+| IC cobre 0 | **empate**: o limite está no insumo, o motor nem tira nem põe |
+| IC < 0 | **motor melhor**: o motor extrai algo do pouco que há |
+
+### Validação — o ingênuo precisa enxergar, senão "empate" é dois cegos empatando
+Controle positivo (gols dirigidos por força de time), 4307 picks com preço:
+
+```
+motor (producao)     Brier 0.2129   skill +6.48%
+ingenuo (Poisson)    Brier 0.2240   skill +1.60%
+mercado (sorteado)   Brier 0.2460   skill -8.08%
+
+motor - ingenuo = -0.0111  IC95 [-0.0163, -0.0063]  -> motor MELHOR: o motor extrai algo
+
+Over 2.5 gols   motor 0.2009  ingenuo 0.2195  dif -0.0185 [-0.0352, -0.0050]  motor melhor
+BTTS Yes        motor 0.2192  ingenuo 0.2496  dif -0.0303 [-0.0451, -0.0166]  motor melhor
+Escanteios 8.5  motor 0.2036  ingenuo 0.2060  dif -0.0024 [-0.0062, +0.0012]  empate
+```
+
+Três coisas confirmadas de uma vez: o ingênuo **acha** o sinal plantado (skill +1,60%, inclinação com IC > 0,15 — é teste), o motor extrai **mais** que ele quando há sinal (força relativa e EMA funcionam quando têm o que ler), e onde o gerador não pôs sinal (escanteios têm preço sorteado, mas contagem com força de time — ambos os previsores captam pouco) dá empate. O instrumento aponta os três lados conforme o que existe.
+
+### Previsão registrada antes da rodada real
+Nas 22 ligas, espero **empate** na maioria — o insumo é o limite — com o motor **ligeiramente pior** nas famílias de gols, porque o encolhimento e a regressão à média do motor achatam menos que o Poisson direto quando não há sinal, e "extremas demais" foi o veredito de inclinação do #227-c. Se o motor sair **melhor** que o ingênuo em dado real, é a primeira evidência de que ele extrai algo — e a conversa muda de "insumo" para "quanto".
+
+### Testes
+4 novos. Suíte: **893 passed, 1 skipped**.
+
+### Lição aprendida
+"O modelo é ruim" tem pelo menos duas causas com remédios opostos, e o #227-e não distinguia. Um terceiro previsor construído para diferir do segundo em **exatamente uma coisa** transforma a diferença numa medição daquela coisa. É o mesmo princípio do controle positivo (#227): cada comparação precisa ser desenhada para que só uma variável mude.

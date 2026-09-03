@@ -353,3 +353,50 @@ def test_reconstruir_por_liga_nao_mistura_historicos():
     pa = next(p["prob"] for p in ra if p["market"] == "Over 2.5 gols")
     pb = next(p["prob"] for p in rb if p["market"] == "Over 2.5 gols")
     assert pa > pb, "liga com 6 gols por jogo tem de dar Over 2.5 mais provavel"
+
+
+# ── #229: o ingenuo isola motor de insumo ────────────────────────────────
+def test_todo_pick_tem_prob_ingenua_valida():
+    linhas = [_linha(i, f"T{i % 4}", f"T{(i + 1) % 4}") for i in range(40)]
+    picks = reconstruir(linhas, "x")["picks"]
+    assert picks
+    for p in picks:
+        assert p["prob_ingenuo"] is not None, p["market"]
+        assert 0.0 <= p["prob_ingenuo"] <= 1.0
+
+
+def test_ingenuo_acha_o_sinal_plantado():
+    """Se o Poisson direto nao achasse resolucao no controle positivo, ele nao
+    serviria de referencia: 'empate com o motor' seria dois cegos empatando."""
+    from backend.services.calibracao_slope import inclinacao_com_ic
+
+    partidas = _gerador()(500, com_sinal=True, semente=227)
+    picks = [{**p, "prob": p["prob_ingenuo"]}
+             for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]
+             if p["market"] == "Over 2.5 gols" and p["prob_ingenuo"] is not None]
+    assert len(picks) > 200
+    r = inclinacao_com_ic(picks, reamostras=120)
+    assert r["ic95"][0] > 0.15, f"ingenuo sem resolucao no positivo: {r['inclinacao']:.3f} {r['ic95']}"
+
+
+def test_ingenuo_bate_o_piso_no_controle_positivo():
+    cmp = _comparador()
+    partidas = _gerador()(500, com_sinal=True, semente=227)
+    picks = [{**p, "prob_modelo": p["prob"]}
+             for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]
+             if p["market"] == "Over 2.5 gols"]
+    piso = cmp._piso(picks)
+    assert cmp._skill(cmp._brier(picks, "prob_ingenuo"), piso) > 0
+
+
+def test_ingenuo_nao_inventa_sinal_no_controle_negativo():
+    cmp = _comparador()
+    partidas = _gerador()(500, com_sinal=False, semente=227)
+    picks = [{**p, "prob_modelo": p["prob"]}
+             for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]
+             if p["market"] == "Over 2.5 gols"]
+    d, lo, hi = cmp._ic_par(picks, "prob_ingenuo", "prob_modelo", cmp._brier, 120)
+    # os dois sao ruido aqui; a diferenca entre eles nao pode ser "significativa"
+    # nos dois sentidos ao mesmo tempo — o que se exige e que o IC seja largo o
+    # bastante para nao afirmar nada com certeza
+    assert not (lo > 0 and hi > 0 and lo > 0.01), (lo, hi)

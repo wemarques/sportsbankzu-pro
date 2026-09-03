@@ -341,6 +341,57 @@ def _picks_cartoes(estado, partida, league_id) -> List[Dict[str, Any]]:
     } for linha in _LINHAS_CARTOES]
 
 
+# #229 - o previsor INGENUO: mesmas medias moveis, motor nenhum.
+#
+# O #227-e provou que "motor + medias moveis" fica 6% abaixo do piso em 22
+# ligas. Isso nao diz se o limite esta no INSUMO (as medias nao carregam
+# informacao) ou no MOTOR (as medias carregam e o motor destroi). Um Poisson
+# direto sobre as mesmas medias separa os dois: se ele empatar com o motor, o
+# limite e o insumo; se for MELHOR, o motor esta tirando sinal; se for pior,
+# o motor extrai algo do pouco que ha.
+#
+# lambda = media de gols PRO do mandante em casa + do visitante fora (queda
+# para a media geral de cada um, depois para a da liga). Nada de forca
+# relativa, xG, EMA, encolhimento ou gamma. Escanteios e cartoes idem.
+def _ingenuo(rast, casa, fora, liga, campo, chave_liga):
+    def m(time, em_casa):
+        return primeiro_valido(rast.media(time, campo, em_casa),
+                               rast.media(time, campo))
+    a, b = m(casa, True), m(fora, False)
+    if a is None or b is None:
+        media_liga = liga.get(chave_liga)
+        if media_liga is None:
+            return None
+        a = a if a is not None else media_liga / 2
+        b = b if b is not None else media_liga / 2
+    return a + b
+
+
+def _picks_ingenuos(estado, partida) -> Dict[str, float]:
+    """{market: prob} pelo caminho ingenuo, para os MESMOS rotulos do motor."""
+    casa_st, fora_st, liga, rast, casa, fora = estado
+    out: Dict[str, float] = {}
+
+    lam_g = _ingenuo(rast, casa, fora, liga, "gols_pro", "average_goals_per_match")
+    if lam_g and lam_g > 0:
+        for linha in _LINHAS_GOLS:
+            out[f"Over {linha} gols"] = _p_over(linha, lam_g)
+        lc = primeiro_valido(rast.media(casa, "gols_pro", True), rast.media(casa, "gols_pro"), padrao=lam_g / 2)
+        lf = primeiro_valido(rast.media(fora, "gols_pro", False), rast.media(fora, "gols_pro"), padrao=lam_g / 2)
+        out["BTTS Yes"] = max(0.0, min(1.0, (1 - math.exp(-lc)) * (1 - math.exp(-lf))))
+
+    lam_e = _ingenuo(rast, casa, fora, liga, "escanteios_pro", "average_corners_per_match")
+    if lam_e and lam_e > 0:
+        for linha in _LINHAS_ESCANTEIOS:
+            out[f"Escanteios Over {linha}"] = _p_over(linha, lam_e)
+
+    lam_c = _ingenuo(rast, casa, fora, liga, "cartoes_pro", "average_cards_per_match")
+    if lam_c and lam_c > 0:
+        for linha in _LINHAS_CARTOES:
+            out[f"Cartoes Over {linha}"] = _p_over(linha, lam_c)
+    return out
+
+
 MERCADOS: Tuple[Tuple[str, Callable], ...] = (
     ("gols", _picks_gols),
     ("escanteios", _picks_escanteios),
@@ -387,6 +438,8 @@ def reconstruir(
             rast, casa, fora,
         )
 
+        ingenuos = _picks_ingenuos(estado, partida)
+
         for nome, construir in MERCADOS:
             if nome not in escolhidas:
                 continue
@@ -413,6 +466,8 @@ def reconstruir(
                     "ev": round(p["prob"] * odd - 1.0, 6) if odd else None,
                     "prob_mercado": round(p_mercado, 6) if p_mercado else None,
                     "mercado_metodo": metodo,
+                    "prob_ingenuo": (round(ingenuos[p["market"]], 6)
+                                     if p["market"] in ingenuos else None),
                 })
 
         rast.registrar(partida)

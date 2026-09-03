@@ -152,6 +152,80 @@ def _por_liga(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
           f"mercado melhor (IC exclui 0) em {mkt}.")
 
 
+def _ic_par(picks, campo_a: str, campo_b: str, metrica, reamostras: int, semente: int = 229):
+    """(dif, lo, hi) de `campo_a - campo_b`, emparelhado por jogo."""
+    a, b = metrica(picks, campo_a), metrica(picks, campo_b)
+    if a is None or b is None:
+        return None
+    blocos = _por_jogo(picks)
+    if len(blocos) < 3:
+        return (a - b, float("nan"), float("nan"))
+    rng = random.Random(semente)
+    difs: List[float] = []
+    for _ in range(reamostras):
+        sorteio: List[Dict[str, Any]] = []
+        for _ in range(len(blocos)):
+            sorteio.extend(blocos[rng.randrange(len(blocos))])
+        x, y = metrica(sorteio, campo_a), metrica(sorteio, campo_b)
+        if x is not None and y is not None:
+            difs.append(x - y)
+    if len(difs) < 20:
+        return (a - b, float("nan"), float("nan"))
+    difs.sort()
+    return (a - b, difs[int(0.025 * len(difs))],
+            difs[min(len(difs) - 1, int(0.975 * len(difs)))])
+
+
+def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
+    """#229 - isola o MOTOR do INSUMO.
+
+    Os tres previsores veem as mesmas partidas. `prob_modelo` e o motor sobre
+    medias moveis; `prob_ingenuo` e um Poisson direto sobre as MESMAS medias.
+    A diferenca entre os dois e o que o motor faz — nada mais entra.
+    """
+    trio = [p for p in picks if p.get("prob_ingenuo") is not None
+            and p.get("prob_modelo") is not None]
+    if not trio:
+        print("\n(sem prob_ingenuo no arquivo — gere de novo com o backfill atual)")
+        return
+    piso = _piso(trio)
+    bm, bi, bk = (_brier(trio, "prob_modelo"), _brier(trio, "prob_ingenuo"),
+                  _brier(trio, "prob"))
+    print("\n── MOTOR x INGENUO (mesmas medias moveis; a diferenca e so o motor) ──")
+    print(f"{'':<30}{'n':>6}{'Brier':>9}{'skill vs piso':>15}")
+    for nome, val in (("motor (producao)", bm), ("ingenuo (Poisson direto)", bi),
+                      ("mercado", bk)):
+        sk = _skill(val, piso)
+        print(f"{nome:<30}{len(trio):>6}{val:>9.4f}{sk:>+14.2f}%"
+              + ("   <- abaixo do piso" if sk < 0 else ""))
+    dif = _ic_par(trio, "prob_modelo", "prob_ingenuo", _brier, reamostras)
+    if dif:
+        d, lo, hi = dif
+        if math.isnan(lo):
+            leitura = "IC indisponivel"
+        elif lo > 0:
+            leitura = "MOTOR PIOR que o ingenuo: o motor destroi sinal"
+        elif hi < 0:
+            leitura = "motor MELHOR que o ingenuo: o motor extrai algo"
+        else:
+            leitura = "empate: o limite esta no insumo, nao no motor"
+        print(f"\nmotor - ingenuo = {d:+.4f}  IC95 [{lo:+.4f}, {hi:+.4f}]  -> {leitura}")
+
+    celulas: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for p in trio:
+        celulas[str(p.get("market", "?"))].append(p)
+    print(f"\n{'celula':<30}{'n':>6}{'motor':>9}{'ingenuo':>9}{'dif':>9}{'IC95':>22}")
+    for mercado in sorted(celulas, key=lambda m: -len(celulas[m])):
+        g = celulas[mercado]
+        r = _ic_par(g, "prob_modelo", "prob_ingenuo", _brier, reamostras)
+        if not r:
+            continue
+        d, lo, hi = r
+        marca = "motor pior" if lo > 0 else ("motor melhor" if hi < 0 else "empate")
+        print(f"{mercado[:29]:<30}{len(g):>6}{_brier(g, 'prob_modelo'):>9.4f}"
+              f"{_brier(g, 'prob_ingenuo'):>9.4f}{d:>+9.4f}  [{lo:+.4f}, {hi:+.4f}]  {marca}")
+
+
 def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
     n = len(picks)
     bm = _brier(picks, "prob_modelo")
@@ -237,6 +311,7 @@ def main() -> int:
               + ("   <- pior que nao saber nada" if ganho < 0 else ""))
 
     _por_liga(picks, args.reamostras)
+    _motor_x_ingenuo(picks, args.reamostras)
     return 0
 
 
