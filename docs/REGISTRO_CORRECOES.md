@@ -11595,7 +11595,7 @@ Se (1) valer e (2) **não** valer — a publicada tem teto acima de 0,25% — o 
 - O deploy automático leva a migração; a primeira escrita cria as colunas. Se a Lambda não tiver `psycopg2` no pacote, a falha aberta segura o pedido e o ledger grava nada — o único sintoma é a ausência das duas linhas de log.
 
 ### Testes
-13 novos. Suíte: **910 passed, 1 skipped**.
+13 novos. Suíte: **918 passed, 1 skipped**.
 
 ### Lição aprendida
 A decisão "ancorar no mercado" parece uma troca de fonte; é uma troca de **promessa**. O EV contra o mesmo mercado some, e o que sobra de valor tem que vir de onde há assimetria real — entre casas, no tempo. Registrar isso antes do código evita descobrir depois que o produto ficou sem o número que o definia.
