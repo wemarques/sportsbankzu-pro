@@ -400,3 +400,33 @@ def test_ingenuo_nao_inventa_sinal_no_controle_negativo():
     # nos dois sentidos ao mesmo tempo — o que se exige e que o IC seja largo o
     # bastante para nao afirmar nada com certeza
     assert not (lo > 0 and hi > 0 and lo > 0.01), (lo, hi)
+
+
+# ── #229-a: Brier menor pode ser sinal OU menos espalhamento ─────────────
+def test_decomposicao_fecha_a_conta():
+    """Brier - piso == espalhamento - 2*sinal, por construcao. Se nao fechar,
+    a decomposicao esta errada e as conclusoes sobre 'sinal' nao valem."""
+    cmp = _comparador()
+    partidas = _gerador()(400, com_sinal=True, semente=227)
+    picks = [{**p, "prob_modelo": p["prob"]}
+             for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]]
+    piso = cmp._piso(picks)
+    for campo in ("prob_modelo", "prob_ingenuo"):
+        dec = cmp._decompor(picks, campo)
+        assert dec is not None
+        assert cmp._brier(picks, campo) - piso == pytest.approx(
+            dec["espalhamento"] - 2 * dec["sinal"], abs=1e-9)
+
+
+@pytest.mark.parametrize("com_sinal", [True, False])
+def test_sinal_positivo_so_quando_ha_sinal(com_sinal):
+    cmp = _comparador()
+    partidas = _gerador()(500, com_sinal=com_sinal, semente=227)
+    picks = [{**p, "prob_modelo": p["prob"]}
+             for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]
+             if p["market"] == "Over 2.5 gols"]
+    sinal = cmp._decompor(picks, "prob_modelo")["sinal"]
+    if com_sinal:
+        assert sinal > 0.005, f"com sinal plantado, cov tem de ser positiva: {sinal:+.4f}"
+    else:
+        assert abs(sinal) < 0.005, f"sem sinal, cov tem de encostar em zero: {sinal:+.4f}"

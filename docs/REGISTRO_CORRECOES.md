@@ -11443,3 +11443,54 @@ Nas 22 ligas, espero **empate** na maioria — o insumo é o limite — com o mo
 
 ### Lição aprendida
 "O modelo é ruim" tem pelo menos duas causas com remédios opostos, e o #227-e não distinguia. Um terceiro previsor construído para diferir do segundo em **exatamente uma coisa** transforma a diferença numa medição daquela coisa. É o mesmo princípio do controle positivo (#227): cada comparação precisa ser desenhada para que só uma variável mude.
+
+---
+
+## 229-a — Rodada real do ingênuo: gols empatam, escanteios "motor melhor" — e o rótulo mentia
+**Data:** 2026-09-03 | **Arquivos:** scripts/comparar_com_mercado.py, tests/test_227_backfill_historico.py | **Severidade:** Alta (rótulo do instrumento afirmava mais do que a medição sustenta) | **Status:** Corrigido — aguarda a decomposição no dado real
+
+### O que foi medido (22 ligas, 64.706 picks com os três previsores)
+```
+motor (producao)      Brier 0.2383   skill -5.97%
+ingenuo (Poisson)     Brier 0.2465   skill -9.60%
+mercado               Brier 0.2238   skill +0.47%
+
+motor - ingenuo = -0.0082  IC95 [-0.0092, -0.0071]
+
+Over 2.5 gols        -0.0004  [-0.0037, +0.0030]  empate
+Over 3.5 gols        +0.0004  [-0.0022, +0.0030]  empate
+BTTS Yes             -0.0030  [-0.0058, -0.0001]  motor melhor (por um fio)
+Escanteios 7.5–11.5  -0.0106 a -0.0142, IC estreito e longe de zero — motor melhor nas 5 linhas
+```
+
+E o ledger: `+ PREDICTION_LEDGER_ENABLED = 1`, 19 variáveis preservadas, Lambda de volta a Active. Sem prova de vida ainda — ela só aparece no CloudWatch depois de uma consulta de fixtures (`[#218] ledger: N de M`) e do próximo batch audit (`[#228] desfechos: N/M`).
+
+### Leitura, em duas partes
+**Gols: motor = ingênuo.** Toda a maquinaria do motor — força relativa, EMA, encolhimento de amostra, γ de mando, correções do Gap 2 — não move o Brier em relação a somar duas médias e aplicar Poisson. Sobre este insumo, o motor de gols é **inerte**. O limite está no insumo, e mexer no motor sem mudar o insumo não tem onde agir.
+
+**Escanteios: o motor bate o ingênuo em Brier, com folga — e aqui o rótulo do script errou.** Ele imprimiu *"o motor extrai algo"*. Não é o que a medição sustenta. Brier menor entre dois previsores pode vir de **mais sinal** ou de **menos espalhamento**, e o #227-c/e já mediu inclinação ≈ 0 (IC excluindo 1) em todas as células de escanteios do motor. Dois previsores sem resolução diferem em Brier **só pelo espalhamento**: ganha o que varia menos em torno da taxa-base. O motor de escanteios aplica redução de 20% (#043) e teto de 12 no λ — encolhe. O ingênuo soma duas médias cruas — não encolhe. A diferença de −0,011 a −0,014 tem exatamente a cara de **menos ruído**, não de mais informação.
+
+### A correção no instrumento
+Brier decomposto por célula, exatamente:
+
+```
+(p - ȳ)²  =  (p - ȳ)²  -  2 (p - ȳ)(y - ȳ)  +  (y - ȳ)²
+              espalhamento    sinal (covariância)    piso
+```
+
+`sinal` é a única coluna que mede informação. O comparador passa a imprimir as três parcelas por previsor e a atribuir a diferença motor − ingênuo a **sinal** ou a **espalhamento**. O rótulo "extrai algo" só sai quando a parcela de sinal domina; caso contrário: *"o motor ganha por ENCOLHER, não por enxergar"*.
+
+Validado nos dois controles: com sinal plantado, motor − ingênuo = −0,0111, dos quais **−0,0088 por sinal** → "ganha por SINAL"; sem sinal, sinal ≈ 0 e a diferença é toda espalhamento. A identidade fecha a 1e-9 (é teste), e o sinal é positivo só quando plantado (é teste parametrizado).
+
+### Previsões conferidas
+- *"Empate na maioria; motor ligeiramente pior em gols."* **Metade:** empate em gols, sim — mas não "pior", e não previ o vão em escanteios.
+- *"Motor melhor em dado real ⇒ primeira evidência de que ele extrai algo."* **Retirada.** Era a premissa errada do rótulo: eu tinha desenhado o instrumento como se Brier menor implicasse sinal. Só a decomposição diz isso.
+
+### Previsão registrada para a próxima rodada
+`comparar_com_mercado.py` sobre o mesmo `todas_mercado.json` (já tem `prob_ingenuo`; só o script mudou): espero **sinal do motor ≈ 0 em escanteios** (da ordem de ±0,002), espalhamento do motor claramente menor que o do ingênuo, e a linha *"ganha por ENCOLHER"*. Em gols, espalhamentos parecidos e sinais parecidos, ambos ≈ 0. Se o sinal do motor em escanteios sair **positivo e da ordem do espalhamento**, eu estava errado e o motor de escanteios enxerga alguma coisa.
+
+### Testes
+3 novos. Suíte: **896 passed, 1 skipped**.
+
+### Lição aprendida
+Desenhei o instrumento com um rótulo que **presumia** o mecanismo ("Brier menor = extrai sinal") em vez de medi-lo. O controle positivo não pegou, porque no controle positivo o mecanismo presumido era verdadeiro. Foi o dado real, onde ele é falso, que expôs o rótulo. Um instrumento validado só no cenário onde a sua hipótese vale não está validado — está confirmado, que é outra coisa.

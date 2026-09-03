@@ -176,6 +176,39 @@ def _ic_par(picks, campo_a: str, campo_b: str, metrica, reamostras: int, semente
             difs[min(len(difs) - 1, int(0.975 * len(difs)))])
 
 
+def _decompor(picks: Sequence[Dict[str, Any]], campo: str) -> Optional[Dict[str, float]]:
+    """#229-a - Brier = piso + ESPALHAMENTO - 2*SINAL, por celula (liga x mercado).
+
+        (p - y)^2 = (p - ybar)^2  -  2 (p - ybar)(y - ybar)  +  (y - ybar)^2
+                    espalhamento     sinal (covariancia)       piso
+
+    Dois previsores sem resolucao (sinal ~ 0) diferem em Brier SO pelo
+    espalhamento: ganha o que varia menos em torno da taxa-base. Chamar isso
+    de "extrai algo" seria confundir encolher ruido com achar informacao — e
+    foi exatamente o rotulo que a primeira versao deste script imprimiu para
+    os escanteios na rodada real. `sinal` e a unica coluna que mede
+    informacao; `espalhamento` mede quanto o previsor se afasta do piso, com
+    ou sem motivo.
+    """
+    grupos: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for p in picks:
+        if p.get(campo) is None:
+            continue
+        grupos[(str(p.get("league_id", "?")), str(p.get("market", "?")))].append(p)
+    esp = sinal = 0.0
+    n = 0
+    for grupo in grupos.values():
+        ybar = sum(p["outcome"] for p in grupo) / len(grupo)
+        for p in grupo:
+            dp, dy = p[campo] - ybar, p["outcome"] - ybar
+            esp += dp * dp
+            sinal += dp * dy
+            n += 1
+    if not n:
+        return None
+    return {"espalhamento": esp / n, "sinal": sinal / n}
+
+
 def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
     """#229 - isola o MOTOR do INSUMO.
 
@@ -204,12 +237,37 @@ def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
         if math.isnan(lo):
             leitura = "IC indisponivel"
         elif lo > 0:
-            leitura = "MOTOR PIOR que o ingenuo: o motor destroi sinal"
+            leitura = "MOTOR PIOR que o ingenuo em Brier"
         elif hi < 0:
-            leitura = "motor MELHOR que o ingenuo: o motor extrai algo"
+            leitura = "motor MELHOR que o ingenuo em Brier"
         else:
-            leitura = "empate: o limite esta no insumo, nao no motor"
+            leitura = "empate em Brier"
         print(f"\nmotor - ingenuo = {d:+.4f}  IC95 [{lo:+.4f}, {hi:+.4f}]  -> {leitura}")
+
+    # #229-a: Brier menor pode ser MAIS SINAL ou MENOS ESPALHAMENTO. So a
+    # decomposicao diz qual — e a resposta muda o que se faz com o motor.
+    print(f"\n{'decomposicao (Brier - piso = espalhamento - 2*sinal)':<52}"
+          f"{'espalh.':>9}{'sinal':>9}{'Brier-piso':>12}")
+    for nome, campo in (("motor", "prob_modelo"), ("ingenuo", "prob_ingenuo"),
+                        ("mercado", "prob")):
+        dec = _decompor(trio, campo)
+        if not dec:
+            continue
+        b = _brier(trio, campo)
+        excesso = b - piso if b is not None and piso is not None else float("nan")
+        print(f"  {nome:<50}{dec['espalhamento']:>9.4f}{dec['sinal']:>+9.4f}{excesso:>+12.4f}")
+    dm, di = _decompor(trio, "prob_modelo"), _decompor(trio, "prob_ingenuo")
+    if dm and di:
+        ganho_sinal = 2 * (dm["sinal"] - di["sinal"])
+        ganho_esp = di["espalhamento"] - dm["espalhamento"]
+        print(f"\n  de onde vem a diferenca motor - ingenuo ({d:+.4f}):")
+        print(f"    por SINAL (o motor acha mais informacao) ....... {-ganho_sinal:+.4f}")
+        print(f"    por ESPALHAMENTO (o motor varia menos) ......... {-ganho_esp:+.4f}")
+        if abs(ganho_sinal) < 0.15 * abs(ganho_esp) and ganho_esp > 0:
+            print("    -> o motor ganha por ENCOLHER, nao por enxergar: sem resolucao nos dois,"
+                  " Brier menor e so menos ruido")
+        elif ganho_sinal > 0.15 * max(abs(ganho_esp), 1e-9):
+            print("    -> o motor ganha por SINAL: extrai informacao que o ingenuo nao tem")
 
     celulas: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for p in trio:
