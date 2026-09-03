@@ -358,9 +358,19 @@ def retrain_all_leagues(
 
 
 def _extract_total_corners(match: Dict[str, Any]) -> float:
-    """Extract total corners from a match dict."""
+    """Extract total corners from a match dict.
+
+    #226-c: `totalCornerCount` vem primeiro porque e o nome REAL do total direto
+    na linha de partida. `totalCorners` e `total_corners` **nao existem** — a
+    funcao chegava ao numero certo pela soma dos times, pelo terceiro candidato,
+    por sorte. A promocao so foi feita depois de medir: em 605 finalizadas da
+    championship, `totalCornerCount` e `team_a + team_b` concordam em **605/605**
+    (`scripts/diagnostico_chaves_escanteios.py`), entao a troca e comprovadamente
+    neutra em vez de plausivelmente neutra.
+    """
     # Direct total
-    total = primeiro_valido(match.get("totalCorners"), match.get("total_corners"), padrao=0)
+    total = primeiro_valido(match.get("totalCornerCount"), match.get("totalCorners"),
+                            match.get("total_corners"), padrao=0)
     if total and float(total) > 0:
         return float(total)
 

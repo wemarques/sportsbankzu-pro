@@ -168,3 +168,25 @@ def test_raiz_de_dados_respeita_precedencia(monkeypatch):
 
     monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME")
     assert str(caminhos.raiz_de_dados()) == "."
+
+
+# ── #226-c: o nome real do total direto ──────────────────────────────────
+def test_total_direto_vem_de_totalCornerCount():
+    """`totalCorners` e `total_corners` nao existem na linha de partida.
+
+    Medido: em 605 finalizadas da championship, `totalCornerCount` e
+    `team_a + team_b` concordam em 605/605 — por isso a promocao e neutra.
+    """
+    from backend.modeling.corners.retrain import _extract_total_corners
+
+    # nome real presente: usa o total direto
+    assert _extract_total_corners({"totalCornerCount": 13,
+                                   "team_a_corners": 10, "team_b_corners": 3}) == 13.0
+    # ausente: cai na soma, como antes
+    assert _extract_total_corners({"team_a_corners": 10, "team_b_corners": 3}) == 13.0
+    # presente valendo None: nao trava a cadeia (#225-c)
+    assert _extract_total_corners({"totalCornerCount": None,
+                                   "team_a_corners": 10, "team_b_corners": 3}) == 13.0
+    # -1 e o "sem dado" da FootyStats
+    assert _extract_total_corners({"totalCornerCount": -1,
+                                   "team_a_corners": -1, "team_b_corners": -1}) == 0.0

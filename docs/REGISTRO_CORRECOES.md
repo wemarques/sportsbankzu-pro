@@ -11081,3 +11081,44 @@ A prova é direta: mesma história, última partida com placar `0-0` versus `5-4
 
 ### Lição aprendida
 Um instrumento que só sabe dizer uma coisa não está medindo nada. Se eu tivesse rodado só o caso realista e visto "SEM RESOLUÇÃO" em todas as células, teria reportado um achado — e o achado teria a mesma cara de um backfill que embaralha as probabilidades. O controle positivo custa um parâmetro no gerador e é a diferença entre medir e supor que se está medindo.
+
+---
+
+## 226-c — A coluna não-zero: uma hipótese minha caiu, uma troca ficou provada
+**Data:** 2026-09-03 | **Arquivos:** backend/modeling/corners/retrain.py, tests/test_226_retrain_escanteios.py | **Severidade:** Baixa (uma troca comprovada, uma suspeita descartada) | **Status:** Corrigido
+
+### O que foi medido
+Segunda execução do diagnóstico na championship, 605 finalizadas, agora com coluna **não-zero** e a comparação total-vs-soma:
+
+```
+chave                        preenchida        nao-zero      exemplo
+totalCornerCount              605/605 100%    605/605 100%     13
+team_a_corners                605/605 100%    599/605  99%     10
+team_b_corners                605/605 100%    596/605  98%      3
+corners_potential             605/605 100%    557/605  92%     15
+corners_o85_potential         605/605 100%    557/605  92%    100
+corners_o95_potential         605/605 100%    551/605  91%    100
+corners_o105_potential        605/605 100%    534/605  88%     50
+odds_corners_* (12 colunas)   605/605 100%    604/605  99%   1.24 .. 3.55
+team_a_corners_0_10_min       596/605  98%    230/605  38%      2
+corner_fh_count               596/605  98%    591/605  97%      4
+
+totalCornerCount vs (team_a + team_b): concordam em 605/605
+```
+
+### Hipótese minha, refutada
+Eu havia escrito: *"`corners_potential` aparece em 100% mas o exemplo é 0 — num campo de projeção, 0 é quase certamente enchimento."* **Errado.** É 92% não-zero. O `0` que apareceu era o primeiro valor da lista, não o valor típico — eu li um exemplo como se fosse distribuição, que é o mesmo erro de amostra pequena que o #225-a existia para evitar.
+
+E os 8% de zeros que sobram **não são bug**: `predictor.py:313` faz `if corners_potential > 0:` antes de misturar a âncora do #123, então um zero desliga o blend em vez de puxar a projeção para baixo. A guarda já estava certa. Além disso, produção lê `cornersPotential` do dicionário de **stats de time**, não da linha de partida — outra camada, e confundir as duas foi exatamente o erro do #226-b. Nada a corrigir aqui.
+
+### Troca comprovada
+`_extract_total_corners` procurava `totalCorners` e `total_corners`, **nenhum dos dois existe**; chegava ao número certo pela soma dos times, pelo terceiro candidato, por sorte. `totalCornerCount` passa a vir primeiro — e a promoção só foi feita depois de medir: **605/605 de concordância** entre o total direto e a soma. Neutra comprovadamente, não plausivelmente. A soma continua como queda.
+
+### Um número que parece defeito e não é
+`team_a_corners_0_10_min` em 38% não-zero é o esperado: escanteio nos 10 primeiros minutos é raro. Foi justamente para não confundir isso com dado faltando que a coluna separa "preenchida" de "não-zero".
+
+### Testes
+4 novos. Suíte: **857 passed, 1 skipped**.
+
+### Lição aprendida
+Duas leituras opostas do mesmo instrumento, na mesma semana. No #226-b um campo em 0% virou "não há dado" quando era "nome errado". Aqui um exemplo `0` virou "campo é enchimento" quando 92% eram valores reais. Nos dois casos o erro foi **concluir a partir de uma célula** — e nos dois a correção foi a mesma: uma coluna a mais, medida sobre a população inteira. Instrumento que mostra exemplo precisa mostrar distribuição ao lado, senão o exemplo vira a conclusão.
