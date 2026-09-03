@@ -162,7 +162,13 @@ def main() -> int:
 
     # Referencia de piso: prever sempre a taxa-base da celula. Um previsor que
     # nao bate isto nao esta usando informacao nenhuma sobre o jogo.
-    print("\n── PISO: prever sempre a taxa-base da celula ──")
+    #
+    # #227-c: a taxa-base aqui e a DA PROPRIA AMOSTRA — o melhor constante
+    # possivel para estes jogos, que ninguem conheceria antes deles. E um piso
+    # otimista de proposito: quem passa dele carrega informacao por jogo de
+    # verdade; quem fica abaixo esta piorando o palpite trivial. Na
+    # championship o mercado passou por 0.30% e o modelo ficou 7.26% abaixo.
+    print("\n── PISO: prever sempre a taxa-base da celula (taxa DESTA amostra) ──")
     piso = 0.0
     total = 0
     for mercado, grupo in celulas.items():

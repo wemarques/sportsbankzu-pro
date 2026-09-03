@@ -11252,3 +11252,58 @@ Aponta **mercado** onde o preço carrega a verdade e **modelo** onde o preço é
 
 ### Lição aprendida
 Duas previsões minhas caíram nesta rodada: o de-vig de gols/BTTS ia ser `1/odd` (o par existe) e a inclinação de mercado ia ficar entre 0.7 e 1.1 nas células de escanteios (o **ponto** ficou — 0.59 a 1.03 —, mas o IC virou o resultado). Registrar a previsão antes valeu de novo, e por um motivo diferente: o que ela expôs não foi o dado, foi o **veredito**. Uma inclinação de 0.98 rotulada "não separa o que acontece" só chama atenção quando existe uma expectativa escrita contra a qual bater.
+
+---
+
+## 227-c — O modelo reconstruído perde para a taxa-base em todas as famílias com mercado
+**Data:** 2026-09-03 | **Arquivos:** scripts/comparar_com_mercado.py (nota) | **Severidade:** Crítica (resultado sobre o modelo, com a ponte para produção nomeada) | **Status:** Medido
+
+### O que foi medido (championship, 4184 picks, os MESMOS para os dois previsores)
+```
+── BRIER (bootstrap emparelhado por jogo) ──
+celula                   n   modelo  mercado      dif        IC95 da dif   leitura
+TODAS                 4184   0.2387   0.2219  +0.0168  [+0.0118, +0.0218]  MERCADO melhor
+Over 2.5 gols          523   0.2705   0.2497  +0.0207  [+0.0087, +0.0313]  MERCADO melhor
+Over 3.5 gols          523   0.1968   0.1813  +0.0155  [+0.0068, +0.0240]  MERCADO melhor
+BTTS Yes               523   0.2632   0.2461  +0.0172  [+0.0083, +0.0261]  MERCADO melhor
+Escanteios Over 7.5    523   0.1746   0.1630  +0.0115  [+0.0064, +0.0175]  MERCADO melhor
+Escanteios Over 8.5    523   0.2314   0.2152  +0.0161  [+0.0084, +0.0243]  MERCADO melhor
+Escanteios Over 9.5    523   0.2670   0.2468  +0.0202  [+0.0110, +0.0305]  MERCADO melhor
+Escanteios Over 10.5   523   0.2666   0.2466  +0.0201  [+0.0105, +0.0294]  MERCADO melhor
+Escanteios Over 11.5   523   0.2394   0.2261  +0.0133  [+0.0057, +0.0222]  MERCADO melhor
+
+LOG-LOSS: modelo 0.6736 | mercado 0.6339 | dif +0.0397  IC95 [+0.0276, +0.0523]
+
+PISO (taxa-base da celula, desta amostra): 0.2225
+  modelo   0.2387   skill -7.26%   <- pior que nao saber nada
+  mercado  0.2219   skill +0.30%
+
+Inclinacao do modelo nos mesmos 4184: as 8 celulas SEM RESOLUCAO, IC excluindo 1.
+```
+
+### Leitura
+Três fatos, em ordem de peso:
+
+1. **O modelo reconstruído é pior que prever a taxa-base**, em 7,26%. Não é "perde para o mercado por pouco" — é que a variação por jogo que ele produz **adiciona erro** em vez de remover. É exatamente o que inclinação zero com espalhamento grande prevê: Brier = Brier da constante + variância dos desvios inúteis. As duas medições (inclinação e Brier) contam a mesma história por caminhos independentes.
+
+2. **O mercado vence em 9 de 9 células, com IC excluindo zero em todas.** Não há família onde o modelo reconstruído se defende. Escanteios, a família que o #226-b reabriu, não é exceção — está entre as piores (+0.020 em Over 9.5 e 10.5).
+
+3. **O mercado bate o piso por só 0,30%.** O piso é a taxa-base **desta amostra** — o melhor constante possível para estes jogos, que ninguém conheceria antes deles. Passar dele, mesmo por pouco, é carregar informação real por jogo. Em totais e escanteios da championship, essa informação é pequena mesmo para a casa. Isso dimensiona o tamanho do prêmio que existe para disputar.
+
+### O que isto prova e o que não prova
+Prova: **o modelo desta família, alimentado por médias móveis das partidas anteriores, não carrega informação por jogo** nas famílias de gols, BTTS e escanteios da championship, em duas temporadas. O instrumento passou pelos dois controles (#227), pela referência de mercado (#227-b) e pelo veredito corrigido; não há mais onde a medição se esconder.
+
+Não prova: que a **produção** esteja no mesmo lugar. Produção come `stats` da FootyStats com xG, calibração per-liga, Dixon-Coles, γ de mando e deflação progressiva — insumos que a reconstrução não tem. É possível que esses insumos carreguem a resolução que as médias móveis não carregam. **É possível; não está medido.** E a única forma de medir é a mesma que já estava pendente: o ledger (#218) grava a probabilidade **publicada**, com desfecho depois. `PREDICTION_LEDGER_ENABLED=1` deixa de ser item de fila e passa a ser o caminho crítico.
+
+Uma leitura coerente, registrada como hipótese e não como achado: a deflação progressiva (#043, #105) — que foi adicionada empiricamente porque melhorava a auditoria — é o sistema tendo descoberto sozinho que suas probabilidades cruas variam mais que a realidade. A inclinação de 0,59 no pooled diz "previsões extremas demais"; deflação é a correção para exatamente isso. Se a hipótese estiver certa, o ledger vai mostrar a probabilidade deflacionada com Brier melhor que a crua e ainda assim perto do piso.
+
+### O que NÃO fazer com isto
+- **Não** recalibrar. Inclinação zero é a situação em que calibrar não ajuda: isotônica, Platt e Beta são monótonas em uma dimensão, e sobre um sinal sem resolução devolvem a taxa-base com outro nome (#220). O resultado seria o próprio piso.
+- **Não** concluir que o produto perde dinheiro. O que sai para o usuário passa por classificação (#028), deflação (#106) e caps de banca; nada disso está nesta medição.
+- **Não** estender a outras ligas sem medir. Championship, duas temporadas, 605 jogos. Rodar `--liga` para as demais custa um comando por liga e está pronto.
+
+### Testes
+Nenhum novo — não houve alteração de lógica. Suíte: **865 passed, 1 skipped**.
+
+### Lição aprendida
+A sequência inteira — #225-a mediu o nome errado, #226 achou um job morto, #226-b reabriu escanteios, #227 construiu o instrumento com controles, #227-a pôs a referência, #227-b consertou o veredito — existiu para que este número fosse **acreditável**. Sem os controles, "−7,26% contra a taxa-base" seria mais um resultado para desconfiar; com eles, é o primeiro número sobre o modelo que não depende de ninguém acreditar em ninguém. O custo de chegar aqui foi sete correções; o custo de não chegar seria continuar calibrando um sinal que não tem o que calibrar.
