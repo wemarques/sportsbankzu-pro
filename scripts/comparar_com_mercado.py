@@ -94,6 +94,64 @@ def _ic_da_diferenca(picks: Sequence[Dict[str, Any]], metrica,
             difs[min(len(difs) - 1, int(0.975 * len(difs)))])
 
 
+def _piso(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
+    """Brier de prever sempre a taxa-base da celula (liga x mercado), desta amostra."""
+    grupos: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+    for p in picks:
+        grupos[(str(p.get("league_id", "?")), str(p.get("market", "?")))].append(p["outcome"])
+    soma = 0.0
+    total = 0
+    for desfechos in grupos.values():
+        taxa = sum(desfechos) / len(desfechos)
+        soma += sum((taxa - y) ** 2 for y in desfechos)
+        total += len(desfechos)
+    return soma / total if total else None
+
+
+def _skill(valor: Optional[float], piso: Optional[float]) -> Optional[float]:
+    if valor is None or not piso:
+        return None
+    return (piso - valor) / piso * 100
+
+
+def _por_liga(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
+    """#227-d: a tabela que responde "regra ou excecao?" — uma linha por liga."""
+    ligas: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for p in picks:
+        ligas[str(p.get("league_id", "?"))].append(p)
+    if len(ligas) < 2:
+        return
+    print("\n── POR LIGA (Brier; skill = ganho sobre o piso da propria liga) ──")
+    print(f"{'liga':<22}{'n':>6}{'modelo':>9}{'mercado':>9}{'piso':>8}"
+          f"{'skill mod':>11}{'skill mkt':>11}{'dif':>9}{'IC95 da dif':>22}  leitura")
+    linhas = []
+    for liga, grupo in ligas.items():
+        bm, bk, pi = _brier(grupo, "prob_modelo"), _brier(grupo, "prob"), _piso(grupo)
+        dif = _ic_da_diferenca(grupo, _brier, reamostras)
+        if bm is None or bk is None or pi is None or dif is None:
+            continue
+        linhas.append((liga, len(grupo), bm, bk, pi, _skill(bm, pi), _skill(bk, pi), dif))
+    # da pior para a melhor skill do modelo
+    linhas.sort(key=lambda r: r[5])
+    for liga, n, bm, bk, pi, sm, sk, (d, lo, hi) in linhas:
+        if math.isnan(lo):
+            leitura = "IC indisponivel"
+        elif lo > 0:
+            leitura = "MERCADO melhor"
+        elif hi < 0:
+            leitura = "MODELO melhor"
+        else:
+            leitura = "empate"
+        abaixo = "  <- abaixo do piso" if sm < 0 else ""
+        print(f"{liga[:21]:<22}{n:>6}{bm:>9.4f}{bk:>9.4f}{pi:>8.4f}"
+              f"{sm:>+10.2f}%{sk:>+10.2f}%{d:>+9.4f}  [{lo:+.4f}, {hi:+.4f}]  "
+              f"{leitura}{abaixo}")
+    abaixo = sum(1 for r in linhas if r[5] < 0)
+    mkt = sum(1 for r in linhas if r[7][1] > 0)
+    print(f"\n{len(linhas)} liga(s): modelo abaixo do piso em {abaixo}; "
+          f"mercado melhor (IC exclui 0) em {mkt}.")
+
+
 def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
     n = len(picks)
     bm = _brier(picks, "prob_modelo")
@@ -169,20 +227,16 @@ def main() -> int:
     # verdade; quem fica abaixo esta piorando o palpite trivial. Na
     # championship o mercado passou por 0.30% e o modelo ficou 7.26% abaixo.
     print("\n── PISO: prever sempre a taxa-base da celula (taxa DESTA amostra) ──")
-    piso = 0.0
-    total = 0
-    for mercado, grupo in celulas.items():
-        taxa = sum(p["outcome"] for p in grupo) / len(grupo)
-        piso += sum((taxa - p["outcome"]) ** 2 for p in grupo)
-        total += len(grupo)
-    piso /= total
+    piso = _piso(picks)
     bm = _brier(picks, "prob_modelo")
     bk = _brier(picks, "prob")
     print(f"piso (taxa-base) {piso:.4f} | modelo {bm:.4f} | mercado {bk:.4f}")
     for nome, val in (("modelo", bm), ("mercado", bk)):
-        ganho = (piso - val) / piso * 100
+        ganho = _skill(val, piso)
         print(f"  {nome:8s} skill score vs piso: {ganho:+.2f}%"
               + ("   <- pior que nao saber nada" if ganho < 0 else ""))
+
+    _por_liga(picks, args.reamostras)
     return 0
 
 

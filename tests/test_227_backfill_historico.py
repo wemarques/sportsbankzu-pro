@@ -319,3 +319,37 @@ def test_so_com_odd_deixa_modelo_e_mercado_no_mesmo_conjunto():
     com_odd = [p for p in picks if p["prob_mercado"] is not None]
     assert 0 < len(com_odd) < len(picks), "o recorte tem de ser um subconjunto real"
     assert all(p["mercado_metodo"] == "devig" for p in com_odd)
+
+
+# ── #227-d: todas as ligas, uma linha por liga ───────────────────────────
+def test_piso_e_por_celula_liga_x_mercado():
+    """Misturar ligas com taxas-base diferentes num piso so inventaria skill."""
+    cmp = _comparador()
+    picks = (
+        [{"league_id": "A", "market": "m", "outcome": 1}] * 9
+        + [{"league_id": "A", "market": "m", "outcome": 0}]
+        + [{"league_id": "B", "market": "m", "outcome": 0}] * 9
+        + [{"league_id": "B", "market": "m", "outcome": 1}]
+    )
+    # taxa 0.9 em A e 0.1 em B -> piso por celula = 0.09; piso global seria 0.25
+    assert cmp._piso(picks) == pytest.approx(0.09, abs=1e-9)
+
+
+def test_skill_negativo_quando_pior_que_o_piso():
+    cmp = _comparador()
+    assert cmp._skill(0.24, 0.22) < 0
+    assert cmp._skill(0.20, 0.22) > 0
+    assert cmp._skill(None, 0.22) is None
+    assert cmp._skill(0.20, 0.0) is None
+
+
+def test_reconstruir_por_liga_nao_mistura_historicos():
+    """O rastreador e por liga: um time da liga A nao pode ganhar forma com
+    jogos da liga B so por ter o mesmo nome."""
+    a = [_linha(i, f"T{i % 4}", f"T{(i + 1) % 4}", gc=3, gf=3) for i in range(40)]
+    b = [_linha(100 + i, f"T{i % 4}", f"T{(i + 1) % 4}", gc=0, gf=0) for i in range(40)]
+    ra = reconstruir(a, "A")["picks"]
+    rb = reconstruir(b, "B")["picks"]
+    pa = next(p["prob"] for p in ra if p["market"] == "Over 2.5 gols")
+    pb = next(p["prob"] for p in rb if p["market"] == "Over 2.5 gols")
+    assert pa > pb, "liga com 6 gols por jogo tem de dar Over 2.5 mais provavel"

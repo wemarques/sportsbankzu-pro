@@ -110,6 +110,10 @@ def _precificar(p: Dict[str, Any], ataque, defesa, com_sinal: bool, rng) -> None
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--liga", default="championship")
+    ap.add_argument("--todas", action="store_true",
+                    help="#227-d: todas as ligas de LEAGUES_CONFIG num arquivo so; "
+                         "cada pick carrega league_id, entao medir_inclinacao e "
+                         "comparar_com_mercado separam por liga sozinhos")
     ap.add_argument("--sintetico", type=int, metavar="N",
                     help="gera a liga em vez de chamar a API")
     ap.add_argument("--sem-sinal", action="store_true",
@@ -137,26 +141,46 @@ def main() -> int:
 
     from backend.services.backfill_historico import reconstruir
 
+    familias = [f.strip() for f in args.familias.split(",")] if args.familias else None
+
     if args.sintetico:
-        linhas = partidas_sinteticas(args.sintetico, com_sinal=not args.sem_sinal)
-        liga = "sintetica"
+        por_liga = {"sintetica": partidas_sinteticas(args.sintetico,
+                                                     com_sinal=not args.sem_sinal)}
     else:
         from backend.config.leagues_config import LEAGUES_CONFIG
         from backend.cron_handler import coletar_partidas_escanteios
 
-        ligas = [l for l in LEAGUES_CONFIG if l.get("id") == args.liga]
-        if not ligas:
-            print(f"liga desconhecida: {args.liga}", file=sys.stderr)
-            return 2
-        dados = coletar_partidas_escanteios(ligas=ligas, n_temporadas=args.temporadas)
-        linhas = dados.get(args.liga) or []
-        liga = args.liga
-        if not linhas:
+        if args.todas:
+            ligas = list(LEAGUES_CONFIG)
+        else:
+            ligas = [l for l in LEAGUES_CONFIG if l.get("id") == args.liga]
+            if not ligas:
+                print(f"liga desconhecida: {args.liga}", file=sys.stderr)
+                return 2
+        por_liga = coletar_partidas_escanteios(ligas=ligas, n_temporadas=args.temporadas)
+        if not por_liga:
             print("coleta vazia — rode com --verboso para ver o motivo", file=sys.stderr)
             return 1
 
-    familias = [f.strip() for f in args.familias.split(",")] if args.familias else None
-    saida = reconstruir(linhas, liga, min_jogos=args.min_jogos, familias=familias)
+    # Uma liga por vez: o rastreador e a taxa-base sao por liga, e misturar
+    # partidas de ligas diferentes num historico so inventaria forma.
+    saida = {"picks": [], "resumo": {"ligas": {}}}
+    for liga, linhas in por_liga.items():
+        r = reconstruir(linhas, liga, min_jogos=args.min_jogos, familias=familias)
+        saida["picks"].extend(r["picks"])
+        saida["resumo"]["ligas"][liga] = {
+            k: r["resumo"][k] for k in ("partidas_finalizadas", "partidas_usadas",
+                                        "picks", "picks_com_odd")
+        }
+    saida["resumo"]["picks"] = len(saida["picks"])
+    saida["resumo"]["picks_com_odd"] = sum(1 for p in saida["picks"] if p["odd"] is not None)
+    saida["resumo"]["prob_mercado"] = {
+        m: sum(1 for p in saida["picks"] if p["mercado_metodo"] == m)
+        for m in ("devig", "implicita", "sem_odd")
+    }
+    if len(por_liga) == 1:
+        # formato de sempre para uma liga so
+        saida["resumo"] = {**r["resumo"], "prob_mercado": saida["resumo"]["prob_mercado"]}
 
     picks = saida["picks"]
     if args.so_com_odd:
