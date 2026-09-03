@@ -1,0 +1,169 @@
+{
+  "generated_at": "2026-09-03T05:17:29.747212",
+  "model_version": "1.0.0",
+  "league_id": "sintetica",
+  "training_results": {
+    "negative_binomial": {
+      "model": "negative_binomial",
+      "league_id": "sintetica",
+      "status": "trained",
+      "mu": 10.8,
+      "alpha": 0.0303,
+      "sample_size": 60,
+      "mean_corners": 10.8,
+      "std_corners": 3.79,
+      "variance_ratio": 1.327,
+      "avg_brier": 0.000258,
+      "line_metrics": {
+        "over_4.5": {
+          "empirical_rate": 0.9667,
+          "predicted_rate": 0.9686,
+          "brier_component": 4e-06,
+          "sample_size": 60,
+          "hits": 58
+        },
+        "over_5.5": {
+          "empirical_rate": 0.9333,
+          "predicted_rate": 0.9338,
+          "brier_component": 0.0,
+          "sample_size": 60,
+          "hits": 56
+        },
+        "over_6.5": {
+          "empirical_rate": 0.85,
+          "predicted_rate": 0.8795,
+          "brier_component": 0.000868,
+          "sample_size": 60,
+          "hits": 51
+        },
+        "over_7.5": {
+          "empirical_rate": 0.8,
+          "predicted_rate": 0.8048,
+          "brier_component": 2.3e-05,
+          "sample_size": 60,
+          "hits": 48
+        },
+        "over_8.5": {
+          "empirical_rate": 0.7333,
+          "predicted_rate": 0.7128,
+          "brier_component": 0.000421,
+          "sample_size": 60,
+          "hits": 44
+        },
+        "over_9.5": {
+          "empirical_rate": 0.5833,
+          "predicted_rate": 0.6094,
+          "brier_component": 0.000682,
+          "sample_size": 60,
+          "hits": 35
+        },
+        "over_10.5": {
+          "empirical_rate": 0.5167,
+          "predicted_rate": 0.5024,
+          "brier_component": 0.000204,
+          "sample_size": 60,
+          "hits": 31
+        },
+        "over_11.5": {
+          "empirical_rate": 0.4,
+          "predicted_rate": 0.3992,
+          "brier_component": 1e-06,
+          "sample_size": 60,
+          "hits": 24
+        },
+        "over_12.5": {
+          "empirical_rate": 0.3167,
+          "predicted_rate": 0.3059,
+          "brier_component": 0.000116,
+          "sample_size": 60,
+          "hits": 19
+        }
+      }
+    },
+    "poisson": {
+      "model": "poisson",
+      "league_id": "sintetica",
+      "status": "trained",
+      "lambda": 10.8,
+      "sample_size": 60,
+      "mean_corners": 10.8,
+      "std_corners": 3.79,
+      "dispersion_index": 1.327,
+      "overdispersed": true,
+      "avg_brier": 0.001179,
+      "line_metrics": {
+        "over_4.5": {
+          "empirical_rate": 0.9667,
+          "predicted_rate": 0.9827,
+          "brier_component": 0.000258,
+          "sample_size": 60,
+          "hits": 58
+        },
+        "over_5.5": {
+          "empirical_rate": 0.9333,
+          "predicted_rate": 0.9577,
+          "brier_component": 0.000596,
+          "sample_size": 60,
+          "hits": 56
+        },
+        "over_6.5": {
+          "empirical_rate": 0.85,
+          "predicted_rate": 0.9128,
+          "brier_component": 0.003942,
+          "sample_size": 60,
+          "hits": 51
+        },
+        "over_7.5": {
+          "empirical_rate": 0.8,
+          "predicted_rate": 0.8434,
+          "brier_component": 0.001885,
+          "sample_size": 60,
+          "hits": 48
+        },
+        "over_8.5": {
+          "empirical_rate": 0.7333,
+          "predicted_rate": 0.7498,
+          "brier_component": 0.00027,
+          "sample_size": 60,
+          "hits": 44
+        },
+        "over_9.5": {
+          "empirical_rate": 0.5833,
+          "predicted_rate": 0.6374,
+          "brier_component": 0.002923,
+          "sample_size": 60,
+          "hits": 35
+        },
+        "over_10.5": {
+          "empirical_rate": 0.5167,
+          "predicted_rate": 0.516,
+          "brier_component": 0.0,
+          "sample_size": 60,
+          "hits": 31
+        },
+        "over_11.5": {
+          "empirical_rate": 0.4,
+          "predicted_rate": 0.3969,
+          "brier_component": 1e-05,
+          "sample_size": 60,
+          "hits": 24
+        },
+        "over_12.5": {
+          "empirical_rate": 0.3167,
+          "predicted_rate": 0.2896,
+          "brier_component": 0.000731,
+          "sample_size": 60,
+          "hits": 19
+        }
+      }
+    },
+    "ml_regression": {
+      "model": "ml_regression",
+      "league_id": "sintetica",
+      "status": "skipped"
+    }
+  },
+  "n_matches": 60,
+  "n_valid_corners": 60,
+  "force_shadow": true
+}

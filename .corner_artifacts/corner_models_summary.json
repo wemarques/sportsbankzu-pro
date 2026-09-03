@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-09-03T05:17:04.685947",
+  "model_version": "1.0.0",
+  "leagues": {
+    "championship": {
+      "negative_binomial": {
+        "status": null,
+        "sample_size": 0,
+        "avg_brier": null,
+        "parameters": {}
+      },
+      "poisson": {
+        "status": null,
+        "sample_size": 0,
+        "avg_brier": null,
+        "parameters": {}
+      },
+      "ml_regression": {
+        "status": null,
+        "sample_size": 0,
+        "avg_brier": null,
+        "parameters": {}
+      }
+    }
+  }
+}

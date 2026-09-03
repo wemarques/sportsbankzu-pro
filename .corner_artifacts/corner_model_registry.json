@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-09-03T05:17:29.746525",
+  "model_version": "1.0.0",
+  "leagues": {
+    "sintetica": {
+      "dominant_champion": "negative_binomial",
+      "champion_distribution": {
+        "negative_binomial": 5,
+        "poisson": 4
+      },
+      "lines": {
+        "over_4.5": {
+          "champion_model": "negative_binomial",
+          "fallback_model": "poisson",
+          "champion_score": 0.349637,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_5.5": {
+          "champion_model": "negative_binomial",
+          "fallback_model": "poisson",
+          "champion_score": 0.46805,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_6.5": {
+          "champion_model": "negative_binomial",
+          "fallback_model": "poisson",
+          "champion_score": 0.540909,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_7.5": {
+          "champion_model": "poisson",
+          "fallback_model": "negative_binomial",
+          "champion_score": 0.488336,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_8.5": {
+          "champion_model": "poisson",
+          "fallback_model": "negative_binomial",
+          "champion_score": 0.554167,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_9.5": {
+          "champion_model": "negative_binomial",
+          "fallback_model": "poisson",
+          "champion_score": 0.905423,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_10.5": {
+          "champion_model": "negative_binomial",
+          "fallback_model": "poisson",
+          "champion_score": 0.817174,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_11.5": {
+          "champion_model": "poisson",
+          "fallback_model": "negative_binomial",
+          "champion_score": 0.764863,
+          "selection_method": "best_ineligible_fallback"
+        },
+        "over_12.5": {
+          "champion_model": "poisson",
+          "fallback_model": "negative_binomial",
+          "champion_score": 0.632159,
+          "selection_method": "best_ineligible_fallback"
+        }
+      }
+    }
+  }
+}

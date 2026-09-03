@@ -1,0 +1,113 @@
+{
+  "generated_at": "2026-09-03T05:17:29.746796",
+  "model_version": "1.0.0",
+  "leagues": {
+    "sintetica": {
+      "lines": {
+        "over_4.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_5.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_6.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_7.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_8.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_9.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_10.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_11.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        },
+        "over_12.5": {
+          "operational_state": "RESTRICTED",
+          "evidence_score": {
+            "total_score": 0
+          },
+          "hard_blockers": [
+            "sample_size=18 < 20"
+          ],
+          "reasoning": "Hard blocked: sample_size=18 < 20",
+          "force_shadow": true
+        }
+      },
+      "state_distribution": {
+        "RESTRICTED": 9
+      },
+      "any_active": false
+    }
+  }
+}

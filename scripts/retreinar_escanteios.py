@@ -22,6 +22,27 @@ import sys
 from typing import Any, Dict, List
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+_RAIZ = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _carregar_env() -> None:
+    """Le `.env` e `backend/.env` se `python-dotenv` estiver instalado.
+
+    Sem isto o script exige `FOOTYSTATS_API_KEY` exportada na sessao, e o erro
+    que aparece e "coleta vazia" — que parece problema de API, nao de chave.
+    Nao sobrescreve variavel ja definida no ambiente.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    for nome in (".env", "backend/.env"):
+        caminho = _RAIZ / nome
+        if caminho.exists():
+            load_dotenv(caminho, override=False)
+
+
+_carregar_env()
 
 
 def liga_sintetica(n: int = 200, semente: int = 226) -> List[Dict[str, Any]]:
@@ -119,10 +140,18 @@ def main() -> int:
         print("escolha --sintetico N, --liga <id> ou --todas", file=sys.stderr)
         return 2
 
+    import os
+    chave = os.getenv("FOOTYSTATS_API_KEY")
+    if not chave:
+        print("FOOTYSTATS_API_KEY nao esta no ambiente nem em .env / backend/.env — "
+              "a coleta vai voltar vazia", file=sys.stderr)
+    elif args.verboso:
+        print(f"chave presente ({len(chave)} chars)", file=sys.stderr)
+
     dados = coletar_partidas_escanteios(ligas=ligas, n_temporadas=args.temporadas)
     if not dados:
-        print("coleta vazia — sem FOOTYSTATS_API_KEY valida ou API sem resposta",
-              file=sys.stderr)
+        print("coleta vazia — chave invalida, liga sem season_id, ou API sem resposta "
+              "(rode com --verboso para ver o motivo por liga)", file=sys.stderr)
         return 1
 
     resultados = retrain_all_leagues(dados, force_shadow=True)
