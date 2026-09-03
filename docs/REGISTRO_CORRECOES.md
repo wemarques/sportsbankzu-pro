@@ -10787,6 +10787,16 @@ records de referencia do #223, sem injecao nenhuma:
 A ressalva é que a forma divergente **existe no feed real** — o #225-b a mediu na championship: `corners_recorded_matches_num` presente-e-nula com `matchesPlayed_*` preenchida, e ali a diferença foi `amostra 0 → 24`, motor inteiro em `RESTRICTED`. A fixture de referência não exercita isso porque não tem histórico de time (`teams=None`, uma partida sintética). Então: **não é possível afirmar que a saída de produção não muda** — só que este patch não tem medição que prove que muda, e não é isso que ele reivindica. O que ele reivindica, e mediu, é a eliminação de 51 fallbacks inalcançáveis por construção.
 
 ### O que ficou de fora, e por quê
+> **Correção (#226): o motivo abaixo, para `corners/features.py`, estava errado.**
+> Aleguei skew treino/serviço com `.pkl` persistidos sem verificar se existia
+> algum. Não existe: o retrain semanal de escanteios nunca rodou — importava
+> dois nomes inexistentes e caía no `except ImportError` toda segunda-feira.
+> Além disso treino e serviço usam **funções diferentes** (`build_corner_features`
+> sobre linhas de partida; `build_match_corner_features` sobre o record), e o
+> predict lê feature por **nome** (`features.get(f, 0.0)`), então ordem de coluna
+> nunca foi o risco. É a mesma falha que a regra #222 existe para impedir: deduzi
+> a consequência de um artefato em vez de olhar se ele estava lá. Corrigido no #226.
+
 As 38 confirmadas restantes:
 
 ```
@@ -10808,3 +10818,103 @@ Os demais degradam narrativa e exibição, não decisão — dívida registrada,
 
 ### Lição aprendida
 Quatro correções pontuais do mesmo defeito não somam uma correção da classe. O que faltava não era mais um fix: era o **critério mecânico** para distinguir fallback vivo de fallback morto — que não está no código do consumidor, está no cruzamento entre o que ele lê e o que o produtor sempre escreve. Uma vez que o critério existe (`scripts/varredura_get.py`), a pergunta "quantos ainda faltam" tem resposta numérica em vez de opinião. E a camada 4 é a moral de graça: o próprio detector do #223, construído para pegar esta classe de erro, foi quebrado pela correção dela — porque casava sintaxe em vez de semântica.
+
+---
+
+## 226 — O retrain semanal de escanteios nunca treinou nada
+**Data:** 2026-09-03 | **Arquivos:** backend/cron_handler.py, backend/modeling/corners/features.py, backend/modeling/corners/retrain.py, backend/modeling/corners/artifacts.py, backend/modeling/corners/ml_regression.py, backend/utils/caminhos.py (novo), scripts/codemod_fallback.py (novo), scripts/retreinar_escanteios.py (novo), scripts/ab_motores.py, tests/test_226_retrain_escanteios.py (novo), tests/test_225c_fallback_morto.py | **Severidade:** Crítica (job morto + número publicado alterado) | **Status:** Corrigido
+
+### Como chegamos aqui
+O #225-c deixou `corners/features.py` de fora da varredura com a justificativa "exige codemod + retrain, senão cria skew treino/serviço com os `.pkl`". A tarefa era fazer as duas coisas. Ao abrir o retrain para fazê-lo, a justificativa caiu inteira.
+
+### Problema identificado (medido, não lido)
+```
+$ python -c "from backend.cron_handler import _run_retrain_corners; print(_run_retrain_corners())"
+WARNING [Corners] footstats_client not available — skipping data collection
+{'status': 'skipped', 'message': 'No training data available for corner retrain'}
+```
+
+O módulo está presente. A mensagem é falsa. `_run_retrain_corners` fazia:
+
+```python
+try:
+    from backend.services.footstats_client import get_league_matches   # metodo de classe
+    from backend.config.leagues_config import SUPPORTED_LEAGUES        # nome inexistente
+    ...
+except ImportError:
+    logger.warning("[Corners] footstats_client not available — skipping data collection")
+```
+
+- `get_league_matches` é **método** de `FootyStatsClient` (e recebe `season_id: int`, não um slug de liga).
+- `SUPPORTED_LEAGUES` não existe: o nome é `LEAGUES_CONFIG`.
+
+Os dois no mesmo `try`, então o primeiro `ImportError` engolia também o segundo, e o `except` reportava a causa errada. Resultado: `cron(0 5 ? * MON *)`, toda segunda-feira, **zero partidas coletadas**.
+
+Consequência em cadeia, verificada: não existe nenhum `corner_regressor.pkl` nem `.corner_artifacts/` — em lugar nenhum. `predictor.py` chama `load_artifact("corner_model_registry")`, recebe `None` e segue sem modelo campeão. O ML de escanteios nunca esteve ligado.
+
+### Correções aplicadas
+
+**Camada 1 — a coleta (`coletar_partidas_escanteios`).** Extraída para função injetável (`cliente`, `ligas`), usando a API real: `resolve_season_ids(country, name, alt_names, n_seasons)` → `get_all_league_matches(season_id)`, concatenando temporadas. Falha de uma liga não derruba as outras, e cada uma loga o próprio motivo (`sem season_id`, `0 partidas`, exceção). A mensagem de `skipped` deixou de culpar um módulo ausente.
+
+**Camada 2 — o diretório gravável (`backend/utils/caminhos.py`).** `Path(os.getenv("DATA_ROOT", "."))` funciona no notebook e falha na Lambda: `/var/task` é somente leitura, então o primeiro `mkdir` do retrain levantaria `OSError`. Precedência agora: `DATA_ROOT` explícito → `/tmp` na Lambda → diretório corrente — a mesma regra que o `footstats_client` já usa para o cache SQLite. Três definições duplicadas do diretório viraram uma (proibição 5).
+
+**Camada 3 — o codemod em `features.py`.** 44 cadeias reescritas. `retrain.py` levou mais uma: `_extract_total_corners` lia `match.get("totalCorners", match.get("total_corners", 0))` — se `totalCorners` viesse presente-e-nula, **toda** partida contaria 0 escanteios e o retrain terminaria em `insufficient_data` sem dizer por quê. Varredura: 38 → **24** confirmadas.
+
+**Camada 4 — um bug que o codemod introduziu e quase passou.** `ast.get_source_segment` de `(league_stats or {})` devolve `league_stats or {}` — **sem os parênteses**. Emitido direto virava `league_stats or {}.get("x")`, que o Python lê como `league_stats or ({}.get("x"))`: com `league_stats` verdadeiro, a expressão inteira devolveria o **dicionário** em vez do valor da chave. Pego na revisão do diff, antes de rodar. O codemod virou `scripts/codemod_fallback.py`, com a regra de reparentetização e a explicação do que ela evita. Os 4 arquivos do #225-c foram auditados: nenhum tinha receptor não-atômico, o defeito nunca chegou ao `main`.
+
+**Camada 5 — instrumentação.** O resultado do cron passa a trazer `n_matches` e `n_valid_corners` por liga: sem isso `insufficient_data` não distingue "não vieram partidas" de "vieram partidas sem contagem de escanteios" — que é exatamente o que o #225-a mediu em **0/48** na championship.
+
+### Medição antes/depois — o número publicado MUDA
+`scripts/ab_motores.py` carrega a versão ANTES direto do git e roda o mesmo payload nos dois módulos. Ao contrário do #225-c, aqui há efeito no record **real**, sem injeção nenhuma:
+
+```
+corners/features (build_v2_match_features):
+  record 0/1/2 sem injecao: DIFERE
+  features que mudam: home_possession, away_possession
+
+entrada: homePossession=None, possessionAVG_home AUSENTE, average_possession AUSENTE
+  home_possession   0.0 -> 50.0
+  away_possession   0.0 -> 50.0
+  pressure index   0.381 -> 0.0238
+```
+
+A cadeia morta fazia `_safe_float(None)` → **0.0**: os dois times com 0% de posse, o que é impossível (a soma é 100). O default 50 que o autor escreveu nunca era alcançado. E `compute_matchup_pressure_index` calcula `poss_dominance = abs(home_poss - 50) / 20`, então 0% virava **domínio máximo** — o modelo achava que todo jogo era um massacre unilateral.
+
+Ponta a ponta, na forma que o #225-b mediu na championship (contagem de escanteios nula, temporada jogada):
+
+```
+predict_corners:
+  expected_total_corners   9.86  ->  9.81   MUDOU
+  pressure_index          0.381  -> 0.0238  MUDOU
+  tier                      LOW  ->  LOW
+```
+
+−0.05 escanteio porque `pressure_index` entra com peso 0.10 × 1.5 e ainda leva encolhimento. Pequeno em módulo, mas é número publicado, e o valor antigo vinha de uma posse impossível.
+
+### Prova de que o pipeline treina
+`scripts/retreinar_escanteios.py --sintetico 200` roda o retrain completo offline:
+
+```
+{"league_id": "sintetica", "status": "completed", "n_matches": 200,
+ "n_valid_corners": 200, "n_feature_samples": 159, "n_features": 45,
+ "training_results": {"negative_binomial": "trained", "poisson": "trained",
+                      "ml_regression": "trained"}, "champion": "poisson"}
+```
+
+Gravou `corner_model_registry.json`, `corner_promotion_decisions.json`, `corner_line_metrics.json`, `corner_training_metadata.json` e o primeiro `corner_regressor.pkl` que este pipeline já produziu. A liga sintética prova o **caminho**, não estima nada sobre futebol.
+
+### O que isto NÃO resolve
+1. **Sem `FOOTYSTATS_API_KEY` válida a coleta volta vazia** — agora com mensagem honesta e log por liga, não mais "módulo ausente".
+2. **A contagem de escanteios pode não vir no endpoint de liga.** O #225-a mediu `home_team_corner_count` em **0/48** na championship. Se isso se confirmar nas outras, o retrain vai reportar `insufficient_data` com `n_valid_corners=0` — e aí o problema é a **fonte** (talvez `get_match_details` por partida, ou API-Football), não o pipeline. A instrumentação da camada 5 existe para essa pergunta ter resposta numérica na primeira execução.
+3. **Durabilidade dos artefatos.** Escrevem em disco local, sem S3. Na Lambda isso é `/tmp`, que morre com o container. Rodar o retrain e servir o modelo em invocações diferentes exige persistir em S3 (`S3_BUCKET` já existe no ambiente) ou versionar os artefatos no deploy. Item próprio.
+4. `calibrator.py`, `ml/train_model.py`, `ml/historical_data.py` e `ml/predictor.py` têm o **mesmo** `Path(os.getenv("DATA_ROOT", "."))`. Não foram tocados: mudar onde eles leem sem saber o que está no pacote de deploy é o tipo de suposição que a regra #222 proíbe.
+
+### Testes
+10 novos em `tests/test_226_retrain_escanteios.py`, incluindo a guarda contra "consertar" o job voltando ao import antigo (`SUPPORTED_LEAGUES` e `get_league_matches` **devem continuar não existindo**), a coleta com cliente dublê sem rede, e o retrain ponta a ponta gravando registry + `.pkl`. `features.py`, `retrain.py` e `predictor.py` entraram na guarda de AST do #225-c. Suíte: **840 passed, 1 skipped**.
+
+### Lição aprendida
+Duas, e a segunda é minha.
+
+A primeira: um `try/except ImportError` em volta de dois imports transforma qualquer erro de nome numa mensagem sobre disponibilidade de módulo. O job não falhou — ele **relatou sucesso parcial** ("skipped") por anos, e ninguém olha um `skipped` semanal.
+
+A segunda: no #225-c eu deixei este arquivo de fora com um motivo técnico que soava bom e não tinha sido verificado. Bastava um `find -name "*.pkl"`. A regra #222 diz para provar efeito antes de afirmar; vale igual para provar **impedimento** antes de alegar. Justificativa de escopo é afirmação sobre o sistema e precisa da mesma medição que o resto.

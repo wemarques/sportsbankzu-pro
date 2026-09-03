@@ -30,10 +30,11 @@ import numpy as np
 
 from backend.modeling.corners import CORNER_LINES, CORNER_LINES_LEGACY
 from backend.modeling.corners.negative_binomial import nb_cdf, fit_negative_binomial
+from backend.utils.caminhos import raiz_de_dados  # #226
 
 logger = logging.getLogger("sportsbankzu.corners.ml_regression")
 
-_MODELS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".corner_models"
+_MODELS_DIR = raiz_de_dados() / ".corner_models"  # #226
 
 
 def train_corner_regressor(

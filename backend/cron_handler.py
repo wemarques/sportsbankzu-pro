@@ -18,6 +18,7 @@ import logging
 import os
 from datetime import datetime
 from backend.services.util_service import team_name
+from backend.utils.valores import primeiro_valido  # #226
 
 logger = logging.getLogger("sportsbankzu.cron")
 logger.setLevel(logging.INFO)
@@ -993,6 +994,66 @@ def _run_retrain_calibrators(force: bool = False) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def coletar_partidas_escanteios(
+    cliente=None,
+    ligas=None,
+    n_temporadas: int = 2,
+) -> dict:
+    """Coleta partidas historicas por liga para o retrain de escanteios (#226).
+
+    Substitui o bloco que nunca coletou nada: ele importava
+    `footstats_client.get_league_matches` (que e **metodo** de
+    `FootyStatsClient`, nao funcao de modulo) e `leagues_config.SUPPORTED_LEAGUES`
+    (que nao existe — o nome e `LEAGUES_CONFIG`). Os dois no mesmo
+    `try/except ImportError`, entao toda segunda-feira o job registrava
+    "footstats_client not available" e devolvia `skipped` — com o modulo
+    presente o tempo inteiro.
+
+    `cliente` e `ligas` sao injetaveis para o teste rodar sem rede.
+
+    Returns:
+        {league_id: [partidas]} — so ligas que devolveram alguma partida.
+    """
+    from backend.config.leagues_config import LEAGUES_CONFIG
+
+    if cliente is None:
+        from backend.services.footstats_client import FootyStatsClient
+        cliente = FootyStatsClient()
+
+    ligas = LEAGUES_CONFIG if ligas is None else ligas
+    coletadas: dict = {}
+
+    for liga in ligas:
+        league_id = primeiro_valido(liga.get("id"), liga.get("slug"), padrao="")
+        if not league_id:
+            continue
+        try:
+            temporadas = cliente.resolve_season_ids(
+                liga.get("country", ""), liga.get("name", ""),
+                alt_names=liga.get("alt_names"), n_seasons=n_temporadas,
+            )
+            if not temporadas:
+                logger.warning(f"[Corners][coleta] {league_id}: sem season_id")
+                continue
+
+            partidas = []
+            for season_id, _nome in temporadas:
+                resposta = cliente.get_all_league_matches(int(season_id)) or {}
+                partidas.extend(resposta.get("data") or [])
+
+            if partidas:
+                coletadas[league_id] = partidas
+                logger.info(f"[Corners][coleta] {league_id}: {len(partidas)} partidas "
+                            f"em {len(temporadas)} temporada(s)")
+            else:
+                logger.warning(f"[Corners][coleta] {league_id}: 0 partidas")
+        except Exception as e:
+            logger.warning(f"[Corners][coleta] {league_id} falhou: {e}")
+
+    logger.info(f"[Corners][coleta] {len(coletadas)}/{len(ligas)} ligas com dados")
+    return coletadas
+
+
 def _run_retrain_corners() -> dict:
     """Retrain corner models for all leagues (weekly).
 
@@ -1006,31 +1067,15 @@ def _run_retrain_corners() -> dict:
     try:
         from backend.modeling.corners.retrain import retrain_all_leagues
 
-        # TODO: collect real training data from fixtures/historical API
-        # For now, this is a placeholder that will work once data is available
-        training_data: dict = {}
-
-        try:
-            from backend.services.footstats_client import get_league_matches
-            from backend.config.leagues_config import SUPPORTED_LEAGUES
-
-            for league in SUPPORTED_LEAGUES:
-                league_id = league.get("id", league.get("slug", ""))
-                if not league_id:
-                    continue
-                try:
-                    matches = get_league_matches(league_id, seasons=2)
-                    if matches:
-                        training_data[league_id] = matches
-                except Exception as e:
-                    logger.warning(f"[Corners] Failed to fetch data for {league_id}: {e}")
-        except ImportError:
-            logger.warning("[Corners] footstats_client not available — skipping data collection")
+        training_data = coletar_partidas_escanteios()
 
         if not training_data:
             return {
                 "status": "skipped",
-                "message": "No training data available for corner retrain",
+                "message": (
+                    "coleta nao devolveu partidas — sem FOOTYSTATS_API_KEY valida "
+                    "ou a API nao respondeu (ver avisos [Corners][coleta] acima)"
+                ),
             }
 
         results = retrain_all_leagues(training_data, force_shadow=True)
@@ -1046,7 +1091,12 @@ def _run_retrain_corners() -> dict:
             "results": [{
                 "league_id": r.get("league_id"),
                 "status": r.get("status"),
-                "champion": r.get("champion_selection", {}).get("dominant_champion"),
+                # #226: sem isto, `insufficient_data` nao diz SE faltou partida
+                # ou se faltou CONTAGEM de escanteios nas partidas — que e o
+                # que o #225-a mediu em 0/48 na championship.
+                "n_matches": r.get("n_matches"),
+                "n_valid_corners": r.get("n_valid_corners"),
+                "champion": (r.get("champion_selection") or {}).get("dominant_champion"),
             } for r in results],
         }
     except Exception as e:

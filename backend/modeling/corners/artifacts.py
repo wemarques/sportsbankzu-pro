@@ -29,10 +29,11 @@ from typing import Any, Dict, List, Optional
 
 from backend.modeling.corners import CORNER_LINES, MODEL_CANDIDATES
 from backend.modeling.corners.operational_states import CornerOperationalState
+from backend.utils.caminhos import raiz_de_dados  # #226
 
 logger = logging.getLogger("sportsbankzu.corners.artifacts")
 
-_ARTIFACTS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".corner_artifacts"
+_ARTIFACTS_DIR = raiz_de_dados() / ".corner_artifacts"  # #226
 _MODEL_VERSION = "1.0.0"
 
 

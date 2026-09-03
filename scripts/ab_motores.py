@@ -136,6 +136,95 @@ def _records_de_referencia(cards_antes, cards_depois, corners_antes, corners_dep
               f"{'IDENTICO' if igual else 'DIFERE'}")
 
 
+def _comparar_features_escanteios(antes, depois, n: int, prob: float, semente: int) -> None:
+    """#226 - o codemod em `corners/features.py`, medido nas duas entradas reais.
+
+    Aqui o payload nao e inventado: sai do record do #223. A primeira leitura usa
+    os records como estao; a segunda forca `None` em parte das chaves — a forma
+    presente-e-nula que o #225-b encontrou no feed da championship.
+    """
+    from backend.config import contrato_record
+
+    registros = list(contrato_record._cenarios())
+    print("\ncorners/features (build_v2_match_features + build_match_corner_features):")
+
+    iguais = 0
+    for i, registro in enumerate(registros):
+        st = registro.get("stats") or {}
+        ls = registro.get("league_stats") or {}
+        mesmo = (antes.build_v2_match_features(st, st, ls)
+                 == depois.build_v2_match_features(st, st, ls)
+                 and antes.build_match_corner_features(st, st, ls)
+                 == depois.build_match_corner_features(st, st, ls))
+        iguais += mesmo
+        print(f"  record {i} sem injecao: {'IDENTICO' if mesmo else 'DIFERE'}")
+
+    rng = random.Random(semente)
+    base = registros[0].get("stats") or {}
+    liga = registros[0].get("league_stats") or {}
+    difs = 0
+    exemplo = None
+    for _ in range(n):
+        st = {k: (None if rng.random() < prob else v) for k, v in base.items()}
+        a = antes.build_v2_match_features(st, st, liga)
+        d = depois.build_v2_match_features(st, st, liga)
+        if a != d:
+            difs += 1
+            if exemplo is None:
+                exemplo = sorted(k for k in set(a) | set(d) if a.get(k) != d.get(k))
+    print(f"  {n} payloads com {int(prob * 100)}% presentes-e-nulas: "
+          f"diferente em {difs} ({difs * 100 // n}%)")
+    if exemplo:
+        print(f"  features que mudam: {', '.join(exemplo[:6])}"
+              f"{' ...' if len(exemplo) > 6 else ''}")
+
+
+def _comparar_predictor(antes_features, n_ignorado=None) -> None:
+    """#226 - o numero PUBLICADO, nao so a feature.
+
+    O record de referencia sozinho nao serve: sem `matchesPlayed_*` o tier trava
+    em INSUFFICIENT e `predict_corners` retorna antes de olhar as features. A
+    forma usada aqui e a que o #225-b MEDIU na championship — contagem de
+    escanteios nula com a temporada jogada — nao uma invencao conveniente.
+    """
+    from backend.config import contrato_record
+    from backend.modeling.corners import predictor
+
+    registro = next(iter(contrato_record._cenarios()))
+    st = dict(registro.get("stats") or {})
+    st.update({"matchesPlayed_home": 24, "matchesPlayed_away": 24,
+               "matchesPlayed_overall": 24})
+    ls = registro.get("league_stats") or {}
+
+    def rodar():
+        r = predictor.predict_corners(st, st, "championship", ls)
+        proj = r.get("projection") or {}
+        return {
+            "expected_total_corners": r.get("expected_total_corners"),
+            "tier": (r.get("data_quality") or {}).get("data_quality_tier"),
+            "pressure_index": round(proj.get("pressure_index") or 0, 4),
+        }
+
+    guardados = (predictor.build_v2_match_features,
+                 predictor.compute_matchup_pressure_index,
+                 predictor.build_match_corner_features)
+    predictor.build_v2_match_features = antes_features.build_v2_match_features
+    predictor.compute_matchup_pressure_index = antes_features.compute_matchup_pressure_index
+    predictor.build_match_corner_features = antes_features.build_match_corner_features
+    try:
+        a = rodar()
+    finally:
+        (predictor.build_v2_match_features,
+         predictor.compute_matchup_pressure_index,
+         predictor.build_match_corner_features) = guardados
+    d = rodar()
+
+    print("\npredict_corners (record + temporada jogada, forma medida no #225-b):")
+    for chave in a:
+        marca = "" if a[chave] == d[chave] else "   <<< MUDOU"
+        print(f"  {chave:24s} {a[chave]}  ->  {d[chave]}{marca}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ref", default=ANTES_PADRAO)
@@ -171,6 +260,13 @@ def main() -> int:
         )
         _records_de_referencia(cards_antes, cards_depois,
                                corners_antes, corners_depois)
+
+        feats_antes = _versao_antiga(args.ref, "backend/modeling/corners/features.py",
+                                     destino, "feats_antes")
+        from backend.modeling.corners import features as feats_depois
+        _comparar_features_escanteios(feats_antes, feats_depois,
+                                      args.n, args.nulos, args.semente)
+        _comparar_predictor(feats_antes)
     logging.disable(logging.NOTSET)
 
     if exemplo:

@@ -49,6 +49,9 @@ def test_pegar_com_entrada_estranha():
 # registrada, nao regressao bloqueante.
 _CAMINHOS_DE_DECISAO = (
     "backend/modeling/corners/data_quality.py",
+    "backend/modeling/corners/features.py",   # #226
+    "backend/modeling/corners/retrain.py",    # #226
+    "backend/modeling/corners/predictor.py",  # #226
     "backend/modeling/corners_engine.py",
     "backend/modeling/cards_engine.py",
     "backend/modeling/lambda_calculator.py",

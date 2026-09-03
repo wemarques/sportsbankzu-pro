@@ -987,10 +987,10 @@ preserva, e 0 escanteios e um resultado, nao uma ausencia.
 Fora do caminho de decisao a forma degrada narrativa e exibicao: e divida
 registrada, nao regressao bloqueante.
 
-**Excecao com motivo declarado:** `backend/modeling/corners/features.py` (13
-confirmadas) fica de fora ate haver retrain. `predictor.py` calcula as features
-em tempo de servico e carrega `.pkl` treinados com as features do jeito errado;
-corrigir so um lado cria skew treino/servico.
+**Excecao retirada no #226.** `backend/modeling/corners/features.py` foi
+corrigido: o motivo que a sustentava — skew treino/servico com `.pkl`
+persistidos — estava **errado**, e nao havia `.pkl` nenhum, porque o retrain
+semanal nunca rodou (dois nomes inexistentes no import). Ver #226.
 
 **Verificacao (gate automatico):** `pytest tests/test_225c_fallback_morto.py -q` —
 varre por AST os 7 modulos de decisao e falha se a forma voltar. Inclui
@@ -998,6 +998,38 @@ varre por AST os 7 modulos de decisao e falha se a forma voltar. Inclui
 silencio quando um caminho e renomeado.
 **Verificacao (inventario):** `python3 scripts/varredura_get.py [--detalhe]` — cruza as
 cadeias encontradas por AST com as chaves que o produtor cria em **todos** os
-cenarios do contrato do #223. Confirmadas hoje: **38** (eram 52).
+cenarios do contrato do #223. Confirmadas: 52 (#225-c) -> 38 -> **24** (#226).
 **Verificacao (efeito na saida):** `python3 scripts/ab_motores.py [--ref <commit>]` —
 carrega a versao ANTES direto do git e roda o mesmo payload nos dois modulos.
+
+---
+
+### #226 — Job agendado nao pode relatar `skipped` sem o numero que justifica
+
+**Tipo:** Hard Constraint (observabilidade)
+**Relacionado:** #225-a (0/48 escanteios), #225-c (fallback morto), #222 (SDD)
+
+O retrain semanal de escanteios devolveu `{"status": "skipped"}` toda
+segunda-feira, por anos, com a mensagem "footstats_client not available" — e o
+modulo estava presente o tempo inteiro. Um `try/except ImportError` em volta de
+**dois** imports converte qualquer erro de nome numa afirmacao falsa sobre
+disponibilidade de modulo, e ninguem audita um `skipped` semanal.
+
+Regras:
+
+1. `except ImportError` cobre **um** import por vez, ou a mensagem nao pode
+   nomear qual modulo faltou.
+2. Todo job agendado que pode nao fazer nada devolve a **contagem** que explica
+   o porque: quantas ligas, quantas partidas, quantas com o insumo presente.
+   `insufficient_data` sem numero nao distingue "nao vieram partidas" de
+   "vieram partidas sem o campo".
+3. Job que grava artefato declara **onde** gravou. Na Lambda, `/var/task` e
+   somente leitura: use `backend/utils/caminhos.py::raiz_de_dados()`, nunca
+   `Path(os.getenv("DATA_ROOT", "."))` direto.
+
+**Verificacao (gate automatico):** `pytest tests/test_226_retrain_escanteios.py -q` —
+inclui a guarda de que `leagues_config.SUPPORTED_LEAGUES` e
+`footstats_client.get_league_matches` **continuam nao existindo**, para que
+"consertar" o job voltando ao import antigo falhe no CI.
+**Verificacao (executar de verdade):** `python3 scripts/retreinar_escanteios.py --sintetico 200`
+(offline) ou `--liga <id>` / `--todas` (com `FOOTYSTATS_API_KEY`).

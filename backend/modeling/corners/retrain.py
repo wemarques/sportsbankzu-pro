@@ -35,6 +35,7 @@ from backend.modeling.corners.benchmarks import (
 from backend.modeling.corners.champion_selector import select_champions_for_league
 from backend.modeling.corners.operational_states import evaluate_all_lines
 from backend.modeling.corners import artifacts
+from backend.utils.valores import primeiro_valido  # #225-c
 
 logger = logging.getLogger("sportsbankzu.corners.retrain")
 
@@ -152,16 +153,16 @@ def retrain_league(
         # Align test sizes
         min_test = min(len(X_test), len(test_counts))
         if min_test > 0:
-            from backend.modeling.corners.ml_regression import predict_corners_ml
+            from backend.modeling.corners.ml_regression import (
+                _MODELS_DIR,  # #226: uma unica definicao do diretorio gravavel
+                predict_corners_ml,
+            )
             from backend.modeling.corners.negative_binomial import nb_cdf
 
             ml_preds = {}
             # Use the trained regressor directly
             import pickle
-            import os
-            from pathlib import Path
 
-            _MODELS_DIR = Path(os.getenv("DATA_ROOT", ".")) / ".corner_models"
             model_path = _MODELS_DIR / (league_id or "global") / "corner_regressor.pkl"
 
             if model_path.exists():
@@ -359,7 +360,7 @@ def retrain_all_leagues(
 def _extract_total_corners(match: Dict[str, Any]) -> float:
     """Extract total corners from a match dict."""
     # Direct total
-    total = match.get("totalCorners", match.get("total_corners", 0))
+    total = primeiro_valido(match.get("totalCorners"), match.get("total_corners"), padrao=0)
     if total and float(total) > 0:
         return float(total)
 
