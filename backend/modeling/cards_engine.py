@@ -16,6 +16,7 @@ Reference: Titman, Costain, Ridall & Gregory (2015), JRSS-A.
 import logging
 import math
 from typing import Optional, Tuple
+from backend.utils.valores import primeiro_valido  # #225-c
 
 logger = logging.getLogger("sportsbankzu.cards_engine")
 
@@ -66,12 +67,8 @@ def predict_cards(
     lambda_raw = lambda_home + lambda_away
 
     # #124: Cross-estimate with cardsAgainst (opponent cards drawn)
-    home_cards_against = _safe_float(home_stats.get("homeCardsAgainstPerMatch",
-                         home_stats.get("cardsAgainstAVG_home",
-                         home_stats.get("cards_against_per_match"))))
-    away_cards_against = _safe_float(away_stats.get("awayCardsAgainstPerMatch",
-                         away_stats.get("cardsAgainstAVG_away",
-                         away_stats.get("cards_against_per_match"))))
+    home_cards_against = _safe_float(primeiro_valido(home_stats.get("homeCardsAgainstPerMatch"), home_stats.get("cardsAgainstAVG_home"), home_stats.get("cards_against_per_match")))
+    away_cards_against = _safe_float(primeiro_valido(away_stats.get("awayCardsAgainstPerMatch"), away_stats.get("cardsAgainstAVG_away"), away_stats.get("cards_against_per_match")))
     # #189-b: exigir valor > 0 (não apenas "is not None"): um 0.0 explícito
     # no feed entraria no cross e arrastaria λ para baixo
     # (blend 0.6λ + 0.4·λ/2 = 0.8λ) sem dado real de cartões sofridos.
@@ -155,10 +152,7 @@ def predict_cards(
 def _get_league_avg_cards(league_stats: Optional[dict]) -> float:
     """Extract league average cards per match (total, both teams)."""
     if league_stats:
-        lg = _safe_float(league_stats.get("cardsAVG_overall",
-             league_stats.get("league_cards_avg",
-             league_stats.get("avg_cards",
-             league_stats.get("average_cards_per_match")))))
+        lg = _safe_float(primeiro_valido(league_stats.get("cardsAVG_overall"), league_stats.get("league_cards_avg"), league_stats.get("avg_cards"), league_stats.get("average_cards_per_match")))
         if lg is not None and lg > 0:
             return lg
     return DEFAULT_CARDS_LAMBDA
@@ -178,15 +172,9 @@ def _compute_relative_lambda(
     half_league = league_avg / 2.0
 
     # Try per-venue stats first (most specific)
-    home_cards = _safe_float(home_stats.get("homeCardsPerMatch",
-                 home_stats.get("cardsAVG_home",
-                 home_stats.get("cardsPerMatch",
-                 home_stats.get("cardsAVG_overall")))))
+    home_cards = _safe_float(primeiro_valido(home_stats.get("homeCardsPerMatch"), home_stats.get("cardsAVG_home"), home_stats.get("cardsPerMatch"), home_stats.get("cardsAVG_overall")))
 
-    away_cards = _safe_float(away_stats.get("awayCardsPerMatch",
-                 away_stats.get("cardsAVG_away",
-                 away_stats.get("cardsPerMatch",
-                 away_stats.get("cardsAVG_overall")))))
+    away_cards = _safe_float(primeiro_valido(away_stats.get("awayCardsPerMatch"), away_stats.get("cardsAVG_away"), away_stats.get("cardsPerMatch"), away_stats.get("cardsAVG_overall")))
 
     # Relative strengths vs league avg per team (half of total)
     if home_cards is not None and half_league > 0:
@@ -232,10 +220,8 @@ def _estimate_overdispersion(
     Otherwise, use conservative default of 1.3 (literature: 1.2-1.5 for cards).
     """
     # Try to estimate from data variance
-    home_var = _safe_float(home_stats.get("cardsVariance",
-               home_stats.get("cards_variance")))
-    home_mean = _safe_float(home_stats.get("cardsPerMatch",
-                home_stats.get("cardsAVG_overall")))
+    home_var = _safe_float(primeiro_valido(home_stats.get("cardsVariance"), home_stats.get("cards_variance")))
+    home_mean = _safe_float(primeiro_valido(home_stats.get("cardsPerMatch"), home_stats.get("cardsAVG_overall")))
 
     if home_var is not None and home_mean is not None and home_mean > 0:
         return max(1.0, home_var / home_mean)

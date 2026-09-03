@@ -295,6 +295,7 @@ SAFE_CIRCUIT_BREAKER_ENABLED = False
 # Shadow picks are logged for accuracy measurement.
 # When accuracy > 50% (N >= 50), set to False to show SAFE to users.
 import os
+from backend.utils.valores import primeiro_valido  # #225-c
 SAFE_SHADOW_MODE = os.getenv("SAFE_SHADOW_MODE", "true").lower() == "true"
 _shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
 
@@ -883,11 +884,11 @@ def evaluate_match_markets(
     odds = match_data.get("odds", {})
     league_stats = match_data.get("league_stats")
     # Normalize team names — handle both string and dict formats
-    _raw_home = match_data.get("homeTeam", match_data.get("home_team", ""))
-    _raw_away = match_data.get("awayTeam", match_data.get("away_team", ""))
-    home_team = _raw_home.get("name", _raw_home.get("team_name", str(_raw_home))) if isinstance(_raw_home, dict) else str(_raw_home)
-    away_team = _raw_away.get("name", _raw_away.get("team_name", str(_raw_away))) if isinstance(_raw_away, dict) else str(_raw_away)
-    match_id = str(match_data.get("id", match_data.get("match_id", "")))
+    _raw_home = primeiro_valido(match_data.get("homeTeam"), match_data.get("home_team"), padrao="")
+    _raw_away = primeiro_valido(match_data.get("awayTeam"), match_data.get("away_team"), padrao="")
+    home_team = primeiro_valido(_raw_home.get("name"), _raw_home.get("team_name"), padrao=str(_raw_home)) if isinstance(_raw_home, dict) else str(_raw_home)
+    away_team = primeiro_valido(_raw_away.get("name"), _raw_away.get("team_name"), padrao=str(_raw_away)) if isinstance(_raw_away, dict) else str(_raw_away)
+    match_id = str(primeiro_valido(match_data.get("id"), match_data.get("match_id"), padrao=""))
 
     # ─── Data quality ───
     quality = calculate_data_quality_score(stats, odds, league_stats)
@@ -1253,7 +1254,7 @@ def evaluate_match_markets(
     corner_governance = get_corner_governance_info(league_id)
     v2_projection = governed_corners.get("projection", {})
     _corners_projection = v2_projection.get("expected_total_corners_ft") if v2_projection else None  # #126
-    v2_engine_version = governed_corners.get("engine_version", governed_corners.get("engineVersion", "1.0.0"))
+    v2_engine_version = primeiro_valido(governed_corners.get("engine_version"), governed_corners.get("engineVersion"), padrao="1.0.0")
     v2_lines = governed_corners.get("lines", {})
 
     # FootyStats stat keys and odds keys for legacy lines (used as fallback)
@@ -1343,9 +1344,9 @@ def evaluate_match_markets(
             continue
 
         gov_line_info = corner_governance.get("lines", {}).get(line_key, {})
-        operational_state = gov_line_info.get("operationalState", gov_line.get("operational_state", "RESTRICTED"))
-        champion_model = gov_line_info.get("championModel", gov_line.get("champion_model"))
-        fallback_model = gov_line_info.get("fallbackModel", gov_line.get("fallback_model"))
+        operational_state = primeiro_valido(gov_line_info.get("operationalState"), gov_line.get("operational_state"), padrao="RESTRICTED")
+        champion_model = primeiro_valido(gov_line_info.get("championModel"), gov_line.get("champion_model"))
+        fallback_model = primeiro_valido(gov_line_info.get("fallbackModel"), gov_line.get("fallback_model"))
         model_used = gov_line.get("model_used", "corners_engine_v2")
 
         mo = MarketOutput(

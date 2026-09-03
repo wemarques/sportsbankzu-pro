@@ -12,6 +12,7 @@ Separate prediction track for corner markets using FootyStats data:
 import logging
 import math
 from typing import Dict, Any, Optional
+from backend.utils.valores import primeiro_valido  # #225-c
 
 logger = logging.getLogger("sportsbankzu.corners_engine")
 
@@ -40,33 +41,22 @@ def estimate_corners_lambda(
     # Home team corners (when playing at home)
     # #145: Cap at 12.0 — values above indicate data pollution (match count as average)
     _MAX_CPM = 12.0
-    home_corners_for = min(_safe_float(home_stats.get("cornersAVG_home",
-                        home_stats.get("homeCornersPerMatch",
-                        home_stats.get("cornersAVG_overall", 0)))), _MAX_CPM)
+    home_corners_for = min(_safe_float(primeiro_valido(home_stats.get("cornersAVG_home"), home_stats.get("homeCornersPerMatch"), home_stats.get("cornersAVG_overall"), padrao=0)), _MAX_CPM)
     # Away team corners (when playing away)
-    away_corners_for = min(_safe_float(away_stats.get("cornersAVG_away",
-                        away_stats.get("awayCornersPerMatch",
-                        away_stats.get("cornersAVG_overall", 0)))), _MAX_CPM)
+    away_corners_for = min(_safe_float(primeiro_valido(away_stats.get("cornersAVG_away"), away_stats.get("awayCornersPerMatch"), away_stats.get("cornersAVG_overall"), padrao=0)), _MAX_CPM)
 
     # Corners conceded
-    home_corners_against = _safe_float(home_stats.get("homeCornersAgainstPerMatch",
-                            home_stats.get("cornersAgainstAVG_home", 0)))
-    away_corners_against = _safe_float(away_stats.get("awayCornersAgainstPerMatch",
-                            away_stats.get("cornersAgainstAVG_away", 0)))
+    home_corners_against = _safe_float(primeiro_valido(home_stats.get("homeCornersAgainstPerMatch"), home_stats.get("cornersAgainstAVG_home"), padrao=0))
+    away_corners_against = _safe_float(primeiro_valido(away_stats.get("awayCornersAgainstPerMatch"), away_stats.get("cornersAgainstAVG_away"), padrao=0))
 
     # League average
     league_avg = 10.0  # default
     if league_stats:
-        league_avg = _safe_float(league_stats.get("cornersAVG_overall",
-                     league_stats.get("leagueAvgCorners", 10.0)))
+        league_avg = _safe_float(primeiro_valido(league_stats.get("cornersAVG_overall"), league_stats.get("leagueAvgCorners"), padrao=10.0))
 
     # #134: Third estimate — cornersTotalAVG (empirical total corners per game)
-    home_total_avg = _safe_float(home_stats.get("homeCornersTotalAvg",
-                      home_stats.get("corners_total_avg_home",
-                      home_stats.get("cornersTotalAVG_home", 0))))
-    away_total_avg = _safe_float(away_stats.get("awayCornersTotalAvg",
-                      away_stats.get("corners_total_avg_away",
-                      away_stats.get("cornersTotalAVG_away", 0))))
+    home_total_avg = _safe_float(primeiro_valido(home_stats.get("homeCornersTotalAvg"), home_stats.get("corners_total_avg_home"), home_stats.get("cornersTotalAVG_home"), padrao=0))
+    away_total_avg = _safe_float(primeiro_valido(away_stats.get("awayCornersTotalAvg"), away_stats.get("corners_total_avg_away"), away_stats.get("cornersTotalAVG_away"), padrao=0))
     total_avg_estimate = None
     if home_total_avg > 0 and away_total_avg > 0:
         total_avg_estimate = (home_total_avg + away_total_avg) / 2

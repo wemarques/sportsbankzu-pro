@@ -79,11 +79,46 @@ _PAD_FALLBACK = re.compile(
 )
 
 
+def _fallbacks_de_primeiro_valido(src: str) -> Set[str]:
+    """#225-c - `primeiro_valido(A.get("a"), B.get("b"), ...)`.
+
+    O codemod do #225-c trocou as cadeias `A.get("a", B.get("b"))` por esta
+    forma, e o detector de fallback do #223 reconhecia so a forma antiga —
+    entao os nomes legados voltaram a aparecer como leitura primaria e o
+    contrato passou a bloquear chaves que ninguem le de verdade.
+
+    Um mecanismo que depende da forma sintatica quebra quando a forma muda.
+    Aqui a regra e a mesma de antes, lida na sintaxe nova: do segundo argumento
+    em diante, e fallback.
+    """
+    import ast
+    out: Set[str] = set()
+    try:
+        arvore = ast.parse(src)
+    except SyntaxError:
+        return out
+    for no in ast.walk(arvore):
+        if not (isinstance(no, ast.Call) and isinstance(no.func, ast.Name)
+                and no.func.id in ("primeiro_valido", "pegar")):
+            continue
+        for arg in no.args[1:]:
+            if (isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute)
+                    and arg.func.attr == "get" and arg.args
+                    and isinstance(arg.args[0], ast.Constant)
+                    and isinstance(arg.args[0].value, str)):
+                out.add(arg.args[0].value)
+            elif isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                out.add(arg.value)          # pegar(d, "a", "b")
+    return out
+
+
 def chaves_de_fallback() -> Set[str]:
-    """Nomes lidos apenas como segundo argumento de um get encadeado."""
+    """Nomes lidos so como alternativa, nas duas formas que o codigo usa."""
     out: Set[str] = set()
     for caminho in CONSUMIDORES:
-        out |= set(_PAD_FALLBACK.findall(_fonte(caminho)))
+        src = _fonte(caminho)
+        out |= set(_PAD_FALLBACK.findall(src))          # forma antiga, encadeada
+        out |= _fallbacks_de_primeiro_valido(src)       # forma do #225-c
     return out
 
 

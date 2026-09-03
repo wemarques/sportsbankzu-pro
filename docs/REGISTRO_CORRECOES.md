@@ -10731,3 +10731,80 @@ DEPOIS  amostra=24.0  sample_adequacy=1.00  tier=LOW
 
 ### Lição aprendida
 `d.get(k, default)` é a forma mais comum de escrever fallback em Python e é **silenciosamente errada** quando o produtor cria a chave sempre. O projeto já corrigiu isso três vezes (#201, #208, #217) e a quarta estava num motor inteiro sendo desligado por ela. O padrão a procurar não é "falta tratamento de None" — é **`.get(k, <expressão>)` onde `k` vem de um produtor que sempre cria a chave**. Vale uma varredura: é um grep, não uma auditoria.
+
+---
+
+## 225-c — A varredura do `.get`: 52 fallbacks mortos, 51 corrigidos nos motores
+**Data:** 2026-09-03 | **Arquivos:** backend/utils/valores.py (novo), scripts/varredura_get.py (novo), scripts/ab_motores.py (novo), backend/modeling/corners/data_quality.py, backend/modeling/corners_engine.py, backend/modeling/cards_engine.py, backend/services/ev_classification.py, backend/config/contrato_record.py, tests/test_225c_fallback_morto.py (novo) | **Severidade:** Alta (classe de defeito, não instância) | **Status:** Corrigido
+
+### Problema identificado
+O #225-b fechou dizendo: *"vale uma varredura: é um grep, não uma auditoria."* Esta é a varredura. A pergunta não é "onde falta tratar `None`" — é **onde `.get(k, alternativa)` tem `k` vindo de um produtor que sempre cria a chave**. Nesse caso a alternativa não é improvável: é **inalcançável por construção**.
+
+### Causa raiz
+`d.get(k, alt)` só usa `alt` quando a chave está **ausente**. `fixtures_service.build_records_from_matches` monta o record com o dicionário inteiro — as chaves existem sempre, preenchidas ou não. Toda cadeia `A.get("a", B.get("b"))` cujo `"a"` esteja nessa lista morre no primeiro nome.
+
+O projeto já tinha corrigido a mesma coisa quatro vezes sem perceber que era a mesma coisa: #201 (`_num()` no λ), #208 (ausência ≠ amostra zero), #217 (`season_data_state`), #225-b (amostra de escanteios → `RESTRICTED`).
+
+### Medição — a varredura (`scripts/varredura_get.py`)
+Não lê intenção: monta os três records de referência **reais** do contrato do #223, extrai as chaves que o produtor cria em **todos** eles, e cruza com as cadeias encontradas por AST.
+
+```
+                                            ANTES (61804b7)   DEPOIS
+.get(chave, default) em backend/ ........        1990          1911
+  encadeados (default e outro .get) .....         234           183
+  com primeiro nome literal .............         230           179
+chaves criadas em TODOS os cenarios ......         172           172
+  dessas, vistas valendo None ...........          95            95
+CONFIRMADAS (alternativa inalcancavel) ...          52            38
+  com o nome ja visto None ..............          18            12
+```
+
+### Correções aplicadas
+
+**Camada 1 — o helper.** `backend/utils/valores.py`: `primeiro_valido(*valores, padrao=None)` e `pegar(d, *chaves, padrao=None)` pulam `None` em vez de parar nele. Diferente de `a or b`: preservam `0`, `0.0`, `""` e `False`, que são valores legítimos (0 escanteios é um resultado).
+
+**Camada 2 — codemod nos motores.** 51 cadeias reescritas por AST com preservação de span (comentários intactos) em `corners/data_quality.py` (16), `cards_engine.py` (15), `corners_engine.py` (11) e `ev_classification.py` (9). Escopo = **caminho de decisão** (λ, veto, classificação, stake). Confirmadas: 52 → 38.
+
+**Camada 3 — guarda de regressão.** `tests/test_225c_fallback_morto.py` varre por AST sete módulos de decisão e falha se a forma encadeada voltar; `test_a_guarda_esta_mesmo_olhando_arquivos` impede que a guarda morra em silêncio se um caminho for renomeado (erro de coleta não aparece como falha, aparece como ausência).
+
+**Camada 4 — o detector do #223 que o codemod quebrou.** `chaves_de_fallback()` reconhecia só a sintaxe antiga; com o codemod, os nomes legados voltaram a aparecer como leitura **primária** e o contrato passou a bloquear chaves que ninguém lê. Corrigido com `_fallbacks_de_primeiro_valido()`, que lê a mesma regra na sintaxe nova. **Um mecanismo que depende da forma sintática quebra quando a forma muda** — e este quebrou na primeira vez que a forma mudou.
+
+### Medição antes/depois — efeito na saída (`scripts/ab_motores.py`)
+O script pega a versão ANTES direto do git e roda o **mesmo payload** nos dois módulos. Duas leituras, que dizem coisas diferentes:
+
+```
+40% das chaves presentes-e-nulas (injecao sintetica, 400 payloads):
+  cards_engine ...... saida diferente em 312 (78%)
+  corners_engine .... saida diferente em 302 (75%)
+  exemplo: cards_lambda 4.06 -> 4.38 | projected_total_cards 4.1 -> 4.4
+
+records de referencia do #223, sem injecao nenhuma:
+  cenario 0/1/2: cards 5.0 -> 5.0 | corners 10.15 -> 10.15   IDENTICO
+```
+
+**A leitura honesta é a segunda, com uma ressalva.** No payload que dá para reproduzir offline **nada muda** — porque nesses records, quando o nome primário está nulo, as alternativas também estão (`homeCardsAgainstPerMatch=None` com `cardsAgainstAVG_home` ausente), ou o primário está simplesmente ausente e a cadeia antiga já funcionava (`cardsAVG_home` ausente → cai em `homeCardsPerMatch=2.5`). Os 78%/75% são **teto sintético**: injeção que deixa a alternativa preenchida de propósito.
+
+A ressalva é que a forma divergente **existe no feed real** — o #225-b a mediu na championship: `corners_recorded_matches_num` presente-e-nula com `matchesPlayed_*` preenchida, e ali a diferença foi `amostra 0 → 24`, motor inteiro em `RESTRICTED`. A fixture de referência não exercita isso porque não tem histórico de time (`teams=None`, uma partida sintética). Então: **não é possível afirmar que a saída de produção não muda** — só que este patch não tem medição que prove que muda, e não é isso que ele reivindica. O que ele reivindica, e mediu, é a eliminação de 51 fallbacks inalcançáveis por construção.
+
+### O que ficou de fora, e por quê
+As 38 confirmadas restantes:
+
+```
+  13  backend/modeling/corners/features.py     <- ML de escanteios (ver abaixo)
+   9  backend/ai/match_analysis_service.py     <- narrativa
+   5  backend/summary_report.py                <- exibicao
+   4  backend/cron_handler.py
+   4  backend/routes/ai_analysis.py            <- narrativa
+   2  backend/ml/feature_engineering.py
+   1  backend/routes/fixtures.py
+```
+
+`corners/features.py` é o caso que **parece** o mais urgente e é o único que exige cuidado: `predictor.py` o usa em tempo de predição e `retrain.py` em tempo de treino, e o predictor carrega artefatos persistidos (`corner_model_registry`, `corner_training_metadata`). Mudar o cálculo das features sem retreinar cria **skew treino/serviço** — os `.pkl` atuais foram ajustados com as features do jeito errado. A correção correta é codemod **+ retrain**, não codemod sozinho. Fica como item próprio.
+
+Os demais degradam narrativa e exibição, não decisão — dívida registrada, não regressão bloqueante.
+
+### Testes
+827 passed, 1 skipped.
+
+### Lição aprendida
+Quatro correções pontuais do mesmo defeito não somam uma correção da classe. O que faltava não era mais um fix: era o **critério mecânico** para distinguir fallback vivo de fallback morto — que não está no código do consumidor, está no cruzamento entre o que ele lê e o que o produtor sempre escreve. Uma vez que o critério existe (`scripts/varredura_get.py`), a pergunta "quantos ainda faltam" tem resposta numérica em vez de opinião. E a camada 4 é a moral de graça: o próprio detector do #223, construído para pegar esta classe de erro, foi quebrado pela correção dela — porque casava sintaxe em vez de semântica.

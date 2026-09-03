@@ -957,3 +957,47 @@ voltar a 489, a coleta quebrou de novo em algum import de nível de módulo.
 **Verificação:** `python3 scripts/testar_payload_diff.py --antes a.json --depois d.json` (exit 1 quando idêntico)
 **Verificação (gate automático):** `pytest tests/test_223_contrato_record.py -q` — roda no CI sem configuração adicional, porque o `pytest -q` do workflow já varre `tests/`.
 **Verificação (premissas da saída):** `python3 scripts/auditar_premissas.py --arquivo <payload.json>`
+
+---
+
+### #225-c — Proibido `.get(k, alternativa)` no caminho de decisao
+
+**Tipo:** Hard Constraint
+**Relacionado:** #201, #208, #217, #225-b (as quatro instancias), #223 (contrato do record)
+
+`d.get(k, alternativa)` so usa a alternativa quando a chave esta **AUSENTE**. Quando
+ela existe valendo `None` — a regra, nao a excecao, porque
+`build_records_from_matches` monta o record com o dicionario inteiro — o `get`
+devolve `None` e a alternativa e **inalcancavel por construcao**. Nao e um caso
+raro: e um caso impossivel de acontecer.
+
+Nos modulos que decidem numero publicado (lambda, veto, classificacao, stake) a
+forma encadeada esta **proibida**. Use `backend/utils/valores.py`:
+
+```python
+from backend.utils.valores import primeiro_valido, pegar
+
+primeiro_valido(a.get("x"), b.get("y"), padrao=0)   # dicionarios diferentes
+pegar(d, "x", "y", padrao=0)                        # mesmo dicionario
+```
+
+Os dois pulam `None` e **preservam `0`, `0.0`, `""` e `False`** — `a or b` nao
+preserva, e 0 escanteios e um resultado, nao uma ausencia.
+
+Fora do caminho de decisao a forma degrada narrativa e exibicao: e divida
+registrada, nao regressao bloqueante.
+
+**Excecao com motivo declarado:** `backend/modeling/corners/features.py` (13
+confirmadas) fica de fora ate haver retrain. `predictor.py` calcula as features
+em tempo de servico e carrega `.pkl` treinados com as features do jeito errado;
+corrigir so um lado cria skew treino/servico.
+
+**Verificacao (gate automatico):** `pytest tests/test_225c_fallback_morto.py -q` —
+varre por AST os 7 modulos de decisao e falha se a forma voltar. Inclui
+`test_a_guarda_esta_mesmo_olhando_arquivos`, que impede a guarda de morrer em
+silencio quando um caminho e renomeado.
+**Verificacao (inventario):** `python3 scripts/varredura_get.py [--detalhe]` — cruza as
+cadeias encontradas por AST com as chaves que o produtor cria em **todos** os
+cenarios do contrato do #223. Confirmadas hoje: **38** (eram 52).
+**Verificacao (efeito na saida):** `python3 scripts/ab_motores.py [--ref <commit>]` —
+carrega a versao ANTES direto do git e roda o mesmo payload nos dois modulos.

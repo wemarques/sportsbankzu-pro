@@ -13,6 +13,7 @@ Quality Tiers:
 
 import logging
 from typing import Any, Dict, Optional, Tuple
+from backend.utils.valores import primeiro_valido  # #225-c
 
 logger = logging.getLogger("sportsbankzu.corners.data_quality")
 
@@ -103,23 +104,13 @@ def compute_corners_data_quality(
         components["coverage"] = 0.1
 
     # ── 2. Corner timing (FH / 2H) availability ──
-    home_timing_sample = _safe_float(home_stats.get(
-        "cornerTimingRecorded_matches",
-        home_stats.get("corners_total_fh", -1)  # proxy: if FH exists, timing recorded
-    ))
-    away_timing_sample = _safe_float(away_stats.get(
-        "cornerTimingRecorded_matches",
-        away_stats.get("corners_total_fh", -1)
-    ))
+    home_timing_sample = _safe_float(primeiro_valido(home_stats.get("cornerTimingRecorded_matches"), home_stats.get("corners_total_fh"), padrao=-1))
+    away_timing_sample = _safe_float(primeiro_valido(away_stats.get("cornerTimingRecorded_matches"), away_stats.get("corners_total_fh"), padrao=-1))
 
-    home_fh = _safe_float(home_stats.get("corners_total_per_match_fh",
-                  home_stats.get("corners_total_fh", 0)))
-    away_fh = _safe_float(away_stats.get("corners_total_per_match_fh",
-                  away_stats.get("corners_total_fh", 0)))
-    home_2h = _safe_float(home_stats.get("corners_total_per_match_2h",
-                  home_stats.get("corners_total_2h_overall", 0)))
-    away_2h = _safe_float(away_stats.get("corners_total_per_match_2h",
-                  away_stats.get("corners_total_2h_overall", 0)))
+    home_fh = _safe_float(primeiro_valido(home_stats.get("corners_total_per_match_fh"), home_stats.get("corners_total_fh"), padrao=0))
+    away_fh = _safe_float(primeiro_valido(away_stats.get("corners_total_per_match_fh"), away_stats.get("corners_total_fh"), padrao=0))
+    home_2h = _safe_float(primeiro_valido(home_stats.get("corners_total_per_match_2h"), home_stats.get("corners_total_2h_overall"), padrao=0))
+    away_2h = _safe_float(primeiro_valido(away_stats.get("corners_total_per_match_2h"), away_stats.get("corners_total_2h_overall"), padrao=0))
 
     timing_available = (home_fh > 0 or away_fh > 0) and (home_2h > 0 or away_2h > 0)
     details["corner_timing_available"] = timing_available
@@ -135,22 +126,16 @@ def compute_corners_data_quality(
 
     # ── 3. Pressure features (shots, possession, xG) ──
     has_shots = (
-        _safe_float(home_stats.get("shots_per_match",
-                    home_stats.get("shotsAVG_home", 0))) > 0
-        and _safe_float(away_stats.get("shots_per_match",
-                        away_stats.get("shotsAVG_away", 0))) > 0
+        _safe_float(primeiro_valido(home_stats.get("shots_per_match"), home_stats.get("shotsAVG_home"), padrao=0)) > 0
+        and _safe_float(primeiro_valido(away_stats.get("shots_per_match"), away_stats.get("shotsAVG_away"), padrao=0)) > 0
     )
     has_possession = (
-        _safe_float(home_stats.get("average_possession",
-                    home_stats.get("possessionAVG_home", 0))) > 0
-        and _safe_float(away_stats.get("average_possession",
-                        away_stats.get("possessionAVG_away", 0))) > 0
+        _safe_float(primeiro_valido(home_stats.get("average_possession"), home_stats.get("possessionAVG_home"), padrao=0)) > 0
+        and _safe_float(primeiro_valido(away_stats.get("average_possession"), away_stats.get("possessionAVG_away"), padrao=0)) > 0
     )
     has_xg = (
-        _safe_float(home_stats.get("xg_for_avg",
-                    home_stats.get("xgAVG_home", 0))) > 0
-        and _safe_float(away_stats.get("xg_for_avg",
-                        away_stats.get("xgAVG_away", 0))) > 0
+        _safe_float(primeiro_valido(home_stats.get("xg_for_avg"), home_stats.get("xgAVG_home"), padrao=0)) > 0
+        and _safe_float(primeiro_valido(away_stats.get("xg_for_avg"), away_stats.get("xgAVG_away"), padrao=0)) > 0
     )
 
     pressure_count = sum([has_shots, has_possession, has_xg])
@@ -181,12 +166,8 @@ def compute_corners_data_quality(
         components["league_risk"] = 0.1
 
     # ── 5. Corners-against data ──
-    home_against = _safe_float(home_stats.get("corners_against_per_match",
-                      home_stats.get("cornersAgainstAVG_home",
-                      home_stats.get("homeCornersAgainstPerMatch", 0))))
-    away_against = _safe_float(away_stats.get("corners_against_per_match",
-                      away_stats.get("cornersAgainstAVG_away",
-                      away_stats.get("awayCornersAgainstPerMatch", 0))))
+    home_against = _safe_float(primeiro_valido(home_stats.get("corners_against_per_match"), home_stats.get("cornersAgainstAVG_home"), home_stats.get("homeCornersAgainstPerMatch"), padrao=0))
+    away_against = _safe_float(primeiro_valido(away_stats.get("corners_against_per_match"), away_stats.get("cornersAgainstAVG_away"), away_stats.get("awayCornersAgainstPerMatch"), padrao=0))
     has_against = home_against > 0 and away_against > 0
     details["has_corners_against"] = has_against
     components["against_data"] = 1.0 if has_against else 0.3

@@ -174,6 +174,7 @@ FootyStats + API-Football v3
 12. **Encolhimento de amostra pequena nos DOIS lados do λ (#208)** — ataque e defesa adversária recebem o mesmo peso `n/8`; contagem ausente não encolhe, amostra 0 encolhe.
 13. **Auditor de premissas reimplementa a matemática de referência (#209)** — NÃO deduplicar contra o pipeline; a duplicação é o mecanismo. Campo novo da FootyStats entra no manifesto (#210).
 14. **Proibido afirmar efeito ou concluir patch sem medição empírica (SDD)** — Alterações de cálculo, filtro ou classificação exigem diff de execução real (antes vs. depois). Hipóteses teóricas não substituem teste de payload ponta a ponta.
+15. **Proibido `.get(k, alternativa)` no caminho de decisão (#225-c)** — `.get` só usa a alternativa quando a chave está AUSENTE; o record cria as chaves sempre, então a alternativa é inalcançável por construção (#201, #208, #217, #225-b são a mesma falha). Use `primeiro_valido`/`pegar` de `backend/utils/valores.py`, que preservam `0`, `""` e `False`. Inventário: `python3 scripts/varredura_get.py`. Gate: `tests/test_225c_fallback_morto.py`.
 
 ## Finalização obrigatória pós-alteração
 
