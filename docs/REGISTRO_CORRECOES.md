@@ -10962,3 +10962,64 @@ Os artefatos (`.corner_artifacts/`, `.corner_models/championship/corner_regresso
 
 ### Lição aprendida
 Uma previsão explícita antes da execução é barata e vale muito: eu disse qual resultado esperava, veio o outro, e a diferença apontou direto para a chave. Se eu não tivesse previsto nada, o `605` teria passado como sucesso e a contradição com o #225-a ficaria sem ninguém para notar.
+
+---
+
+## 226-b — Não era ausência de dado, era ausência de nome (e o nome era nosso)
+**Data:** 2026-09-03 | **Arquivos:** backend/routes/debug.py, scripts/diagnostico_chaves_escanteios.py, tests/test_225a_historico_odds.py | **Severidade:** Alta (uma decisão de escopo tomada a partir de medição falsa) | **Status:** Corrigido
+
+### O que foi medido
+`scripts/diagnostico_chaves_escanteios.py --liga championship`, 1110 partidas, **605 finalizadas**:
+
+```
+chave                          preenchida    %    exemplo
+totalCornerCount                605/605    100%   13
+team_a_corners                  605/605    100%   10
+team_b_corners                  605/605    100%    3
+corner_fh_count / corner_2h_count           98%   4 / 9
+team_a_fh_corners / team_a_2h_corners       98%   3 / 7
+odds_corners_over_75..115 (e unders)       100%   1.24 .. 2.63
+odds_corners_1 / x / 2                     100%   1.55 / 7.5 / 2.75
+corners_potential, corners_o85/95/105      100%   0        <- ver adiante
+
+home_team_corner_count   NAO APARECE NA LISTA
+away_team_corner_count   NAO APARECE NA LISTA
+
+_extract_total_corners > 0 em 605/605 (100%)
+```
+
+A varredura lista toda chave presente em **pelo menos uma** partida finalizada. Se `home_team_corner_count` estivesse presente valendo `None`, apareceria com 0%. Não aparece: a chave **não existe** na linha de partida.
+
+### Causa raiz — e não é da FootyStats
+`backend/services/data_mapper.py:183`:
+
+```python
+"home_team_corner_count": _s(api_match.get("team_a_corners", -1)),
+"away_team_corner_count": _s(api_match.get("team_b_corners", -1)),
+```
+
+`home_team_corner_count` é um **apelido interno que nós criamos**, traduzindo `team_a_corners`. Existe depois do mapper; não existe antes.
+
+`debug.py` lê a linha **crua** (`fsc.get_all_league_matches(sid)["data"]`) e mediu ali um nome que só nasce **depois** do mapper. Não é peculiaridade da fonte: é confusão de camada dentro do nosso próprio código. Pelo `.get()` as duas coisas são idênticas — chave vazia e chave inexistente devolvem `None` —, e foi assim que a rota reportou *ausência de dado* onde havia *erro de nome*.
+
+Verificado que a mesma confusão **não** existe nos outros consumidores: `fixtures_service` recebe `DataMapper.matches_to_df(raw_list)`, ou seja, dado já mapeado, então `_avg_from_history("home_team_corner_count", ...)` está vivo; `retrain` e `features.py` leem cru e listam `team_a_corners` primeiro. Só a rota de diagnóstico misturava as camadas — e o manifesto (#210) está certo ao declarar os dois apelidos como CONSUMIDO, porque são campos de saída do mapper.
+
+### O custo do erro
+Eu fechei o escopo do #225 com *"escanteios estão fora — 0/48 contagens"*. **Refutado.** Escanteios têm, nas 605 finalizadas da championship, contagem em 100% **e** a escada de odds completa (over/under 7.5 a 11.5, mais 1/x/2) em 100%. É a família com a cobertura mais rica das quatro — melhor que 1X2, que tem desfecho mas odd em 0%.
+
+**Escanteios voltam ao backfill do #225 com probabilidade E EV.**
+
+### Correções aplicadas
+1. `debug.py`: `_CAMPOS_STATS`, `_CAMPOS_DESFECHO` e `_DESFECHO_DA_FAMILIA["escanteios"]` passam a medir `totalCornerCount`, `team_a_corners`, `team_b_corners`.
+2. Guarda nova (`test_rota_nao_mede_nome_ausente_do_payload`): lê os **literais** da rota por AST — não o texto bruto, senão o comentário que documenta o erro derrubaria o teste — e falha se os nomes mortos voltarem ou se os vivos sumirem.
+3. Os testes do #225-a **fabricavam** `home_team_corner_count`. Regra #222 ponto 6 outra vez, e desta vez custou uma decisão de escopo: um dicionário escrito por quem escreveu o consumidor sempre contém as chaves que o consumidor espera, então o teste concordava com a rota e ficava verde enquanto a produção media um nome inexistente. Fixture corrigida para os nomes reais.
+4. O diagnóstico ganhou coluna **não-zero** e a comparação `totalCornerCount` vs `team_a + team_b`.
+
+### Uma pergunta que a medição abriu
+`corners_potential`, `corners_o85_potential`, `corners_o95_potential` e `corners_o105_potential` aparecem em **100%** — mas o exemplo exibido é **0**. Numa contagem, 0 é resultado; num campo de *potencial* (projeção), 0 é quase certamente enchimento. Importa porque `features.py` lê `corners_potential` como `footystats_corners_potential`, que o #123 chama de "âncora de projeção independente" — e âncora de zero não ancora nada. A coluna não-zero responde na próxima execução.
+
+### Testes
+841 passed, 1 skipped.
+
+### Lição aprendida
+Um `.get()` apaga a diferença entre "o dado não veio" e "eu pedi pelo nome errado", e as duas viram o mesmo `None`. Foi o que aconteceu no #201, no #208, no #217, no #225-b e no #225-c — sempre no consumo. Aqui a mesma perda de informação aconteceu num **instrumento de medição**, que é pior: o instrumento não errou uma conta, ele produziu um fato falso, e o fato falso virou decisão de escopo. Instrumento que responde "ausente" precisa distinguir **chave ausente** de **valor ausente**, e a varredura que descobre nomes em vez de conferir uma lista é a forma barata de garantir isso.

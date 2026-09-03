@@ -125,16 +125,23 @@ def historico_odds(
     _CAMPOS_STATS = [
         "date_unix", "homeGoalCount", "awayGoalCount",
         "team_a_yellow_cards", "team_b_yellow_cards",
-        "home_team_corner_count", "away_team_corner_count",
+        "totalCornerCount", "team_a_corners", "team_b_corners",
     ]
     # #225-a (adendo): odd sem DESFECHO nao serve para backfill — nao da para
-    # saber se o pick acertou. A primeira leitura mostrou escanteios com odd em
-    # 100% dos jogos e `home_team_corner_count` nulo na amostra: se a contagem
-    # faltar no historico, a odd de escanteios e inutil para medir resolucao.
+    # saber se o pick acertou.
+    #
+    # #226-b: esta lista dizia `home_team_corner_count` / `away_team_corner_count`
+    # e mediu escanteios em **0/48**, do que concluimos "escanteios estao fora do
+    # backfill". Errado: esses dois nomes **nao existem** na linha de partida da
+    # FootyStats. Nao era campo vazio, era campo inexistente — `.get()` devolve
+    # None dos dois jeitos, e a rota reportou ausencia de DADO onde havia ausencia
+    # de NOME. Medido em 605 finalizadas da championship
+    # (`scripts/diagnostico_chaves_escanteios.py`): `totalCornerCount`,
+    # `team_a_corners` e `team_b_corners` em **100%**.
     _CAMPOS_DESFECHO = [
         "homeGoalCount", "awayGoalCount",
         "team_a_yellow_cards", "team_b_yellow_cards",
-        "home_team_corner_count", "away_team_corner_count",
+        "totalCornerCount", "team_a_corners", "team_b_corners",
     ]
 
     def _preenchido(v) -> bool:
@@ -184,7 +191,7 @@ def historico_odds(
         "1X2": ["homeGoalCount", "awayGoalCount"],
         "gols_ou": ["homeGoalCount", "awayGoalCount"],
         "btts": ["homeGoalCount", "awayGoalCount"],
-        "escanteios": ["home_team_corner_count", "away_team_corner_count"],
+        "escanteios": ["totalCornerCount", "team_a_corners", "team_b_corners"],  # #226-b
     }
 
     def _min_pct(campos, fonte):

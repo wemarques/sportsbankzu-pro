@@ -22,7 +22,14 @@ def _jogo(status="complete", odd=None, **extra):
         "status": status, "date_unix": 1788300000,
         "homeGoalCount": 2, "awayGoalCount": 1,
         "team_a_yellow_cards": 2, "team_b_yellow_cards": 3,
-        "home_team_corner_count": 6, "away_team_corner_count": 4,
+        # #226-b: os nomes reais da linha de partida, MEDIDOS em 605 finalizadas
+        # da championship. `home_team_corner_count` / `away_team_corner_count`
+        # nao existem no payload — e este teste fabricava os dois, entao
+        # concordava com a suposicao da rota e ficava verde enquanto a rota
+        # media um campo inexistente e reportava "escanteios AUSENTES".
+        # E a falha da regra #222 ponto 6, de novo: dicionario escrito por quem
+        # escreveu o consumidor sempre contem as chaves que o consumidor espera.
+        "totalCornerCount": 10, "team_a_corners": 6, "team_b_corners": 4,
     }
     for c in ("odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win",
               "odds_ft_over25", "odds_btts_yes"):
@@ -92,23 +99,24 @@ def test_veredito_e_por_familia_nao_por_um_campo(_sem_chave, monkeypatch):
 def test_odd_sem_desfecho_e_inutil(_sem_chave, monkeypatch):
     """Escanteios com odd em 100% e contagem nula: nao da para saber se acertou.
 
-    Foi o segundo sinal da leitura de 02/09 — `home_team_corner_count` nulo na
-    amostra. Odd sem desfecho nao mede resolucao nenhuma, e chamar isso de
-    'backfill possivel' seria prometer numero que nao existe.
+    O cenario continua valido como REGRA (odd sem desfecho nao mede resolucao),
+    mas ja nao descreve a championship: com os nomes certos, a contagem esta em
+    100% (#226-b). Aqui a ausencia e forcada de proposito.
     """
     jogos = [_jogo(odd=None, odds_corners_over_85=1.42, odds_corners_over_95=1.77,
-                   home_team_corner_count=None, away_team_corner_count=None)
+                   totalCornerCount=None, team_a_corners=None, team_b_corners=None)
              for _ in range(10)]
     r = _rodar(monkeypatch, jogos)
-    assert r["cobertura_desfechos"]["home_team_corner_count"]["pct"] == 0.0
+    assert r["cobertura_desfechos"]["totalCornerCount"]["pct"] == 0.0
     assert r["por_familia"]["escanteios"]["backfill"] == "INUTIL (odd sem desfecho)"
 
 
 def test_desfecho_zero_conta_como_presente(_sem_chave, monkeypatch):
     """0 escanteios e 0 cartoes sao resultados legitimos — so None e ausencia."""
-    r = _rodar(monkeypatch, [_jogo(odd=None, home_team_corner_count=0,
-                                   away_team_corner_count=0) for _ in range(5)])
-    assert r["cobertura_desfechos"]["home_team_corner_count"]["pct"] == 100.0
+    r = _rodar(monkeypatch, [_jogo(odd=None, totalCornerCount=0,
+                                   team_a_corners=0, team_b_corners=0)
+                             for _ in range(5)])
+    assert r["cobertura_desfechos"]["totalCornerCount"]["pct"] == 100.0
 
 
 def test_zero_e_ausente_nao_preenchido(_sem_chave, monkeypatch):
@@ -147,7 +155,7 @@ def test_amostra_traz_estatistica_por_jogo(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=2.1) for _ in range(10)], n=3)
     assert len(r["amostra"]) == 3
     a = r["amostra"][0]
-    for c in ("date_unix", "homeGoalCount", "team_a_yellow_cards", "home_team_corner_count"):
+    for c in ("date_unix", "homeGoalCount", "team_a_yellow_cards", "totalCornerCount"):
         assert c in a, c
 
 
@@ -181,3 +189,35 @@ def test_temporada_sem_jogos_nao_divide_por_zero(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [])
     assert r["finalizados"] == 0
     assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 0.0
+
+
+# ── #226-b: o nome que nunca existiu ────────────────────────────────────
+def test_rota_nao_mede_nome_ausente_do_payload():
+    """`home_team_corner_count` nao existe na linha de partida da FootyStats.
+
+    Medido em 605 finalizadas da championship
+    (`scripts/diagnostico_chaves_escanteios.py`): a chave nao aparece — nem
+    vazia, **ausente**. A rota media esse nome, `.get()` devolvia None, e o
+    resultado foi "escanteios AUSENTES" em 0/48, do que concluimos que
+    escanteios estavam fora do backfill. Nao era ausencia de DADO, era ausencia
+    de NOME, e as duas se parecem exatamente igual atraves de um `.get()`.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from backend.routes import debug
+
+    arvore = ast.parse(textwrap.dedent(inspect.getsource(debug.historico_odds)))
+    # Literais, nao texto bruto: o comentario que documenta o erro cita os nomes
+    # mortos de proposito, e nao e ele que a rota mede.
+    literais = {n.value for n in ast.walk(arvore)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+
+    for morto in ("home_team_corner_count", "away_team_corner_count"):
+        assert morto not in literais, (
+            f"{morto} nao existe no payload da FootyStats — medir esse nome "
+            f"reporta ausencia de dado onde ha erro de nome"
+        )
+    for vivo in ("totalCornerCount", "team_a_corners", "team_b_corners"):
+        assert vivo in literais, f"{vivo} e o nome real e precisa ser medido"

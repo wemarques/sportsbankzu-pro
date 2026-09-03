@@ -39,6 +39,18 @@ def _finalizada(partida: Dict[str, Any]) -> bool:
     return str(partida.get("status", "")).lower() in {"complete", "finished", "ft"}
 
 
+def _numero(valor: Any):
+    """Float quando der, `None` quando nao — sem transformar texto em 0."""
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _soma(a, b):
+    return None if a is None or b is None else a + b
+
+
 def _util(valor: Any) -> bool:
     """`0` conta — zero escanteio e um resultado. `None` e `-1` nao contam."""
     return valor is not None and valor != -1 and valor != ""
@@ -80,20 +92,46 @@ def main() -> int:
         print("nenhuma chave com 'corner' no nome — o endpoint nao traz escanteio")
         return 1
 
-    print(f"\n{'chave':42s} {'preenchida':>12s}  {'%':>5s}   exemplo")
-    print("-" * 82)
+    # #226-b: "preenchida" e "nao-zero" sao perguntas diferentes. Numa CONTAGEM,
+    # 0 e resultado legitimo. Num campo de POTENCIAL/projecao, 0 quase sempre e
+    # enchimento — e `corners_potential` alimenta `footystats_corners_potential`,
+    # que o #123 chama de "ancora de projecao independente". Ancora de zero nao
+    # ancora nada, e as duas colunas juntas denunciam isso sem precisar supor.
+    print(f"\n{'chave':42s} {'preenchida':>12s} {'%':>5s} {'nao-zero':>10s} {'%':>5s}   exemplo")
+    print("-" * 100)
+    n = len(finalizadas)
     for nome in nomes:
         preenchidas = [p[nome] for p in finalizadas if _util(p.get(nome))]
-        pct = len(preenchidas) * 100 // len(finalizadas)
-        exemplo = preenchidas[0] if preenchidas else "-"
-        marca = "  <<<" if pct >= 50 else ""
-        print(f"{nome:42s} {len(preenchidas):6d}/{len(finalizadas):<5d} {pct:4d}%   {exemplo!r}{marca}")
+        nao_zero = [v for v in preenchidas if _numero(v) not in (None, 0.0)]
+        exemplo = next((v for v in nao_zero), preenchidas[0] if preenchidas else "-")
+        marca = "  <<<" if len(nao_zero) * 100 // n >= 50 else ""
+        if preenchidas and not nao_zero:
+            marca = "   TODOS ZERO"
+        print(f"{nome:42s} {len(preenchidas):6d}/{n:<5d} {len(preenchidas) * 100 // n:4d}% "
+              f"{len(nao_zero):6d}/{n:<5d} {len(nao_zero) * 100 // n:4d}%   {exemplo!r}{marca}")
 
     # O que o retrain de fato usa, na ordem em que le.
     from backend.modeling.corners.retrain import _extract_total_corners
     com_total = sum(1 for p in finalizadas if _extract_total_corners(p) > 0)
-    print(f"\n_extract_total_corners > 0 em {com_total}/{len(finalizadas)} finalizadas "
-          f"({com_total * 100 // len(finalizadas)}%)")
+    print(f"\n_extract_total_corners > 0 em {com_total}/{n} finalizadas "
+          f"({com_total * 100 // n}%)")
+
+    # #226-b: `_extract_total_corners` procura `totalCorners` e `total_corners`,
+    # que NAO existem — chega no numero certo pela soma dos times, por sorte do
+    # terceiro candidato. Antes de promover `totalCornerCount` a primeiro nome,
+    # medir se ele concorda com a soma. Discordancia = os dois medem coisas
+    # diferentes (prorrogacao? escanteios nao atribuidos?) e a troca nao e neutra.
+    pares = [(_numero(p.get("totalCornerCount")),
+              _soma(_numero(p.get("team_a_corners")), _numero(p.get("team_b_corners"))))
+             for p in finalizadas]
+    pares = [(t, s) for t, s in pares if t is not None and s is not None]
+    if pares:
+        divergem = [(t, s) for t, s in pares if t != s]
+        print(f"totalCornerCount vs (team_a + team_b): concordam em "
+              f"{len(pares) - len(divergem)}/{len(pares)}"
+              + (f" | divergem em {len(divergem)}, ex: {divergem[:3]}" if divergem else ""))
+    else:
+        print("totalCornerCount vs soma: sem par comparavel")
 
     por_status = Counter(str(p.get("status", "?")) for p in partidas)
     print(f"status das {len(partidas)} partidas: {dict(por_status)}")
