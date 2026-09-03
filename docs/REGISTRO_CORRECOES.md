@@ -10678,3 +10678,56 @@ escanteios        100          0   INUTIL (odd sem desfecho)
 
 ### Lição aprendida
 O instrumento carregava a decisão que deveria delegar. Medir oito famílias e resumir em um veredito derivado de uma delas descarta a informação que custou a medição — e o resumo é o que a pessoa lê. Quando um diagnóstico agrega dimensões heterogêneas, o agregado é opinião embutida: a saída tem de mostrar as dimensões e deixar a conclusão para quem decide o escopo.
+
+## 225-b — A cadeia de fallback do motor de escanteios estava morta
+**Data:** 2026-09-02 | **Arquivos:** backend/modeling/corners/data_quality.py, tests/test_225b_amostra_escanteios.py (novo) | **Severidade:** Alta (piso artificial em RESTRICTED) | **Status:** Corrigido
+
+### Como chegamos aqui
+A leitura do #225-a mediu, na championship com 48 finalizados:
+
+```
+homeGoalCount / awayGoalCount ......... 48/48   100%
+team_a/b_yellow_cards ................. 48/48   100%
+home/away_team_corner_count ...........  0/48     0%
+```
+
+Escanteios com odd em 100% e **contagem em zero** — impossível pontuar o pick. Isso levou à pergunta que o #221 deixou aberta: *por que a amostra de escanteios por time está baixa com 25 rodadas jogadas?*
+
+### Causa raiz
+`data_quality.py` obtinha a amostra assim:
+
+```python
+home_sample = _safe_float(home_stats.get(
+    "corners_recorded_matches_num",
+    home_stats.get("matchesPlayed_home",
+    home_stats.get("matchesPlayed_overall", 0))))
+```
+
+**`d.get(k, alternativa)` só usa a alternativa quando a chave está AUSENTE.** Com a chave presente valendo `None` — que é o caso, porque `fixtures_service.py:1950` **sempre** cria `corners_recorded_matches_num`, preenchida ou não — o `get` devolve `None`, a cadeia inteira morre e `_safe_float(None)` dá `0.0`.
+
+Verificado isoladamente:
+```
+chave PRESENTE com None -> get devolve None  (o fallback de 24 NUNCA e alcancado)
+chave AUSENTE           -> get devolve 24    (fallback funciona)
+```
+
+É o mesmo defeito que o #201 corrigiu no λ com `_num()`, e a mesma forma do #208 e do #217: **ausência de informação tratada como informação de ausência**. Aqui com consequência dura: `min_sample = 0` → `sample_adequacy = 0` → tier `INSUFFICIENT` → e `_determine_governance_state` mapeia `INSUFFICIENT` direto para **RESTRICTED**, que é o veto que o #217 passou a aplicar.
+
+A mesma cadeia morta estava em `home_has_corners`/`away_has_corners`.
+
+### Medição antes/depois
+Cenário: temporada inteira jogada, `corners_recorded_matches_num = None`.
+
+```
+ANTES   amostra= 0.0  sample_adequacy=0.00  tier=INSUFFICIENT
+DEPOIS  amostra=24.0  sample_adequacy=1.00  tier=LOW
+```
+
+### O que isto NÃO faz
+**Não promove escanteios.** Remove um piso artificial: com tier ≠ `INSUFFICIENT`, o fluxo passa a **chegar** ao artefato de promoção (`corner_promotion_decisions`) em vez de ser barrado antes dele. Se o artefato mantiver `RESTRICTED`, escanteios seguem vetados — e aí o veto passa a ser uma decisão de governança, não um efeito colateral de `.get()`.
+
+### Testes
+6 novos, incluindo o caso inverso (`0` informado continua `0` — se a fonte diz zero, é zero) e a guarda contra a correção inventar qualidade onde não há dado. Suíte: **814 passed, 1 skipped**.
+
+### Lição aprendida
+`d.get(k, default)` é a forma mais comum de escrever fallback em Python e é **silenciosamente errada** quando o produtor cria a chave sempre. O projeto já corrigiu isso três vezes (#201, #208, #217) e a quarta estava num motor inteiro sendo desligado por ela. O padrão a procurar não é "falta tratamento de None" — é **`.get(k, <expressão>)` onde `k` vem de um produtor que sempre cria a chave**. Vale uma varredura: é um grep, não uma auditoria.

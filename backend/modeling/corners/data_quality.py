@@ -49,26 +49,44 @@ def compute_corners_data_quality(
     ls = league_stats or {}
 
     # ── 1. Corner coverage per team ──
-    home_sample = _safe_float(home_stats.get(
-        "corners_recorded_matches_num",
-        home_stats.get("matchesPlayed_home",
-        home_stats.get("matchesPlayed_overall", 0))
+    # #225-b: `d.get(k, alternativa)` so usa a alternativa quando a chave esta
+    # AUSENTE. Quando ela existe valendo None — que e o caso aqui, porque
+    # fixtures_service.py:1950 SEMPRE cria `corners_recorded_matches_num`,
+    # preenchida ou nao — o get devolve None e a cadeia inteira de fallback
+    # morre. `_safe_float(None)` da 0.0, entao `min_sample` vai a zero,
+    # `sample_adequacy` vai a zero e o tier despenca para INSUFFICIENT mesmo com
+    # a temporada inteira jogada. Verificado: com a chave presente e nula, o
+    # fallback de 24 jogos nunca e alcancado.
+    #
+    # E o mesmo defeito que o #201 corrigiu no lambda com `_num()`, e a mesma
+    # forma do #208 e do #217: ausencia de informacao tratada como informacao de
+    # ausencia. `_primeiro_valido` pula None em vez de parar nele.
+    def _primeiro_valido(*valores):
+        for v in valores:
+            if v is not None:
+                return v
+        return 0
+
+    home_sample = _safe_float(_primeiro_valido(
+        home_stats.get("corners_recorded_matches_num"),
+        home_stats.get("matchesPlayed_home"),
+        home_stats.get("matchesPlayed_overall"),
     ))
-    away_sample = _safe_float(away_stats.get(
-        "corners_recorded_matches_num",
-        away_stats.get("matchesPlayed_away",
-        away_stats.get("matchesPlayed_overall", 0))
+    away_sample = _safe_float(_primeiro_valido(
+        away_stats.get("corners_recorded_matches_num"),
+        away_stats.get("matchesPlayed_away"),
+        away_stats.get("matchesPlayed_overall"),
     ))
 
-    home_has_corners = _safe_float(home_stats.get(
-        "corners_total_per_match",
-        home_stats.get("cornersAVG_home",
-        home_stats.get("homeCornersPerMatch", 0))
+    home_has_corners = _safe_float(_primeiro_valido(
+        home_stats.get("corners_total_per_match"),
+        home_stats.get("cornersAVG_home"),
+        home_stats.get("homeCornersPerMatch"),
     )) > 0
-    away_has_corners = _safe_float(away_stats.get(
-        "corners_total_per_match",
-        away_stats.get("cornersAVG_away",
-        away_stats.get("awayCornersPerMatch", 0))
+    away_has_corners = _safe_float(_primeiro_valido(
+        away_stats.get("corners_total_per_match"),
+        away_stats.get("cornersAVG_away"),
+        away_stats.get("awayCornersPerMatch"),
     )) > 0
 
     min_sample = min(home_sample, away_sample)
