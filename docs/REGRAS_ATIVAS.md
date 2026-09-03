@@ -1033,3 +1033,30 @@ inclui a guarda de que `leagues_config.SUPPORTED_LEAGUES` e
 "consertar" o job voltando ao import antigo falhe no CI.
 **Verificacao (executar de verdade):** `python3 scripts/retreinar_escanteios.py --sintetico 200`
 (offline) ou `--liga <id>` / `--todas` (com `FOOTYSTATS_API_KEY`).
+
+---
+
+### #227 — Instrumento de medicao precisa de controle positivo
+
+**Tipo:** Hard Constraint (metodologia)
+**Relacionado:** #222 (SDD), #220 (inclinacao), #226-b (instrumento que produziu fato falso)
+
+Todo instrumento novo que responde "existe X?" tem de ser exercitado em dois
+cenarios antes de valer como medicao:
+
+1. **Controle positivo** — entrada onde X foi plantado de proposito. O
+   instrumento tem de achar.
+2. **Controle negativo** — entrada onde X nao existe. O instrumento nao pode
+   achar.
+
+Sem o par, "nao encontrei X" e indistinguivel de "estou quebrado", e as duas
+leituras levam a decisoes opostas. O #226-b e o caso concreto do custo: uma
+rota mediu um nome inexistente, reportou "escanteios ausentes" e a partir dai
+uma familia inteira saiu do escopo do #225 — por um fato falso, nao por um
+dado.
+
+Os dois controles vao no mesmo teste parametrizado, para que a ausencia de um
+deles seja visivel.
+
+**Verificacao:** `pytest tests/test_227_backfill_historico.py -q` —
+`test_controle_positivo_e_negativo` e o par.

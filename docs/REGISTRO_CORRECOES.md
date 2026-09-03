@@ -11023,3 +11023,61 @@ Eu fechei o escopo do #225 com *"escanteios estão fora — 0/48 contagens"*. **
 
 ### Lição aprendida
 Um `.get()` apaga a diferença entre "o dado não veio" e "eu pedi pelo nome errado", e as duas viram o mesmo `None`. Foi o que aconteceu no #201, no #208, no #217, no #225-b e no #225-c — sempre no consumo. Aqui a mesma perda de informação aconteceu num **instrumento de medição**, que é pior: o instrumento não errou uma conta, ele produziu um fato falso, e o fato falso virou decisão de escopo. Instrumento que responde "ausente" precisa distinguir **chave ausente** de **valor ausente**, e a varredura que descobre nomes em vez de conferir uma lista é a forma barata de garantir isso.
+
+---
+
+## 227 — Backfill histórico: picks reconstruídos, com escanteios no escopo
+**Data:** 2026-09-03 | **Arquivos:** backend/services/backfill_historico.py (novo), scripts/backfill_historico.py (novo), scripts/retreinar_escanteios.py, tests/test_227_backfill_historico.py (novo) | **Severidade:** Alta (instrumento que destrava o #220) | **Status:** Implementado
+
+### Problema identificado
+O #220 mede inclinação de calibração e precisa de observações. O ledger (#218) está desligado e, mesmo ligado, só acumula daqui para a frente — semanas até o primeiro número. As observações já existem: cada partida finalizada tem desfecho, e as anteriores têm o que era sabido antes dela.
+
+### Escopo — decidido por medição, duas vezes
+Fechei o #225 com *"escanteios estão fora — 0/48 contagens"*. O #226-b refutou: nas 605 finalizadas da championship, contagem em **100%** (`totalCornerCount`, `team_a_corners`, `team_b_corners`) e a escada `odds_corners_*` em **100%**. **Escanteios entram, com probabilidade e EV.**
+
+| família | prob | EV | fonte do desfecho |
+|---|---|---|---|
+| gols O/U 0.5–4.5 | sim | só 2.5 e 3.5 (as odds que existem) | `homeGoalCount + awayGoalCount` |
+| BTTS | sim | sim (`odds_btts_yes`) | ambos > 0 |
+| escanteios 7.5–11.5 | sim | sim (escada completa) | `totalCornerCount`, soma como queda |
+| cartões 2.5–5.5 | sim | não (não há coluna de odd) | `team_a + team_b_yellow_cards` |
+| 1X2 | **não** | não | — |
+
+1X2 fica fora inteiro, e não por descuido: nossa probabilidade de 1X2 **vem da odd** (`predictionSource="odds_implied"`, a circularidade que o #219 deixou marcada), e o #225-a mediu a odd de 1X2 em **0%** no histórico. Sem odd não há nem probabilidade a reconstruir.
+
+### Como funciona
+`RastreadorHistorico` acumula, por time, o que aconteceu **até a partida anterior**. Para cada partida, monta `home_stats`/`away_stats`/`league_stats` com **as chaves que os motores realmente leem** — auditadas contra `calcular_lambda_dinamico`, `estimate_corners_lambda` e `predict_cards`, não contra o que seria natural nomear — e chama os motores de verdade. Depois registra a partida.
+
+Média de zero observações devolve `None`, nunca `0`: devolver zero plantaria no motor a mesma "informação de ausência" que o #208 removeu. `-1` da FootyStats é ausência; `0` é resultado.
+
+### O que este instrumento mede, e o que não mede
+Mede: se um modelo desta família, alimentado por este dado, separa o que acontece do que não acontece. É a pergunta do #220.
+
+**Não** mede "a probabilidade exata que publicamos naquele dia". Produção come `stats` de time dos endpoints da FootyStats no momento da consulta, e não há versão histórica deles; aqui o estado sai das próprias partidas anteriores. São modelos da mesma família por caminhos diferentes, e vender retrospectiva como registro seria a mesma troca de intenção por medição que o SDD existe para impedir. Está escrito no topo do módulo.
+
+### Prova empírica — e o controle que faltaria
+Cadeia completa, 400 partidas sintéticas: **5070 picks** (gols 2028, escanteios 1690, cartões 1352), 2704 com odd e EV, alimentando `medir_inclinacao.py` sem ajuste nenhum.
+
+Mas "5070 picks e todas as células SEM RESOLUÇÃO" é indistinguível de um backfill quebrado. Então o gerador ganhou dois modos e o teste virou par:
+
+```
+CONTROLE POSITIVO  (gols de forcas de ataque/defesa por time)
+  Over 2.5 gols   n=539   incl 0.689   IC95 [0.54, 0.86]   previsoes extremas demais
+  Over 3.5 gols   n=539   incl 0.632   IC95 [0.47, 0.81]
+  BTTS Yes        n=539   incl 0.599   IC95 [0.37, 0.83]
+
+CONTROLE NEGATIVO  (gols sorteados, sem efeito de time)
+  BTTS Yes        n=539   incl -0.171  IC95 [-0.56, 0.15]  SEM RESOLUCAO
+  Over 3.5 gols   n=539   incl -0.123  IC95 [-0.40, 0.16]  SEM RESOLUCAO
+```
+
+**O instrumento discrimina**: acha resolução onde ela foi plantada e não acha onde não foi. Os dois controles são teste parametrizado — o positivo falha se o backfill parar de propagar sinal, o negativo falha se ele começar a inventar.
+
+### Vazamento temporal
+A prova é direta: mesma história, última partida com placar `0-0` versus `5-4`, e as probabilidades daquela partida têm de sair **idênticas** — só o `outcome` muda. Se o rastreador registrasse antes de montar o estado, o placar entraria na própria média e a previsão acertaria sozinha. É a única forma de este instrumento mentir para melhor, e mentira para melhor não aparece como erro.
+
+### Testes
+15 novos. Suíte: **856 passed, 1 skipped**.
+
+### Lição aprendida
+Um instrumento que só sabe dizer uma coisa não está medindo nada. Se eu tivesse rodado só o caso realista e visto "SEM RESOLUÇÃO" em todas as células, teria reportado um achado — e o achado teria a mesma cara de um backfill que embaralha as probabilidades. O controle positivo custa um parâmetro no gerador e é a diferença entre medir e supor que se está medindo.
