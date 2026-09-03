@@ -256,6 +256,22 @@ def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
         b = _brier(trio, campo)
         excesso = b - piso if b is not None and piso is not None else float("nan")
         print(f"  {nome:<50}{dec['espalhamento']:>9.4f}{dec['sinal']:>+9.4f}{excesso:>+12.4f}")
+    # #229-b: quanto sobraria se cada previsor fosse ENCOLHIDO da melhor forma
+    # possivel (calibracao linear otima em torno da taxa-base). Brier minimo
+    # = piso - sinal^2/espalhamento. E o teto do que "calibrar" pode dar — e
+    # responde com numero a pergunta do #220 ("existe resolucao para calibrar?").
+    print(f"\n{'teto apos calibracao linear otima':<40}{'skill max':>11}   leitura")
+    for nome, campo in (("motor", "prob_modelo"), ("ingenuo", "prob_ingenuo"),
+                        ("mercado", "prob")):
+        dec = _decompor(trio, campo)
+        if not dec or not dec["espalhamento"] or not piso:
+            continue
+        ganho = dec["sinal"] ** 2 / dec["espalhamento"]
+        skill_max = ganho / piso * 100
+        leitura = ("indistinguivel do piso — calibrar devolve a taxa-base"
+                   if skill_max < 0.25 else "ha algo a extrair")
+        print(f"  {nome:<38}{skill_max:>+10.2f}%   {leitura}")
+
     dm, di = _decompor(trio, "prob_modelo"), _decompor(trio, "prob_ingenuo")
     if dm and di:
         ganho_sinal = 2 * (dm["sinal"] - di["sinal"])

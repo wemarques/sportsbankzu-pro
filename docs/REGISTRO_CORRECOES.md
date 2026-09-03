@@ -11494,3 +11494,61 @@ Validado nos dois controles: com sinal plantado, motor − ingênuo = −0,0111,
 
 ### Lição aprendida
 Desenhei o instrumento com um rótulo que **presumia** o mecanismo ("Brier menor = extrai sinal") em vez de medi-lo. O controle positivo não pegou, porque no controle positivo o mecanismo presumido era verdadeiro. Foi o dado real, onde ele é falso, que expôs o rótulo. Um instrumento validado só no cenário onde a sua hipótese vale não está validado — está confirmado, que é outra coisa.
+
+---
+
+## 229-b — A decomposição no dado real: o motor ganha por encolher, e o teto de calibração é o piso
+**Data:** 2026-09-03 | **Arquivos:** scripts/comparar_com_mercado.py, tests/test_227_backfill_historico.py | **Severidade:** Crítica (fecha numericamente a pergunta do #220) | **Status:** Medido
+
+### O que foi medido (22 ligas, 64.706 picks, mesmo arquivo do #229-a)
+```
+decomposicao (Brier - piso = espalhamento - 2*sinal)   espalh.    sinal   Brier-piso
+  motor                                                 0.0166   +0.0016     +0.0134
+  ingenuo                                               0.0260   +0.0022     +0.0216
+  mercado                                               0.0032   +0.0021     -0.0011
+
+  de onde vem a diferenca motor - ingenuo (-0.0082):
+    por SINAL ............ +0.0012   (o motor tem MENOS sinal que o ingenuo)
+    por ESPALHAMENTO ..... -0.0094
+    -> o motor ganha por ENCOLHER, nao por enxergar
+```
+
+### Previsão conferida
+*"Sinal do motor ≈ 0 em escanteios (±0,002), espalhamento do motor menor, linha 'ganha por ENCOLHER'."* **Confirmada nas três partes.** O sinal do motor é +0,0016; o rótulo antigo ("extrai algo") estava errado e o novo está certo.
+
+### As três leituras que o número permite
+1. **O motor não adiciona informação — tira um pouco.** Sinal do motor +0,0016 contra +0,0022 do Poisson direto sobre as mesmas médias. Força relativa, EMA, encolhimento, γ e o resto transformam o insumo sem aumentar a covariância com o desfecho. A vantagem de Brier vem inteira do espalhamento (0,0166 contra 0,0260): redução de 20% e teto de 12 nos escanteios (#043), regressão à média nos gols.
+
+2. **`sinal / espalhamento` ≈ inclinação, e fecha com o #227.** É a inclinação de `y` sobre `p` na escala linear: motor **0,10**, ingênuo 0,08, mercado **0,66**. Os 0,10 são o mesmo "≈ zero" que o #227-a/c/e mediram por logística e bootstrap, por um caminho independente. Duas medições, mesma resposta.
+
+3. **O mercado carrega quase a mesma covariância com 5× menos variância.** Sinal +0,0021 contra +0,0016 do motor — da mesma ordem. Espalhamento 0,0032 contra 0,0166. O que separa os dois não é o quanto acompanham o desfecho; é o quanto se afastam do piso **sem motivo**. O modelo publica ±12,9 pp por pick (√0,0166); o mercado, ±5,7 pp. E dos ±12,9 pp do modelo, 10% acompanham a realidade.
+
+### O teto de calibração — a resposta numérica ao #220
+Encolhimento linear ótimo em torno da taxa-base deixa `Brier = piso − sinal²/espalhamento`. Esse é o **máximo** que qualquer calibrador monótono de uma dimensão pode dar:
+
+```
+                         skill max apos calibracao otima
+  motor                            +0.07%
+  ingenuo                          +0.08%
+  mercado                          +0.61%
+```
+
+**+0,07%.** Calibrar o modelo — isotônica, Platt, Beta, deflação por nós, qualquer coisa monótona — devolve o piso com outro nome, exatamente como o #220 previu em teoria e o #227-c disse que aconteceria. Agora é número. O mercado, pelo mesmo teto, sobe para +0,61%: pouco, mas dez vezes mais, e real.
+
+Isto também explica por que a deflação progressiva (#043, #105) **melhorava as auditorias**: ela caminha na direção do encolhimento ótimo. Só que o destino desse caminho é o piso, não o mercado — e o sistema estava a meio caminho, publicando o ruído que a deflação ainda não tinha tirado.
+
+O comparador passa a imprimir esse teto por previsor, com a leitura "indistinguível do piso" abaixo de 0,25%. Teste: sem sinal plantado o teto fica abaixo de 0,25%; com sinal, acima de 1%.
+
+### O que está fechado, e o que ainda não
+**Fechado, para a reconstrução:** não há informação a extrair do modelo alimentado por médias móveis. Não por falta de amostra (64 mil picks, IC de 0,001 no Brier), não por defeito de instrumento (dois controles, referência de mercado, decomposição exata), não por má calibração (o teto após calibração é +0,07%). Três motores, 22 ligas, mesmo veredito.
+
+**Ainda aberto, e é só isto:** a produção come `stats` da FootyStats — xG, forma, splits casa/fora que a FootyStats calcula, calibração per-liga, γ — não as médias móveis que a reconstrução monta. Se **esse** insumo carrega covariância que as médias não carregam, o motor de produção pode estar noutro lugar. O ledger está ligado desde hoje; a primeira medição de produção de verdade sai de `medir_inclinacao.py --ledger` e, com uma extensão pequena, de `comparar_com_mercado.py` sobre o mesmo JOIN. Precisa de rodadas — o Brier emparelhado com IC útil pede algumas centenas de jogos com desfecho.
+
+### O que isto muda na conversa de produto (decisão, não recomendação)
+Se o ledger mostrar a produção no mesmo lugar da reconstrução, a camada de probabilidade do produto tem duas saídas honestas: ancorar no mercado de-vigado (#219) e apresentar o modelo como ajuste pequeno — ou nenhum — sobre ele; ou publicar a taxa-base da liga com o rótulo certo. Nenhuma das duas é "calibrar melhor". É escolha de produto e fica registrada como tal.
+
+### Testes
+1 novo. Suíte: **897 passed, 1 skipped**.
+
+### Lição aprendida
+Uma identidade algébrica exata (Brier = piso + espalhamento − 2·sinal) fez em uma linha o que três rodadas de bootstrap não conseguiam: separar *quanto o previsor sabe* de *quanto ele fala*. O modelo sabe tanto quanto o mercado e fala cinco vezes mais alto. Todo o −6% é o volume, não o conteúdo.

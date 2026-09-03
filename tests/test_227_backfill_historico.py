@@ -430,3 +430,20 @@ def test_sinal_positivo_so_quando_ha_sinal(com_sinal):
         assert sinal > 0.005, f"com sinal plantado, cov tem de ser positiva: {sinal:+.4f}"
     else:
         assert abs(sinal) < 0.005, f"sem sinal, cov tem de encostar em zero: {sinal:+.4f}"
+
+
+def test_teto_de_calibracao_e_o_piso_quando_nao_ha_sinal():
+    """sinal^2/espalhamento: sem sinal, o melhor encolhimento devolve o piso;
+    com sinal plantado, sobra skill. E a resposta numerica ao #220."""
+    cmp = _comparador()
+    for com_sinal, espera in ((True, 1.0), (False, 0.25)):
+        partidas = _gerador()(500, com_sinal=com_sinal, semente=227)
+        picks = [{**p, "prob_modelo": p["prob"]}
+                 for p in reconstruir(partidas, "sintetica", familias=["gols"])["picks"]]
+        piso = cmp._piso(picks)
+        dec = cmp._decompor(picks, "prob_modelo")
+        skill_max = dec["sinal"] ** 2 / dec["espalhamento"] / piso * 100
+        if com_sinal:
+            assert skill_max > espera, skill_max
+        else:
+            assert skill_max < espera, skill_max
