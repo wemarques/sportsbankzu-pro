@@ -27,9 +27,13 @@ from backend.services.calibracao_slope import (   # noqa: E402
 
 
 def _do_ledger(desde: str, campo: str):
-    import psycopg2
+    # #230-a: conferir o DSN ANTES de importar psycopg2 — senao, numa maquina
+    # sem o driver, o erro seria "No module named psycopg2" e esconderia que
+    # a variavel e que falta.
     from backend.services.prediction_ledger import dsn_obrigatorio
-    conn = psycopg2.connect(dsn_obrigatorio())   # #230-a: sem DSN, erro claro
+    dsn = dsn_obrigatorio()
+    import psycopg2
+    conn = psycopg2.connect(dsn)
     cur = conn.cursor()
     cur.execute(
         f"""

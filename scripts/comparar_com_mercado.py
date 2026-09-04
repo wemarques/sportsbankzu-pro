@@ -340,9 +340,13 @@ def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
     por selecao e o do #228. Sem `prob_ingenuo` aqui — a secao MOTOR x
     INGENUO pula sozinha.
     """
-    import psycopg2
+    # #230-a: conferir o DSN ANTES de importar psycopg2 — senao, numa maquina
+    # sem o driver, o erro seria "No module named psycopg2" e esconderia que
+    # a variavel e que falta.
     from backend.services.prediction_ledger import dsn_obrigatorio
-    conn = psycopg2.connect(dsn_obrigatorio())   # #230-a: sem DSN, erro claro
+    dsn = dsn_obrigatorio()
+    import psycopg2
+    conn = psycopg2.connect(dsn)
     cur = conn.cursor()
     cur.execute(
         f"""
