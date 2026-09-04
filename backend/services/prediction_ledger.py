@@ -55,7 +55,24 @@ def ledger_habilitado() -> bool:
 
 def _conn():
     import psycopg2
-    return psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+    return psycopg2.connect(dsn_obrigatorio())
+
+
+def dsn_obrigatorio() -> str:
+    """#230-a - DSN vazio NAO pode cair no padrao da libpq.
+
+    `psycopg2.connect("")` tenta localhost:5432 e falha com "Connection
+    refused" — um erro sobre um servidor que ninguem configurou, no lugar do
+    erro real: a variavel nao esta definida. Na Lambda, com a falha aberta do
+    ledger, isso vira "ligado gravando nada" sem nenhuma pista no log.
+    """
+    dsn = (os.environ.get("DATABASE_URL") or "").strip()
+    if not dsn:
+        raise RuntimeError(
+            "DATABASE_URL nao esta definida — defina no ambiente ou em .env; "
+            "sem ela o psycopg2 tentaria localhost:5432, que nao e o banco"
+        )
+    return dsn
 
 
 _DDL_LEDGER = """

@@ -95,12 +95,22 @@ def gravar(variaveis: Dict[str, str]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--show", action="store_true")
+    ap.add_argument("--get", metavar="K",
+                    help="imprime o valor CRU de uma variavel (sem mascara). E "
+                         "para copiar DATABASE_URL para o .env local, que e "
+                         "gitignored; nao cole a saida em chat nem em commit.")
     ap.add_argument("--set", action="append", default=[], metavar="K=V")
     ap.add_argument("--unset", action="append", default=[], metavar="K")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     atual = ler()
+    if args.get:
+        if args.get not in atual:
+            print(f"{args.get} nao existe na Lambda", file=sys.stderr)
+            return 1
+        print(atual[args.get])
+        return 0
     if args.show or not (args.set or args.unset):
         print(f"{FUNCTION_NAME} ({REGION}): {len(atual)} variavel(is)")
         for k in sorted(atual):

@@ -152,3 +152,24 @@ def test_comparador_le_do_ledger_por_selecao():
     src = (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "comparar_com_mercado.py").read_text(encoding="utf-8")
     assert "l.prob_mercado" in src and "o.selection = COALESCE(l.selection, '')" in src
     assert "--ledger" in src
+
+
+# ── #230-a: DSN vazio e erro, nao localhost ──────────────────────────────
+def test_dsn_vazio_da_erro_claro_e_nao_tenta_localhost(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="DATABASE_URL nao esta definida"):
+        L.dsn_obrigatorio()
+    monkeypatch.setenv("DATABASE_URL", "   ")
+    with pytest.raises(RuntimeError):
+        L.dsn_obrigatorio()
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h:5432/db")
+    assert L.dsn_obrigatorio() == "postgresql://u:p@h:5432/db"
+
+
+def test_scripts_nao_conectam_com_dsn_vazio():
+    import pathlib
+    raiz = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+    for nome in ("medir_inclinacao.py", "comparar_com_mercado.py"):
+        src = (raiz / nome).read_text(encoding="utf-8")
+        assert 'psycopg2.connect(os.environ.get("DATABASE_URL", ""))' not in src, nome
+        assert "dsn_obrigatorio()" in src, nome

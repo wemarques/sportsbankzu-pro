@@ -341,7 +341,8 @@ def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
     INGENUO pula sozinha.
     """
     import psycopg2
-    conn = psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+    from backend.services.prediction_ledger import dsn_obrigatorio
+    conn = psycopg2.connect(dsn_obrigatorio())   # #230-a: sem DSN, erro claro
     cur = conn.cursor()
     cur.execute(
         f"""
