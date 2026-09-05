@@ -11633,7 +11633,7 @@ Over 2.5    5
 Draw aparece quatro vezes mais que Home; Over 2.5 aparece cinco vezes. Duas hipóteses, e o instrumento passa a distinguir: (a) o pipeline **publica** assim — `_filter_1x2_dc_redundancy` troca Home/Away por DC quando a prob é baixa, e o corredor do #187 derruba Over 2.5 com frequência (apareceu nos logs do #223); nesse caso o ledger está certo e a cobertura é a do produto; (b) as linhas existem e **somem num filtro** — `calibrated_prob` nula, `prob_mercado` nula, ou o JOIN. A tabela **COBERTURA DO LEDGER** imprime, por seleção, linhas gravadas → com prob publicada → com prob de mercado → devig → com desfecho. Onde o número cai é onde está a resposta.
 
 ### Testes
-3 novos, 1 ajustado (o teste do #227-d usava células de 10 picks, que agora caem no agregado de propósito). Suíte: **926 passed, 1 skipped**.
+3 novos, 1 ajustado (o teste do #227-d usava células de 10 picks, que agora caem no agregado de propósito). Suíte: **923 passed, 1 skipped**.
 
 ### Lição aprendida
 A primeira leitura de qualquer instrumento em dado novo é uma leitura **do instrumento**. O −272% não era sobre o modelo, e teria virado manchete se alguém o levasse a sério. Piso in-sample precisa de n mínimo por célula, e veredito precisa de n mínimo por célula, pela mesma razão: com 4 observações, tudo é significativo.
