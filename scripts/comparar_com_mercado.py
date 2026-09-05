@@ -106,6 +106,7 @@ def _ic_da_diferenca(picks: Sequence[Dict[str, Any]], metrica,
 
 
 MIN_N_CELULA = 30
+MIN_JOGOS_LIGA = 10
 
 
 def _celula_de(picks: Sequence[Dict[str, Any]]) -> Dict[int, Tuple[str, str]]:
@@ -175,24 +176,26 @@ def _por_liga(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
     if len(ligas) < 2:
         return
     print("\n── POR LIGA (Brier; skill = ganho sobre o piso da propria liga) ──")
-    print(f"{'liga':<22}{'n':>6}{'modelo':>9}{'mercado':>9}{'piso':>8}"
+    print(f"{'liga':<22}{'n':>6}{'jogos':>6}{'modelo':>9}{'mercado':>9}{'piso':>8}"
           f"{'skill mod':>11}{'skill mkt':>11}{'dif':>9}{'IC95 da dif':>22}  leitura")
     linhas = []
     for liga, grupo in ligas.items():
-        if len(grupo) < MIN_N_CELULA:
+        # #230-e: um jogo grava ~20 selecoes; 40 picks podem ser 2 jogos, e o
+        # bootstrap por bloco devolve NaN abaixo de 3. Gate por JOGOS.
+        if _jogos(grupo) < MIN_JOGOS_LIGA:
             continue
         bm, bk, pi = _brier(grupo, "prob_modelo"), _brier(grupo, "prob"), _piso(grupo)
         dif = _ic_da_diferenca(grupo, _brier, reamostras)
         sm, sk = _skill(bm, pi), _skill(bk, pi)
         if None in (bm, bk, pi, dif, sm, sk):
             continue
-        linhas.append((liga, len(grupo), bm, bk, pi, sm, sk, dif))
+        linhas.append((liga, len(grupo), bm, bk, pi, sm, sk, dif, _jogos(grupo)))
     if not linhas:
-        print(f"  (nenhuma liga com n >= {MIN_N_CELULA})")
+        print(f"  (nenhuma liga com >= {MIN_JOGOS_LIGA} jogos)")
         return
     # da pior para a melhor skill do modelo
     linhas.sort(key=lambda r: r[5])
-    for liga, n, bm, bk, pi, sm, sk, (d, lo, hi) in linhas:
+    for liga, n, bm, bk, pi, sm, sk, (d, lo, hi), jogos in linhas:
         if math.isnan(lo):
             leitura = "IC indisponivel"
         elif lo > 0:
@@ -202,7 +205,7 @@ def _por_liga(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
         else:
             leitura = "empate"
         abaixo = "  <- abaixo do piso" if sm < 0 else ""
-        print(f"{liga[:21]:<22}{n:>6}{bm:>9.4f}{bk:>9.4f}{pi:>8.4f}"
+        print(f"{liga[:21]:<22}{n:>6}{jogos:>6}{bm:>9.4f}{bk:>9.4f}{pi:>8.4f}"
               f"{sm:>+10.2f}%{sk:>+10.2f}%{d:>+9.4f}  [{lo:+.4f}, {hi:+.4f}]  "
               f"{leitura}{abaixo}")
     abaixo = sum(1 for r in linhas if r[5] < 0)
@@ -381,11 +384,18 @@ def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> Non
         marca = "MODELO melhor"
     else:
         marca = "empate (IC cobre 0)"
-    print(f"{rotulo[:29]:<30}{n:>6}{bm:>9.4f}{bk:>9.4f}{d:>+9.4f}"
+    print(f"{rotulo[:29]:<30}{n:>6}{_jogos(picks):>6}{bm:>9.4f}{bk:>9.4f}{d:>+9.4f}"
           f"  [{lo:+.4f}, {hi:+.4f}]  {marca}")
 
 
-def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
+_METODOS_JUSTOS = ("devig", "devig3")
+
+
+def _jogos(picks: Sequence[Dict[str, Any]]) -> int:
+    return len({p.get("match_id") for p in picks})
+
+
+def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[Dict[str, Any]]:
     """#230 - producao contra mercado, nos mesmos picks, com desfecho.
 
     `prob_modelo` = a probabilidade PUBLICADA (coluna escolhida); `prob` = a
@@ -414,9 +424,14 @@ def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
          WHERE l.published_at >= %s
            AND l.{campo} IS NOT NULL
            AND l.prob_mercado IS NOT NULL
+           {"" if incluir_implicita else "AND l.mercado_metodo IN ('devig', 'devig3')"}
         """,
         (desde,),
     )
+    # #230-e: por padrao so entra o que foi DE-VIGADO. "implicita" carrega a
+    # margem inteira da casa (5-7 pp) e inflaria o Brier do mercado — o
+    # "modelo melhor por 0,006" do #230-d era em parte isso: Draw (n=79) e
+    # os overs sem par entravam com margem dentro.
     picks = [{
         "match_id": r[0], "league_id": r[1], "market": r[2],
         "prob_modelo": float(r[3]), "prob": float(r[4]),
@@ -477,11 +492,14 @@ def main() -> int:
     ap.add_argument("--campo", default="calibrated_prob",
                     choices=["raw_prob", "iso_prob", "calibrated_prob"],
                     help="qual probabilidade publicada comparar (ledger)")
+    ap.add_argument("--incluir-implicita", action="store_true",
+                    help="#230-e: inclui picks cuja prob de mercado e 1/odd (margem "
+                         "dentro). Por padrao so entra o de-vigado.")
     ap.add_argument("--reamostras", type=int, default=600)
     args = ap.parse_args()
 
     if args.ledger:
-        picks = _do_ledger(args.desde, args.campo)
+        picks = _do_ledger(args.desde, args.campo, args.incluir_implicita)
         if not picks:
             print("ledger sem pares (pick com prob_mercado E desfecho) desde "
                   f"{args.desde} — ou o ledger nao gravou, ou o batch audit ainda "
@@ -489,7 +507,8 @@ def main() -> int:
                   "no CloudWatch.", file=sys.stderr)
             return 1
         print(f"fonte: prediction_ledger ({args.campo} x prob_mercado), "
-              f"{len(picks)} picks com desfecho desde {args.desde}\n")
+              f"{len(picks)} picks em {_jogos(picks)} jogos com desfecho desde {args.desde}"
+              f"{' (so de-vigados)' if not args.incluir_implicita else ' (inclui 1/odd)'}\n")
         _imprimir_cobertura()
     elif args.arquivo:
         with open(args.arquivo, encoding="utf-8") as f:
@@ -515,7 +534,7 @@ def main() -> int:
     print("diferenca = modelo - mercado. Positiva = o modelo erra mais.\n")
 
     print("── BRIER (erro quadratico, menor e melhor) ──")
-    print(f"{'celula':<30}{'n':>6}{'modelo':>9}{'mercado':>9}{'dif':>9}"
+    print(f"{'celula':<30}{'n':>6}{'jogos':>6}{'modelo':>9}{'mercado':>9}{'dif':>9}"
           f"{'IC95 da dif':>22}  leitura")
     _linha("TODAS", picks, args.reamostras)
     celulas: Dict[str, List[Dict[str, Any]]] = defaultdict(list)

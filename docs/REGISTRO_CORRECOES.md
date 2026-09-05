@@ -11637,3 +11637,44 @@ Draw aparece quatro vezes mais que Home; Over 2.5 aparece cinco vezes. Duas hip�
 
 ### Lição aprendida
 A primeira leitura de qualquer instrumento em dado novo é uma leitura **do instrumento**. O −272% não era sobre o modelo, e teria virado manchete se alguém o levasse a sério. Piso in-sample precisa de n mínimo por célula, e veredito precisa de n mínimo por célula, pela mesma razão: com 4 observações, tudo é significativo.
+
+---
+
+## 230-e — A cobertura respondeu: Over 2.5 quase não é publicado, e a âncora tinha dois buracos
+**Data:** 2026-09-05 | **Arquivos:** backend/services/prediction_ledger.py, scripts/comparar_com_mercado.py, tests/test_230_ancora_mercado.py | **Severidade:** Alta (viés a favor do modelo na comparação de produção) | **Status:** Corrigido
+
+### O que a tabela de cobertura mostrou (728 picks, ledger real)
+```
+selecao                      linhas  publ.  mercado  devig  desf.
+Under 1.5                       319    319      106    106    111
+Double Chance DC 12             310    310        0      0    109
+Over 4.5                        303    303      294    100     96
+1X2 Draw                        222    222      216      0     82
+Cards Over 2.5                  210    210        0      0     75
+Corners Over 11.5               215    215      214      8     80
+Over 2.5                         31     31       31     31      5
+1X2 Home                         59     59       57      0     23
+```
+
+Três leituras, em ordem de importância:
+
+**1. Over 2.5 é raro porque o pipeline raramente o publica.** 31 linhas contra 300 de Over 1.5. Não é filtro do instrumento: é o corredor do #187 derrubando o Over 2.5 na maioria dos jogos (apareceu nos logs do #223). Home aparece 59 vezes contra 222 do Draw pelo mesmo motivo estrutural: `_filter_1x2_dc_redundancy` troca Home e Away por Dupla Chance quando a probabilidade é baixa. A cobertura do ledger é a cobertura **do produto**, e o produto publica muito mais Under 1.5, Over 4.5 e DC do que o mercado principal. Isso é achado sobre o produto, não sobre o instrumento, e fica registrado.
+
+**2. Dois buracos na âncora, meus.** Dupla Chance tinha **zero** `prob_mercado` em 831 linhas: `par_de_odds` não tratava a família. E 1X2 estava marcado `implicita` em 100% dos casos (0 devig em 222 Draw): eu deixei o de-vig de duas pernas de fora porque 1X2 tem três — sem lembrar que Shin generaliza para n pernas e que a função já aceitava. Correção: 1X2 e DC saem do de-vig de **três pernas** (`devig3`); DC é a soma de duas pernas de-vigadas. Verificado: as três somam 1,000 contra 1,056 da implícita; margem medida 5,6 pp.
+
+**3. A comparação misturava de-vigado com 1/odd, e isso favorecia o modelo.** `implicita` carrega a margem inteira da casa dentro da probabilidade, o que infla o Brier do mercado. O Draw (n=79, uma das maiores células) entrava assim, e vários overs sem par também. Parte do "modelo melhor por 0,006" do #230-d era margem, não mérito. Por padrão o `--ledger` passa a usar **só** `devig`/`devig3`; `--incluir-implicita` abre, para quem quiser ver o viés.
+
+### Uma quarta coisa: n de picks não é n de jogos
+Um jogo grava ~20 seleções. 728 picks eram uns 35 a 40 jogos, não 90. A tabela por liga mostrava `serie-a n=40` com IC `nan` — dois jogos. O script imprime **jogos** ao lado de n em toda tabela, e a tabela por liga passa a exigir 10 jogos, não 30 picks. O bootstrap já era por jogo; o rótulo é que mentia.
+
+### O que isto muda na leitura do #230-d
+O "modelo −0,006 melhor" fica **retirado** até a rodada com o filtro certo. Previsão registrada para ela, sobre os picks de-vigados: diferença entre −0,005 e +0,010, IC cobrindo zero, com o ponto deslocado para o lado do mercado em relação ao #230-d. Se o ponto ficar do lado do modelo com o de-vig, aí sim há algo a investigar — mas com 40 jogos, continua inconclusivo por regra.
+
+### Linhas antigas
+O ledger é append-only: as linhas de 1X2 gravadas como `implicita` e as de DC sem âncora **ficam como estão**. As novas saem certas. O filtro por método exclui as antigas sozinho.
+
+### Testes
+5 novos, 1 ajustado (1X2 com o trio completo agora é devig3 por desenho). Suíte: **928 passed, 1 skipped**.
+
+### Lição aprendida
+A tabela de cobertura custou 20 linhas de SQL e respondeu três perguntas que a tabela de resultados não podia responder — e uma delas era um viés a favor do modelo que eu teria lido como resultado. Instrumento que mede diferença precisa mostrar **de onde vieram os pares**, senão a diferença absorve o que o filtro escondeu.

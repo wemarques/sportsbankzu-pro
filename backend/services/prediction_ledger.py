@@ -327,11 +327,30 @@ def par_de_odds(market: str, selection: str, odds: Optional[Dict[str, Any]]
         return (_v(over), _v(under)) if "over" in sl else (_v(under), _v(over))
     if m == "1X2":
         chave = {"home": "home", "draw": "draw", "away": "away"}.get(sl)
-        # 1X2 tem tres pernas; o de-vig precisa das tres. Devolve a propria e
-        # deixa o par vazio: sem par nao ha de-vig de duas pernas, e e assim
-        # que o metodo fica marcado "implicita" (a margem inteira fica dentro).
+        return _v(chave), None          # tres pernas: ver _trio_1x2 / prob_mercado_do_pick
+    if m == "Double Chance":
+        chave = {"dc 1x": "dc_1x", "dc 12": "dc_12", "dc x2": "dc_x2"}.get(sl)
         return _v(chave), None
     return None, None
+
+
+_PERNA_1X2 = {"home": 0, "draw": 1, "away": 2}
+_PERNAS_DC = {"dc 1x": (0, 1), "dc 12": (0, 2), "dc x2": (1, 2)}
+
+
+def _trio_1x2(odds: Optional[Dict[str, Any]]) -> Optional[List[float]]:
+    """(home, draw, away) quando as tres existem e sao preco (> 1.0)."""
+    odds = odds or {}
+    trio = []
+    for k in ("home", "draw", "away"):
+        try:
+            v = float(odds.get(k) or 0)
+        except (TypeError, ValueError):
+            return None
+        if v <= 1.0:
+            return None
+        trio.append(v)
+    return trio
 
 
 def prob_mercado_do_pick(market: str, selection: str, odds: Optional[Dict[str, Any]]
@@ -346,6 +365,40 @@ def prob_mercado_do_pick(market: str, selection: str, odds: Optional[Dict[str, A
     propria, par = par_de_odds(market, selection, odds)
     out: Dict[str, Any] = {"prob_mercado": None, "mercado_metodo": "sem_odd",
                            "odd_par": par, "margem_pp": None, "frescor": None}
+
+    # #230-e - 1X2 e Dupla Chance saem do de-vig de TRES pernas (Shin
+    # generaliza). A primeira versao deixava 1X2 "implicita" (margem inteira
+    # dentro) e nao dava ancora nenhuma a DC: 831 linhas de DC sem
+    # prob_mercado e 222 de Draw carregando ~5,6 pp de margem contra o
+    # mercado. Medido na tabela de cobertura do #230-d.
+    m = (market or "").strip()
+    sl = (selection or "").strip().lower()
+    if m in ("1X2", "Double Chance"):
+        trio = _trio_1x2(odds)
+        if trio:
+            try:
+                from backend.services.devig import devig, odds_utilizaveis
+                justas = devig(trio)
+                ok, margem, motivo = odds_utilizaveis(trio)
+                if justas and len(justas) == 3:
+                    if m == "1X2" and sl in _PERNA_1X2:
+                        pj = justas[_PERNA_1X2[sl]]
+                    elif m == "Double Chance" and sl in _PERNAS_DC:
+                        i, j = _PERNAS_DC[sl]
+                        pj = justas[i] + justas[j]
+                    else:
+                        pj = None
+                    if pj is not None and 0.0 < pj < 1.0:
+                        out.update({"prob_mercado": round(pj, 6), "mercado_metodo": "devig3",
+                                    "margem_pp": margem, "frescor": motivo})
+                        return out
+            except Exception as e:                           # noqa: BLE001
+                logger.debug("[#230] devig 3 pernas falhou: %s", e)
+        # sem o trio: a propria odd (1X2 ou dc_*), com a margem dentro
+        if propria is not None:
+            out.update({"prob_mercado": round(1.0 / propria, 6), "mercado_metodo": "implicita"})
+        return out
+
     if propria is None:
         return out
     if par is not None:

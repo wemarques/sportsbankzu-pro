@@ -60,7 +60,9 @@ def test_com_par_usa_devig_e_marca_frescor():
 
 
 def test_so_a_propria_perna_e_implicita():
-    r = L.prob_mercado_do_pick("1X2", "Home", _ODDS)
+    """#230-e: com o trio completo o 1X2 vira devig3; a implicita fica para
+    quando so a propria perna existe."""
+    r = L.prob_mercado_do_pick("1X2", "Home", {"home": 2.10})
     assert r["mercado_metodo"] == "implicita"
     assert r["prob_mercado"] == pytest.approx(1 / 2.10, abs=1e-6)
     assert r["odd_par"] is None
@@ -173,3 +175,54 @@ def test_scripts_nao_conectam_com_dsn_vazio():
         src = (raiz / nome).read_text(encoding="utf-8")
         assert 'psycopg2.connect(os.environ.get("DATABASE_URL", ""))' not in src, nome
         assert "dsn_obrigatorio()" in src, nome
+
+
+# ── #230-e: 1X2 em tres pernas, Dupla Chance a partir delas ──────────────
+def test_1x2_usa_devig_de_tres_pernas():
+    r = L.prob_mercado_do_pick("1X2", "Home", _ODDS)
+    assert r["mercado_metodo"] == "devig3"
+    assert r["prob_mercado"] == pytest.approx(0.4558, abs=2e-3)   # Shin([2.10,3.40,3.50])[0]
+    assert r["prob_mercado"] < 1 / 2.10, "tres pernas de-vigadas somam 1; 1/odd somava 1.056"
+    assert r["frescor"] == "ok" and r["margem_pp"] == pytest.approx(5.6, abs=0.1)
+
+    soma = sum(L.prob_mercado_do_pick("1X2", s, _ODDS)["prob_mercado"]
+               for s in ("Home", "Draw", "Away"))
+    assert soma == pytest.approx(1.0, abs=5e-6)     # tres arredondamentos a 6 casas
+
+
+def test_dupla_chance_e_a_soma_de_duas_pernas_de_vigadas():
+    p1, px, p2 = (L.prob_mercado_do_pick("1X2", s, _ODDS)["prob_mercado"]
+                  for s in ("Home", "Draw", "Away"))
+    for sel, esperado in (("DC 1X", p1 + px), ("DC 12", p1 + p2), ("DC X2", px + p2)):
+        r = L.prob_mercado_do_pick("Double Chance", sel, _ODDS)
+        assert r["mercado_metodo"] == "devig3"
+        assert r["prob_mercado"] == pytest.approx(esperado, abs=5e-6), sel   # arredondamento
+
+
+def test_sem_o_trio_1x2_cai_para_a_propria_odd():
+    so_dc = {"dc_1x": 1.35}
+    r = L.prob_mercado_do_pick("Double Chance", "DC 1X", so_dc)
+    assert (r["mercado_metodo"], r["prob_mercado"]) == ("implicita", pytest.approx(1 / 1.35, abs=1e-6))
+    so_home = {"home": 2.10}
+    r = L.prob_mercado_do_pick("1X2", "Home", so_home)
+    assert r["mercado_metodo"] == "implicita"
+    assert L.prob_mercado_do_pick("Double Chance", "DC 12", {})["mercado_metodo"] == "sem_odd"
+
+
+def test_linhas_de_dc_agora_tem_ancora():
+    b = MatchMarketBundle(
+        match_id="m2", home_team="A", away_team="B", league_id="x", data_quality_score=0.5,
+        markets=[MarketOutput(market_type="Double Chance", selection="DC 1X",
+                              raw_probability=0.7, calibrated_probability=0.66,
+                              classification=MarketClassification.NEUTRO, reason_codes=[])],
+    )
+    l = L.linhas_do_bundle(b, {"id": "m2", "odds": _ODDS}, {})[0]
+    assert l["mercado_metodo"] == "devig3" and 0.7 < l["prob_mercado"] < 0.76
+
+
+def test_comparador_so_devigados_por_padrao_e_mostra_jogos():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "comparar_com_mercado.py").read_text(encoding="utf-8")
+    assert "mercado_metodo IN ('devig', 'devig3')" in src
+    assert "--incluir-implicita" in src
+    assert "MIN_JOGOS_LIGA" in src and "def _jogos(" in src
