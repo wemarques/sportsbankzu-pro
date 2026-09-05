@@ -106,10 +106,20 @@ def main() -> int:
 
     atual = ler()
     if args.get:
-        if args.get not in atual:
-            print(f"{args.get} nao existe na Lambda", file=sys.stderr)
+        # #230-b: `--get` recebe so o NOME. Quem passa `NOME=valor` ou o nome em
+        # minusculas recebia "nao existe na Lambda", que parece um problema da
+        # Lambda e nao do comando. Normaliza e, se ainda nao achar, mostra os
+        # nomes parecidos em vez de negar a existencia.
+        nome = args.get.split("=", 1)[0].strip()
+        achado = next((k for k in atual if k.lower() == nome.lower()), None)
+        if achado is None:
+            parecidos = [k for k in sorted(atual) if nome.lower()[:4] in k.lower()]
+            print(f"'{nome}' nao esta entre as {len(atual)} variaveis da Lambda."
+                  + (f" Parecidas: {', '.join(parecidos)}" if parecidos else "")
+                  + "\nuso: --get NOME  (so o nome; o valor e a saida)",
+                  file=sys.stderr)
             return 1
-        print(atual[args.get])
+        print(atual[achado])
         return 0
     if args.show or not (args.set or args.unset):
         print(f"{FUNCTION_NAME} ({REGION}): {len(atual)} variavel(is)")
