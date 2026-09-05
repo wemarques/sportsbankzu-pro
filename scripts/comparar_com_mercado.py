@@ -105,11 +105,44 @@ def _ic_da_diferenca(picks: Sequence[Dict[str, Any]], metrica,
             difs[min(len(difs) - 1, int(0.975 * len(difs)))])
 
 
-def _piso(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
-    """Brier de prever sempre a taxa-base da celula (liga x mercado), desta amostra."""
-    grupos: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+MIN_N_CELULA = 30
+
+
+def _celula_de(picks: Sequence[Dict[str, Any]]) -> Dict[int, Tuple[str, str]]:
+    """#230-d - a celula da taxa-base, com minimo de n.
+
+    A taxa-base "desta amostra" e um otimo in-sample, e o otimismo cresce com
+    (numero de celulas / n). Com 728 picks em ~30 mercados x ligas, a maioria
+    das celulas tinha 1 a 5 picks: taxa 0 ou 1, Brier do piso ~0, e o script
+    imprimiu "modelo -272% abaixo do piso" — um numero sobre o instrumento,
+    nao sobre o modelo. Celula abaixo de MIN_N_CELULA cai para o mercado
+    agregado entre ligas (Over 2.5 tem taxa parecida em toda liga), e se ainda
+    faltar n, para o total. Mesma regra para _piso e _decompor, senao o teto
+    de calibracao herdaria o mesmo otimismo.
+    """
+    fina: Dict[Tuple[str, str], int] = defaultdict(int)
+    media: Dict[str, int] = defaultdict(int)
     for p in picks:
-        grupos[(str(p.get("league_id", "?")), str(p.get("market", "?")))].append(p["outcome"])
+        fina[(str(p.get("league_id", "?")), str(p.get("market", "?")))] += 1
+        media[str(p.get("market", "?"))] += 1
+    out: Dict[int, Tuple[str, str]] = {}
+    for i, p in enumerate(picks):
+        liga, mercado = str(p.get("league_id", "?")), str(p.get("market", "?"))
+        if fina[(liga, mercado)] >= MIN_N_CELULA:
+            out[i] = (liga, mercado)
+        elif media[mercado] >= MIN_N_CELULA:
+            out[i] = ("*", mercado)
+        else:
+            out[i] = ("*", "*")
+    return out
+
+
+def _piso(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
+    """Brier de prever sempre a taxa-base da celula (ver _celula_de)."""
+    celula = _celula_de(picks)
+    grupos: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+    for i, p in enumerate(picks):
+        grupos[celula[i]].append(p["outcome"])
     soma = 0.0
     total = 0
     for desfechos in grupos.values():
@@ -117,6 +150,15 @@ def _piso(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
         soma += sum((taxa - y) ** 2 for y in desfechos)
         total += len(desfechos)
     return soma / total if total else None
+
+
+def _nota_do_piso(picks: Sequence[Dict[str, Any]]) -> str:
+    celula = _celula_de(picks)
+    n_fina = sum(1 for c in celula.values() if c[0] != "*")
+    n_media = sum(1 for c in celula.values() if c[0] == "*" and c[1] != "*")
+    n_total = len(celula) - n_fina - n_media
+    return (f"celulas do piso (min n={MIN_N_CELULA}): {n_fina} picks em liga x mercado, "
+            f"{n_media} em mercado agregado, {n_total} no total")
 
 
 def _skill(valor: Optional[float], piso: Optional[float]) -> Optional[float]:
@@ -137,11 +179,17 @@ def _por_liga(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
           f"{'skill mod':>11}{'skill mkt':>11}{'dif':>9}{'IC95 da dif':>22}  leitura")
     linhas = []
     for liga, grupo in ligas.items():
+        if len(grupo) < MIN_N_CELULA:
+            continue
         bm, bk, pi = _brier(grupo, "prob_modelo"), _brier(grupo, "prob"), _piso(grupo)
         dif = _ic_da_diferenca(grupo, _brier, reamostras)
-        if bm is None or bk is None or pi is None or dif is None:
+        sm, sk = _skill(bm, pi), _skill(bk, pi)
+        if None in (bm, bk, pi, dif, sm, sk):
             continue
-        linhas.append((liga, len(grupo), bm, bk, pi, _skill(bm, pi), _skill(bk, pi), dif))
+        linhas.append((liga, len(grupo), bm, bk, pi, sm, sk, dif))
+    if not linhas:
+        print(f"  (nenhuma liga com n >= {MIN_N_CELULA})")
+        return
     # da pior para a melhor skill do modelo
     linhas.sort(key=lambda r: r[5])
     for liga, n, bm, bk, pi, sm, sk, (d, lo, hi) in linhas:
@@ -201,11 +249,12 @@ def _decompor(picks: Sequence[Dict[str, Any]], campo: str) -> Optional[Dict[str,
     informacao; `espalhamento` mede quanto o previsor se afasta do piso, com
     ou sem motivo.
     """
+    celula = _celula_de(picks)
     grupos: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
-    for p in picks:
+    for i, p in enumerate(picks):
         if p.get(campo) is None:
             continue
-        grupos[(str(p.get("league_id", "?")), str(p.get("market", "?")))].append(p)
+        grupos[celula[i]].append(p)
     esp = sinal = 0.0
     n = 0
     for grupo in grupos.values():
@@ -320,7 +369,11 @@ def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> Non
         print(f"{rotulo[:29]:<30}{n:>6}  sem par comparavel")
         return
     d, lo, hi = dif
-    if math.isnan(lo):
+    if n < MIN_N_CELULA and rotulo != "TODAS":
+        # #230-d: com 4 picks o bootstrap emparelhado "exclui zero" por acaso;
+        # "MERCADO melhor" em n=7 era ruido com rotulo de veredito.
+        marca = f"n<{MIN_N_CELULA}: sem veredito"
+    elif math.isnan(lo):
         marca = "IC indisponivel"
     elif lo > 0:
         marca = "MERCADO melhor"
@@ -369,9 +422,47 @@ def _do_ledger(desde: str, campo: str) -> List[Dict[str, Any]]:
         "prob_modelo": float(r[3]), "prob": float(r[4]),
         "mercado_metodo": r[5], "outcome": int(r[6]),
     } for r in cur.fetchall()]
+
+    # #230-d: a cobertura por selecao, filtro a filtro. Sem isto, "Over 2.5
+    # n=5 e Over 4.5 n=88" ou "Draw 79, Home 21" parecem dado — e podem ser
+    # o JOIN, o prob_mercado nulo, ou o pipeline publicando so o que sobrou
+    # da deduplicacao 1X2/DC (#187). O instrumento tem de dizer onde some.
+    cur.execute(
+        f"""
+        SELECT l.market || ' ' || COALESCE(l.selection, ''),
+               COUNT(*),
+               COUNT(*) FILTER (WHERE l.{campo} IS NOT NULL),
+               COUNT(*) FILTER (WHERE l.prob_mercado IS NOT NULL),
+               COUNT(*) FILTER (WHERE l.mercado_metodo = 'devig'),
+               COUNT(o.outcome)
+          FROM prediction_ledger l
+          LEFT JOIN ledger_outcomes o
+            ON o.match_id = l.match_id AND o.market = l.market
+           AND o.selection = COALESCE(l.selection, '')
+         WHERE l.published_at >= %s
+         GROUP BY 1 ORDER BY 2 DESC
+        """,
+        (desde,),
+    )
+    global _COBERTURA_LEDGER
+    _COBERTURA_LEDGER = cur.fetchall()
     cur.close()
     conn.close()
     return picks
+
+
+_COBERTURA_LEDGER: List[Tuple[Any, ...]] = []
+
+
+def _imprimir_cobertura() -> None:
+    if not _COBERTURA_LEDGER:
+        return
+    print("── COBERTURA DO LEDGER por selecao (linhas gravadas -> com prob publicada "
+          "-> com prob de mercado -> devig -> com desfecho) ──")
+    print(f"{'selecao':<30}{'linhas':>8}{'publ.':>8}{'mercado':>9}{'devig':>7}{'desf.':>7}")
+    for sel, n, pub, mkt, dv, out in _COBERTURA_LEDGER:
+        print(f"{str(sel)[:29]:<30}{n:>8}{pub:>8}{mkt:>9}{dv:>7}{out:>7}")
+    print()
 
 
 def main() -> int:
@@ -399,6 +490,7 @@ def main() -> int:
             return 1
         print(f"fonte: prediction_ledger ({args.campo} x prob_mercado), "
               f"{len(picks)} picks com desfecho desde {args.desde}\n")
+        _imprimir_cobertura()
     elif args.arquivo:
         with open(args.arquivo, encoding="utf-8") as f:
             picks = json.load(f)
@@ -453,6 +545,7 @@ def main() -> int:
     bm = _brier(picks, "prob_modelo")
     bk = _brier(picks, "prob")
     print(f"piso (taxa-base) {piso:.4f} | modelo {bm:.4f} | mercado {bk:.4f}")
+    print(f"  {_nota_do_piso(picks)}")
     for nome, val in (("modelo", bm), ("mercado", bk)):
         ganho = _skill(val, piso)
         print(f"  {nome:8s} skill score vs piso: {ganho:+.2f}%"

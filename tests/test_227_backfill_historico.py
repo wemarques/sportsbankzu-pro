@@ -326,13 +326,18 @@ def test_piso_e_por_celula_liga_x_mercado():
     """Misturar ligas com taxas-base diferentes num piso so inventaria skill."""
     cmp = _comparador()
     picks = (
-        [{"league_id": "A", "market": "m", "outcome": 1}] * 9
-        + [{"league_id": "A", "market": "m", "outcome": 0}]
-        + [{"league_id": "B", "market": "m", "outcome": 0}] * 9
-        + [{"league_id": "B", "market": "m", "outcome": 1}]
+        [{"league_id": "A", "market": "m", "outcome": 1}] * 36
+        + [{"league_id": "A", "market": "m", "outcome": 0}] * 4
+        + [{"league_id": "B", "market": "m", "outcome": 0}] * 36
+        + [{"league_id": "B", "market": "m", "outcome": 1}] * 4
     )
-    # taxa 0.9 em A e 0.1 em B -> piso por celula = 0.09; piso global seria 0.25
+    # taxa 0.9 em A e 0.1 em B, n=40 cada -> piso por celula = 0.09; global seria 0.25
     assert cmp._piso(picks) == pytest.approx(0.09, abs=1e-9)
+
+    # #230-d: com n abaixo do minimo a celula fina nao vale — cai para o
+    # agregado, e o piso deixa de ser um otimo in-sample de 10 picks.
+    poucos = picks[:10] + picks[40:50]
+    assert cmp._piso(poucos) == pytest.approx(0.25, abs=1e-9)
 
 
 def test_skill_negativo_quando_pior_que_o_piso():
@@ -447,3 +452,37 @@ def test_teto_de_calibracao_e_o_piso_quando_nao_ha_sinal():
             assert skill_max > espera, skill_max
         else:
             assert skill_max < espera, skill_max
+
+
+# ── #230-d: o piso nao pode ser um otimo in-sample de celulas minusculas ──
+def test_piso_com_celulas_minusculas_cai_para_o_agregado():
+    """728 picks em ~30 celulas: taxa 0 ou 1 por celula, piso ~0, e o modelo
+    aparecia -272% abaixo. O piso com n minimo tem de ficar perto do Brier de
+    um previsor constante honesto (~0.25 para taxa ~50%), nao perto de zero."""
+    cmp = _comparador()
+    import random
+    rng = random.Random(230)
+    picks = []
+    for i in range(300):
+        picks.append({"league_id": f"liga{i % 25}", "market": f"m{i % 12}",
+                      "outcome": rng.randint(0, 1), "prob": 0.5, "prob_modelo": 0.5})
+    piso = cmp._piso(picks)
+    assert piso > 0.20, f"piso otimista demais: {piso:.4f}"
+    celulas = cmp._celula_de(picks)
+    assert all(c[0] == "*" for c in celulas.values()), "toda celula fina tem n<30 aqui"
+
+
+def test_piso_usa_a_celula_fina_quando_ha_n():
+    cmp = _comparador()
+    picks = ([{"league_id": "A", "market": "m", "outcome": 1}] * 40
+             + [{"league_id": "B", "market": "m", "outcome": 0}] * 40)
+    assert cmp._piso(picks) == pytest.approx(0.0, abs=1e-9)   # taxa 1.0 e 0.0, n=40 cada
+    assert all(c[0] in ("A", "B") for c in cmp._celula_de(picks).values())
+
+
+def test_por_liga_nao_quebra_com_skill_none():
+    """A saida real quebrou em `linhas.sort(key=lambda r: r[5])` com None."""
+    cmp = _comparador()
+    picks = [{"league_id": "A", "market": "m", "match_id": i, "outcome": 1,
+              "prob": 1.0, "prob_modelo": 1.0} for i in range(40)]   # piso 0 -> skill None
+    cmp._por_liga(picks, reamostras=20)                                # nao pode levantar

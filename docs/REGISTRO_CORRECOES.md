@@ -11599,3 +11599,41 @@ Se (1) valer e (2) **não** valer — a publicada tem teto acima de 0,25% — o 
 
 ### Lição aprendida
 A decisão "ancorar no mercado" parece uma troca de fonte; é uma troca de **promessa**. O EV contra o mesmo mercado some, e o que sobra de valor tem que vir de onde há assimetria real — entre casas, no tempo. Registrar isso antes do código evita descobrir depois que o produto ficou sem o número que o definia.
+
+---
+
+## 230-d — Prova de vida do ledger: 728 picks reais — e dois defeitos do instrumento na primeira leitura
+**Data:** 2026-09-04 | **Arquivos:** scripts/comparar_com_mercado.py, tests/test_227_backfill_historico.py | **Severidade:** Alta (instrumento imprimiu −272% e depois caiu) | **Status:** Corrigido
+
+### Prova de vida
+`comparar_com_mercado.py --ledger --desde 2026-09-03` devolveu **728 picks com desfecho**. Isso prova, sem CloudWatch, que as três pontas do #228/#230 funcionam em produção: o ledger grava (`[#218]`), o batch audit pontua por seleção (`[#228]`), e a âncora de mercado está sendo gravada ao lado da publicada (`prob_mercado IS NOT NULL` no filtro).
+
+### O primeiro número de produção — lido com o cuidado que o n exige
+```
+TODAS   n=728   modelo 0.1958   mercado 0.2017   dif -0.0059  IC95 [-0.0221, +0.0081]   empate
+log-loss        modelo 0.5773   mercado 0.5949   dif -0.0176  IC95 [-0.0583, +0.0190]   empate
+```
+
+Cerca de 90 jogos. O IC da diferença (±0,015) **cobre a diferença da reconstrução** (+0,0145 a favor do mercado) e cobre zero. Inconclusivo, como a regra #230 previa ao exigir 300 jogos. O ponto favorece levemente a publicada — e há um motivo estrutural para isso ser plausível mesmo que o modelo não tenha sinal: `calibrated_prob` é a probabilidade **deflacionada** (#106), e o #229-b mostrou que a deflação caminha para o encolhimento ótimo. A reconstrução comparava a probabilidade **crua**. Nada disso é conclusão; é a leitura que o n permite.
+
+### Os dois defeitos
+**1. O piso imprimiu 0,0525 e "modelo −272% abaixo".** A taxa-base "desta amostra" é um ótimo in-sample, e o otimismo cresce com (células / n). Com 728 picks em ~30 seleções × ligas, a maioria das células tinha de 1 a 5 picks: taxa 0 ou 1, Brier do piso ≈ 0, e qualquer previsor real fica "centenas de por cento abaixo". Um número sobre o instrumento com cara de número sobre o modelo — a mesma família do #226-b e do #229-a. Correção: célula com n < 30 cai para o mercado agregado entre ligas (Over 2.5 tem taxa parecida em toda liga), e se ainda faltar n, para o total. A mesma regra vale para a decomposição, senão o teto de calibração herdaria o mesmo otimismo. O script imprime quantos picks ficaram em cada nível.
+
+**2. Vereditos por célula com n = 4 e 7** ("MERCADO melhor" em Corners Under 10.5, n=4) e a tabela por liga caindo com `TypeError` quando o piso de uma liga dava zero. Abaixo de 30 picks a célula recebe "sem veredito"; liga sem n suficiente não entra; skill nula não vai para o sort.
+
+### O que a cobertura revelou, e ainda não explica
+A distribuição por seleção é estranha para um produto cujo carro-chefe é Over 2.5:
+
+```
+Over 4.5   88     Over 1.5   87     1X2 Draw   79     Corners Over 11.5   79
+BTTS Yes   76     ...        ...    1X2 Home   21     1X2 Away            17
+Over 2.5    5
+```
+
+Draw aparece quatro vezes mais que Home; Over 2.5 aparece cinco vezes. Duas hipóteses, e o instrumento passa a distinguir: (a) o pipeline **publica** assim — `_filter_1x2_dc_redundancy` troca Home/Away por DC quando a prob é baixa, e o corredor do #187 derruba Over 2.5 com frequência (apareceu nos logs do #223); nesse caso o ledger está certo e a cobertura é a do produto; (b) as linhas existem e **somem num filtro** — `calibrated_prob` nula, `prob_mercado` nula, ou o JOIN. A tabela **COBERTURA DO LEDGER** imprime, por seleção, linhas gravadas → com prob publicada → com prob de mercado → devig → com desfecho. Onde o número cai é onde está a resposta.
+
+### Testes
+3 novos, 1 ajustado (o teste do #227-d usava células de 10 picks, que agora caem no agregado de propósito). Suíte: **926 passed, 1 skipped**.
+
+### Lição aprendida
+A primeira leitura de qualquer instrumento em dado novo é uma leitura **do instrumento**. O −272% não era sobre o modelo, e teria virado manchete se alguém o levasse a sério. Piso in-sample precisa de n mínimo por célula, e veredito precisa de n mínimo por célula, pela mesma razão: com 4 observações, tudo é significativo.
