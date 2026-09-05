@@ -77,6 +77,31 @@ def mesclar(atual: Dict[str, str], sets: List[str], unsets: List[str]) -> Dict[s
     return novo
 
 
+def gravar_no_env(caminho: str, chave: str, valor: str) -> str:
+    """Cria ou atualiza `chave=valor` no .env. UTF-8 SEM BOM.
+
+    O PowerShell 5.1 grava `-Encoding utf8` COM BOM, e o python-dotenv leria
+    a primeira chave como "\ufeffDATABASE_URL" — a variavel existiria no
+    arquivo e nao existiria para o programa. Por isso o Python grava.
+    """
+    linhas: List[str] = []
+    if os.path.exists(caminho):
+        with open(caminho, "r", encoding="utf-8-sig") as f:
+            linhas = f.read().splitlines()
+    nova = f"{chave}={valor}"
+    acao = "adicionado"
+    for i, linha in enumerate(linhas):
+        if linha.split("=", 1)[0].strip() == chave:
+            linhas[i] = nova
+            acao = "atualizado"
+            break
+    else:
+        linhas.append(nova)
+    with open(caminho, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(linhas) + "\n")
+    return acao
+
+
 def gravar(variaveis: Dict[str, str]) -> None:
     # file:// evita o parser de Variables={...}, que quebra com virgula e igual
     # dentro de valor (DATABASE_URL tem os dois).
@@ -101,10 +126,30 @@ def main() -> int:
                          "gitignored; nao cole a saida em chat nem em commit.")
     ap.add_argument("--set", action="append", default=[], metavar="K=V")
     ap.add_argument("--unset", action="append", default=[], metavar="K")
+    ap.add_argument("--to-env", metavar="K",
+                    help="#230-c: copia a variavel da Lambda para o .env local "
+                         "(cria ou atualiza a linha K=valor). Evita editar o "
+                         "arquivo a mao e evita colar o valor no terminal, onde "
+                         "o PowerShell tenta executa-lo.")
+    ap.add_argument("--env-file", default=None,
+                    help="caminho do .env (padrao: raiz do repositorio)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     atual = ler()
+    if args.to_env:
+        nome = args.to_env.split("=", 1)[0].strip()
+        achado = next((k for k in atual if k.lower() == nome.lower()), None)
+        if achado is None:
+            print(f"'{nome}' nao esta entre as {len(atual)} variaveis da Lambda",
+                  file=sys.stderr)
+            return 1
+        destino = args.env_file or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+        acao = gravar_no_env(destino, achado, atual[achado])
+        print(f"{acao}: {achado} = {_mascarar(achado, atual[achado])} -> {destino}")
+        print("o .env esta no .gitignore; nao entra em commit")
+        return 0
     if args.get:
         # #230-b: `--get` recebe so o NOME. Quem passa `NOME=valor` ou o nome em
         # minusculas recebia "nao existe na Lambda", que parece um problema da
