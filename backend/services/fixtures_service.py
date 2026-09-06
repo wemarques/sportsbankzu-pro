@@ -1406,6 +1406,17 @@ def build_records_from_matches(
         odds_corners_o95 = r.get("odds_corners_over_95", None)
         odds_corners_o105 = r.get("odds_corners_over_105", None)
         odds_corners_o115 = r.get("odds_corners_over_115", None)
+        # #230-g - a FootyStats manda a escada INTEIRA de escanteios (over e
+        # under de 7.5 a 11.5, 99% de 605 finalizadas, medido no #226-c) e o
+        # record so publicava quatro overs. Sem o under nao ha par, sem par nao
+        # ha de-vig, e a ancora de escanteios (#230) ficava em 8 de 357 linhas.
+        # O par estava no payload o tempo todo; era o mapper que o jogava fora.
+        odds_corners_o75 = r.get("odds_corners_over_75", None)
+        odds_corners_u75 = r.get("odds_corners_under_75", None)
+        odds_corners_u85 = r.get("odds_corners_under_85", None)
+        odds_corners_u95 = r.get("odds_corners_under_95", None)
+        odds_corners_u105 = r.get("odds_corners_under_105", None)
+        odds_corners_u115 = r.get("odds_corners_under_115", None)
         try:
             corners_potential = float(corners_potential) if corners_potential is not None and float(corners_potential) > 0 else None
             corners_o85_pct = float(corners_o85_pct) if corners_o85_pct is not None and float(corners_o85_pct) > 0 else None
@@ -1876,6 +1887,15 @@ def build_records_from_matches(
                 "cornersOver95": float(odds_corners_o95) if odds_corners_o95 else None,
                 "cornersOver105": float(odds_corners_o105) if odds_corners_o105 else None,
                 "cornersOver115": float(odds_corners_o115) if odds_corners_o115 else None,
+                # #230-g: unders e a linha 7.5 — nomes iguais aos que o
+                # enriquecimento #120 usa (routes/fixtures.py), entao o par
+                # fecha por qualquer uma das duas fontes.
+                "cornersOver75": float(odds_corners_o75) if odds_corners_o75 else None,
+                "cornersUnder75": float(odds_corners_u75) if odds_corners_u75 else None,
+                "cornersUnder85": float(odds_corners_u85) if odds_corners_u85 else None,
+                "cornersUnder95": float(odds_corners_u95) if odds_corners_u95 else None,
+                "cornersUnder105": float(odds_corners_u105) if odds_corners_u105 else None,
+                "cornersUnder115": float(odds_corners_u115) if odds_corners_u115 else None,
             },
             "stats": {
                 "homeWinProb": round(homeProb, 1),

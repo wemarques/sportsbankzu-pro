@@ -60,6 +60,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--liga", default="championship")
     ap.add_argument("--temporadas", type=int, default=2)
+    ap.add_argument("--contem", default="corner",
+                    help="#230-g: substring do nome da chave a varrer (padrao "
+                         "'corner'; use 'odds_' para ver toda odd que a "
+                         "FootyStats manda, e saber quais unders existem)")
     ap.add_argument("--verboso", action="store_true")
     args = ap.parse_args()
 
@@ -87,9 +91,9 @@ def main() -> int:
         return 1
 
     # Nomes DESCOBERTOS, nao presumidos.
-    nomes = sorted({c for p in finalizadas for c in p if "corner" in c.lower()})
+    nomes = sorted({c for p in finalizadas for c in p if args.contem.lower() in c.lower()})
     if not nomes:
-        print("nenhuma chave com 'corner' no nome — o endpoint nao traz escanteio")
+        print(f"nenhuma chave com '{args.contem}' no nome")
         return 1
 
     # #226-b: "preenchida" e "nao-zero" sao perguntas diferentes. Numa CONTAGEM,

@@ -11715,3 +11715,25 @@ As janelas são aninhadas e quase idênticas: as linhas de 1X2/DC em `devig3` s�
 
 ### Lição aprendida
 Duas armadilhas na mesma tabela, com sinais opostos: uma célula "idêntica" que era circularidade e uma célula "significativa" que era multiplicidade. As duas teriam virado frase — "o modelo empata com o mercado no 1X2", "o modelo bate o mercado no Over 2.5" — e as duas estariam erradas. O #220 já tinha os dois avisos por escrito; o instrumento é que ainda não os aplicava sozinho.
+
+---
+
+## 230-g — O par de escanteios estava no payload; o mapper jogava fora
+**Data:** 2026-09-05 | **Arquivos:** backend/services/fixtures_service.py, scripts/diagnostico_chaves_escanteios.py, tests/test_230g_par_escanteios.py (novo) | **Severidade:** Média (âncora de escanteios em 8 de 357 linhas por um mapper incompleto) | **Status:** Corrigido
+
+### O erro, e de quem
+No #230-f escrevi que a âncora de escanteios precisaria de *"par de outra fonte"*. Errado, e por falta de conferir o código: a FootyStats manda a escada inteira, over **e** under de 7.5 a 11.5, em 99% de 605 finalizadas — medido no #226-c, no meu próprio diagnóstico. O record (`fixtures_service`) lia só quatro overs (`odds_corners_over_85..115`) e publicava só `cornersOver85..115`. Os unders chegavam na linha crua e morriam no mapper. É a mesma forma do #226-b: o dado existe, o nome no nosso código é que não o alcança.
+
+### Correção
+O record passa a publicar `cornersOver75` e `cornersUnder75..115`, com os mesmos nomes que o enriquecimento #120 usa, então o par fecha por qualquer uma das duas fontes. `par_de_odds` já esperava esses nomes; nada mudou na âncora. Teste monta um record de verdade (caminho do contrato #223) a partir de uma linha com a escada inteira e verifica que `Corners Over 9.5` sai `devig` com `odd_par` = 1,95 e que over + under de-vigados somam 1. Manifesto #210 continua fechando (os campos são da linha de partida, não do mapper de stats).
+
+Efeito esperado na próxima cobertura do ledger: escanteios de 7.5 a 11.5 saem de ~8 para centenas de pares de-vigados, e a família entra na comparação de produção.
+
+### Uma pergunta que fica aberta com um comando, não com uma suposição
+Não sei quais unders de **gols** a FootyStats manda — o record lê `odds_ft_under25`; `under15`, `under35`, `under45` só existem hoje via enriquecimento (24% do Under 1.5). O diagnóstico ganhou `--contem`: `--contem odds_` lista toda odd da linha de partida. Se `odds_ft_under15/35/45` existirem, é o mesmo mapeamento de uma linha por chave.
+
+### Testes
+3 novos. Suíte: **934 passed, 1 skipped**.
+
+### Lição aprendida
+Escrevi "outra fonte" sem abrir o mapper, depois de ter medido eu mesmo que a fonte atual tinha o dado. Rastreabilidade origem → destino (SDD, etapa 1) vale também para sugestões: antes de propor buscar fora, conferir o que já entra e onde é jogado fora.
