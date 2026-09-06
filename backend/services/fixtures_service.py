@@ -14,6 +14,7 @@ from backend.services.math_service import implied_probs, poisson_pmf, poisson_cd
 from backend.modeling.xg_filter import aplicar_filtro_completo
 from backend.modeling.chaos_detector import detectar_caos_jogo
 from backend.services.market_service import selecionar_mercados_v2
+from backend.utils.valores import primeiro_valido  # #230-h
 
 logger = logging.getLogger("sportsbankzu")
 
@@ -710,11 +711,31 @@ def build_records_from_matches(
             if has_ht and period == "1T":
                 period = "2T"
 
-        odds_home = r.get("odds_home_win", r.get("odds_ft_home_team_win", None))
-        odds_draw = r.get("odds_draw", r.get("odds_ft_draw", None))
-        odds_away = r.get("odds_away_win", r.get("odds_ft_away_team_win", None))
-        odds_over25 = r.get("odds_over_25", r.get("odds_ft_over25", None))
-        odds_under25 = r.get("odds_ft_under25", r.get("odds_under_25", r.get("odds_under25", None)))
+        # #230-h - os nomes REAIS da FootyStats para 1X2 sao odds_ft_1 / odds_ft_x /
+        # odds_ft_2 (99% de 617 finalizadas, medido com --contem odds_).
+        # `odds_ft_home_team_win` nao existe: foi o nome que o #225-a mediu em
+        # "0%" e do qual se concluiu que a odd historica de 1X2 nao vinha. Vinha.
+        # Os nomes antigos ficam como queda para outras fontes.
+        odds_home = primeiro_valido(r.get("odds_ft_1"), r.get("odds_home_win"),
+                                    r.get("odds_ft_home_team_win"))
+        odds_draw = primeiro_valido(r.get("odds_ft_x"), r.get("odds_draw"), r.get("odds_ft_draw"))
+        odds_away = primeiro_valido(r.get("odds_ft_2"), r.get("odds_away_win"),
+                                    r.get("odds_ft_away_team_win"))
+        odds_over25 = primeiro_valido(r.get("odds_ft_over25"), r.get("odds_over_25"))
+        odds_under25 = primeiro_valido(r.get("odds_ft_under25"), r.get("odds_under_25"),
+                                       r.get("odds_under25"))
+        # #230-h - a escada inteira de gols vem da FootyStats (over e under de
+        # 0.5 a 4.5, 99%); o record publicava quatro overs e UM under. Sem o
+        # under nao ha par nem de-vig; Under 1.5 tinha ancora em 24% (so via
+        # enriquecimento). Dupla Chance idem: a FootyStats manda as tres.
+        odds_over05 = r.get("odds_ft_over05", None)
+        odds_under05 = r.get("odds_ft_under05", None)
+        odds_under15 = r.get("odds_ft_under15", None)
+        odds_under35 = r.get("odds_ft_under35", None)
+        odds_under45 = r.get("odds_ft_under45", None)
+        odds_dc_1x = r.get("odds_doublechance_1x", None)
+        odds_dc_12 = r.get("odds_doublechance_12", None)
+        odds_dc_x2 = r.get("odds_doublechance_x2", None)
         odds_btts_yes = r.get("odds_btts_yes", None)
         odds_btts_no = r.get("odds_btts_no", None)
         homeProb, drawProb, awayProb = implied_probs(odds_home, odds_draw, odds_away)
@@ -1881,6 +1902,15 @@ def build_records_from_matches(
                 "over35": float(odds_over35) if odds_over35 else None,
                 "over45": float(odds_over45) if odds_over45 else None,
                 "under25": float(odds_under25) if odds_under25 else None,
+                # #230-h: nomes iguais aos do enriquecimento #120 (routes/fixtures.py)
+                "over05": float(odds_over05) if odds_over05 else None,
+                "under05": float(odds_under05) if odds_under05 else None,
+                "under15": float(odds_under15) if odds_under15 else None,
+                "under35": float(odds_under35) if odds_under35 else None,
+                "under45": float(odds_under45) if odds_under45 else None,
+                "dc_1x": float(odds_dc_1x) if odds_dc_1x else None,
+                "dc_12": float(odds_dc_12) if odds_dc_12 else None,
+                "dc_x2": float(odds_dc_x2) if odds_dc_x2 else None,
                 "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
                 "bttsNo": float(odds_btts_no) if odds_btts_no else None,
                 "cornersOver85": float(odds_corners_o85) if odds_corners_o85 else None,

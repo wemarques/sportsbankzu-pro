@@ -50,7 +50,9 @@ MIN_JOGOS_PREVIOS = 5
 # Linhas de gols com odd historica na linha de partida. As demais entram so com
 # probabilidade — o #225-a mediu que a FootyStats publica over25/over35, nao a
 # escada inteira.
-_ODD_GOLS = {2.5: "odds_ft_over25", 3.5: "odds_ft_over35"}
+# #230-h: medido com --contem odds_ — over e under de 0.5 a 4.5 em 99%.
+_ODD_GOLS = {0.5: "odds_ft_over05", 1.5: "odds_ft_over15", 2.5: "odds_ft_over25",
+             3.5: "odds_ft_over35", 4.5: "odds_ft_over45"}
 _LINHAS_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5]
 _LINHAS_ESCANTEIOS = [7.5, 8.5, 9.5, 10.5, 11.5]
 _LINHAS_CARTOES = [2.5, 3.5, 4.5, 5.5]
@@ -66,8 +68,11 @@ _LINHAS_CARTOES = [2.5, 3.5, 4.5, 5.5]
 # Par over/under quando existe: de-vig de verdade (#219). So a perna over:
 # `1/odd`, que carrega a margem e e marcada como tal.
 _PAR_ODD = {
+    "odds_ft_over05": "odds_ft_under05",   # #230-h: a escada inteira existe (99%)
+    "odds_ft_over15": "odds_ft_under15",
     "odds_ft_over25": "odds_ft_under25",
     "odds_ft_over35": "odds_ft_under35",
+    "odds_ft_over45": "odds_ft_under45",
     "odds_btts_yes": "odds_btts_no",
     "odds_corners_over_75": "odds_corners_under_75",
     "odds_corners_over_85": "odds_corners_under_85",

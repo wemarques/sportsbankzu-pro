@@ -117,8 +117,12 @@ def historico_odds(
         if str(j.get("status", "")).lower() in ("complete", "finished", "ft")
     ]
 
+    # #230-h: 1X2 e odds_ft_1 / odds_ft_x / odds_ft_2 na FootyStats. Os nomes
+    # antigos (odds_ft_home_team_win...) NAO existem — foi por eles que esta
+    # rota mediu "1X2 em 0%" e o #227 tirou o 1X2 do backfill por falta de
+    # odd historica. A odd existia; o nome era nosso.
     _CAMPOS_ODDS = [
-        "odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win",
+        "odds_ft_1", "odds_ft_x", "odds_ft_2",
         "odds_ft_over25", "odds_ft_over35", "odds_btts_yes",
         "odds_corners_over_85", "odds_corners_over_95",
     ]
@@ -182,7 +186,7 @@ def historico_odds(
     # do #225 para o lado errado — a mesma falacia de amostra pequena que a rota
     # existia para evitar, num eixo diferente: um campo mentindo sobre oito.
     _FAMILIAS = {
-        "1X2": ["odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win"],
+        "1X2": ["odds_ft_1", "odds_ft_x", "odds_ft_2"],   # #230-h
         "gols_ou": ["odds_ft_over25", "odds_ft_over35"],
         "btts": ["odds_btts_yes"],
         "escanteios": ["odds_corners_over_85", "odds_corners_over_95"],

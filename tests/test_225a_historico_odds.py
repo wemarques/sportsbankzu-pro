@@ -31,7 +31,7 @@ def _jogo(status="complete", odd=None, **extra):
         # escreveu o consumidor sempre contem as chaves que o consumidor espera.
         "totalCornerCount": 10, "team_a_corners": 6, "team_b_corners": 4,
     }
-    for c in ("odds_ft_home_team_win", "odds_ft_draw", "odds_ft_away_team_win",
+    for c in ("odds_ft_1", "odds_ft_x", "odds_ft_2",      # #230-h: nomes reais
               "odds_ft_over25", "odds_btts_yes"):
         j[c] = odd
     j.update(extra)
@@ -72,14 +72,14 @@ def test_liga_desconhecida(_sem_chave):
 # ── o veredito ──────────────────────────────────────────────────────────
 def test_odds_preenchidas(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=2.10) for _ in range(10)])
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 100.0
+    assert r["cobertura_odds"]["odds_ft_1"]["pct"] == 100.0
     assert r["por_familia"]["1X2"]["backfill"] == "prob + EV"
     assert "1X2" in r["veredito"]
 
 
 def test_odds_ausentes(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=None) for _ in range(10)])
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 0.0
+    assert r["cobertura_odds"]["odds_ft_1"]["pct"] == 0.0
     assert r["por_familia"]["1X2"]["backfill"] == "so prob (sem odd)"
 
 
@@ -122,12 +122,12 @@ def test_desfecho_zero_conta_como_presente(_sem_chave, monkeypatch):
 def test_zero_e_ausente_nao_preenchido(_sem_chave, monkeypatch):
     """Odd 0 ou 1.0 nao e preco — e campo vazio com outro disfarce."""
     r = _rodar(monkeypatch, [_jogo(odd=0) for _ in range(5)] + [_jogo(odd=1.0) for _ in range(5)])
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["preenchidos"] == 0
+    assert r["cobertura_odds"]["odds_ft_1"]["preenchidos"] == 0
 
 
 def test_cobertura_parcial_nao_vira_veredito_positivo(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [_jogo(odd=2.1) for _ in range(3)] + [_jogo(odd=None) for _ in range(7)])
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 30.0
+    assert r["cobertura_odds"]["odds_ft_1"]["pct"] == 30.0
     assert r["por_familia"]["1X2"]["backfill"] == "so prob (sem odd)"
 
 
@@ -146,8 +146,8 @@ def test_jogo_futuro_nao_conta_na_cobertura(_sem_chave, monkeypatch):
              + [_jogo(status="complete", odd=None)])
     r = _rodar(monkeypatch, jogos)
     assert r["finalizados"] == 1
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["total"] == 1
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["preenchidos"] == 0
+    assert r["cobertura_odds"]["odds_ft_1"]["total"] == 1
+    assert r["cobertura_odds"]["odds_ft_1"]["preenchidos"] == 0
 
 
 # ── amostra ─────────────────────────────────────────────────────────────
@@ -181,14 +181,14 @@ def test_chaves_relevantes_vem_antes_do_corte(_sem_chave, monkeypatch):
         j[f"odds_1st_half_x{i:02d}"] = 1.5
     r = _rodar(monkeypatch, [j])
     presentes = r["amostra"][0]["chaves_odds_presentes"]
-    assert "odds_ft_home_team_win" in presentes
+    assert "odds_ft_1" in presentes
     assert "odds_btts_yes" in presentes
 
 
 def test_temporada_sem_jogos_nao_divide_por_zero(_sem_chave, monkeypatch):
     r = _rodar(monkeypatch, [])
     assert r["finalizados"] == 0
-    assert r["cobertura_odds"]["odds_ft_home_team_win"]["pct"] == 0.0
+    assert r["cobertura_odds"]["odds_ft_1"]["pct"] == 0.0
 
 
 # ── #226-b: o nome que nunca existiu ────────────────────────────────────

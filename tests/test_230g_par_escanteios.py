@@ -68,3 +68,38 @@ def test_sem_under_no_payload_continua_implicita_nao_inventa():
     odds = _record(so_over)["odds"]
     assert odds.get("cornersUnder95") is None
     assert L.prob_mercado_do_pick("Corners", "Corners Over 9.5", odds)["mercado_metodo"] == "implicita"
+
+
+# ── #230-h: gols, 1X2 e DC com os nomes reais da FootyStats ─────────────
+_GOLS_1X2_DC = {
+    "odds_ft_1": 1.95, "odds_ft_x": 3.60, "odds_ft_2": 3.70,
+    "odds_ft_over05": 1.03, "odds_ft_under05": 9.50,
+    "odds_ft_over15": 1.22, "odds_ft_under15": 3.54,
+    "odds_ft_over25": 1.80, "odds_ft_under25": 1.90,
+    "odds_ft_over35": 2.99, "odds_ft_under35": 1.30,
+    "odds_ft_over45": 5.85, "odds_ft_under45": 1.10,
+    "odds_doublechance_1x": 1.25, "odds_doublechance_12": 1.28, "odds_doublechance_x2": 1.83,
+}
+
+
+def test_record_publica_1x2_pelos_nomes_reais():
+    """odds_ft_home_team_win nao existe; a rota #225-a mediu 0% por isso."""
+    odds = _record(_GOLS_1X2_DC)["odds"]
+    assert (odds["home"], odds["draw"], odds["away"]) == (1.95, 3.60, 3.70)
+
+
+def test_record_publica_a_escada_inteira_de_gols_e_a_dc():
+    odds = _record(_GOLS_1X2_DC)["odds"]
+    for k, v in (("over05", 1.03), ("under05", 9.50), ("under15", 3.54),
+                 ("under35", 1.30), ("under45", 1.10),
+                 ("dc_1x", 1.25), ("dc_12", 1.28), ("dc_x2", 1.83)):
+        assert odds.get(k) == v, k
+
+
+def test_com_os_pares_toda_linha_de_gols_vira_devig_e_1x2_vira_devig3():
+    odds = _record(_GOLS_1X2_DC)["odds"]
+    for linha in ("0.5", "1.5", "2.5", "3.5", "4.5"):
+        r = L.prob_mercado_do_pick("Over/Under", f"Under {linha}", odds)
+        assert r["mercado_metodo"] == "devig", linha
+    assert L.prob_mercado_do_pick("1X2", "Draw", odds)["mercado_metodo"] == "devig3"
+    assert L.prob_mercado_do_pick("Double Chance", "DC X2", odds)["mercado_metodo"] == "devig3"

@@ -11737,3 +11737,37 @@ Não sei quais unders de **gols** a FootyStats manda — o record lê `odds_ft_u
 
 ### Lição aprendida
 Escrevi "outra fonte" sem abrir o mapper, depois de ter medido eu mesmo que a fonte atual tinha o dado. Rastreabilidade origem → destino (SDD, etapa 1) vale também para sugestões: antes de propor buscar fora, conferir o que já entra e onde é jogado fora.
+
+---
+
+## 230-h — A FootyStats manda tudo: unders de gols, Dupla Chance e o 1X2 que o #225-a mediu em "0%"
+**Data:** 2026-09-05 | **Arquivos:** backend/services/fixtures_service.py, backend/routes/debug.py, backend/services/backfill_historico.py, tests/test_230g_par_escanteios.py, tests/test_225a_historico_odds.py | **Severidade:** Alta (três famílias com âncora incompleta por nome errado, e uma medição de 0% que era falsa) | **Status:** Corrigido
+
+### O que foi medido (`--contem odds_`, championship, 617 finalizadas)
+Toda odd que a linha de partida da FootyStats carrega, com preenchimento. O que importa para o produto:
+
+```
+odds_ft_1 / odds_ft_x / odds_ft_2 ............... 99%   (1X2)
+odds_ft_over05..over45 e under05..under45 ......... 99%   (escada inteira de gols)
+odds_doublechance_1x / x2 ........................ 99%,  12 em 53%
+odds_btts_yes / no ............................... 99%
+odds_corners_over/under_75..115 .................. 99%
+odds_cards_* .................................... NAO EXISTE
+odds_corners 4.5 / 5.5 / 6.5 / 12.5 ............. NAO EXISTE
+```
+
+### Três nomes errados no record, um deles com história
+1. **1X2.** O record lia `odds_ft_home_team_win`, `odds_ft_draw`, `odds_ft_away_team_win`. Nenhum existe: os nomes são `odds_ft_1`, `odds_ft_x`, `odds_ft_2`. Foi com os nomes errados que a rota do #225-a mediu **"1X2 em 0%"**, e foi dessa medição que o #227 tirou o 1X2 do backfill *"por falta de odd histórica"*. A odd existia em 99% dos jogos; o nome era nosso. Mesma família do #226-b, agora numa medição que virou decisão de escopo. O 1X2 continua fora da comparação modelo × mercado por outro motivo, que está certo: em produção a probabilidade de 1X2 vem da odd (#230-f). Mas a odd histórica de 1X2 existe, e a rota do #225-a passa a medi-la pelo nome certo.
+2. **Unders de gols.** A FootyStats manda under de 0.5 a 4.5; o record publicava só `under25`. Under 1.5 tinha âncora em 24% dos picks porque dependia do enriquecimento. Publicados `over05`, `under05`, `under15`, `under35`, `under45`, com os nomes que o #120 já usa.
+3. **Dupla Chance.** As três odds vêm da FootyStats; o record não publicava nenhuma. Publicadas `dc_1x`, `dc_12`, `dc_x2`. A âncora de DC já sai do de-vig de três pernas do 1X2 (#230-e); a odd oferecida entra para o passo 4 (valor contra preço justo).
+
+O backfill (`_ODD_GOLS`, `_PAR_ODD`) passa a cobrir as cinco linhas de gols com par, não só 2.5 e 3.5.
+
+### O que NÃO existe na FootyStats, e portanto é fato de dado
+Cartões, em qualquer linha. Escanteios 4.5, 5.5, 6.5 e 12.5. Para essas seleções o único preço possível é o do enriquecimento API-Football, que só cota cartões a partir de 3.5 e escanteios raramente fora de 7.5–11.5. "Mercado sem preço" (#230-f) fica confirmado por inventário, não por suspeita: Cartões Over 1.5 e 2.5 e Escanteios 4.5 são publicados em volume e não têm referência em nenhuma das duas fontes.
+
+### Testes
+3 novos; o fixture do #225-a passou a usar os nomes reais (era mais um teste que fabricava a chave que o código esperava — regra #222 ponto 6). Manifesto #210 fecha. Suíte: **937 passed, 1 skipped**.
+
+### Lição aprendida
+Um inventário de 70 linhas, uma rodada, fechou três lacunas e desfez uma medição falsa que já tinha virado decisão. O #225-a não errou a conta: errou o nome, e uma rota que conta chaves pelo nome que o código espera só pode confirmar o que o código já supõe. A varredura por *conteúdo* do nome (`--contem`) é o instrumento certo porque não sabe o que procurar.
