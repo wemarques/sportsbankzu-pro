@@ -84,6 +84,21 @@ class MarketOutput(BaseModel):
         None, description="#216: 'inteira' | 'meia' | 'meia-btts' | 'nenhuma'"
     )
 
+    # #231 - fonte da probabilidade publicada (flag PROB_SOURCE, #230 passo 4).
+    # Com a flag desligada os dois ficam None e o payload e byte a byte o de
+    # antes. Com `PROB_SOURCE=mercado`, `calibrated_probability` passa a ser a
+    # ancora (mercado de-vigado ou taxa-base) e o valor do modelo e preservado
+    # em `model_probability` — e ESSE que o ledger continua gravando em
+    # `calibrated_prob`, senao a medicao publicada x mercado deixaria de
+    # existir no instante em que a troca fosse ligada.
+    #   prob_source: 'mercado' | 'taxa_base' | 'modelo_sem_referencia'
+    model_probability: Optional[float] = Field(
+        None, description="#231: probabilidade do modelo quando a publicada vem de outra fonte"
+    )
+    prob_source: Optional[str] = Field(
+        None, description="#231: fonte da probabilidade publicada (None = modelo, flag desligada)"
+    )
+
     # Display helpers
     display_label: str = ""
     prob_min_pct: int = 0
@@ -148,6 +163,13 @@ class MarketOutput(BaseModel):
             "iso_probability": round(self.iso_probability, 4) if self.iso_probability else None,
             "banda": self.deflation_band_type,
         }
+        # #231: so aparece quando a fonte foi trocada — flag desligada = payload
+        # identico ao anterior (teste test_231_prob_source.py garante).
+        if self.prob_source is not None:
+            result["prob_source"] = self.prob_source
+            result["model_probability"] = (
+                round(self.model_probability, 4) if self.model_probability is not None else None
+            )
         # Add corner governance metadata if available
         if self.corner_governance:
             result["corner_governance"] = self.corner_governance

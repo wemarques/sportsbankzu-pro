@@ -54,8 +54,12 @@ MIN_JOGOS_PREVIOS = 5
 _ODD_GOLS = {0.5: "odds_ft_over05", 1.5: "odds_ft_over15", 2.5: "odds_ft_over25",
              3.5: "odds_ft_over35", 4.5: "odds_ft_over45"}
 _LINHAS_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5]
-_LINHAS_ESCANTEIOS = [7.5, 8.5, 9.5, 10.5, 11.5]
-_LINHAS_CARTOES = [2.5, 3.5, 4.5, 5.5]
+# #231 - as linhas que a producao publica SEM preco em fonte nenhuma
+# (escanteios 4.5/5.5/6.5/12.5, cartoes 1.5; inventario #230-h) entram aqui
+# para que a taxa-base (scripts/gerar_taxas_base.py) exista exatamente onde
+# a ancora de mercado nao existe. Odd `None` nessas linhas e fato, nao lacuna.
+_LINHAS_ESCANTEIOS = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
+_LINHAS_CARTOES = [1.5, 2.5, 3.5, 4.5, 5.5]
 
 
 # #227-a - a probabilidade do MERCADO, para servir de referencia.

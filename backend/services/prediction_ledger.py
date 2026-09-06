@@ -103,7 +103,9 @@ CREATE TABLE IF NOT EXISTS prediction_ledger (
     mercado_metodo  TEXT,
     odd_par         DOUBLE PRECISION,
     margem_pp       DOUBLE PRECISION,
-    frescor         TEXT
+    frescor         TEXT,
+    published_prob  DOUBLE PRECISION,
+    prob_source     TEXT
 );
 """
 
@@ -117,6 +119,11 @@ _DDL_LEDGER_MIGRACAO = [
     "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS odd_par DOUBLE PRECISION",
     "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS margem_pp DOUBLE PRECISION",
     "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS frescor TEXT",
+    # #231 - o que foi PUBLICADO e de onde veio. `calibrated_prob` segue sendo
+    # o modelo mesmo com PROB_SOURCE=mercado; sem esta separacao, ligar a flag
+    # apagaria a medicao publicada x mercado que a autoriza.
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS published_prob DOUBLE PRECISION",
+    "ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS prob_source TEXT",
 ]
 
 # A unicidade e por CONTEUDO, nao por (jogo, mercado). Republicar o mesmo pick
@@ -210,6 +217,8 @@ def _hash(linha: Dict[str, Any]) -> str:
         # #230: a odd do par e a prob de mercado entram — preco que mexeu e
         # informacao nova, e o ledger guarda REVISOES, nao acessos.
         "odd_par", "prob_mercado",
+        # #231: trocar a fonte e uma revisao do prognostico.
+        "published_prob", "prob_source",
     )
     bruto = json.dumps(
         {k: linha.get(k) for k in campos}, sort_keys=True, default=str,
@@ -242,7 +251,11 @@ def montar_linha(
     odd_par: Optional[float] = None,
     margem_pp: Optional[float] = None,
     frescor: Optional[str] = None,
+    published_prob: Optional[float] = None,
+    prob_source: Optional[str] = None,
 ) -> Dict[str, Any]:
+    if published_prob is None:
+        published_prob = calibrated_prob
     linha = {
         "match_id": str(match_id),
         "league_id": league_id,
@@ -268,6 +281,8 @@ def montar_linha(
         "odd_par": odd_par,
         "margem_pp": margem_pp,
         "frescor": frescor,
+        "published_prob": published_prob,
+        "prob_source": prob_source or "modelo",
     }
     linha["payload_hash"] = _hash(linha)
     return linha
@@ -279,6 +294,7 @@ _COLUNAS = (
     "book_odd", "odd_source", "overround", "ev", "classification", "stake",
     "reason_codes", "governance", "inputs", "payload_hash",
     "prob_mercado", "mercado_metodo", "odd_par", "margem_pp", "frescor",
+    "published_prob", "prob_source",
 )
 
 
@@ -551,6 +567,14 @@ def registrar_desfechos_do_jogo(match_id: str, actual_result: Dict[str, Any]) ->
     return gravados
 
 
+def _prob_do_modelo(m) -> Optional[float]:
+    """#231 - a probabilidade do modelo, esteja a flag ligada ou nao."""
+    modelo = getattr(m, "model_probability", None)
+    if modelo is not None and getattr(m, "prob_source", None) is not None:
+        return modelo
+    return getattr(m, "calibrated_probability", None)
+
+
 def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
                      stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Traduz um MarketBundle ja classificado em linhas do ledger.
@@ -617,7 +641,13 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
             selection=getattr(m, "selection", None),
             raw_prob=getattr(m, "raw_probability", None),
             iso_prob=getattr(m, "iso_probability", None),
-            calibrated_prob=getattr(m, "calibrated_probability", None),
+            # #231: com PROB_SOURCE=mercado a `calibrated_probability` do
+            # MarketOutput e a ancora; o modelo esta em `model_probability`.
+            # O ledger grava o MODELO em calibrated_prob (a serie que o gate
+            # #230 mede) e a publicada em published_prob.
+            calibrated_prob=_prob_do_modelo(m),
+            published_prob=getattr(m, "calibrated_probability", None),
+            prob_source=getattr(m, "prob_source", None),
             band_type=getattr(m, "deflation_band_type", None),
             book_odd=getattr(m, "book_odd", None),
             ev=getattr(m, "ev", None),

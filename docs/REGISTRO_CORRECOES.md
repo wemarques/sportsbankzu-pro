@@ -11771,3 +11771,55 @@ Cartões, em qualquer linha. Escanteios 4.5, 5.5, 6.5 e 12.5. Para essas seleç�
 
 ### Lição aprendida
 Um inventário de 70 linhas, uma rodada, fechou três lacunas e desfez uma medição falsa que já tinha virado decisão. O #225-a não errou a conta: errou o nome, e uma rota que conta chaves pelo nome que o código espera só pode confirmar o que o código já supõe. A varredura por *conteúdo* do nome (`--contem`) é o instrumento certo porque não sabe o que procurar.
+
+---
+
+## 231 — Fonte da probabilidade publicada atrás de flag: `PROB_SOURCE=mercado` (passo 4 do #230, item 1)
+**Data:** 2026-09-06 | **Arquivos:** backend/services/ancora_mercado.py (novo), backend/models/market_output.py, backend/services/ev_classification.py, backend/services/prediction_ledger.py, backend/services/backfill_historico.py, scripts/gerar_taxas_base.py (novo), scripts/comparar_com_mercado.py, tests/test_231_prob_source.py (novo) | **Severidade:** Alta (troca da fonte da probabilidade publicada — desligada por padrão) | **Status:** Implementado, flag desligada
+
+### Objetivo
+Decisão de produto do #230: ancorar a probabilidade publicada no mercado de-vigado e usar o modelo como ajuste mínimo ou nenhum. Este é o **item 1** do passo 4: a troca existe no código, atrás de uma flag que nasce em `modelo`, e **não pode ser ligada** antes do gate do #230 (n ≥ 300 jogos no ledger, Brier do mercado < Brier da publicada com IC excluindo zero) e dos itens 2 (EV contra preço justo) e 3 (classificação em valor + confiança na âncora).
+
+### Rastreabilidade (origem → destino)
+- **Âncora:** `match_data["odds"]` do record (nomes reais do #230-g/h) → `prediction_ledger.prob_mercado_do_pick` → `devig`/`devig3` (#219, #230-e). `implicita` (1/odd de uma perna) **não** serve de âncora: carrega a margem inteira (5–7 pp, #230-e).
+- **Taxa-base:** `scripts/backfill_historico.py --todas` → `picks_historicos.json` → `scripts/gerar_taxas_base.py` → `backend/config/taxas_base.json` (célula `(liga, mercado, selecao)`, com n ≥ 30 e fallback para `*`, a mesma hierarquia do comparador #230-d) → `ancora_mercado.taxa_base`. O artefato é gerado com a chave da FootyStats e comitado; ausente ou ilegível, não há taxa-base e nada quebra.
+- **Consumidor:** `evaluate_match_markets` chama `aplicar_ancora(bundle, match_data, league_id)` **antes** do hook do ledger (#218). O frontend lê `calibrated_probability` (MatchDetailCard, DestaquesDoDia, dashboard) — é esse campo que a troca escreve; o modelo fica em `model_probability` e a fonte em `prob_source`, ambos no legado (`to_legacy_mercado`) **só quando a flag está ligada**.
+
+### O que a flag faz, por seleção
+| Situação | `calibrated_probability` | `prob_source` | EV |
+|---|---|---|---|
+| par de-vigado (`devig`/`devig3`) | prob de mercado | `mercado` | `None` (item 2) |
+| sem par, taxa-base na célula | taxa-base | `taxa_base` | `None` |
+| sem preço em fonte nenhuma e sem taxa-base | modelo (inalterada) | `modelo_sem_referencia` | EV do modelo |
+
+Classificação (#028/#042) **não** é tocada: item 3. Display (`fair_odd`, `prob_min/max`) é recomputado da probabilidade publicada.
+
+### O ledger não perde a medição
+Ligar a flag sem esta parte apagaria a série que autoriza a flag. Duas colunas novas (migração idempotente, como no #230): `published_prob` (o que foi publicado) e `prob_source`. `calibrated_prob` **continua sendo o modelo** (`_prob_do_modelo` lê `model_probability` quando a fonte foi trocada). `comparar_com_mercado.py --campo published_prob` mede o publicado; `--campo calibrated_prob` (padrão) segue medindo o modelo contra `prob_mercado`. A troca de fonte entra no hash: é uma revisão do prognóstico.
+
+### Backfill cobre as linhas sem preço
+A taxa-base só serve onde a âncora não existe, e o backfill não gerava exatamente essas linhas: escanteios 4.5/5.5/6.5/12.5 e cartões 1.5 (inventário #230-h). Entraram em `_LINHAS_ESCANTEIOS`/`_LINHAS_CARTOES` com odd `None` (fato, não lacuna). As tabelas por mercado das medições anteriores continuam comparáveis; o agregado do `--arquivo` passa a incluir mais picks sem odd.
+
+### Prova empírica (antes → depois, `evaluate_match_markets` com um match_data real, 20 seleções)
+```
+mercado / selecao          ANTES   DEPOIS  fonte                  ev_antes ev_depois
+1X2 Draw                  0.2340  0.2586  mercado                 -0.1576  None
+Over/Under Over 1.5       0.6466  0.7686  mercado                 -0.2111  None
+Over/Under Under 1.5      0.2748  0.2314  mercado                 -0.0272  None
+BTTS BTTS Yes             0.5364  0.5357  mercado                 -0.0612  None
+Double Chance DC 1X       0.5913  0.7488  mercado                 -0.2609  None
+Corners Over 4.5          0.7253  0.7253  modelo_sem_referencia   None     None
+Corners Over 9.5          0.5401  0.5261  mercado                 -0.0440  None
+Corners Under 11.5        0.5429  0.6645  mercado                 -0.2345  None
+Cards Over 1.5            0.6846  0.6846  modelo_sem_referencia   None     None
+flag desligada: legado sem prob_source, ledger published == calibrated .... True
+flag ligada:    ledger calibrated_prob == modelo em 20/20 ................. True
+```
+Sem artefato, 15 de 20 saem `mercado` e 5 `modelo_sem_referencia` (escanteios 4.5–6.5, cartões 1.5/2.5). Com artefato sintético (300 jogos), `gerar_taxas_base.py` produz 40 células e essas cinco caem para `taxa_base` (teste). Dois números do quadro merecem registro: Over 1.5 publicado a 0,647 contra 0,769 do mercado e DC 1X a 0,591 contra 0,749 — a deflação (#105/#229-b) está bem abaixo do mercado nas linhas altas; é o que o gate do #230 vai decidir, não este patch.
+
+### Testes
+11 novos: flag desligada = payload idêntico e ledger igual; valor inválido = `modelo`; troca só com par de-vigado; `implicita` não ancora; taxa-base hierárquica, com mínimo de n, ausente ou quebrada não derruba; ledger grava modelo em `calibrated_prob` e âncora em `published_prob`; ponta a ponta flag off × on com classificação preservada. Suíte: **948 passed, 1 skipped**.
+
+### Lição aprendida
+A troca mais simples do passo 4 — trocar um número — tinha um efeito colateral invisível: sem separar `published_prob` de `calibrated_prob`, o ledger passaria a comparar o mercado com ele mesmo no dia em que a flag ligasse, e o gate que autoriza a flag deixaria de existir. Toda troca de fonte precisa carregar a fonte antiga junto.
+

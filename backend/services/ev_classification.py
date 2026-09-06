@@ -1655,6 +1655,16 @@ def evaluate_match_markets(
     if early_season:
         bundle.reason_codes.append(ReasonCode.EARLY_SEASON_FALLBACK)
 
+    # ─── #231: fonte da probabilidade publicada (PROB_SOURCE, passo 4 do #230) ───
+    # Desligada por padrao: nada roda e o payload e o de sempre. Ligada, troca
+    # a publicada pela ancora de-vigada (ou taxa-base) e guarda o modelo em
+    # `model_probability` — que e o que o ledger abaixo continua medindo.
+    try:
+        from backend.services.ancora_mercado import aplicar_ancora
+        aplicar_ancora(bundle, match_data, league_id)
+    except Exception as _e:                                   # noqa: BLE001
+        logger.warning("[#231] ancora de mercado nao aplicada: %s", _e)
+
     # ─── #218: ledger imutavel. So observa, nunca decide. ───
     # Desligado por padrao (PREDICTION_LEDGER_ENABLED=0) e falha aberto: se a
     # escrita quebrar, o pedido segue. E o unico registro do que o sistema

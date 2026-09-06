@@ -102,6 +102,8 @@ aws lambda update-function-configuration --function-name sportsbank-pro-backend 
 
 `MISTRAL_API_KEY`, `PY_BACKEND_URL`, `FUTEBOL_ROOT` / `DATA_ROOT`, `S3_BUCKET` (opcional).
 
+`PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos) e dos itens 2–3 do passo 4. `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`.
+
 ## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
 
 ```
@@ -125,6 +127,7 @@ FootyStats + API-Football v3
        correlation_matrix anti-redundância (#028)
   → odds enrichment API-Football (#120; famílias de bet único #187)
        → reclassificação pós-enrichment (#187)
+  → ancora_mercado.aplicar_ancora (#231) — só com PROB_SOURCE=mercado; flag desligada = payload inalterado
   → Next.js (Vercel)
 ```
 

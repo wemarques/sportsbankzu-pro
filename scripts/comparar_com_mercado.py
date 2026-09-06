@@ -517,8 +517,10 @@ def main() -> int:
                          "mercado de-vigado gravada ao lado dela, com desfecho")
     ap.add_argument("--desde", default="2026-01-01")
     ap.add_argument("--campo", default="calibrated_prob",
-                    choices=["raw_prob", "iso_prob", "calibrated_prob"],
-                    help="qual probabilidade publicada comparar (ledger)")
+                    choices=["raw_prob", "iso_prob", "calibrated_prob", "published_prob"],
+                    help="qual probabilidade comparar (ledger). calibrated_prob = "
+                         "modelo (mesmo com PROB_SOURCE=mercado); published_prob = "
+                         "o que foi publicado de fato (#231)")
     ap.add_argument("--incluir-circulares", action="store_true",
                     help="#230-f: inclui 1X2 e Dupla Chance no TODAS. Em producao "
                          "essa probabilidade vem da propria odd (odds_implied); "

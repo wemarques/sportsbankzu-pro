@@ -1093,3 +1093,33 @@ padrao.
 **Verificacao:** `python3 scripts/comparar_com_mercado.py --ledger --desde <data>`
 — imprime Brier emparelhado, piso, decomposicao e o teto de calibracao.
 **Gate automatico:** `pytest tests/test_230_ancora_mercado.py -q`.
+
+### #231 — `PROB_SOURCE` nasce em `modelo`; o ledger grava sempre o modelo
+
+**Tipo:** Hard Constraint (flag de produto + contrato do ledger)
+**Relacionado:** #230 (gate e passo 4), #218/#228 (ledger), #219 (de-vig), #227 (backfill → taxa-base)
+
+1. A fonte da probabilidade publicada e escolhida por `PROB_SOURCE`
+   (`modelo` | `mercado`). O padrao e `modelo`; valor desconhecido vale
+   `modelo`. **Proibido** definir `PROB_SOURCE=mercado` na Lambda antes de:
+   (a) o gate do #230 fechar (n >= 300 jogos, Brier do mercado < Brier da
+   publicada com IC excluindo zero); (b) o EV ser redefinido como distancia
+   entre odd oferecida e preco justo (item 2); (c) a classificacao ser
+   redefinida em valor + confianca na ancora (item 3).
+2. Com a flag ligada, so `devig`/`devig3` servem de ancora. `implicita`
+   (1/odd de uma perna) NUNCA e publicada como probabilidade. Sem par, a
+   selecao cai para a taxa-base da celula (n >= 30, fallback `*`) ROTULADA
+   `taxa_base`; sem taxa-base, o modelo fica ROTULADO `modelo_sem_referencia`.
+   Rotulo ausente com fonte trocada e violacao.
+3. No `prediction_ledger`, `calibrated_prob` E O MODELO em qualquer estado da
+   flag; o publicado vai em `published_prob` e a fonte em `prob_source`. O
+   comparador mede o modelo por padrao (`--campo calibrated_prob`) e o
+   publicado por `--campo published_prob`. Quebrar esta separacao apaga a
+   medicao que autoriza a flag.
+4. A taxa-base vem do backfill (#227) via `scripts/gerar_taxas_base.py`,
+   nunca de um numero escolhido; regenerar quando o backfill for rodado de
+   novo. O artefato e `backend/config/taxas_base.json`.
+
+**Verificacao:** `python3 scripts/lambda_env.py --get PROB_SOURCE` (ausente
+ou `modelo` ate o gate). **Gate automatico:**
+`pytest tests/test_231_prob_source.py -q`.
