@@ -486,3 +486,36 @@ def test_por_liga_nao_quebra_com_skill_none():
     picks = [{"league_id": "A", "market": "m", "match_id": i, "outcome": 1,
               "prob": 1.0, "prob_modelo": 1.0} for i in range(40)]   # piso 0 -> skill None
     cmp._por_liga(picks, reamostras=20)                                # nao pode levantar
+
+
+# ── #230-f: circularidade e Benjamini-Hochberg ───────────────────────────
+def test_1x2_e_dc_sao_circulares():
+    cmp = _comparador()
+    assert cmp._e_circular({"market": "1X2 Draw"})
+    assert cmp._e_circular({"market": "Double Chance DC 1X"})
+    assert not cmp._e_circular({"market": "Over/Under Over 2.5"})
+    assert not cmp._e_circular({"market": "BTTS BTTS Yes"})
+
+
+def test_p_valor_bootstrap_e_coerente_com_o_ic():
+    cmp = _comparador()
+    partidas = _gerador()(400, com_sinal=True, semente=227)
+    todos = reconstruir(partidas, "sintetica")["picks"]
+    picks = [{**p, "prob_modelo": p["prob"], "prob": p["prob_mercado"]}
+             for p in todos if p["prob_mercado"] is not None and p["market"] == "Over 2.5 gols"]
+    d, lo, hi = cmp._ic_da_diferenca(picks, cmp._brier, reamostras=200)
+    pv = cmp._ULTIMO_P[id(picks)]
+    assert 0.0 <= pv <= 1.0
+    # IC exclui zero <-> p < 0.05 (mesmo bootstrap, mesma leitura)
+    assert (lo > 0 or hi < 0) == (pv < 0.05)
+
+
+def test_bh_derruba_um_isolado_entre_muitos_nulos():
+    from backend.services.calibracao_slope import benjamini_hochberg
+    # 12 celulas nulas (p ~ uniforme) e uma com p=0.04: a 95% ela "passaria";
+    # com FDR controlado, nao.
+    pv = [0.04, 0.31, 0.52, 0.77, 0.12, 0.66, 0.91, 0.45, 0.23, 0.88, 0.59, 0.37, 0.70]
+    assert benjamini_hochberg(pv, q=0.05) == [False] * 13
+    # sinal forte sobrevive
+    pv[0] = 0.001
+    assert benjamini_hochberg(pv, q=0.05)[0] is True

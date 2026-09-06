@@ -76,10 +76,20 @@ def _por_jogo(picks: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
     return list(grupos.values())
 
 
+_ULTIMO_P: Dict[int, float] = {}
+
+
 def _ic_da_diferenca(picks: Sequence[Dict[str, Any]], metrica,
                      reamostras: int = 1000, semente: int = 227
                      ) -> Optional[Tuple[float, float, float]]:
-    """(diferenca, ic_baixo, ic_alto) para `modelo - mercado`, emparelhado."""
+    """(diferenca, ic_baixo, ic_alto) para `modelo - mercado`, emparelhado.
+
+    #230-f: guarda tambem o p-valor bootstrap bilateral em `_ULTIMO_P[id(picks)]`
+    — a fracao de reamostras do lado oposto ao ponto, dobrada — para o
+    Benjamini-Hochberg entre celulas. O #220 avisou: muitas celulas a 95% dao
+    falsos positivos por construcao, e "Over 2.5 MODELO melhor" numa de 13
+    celulas e exatamente o caso.
+    """
     a = metrica(picks, "prob_modelo")
     b = metrica(picks, "prob")
     if a is None or b is None:
@@ -101,12 +111,28 @@ def _ic_da_diferenca(picks: Sequence[Dict[str, Any]], metrica,
     if len(difs) < 20:
         return (a - b, float("nan"), float("nan"))
     difs.sort()
+    fr_neg = sum(1 for d in difs if d <= 0) / len(difs)
+    fr_pos = sum(1 for d in difs if d >= 0) / len(difs)
+    _ULTIMO_P[id(picks)] = min(1.0, 2 * min(fr_neg, fr_pos))
     return (a - b, difs[int(0.025 * len(difs))],
             difs[min(len(difs) - 1, int(0.975 * len(difs)))])
 
 
 MIN_N_CELULA = 30
 MIN_JOGOS_LIGA = 10
+
+# #230-f - em producao a probabilidade de 1X2 VEM DA ODD (`predictionSource:
+# odds_implied`, fixtures_service) e a de Dupla Chance e a soma normalizada
+# das pernas de 1X2 (market_service). Comparar isso com o mercado de-vigado e
+# comparar a odd com ela mesma por dois de-vigs diferentes: Draw deu
+# dif +0.0002 com IC [-0.0036, +0.0048] — identidade, nao merito. Ficam fora
+# do TODAS por padrao e marcadas na tabela.
+_CIRCULARES = ("1X2", "Double Chance")
+
+
+def _e_circular(p: Dict[str, Any]) -> bool:
+    return str(p.get("market", "")).split(" ", 1)[0] in _CIRCULARES \
+        or str(p.get("market", "")).startswith("Double Chance")
 
 
 def _celula_de(picks: Sequence[Dict[str, Any]]) -> Dict[int, Tuple[str, str]]:
@@ -363,7 +389,8 @@ def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
               f"{_brier(g, 'prob_ingenuo'):>9.4f}{d:>+9.4f}  [{lo:+.4f}, {hi:+.4f}]  {marca}")
 
 
-def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
+def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int,
+           sufixo: str = "") -> None:
     n = len(picks)
     bm = _brier(picks, "prob_modelo")
     bk = _brier(picks, "prob")
@@ -385,7 +412,7 @@ def _linha(rotulo: str, picks: Sequence[Dict[str, Any]], reamostras: int) -> Non
     else:
         marca = "empate (IC cobre 0)"
     print(f"{rotulo[:29]:<30}{n:>6}{_jogos(picks):>6}{bm:>9.4f}{bk:>9.4f}{d:>+9.4f}"
-          f"  [{lo:+.4f}, {hi:+.4f}]  {marca}")
+          f"  [{lo:+.4f}, {hi:+.4f}]  {marca}{sufixo}")
 
 
 _METODOS_JUSTOS = ("devig", "devig3")
@@ -492,6 +519,10 @@ def main() -> int:
     ap.add_argument("--campo", default="calibrated_prob",
                     choices=["raw_prob", "iso_prob", "calibrated_prob"],
                     help="qual probabilidade publicada comparar (ledger)")
+    ap.add_argument("--incluir-circulares", action="store_true",
+                    help="#230-f: inclui 1X2 e Dupla Chance no TODAS. Em producao "
+                         "essa probabilidade vem da propria odd (odds_implied); "
+                         "compara-la com o mercado e comparar a odd com ela mesma.")
     ap.add_argument("--incluir-implicita", action="store_true",
                     help="#230-e: inclui picks cuja prob de mercado e 1/odd (margem "
                          "dentro). Por padrao so entra o de-vigado.")
@@ -533,15 +564,40 @@ def main() -> int:
     print("modelo x mercado, MESMOS picks, bootstrap emparelhado por jogo")
     print("diferenca = modelo - mercado. Positiva = o modelo erra mais.\n")
 
+    circulares = [p for p in picks if _e_circular(p)]
+    if circulares and not args.incluir_circulares:
+        picks = [p for p in picks if not _e_circular(p)]
+        print(f"(fora do TODAS: {len(circulares)} picks de 1X2/Dupla Chance — em producao "
+              f"essa probabilidade vem da propria odd; use --incluir-circulares para ver)\n")
+
     print("── BRIER (erro quadratico, menor e melhor) ──")
     print(f"{'celula':<30}{'n':>6}{'jogos':>6}{'modelo':>9}{'mercado':>9}{'dif':>9}"
           f"{'IC95 da dif':>22}  leitura")
     _linha("TODAS", picks, args.reamostras)
     celulas: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for p in picks:
+    for p in picks + (circulares if not args.incluir_circulares else []):
         celulas[str(p.get("market", "?"))].append(p)
-    for mercado in sorted(celulas, key=lambda m: -len(celulas[m])):
-        _linha(mercado, celulas[mercado], args.reamostras)
+    ordem = sorted(celulas, key=lambda m: -len(celulas[m]))
+    # BH sobre as celulas com n suficiente: um "significativo" em 13 e o esperado
+    # por acaso; o veredito por celula so vale se sobreviver ao controle de FDR.
+    from backend.services.calibracao_slope import benjamini_hochberg
+    elegiveis = [m for m in ordem if len(celulas[m]) >= MIN_N_CELULA
+                 and not _e_circular(celulas[m][0])]
+    pvals: Dict[str, float] = {}
+    for m in elegiveis:
+        _ic_da_diferenca(celulas[m], _brier, args.reamostras)
+        pvals[m] = _ULTIMO_P.get(id(celulas[m]), 1.0)
+    passa = dict(zip(elegiveis, benjamini_hochberg([pvals[m] for m in elegiveis])))
+    for mercado in ordem:
+        grupo = celulas[mercado]
+        _linha(mercado, grupo, args.reamostras,
+               sufixo=("  [CIRCULAR: odd x odd]" if _e_circular(grupo[0])
+                       else ("  passa BH" if passa.get(mercado)
+                             else ("  isolado: cai no BH" if mercado in pvals
+                                   and pvals[mercado] < 0.05 else ""))))
+    if elegiveis:
+        print(f"\nBenjamini-Hochberg q=0.05 sobre {len(elegiveis)} celulas: "
+              f"{sum(passa.values())} sobrevivem")
 
     print("\n── LOG-LOSS (menor e melhor) ──")
     dif = _ic_da_diferenca(picks, _logloss, args.reamostras)

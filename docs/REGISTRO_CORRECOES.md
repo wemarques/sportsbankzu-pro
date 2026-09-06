@@ -11678,3 +11678,40 @@ O ledger é append-only: as linhas de 1X2 gravadas como `implicita` e as de DC s
 
 ### Lição aprendida
 A tabela de cobertura custou 20 linhas de SQL e respondeu três perguntas que a tabela de resultados não podia responder — e uma delas era um viés a favor do modelo que eu teria lido como resultado. Instrumento que mede diferença precisa mostrar **de onde vieram os pares**, senão a diferença absorve o que o filtro escondeu.
+
+---
+
+## 230-f — Primeira leitura limpa de produção: previsão confirmada, uma circularidade e um "significativo" isolado
+**Data:** 2026-09-05 | **Arquivos:** scripts/comparar_com_mercado.py, tests/test_227_backfill_historico.py | **Severidade:** Alta (duas leituras que enganariam sem correção) | **Status:** Corrigido — medição em curso
+
+### O que foi medido (ledger real, só de-vigados, 3-way em 1X2/DC)
+```
+janela        picks  jogos   dif Brier  IC95                  log-loss dif  IC95
+desde 03/09    1906    131   +0.0041    [-0.0020, +0.0101]    +0.0087      [-0.0074, +0.0242]
+desde 04/09    1846    112   +0.0047    [-0.0019, +0.0110]    +0.0098      [-0.0072, +0.0253]
+desde 05/09    1607    106   +0.0064    [+0.0007, +0.0128]    +0.0150      [-0.0002, +0.0306]
+
+piso ~0.209 | modelo -2.7% a -3.9% | mercado -0.7% a -1.2%
+```
+
+**Previsão do #230-e conferida:** *"dif entre −0,005 e +0,010, IC cobrindo zero, ponto deslocado para o mercado."* As três janelas caem dentro; o ponto foi de −0,006 (com implícita) para +0,004 a +0,006 (de-vigado). A janela mais recente exclui zero por um fio — e tem 106 jogos contra os 300 da regra #230. Inconclusivo por regra, na direção prevista.
+
+As janelas são aninhadas e quase idênticas: as linhas de 1X2/DC em `devig3` só existem desde o deploy do #230-e, então as três leem majoritariamente os mesmos jogos. É uma medição, não três.
+
+### Circularidade: 1X2 e Dupla Chance comparam a odd com ela mesma
+`Draw: dif +0.0002, IC [-0.0036, +0.0048]` — identidade, não empate. Em produção a probabilidade de 1X2 **vem da odd** (`predictionSource: odds_implied`, `fixtures_service:1884`) e a de DC é a soma normalizada das pernas (`market_service:300`). Comparar isso com o mercado de-vigado é comparar dois de-vigs da mesma odd. Essas famílias eram **537 dos 1906 picks** e puxavam o TODAS para o zero. Ficam fora do TODAS por padrão, marcadas `[CIRCULAR: odd x odd]` na tabela; `--incluir-circulares` abre.
+
+### "Over 2.5 MODELO melhor": isolado, e cai no Benjamini-Hochberg
+`Over 2.5: dif -0.0220, IC [-0.0419, -0.0053]`, 29 jogos, numa tabela de 13 células elegíveis. O #220 já tinha registrado o mecanismo: a 95%, uma "significativa" em treze é o esperado por acaso. E há um viés de seleção estrutural por cima: o corredor do #187 só deixa o Over 2.5 ser publicado quando o pipeline está confiante — a célula é uma amostra condicionada à confiança do próprio modelo. O comparador passa a calcular o p-valor bootstrap bilateral por célula e a aplicar BH (q=0,05) sobre as células com n ≥ 30; o veredito só recebe "passa BH" se sobreviver, senão "isolado: cai no BH". Validado no sintético: 7 de 8 células com sinal plantado sobrevivem; 12 nulas com uma em p=0,04 não passam nenhuma.
+
+### O que a cobertura diz sobre o produto, já com âncora completa
+- **Cards Over 2.5 (353 linhas), Cards Over 1.5 (341), Corners Over/Under 4.5 (302/293): zero preço.** Nenhuma casa cota. São mercados publicados em volume **sem referência possível**. Pela decisão do #230, caem para a taxa-base rotulada. É uma fatia grande do que o produto mostra.
+- **Unders só com enriquecimento:** Under 1.5 com âncora em 114 de 475 (24%). A FootyStats traz o over; o under vem do API-Football quando vem.
+- **Escanteios quase sem par:** Over 11.5 com 357 linhas anotadas e 8 de-vigadas. A comparação de produção ainda não mede escanteios.
+- **Over 2.5 publicado em 68 de ~450 jogos-linha.** O carro-chefe é a exceção.
+
+### Testes
+3 novos. Suíte: **931 passed, 1 skipped**.
+
+### Lição aprendida
+Duas armadilhas na mesma tabela, com sinais opostos: uma célula "idêntica" que era circularidade e uma célula "significativa" que era multiplicidade. As duas teriam virado frase — "o modelo empata com o mercado no 1X2", "o modelo bate o mercado no Over 2.5" — e as duas estariam erradas. O #220 já tinha os dois avisos por escrito; o instrumento é que ainda não os aplicava sozinho.
