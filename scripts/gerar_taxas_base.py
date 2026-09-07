@@ -90,6 +90,11 @@ def main() -> int:
                                           / "backend" / "config" / "taxas_base.json"))
     ap.add_argument("--min-n", type=int, default=MIN_N_TAXA_BASE)
     args = ap.parse_args()
+    if not Path(args.entrada).is_file():
+        print(f"entrada nao encontrada: {args.entrada} — rode antes "
+              f"`python scripts/backfill_historico.py --todas --saida {args.entrada}`",
+              file=sys.stderr)
+        return 2
     with open(args.entrada, "r", encoding="utf-8") as f:
         picks = json.load(f)
     if isinstance(picks, dict):

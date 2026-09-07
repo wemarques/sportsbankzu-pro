@@ -102,7 +102,7 @@ aws lambda update-function-configuration --function-name sportsbank-pro-backend 
 
 `MISTRAL_API_KEY`, `PY_BACKEND_URL`, `FUTEBOL_ROOT` / `DATA_ROOT`, `S3_BUCKET` (opcional).
 
-`PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos) e dos itens 2–3 do passo 4. `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`.
+`PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos) e dos itens 2–3 do passo 4. `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`. `LAMBDA_CORRECTIONS_TTL_S` (#231-a): cache por liga das correções do banco, padrão 300 s; `0` desliga.
 
 ## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
 

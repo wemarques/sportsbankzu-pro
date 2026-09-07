@@ -11823,3 +11823,31 @@ Sem artefato, 15 de 20 saem `mercado` e 5 `modelo_sem_referencia` (escanteios 4.
 ### Lição aprendida
 A troca mais simples do passo 4 — trocar um número — tinha um efeito colateral invisível: sem separar `published_prob` de `calibrated_prob`, o ledger passaria a comparar o mercado com ele mesmo no dia em que a flag ligasse, e o gate que autoriza a flag deixaria de existir. Toda troca de fonte precisa carregar a fonte antiga junto.
 
+---
+
+## 231-a — O banco de correções era aberto 48 vezes por jogo; o backfill "travou" em 31 mil conexões à RDS
+**Data:** 2026-09-06 | **Arquivos:** backend/modeling/lambda_calculator.py, scripts/gerar_taxas_base.py, tests/test_231a_cache_correcoes.py (novo) | **Severidade:** Alta (latência de produção por jogo + backfill inviável com `DATABASE_URL` no `.env`) | **Status:** Corrigido
+
+### Sintoma
+`backfill_historico.py --todas` terminou a coleta (22/22 ligas) e ficou horas com CPU em 0%. O Ctrl+C mostrou onde estava: `calcular_lambda_jogo → get_lambda_corrections → audit.get_active_corrections → init_db → psycopg2.connect(DATABASE_URL)`. Desde o #230-b o `.env` tem `DATABASE_URL` (para o ledger), e o backfill carrega o `.env`; cada partida passou a abrir conexão com a RDS a partir da máquina do Welligton. As rodadas anteriores do backfill não tinham a variável e caíam no SQLite local, por isso nunca apareceu.
+
+### Medição (contador em `audit.get_active_corrections`, mesmo match_data do #231)
+```
+                                          ANTES   DEPOIS
+evaluate_match_markets x3 (1 liga)         144        1
+calcular_lambda_jogo x100 (backfill)       200        0   (depois da 1ª)
+```
+**48 leituras do banco por jogo em produção** — γ (#078), multiplicadores de λ, `corner_multiplier`, `corners_alpha`, mais as leituras de `fixtures_service`, `ev_classification` e `main.py`. Cada leitura é um `init_db()` inteiro: conexão, `CREATE TABLE IF NOT EXISTS` e consultas ao `information_schema`. No backfill, 2 por partida × 15.500 partidas ≈ 31 mil conexões.
+
+### Correção
+Cache por liga em `get_lambda_corrections`, TTL `LAMBDA_CORRECTIONS_TTL_S` (padrão 300 s; `0` desliga). As correções só mudam quando o calibrador roda (cron); dentro do TTL são constantes por construção. Falha do banco também é cacheada: banco fora do ar vira uma tentativa por liga por TTL, não uma por leitura. Leitor recebe cópia; alterar o dict devolvido não contamina o cache. `limpar_cache_correcoes()` para testes. Nenhum valor muda: é a mesma consulta, feita uma vez.
+
+### Efeito colateral honesto no backfill
+Com `DATABASE_URL` no `.env`, o backfill passa a aplicar as correções **da RDS** (as de produção), não as do SQLite local das rodadas anteriores. Para a taxa-base (#231) é irrelevante: ela é média de desfechos, não depende do modelo. Para a comparação modelo × mercado do `--arquivo`, o modelo fica mais parecido com o de produção — as próximas leituras devem ser comparadas entre si, não com as de #229/#230 sem essa ressalva.
+
+### Testes
+6 novos, incluindo a medição como teste (3 jogos → 1 leitura). `gerar_taxas_base.py` avisa quando a entrada não existe em vez de estourar. Suíte: **954 passed, 1 skipped**.
+
+### Lição aprendida
+"Travado" com CPU em zero é espera de rede, não cálculo. O traceback do Ctrl+C disse exatamente onde; a hipótese anterior (modo de seleção do console) era plausível e estava errada — foi dada antes de pedir o traceback. Perguntar o dado antes de dar a causa.
+

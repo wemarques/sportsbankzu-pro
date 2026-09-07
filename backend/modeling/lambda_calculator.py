@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional, Tuple, List
 import logging
 import math
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -504,19 +505,54 @@ def obter_info_ponderacao(regime: str) -> Dict[str, float]:
     return PESOS_LAMBDA.get(regime, PESOS_LAMBDA['NORMAL']).copy()
 
 
+# #231-a - cache por liga das correcoes. MEDIDO antes: evaluate_match_markets
+# abria o banco de correcoes 48 vezes POR JOGO (gamma, multiplicadores,
+# corner_factor, alpha... cada leitura era um init_db() com CREATE TABLE +
+# information_schema), e o backfill 2 vezes por calcular_lambda_jogo — com
+# DATABASE_URL no .env, 31 mil conexoes a RDS para 15.500 partidas, CPU em
+# zero esperando rede. As correcoes so mudam quando o calibrador roda (cron);
+# dentro de um TTL curto sao constantes por construcao. Falha tambem e
+# cacheada: banco fora do ar vira UMA tentativa por liga por TTL, nao uma por
+# leitura.
+_CORRECOES_TTL_PADRAO_S = 300.0
+_cache_correcoes: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+def _ttl_correcoes() -> float:
+    try:
+        return max(0.0, float(os.getenv("LAMBDA_CORRECTIONS_TTL_S", _CORRECOES_TTL_PADRAO_S)))
+    except (TypeError, ValueError):
+        return _CORRECOES_TTL_PADRAO_S
+
+
+def limpar_cache_correcoes() -> None:
+    _cache_correcoes.clear()
+
+
 def get_lambda_corrections(league: str) -> Dict[str, Any]:
     """
     Fetch active lambda/weight corrections from the audit corrections table.
 
     Returns a dict keyed by parameter_name with the corrected value.
     These can be applied as multipliers or weight overrides in calcular_lambda_dinamico().
+    Cached per league for LAMBDA_CORRECTIONS_TTL_S seconds (#231-a; 0 disables).
     """
+    chave = str(league or "")
+    ttl = _ttl_correcoes()
+    agora = time.monotonic()
+    if ttl > 0:
+        hit = _cache_correcoes.get(chave)
+        if hit is not None and hit[0] > agora:
+            return dict(hit[1])
     try:
         from backend.audit import get_active_corrections
-        return get_active_corrections(league)
+        corr = get_active_corrections(league) or {}
     except Exception as e:
         logger.warning(f"Could not load lambda corrections for {league}: {e}")
-        return {}
+        corr = {}
+    if ttl > 0:
+        _cache_correcoes[chave] = (agora + ttl, dict(corr))
+    return dict(corr)
 
 
 # Aliases para compatibilidade
