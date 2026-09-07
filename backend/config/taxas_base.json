@@ -1,0 +1,3735 @@
+{
+ "gerado_em": "2026-09-07T12:53:32+00:00",
+ "fonte": "backfill_historico (#227)",
+ "min_n": 30,
+ "picks_lidos": 173282,
+ "picks_ignorados": 0,
+ "celulas": {
+  "premier-league": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.9375,
+    "n": 352
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.0625,
+    "n": 352
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.803977,
+    "n": 352
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.196023,
+    "n": 352
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.556818,
+    "n": 352
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.443182,
+    "n": 352
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.298295,
+    "n": 352
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.701705,
+    "n": 352
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.133523,
+    "n": 352
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.866477,
+    "n": 352
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.582386,
+    "n": 352
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.417614,
+    "n": 352
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.963068,
+    "n": 352
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.036932,
+    "n": 352
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.911932,
+    "n": 352
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.088068,
+    "n": 352
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.860795,
+    "n": 352
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.139205,
+    "n": 352
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.747159,
+    "n": 352
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.252841,
+    "n": 352
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.647727,
+    "n": 352
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.352273,
+    "n": 352
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.556818,
+    "n": 352
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.443182,
+    "n": 352
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.428977,
+    "n": 352
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.571023,
+    "n": 352
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.306818,
+    "n": 352
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.693182,
+    "n": 352
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.215909,
+    "n": 352
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.784091,
+    "n": 352
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.886364,
+    "n": 352
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.113636,
+    "n": 352
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.724432,
+    "n": 352
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.275568,
+    "n": 352
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.571023,
+    "n": 352
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.428977,
+    "n": 352
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.349432,
+    "n": 352
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.650568,
+    "n": 352
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.193182,
+    "n": 352
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.806818,
+    "n": 352
+   }
+  },
+  "*": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.928332,
+    "n": 8665
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.071668,
+    "n": 8665
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.752683,
+    "n": 8665
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.247317,
+    "n": 8665
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.516099,
+    "n": 8665
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.483901,
+    "n": 8665
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.280208,
+    "n": 8665
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.719792,
+    "n": 8665
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.131448,
+    "n": 8665
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.868552,
+    "n": 8665
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.542066,
+    "n": 8665
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.457934,
+    "n": 8665
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.954981,
+    "n": 8663
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.045019,
+    "n": 8663
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.907422,
+    "n": 8663
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.092578,
+    "n": 8663
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.830775,
+    "n": 8663
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.169225,
+    "n": 8663
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.731848,
+    "n": 8663
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.268152,
+    "n": 8663
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.622186,
+    "n": 8663
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.377814,
+    "n": 8663
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.508946,
+    "n": 8663
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.491054,
+    "n": 8663
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.395475,
+    "n": 8663
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.604525,
+    "n": 8663
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.291354,
+    "n": 8663
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.708646,
+    "n": 8663
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.205125,
+    "n": 8663
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.794875,
+    "n": 8663
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.909059,
+    "n": 8665
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.090941,
+    "n": 8665
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.782112,
+    "n": 8665
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.217888,
+    "n": 8665
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.603347,
+    "n": 8665
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.396653,
+    "n": 8665
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.41408,
+    "n": 8665
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.58592,
+    "n": 8665
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.254126,
+    "n": 8665
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.745874,
+    "n": 8665
+   }
+  },
+  "championship": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.932075,
+    "n": 530
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.067925,
+    "n": 530
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.769811,
+    "n": 530
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.230189,
+    "n": 530
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.511321,
+    "n": 530
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.488679,
+    "n": 530
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.243396,
+    "n": 530
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.756604,
+    "n": 530
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.088679,
+    "n": 530
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.911321,
+    "n": 530
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.567925,
+    "n": 530
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.432075,
+    "n": 530
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.983019,
+    "n": 530
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.016981,
+    "n": 530
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.943396,
+    "n": 530
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.056604,
+    "n": 530
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.875472,
+    "n": 530
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.124528,
+    "n": 530
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.79434,
+    "n": 530
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.20566,
+    "n": 530
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.681132,
+    "n": 530
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.318868,
+    "n": 530
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.55283,
+    "n": 530
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.44717,
+    "n": 530
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.45283,
+    "n": 530
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.54717,
+    "n": 530
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.34717,
+    "n": 530
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.65283,
+    "n": 530
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.249057,
+    "n": 530
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.750943,
+    "n": 530
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.884906,
+    "n": 530
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.115094,
+    "n": 530
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.716981,
+    "n": 530
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.283019,
+    "n": 530
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.50566,
+    "n": 530
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.49434,
+    "n": 530
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.316981,
+    "n": 530
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.683019,
+    "n": 530
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.164151,
+    "n": 530
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.835849,
+    "n": 530
+   }
+  },
+  "league-one": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.937381,
+    "n": 527
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.062619,
+    "n": 527
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.73055,
+    "n": 527
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.26945,
+    "n": 527
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.519924,
+    "n": 527
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.480076,
+    "n": 527
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.296015,
+    "n": 527
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.703985,
+    "n": 527
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.127135,
+    "n": 527
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.872865,
+    "n": 527
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.533207,
+    "n": 527
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.466793,
+    "n": 527
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.967742,
+    "n": 527
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.032258,
+    "n": 527
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.925996,
+    "n": 527
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.074004,
+    "n": 527
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.855787,
+    "n": 527
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.144213,
+    "n": 527
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.757116,
+    "n": 527
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.242884,
+    "n": 527
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.645161,
+    "n": 527
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.354839,
+    "n": 527
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.531309,
+    "n": 527
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.468691,
+    "n": 527
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.41556,
+    "n": 527
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.58444,
+    "n": 527
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.316888,
+    "n": 527
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.683112,
+    "n": 527
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.225806,
+    "n": 527
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.774194,
+    "n": 527
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.870968,
+    "n": 527
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.129032,
+    "n": 527
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.71537,
+    "n": 527
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.28463,
+    "n": 527
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.504744,
+    "n": 527
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.495256,
+    "n": 527
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.313093,
+    "n": 527
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.686907,
+    "n": 527
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.157495,
+    "n": 527
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.842505,
+    "n": 527
+   }
+  },
+  "la-liga": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.94958,
+    "n": 357
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.05042,
+    "n": 357
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.767507,
+    "n": 357
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.232493,
+    "n": 357
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.512605,
+    "n": 357
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.487395,
+    "n": 357
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.266106,
+    "n": 357
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.733894,
+    "n": 357
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.142857,
+    "n": 357
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.857143,
+    "n": 357
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.563025,
+    "n": 357
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.436975,
+    "n": 357
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.932773,
+    "n": 357
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.067227,
+    "n": 357
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.879552,
+    "n": 357
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.120448,
+    "n": 357
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.815126,
+    "n": 357
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.184874,
+    "n": 357
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.714286,
+    "n": 357
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.285714,
+    "n": 357
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.605042,
+    "n": 357
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.394958,
+    "n": 357
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.490196,
+    "n": 357
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.509804,
+    "n": 357
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.380952,
+    "n": 357
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.619048,
+    "n": 357
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.288515,
+    "n": 357
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.711485,
+    "n": 357
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.207283,
+    "n": 357
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.792717,
+    "n": 357
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.929972,
+    "n": 357
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.070028,
+    "n": 357
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.80112,
+    "n": 357
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.19888,
+    "n": 357
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.619048,
+    "n": 357
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.380952,
+    "n": 357
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.428571,
+    "n": 357
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.571429,
+    "n": 357
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.280112,
+    "n": 357
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.719888,
+    "n": 357
+   }
+  },
+  "serie-a": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.911429,
+    "n": 350
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.088571,
+    "n": 350
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.702857,
+    "n": 350
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.297143,
+    "n": 350
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.471429,
+    "n": 350
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.528571,
+    "n": 350
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.228571,
+    "n": 350
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.771429,
+    "n": 350
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.097143,
+    "n": 350
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.902857,
+    "n": 350
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.457143,
+    "n": 350
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.542857,
+    "n": 350
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.92,
+    "n": 350
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.08,
+    "n": 350
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.842857,
+    "n": 350
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.157143,
+    "n": 350
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.751429,
+    "n": 350
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.248571,
+    "n": 350
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.64,
+    "n": 350
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.36,
+    "n": 350
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.502857,
+    "n": 350
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.497143,
+    "n": 350
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.394286,
+    "n": 350
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.605714,
+    "n": 350
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.288571,
+    "n": 350
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.711429,
+    "n": 350
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.2,
+    "n": 350
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.8,
+    "n": 350
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.125714,
+    "n": 350
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.874286,
+    "n": 350
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.877143,
+    "n": 350
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.122857,
+    "n": 350
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.742857,
+    "n": 350
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.257143,
+    "n": 350
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.497143,
+    "n": 350
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.502857,
+    "n": 350
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.277143,
+    "n": 350
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.722857,
+    "n": 350
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.14,
+    "n": 350
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.86,
+    "n": 350
+   }
+  },
+  "serie-b": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.928775,
+    "n": 351
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.071225,
+    "n": 351
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.74359,
+    "n": 351
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.25641,
+    "n": 351
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.478632,
+    "n": 351
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.521368,
+    "n": 351
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.242165,
+    "n": 351
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.757835,
+    "n": 351
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.091168,
+    "n": 351
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.908832,
+    "n": 351
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.521368,
+    "n": 351
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.478632,
+    "n": 351
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.962963,
+    "n": 351
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.037037,
+    "n": 351
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.91453,
+    "n": 351
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.08547,
+    "n": 351
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.823362,
+    "n": 351
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.176638,
+    "n": 351
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.737892,
+    "n": 351
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.262108,
+    "n": 351
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.589744,
+    "n": 351
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.410256,
+    "n": 351
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.492877,
+    "n": 351
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.507123,
+    "n": 351
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.387464,
+    "n": 351
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.612536,
+    "n": 351
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.293447,
+    "n": 351
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.706553,
+    "n": 351
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.182336,
+    "n": 351
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.817664,
+    "n": 351
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.925926,
+    "n": 351
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.074074,
+    "n": 351
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.817664,
+    "n": 351
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.182336,
+    "n": 351
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.652422,
+    "n": 351
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.347578,
+    "n": 351
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.441595,
+    "n": 351
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.558405,
+    "n": 351
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.259259,
+    "n": 351
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.740741,
+    "n": 351
+   }
+  },
+  "bundesliga": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.96337,
+    "n": 273
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.03663,
+    "n": 273
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.842491,
+    "n": 273
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.157509,
+    "n": 273
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.644689,
+    "n": 273
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.355311,
+    "n": 273
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.43956,
+    "n": 273
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.56044,
+    "n": 273
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.212454,
+    "n": 273
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.787546,
+    "n": 273
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.622711,
+    "n": 273
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.377289,
+    "n": 273
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.92674,
+    "n": 273
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.07326,
+    "n": 273
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.871795,
+    "n": 273
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.128205,
+    "n": 273
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.824176,
+    "n": 273
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.175824,
+    "n": 273
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.725275,
+    "n": 273
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.274725,
+    "n": 273
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.615385,
+    "n": 273
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.384615,
+    "n": 273
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.512821,
+    "n": 273
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.487179,
+    "n": 273
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.384615,
+    "n": 273
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.615385,
+    "n": 273
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.307692,
+    "n": 273
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.692308,
+    "n": 273
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.230769,
+    "n": 273
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.769231,
+    "n": 273
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.849817,
+    "n": 273
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.150183,
+    "n": 273
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.677656,
+    "n": 273
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.322344,
+    "n": 273
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.498168,
+    "n": 273
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.501832,
+    "n": 273
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.29304,
+    "n": 273
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.70696,
+    "n": 273
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.142857,
+    "n": 273
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.857143,
+    "n": 273
+   }
+  },
+  "2-bundesliga": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.953405,
+    "n": 279
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.046595,
+    "n": 279
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.810036,
+    "n": 279
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.189964,
+    "n": 279
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.591398,
+    "n": 279
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.408602,
+    "n": 279
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.336918,
+    "n": 279
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.663082,
+    "n": 279
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.182796,
+    "n": 279
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.817204,
+    "n": 279
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.602151,
+    "n": 279
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.397849,
+    "n": 279
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.964158,
+    "n": 279
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.035842,
+    "n": 279
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.917563,
+    "n": 279
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.082437,
+    "n": 279
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.860215,
+    "n": 279
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.139785,
+    "n": 279
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.759857,
+    "n": 279
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.240143,
+    "n": 279
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.65233,
+    "n": 279
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.34767,
+    "n": 279
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.541219,
+    "n": 279
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.458781,
+    "n": 279
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.415771,
+    "n": 279
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.584229,
+    "n": 279
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.308244,
+    "n": 279
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.691756,
+    "n": 279
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.222222,
+    "n": 279
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.777778,
+    "n": 279
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.935484,
+    "n": 279
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.064516,
+    "n": 279
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.817204,
+    "n": 279
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.182796,
+    "n": 279
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.659498,
+    "n": 279
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.340502,
+    "n": 279
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.469534,
+    "n": 279
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.530466,
+    "n": 279
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.286738,
+    "n": 279
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.713262,
+    "n": 279
+   }
+  },
+  "ligue-1": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.914591,
+    "n": 281
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.085409,
+    "n": 281
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.75089,
+    "n": 281
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.24911,
+    "n": 281
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.537367,
+    "n": 281
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.462633,
+    "n": 281
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.323843,
+    "n": 281
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.676157,
+    "n": 281
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.156584,
+    "n": 281
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.843416,
+    "n": 281
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.516014,
+    "n": 281
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.483986,
+    "n": 281
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.953737,
+    "n": 281
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.046263,
+    "n": 281
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.88968,
+    "n": 281
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.11032,
+    "n": 281
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.800712,
+    "n": 281
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.199288,
+    "n": 281
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.697509,
+    "n": 281
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.302491,
+    "n": 281
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.597865,
+    "n": 281
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.402135,
+    "n": 281
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.491103,
+    "n": 281
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.508897,
+    "n": 281
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.355872,
+    "n": 281
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.644128,
+    "n": 281
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.259786,
+    "n": 281
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.740214,
+    "n": 281
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.206406,
+    "n": 281
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.793594,
+    "n": 281
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.875445,
+    "n": 281
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.124555,
+    "n": 281
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.729537,
+    "n": 281
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.270463,
+    "n": 281
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.512456,
+    "n": 281
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.487544,
+    "n": 281
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.288256,
+    "n": 281
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.711744,
+    "n": 281
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.117438,
+    "n": 281
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.882562,
+    "n": 281
+   }
+  },
+  "brasileirao-serie-a": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.934629,
+    "n": 566
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.065371,
+    "n": 566
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.740283,
+    "n": 566
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.259717,
+    "n": 566
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.482332,
+    "n": 566
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.517668,
+    "n": 566
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.254417,
+    "n": 566
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.745583,
+    "n": 566
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.120141,
+    "n": 566
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.879859,
+    "n": 566
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.515901,
+    "n": 566
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.484099,
+    "n": 566
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.977032,
+    "n": 566
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.022968,
+    "n": 566
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.929329,
+    "n": 566
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.070671,
+    "n": 566
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.85159,
+    "n": 566
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.14841,
+    "n": 566
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.775618,
+    "n": 566
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.224382,
+    "n": 566
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.664311,
+    "n": 566
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.335689,
+    "n": 566
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.533569,
+    "n": 566
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.466431,
+    "n": 566
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.40106,
+    "n": 566
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.59894,
+    "n": 566
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.293286,
+    "n": 566
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.706714,
+    "n": 566
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.210247,
+    "n": 566
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.789753,
+    "n": 566
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.954064,
+    "n": 566
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.045936,
+    "n": 566
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.848057,
+    "n": 566
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.151943,
+    "n": 566
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.685512,
+    "n": 566
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.314488,
+    "n": 566
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.4947,
+    "n": 566
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.5053,
+    "n": 566
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.340989,
+    "n": 566
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.659011,
+    "n": 566
+   }
+  },
+  "brasileirao-serie-b": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.912343,
+    "n": 559
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.087657,
+    "n": 559
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.676208,
+    "n": 559
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.323792,
+    "n": 559
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.411449,
+    "n": 559
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.588551,
+    "n": 559
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.178891,
+    "n": 559
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.821109,
+    "n": 559
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.064401,
+    "n": 559
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.935599,
+    "n": 559
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.493739,
+    "n": 559
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.506261,
+    "n": 559
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.9678,
+    "n": 559
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.0322,
+    "n": 559
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.928444,
+    "n": 559
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.071556,
+    "n": 559
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.865832,
+    "n": 559
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.134168,
+    "n": 559
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.765653,
+    "n": 559
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.234347,
+    "n": 559
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.663685,
+    "n": 559
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.336315,
+    "n": 559
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.561717,
+    "n": 559
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.438283,
+    "n": 559
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.445438,
+    "n": 559
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.554562,
+    "n": 559
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.347048,
+    "n": 559
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.652952,
+    "n": 559
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.243292,
+    "n": 559
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.756708,
+    "n": 559
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.948122,
+    "n": 559
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.051878,
+    "n": 559
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.855098,
+    "n": 559
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.144902,
+    "n": 559
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.686941,
+    "n": 559
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.313059,
+    "n": 559
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.511628,
+    "n": 559
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.488372,
+    "n": 559
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.357782,
+    "n": 559
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.642218,
+    "n": 559
+   }
+  },
+  "eredivisie": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.965517,
+    "n": 290
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.034483,
+    "n": 290
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.872414,
+    "n": 290
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.127586,
+    "n": 290
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.631034,
+    "n": 290
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.368966,
+    "n": 290
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.396552,
+    "n": 290
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.603448,
+    "n": 290
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.206897,
+    "n": 290
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.793103,
+    "n": 290
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.658621,
+    "n": 290
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.341379,
+    "n": 290
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.972414,
+    "n": 290
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.027586,
+    "n": 290
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.941379,
+    "n": 290
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.058621,
+    "n": 290
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.893103,
+    "n": 290
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.106897,
+    "n": 290
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.803448,
+    "n": 290
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.196552,
+    "n": 290
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.724138,
+    "n": 290
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.275862,
+    "n": 290
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.57931,
+    "n": 290
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.42069,
+    "n": 290
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.47931,
+    "n": 290
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.52069,
+    "n": 290
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.389655,
+    "n": 290
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.610345,
+    "n": 290
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.27931,
+    "n": 290
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.72069,
+    "n": 290
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.810345,
+    "n": 290
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.189655,
+    "n": 290
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.6,
+    "n": 290
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.4,
+    "n": 290
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.365517,
+    "n": 290
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.634483,
+    "n": 290
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.206897,
+    "n": 290
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.793103,
+    "n": 290
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.110345,
+    "n": 290
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.889655,
+    "n": 290
+   }
+  },
+  "primeira-liga": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.931507,
+    "n": 292
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.068493,
+    "n": 292
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.743151,
+    "n": 292
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.256849,
+    "n": 292
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.537671,
+    "n": 292
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.462329,
+    "n": 292
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.318493,
+    "n": 292
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.681507,
+    "n": 292
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.106164,
+    "n": 292
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.893836,
+    "n": 292
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.486301,
+    "n": 292
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.513699,
+    "n": 292
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.952055,
+    "n": 292
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.047945,
+    "n": 292
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.883562,
+    "n": 292
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.116438,
+    "n": 292
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.784247,
+    "n": 292
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.215753,
+    "n": 292
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.684932,
+    "n": 292
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.315068,
+    "n": 292
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.59589,
+    "n": 292
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.40411,
+    "n": 292
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.479452,
+    "n": 292
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.520548,
+    "n": 292
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.359589,
+    "n": 292
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.640411,
+    "n": 292
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.260274,
+    "n": 292
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.739726,
+    "n": 292
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.195205,
+    "n": 292
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.804795,
+    "n": 292
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.924658,
+    "n": 292
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.075342,
+    "n": 292
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.808219,
+    "n": 292
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.191781,
+    "n": 292
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.664384,
+    "n": 292
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.335616,
+    "n": 292
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.493151,
+    "n": 292
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.506849,
+    "n": 292
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.294521,
+    "n": 292
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.705479,
+    "n": 292
+   }
+  },
+  "super-lig": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.914591,
+    "n": 281
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.085409,
+    "n": 281
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.765125,
+    "n": 281
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.234875,
+    "n": 281
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.533808,
+    "n": 281
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.466192,
+    "n": 281
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.284698,
+    "n": 281
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.715302,
+    "n": 281
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.13879,
+    "n": 281
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.86121,
+    "n": 281
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.55516,
+    "n": 281
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.44484,
+    "n": 281
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.94306,
+    "n": 281
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.05694,
+    "n": 281
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.886121,
+    "n": 281
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.113879,
+    "n": 281
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.782918,
+    "n": 281
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.217082,
+    "n": 281
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.676157,
+    "n": 281
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.323843,
+    "n": 281
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.551601,
+    "n": 281
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.448399,
+    "n": 281
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.459075,
+    "n": 281
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.540925,
+    "n": 281
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.366548,
+    "n": 281
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.633452,
+    "n": 281
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.245552,
+    "n": 281
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.754448,
+    "n": 281
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.16726,
+    "n": 281
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.83274,
+    "n": 281
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.903915,
+    "n": 281
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.096085,
+    "n": 281
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.790036,
+    "n": 281
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.209964,
+    "n": 281
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.601423,
+    "n": 281
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.398577,
+    "n": 281
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.412811,
+    "n": 281
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.587189,
+    "n": 281
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.270463,
+    "n": 281
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.729537,
+    "n": 281
+   }
+  },
+  "pro-league": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.920266,
+    "n": 301
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.079734,
+    "n": 301
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.760797,
+    "n": 301
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.239203,
+    "n": 301
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.521595,
+    "n": 301
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.478405,
+    "n": 301
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.282392,
+    "n": 301
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.717608,
+    "n": 301
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.142857,
+    "n": 301
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.857143,
+    "n": 301
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.534884,
+    "n": 301
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.465116,
+    "n": 301
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.966777,
+    "n": 301
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.033223,
+    "n": 301
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.940199,
+    "n": 301
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.059801,
+    "n": 301
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.857143,
+    "n": 301
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.142857,
+    "n": 301
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.770764,
+    "n": 301
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.229236,
+    "n": 301
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.657807,
+    "n": 301
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.342193,
+    "n": 301
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.568106,
+    "n": 301
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.431894,
+    "n": 301
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.465116,
+    "n": 301
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.534884,
+    "n": 301
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.315615,
+    "n": 301
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.684385,
+    "n": 301
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.23588,
+    "n": 301
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.76412,
+    "n": 301
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.870432,
+    "n": 301
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.129568,
+    "n": 301
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.700997,
+    "n": 301
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.299003,
+    "n": 301
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.478405,
+    "n": 301
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.521595,
+    "n": 301
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.322259,
+    "n": 301
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.677741,
+    "n": 301
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.159468,
+    "n": 301
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.840532,
+    "n": 301
+   }
+  },
+  "premiership": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.9375,
+    "n": 224
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.0625,
+    "n": 224
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.772321,
+    "n": 224
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.227679,
+    "n": 224
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.544643,
+    "n": 224
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.455357,
+    "n": 224
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.3125,
+    "n": 224
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.6875,
+    "n": 224
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.129464,
+    "n": 224
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.870536,
+    "n": 224
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.504464,
+    "n": 224
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.495536,
+    "n": 224
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.955357,
+    "n": 224
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.044643,
+    "n": 224
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.924107,
+    "n": 224
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.075893,
+    "n": 224
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.857143,
+    "n": 224
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.142857,
+    "n": 224
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.790179,
+    "n": 224
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.209821,
+    "n": 224
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.709821,
+    "n": 224
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.290179,
+    "n": 224
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.589286,
+    "n": 224
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.410714,
+    "n": 224
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.464286,
+    "n": 224
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.535714,
+    "n": 224
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.348214,
+    "n": 224
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.651786,
+    "n": 224
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.21875,
+    "n": 224
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.78125,
+    "n": 224
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.870536,
+    "n": 224
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.129464,
+    "n": 224
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.758929,
+    "n": 224
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.241071,
+    "n": 224
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.558036,
+    "n": 224
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.441964,
+    "n": 224
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.339286,
+    "n": 224
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.660714,
+    "n": 224
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.200893,
+    "n": 224
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.799107,
+    "n": 224
+   }
+  },
+  "superliga": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.94359,
+    "n": 195
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.05641,
+    "n": 195
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.805128,
+    "n": 195
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.194872,
+    "n": 195
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.594872,
+    "n": 195
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.405128,
+    "n": 195
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.333333,
+    "n": 195
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.666667,
+    "n": 195
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.194872,
+    "n": 195
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.805128,
+    "n": 195
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.579487,
+    "n": 195
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.420513,
+    "n": 195
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.948718,
+    "n": 195
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.051282,
+    "n": 195
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.938462,
+    "n": 195
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.061538,
+    "n": 195
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.851282,
+    "n": 195
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.148718,
+    "n": 195
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.748718,
+    "n": 195
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.251282,
+    "n": 195
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.682051,
+    "n": 195
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.317949,
+    "n": 195
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.574359,
+    "n": 195
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.425641,
+    "n": 195
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.446154,
+    "n": 195
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.553846,
+    "n": 195
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.302564,
+    "n": 195
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.697436,
+    "n": 195
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.230769,
+    "n": 195
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.769231,
+    "n": 195
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.815385,
+    "n": 195
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.184615,
+    "n": 195
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.65641,
+    "n": 195
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.34359,
+    "n": 195
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.466667,
+    "n": 195
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.533333,
+    "n": 195
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.261538,
+    "n": 195
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.738462,
+    "n": 195
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.133333,
+    "n": 195
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.866667,
+    "n": 195
+   }
+  },
+  "primera-division": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.888732,
+    "n": 710
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.111268,
+    "n": 710
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.664789,
+    "n": 710
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.335211,
+    "n": 710
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.404225,
+    "n": 710
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.595775,
+    "n": 710
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.174648,
+    "n": 710
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.825352,
+    "n": 710
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.074648,
+    "n": 710
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.925352,
+    "n": 710
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.461972,
+    "n": 710
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.538028,
+    "n": 710
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.944915,
+    "n": 708
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.055085,
+    "n": 708
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.887006,
+    "n": 708
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.112994,
+    "n": 708
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.792373,
+    "n": 708
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.207627,
+    "n": 708
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.694915,
+    "n": 708
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.305085,
+    "n": 708
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.586158,
+    "n": 708
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.413842,
+    "n": 708
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.470339,
+    "n": 708
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.529661,
+    "n": 708
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.362994,
+    "n": 708
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.637006,
+    "n": 708
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.254237,
+    "n": 708
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.745763,
+    "n": 708
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.173729,
+    "n": 708
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.826271,
+    "n": 708
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.970423,
+    "n": 710
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.029577,
+    "n": 710
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.892958,
+    "n": 710
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.107042,
+    "n": 710
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.728169,
+    "n": 710
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.271831,
+    "n": 710
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.542254,
+    "n": 710
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.457746,
+    "n": 710
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.347887,
+    "n": 710
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.652113,
+    "n": 710
+   }
+  },
+  "a-league": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.947368,
+    "n": 133
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.052632,
+    "n": 133
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.774436,
+    "n": 133
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.225564,
+    "n": 133
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.571429,
+    "n": 133
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.428571,
+    "n": 133
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.353383,
+    "n": 133
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.646617,
+    "n": 133
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.135338,
+    "n": 133
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.864662,
+    "n": 133
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.609023,
+    "n": 133
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.390977,
+    "n": 133
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.969925,
+    "n": 133
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.030075,
+    "n": 133
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.947368,
+    "n": 133
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.052632,
+    "n": 133
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.887218,
+    "n": 133
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.112782,
+    "n": 133
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.81203,
+    "n": 133
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.18797,
+    "n": 133
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.706767,
+    "n": 133
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.293233,
+    "n": 133
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.601504,
+    "n": 133
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.398496,
+    "n": 133
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.466165,
+    "n": 133
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.533835,
+    "n": 133
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.308271,
+    "n": 133
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.691729,
+    "n": 133
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.210526,
+    "n": 133
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.789474,
+    "n": 133
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.879699,
+    "n": 133
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.120301,
+    "n": 133
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.684211,
+    "n": 133
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.315789,
+    "n": 133
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.481203,
+    "n": 133
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.518797,
+    "n": 133
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.263158,
+    "n": 133
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.736842,
+    "n": 133
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.165414,
+    "n": 133
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.834586,
+    "n": 133
+   }
+  },
+  "mls": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.944238,
+    "n": 807
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.055762,
+    "n": 807
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.802974,
+    "n": 807
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.197026,
+    "n": 807
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.60347,
+    "n": 807
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.39653,
+    "n": 807
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.375465,
+    "n": 807
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.624535,
+    "n": 807
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.215613,
+    "n": 807
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.784387,
+    "n": 807
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.61834,
+    "n": 807
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.38166,
+    "n": 807
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.954151,
+    "n": 807
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.045849,
+    "n": 807
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.907063,
+    "n": 807
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.092937,
+    "n": 807
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.831475,
+    "n": 807
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.168525,
+    "n": 807
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.726146,
+    "n": 807
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.273854,
+    "n": 807
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.620818,
+    "n": 807
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.379182,
+    "n": 807
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.504337,
+    "n": 807
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.495663,
+    "n": 807
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.39653,
+    "n": 807
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.60347,
+    "n": 807
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.304833,
+    "n": 807
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.695167,
+    "n": 807
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.223048,
+    "n": 807
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.776952,
+    "n": 807
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.918216,
+    "n": 807
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.081784,
+    "n": 807
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.788104,
+    "n": 807
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.211896,
+    "n": 807
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.61834,
+    "n": 807
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.38166,
+    "n": 807
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.4114,
+    "n": 807
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.5886,
+    "n": 807
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.22057,
+    "n": 807
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.77943,
+    "n": 807
+   }
+  },
+  "colombian-primera-a": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.901813,
+    "n": 662
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.098187,
+    "n": 662
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.700906,
+    "n": 662
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.299094,
+    "n": 662
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.445619,
+    "n": 662
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.554381,
+    "n": 662
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.206949,
+    "n": 662
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.793051,
+    "n": 662
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.092145,
+    "n": 662
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.907855,
+    "n": 662
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.496979,
+    "n": 662
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.503021,
+    "n": 662
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.927492,
+    "n": 662
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.072508,
+    "n": 662
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.882175,
+    "n": 662
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.117825,
+    "n": 662
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.791541,
+    "n": 662
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.208459,
+    "n": 662
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.663142,
+    "n": 662
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.336858,
+    "n": 662
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.531722,
+    "n": 662
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.468278,
+    "n": 662
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.41994,
+    "n": 662
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.58006,
+    "n": 662
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.312689,
+    "n": 662
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.687311,
+    "n": 662
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.21148,
+    "n": 662
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.78852,
+    "n": 662
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.128399,
+    "n": 662
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.871601,
+    "n": 662
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.957704,
+    "n": 662
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.042296,
+    "n": 662
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.888218,
+    "n": 662
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.111782,
+    "n": 662
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.785498,
+    "n": 662
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.214502,
+    "n": 662
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.646526,
+    "n": 662
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.353474,
+    "n": 662
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.493958,
+    "n": 662
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.506042,
+    "n": 662
+   }
+  },
+  "liga-mx": {
+   "Over/Under|Over 0.5": {
+    "taxa": 0.930435,
+    "n": 345
+   },
+   "Over/Under|Under 0.5": {
+    "taxa": 0.069565,
+    "n": 345
+   },
+   "Over/Under|Over 1.5": {
+    "taxa": 0.782609,
+    "n": 345
+   },
+   "Over/Under|Under 1.5": {
+    "taxa": 0.217391,
+    "n": 345
+   },
+   "Over/Under|Over 2.5": {
+    "taxa": 0.550725,
+    "n": 345
+   },
+   "Over/Under|Under 2.5": {
+    "taxa": 0.449275,
+    "n": 345
+   },
+   "Over/Under|Over 3.5": {
+    "taxa": 0.318841,
+    "n": 345
+   },
+   "Over/Under|Under 3.5": {
+    "taxa": 0.681159,
+    "n": 345
+   },
+   "Over/Under|Over 4.5": {
+    "taxa": 0.168116,
+    "n": 345
+   },
+   "Over/Under|Under 4.5": {
+    "taxa": 0.831884,
+    "n": 345
+   },
+   "BTTS|BTTS Yes": {
+    "taxa": 0.585507,
+    "n": 345
+   },
+   "BTTS|BTTS No": {
+    "taxa": 0.414493,
+    "n": 345
+   },
+   "Corners|Corners Over 4.5": {
+    "taxa": 0.953623,
+    "n": 345
+   },
+   "Corners|Corners Under 4.5": {
+    "taxa": 0.046377,
+    "n": 345
+   },
+   "Corners|Corners Over 5.5": {
+    "taxa": 0.898551,
+    "n": 345
+   },
+   "Corners|Corners Under 5.5": {
+    "taxa": 0.101449,
+    "n": 345
+   },
+   "Corners|Corners Over 6.5": {
+    "taxa": 0.817391,
+    "n": 345
+   },
+   "Corners|Corners Under 6.5": {
+    "taxa": 0.182609,
+    "n": 345
+   },
+   "Corners|Corners Over 7.5": {
+    "taxa": 0.704348,
+    "n": 345
+   },
+   "Corners|Corners Under 7.5": {
+    "taxa": 0.295652,
+    "n": 345
+   },
+   "Corners|Corners Over 8.5": {
+    "taxa": 0.597101,
+    "n": 345
+   },
+   "Corners|Corners Under 8.5": {
+    "taxa": 0.402899,
+    "n": 345
+   },
+   "Corners|Corners Over 9.5": {
+    "taxa": 0.46087,
+    "n": 345
+   },
+   "Corners|Corners Under 9.5": {
+    "taxa": 0.53913,
+    "n": 345
+   },
+   "Corners|Corners Over 10.5": {
+    "taxa": 0.353623,
+    "n": 345
+   },
+   "Corners|Corners Under 10.5": {
+    "taxa": 0.646377,
+    "n": 345
+   },
+   "Corners|Corners Over 11.5": {
+    "taxa": 0.257971,
+    "n": 345
+   },
+   "Corners|Corners Under 11.5": {
+    "taxa": 0.742029,
+    "n": 345
+   },
+   "Corners|Corners Over 12.5": {
+    "taxa": 0.185507,
+    "n": 345
+   },
+   "Corners|Corners Under 12.5": {
+    "taxa": 0.814493,
+    "n": 345
+   },
+   "Cards|Over 1.5": {
+    "taxa": 0.892754,
+    "n": 345
+   },
+   "Cards|Under 1.5": {
+    "taxa": 0.107246,
+    "n": 345
+   },
+   "Cards|Over 2.5": {
+    "taxa": 0.771014,
+    "n": 345
+   },
+   "Cards|Under 2.5": {
+    "taxa": 0.228986,
+    "n": 345
+   },
+   "Cards|Over 3.5": {
+    "taxa": 0.591304,
+    "n": 345
+   },
+   "Cards|Under 3.5": {
+    "taxa": 0.408696,
+    "n": 345
+   },
+   "Cards|Over 4.5": {
+    "taxa": 0.42029,
+    "n": 345
+   },
+   "Cards|Under 4.5": {
+    "taxa": 0.57971,
+    "n": 345
+   },
+   "Cards|Over 5.5": {
+    "taxa": 0.266667,
+    "n": 345
+   },
+   "Cards|Under 5.5": {
+    "taxa": 0.733333,
+    "n": 345
+   }
+  }
+ }
+}
