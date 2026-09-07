@@ -12006,3 +12006,34 @@ Se o empate se mantiver a 300 jogos, o gate literal não autoriza a troca, e a e
 ### Lição aprendida
 Dois previsores independentes "igualmente piores que nada" é um resultado sobre a régua. A régua tinha um viés que só aparece com dados correlacionados, e a primeira versão dela (#227-c) foi validada num backfill em que cada partida contribuía com poucos picks de famílias diferentes. O instrumento precisa ser re-validado quando a estrutura dos dados muda, não só quando o código muda.
 
+---
+
+## 235-a — Pós-deploy, os pares ainda não chegam: produção lê `todays-matches`, o inventário do #230-h mediu `league-matches`
+**Data:** 2026-09-07 | **Arquivos:** scripts/diagnostico_chaves_escanteios.py | **Severidade:** Alta (âncora de unders e escanteios ausente em produção; inventário feito no endpoint errado) | **Status:** Instrumento pronto; medição pendente (chave da FootyStats)
+
+### A leitura (`--ledger --desde 2026-09-07`, 72 picks, 13 jogos — só cobertura conta)
+```
+selecao                       linhas  mercado  devig
+Over/Under Under 1.5              51       20     20    (39%)
+Over/Under Under 3.5              44       18     18
+Over/Under Over 1.5               44       44     16    (par so em 36%)
+Corners Over 11.5                 31       31      0
+Corners Under 11.5                29        2      2    (7%)
+Cards Over 1.5 / 2.5              37        2      2    (esperado: sem preco)
+```
+Depois do deploy do #230-g/h os unders de gols continuam em ~40% e os de escanteios em dígito único. Os Brier desta janela (13 jogos) são diagnósticos e não entram em decisão.
+
+### A causa provável, rastreada no código, não suposta
+`routes/fixtures.py:1134`: a produção monta os records a partir de **`get_todays_matches`** (endpoint `todays-matches`, cache 5 min). O inventário do #230-h (`--contem odds_`, "99% das 617 finalizadas") foi feito em **`league-matches`** via `coletar_partidas_escanteios`, em partidas **finalizadas**. São dois endpoints e dois momentos: ou o `todays-matches` manda menos odds, ou antes do jogo a escada de unders ainda não foi postada. Qualquer das duas explica o ledger; nenhuma se resolve por leitura de código. O mapper do #230-g/h está correto para a chave que ele lê; a pergunta é se a chave existe na linha que a produção recebe.
+
+### Instrumento
+`diagnostico_chaves_escanteios.py --hoje [AAAA-MM-DD] --contem odds_`: varre as linhas do **mesmo endpoint** que a produção lê, separando PENDENTES (o que o record vê antes do jogo) de FINALIZADAS do mesmo dia. A tabela de preenchimento/não-zero foi extraída para `_tabela` e serve aos dois modos. Provado com um cliente de mentira: 2 pendentes sem `odds_ft_under15` não-zero e 1 finalizada com a escada inteira saem em tabelas separadas.
+
+### O que a medição vai decidir
+- Se PENDENTES já trazem `odds_ft_under15..45` e `odds_corners_under_*` não-zero em maioria: o elo faltante está entre a linha e o record (mapper, cache ou merge), e volta para o código.
+- Se PENDENTES não trazem e FINALIZADAS trazem: é timing da FootyStats, e o par tem de vir do enriquecimento API-Football (#120), que hoje só preenche o que falta e já cobre unders — então a cobertura de `devig` deve subir nos records reclassificados; investigar por que não sobe.
+- Se nem FINALIZADAS do dia trazem: o endpoint do dia é mais pobre que o `league-matches`, e a fonte da escada tem de ser o `league-matches` da temporada (já em cache 15 min no cron), casado por `id`.
+
+### Lição aprendida
+"99%" foi medido no endpoint que o backfill usa, e a conclusão foi aplicada ao endpoint que a produção usa. Rastreabilidade origem → destino inclui *qual chamada* produz a linha, não só o nome da chave.
+

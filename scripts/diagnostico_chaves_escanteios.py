@@ -56,6 +56,60 @@ def _util(valor: Any) -> bool:
     return valor is not None and valor != -1 and valor != ""
 
 
+def _tabela(partidas: List[Dict[str, Any]], contem: str) -> bool:
+    """Preenchimento e nao-zero de toda chave cujo nome contem `contem`."""
+    nomes = sorted({c for p in partidas for c in p if contem.lower() in c.lower()})
+    if not nomes:
+        print(f"nenhuma chave com '{contem}' no nome")
+        return False
+    print(f"\n{'chave':42s} {'preenchida':>12s} {'%':>5s} {'nao-zero':>10s} {'%':>5s}   exemplo")
+    print("-" * 100)
+    n = len(partidas)
+    for nome in nomes:
+        preenchidas = [p[nome] for p in partidas if _util(p.get(nome))]
+        nao_zero = [v for v in preenchidas if _numero(v) not in (None, 0.0)]
+        exemplo = next((v for v in nao_zero), preenchidas[0] if preenchidas else "-")
+        marca = "  <<<" if len(nao_zero) * 100 // n >= 50 else ""
+        if preenchidas and not nao_zero:
+            marca = "   TODOS ZERO"
+        print(f"{nome:42s} {len(preenchidas):6d}/{n:<5d} {len(preenchidas) * 100 // n:4d}% "
+              f"{len(nao_zero):6d}/{n:<5d} {len(nao_zero) * 100 // n:4d}%   {exemplo!r}{marca}")
+    return True
+
+
+def _varrer_hoje(data: str, contem: str, liga: str) -> int:
+    """#235-a - a producao le `todays-matches` (routes/fixtures.py:1134), nao
+    `league-matches`. O inventario do #230-h foi feito em finalizadas do
+    league-matches e disse "99%"; o ledger desde 07/09 mostra under15 em 39%
+    e cornersUnder115 em 7% das linhas. Ou o endpoint do dia manda menos
+    odds, ou pre-jogo a escada ainda nao foi postada. So esta varredura, no
+    endpoint certo e na hora certa, diz qual."""
+    from datetime import datetime, timedelta, timezone
+    from backend.services.footstats_client import FootyStatsClient
+
+    if data == "hoje":
+        data = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+    resp = FootyStatsClient().get_todays_matches(date=data)
+    if not resp.get("success"):
+        print(f"todays-matches falhou: {str(resp)[:300]}", file=sys.stderr)
+        return 1
+    linhas: List[Dict[str, Any]] = resp.get("data") or []
+    print(f"todays-matches data={data}: {len(linhas)} partidas (todas as ligas)")
+    if not linhas:
+        return 1
+    por_status = Counter(str(p.get("status", "?")) for p in linhas)
+    print(f"status: {dict(por_status)}")
+    pendentes = [p for p in linhas if not _finalizada(p)]
+    print(f"\n== PENDENTES (o que a producao ve antes do jogo): {len(pendentes)} ==")
+    if pendentes:
+        _tabela(pendentes, contem)
+    finalizadas = [p for p in linhas if _finalizada(p)]
+    if finalizadas:
+        print(f"\n== FINALIZADAS do mesmo dia: {len(finalizadas)} ==")
+        _tabela(finalizadas, contem)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--liga", default="championship")
@@ -64,11 +118,18 @@ def main() -> int:
                     help="#230-g: substring do nome da chave a varrer (padrao "
                          "'corner'; use 'odds_' para ver toda odd que a "
                          "FootyStats manda, e saber quais unders existem)")
+    ap.add_argument("--hoje", nargs="?", const="hoje", metavar="AAAA-MM-DD",
+                    help="#235-a: varre as linhas do endpoint todays-matches (o que a "
+                         "PRODUCAO le, routes/fixtures.py) em vez de league-matches "
+                         "(finalizadas). Sem data = hoje em BRT.")
     ap.add_argument("--verboso", action="store_true")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.verboso else logging.WARNING,
                         format="%(levelname)s %(name)s: %(message)s")
+
+    if args.hoje:
+        return _varrer_hoje(args.hoje, args.contem, args.liga)
 
     from backend.config.leagues_config import LEAGUES_CONFIG
     from backend.cron_handler import coletar_partidas_escanteios
@@ -90,29 +151,13 @@ def main() -> int:
         print("nenhuma finalizada — nada a medir")
         return 1
 
-    # Nomes DESCOBERTOS, nao presumidos.
-    nomes = sorted({c for p in finalizadas for c in p if args.contem.lower() in c.lower()})
-    if not nomes:
-        print(f"nenhuma chave com '{args.contem}' no nome")
+    # Nomes DESCOBERTOS, nao presumidos. #226-b: "preenchida" e "nao-zero" sao
+    # perguntas diferentes — numa CONTAGEM, 0 e resultado legitimo; num campo
+    # de POTENCIAL/projecao, 0 quase sempre e enchimento (`corners_potential`
+    # alimenta `footystats_corners_potential`, a "ancora de projecao" do #123).
+    if not _tabela(finalizadas, args.contem):
         return 1
-
-    # #226-b: "preenchida" e "nao-zero" sao perguntas diferentes. Numa CONTAGEM,
-    # 0 e resultado legitimo. Num campo de POTENCIAL/projecao, 0 quase sempre e
-    # enchimento — e `corners_potential` alimenta `footystats_corners_potential`,
-    # que o #123 chama de "ancora de projecao independente". Ancora de zero nao
-    # ancora nada, e as duas colunas juntas denunciam isso sem precisar supor.
-    print(f"\n{'chave':42s} {'preenchida':>12s} {'%':>5s} {'nao-zero':>10s} {'%':>5s}   exemplo")
-    print("-" * 100)
     n = len(finalizadas)
-    for nome in nomes:
-        preenchidas = [p[nome] for p in finalizadas if _util(p.get(nome))]
-        nao_zero = [v for v in preenchidas if _numero(v) not in (None, 0.0)]
-        exemplo = next((v for v in nao_zero), preenchidas[0] if preenchidas else "-")
-        marca = "  <<<" if len(nao_zero) * 100 // n >= 50 else ""
-        if preenchidas and not nao_zero:
-            marca = "   TODOS ZERO"
-        print(f"{nome:42s} {len(preenchidas):6d}/{n:<5d} {len(preenchidas) * 100 // n:4d}% "
-              f"{len(nao_zero):6d}/{n:<5d} {len(nao_zero) * 100 // n:4d}%   {exemplo!r}{marca}")
 
     # O que o retrain de fato usa, na ordem em que le.
     from backend.modeling.corners.retrain import _extract_total_corners
