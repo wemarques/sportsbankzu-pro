@@ -574,6 +574,14 @@ def _log_odds_coverage(lid: str, records: List[Dict[str, Any]]) -> None:
         logger.debug(f"[ODDS-COVERAGE] skipped: {e}")
 
 
+def _ancora_ligada() -> bool:
+    try:
+        from backend.services.ancora_mercado import ancora_ligada
+        return ancora_ligada()
+    except Exception:                                     # noqa: BLE001
+        return False
+
+
 def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Enrich fixture records with odds from API-Football (#120).
 
@@ -599,6 +607,20 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[s
             af_odds = _afc.get_odds(int(af_id), ttl_minutes=180)
             if not af_odds:
                 continue
+            # #232 - consenso entre TODAS as casas da resposta, so com a fonte
+            # da probabilidade trocada (PROB_SOURCE=mercado): e o preco justo
+            # independente de que o EV do passo 4 precisa. Flag desligada =
+            # payload inalterado (garantia do #231).
+            if _ancora_ligada():
+                try:
+                    from backend.services.consenso_odds import consenso_por_selecao
+                    _cons = consenso_por_selecao(af_odds)
+                    if _cons:
+                        rec["odds_consenso"] = _cons
+                        if not any(r is rec for r in enriched_recs):
+                            enriched_recs.append(rec)      # reclassifica com EV novo
+                except Exception as _e:                   # noqa: BLE001
+                    logger.debug(f"[#232] consenso af_id={af_id} falhou: {_e}")
             best = _afc.extract_best_odds(af_odds, league_id=rec.get("leagueId", ""))
             if not best:
                 continue
@@ -653,7 +675,8 @@ def _enrich_odds_from_api_football(records: List[Dict[str, Any]]) -> List[Dict[s
                         filled.append(odds_key)
             if filled:
                 rec.setdefault("source_flags", []).append("api_football_odds")
-                enriched_recs.append(rec)
+                if not any(r is rec for r in enriched_recs):
+                    enriched_recs.append(rec)
                 enriched_count += 1
                 _ht = rec.get("homeTeam")
                 home = _ht.get("name", "") if isinstance(_ht, dict) else str(_ht or "")

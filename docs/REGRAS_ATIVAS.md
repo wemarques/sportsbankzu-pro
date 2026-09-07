@@ -1123,3 +1123,26 @@ padrao.
 **Verificacao:** `python3 scripts/lambda_env.py --get PROB_SOURCE` (ausente
 ou `modelo` ate o gate). **Gate automatico:**
 `pytest tests/test_231_prob_source.py -q`.
+
+### #232 — Sob a flag, EV so existe contra um preco justo INDEPENDENTE da odd
+
+**Tipo:** Hard Constraint (definicao do EV com a fonte trocada)
+**Relacionado:** #230 (passo 4), #231 (ancora), #219 (de-vig), #120/#187 (odds API-Football)
+
+1. Com `PROB_SOURCE=mercado`, `ev` de qualquer selecao e
+   `p_justa(consenso) x odd_oferecida - 1`, onde `p_justa` e a mediana dos
+   de-vigs por casa na resposta inteira do /odds da API-Football
+   (`odds_consenso` do record). PROIBIDO calcular EV como probabilidade
+   publicada x odd quando as duas saem da mesma fonte — e o de-vig ao
+   contrario, EV <= 0 por construcao.
+2. Consenso exige `n_casas >= 3` (`MIN_CASAS_CONSENSO`). Abaixo disso, ou
+   sem resposta, `ev = None` e `ev_referencia` carrega o motivo
+   (`sem_odd` | `sem_consenso` | `poucas_casas`). EV ausente com motivo
+   ausente e violacao.
+3. O parser por casa e `_parse_bets_into` (api_football_client) — o MESMO de
+   `extract_best_odds`. Proibido um segundo parser de nomes de bet.
+4. A probabilidade publicada NAO muda por este item (segue #231); o consenso
+   so alimenta o EV ate o gate #230 fechar e o consenso entrar na
+   comparacao como terceira serie.
+
+**Gate automatico:** `pytest tests/test_232_ev_consenso.py -q`.

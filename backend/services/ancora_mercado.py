@@ -26,10 +26,11 @@ autoriza a flag.
 `implicita` (1/odd de uma perna so) NAO serve de ancora: carrega a margem
 inteira da casa (5-7 pp, #230-e). Quem nao tem par cai para a taxa-base.
 
-EV: com a probabilidade vinda do mercado, `prob x odd` da mesma casa e por
-construcao <= 0 (e o de-vig ao contrario). O EV fica None ate o item 2
-redefini-lo como distancia entre a odd oferecida e o preco justo entre casas.
-A classificacao (#028/#042) NAO e tocada aqui — item 3.
+EV (#232, item 2): `prob x odd` da mesma fonte e por construcao <= 0 (e o
+de-vig ao contrario). Com a flag ligada o EV de TODA selecao passa a ser
+p_justa(consenso entre casas, `match_data["odds_consenso"]`) x odd oferecida
+- 1, ou None com o motivo em `ev_referencia`. A classificacao (#028/#042)
+NAO e tocada aqui — item 3.
 
 Com a flag desligada (padrao) nada neste modulo roda e o payload e identico
 ao anterior, byte a byte (teste test_231_prob_source.py).
@@ -152,11 +153,13 @@ def aplicar_ancora(bundle, match_data: Optional[Dict[str, Any]] = None,
 
     match_data = match_data or {}
     odds = (match_data.get("odds") or {}) if isinstance(match_data, dict) else {}
+    consenso = (match_data.get("odds_consenso") or {}) if isinstance(match_data, dict) else {}
     liga = league_id or getattr(bundle, "league_id", None)
 
     for m in getattr(bundle, "markets", []) or []:
         try:
             _trocar_uma(m, odds, liga, prob_mercado_do_pick, contagem)
+            _ev_uma(m, consenso)
         except Exception as e:                               # noqa: BLE001
             logger.warning("[#231] ancora falhou em %s %s: %s",
                            getattr(m, "market_type", "?"), getattr(m, "selection", "?"), e)
@@ -187,6 +190,19 @@ def _trocar_uma(m, odds, liga, prob_mercado_do_pick, contagem) -> None:
         return                      # modelo fica, rotulado como sem referencia
     m.calibrated_probability = round(nova, 6)
     m.compute_display()
-    # ver docstring do modulo: prob x odd da mesma casa nao e EV. Item 2.
-    m.ev = None
-    m.edge = None
+
+
+def _ev_uma(m, consenso_do_jogo: Dict[str, Any]) -> None:
+    """#232 - EV contra o preco justo de consenso entre casas.
+
+    Vale para TODA selecao com a flag ligada, seja qual for a fonte da
+    probabilidade publicada: a odd oferecida e comparada com o consenso da
+    API-Football, nunca com a probabilidade que saiu da mesma fonte da odd.
+    Sem consenso (>= MIN_CASAS_CONSENSO casas) nao ha EV, e o motivo fica em
+    `ev_referencia`.
+    """
+    from backend.services.consenso_odds import chave_da_selecao, ev_contra_consenso
+    chave = chave_da_selecao(getattr(m, "market_type", "") or "", getattr(m, "selection", "") or "")
+    cons = consenso_do_jogo.get(chave) if chave else None
+    r = ev_contra_consenso(m.book_odd, cons)
+    m.ev, m.edge, m.ev_referencia = r["ev"], r["edge"], r["referencia"]

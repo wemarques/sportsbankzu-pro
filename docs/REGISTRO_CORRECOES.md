@@ -11853,3 +11853,40 @@ Com `DATABASE_URL` no `.env`, o backfill passa a aplicar as correções **da RDS
 ### Lição aprendida
 "Travado" com CPU em zero é espera de rede, não cálculo. O traceback do Ctrl+C disse exatamente onde; a hipótese anterior (modo de seleção do console) era plausível e estava errada — foi dada antes de pedir o traceback. Perguntar o dado antes de dar a causa.
 
+---
+
+## 232 — EV contra o preço justo de consenso entre casas (passo 4 do #230, item 2)
+**Data:** 2026-09-07 | **Arquivos:** backend/services/consenso_odds.py (novo), backend/services/api_football_client.py, backend/services/ancora_mercado.py, backend/models/market_output.py, backend/routes/fixtures.py, tests/test_232_ev_consenso.py (novo), tests/test_231_prob_source.py | **Severidade:** Alta (redefinição do EV sob a flag — desligada por padrão) | **Status:** Implementado, flag desligada
+
+### Objetivo
+Regra #230: *"EV passa a ser distância entre odd oferecida e preço justo (entre casas, #120), nunca prob × odd da mesma casa."* Com a âncora do #231 a probabilidade publicada é o de-vig do par da FootyStats; multiplicá-la pela odd da mesma fonte desfaz o de-vig: EV ≤ 0 por construção (no quadro do #231, Over 1.5 a 0,769 × 1,22 = −6,2%). O item 1 deixou o EV em `None`. Este item o define.
+
+### Rastreabilidade (origem → destino)
+- **Produtor:** `_afc.get_odds(af_id)`, a resposta inteira do `/odds` da API-Football, com **todas** as casas. O enriquecimento #120 já a busca (cache 180 min) e só aproveitava a primeira casa da prioridade (`extract_best_odds`, #166/#187).
+- **Parser:** `_parse_bets_into(bk_name, bets, result)` — o corpo do loop de `extract_best_odds` extraído para função de módulo, **sem mudar uma linha da semântica** (27 testes de #187/#189-f passam idênticos). Um parser, dois consumidores; nada duplicado (proibição 5).
+- **Consenso** (`consenso_odds.consenso_por_selecao`): por casa, dict novo e de-vig Shin (#219) do par daquela casa (trio para 1X2, soma de pernas para DC); por seleção, **mediana** das probabilidades justas entre casas (robusta a uma casa com linha velha), `n_casas`, `odd_mediana`, `odd_max`/`casa_max`. Uma casa entra uma vez (a paginação repete casas). Chaves = nomes reais do `odds` do record; `chave_da_selecao(market, selection)` espelha `par_de_odds` (#230).
+- **Transporte:** `_enrich_odds_from_api_football` grava `rec["odds_consenso"]` e enfileira o record para `_reclassify_after_odds` **só com `PROB_SOURCE=mercado`** — flag desligada, payload byte a byte o de sempre (garantia do #231, testada).
+- **Consumidor:** `ancora_mercado._ev_uma`, para **toda** seleção com a flag ligada, seja qual for a fonte da probabilidade publicada: `ev = p_justa(consenso) × odd_oferecida − 1` com `n_casas ≥ 3`; senão `ev = None` e o motivo em `ev_referencia` (`sem_odd` | `sem_consenso` | `poucas_casas`). `MarketOutput.ev_referencia` entra no legado só com a flag ligada.
+
+### Decisão que fica registrada, com o caminho de medição
+A probabilidade **publicada** continua o de-vig do par da FootyStats (#231); o consenso alimenta só o EV. Consenso entre N casas é candidato natural a âncora melhor, mas a série que o gate #230 mede é `prob_mercado` (par FootyStats) — trocar a âncora agora seria trocar o instrumento no meio da medição. Quando o gate fechar, o consenso entra na comparação como terceira série.
+
+### Prova empírica (`evaluate_match_markets`, flag ligada, resposta sintética de 5 casas)
+```
+selecao                    publicada   odd  p_consenso  n  EV antes  EV depois  referencia
+1X2 Draw                      0.2586  3.60    0.2691    5     None    -0.0313   consenso
+Over/Under Over 1.5           0.7686  1.22    0.7666    5     None    -0.0648   consenso
+BTTS BTTS Yes                 0.5357  1.75    0.5415    5     None    -0.0524   consenso
+Corners Over 9.5              0.5261  1.77    0.5018    5     None    -0.1118   consenso
+Double Chance DC 1X           0.7488  1.25       -      -     None      None    sem_consenso
+Corners Over 4.5              0.9830  None       -      -     None      None    sem_odd (taxa_base)
+Cards Over 1.5                0.8849  None       -      -     None      None    sem_odd (taxa_base)
+```
+Antes (item 1) todo EV era `None`; depois, 8 de 20 seleções têm EV contra consenso e 12 têm o motivo. Os EVs negativos são do payload sintético (odds da FootyStats abaixo do justo de consenso), não uma propriedade da fórmula: no teste unitário, par simétrico 1,90/1,90 como âncora e consenso pendendo para o Over dá EV ≠ −5%, o valor circular. Os dois `taxa_base` a 0,983 e 0,885 são o artefato real do Championship (#231), já no ar.
+
+### Testes
+12 novos (consenso, chave, EV e motivos, flag off intocada, flag on contra consenso, enriquecimento só com a flag e uma entrada por record). Um teste do #231 ajustado ao contrato novo (`modelo_sem_referencia` sem consenso → EV `None` com motivo, não EV do modelo). Suíte: **966 passed, 1 skipped**.
+
+### Lição aprendida
+O dado para o preço justo independente já entrava no processo a cada requisição e era descartado depois da primeira casa. Antes de buscar fonte nova, olhar o que a resposta atual carrega — a mesma lição do #230-g, agora no lado do EV.
+

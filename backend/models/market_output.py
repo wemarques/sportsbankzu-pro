@@ -98,6 +98,14 @@ class MarketOutput(BaseModel):
     prob_source: Optional[str] = Field(
         None, description="#231: fonte da probabilidade publicada (None = modelo, flag desligada)"
     )
+    # #232 - com a fonte trocada, o EV e distancia entre a odd oferecida e o
+    # preco justo de CONSENSO entre casas (API-Football, #120), nunca prob x
+    # odd da mesma fonte. `ev_referencia` diz de onde veio o EV ou por que
+    # nao ha: {"fonte": "consenso", "n_casas", "p_justa", ...} ou
+    # {"fonte": None, "motivo": "sem_odd" | "sem_consenso" | "poucas_casas"}.
+    ev_referencia: Optional[dict] = Field(
+        None, description="#232: referencia do EV quando a fonte da probabilidade foi trocada"
+    )
 
     # Display helpers
     display_label: str = ""
@@ -170,6 +178,8 @@ class MarketOutput(BaseModel):
             result["model_probability"] = (
                 round(self.model_probability, 4) if self.model_probability is not None else None
             )
+            if self.ev_referencia is not None:            # #232
+                result["ev_referencia"] = self.ev_referencia
         # Add corner governance metadata if available
         if self.corner_governance:
             result["corner_governance"] = self.corner_governance

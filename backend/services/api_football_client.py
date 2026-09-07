@@ -164,6 +164,126 @@ BASE_URL = "https://v3.football.api-sports.io"
 _RETRYABLE_STATUS_CODES = {502, 503, 504, 429}
 
 
+
+def _parse_bets_into(bk_name: str, bets: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
+    """Le as bets de UMA casa para dentro de `result` (primeiro valor vence).
+
+    #232 - extraido do corpo de `extract_best_odds` sem mudar uma linha da
+    semantica, para o consenso entre casas (consenso_odds.py) usar o MESMO
+    parser com um dict novo por casa. Uma unica leitura dos nomes de bet,
+    dois consumidores.
+    """
+    for bet in bets or []:
+        bet_id = bet.get("id")
+        bet_name = (bet.get("name") or "").lower()
+        # #166: BET_ID_MAP is the future primary identifier once
+        # validated via /odds/bets. Currently empty → all matching
+        # falls through to the existing name-based branches. Unknown
+        # non-null IDs are logged so we can populate the map from
+        # real data rather than guessed values.
+        _mapped = _BET_ID_MAP.get(bet_id) if bet_id is not None else None
+        if bet_id is not None and _mapped is None and _BET_ID_MAP:
+            logger.warning(
+                "[ODDS] Unknown bet id=%s name=%r — add to BET_ID_MAP",
+                bet_id, bet_name,
+            )
+        values = bet.get("values", [])
+
+        if "match winner" in bet_name or bet_name == "1x2":
+            for v in values:
+                val = v.get("value", "")
+                odd = _safe_float(v.get("odd"))
+                if val == "Home" and "home" not in result:
+                    result["home"] = odd
+                elif val == "Draw" and "draw" not in result:
+                    result["draw"] = odd
+                elif val == "Away" and "away" not in result:
+                    result["away"] = odd
+            if "home" in result:
+                result.setdefault("bookmaker", bk_name)
+
+        # Corners Over/Under (#144) — checked BEFORE goals O/U
+        # because corner bet names commonly contain "over/under"
+        # and would otherwise be miscaptured by the goals branch.
+        # #187: whole family captured from a SINGLE total-market bet
+        # (no cross-bet/cross-bookmaker mixing) + ladder coherence.
+        elif "corner" in bet_name:
+            if not any(k.startswith("corners_") for k in result):
+                cand = _extract_line_family(
+                    bet_name, values, "corners",
+                    ("4.5", "5.5", "6.5", "7.5", "8.5",
+                     "9.5", "10.5", "11.5", "12.5"),
+                )
+                if cand:
+                    result.update(cand)
+                    logger.info(
+                        "[ODDS-FAMILY] corners captured from bet id=%s %r (%s): %d lines",
+                        bet_id, bet_name, bk_name, len(cand),
+                    )
+
+        elif ("over/under" in bet_name or "goals" in bet_name) \
+                and "corner" not in bet_name \
+                and "card" not in bet_name \
+                and "booking" not in bet_name:
+            for v in values:
+                val = str(v.get("value", "")).lower()
+                odd = _safe_float(v.get("odd"))
+                if not odd:
+                    continue
+                # Extract all O/U goal lines (#120)
+                for line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5"):
+                    key_sfx = line.replace(".", "")
+                    if f"over {line}" in val and f"over_{key_sfx}" not in result:
+                        result[f"over_{key_sfx}"] = odd
+                    elif f"under {line}" in val and f"under_{key_sfx}" not in result:
+                        result[f"under_{key_sfx}"] = odd
+
+        elif "both teams" in bet_name or "btts" in bet_name:
+            for v in values:
+                val = str(v.get("value", "")).lower()
+                odd = _safe_float(v.get("odd"))
+                if val == "yes" and "btts_yes" not in result:
+                    result["btts_yes"] = odd
+                elif val == "no" and "btts_no" not in result:
+                    result["btts_no"] = odd
+
+        # Double Chance (#111)
+        elif "double chance" in bet_name or "dupla chance" in bet_name:
+            for v in values:
+                val = str(v.get("value", "")).lower()
+                odd = _safe_float(v.get("odd"))
+                if not odd:
+                    continue
+                if "home/draw" in val or "1x" in val:
+                    result.setdefault("dc_1x", odd)
+                elif "home/away" in val or "12" in val:
+                    result.setdefault("dc_12", odd)
+                elif "draw/away" in val or "x2" in val:
+                    result.setdefault("dc_x2", odd)
+
+        # Cards / Bookings Over/Under (#095)
+        # #187: pre-#187 this filled each line with the FIRST value
+        # from ANY bet containing "card"/"booking" — mixing total
+        # cards with team/half/handicap card markets across
+        # bookmakers, producing impossible ladders (e.g. Over 5.5
+        # paying less than Over 3.5). Now the whole family comes
+        # from a SINGLE coherent total-market bet.
+        elif "booking" in bet_name or "card" in bet_name:
+            if not any(k.startswith("cards_") for k in result):
+                cand = _extract_line_family(
+                    bet_name, values, "cards",
+                    ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"),
+                )
+                if cand:
+                    result.update(cand)
+                    logger.info(
+                        "[ODDS-FAMILY] cards captured from bet id=%s %r (%s): %d lines",
+                        bet_id, bet_name, bk_name, len(cand),
+                    )
+
+
+
+
 class APIFootballClient:
     """Client for API-Football v3.
 
@@ -1204,113 +1324,7 @@ class APIFootballClient:
 
             for bk in sorted_bk:
                 bk_name = bk.get("name", "")
-                for bet in bk.get("bets", []):
-                    bet_id = bet.get("id")
-                    bet_name = (bet.get("name") or "").lower()
-                    # #166: BET_ID_MAP is the future primary identifier once
-                    # validated via /odds/bets. Currently empty → all matching
-                    # falls through to the existing name-based branches. Unknown
-                    # non-null IDs are logged so we can populate the map from
-                    # real data rather than guessed values.
-                    _mapped = _BET_ID_MAP.get(bet_id) if bet_id is not None else None
-                    if bet_id is not None and _mapped is None and _BET_ID_MAP:
-                        logger.warning(
-                            "[ODDS] Unknown bet id=%s name=%r — add to BET_ID_MAP",
-                            bet_id, bet_name,
-                        )
-                    values = bet.get("values", [])
-
-                    if "match winner" in bet_name or bet_name == "1x2":
-                        for v in values:
-                            val = v.get("value", "")
-                            odd = _safe_float(v.get("odd"))
-                            if val == "Home" and "home" not in result:
-                                result["home"] = odd
-                            elif val == "Draw" and "draw" not in result:
-                                result["draw"] = odd
-                            elif val == "Away" and "away" not in result:
-                                result["away"] = odd
-                        if "home" in result:
-                            result.setdefault("bookmaker", bk_name)
-
-                    # Corners Over/Under (#144) — checked BEFORE goals O/U
-                    # because corner bet names commonly contain "over/under"
-                    # and would otherwise be miscaptured by the goals branch.
-                    # #187: whole family captured from a SINGLE total-market bet
-                    # (no cross-bet/cross-bookmaker mixing) + ladder coherence.
-                    elif "corner" in bet_name:
-                        if not any(k.startswith("corners_") for k in result):
-                            cand = _extract_line_family(
-                                bet_name, values, "corners",
-                                ("4.5", "5.5", "6.5", "7.5", "8.5",
-                                 "9.5", "10.5", "11.5", "12.5"),
-                            )
-                            if cand:
-                                result.update(cand)
-                                logger.info(
-                                    "[ODDS-FAMILY] corners captured from bet id=%s %r (%s): %d lines",
-                                    bet_id, bet_name, bk_name, len(cand),
-                                )
-
-                    elif ("over/under" in bet_name or "goals" in bet_name) \
-                            and "corner" not in bet_name \
-                            and "card" not in bet_name \
-                            and "booking" not in bet_name:
-                        for v in values:
-                            val = str(v.get("value", "")).lower()
-                            odd = _safe_float(v.get("odd"))
-                            if not odd:
-                                continue
-                            # Extract all O/U goal lines (#120)
-                            for line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5"):
-                                key_sfx = line.replace(".", "")
-                                if f"over {line}" in val and f"over_{key_sfx}" not in result:
-                                    result[f"over_{key_sfx}"] = odd
-                                elif f"under {line}" in val and f"under_{key_sfx}" not in result:
-                                    result[f"under_{key_sfx}"] = odd
-
-                    elif "both teams" in bet_name or "btts" in bet_name:
-                        for v in values:
-                            val = str(v.get("value", "")).lower()
-                            odd = _safe_float(v.get("odd"))
-                            if val == "yes" and "btts_yes" not in result:
-                                result["btts_yes"] = odd
-                            elif val == "no" and "btts_no" not in result:
-                                result["btts_no"] = odd
-
-                    # Double Chance (#111)
-                    elif "double chance" in bet_name or "dupla chance" in bet_name:
-                        for v in values:
-                            val = str(v.get("value", "")).lower()
-                            odd = _safe_float(v.get("odd"))
-                            if not odd:
-                                continue
-                            if "home/draw" in val or "1x" in val:
-                                result.setdefault("dc_1x", odd)
-                            elif "home/away" in val or "12" in val:
-                                result.setdefault("dc_12", odd)
-                            elif "draw/away" in val or "x2" in val:
-                                result.setdefault("dc_x2", odd)
-
-                    # Cards / Bookings Over/Under (#095)
-                    # #187: pre-#187 this filled each line with the FIRST value
-                    # from ANY bet containing "card"/"booking" — mixing total
-                    # cards with team/half/handicap card markets across
-                    # bookmakers, producing impossible ladders (e.g. Over 5.5
-                    # paying less than Over 3.5). Now the whole family comes
-                    # from a SINGLE coherent total-market bet.
-                    elif "booking" in bet_name or "card" in bet_name:
-                        if not any(k.startswith("cards_") for k in result):
-                            cand = _extract_line_family(
-                                bet_name, values, "cards",
-                                ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5"),
-                            )
-                            if cand:
-                                result.update(cand)
-                                logger.info(
-                                    "[ODDS-FAMILY] cards captured from bet id=%s %r (%s): %d lines",
-                                    bet_id, bet_name, bk_name, len(cand),
-                                )
+                _parse_bets_into(bk_name, bk.get("bets", []), result)
 
                 # #166: checklist break — stop only when all essentials present
                 # (home + over_25 + btts_yes). Legacy flag-off keeps the old

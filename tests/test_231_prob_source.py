@@ -101,7 +101,7 @@ def test_ligada_troca_so_quem_tem_par_devigado(monkeypatch):
     assert o25.calibrated_probability == pytest.approx(esperado, abs=1e-6)
     assert o25.model_probability == 0.50                   # modelo preservado
     assert o25.fair_odd == round(1 / esperado, 2)          # display recomputado
-    assert o25.ev is None and o25.edge is None             # item 2 redefine
+    assert o25.ev is None and o25.edge is None             # #232: sem consenso, sem EV
     assert o25.classification == MarketClassification.SAFE  # item 3 redefine
     assert o25.odds_available is True                      # a odd continua la
 
@@ -111,7 +111,9 @@ def test_ligada_troca_so_quem_tem_par_devigado(monkeypatch):
     o115 = por["Corners Over 11.5"]
     assert o115.prob_source == "modelo_sem_referencia"
     assert o115.calibrated_probability == 0.35 and o115.model_probability == 0.35
-    assert o115.ev is not None                              # EV do modelo fica
+    # #232: com a flag ligada o EV de TODA selecao e contra o consenso entre
+    # casas; sem consenso no jogo, None com o motivo — nunca prob x odd.
+    assert o115.ev is None and o115.ev_referencia["motivo"] == "sem_consenso"
 
     c15 = por["Over 1.5"]
     assert c15.prob_source == "modelo_sem_referencia" and c15.calibrated_probability == 0.68
