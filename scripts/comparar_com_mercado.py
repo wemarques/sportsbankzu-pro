@@ -179,6 +179,38 @@ def _piso(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
     return soma / total if total else None
 
 
+def _piso_logo(picks: Sequence[Dict[str, Any]]) -> Optional[float]:
+    """#235 - piso DEIXA-UM-JOGO-FORA: a taxa-base de cada pick e calculada
+    sem os picks do proprio jogo.
+
+    O piso in-sample (_piso) usa o desfecho do pick para estimar a taxa que
+    vai prever esse mesmo pick. Com ~10 selecoes por jogo, os desfechos de
+    um jogo entram correlacionados (Over 1.5, Over 2.5, BTTS do mesmo placar)
+    e o otimismo do piso nao e o "celulas/n" de picks independentes — na
+    primeira leitura com 196 jogos ele deixou modelo E mercado 7% "abaixo
+    de nao saber nada", um numero sobre o instrumento. Este piso e o que
+    alguem poderia ter formado com os OUTROS jogos: e o honesto para o skill.
+    Celula que so tem o proprio jogo cai para a taxa in-sample da celula.
+    """
+    celula = _celula_de(picks)
+    soma_c: Dict[Tuple[str, str], float] = defaultdict(float)
+    n_c: Dict[Tuple[str, str], int] = defaultdict(int)
+    soma_cj: Dict[Tuple[Tuple[str, str], str], float] = defaultdict(float)
+    n_cj: Dict[Tuple[Tuple[str, str], str], int] = defaultdict(int)
+    for i, p in enumerate(picks):
+        c, j = celula[i], str(p.get("match_id"))
+        soma_c[c] += p["outcome"]; n_c[c] += 1
+        soma_cj[(c, j)] += p["outcome"]; n_cj[(c, j)] += 1
+    soma = 0.0
+    for i, p in enumerate(picks):
+        c, j = celula[i], str(p.get("match_id"))
+        n_fora = n_c[c] - n_cj[(c, j)]
+        taxa = ((soma_c[c] - soma_cj[(c, j)]) / n_fora if n_fora > 0
+                else soma_c[c] / n_c[c])
+        soma += (taxa - p["outcome"]) ** 2
+    return soma / len(picks) if picks else None
+
+
 def _nota_do_piso(picks: Sequence[Dict[str, Any]]) -> str:
     celula = _celula_de(picks)
     n_fina = sum(1 for c in celula.values() if c[0] != "*")
@@ -298,6 +330,42 @@ def _decompor(picks: Sequence[Dict[str, Any]], campo: str) -> Optional[Dict[str,
     return {"espalhamento": esp / n, "sinal": sinal / n}
 
 
+def _decomposicao_e_teto(picks: Sequence[Dict[str, Any]], piso: Optional[float],
+                         previsores: Sequence[Tuple[str, str]]) -> None:
+    """#229-a/#229-b, agora tambem no caminho do ledger (#235).
+
+    Ate o #235 esta impressao vivia dentro de _motor_x_ingenuo, que devolve
+    cedo sem `prob_ingenuo` — e o ledger nunca tem esse campo. Resultado: o
+    criterio (b) do gate #230 (teto de calibracao da publicada < 0,25%) nao
+    era impresso justamente na leitura que decide.
+    """
+    # #229-a: Brier menor pode ser MAIS SINAL ou MENOS ESPALHAMENTO. So a
+    # decomposicao diz qual — e a resposta muda o que se faz com o motor.
+    print(f"\n{'decomposicao (Brier - piso = espalhamento - 2*sinal)':<52}"
+          f"{'espalh.':>9}{'sinal':>9}{'Brier-piso':>12}")
+    for nome, campo in previsores:
+        dec = _decompor(picks, campo)
+        if not dec:
+            continue
+        b = _brier(picks, campo)
+        excesso = b - piso if b is not None and piso is not None else float("nan")
+        print(f"  {nome:<50}{dec['espalhamento']:>9.4f}{dec['sinal']:>+9.4f}{excesso:>+12.4f}")
+    # #229-b: quanto sobraria se cada previsor fosse ENCOLHIDO da melhor forma
+    # possivel (calibracao linear otima em torno da taxa-base). Brier minimo
+    # = piso - sinal^2/espalhamento. E o teto do que "calibrar" pode dar — e
+    # responde com numero a pergunta do #220 ("existe resolucao para calibrar?").
+    print(f"\n{'teto apos calibracao linear otima':<40}{'skill max':>11}   leitura")
+    for nome, campo in previsores:
+        dec = _decompor(picks, campo)
+        if not dec or not dec["espalhamento"] or not piso:
+            continue
+        ganho = dec["sinal"] ** 2 / dec["espalhamento"]
+        skill_max = ganho / piso * 100
+        leitura = ("indistinguivel do piso — calibrar devolve a taxa-base"
+                   if skill_max < 0.25 else "ha algo a extrair")
+        print(f"  {nome:<38}{skill_max:>+10.2f}%   {leitura}")
+
+
 def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
     """#229 - isola o MOTOR do INSUMO.
 
@@ -333,33 +401,8 @@ def _motor_x_ingenuo(picks: Sequence[Dict[str, Any]], reamostras: int) -> None:
             leitura = "empate em Brier"
         print(f"\nmotor - ingenuo = {d:+.4f}  IC95 [{lo:+.4f}, {hi:+.4f}]  -> {leitura}")
 
-    # #229-a: Brier menor pode ser MAIS SINAL ou MENOS ESPALHAMENTO. So a
-    # decomposicao diz qual — e a resposta muda o que se faz com o motor.
-    print(f"\n{'decomposicao (Brier - piso = espalhamento - 2*sinal)':<52}"
-          f"{'espalh.':>9}{'sinal':>9}{'Brier-piso':>12}")
-    for nome, campo in (("motor", "prob_modelo"), ("ingenuo", "prob_ingenuo"),
-                        ("mercado", "prob")):
-        dec = _decompor(trio, campo)
-        if not dec:
-            continue
-        b = _brier(trio, campo)
-        excesso = b - piso if b is not None and piso is not None else float("nan")
-        print(f"  {nome:<50}{dec['espalhamento']:>9.4f}{dec['sinal']:>+9.4f}{excesso:>+12.4f}")
-    # #229-b: quanto sobraria se cada previsor fosse ENCOLHIDO da melhor forma
-    # possivel (calibracao linear otima em torno da taxa-base). Brier minimo
-    # = piso - sinal^2/espalhamento. E o teto do que "calibrar" pode dar — e
-    # responde com numero a pergunta do #220 ("existe resolucao para calibrar?").
-    print(f"\n{'teto apos calibracao linear otima':<40}{'skill max':>11}   leitura")
-    for nome, campo in (("motor", "prob_modelo"), ("ingenuo", "prob_ingenuo"),
-                        ("mercado", "prob")):
-        dec = _decompor(trio, campo)
-        if not dec or not dec["espalhamento"] or not piso:
-            continue
-        ganho = dec["sinal"] ** 2 / dec["espalhamento"]
-        skill_max = ganho / piso * 100
-        leitura = ("indistinguivel do piso — calibrar devolve a taxa-base"
-                   if skill_max < 0.25 else "ha algo a extrair")
-        print(f"  {nome:<38}{skill_max:>+10.2f}%   {leitura}")
+    _decomposicao_e_teto(trio, piso, (("motor", "prob_modelo"), ("ingenuo", "prob_ingenuo"),
+                                      ("mercado", "prob")))
 
     dm, di = _decompor(trio, "prob_modelo"), _decompor(trio, "prob_ingenuo")
     if dm and di:
@@ -617,16 +660,28 @@ def main() -> int:
     # otimista de proposito: quem passa dele carrega informacao por jogo de
     # verdade; quem fica abaixo esta piorando o palpite trivial. Na
     # championship o mercado passou por 0.30% e o modelo ficou 7.26% abaixo.
-    print("\n── PISO: prever sempre a taxa-base da celula (taxa DESTA amostra) ──")
+    print("\n── PISO: prever sempre a taxa-base da celula ──")
     piso = _piso(picks)
+    piso_logo = _piso_logo(picks)
     bm = _brier(picks, "prob_modelo")
     bk = _brier(picks, "prob")
-    print(f"piso (taxa-base) {piso:.4f} | modelo {bm:.4f} | mercado {bk:.4f}")
+    print(f"piso in-sample (taxa DESTA amostra) {piso:.4f} | "
+          f"piso deixa-um-jogo-fora {piso_logo:.4f} | modelo {bm:.4f} | mercado {bk:.4f}")
     print(f"  {_nota_do_piso(picks)}")
+    # #235: o skill que vale e contra o piso deixa-um-jogo-fora — o in-sample
+    # usa o desfecho do proprio pick e, com ~10 picks correlacionados por
+    # jogo, fica otimista o bastante para por os dois "abaixo de nao saber
+    # nada" com 196 jogos. O in-sample continua impresso porque a
+    # decomposicao (#229-a) e exata so contra ele.
     for nome, val in (("modelo", bm), ("mercado", bk)):
-        ganho = _skill(val, piso)
-        print(f"  {nome:8s} skill score vs piso: {ganho:+.2f}%"
+        ganho = _skill(val, piso_logo)
+        print(f"  {nome:8s} skill score vs piso deixa-um-jogo-fora: {ganho:+.2f}%"
               + ("   <- pior que nao saber nada" if ganho < 0 else ""))
+
+    # #235: criterio (b) do gate #230 — teto de calibracao da PUBLICADA — impresso
+    # no caminho do ledger, que nao tem prob_ingenuo.
+    _decomposicao_e_teto(picks, piso, (("publicada (" + args.campo + ")", "prob_modelo"),
+                                       ("mercado", "prob")))
 
     _por_liga(picks, args.reamostras)
     _motor_x_ingenuo(picks, args.reamostras)

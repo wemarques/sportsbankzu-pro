@@ -11974,3 +11974,35 @@ Itens 1 (#231), 2 (#232), 3 (#233) e 4 (#234) prontos atrás de `PROB_SOURCE`. O
 ### Lição aprendida
 A interface só precisou de um helper porque os três itens anteriores deixaram no payload tudo que ela tinha de dizer — a fonte, o modelo, a referência e o motivo. Rótulo é a última camada, não a primeira: sem o dado no contrato, o front inventa texto.
 
+---
+
+## 235 — Leitura com 196 jogos: empate exato; dois defeitos do instrumento corrigidos (piso deixa-um-jogo-fora, teto no ledger)
+**Data:** 2026-09-07 | **Arquivos:** scripts/comparar_com_mercado.py, tests/test_235_piso_logo.py (novo) | **Severidade:** Média (instrumento do gate #230) | **Status:** Corrigido + Medição registrada
+
+### A leitura (`--ledger --desde 2026-09-03`, 4268 picks, 196 jogos, só de-vigados)
+```
+TODAS   n=2026  jogos=196  modelo 0.2125  mercado 0.2125  dif -0.0000  IC95 [-0.0073, +0.0075]
+log-loss  modelo 0.6164  mercado 0.6155  dif +0.0010  [-0.0166, +0.0185]
+BH q=0.05 sobre 14 células: 0 sobrevivem (Over 1.5 mercado melhor e Over 2.5 modelo melhor caem)
+por liga: 8 ligas, todas empate; modelo abaixo do piso em 2 (Série A −1,2%, Premiership −0,5%)
+```
+Terceira janela aninhada (131 → 196 jogos): o ponto foi de +0,0041 para 0,0000. **Empate exato em Brier e em log-loss.** O gate #230 exige mercado *melhor* com IC excluindo zero e n ≥ 300; a 196 jogos o IC é ±0,0074 e, se a diferença verdadeira for zero, a 300 jogos será ±0,006 e o gate como escrito **nunca fecha**. Isso é uma consequência da regra, não um defeito da medição, e a decisão sobre ela é do Welligton (ver "Decisão pendente").
+
+### Defeito 1 — piso in-sample com picks correlacionados
+O comparador imprimiu **modelo −6,95% e mercado −6,96% "abaixo de não saber nada"**. Os dois abaixo do piso pelo mesmo tanto é assinatura do instrumento, não dos previsores: `_piso` usa o desfecho do próprio pick para estimar a taxa que prevê esse pick, e com ~10 seleções por jogo (Over 1.5, Over 2.5, BTTS do mesmo placar) o otimismo não é o "células/n" de picks independentes que o #230-d assumiu. Correção: `_piso_logo`, taxa-base de cada pick calculada **sem os picks do próprio jogo** (deixa-um-jogo-fora), célula com um jogo só cai para a in-sample. Teste construído: 20 jogos × 10 picks alternando 0/1 → in-sample 0,2500 (cego à correlação), deixa-um-jogo-fora (10/19)² = 0,2770. O skill passa a ser impresso contra o piso honesto; o in-sample continua impresso porque a decomposição (#229-a) é exata só contra ele. Na próxima rodada real os dois skills devem sair perto de zero, não −7%.
+
+### Defeito 2 — o critério (b) do gate nunca era impresso no ledger
+Decomposição e teto de calibração (#229-a/b) viviam dentro de `_motor_x_ingenuo`, que devolve cedo sem `prob_ingenuo` — e o ledger nunca tem esse campo. O critério (b) do #230 ("teto de calibração da publicada < 0,25%") não aparecia justamente na leitura que decide. Extraído para `_decomposicao_e_teto(picks, piso, previsores)`, chamado nos dois caminhos; no ledger imprime publicada (`--campo`) e mercado. Verificado num arquivo sintético (`--prob-de mercado`): as duas seções aparecem com os dois previsores.
+
+### Cobertura que pede uma conferência
+`Under 1.5: 867 linhas, 186 com prob de mercado`; `Corners Over 11.5: 664 com mercado, 9 devig`. A FootyStats manda esses unders (#230-g/h), mas o deploy dessas correções é de 06/09 e a janela começa em 03/09. `--desde 2026-09-07` responde se os pares chegam em produção depois do deploy; se `devig` continuar baixo nessa janela, o mapper ainda não está no ar ou há outro elo faltando.
+
+### Decisão pendente (do Welligton, não do código)
+Se o empate se mantiver a 300 jogos, o gate literal não autoriza a troca, e a escolha da fonte passa a ser de honestidade (EV não circular, rótulos, item 2–4 prontos), não de acurácia. A alternativa metodologicamente correta é **pré-registrar agora**, antes de ver os 300, um critério de não-inferioridade: limite superior do IC95 de `Brier(mercado) − Brier(publicada)` abaixo de uma margem δ. Proposta: δ = 0,005 (a metade do IC atual). É um número escolhido; fica como proposta, e a regra #230 só muda com a decisão registrada. Sem pré-registro, escolher o critério depois de ver os dados é o erro que o #230-f fechou com Benjamini-Hochberg.
+
+### Testes
+4 novos. Suíte: **988 passed, 1 skipped**.
+
+### Lição aprendida
+Dois previsores independentes "igualmente piores que nada" é um resultado sobre a régua. A régua tinha um viés que só aparece com dados correlacionados, e a primeira versão dela (#227-c) foi validada num backfill em que cada partida contribuía com poucos picks de famílias diferentes. O instrumento precisa ser re-validado quando a estrutura dos dados muda, não só quando o código muda.
+
