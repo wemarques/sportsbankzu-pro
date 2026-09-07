@@ -11940,3 +11940,37 @@ Neste payload as odds da FootyStats estão abaixo do justo de consenso, então t
 ### Lição aprendida
 Trocar a probabilidade e o EV sem trocar a classificação deixava o rótulo mais visível do produto explicando um número que não era mais publicado. Cada item do passo 4 arrasta o consumidor seguinte; a regra #230 já listava os três no mesmo patch, e a ordem 1 → 2 → 3 só funcionou porque cada um deixou o anterior testado.
 
+---
+
+## 234 — Rótulos na interface: fonte da probabilidade, referência do EV e os reason codes do #233 (passo 4 do #230, item 4)
+**Data:** 2026-09-07 | **Arquivos:** frontend/next/src/lib/fonteProbabilidade.ts (novo), frontend/next/src/lib/leagues.ts, frontend/next/src/components/MatchDetailCard.tsx, frontend/next/src/app/dashboard/page.tsx | **Severidade:** Média (interface; sem a flag nada muda) | **Status:** Implementado
+
+### Objetivo
+Fechar o passo 4: com `PROB_SOURCE=mercado` o backend publica `prob_source`, `model_probability`, `ev_referencia` e `ancora_referencia` (#231–#233), e a interface tinha de dizer ao usuário de onde vem o número que ele vê. Regra #231 ponto 2: rótulo ausente com fonte trocada é violação.
+
+### Rastreabilidade
+O `/fixtures` devolve o dicionário legado inteiro (`predictions: item.mercados`, `dashboard/page.tsx:621`), então os quatro campos chegam ao card sem mapeamento novo. Sem a flag os campos não existem e cada helper devolve `null`: a interface fica byte a byte a de antes.
+
+### O que aparece, e só com a flag
+- **Pílula da fonte** ao lado da probabilidade, no card do jogo e na linha do dashboard: `Mercado` (azul), `Mercado (odd velha)` (laranja, frescor ≠ ok), `Taxa-base` (roxo) ou `Modelo` (cinza). O *title* explica: método do de-vig, margem em pp e o valor do modelo (`Modelo: 64.7%`).
+- **EV com referência:** o *title* do EV passa a ser "EV −6,5% contra o consenso de 5 casas (justo 76,7%)". Sem EV, aparece `EV: —` esmaecido com o motivo no *title* (sem odd, sem consenso, poucas casas), em vez de sumir.
+- **Reason codes do #233** com rótulo em pt-BR no `REASON_META` do card: `Âncora: mercado`, `Odd velha`, `Sem referência de valor`, `Taxa-base`, `Só modelo`; quatro termos novos no glossário.
+- Tipos: `MatchPrediction` (leagues.ts) e o tipo local do card ganham os quatro campos; o `ReasonCode` TS já tinha os cinco códigos (#233).
+
+Tudo vive em `lib/fonteProbabilidade.ts` (`fonteProbabilidade`, `referenciaDoEv`, `REASON_META_ANCORA`, `GLOSSARIO_ANCORA`), consumido pelos dois lugares que renderizam picks — nenhuma cópia de texto.
+
+### Prova
+`tsc --noEmit` limpo; `lint:accents` (#189-j) limpo depois de tirar a chave interna `metodo` de dentro de um template literal; helper compilado com esbuild e exercido com 12 asserções (sem flag → `null`; mercado fresco/velho, taxa-base, modelo; EV com consenso e os três motivos; os cinco códigos). Saída real:
+```
+Mercado | Probabilidade publicada: mercado sem margem (par de odds, devig). Margem 5.2 pp. Modelo: 64.7%.
+EV -6.5% contra o consenso de 5 casas (justo 76.7%)
+EV: — / Sem consenso entre casas: não há referência independente para o EV
+```
+O e2e Playwright não foi executado aqui (exige backend e chave); a renderização com a flag ligada fica para a rodada em que o gate fechar, antes de ligar em produção.
+
+### Passo 4 fechado
+Itens 1 (#231), 2 (#232), 3 (#233) e 4 (#234) prontos atrás de `PROB_SOURCE`. O que resta para ligar é só o gate do #230: n ≥ 300 jogos no ledger com Brier do mercado menor que o da publicada, IC excluindo zero. `comparar_com_mercado.py --ledger --desde 2026-09-03` diz quando.
+
+### Lição aprendida
+A interface só precisou de um helper porque os três itens anteriores deixaram no payload tudo que ela tinha de dizer — a fonte, o modelo, a referência e o motivo. Rótulo é a última camada, não a primeira: sem o dado no contrato, o front inventa texto.
+

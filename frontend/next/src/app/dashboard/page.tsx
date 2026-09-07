@@ -14,6 +14,7 @@ import MatchDetailCard, {
 import { MatchAnalysis } from "@/components/MatchAnalysis";
 import { mapToMatchAnalysis } from "@/lib/matchDataMapper";
 import { ACTIVE_LEAGUES, AVAILABLE_LEAGUES, type Match, type MatchPrediction } from "@/lib/leagues";
+import { fonteProbabilidade, referenciaDoEv } from "@/lib/fonteProbabilidade";
 import { mapMatchStats } from "@/lib/matchStats";
 import { getMatchesByLeague, getAiMatchAnalysis, postMatchAudit, applyAuditCorrection, applyBatchCorrections } from "@/lib/api";
 import type { BatchAuditResult, BatchAuditCorrection, MatchesResponse } from "@/lib/api";
@@ -2629,6 +2630,15 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                                   <span className="st-prediction-market">{fmtMercado(pred.mercado)}</span>
                                   <span className="st-prediction-sep" aria-hidden="true">|</span>
                                   <span className="st-prediction-prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  {/* #234: fonte da probabilidade (so com PROB_SOURCE=mercado) */}
+                                  {(() => {
+                                    const fonte = fonteProbabilidade(pred);
+                                    return fonte ? (
+                                      <span style={{ fontSize: "0.6em", color: fonte.color, background: `${fonte.color}1f`, border: `1px solid ${fonte.color}40`, borderRadius: 4, padding: "1px 5px", marginLeft: 3, whiteSpace: "nowrap" as const, fontWeight: 500 }} title={fonte.title}>
+                                        {fonte.label}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                   {/* EV display — show real EV% when available, fallback to odd_minima */}
                                   {pred.ev != null ? (
                                     <>
@@ -2638,9 +2648,16 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                                         style={{
                                           color: pred.ev >= 0.05 ? "#00df82" : pred.ev >= 0 ? "#ffaa44" : "#ff5555",
                                         }}
-                                        title={`EV: ${(pred.ev * 100).toFixed(1)}% | Odd mín: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
+                                        title={referenciaDoEv(pred)?.texto ?? `EV: ${(pred.ev * 100).toFixed(1)}% | Odd mín: ${pred.odd_minima?.toFixed(2) ?? "-"}`}
                                       >
                                         EV: {pred.ev >= 0 ? "+" : ""}{(pred.ev * 100).toFixed(1)}%
+                                      </span>
+                                    </>
+                                  ) : referenciaDoEv(pred)?.semEv ? (
+                                    <>
+                                      <span className="st-prediction-sep" aria-hidden="true">|</span>
+                                      <span className="st-prediction-odd" style={{ opacity: 0.6 }} title={referenciaDoEv(pred)?.texto}>
+                                        {referenciaDoEv(pred)?.semEv}
                                       </span>
                                     </>
                                   ) : pred.odd_minima != null ? (

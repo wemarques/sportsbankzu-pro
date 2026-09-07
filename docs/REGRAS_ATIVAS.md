@@ -1104,8 +1104,10 @@ padrao.
    `modelo`. **Proibido** definir `PROB_SOURCE=mercado` na Lambda antes de:
    (a) o gate do #230 fechar (n >= 300 jogos, Brier do mercado < Brier da
    publicada com IC excluindo zero); (b) o EV ser redefinido como distancia
-   entre odd oferecida e preco justo (item 2); (c) a classificacao ser
-   redefinida em valor + confianca na ancora (item 3).
+   entre odd oferecida e preco justo (item 2 — feito, #232); (c) a
+   classificacao ser redefinida em valor + confianca na ancora (item 3 —
+   feito, #233); (d) os rotulos na interface (item 4 — feito, #234). Desde
+   2026-09-07 resta so (a).
 2. Com a flag ligada, so `devig`/`devig3` servem de ancora. `implicita`
    (1/odd de uma perna) NUNCA e publicada como probabilidade. Sem par, a
    selecao cai para a taxa-base da celula (n >= 30, fallback `*`) ROTULADA

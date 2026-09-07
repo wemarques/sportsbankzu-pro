@@ -251,6 +251,11 @@ export type MatchPrediction = {
   calibrated_probability?: number | null;
   raw_probability?: number | null;
   stake?: number | null;
+  // #231–#234: presentes só com PROB_SOURCE=mercado no backend
+  prob_source?: "mercado" | "taxa_base" | "modelo_sem_referencia";
+  model_probability?: number | null;
+  ev_referencia?: import("./fonteProbabilidade").EvReferencia | null;
+  ancora_referencia?: import("./fonteProbabilidade").AncoraReferencia | null;
   // Corner governance (populated for marketFamily=corners)
   corner_governance?: {
     marketFamily: string;

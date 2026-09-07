@@ -20,6 +20,10 @@ import CornerProgressBar, { extractTargetCorners } from "./CornerProgressBar";
 import { calcQuarterKelly, familyGateReason, familyStakePolicy } from "./BankrollCard";
 import ClassificationBadge from "./ClassificationBadge";
 import { getClassificationDisplay } from "@/lib/classifications";
+import {
+  fonteProbabilidade, referenciaDoEv, REASON_META_ANCORA, GLOSSARIO_ANCORA,
+  type EvReferencia, type AncoraReferencia,
+} from "@/lib/fonteProbabilidade";
 import "../styles/match-detail-card.css";
 
 /* ── Team name fuzzy matching for standings highlight (#097) ── */
@@ -66,6 +70,7 @@ const REASON_META: Record<string, { icon: string; label: string; color: string; 
   ODDS_TOO_LOW:         { icon: "\u2193", label: "Odd Baixa",     color: "#666",    type: "neutral" },
   HIGH_MARKET_CORRELATION:{ icon: "\u229E", label: "Correla\u00E7\u00E3o",  color: "#666",    type: "neutral" },
   LINEUP_UNCERTAINTY:   { icon: "?", label: "Escala\u00E7\u00E3o ?",   color: "#ff6b35", type: "warning" },
+  ...REASON_META_ANCORA,   // #234
 };
 
 /* ── Glossary terms ── */
@@ -89,6 +94,7 @@ const GLOSSARY = [
   { term: "xG (Expected Goals)", description: "Gols esperados \u2014 m\u00E9trica que mede a qualidade das finaliza\u00E7\u00F5es, n\u00E3o apenas a quantidade" },
   { term: "Clean Sheet", description: "Quando o time n\u00E3o sofre gols durante a partida" },
   { term: "BTTS", description: "Both Teams To Score \u2014 mercado onde ambas as equipes precisam marcar pelo menos um gol" },
+  ...GLOSSARIO_ANCORA,   // #234
   { term: "FTS%", description: "Failed To Score \u2014 percentual de jogos em que o time n\u00E3o marcou gols" },
   { term: "DC 1X", description: "Dupla Chance Casa ou Empate \u2014 aposta que cobre dois dos tr\u00EAs resultados poss\u00EDveis" },
   { term: "Under / Over", description: "Menos / Mais \u2014 mercado de gols ou escanteios acima ou abaixo de uma linha (ex: Under 2.5 = menos de 3 gols)" },
@@ -355,6 +361,11 @@ export interface MatchDetailData {
     book_odd?: number | null;
     calibrated_probability?: number | null;
     stake?: number | null;
+    // #231–#234: presentes só com PROB_SOURCE=mercado no backend
+    prob_source?: "mercado" | "taxa_base" | "modelo_sem_referencia";
+    model_probability?: number | null;
+    ev_referencia?: EvReferencia | null;
+    ancora_referencia?: AncoraReferencia | null;
     // Market reference signal fields
     marketReferenceSignal?: "SAFE" | "NEUTRO" | "RESTRITO";
     marketReferenceReason?: string;
@@ -798,6 +809,19 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                   <span className="mdc-prognostico__market">{pred.mercado}</span>
                                   <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
                                   <span className="mdc-prognostico__prob">{pred.prob_min}-{pred.prob_max}%</span>
+                                  {/* #234: fonte da probabilidade (so com PROB_SOURCE=mercado) */}
+                                  {(() => {
+                                    const fonte = fonteProbabilidade(pred);
+                                    return fonte ? (
+                                      <span
+                                        className="mdc-prognostico__ev"
+                                        style={{ fontSize: "0.65em", padding: "1px 6px", borderRadius: 4, color: fonte.color, background: `${fonte.color}1f`, border: `1px solid ${fonte.color}40`, marginLeft: 3, whiteSpace: "nowrap" as const }}
+                                        title={fonte.title}
+                                      >
+                                        {fonte.label}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                   {/* Show fair odd and book odd */}
                                   {pred.book_odd != null && (
                                     <>
@@ -826,9 +850,18 @@ function MatchDetailCardInner({ match, aiLoading, onRegenerate, onAudit, onApply
                                           textDecoration: pred.reason_codes?.includes("SUSPICIOUS_EV") ? "line-through" : "none",
                                           opacity: pred.reason_codes?.includes("SUSPICIOUS_EV") ? 0.6 : 1,
                                         }}
-                                        title={pred.reason_codes?.includes("SUSPICIOUS_EV") ? "EV suspeito \u2014 prov\u00E1vel diverg\u00EAncia entre fonte de probabilidade e odds" : `EV: ${(pred.ev * 100).toFixed(1)}%`}
+                                        title={pred.reason_codes?.includes("SUSPICIOUS_EV") ? "EV suspeito \u2014 prov\u00E1vel diverg\u00EAncia entre fonte de probabilidade e odds" : (referenciaDoEv(pred)?.texto ?? `EV: ${(pred.ev * 100).toFixed(1)}%`)}
                                       >
                                         EV: {(pred.ev * 100).toFixed(1)}%
+                                      </span>
+                                    </>
+                                  )}
+                                  {/* #234: sem EV, com o motivo (so com PROB_SOURCE=mercado) */}
+                                  {pred.ev == null && referenciaDoEv(pred)?.semEv && (
+                                    <>
+                                      <span className="mdc-prognostico__sep" aria-hidden="true">|</span>
+                                      <span className="mdc-prognostico__ev" style={{ opacity: 0.6 }} title={referenciaDoEv(pred)?.texto}>
+                                        {referenciaDoEv(pred)?.semEv}
                                       </span>
                                     </>
                                   )}

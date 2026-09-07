@@ -102,7 +102,7 @@ aws lambda update-function-configuration --function-name sportsbank-pro-backend 
 
 `MISTRAL_API_KEY`, `PY_BACKEND_URL`, `FUTEBOL_ROOT` / `DATA_ROOT`, `S3_BUCKET` (opcional).
 
-`PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos) e dos itens 2–3 do passo 4. `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`. `LAMBDA_CORRECTIONS_TTL_S` (#231-a): cache por liga das correções do banco, padrão 300 s; `0` desliga.
+`PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos no ledger); itens 2–4 do passo 4 já implementados (#232–#234). `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`. `LAMBDA_CORRECTIONS_TTL_S` (#231-a): cache por liga das correções do banco, padrão 300 s; `0` desliga.
 
 ## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
 
@@ -130,7 +130,7 @@ FootyStats + API-Football v3
   → ancora_mercado.aplicar_ancora (#231) — só com PROB_SOURCE=mercado; flag desligada = payload inalterado
        EV contra consenso entre casas (#232): consenso_odds.py, `odds_consenso` do record, n_casas ≥ 3
        classificação em valor + confiança na âncora (#233): mesmos limiares, só âncora fresca chega a SAFE/NQ
-  → Next.js (Vercel)
+  → Next.js (Vercel) — rótulos da fonte/EV só com a flag (#234, lib/fonteProbabilidade.ts)
 ```
 
 **Calibração per-league automática** (`league_calibrator.py`): deflation (O/U, BTTS, 1X2, cards #056, corners), lambda weights season/recent, xG blend, BTTS fusion, thresholds safe_prob de 6 mercados, Dixon-Coles ρ (#078), home advantage γ (#078), SAFE enabled per liga (#054 — 36/37 ligas com `safe_enabled=true`).
