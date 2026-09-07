@@ -112,6 +112,26 @@ class FootyStatsMatchInput(BaseModel):
     odds_ft_under25: Optional[float] = 0.0
     odds_btts_yes: Optional[float] = 0.0
     odds_btts_no: Optional[float] = 0.0
+    # #237 - a escada inteira que a FootyStats manda (medido: 13/13 pendentes
+    # no todays-matches e 99% das finalizadas no league-matches). Sem estes
+    # campos o mapper descartava os unders, a DC e os unders de escanteio
+    # ANTES do record ler, e o ledger ficava com Under 1.5 em ~35% de ancora
+    # mesmo depois do #230-g/h — cujo teste passava por _rows_override, que
+    # pula este mapper.
+    odds_ft_over05: Optional[float] = 0.0
+    odds_ft_under05: Optional[float] = 0.0
+    odds_ft_under15: Optional[float] = 0.0
+    odds_ft_under35: Optional[float] = 0.0
+    odds_ft_under45: Optional[float] = 0.0
+    odds_doublechance_1x: Optional[float] = 0.0
+    odds_doublechance_12: Optional[float] = 0.0
+    odds_doublechance_x2: Optional[float] = 0.0
+    odds_corners_over_75: Optional[float] = 0.0
+    odds_corners_under_75: Optional[float] = 0.0
+    odds_corners_under_85: Optional[float] = 0.0
+    odds_corners_under_95: Optional[float] = 0.0
+    odds_corners_under_105: Optional[float] = 0.0
+    odds_corners_under_115: Optional[float] = 0.0
     competition_id: Optional[int] = None
     game_week: Optional[int] = None
     stadium_name: Optional[str] = None
@@ -238,6 +258,21 @@ class DataMapper:
             "odds_ft_under25": api_match.get("odds_ft_under25", 0.0),
             "odds_btts_yes": api_match.get("odds_btts_yes", 0.0),
             "odds_btts_no": api_match.get("odds_btts_no", 0.0),
+            # #237: nomes iguais aos da FootyStats, que e o que odds_do_row le
+            "odds_ft_over05": api_match.get("odds_ft_over05", 0.0),
+            "odds_ft_under05": api_match.get("odds_ft_under05", 0.0),
+            "odds_ft_under15": api_match.get("odds_ft_under15", 0.0),
+            "odds_ft_under35": api_match.get("odds_ft_under35", 0.0),
+            "odds_ft_under45": api_match.get("odds_ft_under45", 0.0),
+            "odds_doublechance_1x": api_match.get("odds_doublechance_1x", 0.0),
+            "odds_doublechance_12": api_match.get("odds_doublechance_12", 0.0),
+            "odds_doublechance_x2": api_match.get("odds_doublechance_x2", 0.0),
+            "odds_corners_over_75": api_match.get("odds_corners_over_75", 0.0),
+            "odds_corners_under_75": api_match.get("odds_corners_under_75", 0.0),
+            "odds_corners_under_85": api_match.get("odds_corners_under_85", 0.0),
+            "odds_corners_under_95": api_match.get("odds_corners_under_95", 0.0),
+            "odds_corners_under_105": api_match.get("odds_corners_under_105", 0.0),
+            "odds_corners_under_115": api_match.get("odds_corners_under_115", 0.0),
             "competition_id": api_match.get("competition_id"),
             "game_week": api_match.get("game_week"),
             "stadium": api_match.get("stadium_name", ""),

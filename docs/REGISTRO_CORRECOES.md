@@ -12062,3 +12062,34 @@ Depois do deploy, na tabela COBERTURA POR PRODUTOR, `complemento todays-matches`
 ### Lição aprendida
 "Onde nasce o dado" tem de incluir *todos* os produtores, não o primeiro que o grep acha. Um record com dois construtores é uma chave com dois nomes: o mesmo defeito do #226-b, na outra ponta.
 
+---
+
+## 237 — O DataMapper descartava a escada de odds antes de o record ler (o elo do caminho principal)
+**Data:** 2026-09-07 | **Arquivos:** backend/services/data_mapper.py, backend/config/footystats_manifest.py, tests/test_237_datamapper_escada.py (novo) | **Severidade:** Alta (âncora de unders, DC e escanteios ausente no produtor principal desde sempre) | **Status:** Corrigido
+
+### O que a cobertura por produtor disse (`--desde "2026-09-07 18:40"`, depois do deploy do #236)
+```
+produtor                        linhas  mercado  devig
+principal league-matches            81       37     37
+(nenhuma linha do complemento todays-matches nesta janela)
+Under 1.5  14 linhas, 5 com mercado | Under 3.5 16/6 | Under 4.5 12/4 | Corners Under 11.5 9/1 | Over 1.5 devig 4/11
+```
+O #236 consertou o complemento, mas o complemento nem estava ativo; o produtor **principal** continuava em ~35%. E os 35% que existiam vinham do enriquecimento API-Football (#120), não da FootyStats — o mesmo "24% só via enriquecimento" do #230-h.
+
+### O elo
+O caminho principal é `league-matches → DataMapper.matches_to_df → DataFrame → build_records_from_matches`. `matches_to_df` valida cada linha em `FootyStatsMatchInput` (que tem `extra="allow"`) e depois **reconstrói o dict em `map_match_to_internal` com uma lista fixa de chaves**: `odds_ft_1/x/2` (renomeados para `odds_ft_home_team_win/draw/away_team_win`), `odds_ft_over15..45`, `odds_ft_under25`, BTTS e `odds_corners_over_85..115`. Nenhum `odds_ft_under15/35/45`, nenhum `odds_doublechance_*`, nenhum `odds_corners_under_*`, nem o 7.5 e o 0.5. O `odds_do_row` do record lia `r.get("odds_ft_under15")` numa linha que já não tinha a chave. O teste do #230-g/h passou porque usava `_rows_override`, que entrega a linha crua **pulando o mapper** — o teste provava o mapper do record, não o caminho de produção.
+
+Três entradas, três "está certo" parciais: #230-g/h acertou o record, #236 acertou o complemento, e o produtor que responde por quase todas as linhas descartava o dado um passo antes dos dois.
+
+### Correção
+`FootyStatsMatchInput` e `map_match_to_internal` ganham os 14 campos da escada com os **nomes da FootyStats** (os que `odds_do_row` lê): `odds_ft_over05/under05/under15/under35/under45`, `odds_doublechance_1x/12/x2`, `odds_corners_over_75`, `odds_corners_under_75..115`. Os 14 entram no manifesto #210 como CONSUMIDO, com motivo; `verificar()` não bloqueia.
+
+### Prova (o caminho REAL, sem `_rows_override`)
+Linha crua da varredura de 07/09 → `matches_to_df` → `build_records_from_matches(matches=df, date_filter="today")`: o record sai com `under15` 6,12, `under45` 1,21, `over05` 1,01, `cornersUnder115` 1,36, `cornersOver75` 1,18, `dc_1x` 1,25, `dc_12` `None` (a FootyStats manda zero), e a âncora fecha `devig` para Under 1.5 e Corners Under 11.5 e `devig3` para DC 1X. Manifesto #210, contrato #223 e os testes do #236 passam. Suíte: **995 passed, 1 skipped**.
+
+### Efeito esperado, a medir depois do deploy
+Na cobertura por seleção, `Under 1.5/3.5/4.5` e `Corners Under 7.5–11.5` com `devig` ≈ `linhas`, e `Over 1.5/3.5/4.5`, `Corners Over 7.5–11.5` com `devig` ≈ `mercado`. É a primeira vez que essas famílias entram inteiras na medição do gate #230.
+
+### Lição aprendida
+Um teste que injeta a linha depois do mapper prova o consumidor e cala sobre o produtor. Rastreabilidade origem → destino exige que a prova entre pela **mesma porta** da produção — aqui, `matches_to_df`. O #210 já dizia que "mapear não é usar"; faltava o inverso: usar não é mapear.
+
