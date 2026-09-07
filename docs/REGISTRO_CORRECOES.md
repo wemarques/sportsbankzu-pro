@@ -11890,3 +11890,53 @@ Antes (item 1) todo EV era `None`; depois, 8 de 20 seleções têm EV contra con
 ### Lição aprendida
 O dado para o preço justo independente já entrava no processo a cada requisição e era descartado depois da primeira casa. Antes de buscar fonte nova, olhar o que a resposta atual carrega — a mesma lição do #230-g, agora no lado do EV.
 
+---
+
+## 233 — Classificação em valor + confiança na âncora (passo 4 do #230, item 3)
+**Data:** 2026-09-07 | **Arquivos:** backend/services/ancora_mercado.py, backend/services/ev_classification.py, backend/models/market_output.py, frontend/next/src/lib/leagues.ts, tests/test_233_classificacao_valor.py (novo), tests/test_231_prob_source.py | **Severidade:** Alta (redefinição de SAFE/NEUTRO sob a flag — desligada por padrão) | **Status:** Implementado, flag desligada
+
+### Objetivo
+Regra #230: *"classificação SAFE/NEUTRO (#028/#042) redefinida em valor + confiança na âncora (margem/frescor #219)"*. Com a fonte trocada, a classificação do `classify_market` deixa de descrever o que é publicado: compara a **raw do modelo** com `safe_prob` (#106) e usa o **EV do modelo × odd**, quando a publicada é o mercado de-vigado (#231) e o EV é contra o consenso (#232). No quadro do #232 isso deixava um SAFE do modelo em cima de uma seleção com EV −6% contra consenso.
+
+### Definição (nenhum número novo)
+`ancora_mercado._classificar_uma`, chamada por seleção depois da troca de fonte e do EV. Dois eixos:
+
+- **Valor:** `ev`/`edge` contra o consenso (#232) com os **mesmos limiares** por mercado e liga de `classify_market` (`_get_thresholds`: safe_ev/safe_edge/neutro_ev/neutro_edge/safe_prob/neutro_prob/min_quality, calibrados por liga #055), `NEUTRO_QUALIFICADO_THRESHOLDS`, `EV_FLOOR` (#165) e `MAX_CREDIBLE_EV` (#116) — os dois últimos eram literais locais e viraram constantes de módulo, valores inalterados. Circuit breaker de SAFE por liga (#043/#052) e shadow mode (#129c) continuam valendo, com a mesma linha de log `SHADOW_SAFE`.
+- **Confiança:** de onde veio a publicada e em que estado, via `ancora_referencia` (método, margem, frescor do #219, odd do par), novo campo do `MarketOutput`. Só `mercado` com `frescor == "ok"` sustenta SAFE/NQ. `mercado` com margem fora de mercado (odd velha), `taxa_base` e `modelo_sem_referencia` param em NEUTRO, rotulados.
+
+| Situação | Classificação máxima | Reason code |
+|---|---|---|
+| âncora de mercado fresca, EV ≥ safe_ev, edge ≥ safe_edge, p ≥ safe_prob | SAFE (→ NQ pelo circuit breaker) | `ANCHOR_MARKET`, `POSITIVE_EV`, `STRONG_EDGE` |
+| âncora fresca, NEUTRO e critérios de NQ | NEUTRO_QUALIFICADO | `ANCHOR_MARKET` |
+| EV < 0 contra consenso | NO_BET, qualquer probabilidade | `NEGATIVE_EV` |
+| 0 ≤ EV < 1% | NO_BET | `EV_FLOOR_DROP` |
+| EV > 40% | EV anulado, NO_BET/NEUTRO pela probabilidade | `SUSPICIOUS_EV` |
+| sem consenso (EV None) | NEUTRO se p ≥ neutro_prob | `NO_VALUE_REFERENCE` |
+| par com odd velha | NEUTRO | `ANCHOR_STALE` |
+| taxa-base | NEUTRO | `BASE_RATE_ONLY` |
+| modelo sem referência | NEUTRO | `MODEL_ONLY` |
+
+A probabilidade comparada com `safe_prob`/`neutro_prob` é a **publicada**, não a raw do modelo (#106): com a fonte trocada a raw não é mais a confiança do que se publica. Diferença deliberada, registrada aqui.
+
+### Consumidores que seguem a classificação nova
+`bundle.eligible_for_multiples` é recalculado dentro de `aplicar_ancora`; `rejected_insights` (#152) é reconstruído por `_insights_rejeitados(markets, ancorado=True)` (helper extraído do inline de `evaluate_match_markets`, sem mudança com a flag desligada), com a razão "EV negativo contra o consenso entre casas" / "sem referência de valor". Os cinco reason codes novos entram no `ReasonCode` do backend e no tipo TS de `leagues.ts`; o card já renderiza código desconhecido com rótulo genérico (`REASON_META[rc] || {...}`), então nada quebra antes do item 4.
+
+### Prova empírica (`evaluate_match_markets`, mesmo jogo do #231/#232, consenso sintético de 5 casas)
+```
+selecao                       pub    odd     EV   ANTES    DEPOIS   codes
+Over/Under Over 1.5          0.769  1.22  -0.107  NO_BET   NO_BET   ANCHOR_MARKET,NEGATIVE_EV
+Double Chance DC 1X          0.749  1.25   None   NO_BET   NO_BET   ANCHOR_MARKET,NO_VALUE_REFERENCE
+Corners Over 4.5             0.983  None   None   NO_BET   NEUTRO   BASE_RATE_ONLY,NO_ODDS_AVAILABLE
+Corners Over 7.5             0.762  1.24   None   NO_BET   NEUTRO   ANCHOR_MARKET,NO_VALUE_REFERENCE
+Corners Over 9.5             0.526  1.77  -0.162  NO_BET   NO_BET   ANCHOR_MARKET,NEGATIVE_EV
+Cards Over 1.5               0.885  None   None   NEUTRO   NEUTRO   BASE_RATE_ONLY,NO_ODDS_AVAILABLE
+eligible antes/depois: False False | insights antes/depois: 14 -> 7 ("EV negativo contra o consenso entre casas")
+```
+Neste payload as odds da FootyStats estão abaixo do justo de consenso, então toda seleção com consenso é NO_BET por EV negativo — resultado correto, não defeito. No teste unitário, par 1,25/4,20 (publicada 0,781) com consenso 0,86 dá EV +7,5%, edge +6 pp → SAFE, e o circuit breaker o rebaixa a NQ quando a liga não tem SAFE habilitado.
+
+### Testes
+9 novos (SAFE com âncora fresca e valor; circuit breaker; EV negativo → NO_BET com probabilidade alta; sem consenso → NEUTRO informativo; EV floor e EV suspeito com os mesmos números; odd velha, taxa-base e modelo em NEUTRO rotulados; NQ só com âncora fresca e valor; flag desligada intocada; ponta a ponta com insights e elegibilidade). Dois testes do #231 ajustados ao contrato novo. Suíte: **984 passed, 1 skipped**.
+
+### Lição aprendida
+Trocar a probabilidade e o EV sem trocar a classificação deixava o rótulo mais visível do produto explicando um número que não era mais publicado. Cada item do passo 4 arrasta o consumidor seguinte; a regra #230 já listava os três no mesmo patch, e a ordem 1 → 2 → 3 só funcionou porque cada um deixou o anterior testado.
+

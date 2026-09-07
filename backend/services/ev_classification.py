@@ -297,6 +297,12 @@ SAFE_CIRCUIT_BREAKER_ENABLED = False
 import os
 from backend.utils.valores import primeiro_valido  # #225-c
 SAFE_SHADOW_MODE = os.getenv("SAFE_SHADOW_MODE", "true").lower() == "true"
+
+# #233 - os dois limites que classify_market tinha como literais locais viram
+# constantes de modulo para a classificacao sob a flag (ancora_mercado) usar
+# OS MESMOS numeros. Valores inalterados: #064/#116 e #165.
+MAX_CREDIBLE_EV = 0.40
+EV_FLOOR = 0.01
 _shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
 
 
@@ -632,7 +638,6 @@ def classify_market(
     # EV > 40% is almost certainly a data issue (prob/odds mismatch).
     # #116: Instead of capping to exactly 40% (which shows misleading "+40.0%"),
     # null out EV/edge so the market is treated as informational only.
-    MAX_CREDIBLE_EV = 0.40
     if output.ev is not None and output.ev > MAX_CREDIBLE_EV and output.book_odd and output.book_odd > 1.0:
         original_prob = prob
         original_ev = output.ev
@@ -775,7 +780,7 @@ def classify_market(
             reason_codes.append(ReasonCode.NEGATIVE_EV)
 
     # #165: EV floor — drop picks with 0 <= EV < 1% (statistical noise, not edge)
-    if (output.ev is not None and 0 <= output.ev < 0.01
+    if (output.ev is not None and 0 <= output.ev < EV_FLOOR
             and classification != MarketClassification.NO_BET):
         classification = MarketClassification.NO_BET
         reason_codes.append(ReasonCode.EV_FLOOR_DROP)
@@ -1614,26 +1619,7 @@ def evaluate_match_markets(
 
     # ─── Collect rejected insights (#152) ───
     # Notable markets classified NO_BET with raw_prob ≥ 55% — explain why
-    _rejected_insights = []
-    for m in markets:
-        if m.classification != MarketClassification.NO_BET:
-            continue
-        raw_p = m.raw_probability or 0
-        if raw_p < 0.55:
-            continue
-        cal_p = m.calibrated_probability or 0
-        ev_val = m.ev
-        reason = "EV negativo após deflação" if (ev_val is not None and ev_val < 0) else "prob insuficiente"
-        if not m.odds_available:
-            reason = "sem odds disponíveis"
-        _rejected_insights.append({
-            "market": m.display_label or m.selection,
-            "raw_prob": round(raw_p * 100, 1),
-            "deflated_prob": round(cal_p * 100, 1),
-            "ev": round(ev_val * 100, 1) if ev_val is not None else None,
-            "reason": reason,
-            "reason_codes": [rc.value for rc in m.reason_codes],
-        })
+    _rejected_insights = _insights_rejeitados(markets)
 
     # ─── Build bundle ───
     bundle = MatchMarketBundle(
@@ -1661,7 +1647,12 @@ def evaluate_match_markets(
     # `model_probability` — que e o que o ledger abaixo continua medindo.
     try:
         from backend.services.ancora_mercado import aplicar_ancora
-        aplicar_ancora(bundle, match_data, league_id)
+        _fontes = aplicar_ancora(bundle, match_data, league_id)
+        if sum(_fontes.values()) > 0:
+            # #233: classificacao refeita em valor + confianca; os insights de
+            # rejeicao e a elegibilidade para multiplas seguem a classificacao
+            # nova, senao explicariam a decisao antiga.
+            bundle.rejected_insights = _insights_rejeitados(bundle.markets, ancorado=True)
     except Exception as _e:                                   # noqa: BLE001
         logger.warning("[#231] ancora de mercado nao aplicada: %s", _e)
 
@@ -1679,6 +1670,43 @@ def evaluate_match_markets(
         logger.debug("[#218] ledger nao registrou: %s", _e)
 
     return bundle
+
+
+def _insights_rejeitados(markets: List[MarketOutput], ancorado: bool = False) -> List[Dict[str, Any]]:
+    """#152 - por que um mercado notavel (raw >= 55%) ficou NO_BET.
+
+    #233: com a fonte trocada (`ancorado=True`) a explicacao fala do EV contra
+    o consenso e da referencia de valor, nao da deflacao.
+    """
+    saida: List[Dict[str, Any]] = []
+    for m in markets:
+        if m.classification != MarketClassification.NO_BET:
+            continue
+        raw_p = m.raw_probability or 0
+        if raw_p < 0.55:
+            continue
+        cal_p = m.calibrated_probability or 0
+        ev_val = m.ev
+        if ancorado:
+            if ev_val is not None and ev_val < 0:
+                reason = "EV negativo contra o consenso entre casas"
+            elif ev_val is None and m.odds_available:
+                reason = "sem referência de valor (consenso indisponível)"
+            else:
+                reason = "prob insuficiente"
+        else:
+            reason = "EV negativo após deflação" if (ev_val is not None and ev_val < 0) else "prob insuficiente"
+        if not m.odds_available:
+            reason = "sem odds disponíveis"
+        saida.append({
+            "market": m.display_label or m.selection,
+            "raw_prob": round(raw_p * 100, 1),
+            "deflated_prob": round(cal_p * 100, 1),
+            "ev": round(ev_val * 100, 1) if ev_val is not None else None,
+            "reason": reason,
+            "reason_codes": [rc.value for rc in m.reason_codes],
+        })
+    return saida
 
 
 def _market_category(market_type: str) -> str:

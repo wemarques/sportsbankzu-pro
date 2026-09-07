@@ -129,6 +129,7 @@ FootyStats + API-Football v3
        → reclassificação pós-enrichment (#187)
   → ancora_mercado.aplicar_ancora (#231) — só com PROB_SOURCE=mercado; flag desligada = payload inalterado
        EV contra consenso entre casas (#232): consenso_odds.py, `odds_consenso` do record, n_casas ≥ 3
+       classificação em valor + confiança na âncora (#233): mesmos limiares, só âncora fresca chega a SAFE/NQ
   → Next.js (Vercel)
 ```
 

@@ -224,7 +224,13 @@ export type ReasonCode =
   | "BORDERLINE_LINE_MARGIN"
   | "DIRECTION_AGAINST_PROJFT"
   | "DIRECTION_NATURAL_MATCH"
-  | "DIRECTION_NATURAL_NO_EV";
+  | "DIRECTION_NATURAL_NO_EV"
+  // #233: classificacao em valor + confianca na ancora (PROB_SOURCE=mercado)
+  | "ANCHOR_MARKET"
+  | "ANCHOR_STALE"
+  | "NO_VALUE_REFERENCE"
+  | "BASE_RATE_ONLY"
+  | "MODEL_ONLY";
 
 export type MatchPrediction = {
   mercado: string;

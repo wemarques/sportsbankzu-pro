@@ -1146,3 +1146,28 @@ ou `modelo` ate o gate). **Gate automatico:**
    comparacao como terceira serie.
 
 **Gate automatico:** `pytest tests/test_232_ev_consenso.py -q`.
+
+### #233 — Sob a flag, SAFE/NQ so com ancora de mercado FRESCA e valor contra consenso
+
+**Tipo:** Hard Constraint (classificacao com a fonte trocada)
+**Relacionado:** #230 (passo 4), #231 (fonte), #232 (EV), #219 (frescor), #042/#043/#052/#129c (limiares e circuit breaker)
+
+1. Com `PROB_SOURCE=mercado`, a classificacao e refeita em dois eixos por
+   `ancora_mercado._classificar_uma`: valor (ev/edge contra o consenso,
+   #232) e confianca (`ancora_referencia`: metodo, margem, frescor). Os
+   limiares sao OS MESMOS de `classify_market` (`_get_thresholds` por
+   mercado e liga, `NEUTRO_QUALIFICADO_THRESHOLDS`, `EV_FLOOR`,
+   `MAX_CREDIBLE_EV`). PROIBIDO introduzir limiar novo neste caminho sem a
+   auditoria exigida pelas proibicoes 2 e 7.
+2. So `prob_source == "mercado"` com `frescor == "ok"` pode chegar a SAFE ou
+   NEUTRO_QUALIFICADO. `ANCHOR_STALE`, `BASE_RATE_ONLY`, `MODEL_ONLY` e
+   `NO_VALUE_REFERENCE` param em NEUTRO. EV negativo contra o consenso e
+   NO_BET em qualquer probabilidade.
+3. O circuit breaker de SAFE por liga (#043/#052) e o shadow mode (#129c)
+   valem tambem sob a flag — a proibicao 3 (nao reativar SAFE sem 3
+   auditorias) nao e contornada pela troca de fonte.
+4. A probabilidade comparada com safe_prob/neutro_prob e a PUBLICADA (nao a
+   raw do modelo, #106). `eligible_for_multiples` e `rejected_insights`
+   seguem a classificacao nova.
+
+**Gate automatico:** `pytest tests/test_233_classificacao_valor.py -q`.

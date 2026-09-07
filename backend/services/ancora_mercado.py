@@ -160,9 +160,19 @@ def aplicar_ancora(bundle, match_data: Optional[Dict[str, Any]] = None,
         try:
             _trocar_uma(m, odds, liga, prob_mercado_do_pick, contagem)
             _ev_uma(m, consenso)
+            _classificar_uma(m, liga)
         except Exception as e:                               # noqa: BLE001
             logger.warning("[#231] ancora falhou em %s %s: %s",
                            getattr(m, "market_type", "?"), getattr(m, "selection", "?"), e)
+    # #233: a elegibilidade para multiplas segue a classificacao nova
+    try:
+        from backend.models.market_output import MarketClassification as _MC
+        bundle.eligible_for_multiples = any(
+            m.classification in (_MC.SAFE, _MC.NEUTRO_QUALIFICADO) and m.odds_available
+            for m in getattr(bundle, "markets", []) or []
+        )
+    except Exception as e:                                   # noqa: BLE001
+        logger.debug("[#233] elegibilidade nao recalculada: %s", e)
     logger.info("[#231] PROB_SOURCE=mercado jogo=%s liga=%s fontes=%s",
                 getattr(bundle, "match_id", "?"), liga, contagem)
     return contagem
@@ -175,6 +185,10 @@ def _trocar_uma(m, odds, liga, prob_mercado_do_pick, contagem) -> None:
     m.model_probability = modelo
 
     ancora = prob_mercado_do_pick(market, selection, odds)
+    m.ancora_referencia = {                                  # #233
+        "metodo": ancora.get("mercado_metodo"), "margem_pp": ancora.get("margem_pp"),
+        "frescor": ancora.get("frescor"), "odd_par": ancora.get("odd_par"),
+    }
     nova: Optional[float] = None
     fonte = "modelo_sem_referencia"
     if ancora.get("mercado_metodo") in METODOS_JUSTOS and ancora.get("prob_mercado"):
@@ -206,3 +220,106 @@ def _ev_uma(m, consenso_do_jogo: Dict[str, Any]) -> None:
     cons = consenso_do_jogo.get(chave) if chave else None
     r = ev_contra_consenso(m.book_odd, cons)
     m.ev, m.edge, m.ev_referencia = r["ev"], r["edge"], r["referencia"]
+
+
+# ── #233 - classificacao em valor + confianca na ancora ──────────────────
+def _classificar_uma(m, league_id: Optional[str]) -> None:
+    """Refaz SAFE / NEUTRO_QUALIFICADO / NEUTRO / NO_BET com a fonte trocada.
+
+    Dois eixos, nenhum numero novo:
+      valor     — `ev`/`edge` contra o consenso entre casas (#232), com os
+                  MESMOS limiares por mercado e liga de `classify_market`
+                  (safe_ev/safe_edge/neutro_ev, NEUTRO_QUALIFICADO_THRESHOLDS,
+                  EV_FLOOR #165, MAX_CREDIBLE_EV #116) e o circuit breaker de
+                  SAFE por liga (#043/#052) com shadow mode (#129c);
+      confianca — de onde veio a probabilidade publicada e em que estado:
+                  `mercado` com frescor ok (#219) e a unica fonte que pode
+                  chegar a SAFE/NQ; `mercado` com odd velha, `taxa_base` e
+                  `modelo_sem_referencia` param em NEUTRO, rotulados.
+    A probabilidade comparada com safe_prob/neutro_prob e a PUBLICADA (a que
+    o usuario ve), nao a raw do modelo como no #106 — com a fonte trocada a
+    raw do modelo nao e mais a confianca do que se publica.
+    """
+    from backend.models.market_output import MarketClassification as MC, ReasonCode as RC
+    from backend.services import ev_classification as EVC
+
+    th = EVC._get_thresholds(EVC._market_category(m.market_type), league_id=league_id)
+    p = m.calibrated_probability or 0.0
+    q = m.data_quality_score or 0.0
+    fonte = m.prob_source
+    frescor_ok = fonte == "mercado" and (m.ancora_referencia or {}).get("frescor") == "ok"
+    codes = []
+
+    # confianca na ancora
+    if fonte == "mercado":
+        codes.append(RC.ANCHOR_MARKET if frescor_ok else RC.ANCHOR_STALE)
+    elif fonte == "taxa_base":
+        codes.append(RC.BASE_RATE_ONLY)
+    else:
+        codes.append(RC.MODEL_ONLY)
+    if q < th.get("min_quality", 0.3):
+        codes.append(RC.LOW_DATA_QUALITY)
+    if not m.odds_available:
+        codes.append(RC.NO_ODDS_AVAILABLE)
+
+    # valor
+    ev, edge = m.ev, m.edge
+    if ev is not None and ev > EVC.MAX_CREDIBLE_EV:            # #116: linha velha na casa
+        codes.append(RC.SUSPICIOUS_EV)
+        m.ev, m.edge = None, None
+        ev, edge = None, None
+    if ev is None:
+        if m.odds_available:
+            codes.append(RC.NO_VALUE_REFERENCE)
+    elif ev < 0:
+        codes.append(RC.NEGATIVE_EV)
+    elif ev >= th.get("safe_ev", 0.05):
+        codes.append(RC.POSITIVE_EV)
+    if edge is not None:
+        if edge < th.get("neutro_edge", 0.01):
+            codes.append(RC.INSUFFICIENT_EDGE)
+        elif edge >= th.get("safe_edge", 0.04):
+            codes.append(RC.STRONG_EDGE)
+    if p >= th.get("safe_prob", 0.60):
+        codes.append(RC.HIGH_CALIBRATED_PROB)
+
+    cls = MC.NO_BET
+    prob_neutro = p >= th.get("neutro_prob", 0.50) and q >= th.get("min_quality", 0.3) * 0.8
+    prob_safe = p >= th.get("safe_prob", 0.60) and q >= th.get("min_quality", 0.3)
+    if ev is None:
+        # sem medida de valor: no maximo informativo, e so com probabilidade
+        if prob_neutro:
+            cls = MC.NEUTRO
+    elif ev < 0:
+        cls = MC.NO_BET
+    elif ev < EVC.EV_FLOOR:                                     # #165
+        cls = MC.NO_BET
+        codes.append(RC.EV_FLOOR_DROP)
+    else:
+        if prob_safe and frescor_ok and edge is not None \
+                and ev >= th.get("safe_ev", 0.05) and edge >= th.get("safe_edge", 0.04):
+            cls = MC.SAFE
+        elif prob_neutro and ev >= th.get("neutro_ev", 0.0):
+            cls = MC.NEUTRO
+            if frescor_ok and RC.SUSPICIOUS_EV not in codes \
+                    and EVC._is_neutro_qualificado(m, p):
+                cls = MC.NEUTRO_QUALIFICADO
+
+    # so a ancora de mercado fresca sustenta SAFE/NQ
+    if cls in (MC.SAFE, MC.NEUTRO_QUALIFICADO) and not frescor_ok:
+        cls = MC.NEUTRO
+
+    # circuit breaker de SAFE por liga (#043/#052) + shadow (#129c)
+    if cls == MC.SAFE and not EVC._is_safe_enabled(league_id):
+        if EVC.SAFE_SHADOW_MODE:
+            EVC._shadow_logger.info(
+                f"SHADOW_SAFE|{m.display_label}|league={league_id}|fonte={fonte}|"
+                f"pub={m.calibrated_probability}|modelo={m.model_probability}|odd={m.book_odd}|ev={m.ev}"
+            )
+            m.source_flags = list(m.source_flags or []) + ["shadow_safe"]
+        cls = MC.NEUTRO_QUALIFICADO
+        codes.append(RC.SAFE_CIRCUIT_BREAKER)
+
+    m.classification = cls
+    m.reason_codes = codes
+

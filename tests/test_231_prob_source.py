@@ -18,7 +18,7 @@ import json
 import pytest
 
 from backend.models.market_output import (
-    MarketClassification, MarketOutput, MatchMarketBundle,
+    MarketClassification, MarketOutput, MatchMarketBundle, ReasonCode,
 )
 from backend.services import ancora_mercado as A
 from backend.services import prediction_ledger as L
@@ -102,7 +102,10 @@ def test_ligada_troca_so_quem_tem_par_devigado(monkeypatch):
     assert o25.model_probability == 0.50                   # modelo preservado
     assert o25.fair_odd == round(1 / esperado, 2)          # display recomputado
     assert o25.ev is None and o25.edge is None             # #232: sem consenso, sem EV
-    assert o25.classification == MarketClassification.SAFE  # item 3 redefine
+    # #233: classificacao refeita em valor + confianca; sem consenso nao ha
+    # medida de valor, e o SAFE do modelo nao sobrevive a troca de fonte.
+    assert o25.classification != MarketClassification.SAFE
+    assert ReasonCode.ANCHOR_MARKET in o25.reason_codes
     assert o25.odds_available is True                      # a odd continua la
 
     assert por["DC 1X"].prob_source == "mercado"           # devig3 do trio
@@ -227,7 +230,9 @@ def test_ponta_a_ponta_flag_desligada_versus_ligada(monkeypatch):
     for m0, m1 in zip(b0.markets, b1.markets):
         assert (m0.market_type, m0.selection) == (m1.market_type, m1.selection)
         assert m1.model_probability == m0.calibrated_probability
-        assert m1.classification == m0.classification          # item 3 ainda nao
+        assert m1.reason_codes and m1.reason_codes[0] in (       # #233: reclassificado
+            ReasonCode.ANCHOR_MARKET, ReasonCode.ANCHOR_STALE,
+            ReasonCode.BASE_RATE_ONLY, ReasonCode.MODEL_ONLY)
         if m1.prob_source == "mercado":
             ref = L.prob_mercado_do_pick(m1.market_type, m1.selection, _MATCH["odds"])
             assert ref["mercado_metodo"] in A.METODOS_JUSTOS

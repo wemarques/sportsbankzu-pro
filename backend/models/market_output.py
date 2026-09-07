@@ -43,6 +43,12 @@ class ReasonCode(str, Enum):
     EV_FLOOR_DROP = "EV_FLOOR_DROP"  # #165: EV < 1% is statistical noise, not edge
     CORNER_ENGINE_NO_BET = "CORNER_ENGINE_NO_BET"  # #217: o motor de escanteios vetou a linha
     DATA_MISSING = "DATA_MISSING"  # #217: contagem de jogos ausente (nao e inicio de temporada)
+    # #233: classificacao em valor + confianca na ancora (so com PROB_SOURCE=mercado)
+    ANCHOR_MARKET = "ANCHOR_MARKET"            # publicada = mercado de-vigado, frescor ok
+    ANCHOR_STALE = "ANCHOR_STALE"              # par existe, mas a margem denuncia odd velha (#219)
+    NO_VALUE_REFERENCE = "NO_VALUE_REFERENCE"  # sem consenso entre casas: nao ha medida de valor
+    BASE_RATE_ONLY = "BASE_RATE_ONLY"          # publicada = taxa-base da liga (sem preco em fonte nenhuma)
+    MODEL_ONLY = "MODEL_ONLY"                  # publicada = modelo, sem referencia de mercado
 
 
 class MarketOutput(BaseModel):
@@ -105,6 +111,11 @@ class MarketOutput(BaseModel):
     # {"fonte": None, "motivo": "sem_odd" | "sem_consenso" | "poucas_casas"}.
     ev_referencia: Optional[dict] = Field(
         None, description="#232: referencia do EV quando a fonte da probabilidade foi trocada"
+    )
+    # #233 - a qualidade da ancora (metodo, margem e frescor do #219, odd do
+    # par), que a classificacao em valor + confianca le.
+    ancora_referencia: Optional[dict] = Field(
+        None, description="#233: metodo/margem/frescor da ancora de mercado (flag ligada)"
     )
 
     # Display helpers
@@ -180,6 +191,8 @@ class MarketOutput(BaseModel):
             )
             if self.ev_referencia is not None:            # #232
                 result["ev_referencia"] = self.ev_referencia
+            if self.ancora_referencia is not None:        # #233
+                result["ancora_referencia"] = self.ancora_referencia
         # Add corner governance metadata if available
         if self.corner_governance:
             result["corner_governance"] = self.corner_governance
