@@ -11815,7 +11815,9 @@ Cards Over 1.5            0.6846  0.6846  modelo_sem_referencia   None     None
 flag desligada: legado sem prob_source, ledger published == calibrated .... True
 flag ligada:    ledger calibrated_prob == modelo em 20/20 ................. True
 ```
-Sem artefato, 15 de 20 saem `mercado` e 5 `modelo_sem_referencia` (escanteios 4.5–6.5, cartões 1.5/2.5). Com artefato sintético (300 jogos), `gerar_taxas_base.py` produz 40 células e essas cinco caem para `taxa_base` (teste). Dois números do quadro merecem registro: Over 1.5 publicado a 0,647 contra 0,769 do mercado e DC 1X a 0,591 contra 0,749 — a deflação (#105/#229-b) está bem abaixo do mercado nas linhas altas; é o que o gate do #230 vai decidir, não este patch.
+Sem artefato, 15 de 20 saem `mercado` e 5 `modelo_sem_referencia` (escanteios 4.5–6.5, cartões 1.5/2.5). Com artefato sintético (300 jogos), `gerar_taxas_base.py` produz 40 células e essas cinco caem para `taxa_base` (teste).
+
+**Artefato real (2026-09-07, gerado pelo Welligton com a chave):** 173.282 picks de 8.665 jogos em 22 ligas, 40 células por liga, todas com n entre 133 e 807 (nenhuma abaixo do mínimo de 30). Agregado `*`: Over 2.5 51,6%, BTTS Yes 54,2%, Escanteios Over 9.5 50,9%, Cartões Over 1.5 90,9%, Escanteios Over 4.5 95,5%. Comitado em `backend/config/taxas_base.json` e no ar pelo deploy (o ZIP copia `backend/` inteiro). Com ele, as cinco seleções sem referência do quadro acima passam a `taxa_base`. Dois números do quadro merecem registro: Over 1.5 publicado a 0,647 contra 0,769 do mercado e DC 1X a 0,591 contra 0,749 — a deflação (#105/#229-b) está bem abaixo do mercado nas linhas altas; é o que o gate do #230 vai decidir, não este patch.
 
 ### Testes
 11 novos: flag desligada = payload idêntico e ledger igual; valor inválido = `modelo`; troca só com par de-vigado; `implicita` não ancora; taxa-base hierárquica, com mínimo de n, ausente ou quebrada não derruba; ledger grava modelo em `calibrated_prob` e âncora em `published_prob`; ponta a ponta flag off × on com classificação preservada. Suíte: **948 passed, 1 skipped**.
