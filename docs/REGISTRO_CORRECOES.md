@@ -12090,6 +12090,9 @@ Linha crua da varredura de 07/09 → `matches_to_df` → `build_records_from_mat
 ### Efeito esperado, a medir depois do deploy
 Na cobertura por seleção, `Under 1.5/3.5/4.5` e `Corners Under 7.5–11.5` com `devig` ≈ `linhas`, e `Over 1.5/3.5/4.5`, `Corners Over 7.5–11.5` com `devig` ≈ `mercado`. É a primeira vez que essas famílias entram inteiras na medição do gate #230.
 
+### Medido pós-deploy (`--desde "2026-09-07 19:20"`, 1 jogo gravado até ali)
+Toda seleção com par na FootyStats saiu `devig`: Under 1.5/3.5/4.5, Over 1.5/4.5, Corners Over 7.5/8.5/9.5/11.5, Corners Under 11.5, BTTS; DC com âncora (devig3). Sem âncora só o que não tem preço em fonte nenhuma (Cartões 1.5/2.5, Escanteios 4.5–6.5), como previsto. Um jogo não é amostra, mas é a primeira linha do ledger em que a escada inteira chegou. A tabela por produtor contava "Under 1.5" de Cartões como dependente da FootyStats (seleção sem o mercado no filtro); corrigido para filtrar por mercado.
+
 ### Lição aprendida
 Um teste que injeta a linha depois do mapper prova o consumidor e cala sobre o produtor. Rastreabilidade origem → destino exige que a prova entre pela **mesma porta** da produção — aqui, `matches_to_df`. O #210 já dizia que "mapear não é usar"; faltava o inverso: usar não é mapear.
 

@@ -545,8 +545,9 @@ def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[
                COUNT(*) FILTER (WHERE l.mercado_metodo IN ('devig', 'devig3'))
           FROM prediction_ledger l
          WHERE l.published_at >= %s
-           AND l.selection IN ('Under 1.5', 'Under 3.5', 'Under 4.5',
-                               'Corners Under 9.5', 'Corners Under 11.5', 'DC 1X')
+           AND ((l.market = 'Over/Under' AND l.selection IN ('Under 1.5', 'Under 3.5', 'Under 4.5'))
+                OR (l.market = 'Corners' AND l.selection IN ('Corners Under 9.5', 'Corners Under 11.5'))
+                OR (l.market = 'Double Chance' AND l.selection = 'DC 1X'))
          GROUP BY 1 ORDER BY 1
         """,
         (desde,),
