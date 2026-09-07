@@ -165,8 +165,15 @@ def main() -> int:
     # Uma liga por vez: o rastreador e a taxa-base sao por liga, e misturar
     # partidas de ligas diferentes num historico so inventaria forma.
     saida = {"picks": [], "resumo": {"ligas": {}}}
-    for liga, linhas in por_liga.items():
+    total = len(por_liga)
+    for i, (liga, linhas) in enumerate(por_liga.items(), 1):
+        # #231 - a reconstrucao e a fase longa e era muda: 22 ligas em
+        # silencio parecem travamento. Uma linha por liga, no stderr.
+        print(f"[reconstrucao] {i}/{total} {liga}: {len(linhas)} partidas...",
+              file=sys.stderr, flush=True)
         r = reconstruir(linhas, liga, min_jogos=args.min_jogos, familias=familias)
+        print(f"[reconstrucao] {i}/{total} {liga}: {r['resumo']['picks']} picks",
+              file=sys.stderr, flush=True)
         saida["picks"].extend(r["picks"])
         saida["resumo"]["ligas"][liga] = {
             k: r["resumo"][k] for k in ("partidas_finalizadas", "partidas_usadas",
