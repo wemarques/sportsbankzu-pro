@@ -11885,7 +11885,7 @@ Cards Over 1.5                0.8849  None       -      -     None      None    
 Antes (item 1) todo EV era `None`; depois, 8 de 20 seleções têm EV contra consenso e 12 têm o motivo. Os EVs negativos são do payload sintético (odds da FootyStats abaixo do justo de consenso), não uma propriedade da fórmula: no teste unitário, par simétrico 1,90/1,90 como âncora e consenso pendendo para o Over dá EV ≠ −5%, o valor circular. Os dois `taxa_base` a 0,983 e 0,885 são o artefato real do Championship (#231), já no ar.
 
 ### Testes
-12 novos (consenso, chave, EV e motivos, flag off intocada, flag on contra consenso, enriquecimento só com a flag e uma entrada por record). Um teste do #231 ajustado ao contrato novo (`modelo_sem_referencia` sem consenso → EV `None` com motivo, não EV do modelo). Suíte: **966 passed, 1 skipped**.
+12 novos (consenso, chave, EV e motivos, flag off intocada, flag on contra consenso, enriquecimento só com a flag e uma entrada por record). Um teste do #231 ajustado ao contrato novo (`modelo_sem_referencia` sem consenso → EV `None` com motivo, não EV do modelo). Suíte: **975 passed, 1 skipped**.
 
 ### Lição aprendida
 O dado para o preço justo independente já entrava no processo a cada requisição e era descartado depois da primeira casa. Antes de buscar fonte nova, olhar o que a resposta atual carrega — a mesma lição do #230-g, agora no lado do EV.
