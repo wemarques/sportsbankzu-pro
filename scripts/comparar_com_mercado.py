@@ -605,6 +605,9 @@ def main() -> int:
 
     if args.ledger:
         picks = _do_ledger(args.desde, args.campo, args.incluir_implicita)
+        # #236: a cobertura nao depende de desfecho — e justamente o que se
+        # quer ver logo depois de um deploy, antes de qualquer jogo acabar.
+        _imprimir_cobertura()
         if not picks:
             print("ledger sem pares (pick com prob_mercado E desfecho) desde "
                   f"{args.desde} — ou o ledger nao gravou, ou o batch audit ainda "
@@ -614,7 +617,6 @@ def main() -> int:
         print(f"fonte: prediction_ledger ({args.campo} x prob_mercado), "
               f"{len(picks)} picks em {_jogos(picks)} jogos com desfecho desde {args.desde}"
               f"{' (so de-vigados)' if not args.incluir_implicita else ' (inclui 1/odd)'}\n")
-        _imprimir_cobertura()
     elif args.arquivo:
         with open(args.arquivo, encoding="utf-8") as f:
             picks = json.load(f)
