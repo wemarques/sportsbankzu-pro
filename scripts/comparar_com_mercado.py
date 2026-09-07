@@ -529,19 +529,48 @@ def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[
         """,
         (desde,),
     )
-    global _COBERTURA_LEDGER
+    global _COBERTURA_LEDGER, _COBERTURA_PRODUTOR
     _COBERTURA_LEDGER = cur.fetchall()
+    # #236: o record tem dois produtores com ids diferentes —
+    # "{liga}-{casa}-{fora}-{ts}" (league-matches) e "{liga}-todays-{id}"
+    # (complemento todays-matches). Ate o #236 o segundo publicava odds sem
+    # unders/DC/escanteios; a cobertura por produtor e o que separa "mapper
+    # errado" de "dado ausente".
+    cur.execute(
+        """
+        SELECT CASE WHEN l.match_id LIKE '%%-todays-%%'
+                    THEN 'complemento todays-matches' ELSE 'principal league-matches' END,
+               COUNT(*),
+               COUNT(*) FILTER (WHERE l.prob_mercado IS NOT NULL),
+               COUNT(*) FILTER (WHERE l.mercado_metodo IN ('devig', 'devig3'))
+          FROM prediction_ledger l
+         WHERE l.published_at >= %s
+           AND l.selection IN ('Under 1.5', 'Under 3.5', 'Under 4.5',
+                               'Corners Under 9.5', 'Corners Under 11.5', 'DC 1X')
+         GROUP BY 1 ORDER BY 1
+        """,
+        (desde,),
+    )
+    _COBERTURA_PRODUTOR = cur.fetchall()
     cur.close()
     conn.close()
     return picks
 
 
 _COBERTURA_LEDGER: List[Tuple[Any, ...]] = []
+_COBERTURA_PRODUTOR: List[Tuple[Any, ...]] = []
 
 
 def _imprimir_cobertura() -> None:
     if not _COBERTURA_LEDGER:
         return
+    if _COBERTURA_PRODUTOR:
+        print("── COBERTURA POR PRODUTOR do record (selecoes que dependem do under/DC da "
+              "FootyStats: Under 1.5/3.5/4.5, Corners Under 9.5/11.5, DC 1X) ──")
+        print(f"{'produtor':<30}{'linhas':>8}{'mercado':>9}{'devig':>7}")
+        for prod, n, mkt, dv in _COBERTURA_PRODUTOR:
+            print(f"{prod:<30}{n:>8}{mkt:>9}{dv:>7}")
+        print()
     print("── COBERTURA DO LEDGER por selecao (linhas gravadas -> com prob publicada "
           "-> com prob de mercado -> devig -> com desfecho) ──")
     print(f"{'selecao':<30}{'linhas':>8}{'publ.':>8}{'mercado':>9}{'devig':>7}{'desf.':>7}")

@@ -1245,6 +1245,7 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                     dt_str = ""
 
             # Read odds
+            from backend.services.fixtures_service import odds_do_row   # #236
             odds_home = _safe_float(m.get("odds_ft_1"))
             odds_draw = _safe_float(m.get("odds_ft_x"))
             odds_away = _safe_float(m.get("odds_ft_2"))
@@ -1426,14 +1427,11 @@ def _fallback_todays_matches(lid: str, league_config: dict, date: str, season_id
                 "score": match_score,
                 "period": period_fb,
                 "minute": minute_fb,
-                "odds": {
-                    "home": odds_home, "draw": odds_draw, "away": odds_away,
-                    "over25": odds_over25, "under25": odds_under25,
-                    "bttsYes": odds_btts_yes, "bttsNo": odds_btts_no,
-                    "over15": _safe_float(m.get("odds_ft_over15")),
-                    "over35": _safe_float(m.get("odds_ft_over35")),
-                    "over45": _safe_float(m.get("odds_ft_over45")),
-                },
+                # #236: o MESMO mapeador do record principal — o todays-matches
+                # manda a escada inteira (unders, DC, escanteios) e este dict
+                # a jogava fora, deixando o par sem fechar em todo record que
+                # entra por aqui.
+                "odds": odds_do_row(m),
                 "stats": {
                     "homeWinProb": round(probs[0], 1) if probs else 0,
                     "drawProb": round(probs[1], 1) if probs else 0,

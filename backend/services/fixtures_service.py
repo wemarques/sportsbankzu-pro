@@ -410,6 +410,63 @@ def _log_lastx_stats(league_id: str, n_jogos: int, st: Dict[str, float]) -> None
     )
 
 
+
+# ── #236 - UM mapeador de odds da linha da FootyStats para o record ─────────
+# Dois produtores montavam `odds`: build_records_from_matches (league-matches,
+# escada inteira desde #230-g/h) e _fallback_todays_matches em routes/fixtures
+# (todays-matches, so 1X2 / 2.5 / BTTS / tres overs). O todays-matches manda a
+# mesma escada (medido: 13/13 pendentes com odds_ft_under15..45 e
+# odds_corners_under_75..115 nao-zero, #235-a), mas o segundo produtor jogava
+# fora — e o ledger desde 07/09 mostrava Under 1.5 com ancora em 39%. Nomes de
+# saida = os do enriquecimento #120, para o par fechar por qualquer fonte.
+_ODDS_DO_RECORD = (
+    # (chave do record, candidatos na linha da FootyStats, em ordem)
+    ("home", ("odds_ft_1", "odds_home_win", "odds_ft_home_team_win")),
+    ("draw", ("odds_ft_x", "odds_draw", "odds_ft_draw")),
+    ("away", ("odds_ft_2", "odds_away_win", "odds_ft_away_team_win")),
+    ("over05", ("odds_ft_over05",)), ("under05", ("odds_ft_under05",)),
+    ("over15", ("odds_ft_over15",)), ("under15", ("odds_ft_under15",)),
+    ("over25", ("odds_ft_over25", "odds_over_25")),
+    ("under25", ("odds_ft_under25", "odds_under_25", "odds_under25")),
+    ("over35", ("odds_ft_over35",)), ("under35", ("odds_ft_under35",)),
+    ("over45", ("odds_ft_over45",)), ("under45", ("odds_ft_under45",)),
+    ("dc_1x", ("odds_doublechance_1x",)), ("dc_12", ("odds_doublechance_12",)),
+    ("dc_x2", ("odds_doublechance_x2",)),
+    ("bttsYes", ("odds_btts_yes",)), ("bttsNo", ("odds_btts_no",)),
+) + tuple(
+    (f"corners{lado}{l}", (f"odds_corners_{lado.lower()}_{l}",))
+    for l in ("75", "85", "95", "105", "115") for lado in ("Over", "Under")
+)
+
+
+def odds_do_row(r: Any) -> Dict[str, Optional[float]]:
+    """Odds publicadas no record a partir de uma linha da FootyStats.
+
+    `r` pode ser dict ou pandas.Series. Valor ausente, nao numerico, zero ou
+    <= 1.0 vira None: zero e o "sem odd" da FootyStats e 1.0 nao e preco.
+    """
+    saida: Dict[str, Optional[float]] = {}
+    for chave, candidatos in _ODDS_DO_RECORD:
+        valor = None
+        for c in candidatos:
+            try:
+                v = r.get(c)
+            except AttributeError:
+                v = None
+            if v is None or v == "":
+                continue
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if f != f or f <= 1.0:            # NaN ou nao-preco
+                continue
+            valor = f
+            break
+        saida[chave] = valor
+    return saida
+
+
 def build_records_from_matches(
     league_id: str,
     matches: "pd.DataFrame",
@@ -1893,40 +1950,7 @@ def build_records_from_matches(
             "score": match_score,
             "period": period,
             "minute": minute,
-            "odds": {
-                "home": float(odds_home) if odds_home else None,
-                "draw": float(odds_draw) if odds_draw else None,
-                "away": float(odds_away) if odds_away else None,
-                "over15": float(odds_over15) if odds_over15 else None,
-                "over25": float(odds_over25) if odds_over25 else None,
-                "over35": float(odds_over35) if odds_over35 else None,
-                "over45": float(odds_over45) if odds_over45 else None,
-                "under25": float(odds_under25) if odds_under25 else None,
-                # #230-h: nomes iguais aos do enriquecimento #120 (routes/fixtures.py)
-                "over05": float(odds_over05) if odds_over05 else None,
-                "under05": float(odds_under05) if odds_under05 else None,
-                "under15": float(odds_under15) if odds_under15 else None,
-                "under35": float(odds_under35) if odds_under35 else None,
-                "under45": float(odds_under45) if odds_under45 else None,
-                "dc_1x": float(odds_dc_1x) if odds_dc_1x else None,
-                "dc_12": float(odds_dc_12) if odds_dc_12 else None,
-                "dc_x2": float(odds_dc_x2) if odds_dc_x2 else None,
-                "bttsYes": float(odds_btts_yes) if odds_btts_yes else None,
-                "bttsNo": float(odds_btts_no) if odds_btts_no else None,
-                "cornersOver85": float(odds_corners_o85) if odds_corners_o85 else None,
-                "cornersOver95": float(odds_corners_o95) if odds_corners_o95 else None,
-                "cornersOver105": float(odds_corners_o105) if odds_corners_o105 else None,
-                "cornersOver115": float(odds_corners_o115) if odds_corners_o115 else None,
-                # #230-g: unders e a linha 7.5 — nomes iguais aos que o
-                # enriquecimento #120 usa (routes/fixtures.py), entao o par
-                # fecha por qualquer uma das duas fontes.
-                "cornersOver75": float(odds_corners_o75) if odds_corners_o75 else None,
-                "cornersUnder75": float(odds_corners_u75) if odds_corners_u75 else None,
-                "cornersUnder85": float(odds_corners_u85) if odds_corners_u85 else None,
-                "cornersUnder95": float(odds_corners_u95) if odds_corners_u95 else None,
-                "cornersUnder105": float(odds_corners_u105) if odds_corners_u105 else None,
-                "cornersUnder115": float(odds_corners_u115) if odds_corners_u115 else None,
-            },
+            "odds": odds_do_row(r),                      # #236: um mapeador so
             "stats": {
                 "homeWinProb": round(homeProb, 1),
                 "drawProb": round(drawProb, 1),

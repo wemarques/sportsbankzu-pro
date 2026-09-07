@@ -12037,3 +12037,28 @@ Depois do deploy do #230-g/h os unders de gols continuam em ~40% e os de escante
 ### Lição aprendida
 "99%" foi medido no endpoint que o backfill usa, e a conclusão foi aplicada ao endpoint que a produção usa. Rastreabilidade origem → destino inclui *qual chamada* produz a linha, não só o nome da chave.
 
+---
+
+## 236 — O segundo produtor do record jogava os pares fora: um mapeador de odds para `league-matches` e `todays-matches`
+**Data:** 2026-09-07 | **Arquivos:** backend/services/fixtures_service.py, backend/routes/fixtures.py, scripts/comparar_com_mercado.py, tests/test_236_odds_do_row.py (novo) | **Severidade:** Alta (âncora de unders, DC e escanteios ausente em todo record que entra pelo complemento) | **Status:** Corrigido
+
+### O que a medição disse (`--hoje --contem odds_`, 07/09, 13 pendentes)
+A FootyStats manda **tudo** no `todays-matches` antes do jogo: `odds_ft_under05..45`, `odds_corners_over/under_75..115`, `odds_doublechance_1x/x2`, BTTS, 1X2 — 13/13 não-zero. Desfecho 1 dos três previstos no #235-a: o elo faltante está entre a linha e o record. (Também apareceu o que a FootyStats não cota: `odds_doublechance_12`, `odds_dnb_*`, `odds_team_to_score_first_*`, BTTS por tempo — todos zero. `dc_12` continua sem odd própria, o que está certo.)
+
+### O elo
+O record tem **dois produtores**. `build_records_from_matches` (league-matches) publica a escada inteira desde #230-g/h. `_fallback_todays_matches` em `routes/fixtures.py` (#153) monta o complemento a partir do `todays-matches` com um `odds` próprio: 1X2, over/under 2.5, BTTS e três overs — **nenhum under, nenhum escanteio, nenhuma DC**. Esse complemento entra sempre que a página 1 do league-matches não tem o jogo do dia (ligas avançadas na temporada) ou não tem jogo nenhum, e o id do record denuncia o produtor: `{liga}-todays-{id}` contra `{liga}-{casa}-{fora}-{ts}`. Era por isso que o ledger, depois do deploy, seguia com Under 1.5 em 39% e Corners Under 11.5 em 7%: a fração que entra pelo complemento nunca teve par.
+
+O #235-a disse "a produção lê `todays-matches`". Meia verdade: a produção lê os dois, e o inventário do #230-h estava certo para o produtor que já mapeava certo.
+
+### Correção
+`fixtures_service.odds_do_row(r)`: um mapeador só, tabela de (chave do record → candidatos na linha), dict ou `pandas.Series`, zero/NaN/texto/≤1,0 viram `None`. Os dois produtores chamam ele; o dict inline do record principal e o do complemento foram removidos (proibição 5: sem duplicar). `comparar_com_mercado.py --ledger` ganha **COBERTURA POR PRODUTOR** (por `match_id LIKE '%-todays-%'`) nas seleções que dependem do under/DC — é a coluna que separa "mapper errado" de "dado ausente" e que teria apontado o produtor no #235-a.
+
+### Prova
+Teste monta o complemento com a linha real da varredura de 07/09 (`get_todays_matches` dublado): `championship-todays-77` sai com `under15` 6,12, `cornersUnder115` 1,36, `dc_1x` 1,25, idêntico ao `odds_do_row` da linha, e `prob_mercado_do_pick` fecha `devig` para Under 1.5 e Corners Under 11.5 — as duas seleções em dígito único no ledger. Record principal: `rec["odds"] == odds_do_row(linha)`. Manifesto #210 e contrato #223 continuam fechando; os testes do #183 e #230-g passam sem alteração. Suíte: **992 passed, 1 skipped**.
+
+### Efeito esperado, a medir
+Depois do deploy, na tabela COBERTURA POR PRODUTOR, `complemento todays-matches` deve sair com `devig` ≈ `linhas`. Se sair, a cobertura de Under 1.5 e escanteios no ledger sobe de ~40% e ~7% para perto de 100% nos novos jogos, e o gate #230 passa a medir as famílias que hoje estão quase de fora.
+
+### Lição aprendida
+"Onde nasce o dado" tem de incluir *todos* os produtores, não o primeiro que o grep acha. Um record com dois construtores é uma chave com dois nomes: o mesmo defeito do #226-b, na outra ponta.
+
