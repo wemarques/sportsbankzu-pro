@@ -43,14 +43,6 @@ pytest -q
 cd frontend/next && npm run test:e2e
 ```
 
-## Diretórios
-
-- `backend/routes/` — endpoints (fixtures, leagues, decision, quadro, ai, health)
-- `backend/services/` — lógica de negócio (math, market, fixtures, decision, **mistral_analysis.py**, ev_classification, correlation_matrix)
-- `backend/modeling/` — modelos estatísticos (lambda, xg_filter, chaos_detector, calibrator, market_validator, league_calibrator)
-- `frontend/next/src/` — App Router; `frontend/next/e2e/` — Playwright
-- `cli/`, `scripts/`
-
 ## API Lambda — armadilhas conhecidas
 
 Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
@@ -67,36 +59,9 @@ Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
 
 API Gateway tem hard limit de **30s**. Calibração leva 15–40s; **503 não significa falha** — Lambda continua processando e persiste o resultado.
 
-## Deploy Lambda
+## Deploy Lambda e Layer scipy
 
-```bash
-# Pré-check OBRIGATÓRIO antes de update-function-code
-MSYS_NO_PATHCONV=1 aws lambda get-function-configuration \
-  --function-name sportsbank-pro-backend --region us-east-1 \
-  --query '{State: State, LastUpdateStatus: LastUpdateStatus}'
-# Só prosseguir se State=Active e LastUpdateStatus=Successful
-
-MSYS_NO_PATHCONV=1 aws lambda update-function-code \
-  --function-name sportsbank-pro-backend \
-  --s3-bucket meu-bucket-sportsbank \
-  --s3-key deploy/sportsbank_lambda.zip --region us-east-1
-```
-
-## Lambda Layer (scipy) — `arn:aws:lambda:us-east-1:838823110426:layer:scipy-numpy-layer:2`
-
-- Layer contém **apenas scipy** (numpy está no ZIP de deploy). Usada por NB2 (cards e corners).
-- Sem Layer compatível, **NB2 cai silenciosamente para Poisson** (sem erro visível).
-- Mudança de runtime Python (ex.: 3.11 → 3.12) **exige recriar a Layer** — extensões C não são portáveis entre versões.
-
-```bash
-pip install scipy -t layer/python/ --platform manylinux2014_x86_64 --only-binary=:all: --python-version 3.XX --no-deps
-cd layer && zip -r ../scipy-layer.zip python/ -x '*.pyc' '*__pycache__*' '*.dist-info/*' '*/tests/*'
-aws lambda publish-layer-version --layer-name scipy-numpy-layer \
-  --content S3Bucket=meu-bucket-sportsbank,S3Key=deploy/scipy-layer.zip \
-  --compatible-runtimes python3.XX --region us-east-1
-aws lambda update-function-configuration --function-name sportsbank-pro-backend \
-  --layers <LAYER_ARN> --region us-east-1
-```
+Procedimento completo (pré-check obrigatório, update via S3, recriação da Layer por runtime) na skill `deploy-lambda` (`.claude/skills/deploy-lambda/SKILL.md`). Regra que fica aqui: **sem Layer compatível, NB2 cai silenciosamente para Poisson**.
 
 ## Variáveis de ambiente
 
@@ -153,15 +118,9 @@ FootyStats + API-Football v3
 - 22+ ligas europeias e sul-americanas + Copa do Brasil
 - UI em pt-BR; código e comentários em inglês
 
-## Checklist novo mercado (#006) — 7 pontos obrigatórios
+## Checklist novo mercado (#006)
 
-1. Engine — `backend/modeling/`
-2. `backend/services/ev_classification.py`
-3. `backend/modeling/market_validator.py`
-4. `backend/services/market_service.py` (dedup)
-5. `backend/services/correlation_matrix.py`
-6. `frontend/next/src/lib/localAudit.ts` (evaluatePick)
-7. `backend/routes/ai_analysis.py` (evaluatePick backend)
+Os 7 pontos obrigatórios estão na skill `novo-mercado` (`.claude/skills/novo-mercado/SKILL.md`).
 
 ## Proibições (regras travadas — NÃO violar sem entrada em REGRAS_ATIVAS)
 
