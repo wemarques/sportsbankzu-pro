@@ -12096,3 +12096,32 @@ Toda seleção com par na FootyStats saiu `devig`: Under 1.5/3.5/4.5, Over 1.5/4
 ### Lição aprendida
 Um teste que injeta a linha depois do mapper prova o consumidor e cala sobre o produtor. Rastreabilidade origem → destino exige que a prova entre pela **mesma porta** da produção — aqui, `matches_to_df`. O #210 já dizia que "mapear não é usar"; faltava o inverso: usar não é mapear.
 
+---
+
+## 238 — Card × texto da Mistral em contradição (AFC Wimbledon, 02/09): rastreio, instrumento M1 e o que só o banco responde
+**Data:** 2026-09-08 | **Arquivos:** scripts/quintis_divergencia.py (novo) | **Severidade:** Alta (o texto narrativo é a única saída sem veto) | **Status:** Diagnóstico registrado; medições no ledger/ai_audit_log pendentes (máquina do Welligton); correção NÃO aplicada
+
+### O jogo
+Relatado como "Bromley 0 × 1 AFC Wimbledon, League Two". **O produto não tem League Two** (`leagues_config.py`: 22 ligas, nenhuma com Bromley) e o `/fixtures?leagues=<todas>&date=2026-09-02` devolve 19 jogos, com um só do AFC Wimbledon: **`league-one-Burton Albion-AFC Wimbledon-1788374700.0`, placar 4 × 1** (Burton favorito a 1,95). λ recalculados hoje: 1,685 / 1,165; raw Over 2.5 54,2%, BTTS 56,0% — perto dos 55,1% / 56,8% do texto citado, o que sugere o mesmo jogo pré-jogo. O resultado "1 gol, BTTS não" e a leitura "visitante favorito" não batem com o record; os Brier calculados sobre eles (0,3036 / 0,3226) valem para um jogo que o produto não publicou. Isso não desfaz a contradição estrutural, que independe do placar.
+
+### O que o payload recalculado mostra (pós-jogo, não é o card da hora)
+`mercados[]`: um só, **Cartões Over 2.5 — NEUTRO (VIÁVEL)**, raw 0,697 → calibrada 0,576 (banda inteira), sem odd, `NO_ODDS_AVAILABLE`. `rejected_insights`: Over 1.5 (EV −9,1%), Under 3.5 (−21,9%), Under 4.5 (−21,1%), **BTTS Sim raw 56,0 → deflacionada 54,3, EV −2,2%**, DC 1X/12 (−21/−26%), escanteios 4.5–6.5 sem odd + `CORNER_ENGINE_NO_BET` (governança RESTRICTED, LOW). Ou seja: hoje o único selo é VIÁVEL em cartões; VALOR DETECTADO não existe neste recálculo. O card da hora só existe em dois lugares que este ambiente não alcança: `audit_results` (batch audit, uma linha por jogo) e `ai_audit_log` (inputs e output de cada geração de texto, com `created_at`). O ledger começou em 03/09.
+
+### As três hipóteses, pelo código
+- **H2 (estágios diferentes) — confirmada no mecanismo.** `ai_analysis._map_record_to_v3` monta `prob_over_25 = stats.over25Prob` e `prob_btts = stats.bttsProb` (RAW, os mesmos números Poisson do `stats`) e o prompt os imprime rotulados "(raw)". O texto citado carrega literalmente "(raw)": Mistral copiou o bloco que a regra #181 manda não citar. Os picks deflacionados vão em `pipeline_picks`, mas **só com `ev > 0`** (`picks_for_prompt`), então NEUTRO sem EV e rejeitados nunca chegam ao texto com o número deflacionado; o único número que Mistral vê para BTTS/Over 2.5 quando não há pick é o raw.
+- **H3 (momentos diferentes) — mecanismo confirmado; ocorrência a medir.** A rota de IA **recalcula a liga inteira** (`_get_match_data → _process_single_league`, com enriquecimento e reclassificação) a cada pedido, sem cache; o card veio de outro `/fixtures`. Dois cálculos, duas janelas de odds. A frase "sem EV positivo após deflação" é a instrução fixa do prompt quando `pipeline_picks` está vazio — logo, no momento do texto nenhum mercado tinha `ev > 0`; VALOR DETECTADO (NEUTRO_QUALIFICADO) exige `ev ≥ 5%` (VIA 1) ou `ev ≥ 0` com direção (VIA 2), portanto no momento do card havia. `ai_audit_log.inputs` e `created_at` contra `audit_results.timestamp` decidem.
+- **H1 (famílias diferentes) — compatível, não decidida.** No recálculo o único selo é cartões. Se `audit_results`/`ai_audit_log` mostrarem NQ em escanteios ou cartões, H1 e H3 coexistem.
+
+### M2 — o texto não passa por veto
+`validate_output` (#181) detecta mercado fora da lista e EV computado, mas é **log-only**; não detecta número raw citado. A camada 6 só vê direção Over/Under na `recomendacao_principal`. Nada bloqueia "56,8% (raw)". Critério de aceite para a correção (não aplicada, prompt protegido pelas 4 camadas #001/#002): **entrada** record com todos os `ev ≤ 0` → **saída** prompt sem nenhum percentual que não esteja em `mercados[].calibrated_probability` ou `rejected_insights[].deflated_prob`; teste `"(raw)" not in prompt`; `validate_output` passa a rejeitar (retry → fallback) qualquer percentual ausente da lista aprovada. "Com texto × sem texto" só se mede no `ai_audit_log` (join por match_id com `ledger_outcomes`).
+
+### M1 — instrumento pronto, não rodado no real
+`scripts/quintis_divergencia.py --arquivo todas_mercado.json`: quintis de |modelo − mercado|, Brier do modelo e do mercado, piso deixa-um-jogo-fora (#235) e IC por jogo para (modelo − piso) e (modelo − mercado); o quintil mais divergente separado por sinal. Controle positivo no sintético (sinal plantado): Q5 modelo 0,1996 × mercado 0,3249, como o gerador planta. A previsão a testar no real é a inversa.
+
+### O que só a máquina do Welligton mede
+```sql
+SELECT created_at, stage, inputs->'pipeline_picks' AS picks, inputs->'match_stats'->'prob_over_25' AS raw_o25,
+       output->>'resumo_analitico' AS resumo FROM ai_audit_log WHERE match_id ILIKE '%Wimbledon%' ORDER BY created_at;
+SELECT match_id, market, pick_type, ev, predicted_probs, timestamp FROM audit_results WHERE match_id ILIKE '%Wimbledon%';
+```
+
