@@ -238,18 +238,35 @@ def taxas() -> int:
             continue
         book = probs.get("book_odd")
         prob = probs.get("prob")
-        # #243 - ODD CIRCULAR: ate 08/2026 cerca de metade das linhas gravou em
-        # `book_odd` a odd JUSTA (1/prob) em vez do preco da casa — o defeito
-        # que o #196 fechou (medido: 54% em abril, 4,4% em setembro). ROI sobre
-        # ela e zero por construcao e faz qualquer acerto acima da propria
-        # probabilidade parecer lucro. Fica fora da coluna "com odd".
-        circular = bool(book and prob) and abs(float(book) - 1.0 / float(prob)) < 0.02
+        # #244 - ODD CIRCULAR, teste RELATIVO. O #243 usou tolerancia ABSOLUTA
+        # (|odd - 1/prob| < 0.02) e por isso subestimou o problema: numa odd de
+        # 1,90 uma diferenca de 1% na probabilidade vale ~0,04 de odd e passa
+        # batido. Medido com `prob * odd`, a fracao de odds derivadas da propria
+        # probabilidade sobe de 47,5% para 75,6% — e chega a 100% em todos os
+        # mercados de cartoes e em `Escanteios Over 7.5`, que nao tem nenhuma
+        # odd de casa gravada. ROI sobre odd derivada nao mede vantagem: mede o
+        # tamanho da deflacao (#244). Fica fora da coluna "com odd".
+        #
+        # A janela [0,95; 1,03] e o pico da distribuicao de prob*odd; acima de
+        # 1,03 a distribuicao vira uma cauda plana (nenhuma faixa passa de 1,4%).
+        # Falso positivo possivel: pick com preco real em que o modelo concorda
+        # exatamente com a casa. Preferimos exclui-lo a contar uma odd circular.
+        produto = float(book) * float(prob) if (book and prob) else None
+        circular = produto is not None and 0.95 <= produto <= 1.03
         alvo = "com" if (book and not circular) else "sem"
         por[market][alvo].append((res == "hit", float(book or 0), float(prob or 0)))
     conn.close()
 
     print("\nTaxa de acerto e retorno por mercado — o que muda quando existe PRECO")
-    print("(ROI simulado com a odd real; mercados sem preco nao tem ROI possivel)\n")
+    print("(ROI simulado com a odd real; mercados sem preco nao tem ROI possivel)")
+    # #244: AVISO OBRIGATORIO. A fonte desta tabela e o `audit_results`, que o
+    # #200 documenta como prognostico RECOMPUTADO POS-JOGO. Medido: os picks de
+    # `Escanteios Over 11.5` caem em jogos de 13,6 escanteios em media e acertam
+    # 78,8% — o modelo "escolhe" o lado certo porque ja viu o jogo. Acerto e ROI
+    # desta tabela sao um teto sem sentido; servem so para comparar COM x SEM
+    # preco dentro do mesmo mercado. Numero limpo: prediction_ledger (pre-jogo).
+    print("AVISO (#200/#244): audit_results e recomputado pos-jogo — acerto e")
+    print("ROI aqui estao contaminados. Use so a comparacao COM x SEM preco.\n")
     print(f"{'mercado':<26}{'n c/odd':>8}{'acerto':>8}{'odd med':>9}{'ROI':>9}   |"
           f"{'n s/odd':>8}{'acerto':>8}")
     print("-" * 92)

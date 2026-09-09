@@ -1212,3 +1212,52 @@ o modelo erra por ~20 pp.
 
 **Verificacao:** `python scripts/quintis_divergencia.py --arquivo todas_mercado.json`
 (regerar com `backfill_historico.py --todas --prob-de mercado`).
+
+---
+
+### #244 — O numero publicado nao e uma probabilidade; medir calibracao so na fonte pre-jogo
+
+**Regra 1 — a deflacao encolhe os dois lados, entao a saida nao soma 1.**
+`apply_probability_deflation` multiplica por um fator que CAI conforme a probabilidade sobe
+(0,95 em 55%; 0,85 em 65%; 0,75 em 85%). Nas duas pontas de um par complementar isso retira
+massa do par: 66/34 sai como **86,4%**. Medido em 3.386 pares do `prediction_ledger`, sem
+usar desfecho: soma publicada **86,3%**, soma raw dos escanteios **100,0%**; 92,0% dos pares
+abaixo de 95%.
+
+Consequencias que ficam proibidas:
+- **Proibido tratar `calibrated_prob`/`published_prob` como probabilidade** em qualquer conta
+  que dependa de coerencia — complementaridade, soma de familia, EV comparado entre lados,
+  Kelly. O numero e uma probabilidade encolhida, nao uma probabilidade.
+- **Proibido derivar odd justa da probabilidade publicada e chamar o resultado de preco.**
+  `1/publicada` e sistematicamente maior que a odd justa verdadeira; qualquer ROI calculado
+  contra ela devolve o tamanho da deflacao, nao vantagem. Foi assim que o `audit_results`
+  passou a sugerir +35% de retorno (#244).
+- **Proibido calibrar a deflacao numa familia de mercado e aplicar em outra.** O redutor foi
+  ajustado contra Brier de gols, onde o raw soma 109-137% e e de fato superconfiante; aplicado
+  a escanteios, cujo raw soma exatamente 100,0%, so destroi sinal (custo medido: -21,8 pontos
+  em Corners Over 4.5). Qualquer alteracao no fator exige a medicao por familia, separada.
+
+**Regra 2 — calibracao mede-se no `prediction_ledger`, nunca no `audit_results`.**
+O #200 registra que o `audit_results` guarda prognostico RECOMPUTADO POS-JOGO. A contaminacao
+e mensuravel: os picks de `Escanteios Over 11.5` caem em jogos de 13,6 escanteios em media e
+"acertam" 78,8% contra odd 2,73. Alem disso a tabela tem indice unico em `match_id` e guarda
+**um unico mercado por jogo** — a composicao por mercado dela e o que sobreviveu ao upsert.
+
+- **Proibido afirmar erro de calibracao, taxa de acerto ou ROI a partir do `audit_results`.**
+  A fonte legitima e `prediction_ledger` x `ledger_outcomes` (gravados antes do jogo). Numero
+  vigente ali: erro medio da probabilidade publicada **-10,1 pontos** em 18.429 previsoes.
+- Quem exibir qualquer agregado do `audit_results` (inclusive `/metrics/brier`) tem de
+  imprimir o aviso do vazamento junto do numero.
+
+**Regra 3 — tolerancia de odd e sempre relativa.**
+Odd nao e linear em probabilidade: numa odd de 1,90, 1% de probabilidade vale ~0,04 de odd.
+Comparacao entre odd gravada e odd justa usa `prob x odd`, nunca `|odd - 1/prob|`. O #243
+concluiu errado ("a odd e de outra linha") por ter usado tolerancia absoluta de 0,02: o
+mesmo dado, medido em escala relativa, mostra 75,6% de odds derivadas em vez de 47,5%, e
+zero odd de casa em `Escanteios Over 7.5` e em todos os mercados de cartoes.
+
+**Nao vale como contra-argumento:** "o rotulo e a odd estao trocados de linha". Nao estao —
+rotulo, probabilidade, odd e linha saem todos do mesmo `item["line"]` em
+`price_ladder.attach_odds_and_edge` -> `_build_lines_from_pricing` -> `ev_classification`,
+sem ponto de dessincronizacao. Ver [[#243]] (retratado) e [[#241]].
+

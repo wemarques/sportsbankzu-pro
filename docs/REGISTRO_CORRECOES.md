@@ -12336,6 +12336,16 @@ Um teste que consulta o banco de produção mede duas coisas ao mesmo tempo e n�
 ### De onde veio a pergunta
 Welligton comparou as apostas reais da bet365 com os prognósticos: 40 apostas liquidadas, 16 ganhas, **−R$ 81,40 (ROI −21,4%)**, e perguntou por que tantos picks erram. O caminho começou pelo cruzamento e terminou num defeito da própria régua.
 
+> **RETRATADO em #244 (2026-09-09):** a conclusão deste item está ERRADA. A odd NÃO é
+> de outra linha. Rótulo, probabilidade, odd e linha viajam juntos a partir de
+> `item["line"]` (`price_ladder.attach_odds_and_edge` → `_build_lines_from_pricing` →
+> `ev_classification`), e não há ponto onde dessincronizem. A odd de 1,85 é a **odd
+> justa da própria probabilidade publicada**, que está deprimida pela deflação. Meu
+> teste de circularidade usou tolerância ABSOLUTA (`|odd − 1/prob| < 0,02`) e por isso
+> classificou como "preço real" odds que eram derivadas: numa odd de 1,90, 1% de
+> probabilidade vale 0,04 de odd. Medido de novo com `prob × odd`: 75,6%, não 47,5%.
+> Ver #244.
+
 ### O achado, e é auto-contraditório dentro do próprio audit
 Para o rótulo `Escanteios Over 7.5`, o `audit_results` (04–08/2026, só linhas com preço real) registra:
 
@@ -12389,4 +12399,120 @@ O "80% de acerto" do sistema **é a taxa-base da linha fácil**, não seleção.
 
 ### Lição aprendida
 A régua vinha errada em duas dimensões ao mesmo tempo — odd de outra linha e odd justa no lugar de preço — e nas duas o erro empurrava para o mesmo lado: mais lucro aparente. Um instrumento que só erra a favor não é ruído, é viés, e explica melhor "o painel diz 80% e eu perco dinheiro" do que qualquer defeito do modelo.
+
+---
+
+## 244 — A probabilidade publicada não é uma probabilidade: a deflação retira 14 pontos de massa de cada par complementar
+**Data:** 2026-09-09 | **Arquivos:** scripts/cruzar_apostas.py | **Severidade:** Crítica (atinge todo número exibido ao operador e toda métrica derivada) | **Status:** Medido; correção do instrumento aplicada, correção do cálculo NÃO aplicada
+
+### De onde veio a pergunta
+Welligton pediu o rastreio da origem do "deslocamento" que o #243 relatou, e corrigiu a
+hipótese dele: o sistema erra por usar **informação de menos**, não de mais. O rastreio
+achou a origem — e refutou o #243 no caminho.
+
+### O que o #243 disse, e por que estava errado
+O #243 concluiu que a odd gravada pertencia a uma linha ~2 acima do rótulo. O caminho de
+código não permite isso: em `price_ladder.attach_odds_and_edge` a odd é buscada por
+`line_tag` derivado do próprio `item["line"]`; em `_build_lines_from_pricing` a chave é
+`f"over_{item['line']}"`; em `ev_classification` o rótulo, a prob e a odd saem todos do
+mesmo `line_val` do laço. Não existe ponto de dessincronização.
+
+O erro do #243 foi de instrumento: o teste de circularidade usou tolerância **absoluta**
+(`|odd − 1/prob| < 0,02`). Numa odd de 1,90, 1% de probabilidade vale ~0,04 de odd, então
+odds derivadas passavam como "preço real". Refeito com `prob × odd`:
+
+| medida | #243 (absoluta) | #244 (relativa) |
+|---|---|---|
+| odds derivadas da própria prob | 47,5% | **75,6%** |
+| `Escanteios Over 7.5` com preço de casa | 382 | **0** |
+| todos os mercados de cartões com preço | centenas | **0** |
+
+### A causa raiz: a deflação encolhe os DOIS lados
+`apply_probability_deflation` multiplica a probabilidade por um fator que **cai conforme a
+probabilidade sobe** — 0,95 em 55%, 0,85 em 65%, 0,75 em 85%. Aplicado às duas pontas de um
+par complementar, retira massa do par inteiro:
+
+| par (raw somando 100%) | soma publicada |
+|---|---|
+| 55/45 | 92,8% |
+| 66/34 | **86,4%** |
+| 75/25 | 82,5% |
+| 80/20 | 80,0% |
+
+Medido no `prediction_ledger` (3.386 pares, agrupados por geração, **sem usar desfecho**):
+
+| par complementar | jogos | soma publicada | soma raw |
+|---|---|---|---|
+| escanteios 4.5 | 672 | 76,8% | **100,0%** |
+| escanteios 11.5 | 715 | 84,6% | **100,0%** |
+| escanteios 8.5 | 86 | 82,4% | **100,0%** |
+| gols 1.5 | 909 | 88,8% | 109,0% |
+| **todos** | **3.386** | **86,3%** | 103,7% |
+
+Mediana observada: **86,4%** — o valor exato que a função produz no par 66/34. 92,0% dos
+pares publicados somam menos de 95%. O motor de escanteios entrega distribuição coerente
+(soma exatamente 100,0%) e a deflação a quebra.
+
+### Efeito na calibração, medido na fonte SEM vazamento
+`audit_results` não serve para isso: o #200 registra que ele é prognóstico **recomputado
+pós-jogo**, e a contaminação é visível (os picks de `Escanteios Over 11.5` caem em jogos de
+13,6 escanteios em média e "acertam" 78,8%). Medição feita no `prediction_ledger` ×
+`ledger_outcomes`, gravados antes do jogo — 18.429 previsões:
+
+| seleção | n | real | raw | publicada | erro da publicada | custo da deflação |
+|---|---|---|---|---|---|---|
+| Corners Over 5.5 | 654 | 91,3% | 80,4% | 61,8% | **−29,5** | −18,6 |
+| Corners Over 4.5 | 656 | 93,4% | 87,0% | 65,2% | **−28,2** | −21,8 |
+| Corners Over 6.5 | 651 | 86,5% | 73,0% | 58,6% | −27,9 | −14,4 |
+| Corners Over 7.5 | 590 | 77,5% | 66,6% | 56,0% | −21,5 | −10,7 |
+| Over 2.5 | 932 | 79,0% | 71,8% | 58,5% | −20,5 | −13,4 |
+| Over 1.5 | 1.642 | 86,7% | 82,8% | 68,1% | −18,7 | −14,8 |
+| DC X2 | 988 | 62,1% | 54,6% | 48,1% | −14,0 | −6,4 |
+| Corners Under 4.5 | 642 | 6,4% | 13,1% | 11,7% | **+5,4** | −1,4 |
+| Under 1.5 | 1.337 | 18,5% | 23,3% | 21,8% | **+3,3** | −1,5 |
+| **média ponderada** | **18.429** | | | | **−10,1** | |
+
+A assimetria é a assinatura do encolhimento: probabilidade alta fica muito abaixo do real,
+probabilidade baixa fica um pouco acima. Nenhum mercado com n≥40 é superestimado acima de
++5,4 pontos; onze passam de −10.
+
+### Por que isso produzia "+35% de ROI"
+A odd gravada é a odd justa da probabilidade já deprimida. Apostar nela e ver o desfecho real
+acontecer devolve exatamente o tamanho da depressão, não uma vantagem: 53,8% publicado, odd
+justa 1,86, frequência real 74,5% → +38,4%. O ROI da auditoria era um termômetro da deflação.
+
+### Por que a hipótese do operador está certa
+"Usa informação de menos" descreve o mecanismo. O motor de escanteios produz uma distribuição
+coerente e razoavelmente informada (raw erra −6,4 pontos em Corners Over 4.5); a deflação
+então joga fora 21,8 pontos de sinal desse mesmo número. O sistema não erra por processar
+demais: erra por **descartar** o que processou, por um redutor calibrado contra excesso de
+confiança que está sendo aplicado a um estimador que não tem esse excesso.
+
+### Correções aplicadas
+1. `scripts/cruzar_apostas.py`: teste de circularidade passa a ser **relativo** (`prob × odd`
+   na janela [0,95; 1,03], o pico da distribuição; acima de 1,03 a distribuição vira cauda
+   plana com nenhuma faixa acima de 1,4%). Critérios de aceite declarados antes da edição e
+   verificados depois: `Escanteios Over 7.5` com preço 382 → **0**; cartões → **0**.
+2. O mesmo script passa a imprimir o aviso do vazamento (#200) sobre a coluna de ROI.
+
+### O que NÃO foi corrigido (e por quê)
+- **A deflação em si.** Mexer nela é alteração de cálculo sob a proibição 4 do `CLAUDE.md`
+  ("não remover deflations sem lambda error < 0.5 por 3 rodadas") e sob a 7 (mudança > 15%
+  bloqueada sem dados). Os dados agora existem, mas a decisão é do produto, não do rastreio.
+  A pergunta a responder antes: a deflação foi calibrada contra Brier de gols (onde o raw
+  soma 109–137% e é de fato superconfiante) e aplicada globalmente a escanteios (onde o raw
+  soma 100,0%). O caminho mínimo é desacoplar por família de mercado.
+- **`/metrics/brier` e qualquer leitura agregada do `audit_results`** continuam sem excluir
+  odd derivada, e agora sabe-se que são 75,6% das linhas, não 47,5%.
+- **`audit_results` guarda um único mercado por jogo** (índice único em `match_id`, 6.401
+  linhas para 6.401 jogos). A composição por mercado dessa tabela é o que sobreviveu ao
+  upsert, não o conjunto de picks. Não medido: qual regra decide o sobrevivente.
+
+### Lição aprendida
+Duas vezes seguidas o instrumento errou antes do modelo. No #243 a tolerância absoluta
+escondeu 28 pontos de odds derivadas; aqui, a taxa de acerto do `audit_results` prometia um
+modelo 20 pontos abaixo da realidade quando o número limpo é 10. A regra que sai disso:
+**antes de acusar o modelo, medir na fonte que não foi recomputada depois do jogo** — e testar
+tolerância de odd em escala relativa, nunca absoluta, porque odd não é linear em
+probabilidade.
 
