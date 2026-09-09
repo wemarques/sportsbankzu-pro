@@ -1186,3 +1186,29 @@ ou `modelo` ate o gate). **Gate automatico:**
    seguem a classificacao nova.
 
 **Gate automatico:** `pytest tests/test_233_classificacao_valor.py -q`.
+
+
+### #241 — Divergencia contra o mercado NAO e evidencia de valor
+
+**Tipo:** Hard Constraint (rotulo de produto com base medida)
+**Relacionado:** #230 (ancora), #232 (EV contra consenso), #233 (classificacao), #235 (piso), #238-a
+
+Medido em 90.337 picks / 8.403 jogos (2026-09-09, `scripts/quintis_divergencia.py`):
+o Brier do modelo piora monotonicamente com `|prob_modelo - prob_mercado|`, e
+no quintil mais divergente fica +0,0414 ACIMA do piso da taxa-base (IC95
+[+0,0341, +0,0439]). No lado que produz EV positivo (modelo acima do
+mercado): modelo 0,652, mercado 0,451, taxa real 0,455 — o mercado acerta e
+o modelo erra por ~20 pp.
+
+1. PROIBIDO descrever divergencia contra o mercado como "valor detectado",
+   "edge" ou "oportunidade" em qualquer texto de produto, prompt ou
+   documento, sem citar esta medicao ao lado.
+2. Rotulo novo que dependa da distancia modelo-mercado exige repetir esta
+   medicao com o dado da propria fonte do rotulo, com piso e IC por jogo.
+3. A conclusao vale para o motor do backfill (#227). Replicar em producao
+   com `comparar_com_mercado.py --ledger --campo published_prob` quando o
+   ledger tiver n; ate la, nao estender a conclusao a `calibrated_prob` sem
+   dizer que e extrapolacao.
+
+**Verificacao:** `python scripts/quintis_divergencia.py --arquivo todas_mercado.json`
+(regerar com `backfill_historico.py --todas --prob-de mercado`).

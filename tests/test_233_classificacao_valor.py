@@ -26,8 +26,22 @@ def _ligada(monkeypatch, tmp_path):
     monkeypatch.setenv(A.FLAG, "mercado")
     monkeypatch.setenv("TAXAS_BASE_PATH", str(tmp_path / "nao.json"))
     monkeypatch.setattr(EVC, "_is_safe_enabled", lambda lid: True)   # sem circuit breaker por padrao
+    # #242 - os limiares tem de ser os DOCUMENTADOS nos comentarios deste
+    # arquivo, nao os que a RDS tiver no momento. `_get_thresholds` consulta
+    # a calibracao por liga (#055, via get_lambda_corrections) e a tabela
+    # `thresholds` do audit: numa maquina com DATABASE_URL, `safe_prob` de
+    # Over/Under vinha 0.60 em vez de 0.75 e `m3` virava SAFE — a suite
+    # falhava por ORDEM (o cache do #231-a segura a leitura por 300 s), e o
+    # teste sozinho passava. Aqui o objeto medido e a LOGICA de
+    # classificacao; qual limiar esta vivo e outra pergunta.
+    from backend.modeling import lambda_calculator as LC
+    LC.limpar_cache_correcoes()
+    monkeypatch.setattr(LC, "get_lambda_corrections", lambda league: {})
+    monkeypatch.setattr(EVC, "_get_thresholds",
+                        lambda cat, league_id=None: dict(EVC.DEFAULT_THRESHOLDS[cat]))
     A.limpar_cache_taxas()
     yield
+    LC.limpar_cache_correcoes()
     A.limpar_cache_taxas()
 
 

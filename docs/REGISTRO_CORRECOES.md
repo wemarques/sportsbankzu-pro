@@ -12102,6 +12102,8 @@ Um teste que injeta a linha depois do mapper prova o consumidor e cala sobre o p
 **Data:** 2026-09-08 | **Arquivos:** scripts/quintis_divergencia.py (novo) | **Severidade:** Alta (o texto narrativo é a única saída sem veto) | **Status:** Diagnóstico registrado; medições no ledger/ai_audit_log pendentes (máquina do Welligton); correção NÃO aplicada
 
 ### O jogo
+> **RETRATADO em #238-a (2026-09-09):** este paragrafo esta ERRADO. O jogo existe — `league-one-Bromley-AFC Wimbledon-1788807600.0`, League One, 07/09 19:00 UTC, Bromley 0x2. Consultei so `date=2026-09-02` (a data que o relato deu) e conclui "nao existe" de uma busca em UMA data. Ver #238-a.
+
 Relatado como "Bromley 0 × 1 AFC Wimbledon, League Two". **O produto não tem League Two** (`leagues_config.py`: 22 ligas, nenhuma com Bromley) e o `/fixtures?leagues=<todas>&date=2026-09-02` devolve 19 jogos, com um só do AFC Wimbledon: **`league-one-Burton Albion-AFC Wimbledon-1788374700.0`, placar 4 × 1** (Burton favorito a 1,95). λ recalculados hoje: 1,685 / 1,165; raw Over 2.5 54,2%, BTTS 56,0% — perto dos 55,1% / 56,8% do texto citado, o que sugere o mesmo jogo pré-jogo. O resultado "1 gol, BTTS não" e a leitura "visitante favorito" não batem com o record; os Brier calculados sobre eles (0,3036 / 0,3226) valem para um jogo que o produto não publicou. Isso não desfaz a contradição estrutural, que independe do placar.
 
 ### O que o payload recalculado mostra (pós-jogo, não é o card da hora)
@@ -12206,3 +12208,123 @@ Com deflação **zero** a publicada seria 63,8% contra 71,6% reais. A deflação
 **Instrumento sem candidato mede zero, e zero se lê como "não há efeito".** O braço shadow ficou meses de pé, com flag, endpoint e gate, comparando um valor consigo mesmo. Um `improvement 0` teria sido lido como evidência contra recalibrar, quando era evidência de que nada estava sendo comparado — mesma família do #226 (`skipped` semanal que parecia decisão e era erro de nome). **Braço shadow vazio é defeito, não estado de repouso.**
 
 E o segundo: **quando um número muda de índice, os alvos que apontavam para ele não se movem sozinhos.** O #189-a trocou bandas por nós contínuos e reindexou de publicada para raw; a mira do #179 continuou apontando para 0,55 e passou a errar o alvo por uma banda inteira, sem que nada quebrasse.
+
+---
+
+## 238-a — A contradição resolvida no banco: H3 confirmada por carimbo de tempo, H1 refutada, H2 confirmada como defeito separado
+**Data:** 2026-09-09 | **Arquivos:** docs (correção do #238); nenhuma alteração de código | **Severidade:** Alta (o #238 concluiu de uma busca em uma data só) | **Status:** Resolvido
+
+### Primeiro, o erro do #238
+O #238 afirmou que "o produto não tem League Two e nenhum jogo do Bromley" e tratou o relato como jogo inexistente. **Falso.** O jogo é `league-one-Bromley-AFC Wimbledon-1788807600.0` — Bromley foi promovido, joga a **League One** —, com pontapé em **07/09 19:00 UTC**, não 02/09. Consultei o `/fixtures` só em `date=2026-09-02`, a data que o relato deu, e de um resultado vazio nessa data concluí a inexistência do jogo. É a **mesma forma do #225-a** que o próprio #238 citava como regra a não repetir: concluir ausência a partir de uma consulta que só cobre o nome (lá) ou a data (aqui) que já se supunha. "Enumere antes de decidir que algo está ausente" vale para a chave de busca, não só para o nome do campo.
+
+Placar real (`ledger_outcomes.detail`): **0×2**, 2 gols, BTTS não, 8 escanteios, 2 cartões. O relato dizia "0×1, 1 gol"; o desfecho de Over 2.5 (miss) e de BTTS (não) está certo, então os dois Brier citados não mudam — mas foram calculados sobre a probabilidade **raw do texto**, não sobre a publicada.
+
+### A linha do tempo, do `ai_audit_log` e do `prediction_ledger`
+| Momento (UTC) | O que o pipeline publicou | O que a Mistral escreveu |
+|---|---|---|
+| 07/09 01:06 | Over 2.5 NEUTRO **EV +16,4%**; BTTS NEUTRO +3,1% | — |
+| 07/09 07:04 | Over 2.5 NEUTRO **EV +12,3%** (odd 1,93); BTTS +1,35% | — |
+| 07/09 13:04 | **só 3 linhas** — Cards O1.5/O2.5 NEUTRO, ev `None` | — |
+| 07/09 13:05–14:07 (5 gerações) | — | `pipeline_picks` = [BTTS SIM +1,4%, **Over 2.5 +12,3%**]; "Recomendação alinhada ao pipeline: Over 2.5 gols (58%, odd 1,93, EV +12.3%)" |
+| 07/09 19:00 | **pontapé** | — |
+| 07/09 19:07 e 19:19 | — | 2 gerações `fallback_static` — **402 Payment Required** da Mistral |
+| 08/09 02:45 | 22 linhas; só Cards NEUTRO, ev `None` | — |
+| 08/09 04:57–05:04 (7 gerações) | — | `pipeline_picks` = **[]**; "BTTS ... (**56.8% raw**)"; "Sem recomendação — nenhum mercado com EV positivo após deflação" |
+
+As `match_stats` mudaram entre as duas gerações: lambda 1,584/1,610 → **1,189/1,700**; raw Over 2.5 61,9% → **55,1%**; raw BTTS 63,6% → **56,8%**. Não é odd que mexeu: é o **record recalculado depois do jogo**, com a própria partida já dentro das médias dos times.
+
+### Veredito das três hipóteses
+- **H1 (famílias diferentes) — REFUTADA.** Os picks da geração do card são exatamente `BTTS — SIM` e `Over 2.5 gols`: a mesma família do texto. Refuta pelo critério que o próprio #238 escreveu ("REFUTA se os badges estiverem em Over 2.5 ou BTTS").
+- **H3 (momentos diferentes) — CONFIRMADA, e é a causa.** Cada geração é **internamente coerente**: em 07/09 o card mostrava VIÁVEL em Over 2.5 e BTTS *e* o texto recomendava Over 2.5 com EV +12,3%; em 08/09 não havia pick *e* o texto dizia "sem EV positivo". A contradição só existe ao ler o card de um momento ao lado do texto de outro. A frase "sem EV positivo após deflação" é **instrução fixa do prompt** quando `pipeline_picks` chega vazio, não uma conclusão da Mistral.
+- **H2 (raw × deflacionada) — CONFIRMADA como defeito, mas não é a causa desta contradição.** O texto de 08/09 cita "**56.8% raw**" literalmente, violando a regra #181, e a linha do `ai_audit_log` traz `validation_errors = []`: `validate_output` **não detectou**. O número raw entra pelo bloco "Estatísticas Poisson" (`prob_btts` = `stats.bttsProb`), e `picks_for_prompt` só carrega picks com `ev > 0` — então, sem pick aprovado, o único número que a Mistral enxerga para BTTS e Over 2.5 é o raw.
+
+### "VALOR DETECTADO" não foi publicado neste jogo
+Nas **9 revisões** do ledger para este `match_id`, `NEUTRO_QUALIFICADO` aparece **zero** vezes (o rótulo existe: 216 linhas no ledger inteiro). `getPickDisplay` mapeia NEUTRO para "VIÁVEL" e cartões/escanteios de linha média para "INFORMATIVO" (#189-g). O que o card podia mostrar em 07/09 eram **dois VIÁVEL** (Over 2.5 e BTTS) mais cartões em cinza. Se houver captura de tela com "VALOR DETECTADO" neste jogo, é um achado novo — badge sem lastro no ledger — e precisa da tela, porque o banco não o registra.
+
+### Dois defeitos que apareceram de graça
+1. **Mistral fora do ar não fica visível.** 07/09 19:07 e 19:19: `402 Payment Required`, `stage=fallback_static`, resumo e recomendação **vazios**. O #090 devolve `confidence=0` e o front mostra "indisponível", mas o operador não é avisado de que a conta está sem crédito.
+2. **Duas chamadas com um minuto de diferença, resultados incompatíveis.** Às 13:04 o `/fixtures` gravou 3 linhas (sem odd); às 13:05 a rota de IA recalculou a mesma liga e obteve a escada inteira com odd 1,93. Anterior ao deploy do #237 (07/09 ~19:20), então é candidato ao mesmo defeito de mapper — mas está registrado como instabilidade medida, não como hipótese confirmada.
+
+### M2 — controle negativo
+Brier dos jogos **com** texto 0,2011 (3.215 picks, 39 jogos) contra **sem** texto 0,1936 (15.320 picks, 181 jogos); diferença +0,0075, IC95 por jogo **[−0,0079, +0,0223]** — empate. Era a previsão honesta: o texto é *downstream*, não há mecanismo pelo qual altere o pick. Grupos disjuntos, não emparelhados: a diferença carrega composição de liga e de mercado.
+
+### Critério de aceite declarado (correção NÃO aplicada — prompt protegido pelas 4 camadas #001/#002)
+1. **Entrada** record com todos os `ev <= 0` produz **saída** de prompt sem nenhum percentual ausente de `mercados[].calibrated_probability` união `rejected_insights[].deflated_prob`; teste `"(raw)" not in prompt`.
+2. `picks_for_prompt` passa a levar **todos** os mercados publicados com a probabilidade deflacionada (hoje só `ev > 0`), com o EV rotulado como ausente quando não houver.
+3. `validate_output` passa a acusar percentual fora da lista aprovada e deixa de ser só log: violação gera retry e depois fallback.
+4. `stage=fallback_static` por erro de cobrança gera alerta visível ao operador, não só linha de log.
+
+### Lição aprendida
+Cada geração estava certa consigo mesma; o produto é que exibe lado a lado dois instantes diferentes sem dizer que são dois instantes. Uma saída sem carimbo de tempo visível não é auditável — e a contradição vista pelo operador foi, no fim, o sistema sendo honesto duas vezes em horários diferentes.
+
+---
+
+## 241 — A divergência do modelo contra o mercado é ruído, medida: quintis sobre 90.337 picks
+**Data:** 2026-09-09 | **Arquivos:** scripts/quintis_divergencia.py (do #238) | **Severidade:** Alta (é o rótulo com que o produto recomenda) | **Status:** Medido
+
+### O que foi medido
+`todas_mercado.json` regenerado com a chave real: **90.337 picks em 8.403 jogos**, 22 ligas (mais que os 64.718 do pedido porque o #231 acrescentou escanteios 4.5–6.5/12.5 e cartões 1.5). Quintis de `|prob_modelo − prob_mercado|`, piso deixa-um-jogo-fora (#235), IC95 por bootstrap **de jogos**.
+
+```
+quintil  |div| media      n  jogos  Brier mod  Brier mkt    piso  mod-piso              IC95    mod-mkt              IC95
+Q1            0.0124  18067   5564     0.1736     0.1734  0.1766   -0.0030  [-0.0068,-0.0040]  +0.0002  [+0.0000,+0.0004]
+Q2            0.0389  18067   6821     0.1849     0.1827  0.1858   -0.0009  [-0.0047,-0.0019]  +0.0022  [+0.0015,+0.0029]
+Q3            0.0702  18068   6756     0.2031     0.1969  0.2010   +0.0020  [-0.0026,+0.0011]  +0.0062  [+0.0049,+0.0074]
+Q4            0.1126  18067   6308     0.2211     0.2076  0.2123   +0.0087  [+0.0036,+0.0087]  +0.0135  [+0.0113,+0.0156]
+Q5            0.2030  18068   4772     0.2660     0.2201  0.2246   +0.0414  [+0.0341,+0.0439]  +0.0459  [+0.0415,+0.0503]
+```
+
+**Previsão confirmada, e monotonicamente.** Quanto mais o modelo se afasta do mercado, pior o Brier e mais acima do piso ele fica. Q1 e Q2 ficam **abaixo** do piso (o modelo agrega algo quando concorda com o mercado); Q4 e Q5 ficam **acima** dele com IC excluindo zero — pior que prever a taxa-base. Em Q5: modelo 0,2660 contra mercado 0,2201, diferença **+0,0459 IC [+0,0415, +0,0503]**.
+
+### O lado que vira "VALOR DETECTADO"
+EV positivo nasce quando o modelo põe probabilidade **acima** da implícita na odd. Esse é o recorte:
+
+| Q5, por sinal | n | jogos | prob. modelo | prob. mercado | **taxa real** | Brier mod | Brier mkt | mod−piso (IC95) |
+|---|---|---|---|---|---|---|---|---|
+| modelo > mercado | 5.325 | 1.675 | 0,652 | 0,451 | **0,455** | 0,2635 | 0,2208 | +0,0345 [+0,0214, +0,0418] |
+| modelo < mercado | 12.743 | 3.562 | 0,330 | 0,534 | **0,541** | 0,2671 | 0,2198 | +0,0422 [+0,0329, +0,0458] |
+
+Nos dois lados **o mercado acerta quase exatamente** (0,451 previsto contra 0,455 real; 0,534 contra 0,541) e o modelo erra por cerca de 20 pontos percentuais, em direções opostas. Quando o sistema anuncia valor, o que ele mede é o próprio erro: a divergência é simétrica, não informativa, e não sobrevive ao piso. **"VALOR DETECTADO" é, medido e com IC, o rótulo do pior quintil do sistema** — não uma interpretação da inclinação.
+
+### O que NÃO foi medido
+- O `prob_modelo` aqui é o do **backfill reconstruído** (#227), não a `calibrated_prob` de produção. Mesmo motor, mas sem a deflação publicada e sem o corredor #187: a conclusão vale para a divergência do motor, e a réplica em produção é o `--campo published_prob` do ledger quando houver n.
+- **Peculiaridade do instrumento, registrada:** em Q1, Q2 e Q4 o ponto cai fora do próprio IC (por exemplo −0,0030 com IC [−0,0068, −0,0040]). O piso é recalculado dentro de cada reamostra, o que enviesa o percentil; os IC servem para ordenar os quintis, não como intervalo exato de cada ponto. Corrigir exige bootstrap com o piso fixo da amostra original — não feito aqui.
+
+### Consequência para o #230
+O gate do #230 pergunta se o mercado bate a publicada no agregado, onde o empate exato (#235) manteve a decisão aberta. Esta medição responde uma pergunta diferente e mais afiada: **onde** o modelo se separa do mercado, ele perde — e é exatamente onde o produto recomenda. Não fecha o gate por si, mas remove a leitura de que "divergir é achar valor".
+
+### Lição aprendida
+A divergência tinha duas leituras possíveis, informação ou ruído, e nenhuma quantidade de plausibilidade separa as duas. Um único corte por quintil, com o piso honesto e IC por jogo, separou: o mercado é praticamente exato nas duas caudas onde o modelo mais se afasta dele.
+
+---
+
+## 242 — O teste de classificação lia a calibração VIVA da RDS: falha por ordem, invisível no contêiner
+**Data:** 2026-09-09 | **Arquivos:** tests/test_233_classificacao_valor.py | **Severidade:** Média (teste não determinístico; nenhum defeito de produção) | **Status:** Corrigido
+
+### Sintoma
+Primeira execução da suíte nesta máquina (Windows, com `DATABASE_URL` e `psycopg2` reais): **1 failed, 995 passed** — `test_233_classificacao_valor.py::test_neutro_qualificado_so_com_ancora_fresca_e_valor`. Rodando o arquivo sozinho: **9 passed**. Rodando com os vizinhos #231/#231-a/#232/#233: **47 passed**. Falha só na suíte inteira, ou seja, por ORDEM.
+
+### Causa, reproduzida antes de afirmada
+`_get_thresholds` não é constante: consulta a calibração por liga (#055) via `_get_calibrated_threshold` → `get_lambda_corrections` → banco, e ainda a tabela `thresholds` do audit. Numa máquina com banco alcançável, `Over/Under` em `championship` volta com `safe_prob = 0.60` no lugar do default 0.75. O `m3` do teste (publicada 0,65, EV +7,3%, edge +5 pp) então satisfaz `prob_safe` e sai **SAFE** em vez de NEUTRO_QUALIFICADO.
+
+O que transformou isso em falha por ordem foi o **cache TTL do #231-a**: qualquer teste anterior que deixe uma leitura real passar guarda o resultado por 300 s sob a chave da liga, e o #233 herda. Script de reprodução (scratchpad, não versionado):
+
+```
+cache limpo                      -> safe_prob 0.72 | m3 = NEUTRO_QUALIFICADO
+cache com safe_prob_ou = 0.60    -> safe_prob 0.60 | m3 = SAFE
+```
+
+No contêiner remoto isso nunca apareceu: sem `DATABASE_URL` e sem `psycopg2`, toda leitura caía em `{}` e os defaults valiam sempre. **O ambiente escondia o defeito**, não o teste.
+
+### Correção
+A fixture do #233 passa a fixar os limiares nos `DEFAULT_THRESHOLDS` — exatamente os valores que os comentários do próprio arquivo citam ("Over/Under neutro_prob 0.60") e que antes eram falsos na prática — e limpa o cache de correções na entrada e na saída. O objeto medido pelo arquivo é a **lógica de classificação** (#233); qual limiar está vivo em cada liga é outra pergunta, coberta pelo #055.
+
+### Critério de aceite (declarado antes da edição) e prova
+Passar em três estados: (a) cache vazio, (b) cache pré-carregado com `safe_prob_ou = 0.60`, (c) `_get_dynamic_thresholds` com qualquer valor. Medido: **9 passed** em (a) e **9 passed** em (b), este último com um plugin que envenena o cache no `sessionstart`. Suíte completa depois do fix: **996 passed, 8 skipped**.
+
+### Achado que fica registrado, sem correção
+Os 8 `skipped` desta máquina contra 1 no contêiner são de dependências ausentes lá, não de regressão — mas mostram que a contagem da suíte não é comparável entre ambientes. As contagens citadas nas entradas #231 a #241 vieram do contêiner.
+
+### Lição aprendida
+Um teste que consulta o banco de produção mede duas coisas ao mesmo tempo e não avisa qual delas falhou. Pior: o ambiente mais pobre (sem banco) fazia o teste passar sempre, então a suíte verde no contêiner nunca foi evidência de isolamento. Teste de lógica fixa seus próprios limiares; teste de calibração é outro arquivo.
+

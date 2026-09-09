@@ -64,3 +64,7 @@ decisions.log
 # Playwright MCP debug artifacts (logs + screenshots, per-run)
 .playwright-mcp/console-*.log
 .playwright-mcp/page-*.png
+
+# #238-a: saida do backfill (regeneravel; 90k picks, ~30 MB)
+todas_mercado.json
+picks_historicos.json
