@@ -12328,3 +12328,65 @@ Os 8 `skipped` desta máquina contra 1 no contêiner são de dependências ausen
 ### Lição aprendida
 Um teste que consulta o banco de produção mede duas coisas ao mesmo tempo e não avisa qual delas falhou. Pior: o ambiente mais pobre (sem banco) fazia o teste passar sempre, então a suíte verde no contêiner nunca foi evidência de isolamento. Teste de lógica fixa seus próprios limiares; teste de calibração é outro arquivo.
 
+---
+
+## 243 — A odd do `audit_results` não pertence à linha do rótulo: a auditoria pagava preço de linha difícil por acerto de linha fácil
+**Data:** 2026-09-09 | **Arquivos:** scripts/cruzar_apostas.py (novo) | **Severidade:** Crítica (toda métrica de EV/ROI derivada do `audit_results` entre 04 e 08/2026 está inflada) | **Status:** Medido; correção não aplicada
+
+### De onde veio a pergunta
+Welligton comparou as apostas reais da bet365 com os prognósticos: 40 apostas liquidadas, 16 ganhas, **−R$ 81,40 (ROI −21,4%)**, e perguntou por que tantos picks erram. O caminho começou pelo cruzamento e terminou num defeito da própria régua.
+
+### O achado, e é auto-contraditório dentro do próprio audit
+Para o rótulo `Escanteios Over 7.5`, o `audit_results` (04–08/2026, só linhas com preço real) registra:
+
+| mês | n | odd média | mín | máx |
+|---|---|---|---|---|
+| 04 | 81 | 1,85 | 1,67 | 2,13 |
+| 05 | 161 | 1,88 | 1,73 | 2,18 |
+| 07 | 36 | 1,90 | 1,70 | 2,15 |
+| 08 | 97 | 1,85 | 1,59 | 2,13 |
+
+E o **mesmo audit** mede acerto de **74,5%** nesse mercado. Uma odd de 1,85 implica 54%. Nenhuma casa paga 1,85 num evento de 74,5% — seriam 20 pontos de presente. **A odd registrada não é o preço dessa linha.**
+
+O `prediction_ledger` de setembro, depois do #237, dá o preço real por linha e fecha o caso:
+
+| linha | odd real (ledger) | odd no audit |
+|---|---|---|
+| Corners Over 7.5 | **1,24** (máx 1,54) | 1,85 (mín 1,59) |
+| Corners Over 8.5 | 1,41 | — |
+| Corners Over 9.5 | **1,79** | — |
+| Corners Over 10.5 | 1,96 | — |
+
+Os intervalos **não se tocam**: o máximo do audit real para 7.5 (1,54) é menor que o mínimo registrado (1,59). O preço gravado é o de ~9.5/10.5 — um deslocamento de cerca de duas linhas.
+
+### Consequência
+1. Todo `ev` do `audit_results` entre 04 e 08/2026 foi calculado com a odd errada.
+2. O ROI que a auditoria sugere é artefato: taxa de acerto da linha **fácil** com preço da linha **difícil**. Medido com o script novo: **+35,0% em 3.105 picks** com "preço real" — número que não sobrevive a nenhuma checagem externa.
+3. Qualquer calibração ou threshold ajustado por EV vindo dessa tabela herdou o viés.
+
+### Uma segunda contaminação, independente
+`book_odd` do `audit_results` carrega a **odd justa (1/prob)** no lugar do preço em boa parte das linhas — o defeito que o #196 fechou, ainda presente no histórico: **54,1% em abril, 50,8% em maio, 45,1% em agosto, 4,4% em setembro**. ROI sobre odd justa é zero por construção. O script novo exclui essas linhas; o `/metrics/brier` e qualquer leitura agregada da tabela **não** excluem.
+
+### O que a auditoria mede de fato quando está certa
+Taxa-base real nos 220 jogos pontuados pelo ledger, contra o acerto do audit:
+
+| mercado | taxa-base real | acerto do audit |
+|---|---|---|
+| Escanteios Over 7.5 | 75,2% | 74,5% |
+| Cartões Over 2.5 | 74,5% | 79,6% |
+
+O "80% de acerto" do sistema **é a taxa-base da linha fácil**, não seleção. Bate com o #241: onde o modelo se afasta do mercado, ele perde; onde acompanha, ele reproduz a taxa-base. Acerto alto em linha barata não é vantagem — é a definição de linha barata.
+
+### Instrumento
+`scripts/cruzar_apostas.py`:
+- `--exemplo apostas.csv` escreve o modelo de planilha;
+- `--apostas apostas.csv` cruza as apostas reais com o `prediction_ledger` e responde cobertura (a aposta tem pick?), linha (X.0 da casa contra X.5 do sistema), revisão (o sistema mudou de ideia depois — #238-a) e desempenho só nas linhas jogadas;
+- `--taxas` separa acerto e ROI por mercado entre picks **com preço real** e **sem preço**, excluindo as odds circulares.
+
+### O que NÃO foi medido
+- Por que a odd está deslocada: pode ser o mapeamento de linha pré-#187/#237 ou o `book_odd` do payload legado. Achar a origem exige rodar o caminho antigo, e o #237 já trocou o mapper — a medição de setembro em diante dirá se o defeito persiste.
+- As 40 apostas do operador têm IC de ROI **[−54,4%, +14,7%]**: o prejuízo em si é indistinguível de variância. As conclusões acima são estruturais, não vêm desse n.
+
+### Lição aprendida
+A régua vinha errada em duas dimensões ao mesmo tempo — odd de outra linha e odd justa no lugar de preço — e nas duas o erro empurrava para o mesmo lado: mais lucro aparente. Um instrumento que só erra a favor não é ruído, é viés, e explica melhor "o painel diz 80% e eu perco dinheiro" do que qualquer defeito do modelo.
+
