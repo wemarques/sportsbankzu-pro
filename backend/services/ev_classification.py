@@ -26,18 +26,23 @@ from backend.modeling.poisson_matrix import derive_all_markets
 from backend.modeling.corners_engine import derive_corner_probabilities
 from backend.modeling.calibrator import calibrate_prob
 
-# #248: a pilha de deflacao por banda + por liga (#105) mudou inteira para
-# `calibragem/legado.py`, congelada como VERSAO 0 da camada aprendida.
-# Reimportada aqui (em vez de duplicada) porque `_band_deflation_v179_shadow`,
-# `apply_probability_deflation_with_shadow`, `_is_safe_enabled` e
-# `_get_calibrated_threshold`, logo abaixo, ainda a usam.
-from backend.modeling.calibragem.legado import (
+# #248: as primitivas de deflacao por banda + por liga (#105) moram em
+# `calibragem/bandas.py` (modulo normal, nao congelado — tem chamadores
+# permanentes fora da versao 0). Reimportadas aqui (em vez de duplicadas)
+# porque `_band_deflation_v179_shadow`, `apply_probability_deflation_with_shadow`,
+# `_is_safe_enabled` e `_get_calibrated_threshold`, logo abaixo, ainda as usam.
+from backend.modeling.calibragem.bandas import (
     _band_deflation,
-    _DEFLATION_KNOTS,
     _league_deflation_factor,
-    apply_probability_deflation,
     _canonical_league,
     _LEAGUE_DEFLATION,
+    # As duas abaixo nao sao usadas diretamente neste arquivo — o reimport
+    # existe so para reexportar a testes antigos que ainda importam de
+    # `ev_classification` em vez de `bandas` diretamente:
+    # `tests/unit/test_deflation_continuous_189.py` (as duas) e
+    # `tests/unit/test_family_gate_189e.py` (`apply_probability_deflation`).
+    apply_probability_deflation,  # noqa: F401
+    _DEFLATION_KNOTS,  # noqa: F401
 )
 
 
@@ -190,7 +195,7 @@ MAX_CREDIBLE_EV = 0.40
 EV_FLOOR = 0.01
 _shadow_logger = logging.getLogger("sportsbankzu.safe_shadow")
 
-# `_canonical_league` mudou para `calibragem/legado.py` no #248 (importada
+# `_canonical_league` mudou para `calibragem/bandas.py` no #248 (importada
 # de volta acima) — usada aqui por `_is_safe_enabled` e
 # `_get_calibrated_threshold`, alem da propria pilha de deflacao.
 
