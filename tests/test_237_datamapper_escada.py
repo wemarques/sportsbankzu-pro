@@ -9,7 +9,7 @@ odds_ft_under15/35/45, odds_doublechance_* e odds_corners_under_* nao
 estavam nela. O teste do #230-g/h usava _rows_override, que pula o mapper —
 por isso passou enquanto a producao descartava.
 """
-import time
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -19,13 +19,33 @@ from backend.services.prediction_ledger import prob_mercado_do_pick
 from tests.test_236_odds_do_row import _LINHA
 
 
+_BRT = timezone(timedelta(hours=-3))
+
+
+def _ts_de_hoje():
+    """Instante SEMPRE dentro do dia calendario BRT corrente.
+
+    A ancora anterior somava uma hora ao relogio, e entre 23h e 00h BRT isso
+    atravessava a meia-noite: o jogo virava de amanha, `date_filter="today"`
+    (dia calendario BRT, regra #089) o descartava com razao, e `len(recs)` dava
+    0. Falhava uma hora por dia — pegou o CI de `c5d5c7a` (23:21 BRT) e o de
+    `3760edb` (23:40 BRT), sem nenhuma relacao com o que aqueles commits
+    mudaram.
+
+    `date_range` so compara `start <= dt <= end`; nao exige jogo futuro. Por
+    isso ancorar no meio-dia resolve sem mock nem relogio congelado.
+    """
+    hoje = datetime.now(_BRT).replace(hour=12, minute=0, second=0, microsecond=0)
+    return int(hoje.timestamp())
+
+
 def _raw(ts):
     return {"id": 1, "date_unix": ts, "status": "incomplete", "home_name": "Casa", "away_name": "Fora",
             "competition_id": 5, **_LINHA}
 
 
 def test_matches_to_df_preserva_a_escada_inteira():
-    df = DataMapper.matches_to_df([_raw(int(time.time()) + 3600)])
+    df = DataMapper.matches_to_df([_raw(_ts_de_hoje())])
     for k in ("odds_ft_under15", "odds_ft_under45", "odds_ft_over05", "odds_doublechance_1x",
               "odds_corners_under_95", "odds_corners_under_115", "odds_corners_over_75"):
         assert k in df.columns, k
@@ -35,7 +55,7 @@ def test_matches_to_df_preserva_a_escada_inteira():
 
 def test_caminho_principal_sem_rows_override_publica_os_pares():
     """O caminho REAL: linha crua -> DataMapper -> DataFrame -> record."""
-    ts = int(time.time()) + 3600
+    ts = _ts_de_hoje()
     df = DataMapper.matches_to_df([_raw(ts)])
     liga = {"average_goals_per_match": 2.65, "average_corners_per_match": 10.2,
             "average_cards_per_match": 4.9, "matches_completed": 25}

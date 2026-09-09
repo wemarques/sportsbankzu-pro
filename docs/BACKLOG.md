@@ -5,8 +5,8 @@
 > concluído, migra para `docs/REGISTRO_CORRECOES.md` com numeração `#N` e é
 > marcado como ✅ aqui.
 
-**Última revisão:** 2026-09-08
-**Itens abertos:** 15 (B-016 adicionado em 08/09)
+**Última revisão:** 2026-09-09
+**Itens abertos:** 16 (B-017 adicionado em 09/09)
 **Última conversa:** Sessão de 2026-04-28/29 — fechou #173 (Caminho 1+2 EOS audit + standings snapshot), #174 (Report Card null guards + watchlist cards), #175 (decommission EC2 prognosticos-brasileirao + 3 SGs + key + IPv4). Higiene de repo: `.gitattributes` + `.gitignore` tightening + 31 arquivos untracked.
 
 **Incidente HTTP_ERROR (0s) de 29/04:** causa raiz = degradação upstream (FootyStats 429 + api-football date format bug). 5 hipóteses originais (H1-H5) refutadas. Achado lateral CRÍTICO (secret leak): **resolvido em 2026-05-01 (#176, B-010 ✅)**. B-011 (date format bug): **resolvido em 2026-07-14 (#186 ✅)** — era também a causa do payload de produção não exibir nenhum traço de API-Football. Pendentes: B-012 (backoff/circuit breaker), B-013 (variantes do leak).
@@ -413,7 +413,48 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 
 **Criterio de sucesso:** identificar o teste que contamina e isolar o estado (fixture de reset ou `monkeypatch`), com a suite completa verde no Windows e no CI.
 
-**Notas:** Nao afeta producao nem o CI — e ruido de ambiente local, nao defeito de calculo. Escalar para P2 se aparecer um segundo teste com o mesmo sintoma, ou se a suite no Windows virar gate de alguem. Diagnosticado em 2026-09-08 na mesma sessao que corrigiu a portabilidade de `test_226_retrain_escanteios.py::test_raiz_de_dados_respeita_precedencia`, que comparava `str()` de um caminho POSIX contra o separador do Windows e passou a comparar `Path`.
+**Notas:** Instancia da classe descrita no [B-017]. Nao afeta producao nem o CI — e ruido de ambiente local, nao defeito de calculo. Escalar para P2 se aparecer um segundo teste com o mesmo sintoma, ou se a suite no Windows virar gate de alguem. Diagnosticado em 2026-09-08 na mesma sessao que corrigiu a portabilidade de `test_226_retrain_escanteios.py::test_raiz_de_dados_respeita_precedencia`, que comparava `str()` de um caminho POSIX contra o separador do Windows e passou a comparar `Path`.
+
+---
+
+### B-017 Testes que dependem de contexto nao declarado (relogio, ordem de execucao)
+
+**Categoria:** Hygiene (suite)
+**Prioridade:** P2
+**Esforco:** M (a instancia aberta e o B-016; a prevencao e S)
+**Status:** Open
+**Adicionado:** 2026-09-09
+
+**Contexto:** Em um unico dia apareceram duas falhas de suite com a mesma
+assinatura — o teste passa ou falha conforme algo que ele nao declara e nao
+controla. Nenhuma das duas indicava defeito de producao, e as duas custaram
+investigacao:
+
+- **Relogio (RESOLVIDO em 2026-09-09).** `test_237_datamapper_escada.py`
+  ancorava o jogo em `int(time.time()) + 3600` com `date_filter="today"`. Entre
+  23h e 00h BRT o `+1h` atravessava a meia-noite, o jogo virava de amanha e o
+  filtro (dia calendario BRT, #089) o descartava corretamente — `len(recs)`
+  dava 0. **Derrubou o CI da `main` duas vezes seguidas**, em `c5d5c7a` (23:21
+  BRT) e `3760edb` (23:40 BRT), sem relacao com o que aqueles commits mudaram;
+  gerou dois e-mails de falha. Corrigido com `_ts_de_hoje()` (meio-dia BRT do
+  dia corrente). Verificado sob 24 relogios simulados: ancora nova falha em
+  0/24 horas, a antiga em 1/24 (hora 23).
+- **Ordem de execucao (ABERTO — ver [B-016]).** `test_233_classificacao_valor.py`
+  passa isolado e falha na suite completa no Windows.
+
+**Criterio de sucesso:** nenhum teste da suite muda de resultado em funcao de
+(a) hora do dia, (b) ordem de coleta, (c) sistema operacional. Fechar o B-016 e
+o que resta da parte (b)/(c).
+
+**Prevencao a avaliar (nao decidida):** rodar o CI uma vez por dia num horario
+de borda (~02:40 UTC = 23:40 BRT) pegaria a classe (a) de graca, ja que foi
+exatamente esse horario que expos o caso do relogio. Alternativa mais barata:
+varredura por AST procurando `time.time()`/`datetime.now()` em testes que
+tambem usam `date_filter`, no espirito do `scripts/varredura_get.py` (#225-c).
+
+**Notas:** A licao e a mesma do #227 — teste que so roda num contexto nao mede o
+que promete. Um teste verde as 15h e um teste verde as 23h sao afirmacoes
+diferentes, e so a segunda foi verificada aqui por acidente.
 
 ---
 
@@ -496,6 +537,7 @@ Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apen
 |---|---|---|
 | 2026-04-29 | Criação inicial | 10 |
 | 2026-09-08 | B-016 (test_233 contaminado no Windows) | 15 |
+| 2026-09-09 | B-017 (testes dependentes de relogio/ordem) | 16 |
 
 ---
 
