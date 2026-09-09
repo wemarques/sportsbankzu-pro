@@ -45,7 +45,9 @@ cd frontend/next && npm run test:e2e
 
 ## API Lambda — armadilhas conhecidas
 
-Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
+Base: `https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/`
+
+**Nunca apontar `PY_BACKEND_URL` para `*.execute-api.*.amazonaws.com` (#114/#203).** O API Gateway corta a integracao em 30s — limite duro que nao se eleva por configuracao. O sintoma da violacao engana: ligas COM jogos (as unicas caras de montar) estouram e somem da tela, enquanto ligas sem jogos respondem em ~2s e aparecem — parece "algumas ligas nao carregam", nunca "o backend caiu". A guarda e `isApiGatewayBackend()` em `frontend/next/src/lib/backend.ts`.
 
 | Rota correta | Errado |
 |---|---|
@@ -57,7 +59,7 @@ Base: `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`
 | `/api/backtesting/calibration-status` | |
 | `/api/health/safe-status` | |
 
-API Gateway tem hard limit de **30s**. Calibração leva 15–40s; **503 não significa falha** — Lambda continua processando e persiste o resultado.
+Calibração leva 15–40s. Atrás da Function URL o teto é o timeout da própria Lambda (60s) e **503 não significa falha** — a Lambda continua processando e persiste o resultado. **503 em ~30s cravados é outra coisa:** é o teto do API Gateway, ou seja, backend errado (#203), nunca cold start.
 
 ## Deploy Lambda e Layer scipy
 
@@ -156,11 +158,16 @@ cd sportsbankzu-pro && git add -A \
   && git commit -m "feat/fix/refactor: descrição curta (#NNN)" \
   && git push origin main
 
-# 4. Deploy (se backend alterado)
-python scripts/deploy_lambda.py
+# 4. Deploy do backend — JA E AUTOMATICO no push acima
+#    .github/workflows/deploy-lambda.yml dispara em push na main quando o commit toca
+#    backend/**, scripts/deploy_lambda.py ou o proprio workflow. Ele roda pytest -q e, se
+#    passar, empacota, sobe pro S3, faz update-function-code e aquece o cache de 22 ligas.
+#    Rodar o script na mao apos o push e um SEGUNDO deploy do mesmo codigo. Use-o apenas
+#    fora do fluxo de push (hotfix a partir de branch, ou quando o workflow falhou):
+# python scripts/deploy_lambda.py
 
 # 5. Validar
-curl -s https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/health
+curl -s https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/health
 ```
 
 Atalho: `bash scripts/finalize.sh` roda 1–3 automaticamente. Pular apenas para alterações exclusivas de doc local.

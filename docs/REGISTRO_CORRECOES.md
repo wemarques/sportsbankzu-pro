@@ -12125,3 +12125,34 @@ SELECT created_at, stage, inputs->'pipeline_picks' AS picks, inputs->'match_stat
 SELECT match_id, market, pick_type, ev, predicted_probs, timestamp FROM audit_results WHERE match_id ILIKE '%Wimbledon%';
 ```
 
+
+## 239 — A documentação apontava para o backend que a regra #203 proíbe, e dava como manual um deploy que é automático
+
+**Data:** 2026-09-08 | **Arquivos:** CLAUDE.md, docs/REGRAS_ATIVAS.md, docs/INDICE_REGRAS.md | **Severidade:** Média (documentação de infraestrutura que induz a uma regressão já catalogada) | **Status:** Corrigido
+
+### Problema identificado
+Leitura integral do `REGRAS_ATIVAS.md` e do `INDICE_REGRAS.md` (a leitura obrigatória do `CLAUDE.md`) expôs três divergências entre o que a documentação afirma e o que o sistema faz:
+
+1. **`CLAUDE.md` dava como "Base" da API a URL `https://ipmywgv9d6.execute-api.us-east-1.amazonaws.com/`** — um API Gateway. A regra #114/#203 exige o contrário, em letras maiúsculas: `PY_BACKEND_URL` TEM de apontar para `*.lambda-url.*.on.aws`, e a regra nasceu justamente de a configuração ter regredido para o gateway uma vez.
+2. **O passo 4 da "Finalização obrigatória" (`CLAUDE.md`) e o passo 3 da "REGRA DE FINALIZACAO OBRIGATORIA" (`REGRAS_ATIVAS.md`)** mandavam rodar `python scripts/deploy_lambda.py` como se o deploy fosse manual.
+3. **A verificação de suíte das regras #219/#220** afirmava que `pytest tests/ -q` deve coletar **753** testes.
+
+### Causa raiz
+As três são defasagem, não erro de origem: cada uma estava certa quando foi escrita.
+
+O item 1 é o mais perigoso porque **o sintoma da violação confirma a documentação errada**. Medido hoje: `GET /health` responde **HTTP 200 nas duas URLs** (gateway 20,3 s, Function URL 15,4 s, ambas frias). O `/health` é barato e passa pelos dois caminhos — é exatamente o que o #203 descreve: só as ligas COM jogos estouram os 30 s do gateway. Quem validar um deploy com `curl .../health` na URL do gateway recebe `200 OK` e conclui que está tudo certo.
+
+O item 2 nasceu antes de `.github/workflows/deploy-lambda.yml` existir. Hoje o workflow dispara em `push` na `main` filtrado por `backend/**`, `scripts/deploy_lambda.py` e ele mesmo; roda `pytest -q` e, se passar, empacota com wheels `manylinux2014_x86_64`, sobe para o S3, faz `update-function-code`, espera `function-updated` e aquece o cache de 22 ligas. Confirmado no histórico: os pushes de 2026-09-07 dispararam o workflow (um deles falhou). Rodar o script após o push é um segundo deploy do mesmo código.
+
+O item 3 é contagem velha: a suíte coleta **1003** testes no commit `c5d5c7a`.
+
+### Correções aplicadas
+- `CLAUDE.md`: a Base passa a ser a Function URL, com o parágrafo que nomeia a proibição (#114/#203), descreve o sintoma enganoso e aponta a guarda `isApiGatewayBackend()` em `frontend/next/src/lib/backend.ts`. O `curl` de validação do passo 5 passa a usar a Function URL.
+- `CLAUDE.md`: o passo 4 declara o deploy como automático, descreve o gatilho do workflow e rebaixa `scripts/deploy_lambda.py` a hotfix fora do fluxo de push (comentado, não como comando padrão).
+- `docs/REGRAS_ATIVAS.md`: mesma emenda no passo 3 da regra de finalização.
+- `docs/REGRAS_ATIVAS.md` (#219/#220): contagem atualizada para 1003, com a data e o commit da medição, e a guarda reescrita como **piso** — o que importa é queda brusca (o retorno a ~489 indica coleta quebrada em import de nível de módulo), não o número exato.
+
+Não foram tocados os ~40 arquivos de `.claude/commands/*.md` que ainda citam o gateway: são registros históricos de prompts executados, não documentação viva. Reescrevê-los falsificaria o histórico.
+
+### Lição aprendida
+**Documentação de infraestrutura envelhece em silêncio e a verificação barata a confirma.** As três divergências sobreviveram porque nenhuma quebra nada de imediato: o `/health` responde 200 no backend errado, o deploy manual redundante funciona, e uma contagem de testes defasada só falha quando alguém a usa como guarda. O padrão reutilizável é o mesmo do #227: **um instrumento que só tem controle positivo não mede nada**. `curl /health` em ambos os backends devolve 200 — para distinguir os dois é preciso o controle negativo, que aqui é uma liga COM jogos. Toda verificação escrita na documentação deve exercitar o caminho caro, não o barato.

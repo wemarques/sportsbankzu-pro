@@ -158,7 +158,10 @@ Novo mercado exige: engine + ev_classification + market_validator + dedup + corr
 Toda alteracao no sistema DEVE:
 1. Sincronizar arquivos espelhados (`REGISTRO_CORRECOES.md`, `CLAUDE.md`)
 2. Commit no repositorio + push para GitHub
-3. Deploy Lambda (se backend alterado)
+3. Deploy Lambda (se backend alterado) — **automatico**: o push na `main` com mudanca em
+   `backend/**` dispara `.github/workflows/deploy-lambda.yml`, que roda `pytest -q` e so
+   entao publica. `scripts/deploy_lambda.py` na mao e um segundo deploy do mesmo codigo;
+   reserve-o para hotfix fora do fluxo de push ou para quando o workflow falhar
 4. Health check pos-deploy
 5. Novas correcoes: registrar no `REGISTRO_CORRECOES.md`
 6. Novas regras permanentes: adicionar ao `REGRAS_ATIVAS.md`
@@ -898,8 +901,11 @@ do isotônico separado do veredito do produto.
 5. **Bootstrap por jogo, nunca por pick**, e Benjamini-Hochberg nas 440 células.
 
 **Verificação:** `pytest tests/test_219_devig.py tests/test_220_inclinacao.py -q`
-**Verificação (suíte):** `pytest tests/ -q` deve coletar **753** testes — se
-voltar a 489, a coleta quebrou de novo em algum import de nível de módulo.
+**Verificação (suíte):** `pytest tests/ -q` deve coletar **1003** testes
+(medido em 2026-09-08, commit `c5d5c7a`; eram 753 quando esta regra foi escrita e 489 antes
+da quebra que a originou). A guarda e o **piso**, nao o numero exato: queda brusca — em
+especial de volta a ~489 — significa que a coleta quebrou em algum import de nivel de
+modulo, nao que testes foram removidos. Atualizar o numero ao medir de novo.
 
 
 ### #222 — Protocolo SDD: proibido afirmar efeito sem prova no payload montado
