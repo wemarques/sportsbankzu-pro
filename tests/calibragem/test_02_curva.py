@@ -55,9 +55,32 @@ def test_bordas_nao_estouram():
     ("Cartoes Over 2.5", "Cards"), ("Cartoes Under 4.5", "Cards"),
     ("1X2 Home", "1X2"), ("1X2 Draw", "1X2"),
     ("DC 1X", "Double Chance"), ("DC X2", "Double Chance"),
+    # Rotulos REAIS do prediction_ledger (ingles, "market selection"
+    # concatenados) -- nao os de exibicao em pt-BR acima. Regressao do
+    # achado da rodada 1: "Corners Corners Over 7.5" caia em "over " antes
+    # de casar "escanteios" e virava Over/Under silenciosamente.
+    ("Corners Corners Over 7.5", "Corners"),
+    ("Cards Over 2.5", "Cards"),
+    ("Corners Corners Under 9.5", "Corners"),
+    ("Over/Under Over 2.5", "Over/Under"),
+    ("Double Chance DC 1X", "Double Chance"),
+    ("BTTS BTTS Yes", "BTTS"),
+    ("1X2 Draw", "1X2"),
 ])
 def test_familia_do_mercado(market, esperado):
     assert familia_do_mercado(market) == esperado
+
+
+@pytest.mark.parametrize("market", [
+    "Corners Corners Over 7.5", "Corners Corners Under 9.5",
+    "Corners Over 8.5", "Corners Under 10.5",
+])
+def test_escanteios_nunca_resolve_para_over_under(market):
+    """Trava de regressao: um rotulo de escanteio, na forma real do ledger
+    (ingles), nunca pode cair no token generico 'over '/'under ' e virar
+    Over/Under -- isso envenenaria a curva de gols com outra distribuicao.
+    """
+    assert familia_do_mercado(market) == "Corners"
 
 
 def test_familia_desconhecida_levanta():

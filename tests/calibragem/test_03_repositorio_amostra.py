@@ -10,7 +10,9 @@ import datetime as dt
 
 import pytest
 
-from backend.modeling.calibragem.repositorio import escolher_ultima_geracao, Pick
+from backend.modeling.calibragem.repositorio import (
+    classificar_familia, escolher_ultima_geracao, Pick,
+)
 
 
 def _linha(match_id, market, selection, publicado, kickoff, raw):
@@ -74,6 +76,34 @@ def test_nao_ha_caminho_de_codigo_para_audit_results():
     import pathlib
     fonte = pathlib.Path("backend/modeling/calibragem/repositorio.py").read_text(encoding="utf-8")
     assert "audit_results" not in fonte
+
+
+@pytest.mark.parametrize("market,selection,esperado", [
+    ("Corners", "Corners Over 7.5", "Corners"),
+    ("Cards", "Over 2.5", "Cards"),
+    ("Over/Under", "Over 2.5", "Over/Under"),
+    ("Double Chance", "DC 1X", "Double Chance"),
+    ("BTTS", "BTTS Yes", "BTTS"),
+    ("1X2", "Draw", "1X2"),
+])
+def test_classificar_familia_com_as_formas_reais_do_ledger(market, selection, esperado):
+    """`market` e `selection` como o ledger de fato guarda -- ingles, nao os
+    rotulos de exibicao em pt-BR. Achado da rodada 1: escanteios e cartoes
+    caiam em Over/Under porque so o rotulo concatenado era testado.
+    """
+    assert classificar_familia(market, selection) == esperado
+
+
+@pytest.mark.parametrize("market,selection", [
+    ("Corners", "Corners Over 7.5"),
+    ("Corners", "Corners Under 9.5"),
+])
+def test_escanteios_nunca_classifica_como_over_under(market, selection):
+    """Trava de regressao do achado critico da rodada 1: um pick de
+    escanteios, na forma real do ledger, nunca pode virar Over/Under -- isso
+    envenenaria a curva de gols com outra distribuicao.
+    """
+    assert classificar_familia(market, selection) == "Corners"
 
 
 def test_pick_aceita_cinco_argumentos_posicionais_e_odd_sai_none():

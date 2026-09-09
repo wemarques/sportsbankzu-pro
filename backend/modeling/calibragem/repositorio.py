@@ -64,6 +64,33 @@ def garantir_tabela() -> bool:
         return False
 
 
+def classificar_familia(market: str, selection: str) -> Optional[str]:
+    """Familia do pick a partir de `market` + `selection` do ledger, pura e
+    testavel sem banco.
+
+    `market` no ledger ja E o nome da familia na maioria dos casos
+    ("Corners", "Cards", "BTTS", "1X2") e resolve sozinho. "Over/Under" (sem
+    espaco antes de "under") e "Double Chance" (em ingles) nao casam nenhum
+    token so com o `market` e so resolvem pelo rotulo "market selection"
+    concatenado, que casa "over "/"dc ". Retorna None (nao levanta) quando
+    nada resolve, para o chamador decidir o que fazer com o descarte.
+
+    Achado da rodada 1 de correcao: casar so o rotulo concatenado deixava
+    "over " de "Corners Over 7.5" vencer antes de "corners" -- escanteios e
+    cartoes viravam Over/Under silenciosamente e envenenavam a curva de
+    gols. Resolver primeiro pelo `market` isolado fecha essa rota.
+    """
+    try:
+        return familia_do_mercado(market)
+    except ValueError:
+        pass
+    rotulo = f"{market} {selection}".strip()
+    try:
+        return familia_do_mercado(rotulo)
+    except ValueError:
+        return None
+
+
 def escolher_ultima_geracao(linhas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Uma linha por (match_id, market, selection): a ultima ANTES do kickoff.
 
@@ -119,10 +146,8 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
     saida: List[Pick] = []
     sem_familia = 0
     for ln in escolher_ultima_geracao(brutas):
-        rotulo = f"{ln['market']} {ln['selection']}".strip()
-        try:
-            familia = familia_do_mercado(rotulo)
-        except ValueError:
+        familia = classificar_familia(ln["market"], ln["selection"])
+        if familia is None:
             sem_familia += 1
             continue
         saida.append(Pick(ln["match_id"], familia, ln["league_id"],

@@ -15,9 +15,16 @@ from backend.modeling.calibragem import VERSAO_LEGADO
 _EPS = 1e-6
 
 _FAMILIAS = (
+    # Rotulos de exibicao em pt-BR (telas) e as formas reais do
+    # `prediction_ledger` (ingles, `market`+`selection` concatenados) tem de
+    # coexistir aqui. "corners"/"cards" tem de vir antes de "over "/"under "
+    # -- senao "Corners Corners Over 7.5" casa "over " primeiro e vira
+    # Over/Under silenciosamente (achado da rodada 1 de correcao).
     ("escanteios", "Corners"),
+    ("corners", "Corners"),
     ("cartoes", "Cards"),
     ("cartões", "Cards"),
+    ("cards", "Cards"),
     ("btts", "BTTS"),
     ("dc ", "Double Chance"),
     ("dupla chance", "Double Chance"),
