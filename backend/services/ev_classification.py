@@ -156,8 +156,8 @@ def _calibrar_com_detalhe(raw: float, market: str, league_id: str, regime: str) 
     a ser a VERSAO 0 da camada aprendida. Nao ha segundo caminho vivo: quem
     decide qual versao serve e `curva.aplicar_versao`.
     """
-    from backend.modeling.calibragem.legado import calibrar_legado
-    return calibrar_legado(raw, market, league_id, regime)
+    from backend.modeling.calibragem.curva import aplicar_versao
+    return aplicar_versao(raw, market, league_id, regime)
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
