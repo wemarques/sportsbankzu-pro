@@ -706,9 +706,16 @@ descrevendo a razão (ex.: hotfix de segurança, não recalibração).
    prova de monotonicidade refeita (d' máximo tal que 1 - d - p·d' > 0).
 2. **#179 está PROMOVIDO:** nó de 0.55 = 0.05 (era 0.12 na banda 50-60%).
    Base: UNBLOCK_REPORT, banda subconfiante em -12.7pp com N=1796.
-   `SHADOW_BAND_50_60_V179` é flag inerte; `/metrics/shadow_v179` reporta
-   improvement 0 por construção (shadow ≡ live). Não remover a função shadow
-   sem migrar o endpoint e o cron_handler.
+   **EMENDADO pelo #240:** `SHADOW_BAND_50_60_V179` deixou de ser inerte. A
+   maquina do #179 (flag, persistencia dos dois bracos no `predicted_probs`,
+   `/metrics/shadow_v179`, gate de 3%) voltou a carregar um candidato —
+   `_SHADOW_KNOTS_V179`, no de 0.65 em 0.10 (producao 0.15). O caminho live
+   segue intocado: com a flag desligada, o padrao, live e shadow sao identicos
+   em todo o dominio (guarda `test_shadow_identico_ao_live_flag_off`). Um
+   candidato novo substitui o do #240 no mesmo lugar; **braco vazio e
+   defeito**, nao estado de repouso — shadow inerte faz o endpoint reportar
+   improvement 0 por construcao e a janela de duas semanas passa medindo nada.
+   Nao remover a funcao shadow sem migrar o endpoint e o cron_handler.
 3. **Cross de cartões é SIMÉTRICO:** `(hf + aa + af + ha)/2`, o mesmo padrão
    do corners_engine. Termos "against" exigem valor > 0 — sentinela 0.0 de
    feed não entra no blend (não arrastar λ para 0.8λ sem dado real).
@@ -901,8 +908,8 @@ do isotônico separado do veredito do produto.
 5. **Bootstrap por jogo, nunca por pick**, e Benjamini-Hochberg nas 440 células.
 
 **Verificação:** `pytest tests/test_219_devig.py tests/test_220_inclinacao.py -q`
-**Verificação (suíte):** `pytest tests/ -q` deve coletar **1003** testes
-(medido em 2026-09-08, commit `c5d5c7a`; eram 753 quando esta regra foi escrita e 489 antes
+**Verificação (suíte):** `pytest tests/ -q` deve coletar **1004** testes
+(medido em 2026-09-09 apos o #240, que somou uma guarda; eram 1003 em `c5d5c7a`, eram 753 quando esta regra foi escrita e 489 antes
 da quebra que a originou). A guarda e o **piso**, nao o numero exato: queda brusca — em
 especial de volta a ~489 — significa que a coleta quebrou em algum import de nivel de
 modulo, nao que testes foram removidos. Atualizar o numero ao medir de novo.

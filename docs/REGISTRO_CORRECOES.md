@@ -12156,3 +12156,53 @@ Não foram tocados os ~40 arquivos de `.claude/commands/*.md` que ainda citam o 
 
 ### Lição aprendida
 **Documentação de infraestrutura envelhece em silêncio e a verificação barata a confirma.** As três divergências sobreviveram porque nenhuma quebra nada de imediato: o `/health` responde 200 no backend errado, o deploy manual redundante funciona, e uma contagem de testes defasada só falha quando alguém a usa como guarda. O padrão reutilizável é o mesmo do #227: **um instrumento que só tem controle positivo não mede nada**. `curl /health` em ambos os backends devolve 200 — para distinguir os dois é preciso o controle negativo, que aqui é uma liga COM jogos. Toda verificação escrita na documentação deve exercitar o caminho caro, não o barato.
+
+## 240 — O braço shadow estava inerte, e o isotônico não era gravado onde se mede
+
+**Data:** 2026-09-09 | **Arquivos:** backend/services/ev_classification.py, backend/cron_handler.py, tests/unit/test_deflation_continuous_189.py, tests/unit/test_calibrator_179.py, docs/REGRAS_ATIVAS.md | **Severidade:** Alta (a instrumentação que autoriza recalibração media 0 por construção) | **Status:** Implementado com a flag DESLIGADA — nenhum número publicado muda
+
+### Problema identificado
+
+**(a) A probabilidade publicada está 16,6pp abaixo da realidade.** `/metrics/brier`, n=6.401 picks com desfecho: a banda 50-60% da probabilidade PUBLICADA concentra 4.028 picks (63% do volume), declara 55,0% e o desfecho real é 71,6%. Nenhuma das cinco bandas está marcada `calibrated`. O mesmo sinal aparece em <50% (47,5% declarado, 65,8% real).
+
+**(b) A máquina que decidiria isso não media nada.** Desde a promoção do #189-a, `_band_deflation_v179_shadow` era `return _band_deflation(prob)`. Flag, persistência dos dois braços, `/metrics/shadow_v179` e o gate de 3% continuavam de pé, mas comparando um valor consigo mesmo. Ligar a flag e esperar as duas semanas do #179 produziria `improvement 0` — não por ausência de efeito, mas por ausência de candidato.
+
+**(c) O isotônico não chega ao lugar da medição.** `iso_probability` nasce em `ev_classification` (#216), viaja no payload via `to_legacy_mercado` e é gravado no `prediction_ledger` — mas **não** no `audit_results`, que é a fonte do `/metrics/brier`. Nos 6.401 picks com desfecho havia `prob_raw` e `prob_deflated` e não havia o passo do meio. Por isso a pergunta aberta desde o #200 e reformulada pelo #216 — *"o isotônico ajuda, ou `iso == raw` e ele está inerte?"* — seguia sem resposta onde existe poder estatístico. Mesma classe do #189-f e do #221: dado extraído, transportado e descartado na cópia para o consumidor que decide.
+
+### Causa raiz
+
+O nó de 0,55 **não é a alavanca**, e essa foi a primeira hipótese a cair. As bandas do snapshot são indexadas na probabilidade **publicada**; os nós, na **raw**. Um pick publicado a 55% tem raw ≈ 0,638 — região governada pelo nó de **0,65** (0,15), não pelo de 0,55. Mover o de 0,55 de 0,05 até o mínimo monotônico (0,02) muda a publicada em **0,23pp**.
+
+Não é erro do #179: quando ele foi escrito a deflação era função-degrau sobre a raw e o alvo estava correto. Os nós contínuos do #189-a reindexaram tudo, e o alvo se deslocou sem que a mira fosse refeita.
+
+### Correções aplicadas
+
+1. **`_SHADOW_KNOTS_V179`** (ev_classification): nó de 0,65 vai a 0,10. Medido: raw 0,638 publica 55,00% no live e **57,80%** no shadow (+2,81pp). É o maior ganho que preserva a monotonicidade de `p*(1-d(p))` exigida pelo #189-a — varredura de 0,30 a 1,00 em passos de 0,0005 rejeitou 0,65→0,05 (quebra em p=0,650).
+2. **`_band_deflation(prob, knots=None)`**: live e shadow passam a compartilhar a MESMA interpolação. O que deve divergir é o nó, nunca a matemática.
+3. **`prob_iso` e `banda` no `predicted_probs`** (cron_handler): fecha o elo (c). Vale para frente; os 6.401 históricos não ganham o campo.
+4. **As duas guardas mudaram de alvo.** `test_shadow_179_promovido_identico_ao_live` e `test_shadow_identico_ao_live_flag_on` afirmavam `shadow == live` incondicionalmente. Apagá-las seria pior que mantê-las desatualizadas — sem elas nada impede o conjunto shadow de vazar para o live. Agora protegem: nós de produção inalterados; fora de 0,55 < p < 0,75 os braços coincidem; dentro, o candidato deflaciona menos; e a monotonicidade vale também para os nós shadow.
+
+### Prova empírica (#222)
+
+Critério declarado antes de editar: **com a flag desligada o payload tem de ser idêntico** — qualquer diferença é regressão, não melhoria (ponto 4 do #222, forma invertida).
+
+| Controle | Resultado |
+|---|---|
+| `_DEFLATION_KNOTS` inalterados | idênticos |
+| Curva live vs. referência, 0→1 passo 0,0005 | divergência **0,00e+00** |
+| Flag OFF, live vs shadow, 0,05→1,0 | **0,00e+00** |
+| Flag ON, raw 0,638 | 55,00% → 57,80% (+2,81pp; previsto +2,80) |
+| Flag ON, fora de 0,55–0,75 | divergência 0 |
+| Monotonicidade dos nós shadow | preservada |
+
+Controle negativo (flag OFF, nada muda) e positivo (flag ON, diverge na medida prevista) no mesmo par, como o #227 exige.
+
+### Teto conhecido — para não criar expectativa errada
+
+Com deflação **zero** a publicada seria 63,8% contra 71,6% reais. A deflação explica **no máximo 8,8 dos 16,6pp**, e este candidato alcança 2,8. Os **≥7,8pp restantes são anteriores à deflação** e vivem no isotônico/modelo. Nenhum nó os resolve — é o que a correção (c) passa a permitir medir.
+
+### Lição aprendida
+
+**Instrumento sem candidato mede zero, e zero se lê como "não há efeito".** O braço shadow ficou meses de pé, com flag, endpoint e gate, comparando um valor consigo mesmo. Um `improvement 0` teria sido lido como evidência contra recalibrar, quando era evidência de que nada estava sendo comparado — mesma família do #226 (`skipped` semanal que parecia decisão e era erro de nome). **Braço shadow vazio é defeito, não estado de repouso.**
+
+E o segundo: **quando um número muda de índice, os alvos que apontavam para ele não se movem sozinhos.** O #189-a trocou bandas por nós contínuos e reindexou de publicada para raw; a mira do #179 continuou apontando para 0,55 e passou a errar o alvo por uma banda inteira, sem que nada quebrasse.

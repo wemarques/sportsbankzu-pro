@@ -351,6 +351,17 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                         "prob_raw": float(_raw_prob) if _raw_prob is not None else None,  # #179: habilita recompute
                         "prob_deflated": _shadow_current,  # #179
                         "prob_shadow_v179": _shadow_v179,  # #179
+                        # #240: o isotonico faltava aqui. `iso_probability` nasce em
+                        # ev_classification (#216), viaja no payload e chega ao
+                        # prediction_ledger — mas NAO ao audit_results, que e a fonte
+                        # do /metrics/brier. Resultado: nos 6401 picks com desfecho
+                        # da havia raw e deflacionada, e nao havia como responder a
+                        # pergunta aberta do #200/#216 ("o isotonico ajuda ou e
+                        # inerte?"), porque o passo do meio nao era gravado.
+                        # `banda` acompanha para permitir cortar por faixa sem
+                        # reinferir a partir do numero.
+                        "prob_iso": merc.get("iso_probability"),
+                        "banda": merc.get("banda"),
                         "market": _norm_market,
                         "odd": odd_pick if odd_pick > 0 else None,
                         # #196: `book_odd` so quando a odd e REAL. Antes gravava

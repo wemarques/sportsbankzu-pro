@@ -71,15 +71,48 @@ _DEFLATION_KNOTS = [
     (0.85, 0.25),
 ]
 
+# #240 — candidato do braco SHADOW (nao entra no caminho live).
+#
+# Medido em /metrics/brier, n=6401 picks com desfecho: a banda 50-60% da
+# probabilidade PUBLICADA (n=4028, 63% do volume) declara 55.0% e o desfecho
+# real e 71.6% — subconfianca de 16.6pp. Nenhuma banda marcada `calibrated`.
+#
+# O no de 0.55 NAO e a alavanca. As bandas do snapshot sao indexadas na
+# probabilidade PUBLICADA; os nos, na RAW. Um pick publicado a 55% tem raw
+# ~0.638 — regiao governada pelo no de 0.65, nao pelo de 0.55. Mover o de
+# 0.55 de 0.05 ate o minimo monotonico (0.02) muda a publicada em 0.23pp.
+#
+# Este candidato move o no de 0.65 de 0.15 para 0.10: +2.80pp na publicada
+# em raw 0.638, o maior ganho que preserva a monotonicidade de p*(1-d(p))
+# exigida pelo #189-a. Verificado por varredura de 0.30 a 1.00 em passos de
+# 0.0005: 0.65 -> 0.05 quebra em p=0.650; 0.65 -> 0.10 nao quebra.
+#
+# Teto conhecido, para nao criar expectativa errada: com deflacao ZERO a
+# publicada seria 63.8% contra 71.6% reais. A deflacao explica no maximo
+# 8.8 dos 16.6pp, e este candidato alcanca 2.8. Os >=7.8pp restantes sao
+# ANTERIORES a deflacao e vivem no isotonico/modelo (#216) — nenhum no os
+# resolve.
+_SHADOW_KNOTS_V179 = [
+    (0.45, 0.10),
+    (0.55, 0.05),
+    (0.65, 0.10),  # candidato (producao: 0.15)
+    (0.75, 0.20),
+    (0.85, 0.25),
+]
 
-def _band_deflation(prob: float) -> float:
+
+def _band_deflation(prob: float, knots=None) -> float:
     """Deflação progressiva CONTÍNUA por interpolação linear entre nós (#189-a).
 
     Substitui a função-degrau do #105 (não-monotônica nas fronteiras).
     Fora dos nós extremos, o valor é constante (0.10 abaixo de 0.45;
     0.25 acima de 0.85).
+
+    `knots` existe para o braço shadow do #179/#240 usar a MESMA matemática
+    com nós diferentes — o que deve divergir entre live e shadow é o nó, não
+    a interpolação. Omitido, usa os nós de produção.
     """
-    knots = _DEFLATION_KNOTS
+    knots = knots if knots is not None else _DEFLATION_KNOTS
     if prob <= knots[0][0]:
         return knots[0][1]
     if prob >= knots[-1][0]:
@@ -92,13 +125,21 @@ def _band_deflation(prob: float) -> float:
 
 
 def _band_deflation_v179_shadow(prob: float) -> float:
-    """#179 — PROMOVIDO (#189-a): o valor shadow da banda 50-60% agora é o
-    valor de produção, embutido nos nós de `_band_deflation`. Shadow e
-    produção são idênticos; a função permanece para compatibilidade com
-    /metrics/shadow_v179 e cron_handler (a comparação passa a reportar
-    improvement 0, sinalizando a promoção concluída).
+    """Braço shadow da deflação — nós candidatos, mesma interpolação.
+
+    Histórico: o #179 original comparava a banda 50-60%; a promoção (#189-a)
+    embutiu o valor shadow nos nós de produção e esta função passou a
+    devolver `_band_deflation(prob)`, deixando `/metrics/shadow_v179` a
+    reportar `improvement 0` por construção — a máquina inteira ficou
+    inerte, sem nada a medir.
+
+    #240 devolve conteúdo ao braço: `_SHADOW_KNOTS_V179` move o nó de 0.65
+    de 0.15 para 0.10, o alvo que a medição de n=6401 indicou (ver o
+    comentário dos nós). O caminho live NÃO muda: quem decide é
+    `apply_probability_deflation_with_shadow`, que só consulta esta função
+    quando `SHADOW_BAND_50_60_V179=true` — desligada por padrão.
     """
-    return _band_deflation(prob)
+    return _band_deflation(prob, _SHADOW_KNOTS_V179)
 
 
 def apply_probability_deflation(prob: float, league_id: str = "") -> float:
@@ -133,10 +174,11 @@ def apply_probability_deflation_with_shadow(prob: float, league_id: str = "") ->
     """#179: returns (current_deflated, shadow_deflated_v179).
 
     When SHADOW_BAND_50_60_V179=false (default), the two values are identical.
-    When true, the shadow path uses `_band_deflation_v179_shadow` (0.05 in band
-    [0.50, 0.60); identical elsewhere). Per-league factor and the 0.05 floor
-    apply to both branches. Used by `/metrics/shadow_v179` for out-of-sample
-    Brier comparison without altering live behavior.
+    When true, the shadow path uses `_band_deflation_v179_shadow` — since #240,
+    the candidate knot set `_SHADOW_KNOTS_V179` (0.65 -> 0.10; production 0.15).
+    Per-league factor and the 0.05 floor apply to both branches. Used by
+    `/metrics/shadow_v179` for out-of-sample Brier comparison without altering
+    live behavior.
     """
     current_def = _band_deflation(prob)
     shadow_def = _band_deflation_v179_shadow(prob) if SHADOW_BAND_50_60_V179 else current_def

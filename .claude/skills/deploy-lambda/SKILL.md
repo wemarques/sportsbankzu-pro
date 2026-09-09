@@ -7,7 +7,26 @@ description: Deploy do backend na Lambda sportsbank-pro-backend (pre-check obrig
 
 Movido do CLAUDE.md (era sempre carregado; /doctor 2026-09-08). Conteudo integral.
 
-## Deploy Lambda
+## Antes de tudo: o deploy normal e AUTOMATICO (#239)
+
+`.github/workflows/deploy-lambda.yml` dispara em **push na `main`** quando o commit toca
+`backend/**`, `scripts/deploy_lambda.py` ou o proprio workflow. Ele roda `pytest -q` e, so
+se passar, empacota com wheels `manylinux2014_x86_64`, sobe para o S3, faz
+`update-function-code`, espera `function-updated` e aquece o cache de 22 ligas.
+
+**No fluxo normal nao ha nada a fazer aqui.** Rodar `scripts/deploy_lambda.py` ou os
+comandos abaixo depois de um push e um SEGUNDO deploy do mesmo codigo.
+
+Use esta skill quando o deploy sair do fluxo de push:
+
+- hotfix a partir de uma branch, sem passar pela `main`;
+- o workflow falhou e voce precisa publicar na mao;
+- **recriar a Layer scipy** (secao abaixo) — isso o workflow nao faz.
+
+Validacao pos-deploy usa a **Function URL**, nunca o API Gateway (#114/#203):
+`curl -s https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/health`
+
+## Deploy Lambda manual
 
 ```bash
 # Pré-check OBRIGATÓRIO antes de update-function-code
