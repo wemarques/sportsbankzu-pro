@@ -5,8 +5,8 @@
 > concluído, migra para `docs/REGISTRO_CORRECOES.md` com numeração `#N` e é
 > marcado como ✅ aqui.
 
-**Última revisão:** 2026-04-29
-**Itens abertos:** 14 (4 novos do incidente HTTP_ERROR de 29/04)
+**Última revisão:** 2026-09-08
+**Itens abertos:** 15 (B-016 adicionado em 08/09)
 **Última conversa:** Sessão de 2026-04-28/29 — fechou #173 (Caminho 1+2 EOS audit + standings snapshot), #174 (Report Card null guards + watchlist cards), #175 (decommission EC2 prognosticos-brasileirao + 3 SGs + key + IPv4). Higiene de repo: `.gitattributes` + `.gitignore` tightening + 31 arquivos untracked.
 
 **Incidente HTTP_ERROR (0s) de 29/04:** causa raiz = degradação upstream (FootyStats 429 + api-football date format bug). 5 hipóteses originais (H1-H5) refutadas. Achado lateral CRÍTICO (secret leak): **resolvido em 2026-05-01 (#176, B-010 ✅)**. B-011 (date format bug): **resolvido em 2026-07-14 (#186 ✅)** — era também a causa do payload de produção não exibir nenhum traço de API-Football. Pendentes: B-012 (backoff/circuit breaker), B-013 (variantes do leak).
@@ -397,6 +397,26 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 
 ---
 
+### B-016 test_233 falha so na suite completa no Windows (contaminacao de estado)
+
+**Categoria:** Hygiene
+**Prioridade:** P3
+**Esforco:** M (1-3h — bisseccao com suite de ~15 min por rodada)
+**Status:** Open
+**Adicionado:** 2026-09-08
+
+**Contexto:** `tests/test_233_classificacao_valor.py::test_neutro_qualificado_so_com_ancora_fresca_e_valor` passa isolado (0,7 s) e falha na suite completa rodada no Windows. O CI (Ubuntu) roda a suite inteira no mesmo commit `fe18739` (#238) e passa — as ultimas 6 execucoes do `ci.yml` na `main` estao verdes. O teste nao usa `monkeypatch` e depende dos thresholds padrao (`neutro_prob` 0.60, `min_ev` 5%) para classificar a ancora de mercado.
+
+**Sintoma exato** (`tests/test_233_classificacao_valor.py:144`): o terceiro caso espera `NEUTRO_QUALIFICADO` e recebe `SAFE` — a classificacao **escala**, ou seja, os thresholds `safe_prob` da liga `championship` estavam mais permissivos que o padrao no momento da chamada. O log capturado confirma que a flag estava correta (`[#231] PROB_SOURCE=mercado jogo=1 liga=championship fontes={'mercado': 1, ...}`), entao nao e a flag. A suspeita recai sobre o cache per-league de `league_calibrator` / `safe_prob` (#054), carregado ou alterado por um teste anterior e nao restaurado.
+
+**Ja descartado:** (a) variavel de ambiente — `PROB_SOURCE`, `DATA_ROOT` e `FUTEBOL_ROOT` indefinidas na maquina e nenhum teste escreve em `os.environ` sem `monkeypatch`; (b) contaminacao via sistema de arquivos — apos a suite completa, `git status` mostra `.corner_artifacts/` e `.corner_models/` limpos, entao a suite nao reescreve artefato versionado.
+
+**Criterio de sucesso:** identificar o teste que contamina e isolar o estado (fixture de reset ou `monkeypatch`), com a suite completa verde no Windows e no CI.
+
+**Notas:** Nao afeta producao nem o CI — e ruido de ambiente local, nao defeito de calculo. Escalar para P2 se aparecer um segundo teste com o mesmo sintoma, ou se a suite no Windows virar gate de alguem. Diagnosticado em 2026-09-08 na mesma sessao que corrigiu a portabilidade de `test_226_retrain_escanteios.py::test_raiz_de_dados_respeita_precedencia`, que comparava `str()` de um caminho POSIX contra o separador do Windows e passou a comparar `Path`.
+
+---
+
 ## Estudos / Open Questions
 
 ### B-Q01 Aurora Serverless v2 migration?
@@ -475,6 +495,7 @@ Migrar para `REGISTRO_CORRECOES.md` quando atingirem 90 dias. Lista mantida apen
 | Data | Mudança | Itens abertos |
 |---|---|---|
 | 2026-04-29 | Criação inicial | 10 |
+| 2026-09-08 | B-016 (test_233 contaminado no Windows) | 15 |
 
 ---
 

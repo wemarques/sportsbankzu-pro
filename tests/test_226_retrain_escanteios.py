@@ -154,20 +154,24 @@ def test_retrain_treina_ponta_a_ponta(tmp_path, monkeypatch):
 
 # ── o diretorio gravavel ─────────────────────────────────────────────────
 def test_raiz_de_dados_respeita_precedencia(monkeypatch):
+    from pathlib import Path
+
     from backend.utils import caminhos
 
+    # comparar Path, nao str: no Windows str(Path("/x")) e "\x" e as tres
+    # asserts quebravam fora do Linux do CI, sem defeito nenhum na precedencia
     monkeypatch.setenv("DATA_ROOT", "/x")
     monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "f")
-    assert str(caminhos.raiz_de_dados()) == "/x"
+    assert caminhos.raiz_de_dados() == Path("/x")
 
     monkeypatch.delenv("DATA_ROOT")
-    assert str(caminhos.raiz_de_dados()) == "/tmp", (
+    assert caminhos.raiz_de_dados() == Path("/tmp"), (
         "na Lambda o diretorio do pacote e somente leitura — o mkdir do retrain "
         "levantaria OSError"
     )
 
     monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME")
-    assert str(caminhos.raiz_de_dados()) == "."
+    assert caminhos.raiz_de_dados() == Path(".")
 
 
 # ── #226-c: o nome real do total direto ──────────────────────────────────
