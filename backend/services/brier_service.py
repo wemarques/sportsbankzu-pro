@@ -192,8 +192,24 @@ def _row_to_pick(market, league, result, pp_raw, ctx_raw, ptype) -> Optional[Dic
     prob = float(prob)
     if prob > 1:
         prob /= 100
-    odd = pp.get("book_odd") or pp.get("odd")
+    # #244 — a odd so entra na comparacao se for PRECO DE CASA. Duas portas
+    # estavam abertas, e as duas devolviam a odd justa do proprio modelo:
+    #
+    # (a) `pp["odd"]` e `odd_minima`, que vira `1/prob` quando nao ha mercado.
+    #     Usa-la como alternativa reintroduz exatamente o defeito que o #196
+    #     fechou em `book_odd`. Fora.
+    # (b) mesmo em `book_odd`, 75,6% das linhas guardam a odd justa da propria
+    #     probabilidade — medido com `prob x odd` (teste RELATIVO; o #243 usou
+    #     tolerancia absoluta de 0,02 e enxergou so 47,5%). Em `Cartoes Over
+    #     2.5` e `Escanteios Over 7.5` sao 100%: nenhuma odd de casa.
+    #
+    # Comparar o modelo contra `1/odd` nesses casos e compara-lo consigo
+    # mesmo: `brier_implied` nasce igual a `brier_model_paired`, o delta nasce
+    # zero e dilui a vantagem medida nos picks que tem preco de verdade.
+    odd = pp.get("book_odd")
     odd = float(odd) if odd and float(odd) > 1 else None
+    if odd is not None and 0.95 <= prob * odd <= 1.03:
+        odd = None
     cls = ctx.get("pick_classification", ptype or "?")
     return {"prob": prob, "odd": odd, "out": outcome, "league": league, "market": market, "cls": cls}
 

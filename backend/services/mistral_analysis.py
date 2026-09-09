@@ -137,6 +137,7 @@ class MistralAnalysisService:
         context: Optional[Dict] = None,
         pipeline_picks: Optional[list] = None,
         audit_meta: Optional[Dict] = None,
+        mercados_publicados: Optional[list] = None,   # #238-a
     ) -> AIAnalysisResponse:
         """Gera análise completa v3.0 cobrindo 24 mercados.
 
@@ -146,6 +147,7 @@ class MistralAnalysisService:
         prompt = self._build_prompt(
             home_team, away_team, league, match_stats, odds, context,
             pipeline_picks=pipeline_picks,
+            mercados_publicados=mercados_publicados,   # #238-a
         )
         _t0 = time.time()
         self._last_parse_error = None  # #188 — resetado a cada análise
@@ -226,6 +228,7 @@ class MistralAnalysisService:
             from backend.ai.audit_log import (
                 STAGE_FALLBACK,
                 STAGE_PRODUCTION,
+                alertar_fallback,
                 log_ai_audit,
                 validate_ai_output,
             )
@@ -244,6 +247,14 @@ class MistralAnalysisService:
                 valid, verrors = False, [error or "unknown error"]
                 confidence = None
                 stage = STAGE_FALLBACK
+                # #238-a item 4: a linha em `ai_audit_log` nao chega a ninguem
+                # em tempo real. O operador precisa saber AGORA que o card
+                # traz narrativa estatica — e, se for cobranca, que a proxima
+                # execucao tambem vai falhar ate alguem agir fora do sistema.
+                alertar_fallback(
+                    meta.get("match_id"), meta.get("league_id"), error,
+                    home_team, away_team,
+                )
 
             log_ai_audit(
                 provider="mistral",
@@ -286,6 +297,7 @@ class MistralAnalysisService:
         odds: Dict,
         context: Optional[Dict] = None,
         pipeline_picks: Optional[list] = None,
+        mercados_publicados: Optional[list] = None,   # #238-a
     ) -> str:
         """Constrói o prompt v3.0 para a MISTRAL AI"""
 
@@ -406,6 +418,38 @@ LESÕES/SUSPENSÕES DE TITULARES (apenas jogadores do 11 titular):
 - Casa: {context.get('home_injuries_starters', context.get('absences', 'Dado não disponível'))}
 - Fora: {context.get('away_injuries_starters', 'Dado não disponível')}
 NOTA: Considere APENAS os jogadores listados acima. São titulares confirmados ou prováveis. Reservas e jogadores do elenco secundário foram filtrados e NÃO devem aparecer na análise.
+"""
+
+        # ---- Numeros publicados ao operador (#238-a) ----------------------
+        # Bloco SEPARADO do de picks: aqui entra TODO mercado que aparece no
+        # card, inclusive os sem odd e sem EV. Existe por um motivo unico —
+        # dar a narrativa o numero DEFLACIONADO de cada mercado exibido. Antes
+        # deste bloco, um mercado sem odd (todos os de cartoes e varias linhas
+        # de escanteio, #244) nao tinha nenhum percentual pos-deflacao no
+        # prompt, e a unica fonte numerica disponivel eram as "Estatisticas
+        # Poisson", que carregam RAW por desenho (#181). Era esse o caminho
+        # pelo qual a Mistral citava probabilidade pre-deflacao.
+        #
+        # Este bloco NAO amplia o que pode ser recomendado: a regra de
+        # alinhamento (#096) continua presa a `pipeline_picks`.
+        if mercados_publicados:
+            _pub = "\n".join(
+                f"- {m['market']} | Prob exibida: {m.get('prob_pct', '?')}%"
+                + (f" | Odd da casa: {m['odd']}" if m.get("odd") else " | SEM ODD DE CASA")
+                for m in mercados_publicados
+            )
+            prompt += f"""
+NUMEROS PUBLICADOS AO OPERADOR (o card exibe exatamente estes):
+{_pub}
+
+REGRA NUMERICA (#181/#238-a):
+- Estes sao os UNICOS percentuais que podem aparecer no seu texto. Qualquer
+  outro numero da secao de estatisticas e insumo interno do modelo (pre-deflacao)
+  e NAO pode ser citado.
+- "SEM ODD DE CASA" significa que nenhuma casa foi consultada para aquela linha.
+  NAO invente preco, NAO estime odd justa e NAO fale em valor/EV para ela.
+- Estar nesta lista NAO torna o mercado recomendavel. A recomendacao segue presa
+  a lista de PICKS abaixo.
 """
 
         # ---- Picks do pipeline (#096) — Mistral DEVE alinhar recomendação ----

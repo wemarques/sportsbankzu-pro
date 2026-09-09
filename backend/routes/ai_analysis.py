@@ -47,6 +47,7 @@ async def get_match_analysis(
             odds=match_data['odds'],
             context=match_data.get('context') if include_context else None,
             pipeline_picks=match_data.get('pipeline_picks', []),
+            mercados_publicados=match_data.get('mercados_publicados', []),   # #238-a
             audit_meta={  # #188 Fase 1 — só para o log de medição
                 "match_id": match_id,
                 "league_id": match_data.get('league_id', ''),
@@ -473,8 +474,27 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
     # --- Pipeline picks (#096): pass to Mistral so it doesn't contradict ---
     # Picks live in "mercados" (v2 pipeline), NOT "predictions" (frontend alias)
     picks_for_prompt = []
+    # #238-a/#244: TODO mercado publicado entra em `mercados_publicados`, mesmo
+    # sem EV. O recorte `ev > 0` abaixo continua definindo o que pode ser
+    # RECOMENDADO (regra de alinhamento #096), mas ele deixava a narrativa sem
+    # nenhum numero deflacionado para os mercados sem odd — e sem numero
+    # deflacionado a Mistral so tinha as "Estatisticas Poisson", que carregam
+    # RAW por desenho (#181). Era assim que o texto citava prob pre-deflacao.
+    # Medido no jogo Toronto x Nashville (09/09): `Cartoes Over 2.5` e
+    # `Escanteios Over 6.5` sao publicados com `book_odd` NULL, logo sem EV,
+    # logo invisiveis ao prompt.
+    mercados_publicados = []
     for pred in record.get("mercados", record.get("predictions", [])):
         ev = pred.get("ev")
+        mercados_publicados.append({
+            "market": pred.get("mercado", ""),
+            "classification": pred.get("classification", pred.get("status", "")),
+            "prob_pct": pred.get("prob_max", 0),
+            # So o preco de casa. `odd_minima` vira a odd justa (1/prob) quando
+            # nao ha mercado (#196/#244) e nao pode ser apresentada como preco.
+            "odd": pred.get("book_odd"),
+            "ev_pct": round(ev * 100, 1) if ev is not None else None,
+        })
         if ev is not None and ev > 0:
             picks_for_prompt.append({
                 "market": pred.get("mercado", ""),
@@ -515,6 +535,7 @@ def _map_record_to_v3(record: Dict[str, Any]) -> Dict[str, Any]:
         "odds": odds,
         "context": context,
         "pipeline_picks": picks_for_prompt,
+        "mercados_publicados": mercados_publicados,   # #238-a
     }
 
 

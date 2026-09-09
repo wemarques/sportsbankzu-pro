@@ -1261,3 +1261,67 @@ rotulo, probabilidade, odd e linha saem todos do mesmo `item["line"]` em
 `price_ladder.attach_odds_and_edge` -> `_build_lines_from_pricing` -> `ev_classification`,
 sem ponto de dessincronizacao. Ver [[#243]] (retratado) e [[#241]].
 
+---
+
+### #230-a — Pre-registro: o item 1 do gate #230 passa a ser NAO-INFERIORIDADE com margem 0,005
+
+**Tipo:** Hard Constraint (emenda ao #230) | **Registrado em:** 2026-09-09, ANTES da medicao
+**Decidido por:** Welligton, em resposta ao levantamento de pendencias
+
+O item 1 do #230 exigia `Brier(prob_mercado) < Brier(calibrated_prob)` com IC95
+emparelhado excluindo zero — superioridade estrita. Fica substituido por:
+
+> **Item 1 (novo).** A ancora de mercado nao pode ser pior que a publicada por mais
+> de **0,005 de Brier**. Operacionalmente, no `scripts/comparar_com_mercado.py`, cuja
+> diferenca `d` e orientada como `Brier(modelo) - Brier(mercado)`:
+>
+> **limite INFERIOR do IC95 de `d` > -0,005**
+>
+> equivalente a: limite SUPERIOR do IC95 de `Brier(mercado) - Brier(publicada)` < +0,005.
+
+Os itens 2 (teto de calibracao da publicada `sinal^2/espalhamento` < 0,25%) e 3
+(n >= 300 JOGOS com desfecho) ficam **inalterados**.
+
+**Protocolo fixado agora, para nao ser escolhido depois:**
+- **Amostra:** `prediction_ledger` com `mercado_metodo = 'devig'`, `prob_mercado`
+  e `calibrated_prob` nao nulos, unido a `ledger_outcomes` por
+  (`match_id`, `market`, `selection`) com `outcome` nao nulo.
+- **Estatistica:** bootstrap emparelhado por **bloco-jogo**, 1000 reamostras,
+  semente 227, IC percentil — exatamente o que `_ic_da_diferenca` ja faz. Nada
+  de trocar de metodo depois de ver o numero.
+- **Momento unico de avaliacao:** quando `COUNT(DISTINCT match_id)` com desfecho
+  atingir 300. Em 2026-09-09 estava em **218** — por isso este registro e
+  prospectivo. **Proibido rodar o gate e "conferir de novo" enquanto n < 300**;
+  medicao intermediaria so vale como diagnostica e tem de ser rotulada assim.
+- **Comando:** `python scripts/comparar_com_mercado.py --ledger --desde <data>`.
+- **Gate automatico:** `pytest tests/test_230_ancora_mercado.py -q`.
+
+**Por que baixar a barra de superioridade para nao-inferioridade.** Superioridade
+estrita confunde significancia estatistica com significancia pratica: com a amostra
+de producao (centenas de jogos, nao dezenas de milhares), o IC emparelhado e largo, e
+"nao provou ser melhor" viraria bloqueio permanente por falta de poder, nao por
+merito da publicada. A pergunta certa e se a troca **piora de forma relevante** — e
+a troca traz um ganho independente de Brier: a ancora de-vigada e coerente por
+construcao, enquanto a publicada nao e (o [[#244]] mediu pares complementares somando
+86,3% contra 100,0% no raw). Aceitar uma perda de ate 0,005 de Brier em troca de
+coerencia e uma escolha de produto, e esta escrita aqui antes do numero.
+
+**Por que 0,005 e nao outro valor.** A margem tem de ficar entre duas ancoras ja
+medidas no #229-b: e **menor** que o teto de calibracao do proprio mercado (+0,61%,
+ou 0,0061 de Brier), entao nunca aceitamos uma perda maior do que uma recalibracao
+otima do mercado poderia recuperar; e e **menor** que a diferenca observada no
+backfill entre mercado e modelo (0,0145), entao a margem nao engole o efeito que se
+quer detectar.
+
+**O que eu ja sabia quando registrei isto — declarado para nao virar pos-hoc.** O
+#229-b mediu, no backfill de 22 ligas e 64.706 picks, `Brier - piso` de **+0,0134**
+para o motor e **-0,0011** para o mercado; o #227-e e o #241 apontam na mesma direcao.
+Ou seja: **eu espero que este criterio passe.** O backfill nao e producao e nao
+substitui a medicao no ledger, mas a expectativa esta declarada. Se o ledger
+contrariar o backfill, isso e resultado, nao erro de medicao — e o gate BLOQUEIA.
+
+**O que faz a troca NAO acontecer:** limite inferior do IC de `d` menor ou igual a
+-0,005 (mercado pior de forma relevante); ou teto de calibracao da publicada acima
+de 0,25% (a publicada ainda tem o que ganhar sozinha); ou n < 300 jogos. Qualquer um
+dos tres, isolado, mantem `PROB_SOURCE=modelo`.
+

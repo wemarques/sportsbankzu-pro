@@ -402,8 +402,20 @@ Se `n >= 15 AND accuracy < 0.40 AND brier > 0.27` → escalar para P0 (calibrar 
 **Categoria:** Hygiene
 **Prioridade:** P3
 **Esforco:** M (1-3h — bisseccao com suite de ~15 min por rodada)
-**Status:** Open
+**Status:** ✅ CONCLUIDO 2026-09-09 (#242)
 **Adicionado:** 2026-09-08
+
+**Resolucao (#242):** a suspeita registrada abaixo — "cache per-league de
+`league_calibrator` / `safe_prob` carregado por um teste anterior" — estava certa na
+forma e errada no dono. O contaminante e o cache TTL por liga das correcoes do banco
+(`lambda_calculator.get_lambda_corrections`, introduzido no #231-a): o teste lia a
+calibracao VIVA da RDS. Isolado no container ele passava porque nao havia
+`DATABASE_URL`; na maquina do Welligton, com o banco acessivel, virou falha
+dependente de ordem. Mecanismo reproduzido antes do patch (cache limpo -> `safe_prob`
+0,72 -> `NEUTRO_QUALIFICADO`; cache com `safe_prob_ou=0,60` -> `SAFE`), criterio de
+aceite declarado, e a fixture passou a fixar `DEFAULT_THRESHOLDS` e a limpar os dois
+caches na entrada e na saida. Verificado nos dois estados de cache; suite completa
+996 passed, 8 skipped. **O [B-017] continua aberto** — este era so uma instancia.
 
 **Contexto:** `tests/test_233_classificacao_valor.py::test_neutro_qualificado_so_com_ancora_fresca_e_valor` passa isolado (0,7 s) e falha na suite completa rodada no Windows. O CI (Ubuntu) roda a suite inteira no mesmo commit `fe18739` (#238) e passa — as ultimas 6 execucoes do `ci.yml` na `main` estao verdes. O teste nao usa `monkeypatch` e depende dos thresholds padrao (`neutro_prob` 0.60, `min_ev` 5%) para classificar a ancora de mercado.
 

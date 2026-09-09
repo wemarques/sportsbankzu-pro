@@ -45,6 +45,71 @@ STAGE_FALLBACK = "fallback_static"       # exceção → resposta estática
 STAGE_ROUTE_FALLBACK = "route_fallback"  # falha antes do serviço (rota)
 
 
+# ── Alerta de fallback ao operador (#238-a, item 4) ────────────────────────
+#
+# O #238 encontrou 402 Payment Required servindo texto estático sem que nada
+# aparecesse para quem opera: a linha ia para `ai_audit_log` com
+# `stage=fallback_static`, tabela que ninguém consulta em tempo real, e o
+# operador via um card com narrativa genérica achando que era análise. Falha
+# de cobrança é a pior das três porque é silenciosa, persistente e só se
+# resolve fora do sistema — não adianta esperar a próxima execução.
+alerta_logger = logging.getLogger("sportsbankzu.ai.alerta")
+
+_PADROES_COBRANCA = (
+    "402", "payment required", "insufficient", "quota", "billing",
+    "credit", "saldo", "capacity exceeded",
+)
+_PADROES_INDISPONIVEL = (
+    "429", "500", "502", "503", "504", "timeout", "timed out",
+    "connection", "unavailable", "rate limit",
+)
+
+
+def classificar_falha(error: Optional[str]) -> str:
+    """Classe da falha que levou ao fallback: cobranca | indisponibilidade | desconhecida.
+
+    Sem heurística de severidade: só casa padrões no texto do erro. Se nenhum
+    casar, devolve `desconhecida` — nunca chuta `cobranca`, porque o alerta de
+    cobrança pede ação humana e um falso positivo dele custa credibilidade.
+    """
+    texto = (error or "").lower()
+    if not texto:
+        return "desconhecida"
+    if any(p in texto for p in _PADROES_COBRANCA):
+        return "cobranca"
+    if any(p in texto for p in _PADROES_INDISPONIVEL):
+        return "indisponibilidade"
+    return "desconhecida"
+
+
+def alertar_fallback(
+    match_id: Optional[str],
+    league_id: Optional[str],
+    error: Optional[str],
+    home_team: str = "",
+    away_team: str = "",
+) -> str:
+    """Emite alerta VISÍVEL de que o operador está vendo texto estático.
+
+    Nível ERROR (vai para o CloudWatch e para qualquer alarme de erro já
+    existente), marcador fixo `[ALERTA-IA]` para filtro. Devolve a classe da
+    falha. Contrato do módulo: nunca levanta.
+    """
+    classe = classificar_falha(error)
+    try:
+        alerta_logger.error(
+            "[ALERTA-IA] classe=%s stage=%s match=%s liga=%s jogo=%s x %s erro=%s "
+            "| o card esta exibindo NARRATIVA ESTATICA, nao analise%s",
+            classe, STAGE_FALLBACK, match_id or "?", league_id or "?",
+            home_team or "?", away_team or "?", (error or "")[:300],
+            " | ACAO HUMANA NECESSARIA: verificar a conta do provedor"
+            if classe == "cobranca" else "",
+        )
+    except Exception:  # pragma: no cover - logging nunca derruba producao
+        pass
+    return classe
+
+
 def _sqlite_path() -> str:
     if os.getenv("AI_AUDIT_SQLITE_PATH"):
         return os.environ["AI_AUDIT_SQLITE_PATH"]

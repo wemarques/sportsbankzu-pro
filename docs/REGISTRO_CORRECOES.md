@@ -12465,12 +12465,22 @@ pós-jogo**, e a contaminação é visível (os picks de `Escanteios Over 11.5` 
 | Corners Over 4.5 | 656 | 93,4% | 87,0% | 65,2% | **−28,2** | −21,8 |
 | Corners Over 6.5 | 651 | 86,5% | 73,0% | 58,6% | −27,9 | −14,4 |
 | Corners Over 7.5 | 590 | 77,5% | 66,6% | 56,0% | −21,5 | −10,7 |
-| Over 2.5 | 932 | 79,0% | 71,8% | 58,5% | −20,5 | −13,4 |
-| Over 1.5 | 1.642 | 86,7% | 82,8% | 68,1% | −18,7 | −14,8 |
+| Cards Over 1.5 | 750 | 91,7% | 88,8% | 66,8% | −25,0 | −22,0 |
+| Over/Under Over 2.5 | 156 | 86,5% | 69,5% | 63,5% | −23,1 | −6,0 |
+| Cards Over 2.5 | 776 | 77,4% | 72,3% | 57,5% | −20,0 | −14,8 |
+| Over/Under Over 1.5 | 892 | 82,5% | 77,8% | 69,1% | −13,4 | −8,7 |
 | DC X2 | 988 | 62,1% | 54,6% | 48,1% | −14,0 | −6,4 |
 | Corners Under 4.5 | 642 | 6,4% | 13,1% | 11,7% | **+5,4** | −1,4 |
-| Under 1.5 | 1.337 | 18,5% | 23,3% | 21,8% | **+3,3** | −1,5 |
-| **média ponderada** | **18.429** | | | | **−10,1** | |
+| Over/Under Under 1.5 | 982 | 19,6% | 24,4% | 23,0% | **+3,5** | −1,4 |
+| **média ponderada** | **18.378** | | | | **−10,2** | |
+
+> **CORRIGIDO em 2026-09-09, mesma sessão:** a primeira versão desta tabela agrupou por
+> `selection` **sem** o `market`, então `Over 1.5`, `Over 2.5` e `Under 1.5` misturaram
+> Over/Under com Cartões — famílias diferentes com o mesmo rótulo de seleção. As linhas de
+> `Corners` nunca foram afetadas (o nome da seleção já carrega a família). Refeito agrupando
+> por (`market`, `selection`): a média ponderada foi de −10,1 para **−10,2** pontos e a
+> conclusão não muda, mas os números por linha acima são os corretos. A versão errada dizia
+> `Over 2.5 | 932 | 79,0% | 71,8% | 58,5%`, que era a fusão de duas famílias.
 
 A assimetria é a assinatura do encolhimento: probabilidade alta fica muito abaixo do real,
 probabilidade baixa fica um pouco acima. Nenhum mercado com n≥40 é superestimado acima de
@@ -12515,4 +12525,349 @@ modelo 20 pontos abaixo da realidade quando o número limpo é 10. A regra que s
 **antes de acusar o modelo, medir na fonte que não foi recomputada depois do jogo** — e testar
 tolerância de odd em escala relativa, nunca absoluta, porque odd não é linear em
 probabilidade.
+
+---
+
+## 245 — A grade por família: a deflação não está mal calibrada entre famílias, está errada nas seis
+**Data:** 2026-09-09 | **Arquivos:** scripts/grade_deflacao_por_familia.py (novo) | **Severidade:** Crítica (o redutor é aplicado a todo número publicado) | **Status:** Medido; correção NÃO aplicada — decisão de produto pendente
+
+### A pergunta
+O #244 mostrou que a deflação encolhe as duas pontas do par complementar e que o custo
+parecia desigual entre famílias: nos gols o raw soma 109–137% (superconfiante de fato, o
+redutor faz sentido) e nos escanteios soma exatamente 100,0% (o redutor só tira sinal). A
+hipótese registrada era **desacoplar o fator por família**. Welligton autorizou a medição.
+
+### Instrumento e controle positivo
+`scripts/grade_deflacao_por_familia.py`. A deflação em produção é uma curva contínua por nós
+(#105/#189-a), então a grade não pode ser "multiplicar por k". Mede-se a **intensidade** da
+curva que já existe:
+
+```
+p(alpha) = raw + alpha * (publicada - raw)
+   alpha = 0,0  -> nenhuma deflação (o raw do motor)
+   alpha = 1,0  -> exatamente o que foi publicado
+   alpha = 1,5  -> metade a mais de deflação
+```
+
+**Controle positivo (regra #227):** em `alpha = 1,0` o script tem de reproduzir o Brier da
+`calibrated_prob` gravada. Reproduziu com **erro 0,00e+00** — a interpolação está ancorada no
+dado de produção, não numa reimplementação da função. Sem isso o script aborta.
+
+**Fonte:** `prediction_ledger` × `ledger_outcomes`, gravados antes do jogo — 18.535 picks com
+desfecho em 220 jogos. O `audit_results` está proibido para isto pela regra #244 (recomputado
+pós-jogo, #200). Bootstrap emparelhado por bloco-jogo, 1000 reamostras, semente 227, IC
+percentil — o mesmo método do `comparar_com_mercado.py`.
+
+### O resultado
+| família | n picks | melhor α | Brier no melhor α | Brier hoje (α=1) | ganho | IC95 |
+|---|---|---|---|---|---|---|
+| Corners | 6.851 | **0,0** | 0,1722 | 0,1976 | **−0,0254** | [−0,0320, −0,0182] |
+| Cards | 2.149 | **0,0** | 0,1463 | 0,1777 | **−0,0314** | [−0,0405, −0,0210] |
+| Double Chance | 2.844 | **0,0** | 0,2147 | 0,2280 | −0,0132 | [−0,0180, −0,0075] |
+| Over/Under | 4.791 | 0,2 | 0,1642 | 0,1677 | −0,0036 | [−0,0065, −0,0007] |
+| 1X2 | 1.110 | 0,0 | 0,2111 | 0,2140 | −0,0029 | [−0,0083, +0,0027] |
+| BTTS | 790 | 0,0 | 0,2355 | 0,2375 | −0,0020 | [−0,0069, +0,0031] |
+| **todas juntas** | **18.535** | **0,0** | 0,1787 | 0,1949 | **−0,0162** | [−0,0190, −0,0133] |
+
+**A hipótese do #244 foi refutada na forma e confirmada no efeito.** Eu esperava encontrar α
+alto nos gols e α baixo nos escanteios — um redutor mal repartido. O que apareceu foi α = 0
+em **cinco das seis famílias**, e 0,2 na sexta. A deflação não está mal calibrada *entre*
+famílias: ela piora o Brier em todas as seis, e a diferença entre famílias é de **magnitude**
+(escanteios e cartões perdem 0,025–0,031; O/U perde 0,0036), não de direção.
+
+Com seis comparações, Corners, Cards e Double Chance sobrevivem a qualquer correção de
+múltiplos testes; Over/Under é marginal (IC encosta em zero); 1X2 e BTTS não excluem zero.
+
+### A confirmação que não depende de desfecho
+| família | soma dos complementares hoje | no melhor α |
+|---|---|---|
+| Corners | 81,8% | **100,3%** |
+| Over/Under | 89,6% | 97,9% |
+| todas | 87,9% | 103,2% |
+
+Em escanteios, remover a deflação devolve a coerência a 100,3% — o par volta a somar 1. Duas
+medições independentes (Brier com desfecho, coerência sem desfecho) apontam para o mesmo α.
+
+### Ressalva importante sobre o nível
+O piso usado aqui é a taxa-base **da própria amostra** (`p(1−p)`), que é otimista por ser
+in-sample. Ele NÃO é o piso leave-one-game-out do #235, e por isso os valores de `Brier − piso`
+desta tabela **não são comparáveis** aos do #229-b (que mediu +0,0134 para o motor). A
+comparação entre α's é imune a isso — o piso é a mesma constante em todas as linhas —, mas o
+nível absoluto não deve ser citado como "o motor tem skill".
+
+Segunda ressalva: a amostra é de picks **publicados**, não de todos os mercados avaliados.
+
+### O que isto NÃO autoriza
+Remover a deflação não é uma mudança isolada de número. A regra #011 manda a classificação usar
+prob raw e o **EV usar a prob deflacionada**. Subir α para 0 sobe o EV de todo pick ao mesmo
+tempo, o que muda quantos picks passam o limiar, quantos chegam a SAFE/NEUTRO_QUALIFICADO e
+quanto o `bankroll_engine` dimensiona em Quarter Kelly. O ganho de Brier está medido; o efeito
+em volume publicado e em stake **não está**. É a próxima medição, e ela vem antes de qualquer
+patch — proibições 4 e 7 do `CLAUDE.md`.
+
+### Lição aprendida
+A hipótese que motivou a medição ("o redutor está mal repartido entre famílias") era mais
+confortável do que o resultado ("o redutor não deveria existir na intensidade atual em
+nenhuma família"). O desenho da grade — intensidade da curva real, com controle positivo
+ancorado na coluna publicada — foi o que permitiu ver isso: uma grade de multiplicadores
+teria medido uma função que o pipeline não usa.
+
+---
+
+## 246 — Lote de correcoes do #238-a e do #244, e o filtro de corredor que apaga o Over 2.5 do card
+**Data:** 2026-09-09 | **Arquivos:** backend/services/brier_service.py, backend/ai/mistral_contract.py, backend/ai/audit_log.py, backend/routes/ai_analysis.py, backend/services/mistral_analysis.py, tests/test_238a_alerta_fallback.py (novo), tests/test_238a_contrato_numerico.py (novo), docs/BACKLOG.md | **Severidade:** Alta | **Status:** Corrigido (4 itens) + 1 achado medido
+
+### Contexto
+Welligton pediu as correcoes que nao dependessem de decisao dele e perguntou por que
+`Over 2.5 gols` nao aparece no card de Toronto x Nashville SC (09/09, MLS) se o texto da
+Mistral cita "over 2.5 em 57.5% dos jogos". A pergunta abriu o achado do fim desta entrada.
+
+### Correcao A — `/metrics/brier` parava de comparar o modelo consigo mesmo (#244)
+`_row_to_pick` tinha DUAS portas para a odd justa entrar como se fosse preco:
+1. `odd = pp.get("book_odd") or pp.get("odd")` — `pp["odd"]` e `odd_minima`, que vira
+   `1/prob` quando nao ha mercado. A alternativa reintroduzia pela porta dos fundos o
+   defeito que o #196 fechou em `book_odd`.
+2. mesmo em `book_odd`, 75,6% das linhas guardam a odd justa da propria probabilidade
+   (#244, teste RELATIVO `prob x odd`).
+
+Medido antes/depois sobre as MESMAS linhas do `audit_results`:
+
+| recorte | n_paired antes | n_paired depois | delta antes | delta depois |
+|---|---|---|---|---|
+| todos os picks | 6.330 (98,9%) | **1.355 (21,2%)** | +0,0071 | **+0,0386** |
+| Cartoes Over 2.5 | 1.454 (100%) | **0** | −0,0019 (`modelo_bate_casa=False`) | sem comparacao possivel |
+| Escanteios Over 7.5 | 945 (100%) | **0** | −0,0017 (`modelo_bate_casa=False`) | sem comparacao possivel |
+| Under 3.5 gols | 518 (97,6%) | 323 (60,8%) | +0,0053 | +0,0083 |
+
+A vantagem real do modelo sobre a casa estava **diluida cinco vezes**. E em `Cartoes Over
+2.5` o endpoint afirmava `modelo_bate_casa = False`: o modelo "perdendo" para a odd justa
+dele proprio, por ruido de arredondamento.
+
+### Correcao B — a narrativa nao tinha numero deflacionado para citar (#238-a item 2)
+`picks_for_prompt` so incluia mercados com `ev > 0`. Mercado sem odd nao tem EV, logo nao
+entrava — e a unica fonte numerica que sobrava no prompt eram as "Estatisticas Poisson",
+que carregam RAW por desenho (#181). Adicionado `mercados_publicados`: TODO mercado do card,
+com a probabilidade publicada e a marca `SEM ODD DE CASA` quando `book_odd` e nulo. Bloco
+SEPARADO do de picks — a regra de alinhamento (#096) continua presa a `pipeline_picks`.
+
+Prova no payload real de Toronto x Nashville (geracao 03:09):
+```
+'Cartoes Over 2.5 | Prob exibida: 60%'      ANTES: False   DEPOIS: True
+'Escanteios Over 6.5 | Prob exibida: 59%'   ANTES: False   DEPOIS: True
+```
+Neste jogo `pipeline_picks` era **vazio** — o prompt nao tinha nenhum numero pos-deflacao.
+
+### Correcao C — o fallback estatico era invisivel (#238-a item 4)
+`alertar_fallback()` em `backend/ai/audit_log.py`: nivel ERROR, marcador fixo `[ALERTA-IA]`,
+e classificacao da falha em `cobranca` / `indisponibilidade` / `desconhecida`. So `cobranca`
+imprime "ACAO HUMANA NECESSARIA", porque so ela nao se resolve na proxima execucao. Erro que
+nao casa nenhum padrao sai como `desconhecida` — nunca chuta `cobranca`, porque falso
+positivo de cobranca pede acao humana a toa. 13 testes.
+
+### Correcao D — o validador de contrato nao via o numero, so o nome (#238-a item 1, parte)
+O texto que o operador viu em Toronto x Nashville passou por `validate_output` com
+**`ok=True`, zero violacoes**, citando duas probabilidades RAW. Duas lacunas:
+1. `r"Over\s+\d+\.?\d*\s+gols?"` exige a palavra "gols" colada; o texto escreveu
+   "over 2.5 em 57.5% dos jogos". O padrao de escanteios exige "Escanteios" colado antes;
+   o texto escreveu "over 8.5 em 67.9%". Mencao NUA de linha nao casava com nada.
+2. Nada comparava o NUMERO citado com o publicado — o contrato do #181 diz que a narrativa
+   so pode citar a deflacionada, e isso nunca foi verificado.
+
+Adicionado o padrao de mencao nua (so ACRESCENTA deteccao: `_market_in_approved` compara por
+substring nos dois sentidos, entao "over 8.5" continua casando com "Escanteios Over 8.5"
+aprovado) e a checagem numerica: percentual a ate 40 caracteres de uma mencao de mercado tem
+de bater com a publicada, com 1 ponto de tolerancia para o arredondamento do card.
+Percentual solto ("clean sheet de 48%") nao e tocado. Depois:
+```
+ok = False   violacoes = 3
+  - Mercado fora da lista aprovada: 'over 8.5'
+  - Probabilidade citada nao e a publicada: 'over 2.5' com 57.5% (publicadas: [59.0, 60.0])
+  - Probabilidade citada nao e a publicada: 'over 8.5' com 67.9% (publicadas: [59.0, 60.0])
+```
+8 testes novos; os 25 existentes de contrato seguem passando.
+
+### O ACHADO — o filtro de corredor apaga a linha mais negociada do futebol
+`Over 2.5 gols` e `Under 2.5 gols` nao estao no ledger do jogo nem como `NO_BET`, enquanto
+`Over 4.5` esta la com 17%. Nao e limiar nem EV: e `_filter_corridor_bets` (#037, expandido
+no #113), que junta `(Over X.5, Under (X+1).5)` e **remove a de menor probabilidade**.
+
+Reproduzido com os numeros reais do jogo:
+
+| corredor | Over | Under | decisao |
+|---|---|---|---|
+| Over 0.5 vs Under 1.5 | 71,2% | 18,0% | par incompleto (Over 0.5 ja caiu pelo #127) |
+| Over 1.5 vs Under 2.5 | 62,0% | 38,2% | REMOVE **Under 2.5** |
+| Over 2.5 vs Under 3.5 | 53,2% | 55,2% | REMOVE **Over 2.5** |
+| Over 3.5 vs Under 4.5 | 31,6% | 62,6% | REMOVE **Over 3.5** |
+
+Sobreviventes previstos: Over 1.5, Over 4.5, Under 1.5, Under 3.5, Under 4.5 — **exatamente**
+as cinco linhas do ledger, somando os dois filtros ja conhecidos (`Over 0.5` exige odd >= 1,30
+pelo #127; `Under 0.5` a 5,0% cai no piso de 5%). Mecanismo confirmado sem residuo.
+
+**Por que isso e um problema.** `Over X.5` e `Under (X+1).5` NAO sao apostas concorrentes:
+elas se sobrepoem em exatamente um resultado (o total = X+1) e somam mais que 1. Escolher a
+de maior probabilidade e escolher sempre a linha mais BARATA — a mesma patologia do #241 e do
+#244, agora decidindo o que o operador chega a ver. E a remocao e do CARD, nao so da
+recomendacao: o mercado desaparece.
+
+Confirmacao no ledger inteiro:
+
+| par | publicado |
+|---|---|
+| `Under 3.5` | **832** |
+| `Over 2.5` | **156** (5,3x menos) |
+| `Over 1.5` | **892** |
+| `Under 2.5` | **72** (12,4x menos) |
+
+**Ressalva medida:** a deflacao NAO causa a inversao neste caso. Em raw o par e 57,5% x 64,9%
+(7,4 pontos); deflacionado, 53,2% x 55,2% (2,0 pontos). A deflacao comprime a distancia mas
+nao troca a ordem — o encolhimento e monotono em `p`. A causa e a regra, nao o redutor.
+
+**NAO corrigido:** mudar o corredor altera o que aparece no card em todos os jogos, e a
+alternativa razoavel (manter as duas linhas e rotular o corredor, ou comparar por EV em vez
+de por probabilidade) e escolha de produto. Fica registrado com o mecanismo provado.
+
+### Tambem nesta entrada
+- **#244 corrigido no lugar:** a tabela de calibracao agrupava por `selection` sem o `market`,
+  fundindo Over/Under com Cartoes em `Over 1.5`, `Over 2.5` e `Under 1.5`. Media ponderada foi
+  de −10,1 para **−10,2** pontos; conclusao inalterada, linhas corrigidas.
+- **B-016 fechado** no `BACKLOG.md` — resolvido pelo #242, a entrada so estava desatualizada.
+
+### Licao aprendida
+Tres dos quatro defeitos corrigidos aqui sao a mesma forma: um filtro que existe por bom
+motivo (nao comparar contra odd inexistente, nao exibir corredor redundante, nao citar prob
+raw) implementado de um jeito que ninguem consegue ver quando ele age. O `[ALERTA-IA]`, o
+`[CORRIDOR-DROPPED]` e o `n_paired` do brier tem a mesma funcao: tornar visivel a decisao
+que o sistema toma sozinho. O filtro de corredor so foi encontrado porque o `[CORRIDOR-DROPPED]`
+apareceu no log de um teste — nao havia outra forma de ve-lo.
+
+---
+
+## 247 — O corredor por EV, e o selo "AI" que anuncia um modelo que nao existe em producao
+**Data:** 2026-09-09 | **Arquivos:** (nenhum — medicao) | **Severidade:** Alta (o selo afirma ao operador uma capacidade inexistente) | **Status:** Medido; correcao NAO aplicada
+
+### Parte 1 — comparar o corredor por EV em vez de por probabilidade (#246)
+
+O #246 mostrou que `_filter_corridor_bets` remove a linha de MENOR probabilidade do par
+`(Over X.5, Under (X+1).5)`, que nao sao concorrentes. Welligton pediu a analise da
+alternativa: comparar por EV.
+
+**Viabilidade — EV exige odd real nos DOIS lados.** Cobertura medida no ledger:
+
+| familia | linhas sem `book_odd` |
+|---|---|
+| Over/Under | **3,7%** |
+| Corners | 46,7% |
+| Cards | **88,3%** |
+
+Comparar por EV e viavel em gols, parcial em escanteios e **impossivel em cartoes**. Uma
+regra unica por EV nao serve; ou e por familia, ou cai para probabilidade quando falta preco.
+
+**Exemplo trabalhado — Toronto x Nashville SC (09/09), odds reais do `ai_audit_log`:**
+
+| linha | prob publicada | odd | EV |
+|---|---|---|---|
+| Over 1.5 | 62,0% | 1,16 | −28,1% |
+| Under 2.5 | 38,2% | 2,10 | −19,8% |
+| **Over 2.5** | 53,2% | 1,66 | **−11,7%** |
+| Under 3.5 | 55,2% | 1,44 | −20,5% |
+| Over 3.5 | 31,6% | 2,63 | −16,9% |
+| Under 4.5 | 62,6% | 1,17 | −26,8% |
+
+Os **tres** corredores decidem diferente:
+
+| corredor | por probabilidade | por EV |
+|---|---|---|
+| Over 1.5 vs Under 2.5 | remove Under 2.5 | remove Over 1.5 |
+| Over 2.5 vs Under 3.5 | remove **Over 2.5** | remove Under 3.5 |
+| Over 3.5 vs Under 4.5 | remove Over 3.5 | remove Under 4.5 |
+
+A regra atual removeu `Over 2.5`, que era a **melhor** das seis linhas por EV (−11,7% contra
+−20,5% da que ficou).
+
+**Desempenho realizado (ledger x ledger_outcomes, so odd de casa, bootstrap por bloco-jogo):**
+
+| recorte | n | jogos | ROI | IC95 |
+|---|---|---|---|---|
+| lado Over (todos) | 1.715 | 206 | +8,8% | [−8,1%, +27,5%] — **cruza zero** |
+| lado Under (todos) | 2.404 | 212 | −10,4% | [−23,3%, +2,5%] — **cruza zero** |
+| diferenca emparelhada Over − Under | — | 201 | +7,9 pp | [−18,9, +32,8] — **cruza zero** |
+| `Over 2.5` | 119 | 47 | **+44,3%** | [+26,8%, +58,5%] |
+| `Under 3.5` | 632 | 169 | **−13,4%** | [−24,9%, −1,4%] |
+
+**No agregado nao ha diferenca significativa** — a tese "o lado que sobrevive rende menos"
+NAO se sustenta nos numeros. O que se sustenta e o par especifico: `Over 2.5` (a linha
+removida) e `Under 3.5` (a que fica) tem IC em lados opostos do zero. Duas ressalvas que
+impedem de tratar isso como conclusao: os 119 picks de `Over 2.5` sao um subconjunto
+SELECIONADO (so sobrevivem quando vencem o Under na probabilidade, ou seja, jogos de lambda
+alto), e sao 6 comparacoes — sob Benjamini-Hochberg `Over 2.5` sobreviveria e `Under 3.5`,
+marginal, provavelmente nao.
+
+**O que fica solido, sem depender de desfecho:** a regra atual mantem sempre a linha mais
+provavel, que e a mais barata (odd media do lado Under 2,46 contra 3,21 do lado Over), e no
+exemplo trabalhado inverte a escolha nos tres corredores.
+
+**Ressalva pratica sobre trocar a regra:** com o EV calculado sobre a probabilidade
+deflacionada — que o #244/#245 mediram 10,2 pontos abaixo da realidade — TODOS os EVs do
+exemplo sao negativos. Comparar por EV escolheria "o menos ruim", e o pick continuaria
+`NO_BET`. Trocar so o corredor faria `Over 2.5` reaparecer como INFO no card, nao como
+recomendacao. A ordem util e a mesma do #245: decidir a deflacao primeiro.
+
+### Parte 2 — o selo "AI" da liga
+
+Welligton perguntou qual e a atuacao da "AI" na Liga NOS (Portugal, `primeira-liga`),
+classificada com o selo **AI** no painel.
+
+**O que o selo afirma.** `LeagueConfidenceBadge` monta o tooltip, e na tela ao vivo ele diz,
+literalmente: *"Modelo AI treinado com 802 jogos | Precisao: 55.5% | Calibracao (Brier):
+0.568 | Atualizado em: 20/03/2026"*. A fonte e o arquivo estatico
+`frontend/next/public/data/league_classifications.json`, lido por `useLeagueClassifications`
+via `fetch("/data/league_classifications.json")` — **o selo nunca consulta o backend**.
+
+**O que a producao responde.**
+```
+GET /ml/status?league=primeira-liga
+  {"available": false, "league_id": "primeira-liga", "message": "No trained model found"}
+
+GET /ml/status/all
+  22 ligas consultadas, 0 com modelo disponivel.
+```
+
+**Nao existe modelo treinado em producao — nem para a primeira-liga, nem para nenhuma das
+22 ligas.** O selo AI e o retrato de um backtest offline de marco/2026 exibido como se
+descrevesse o que roda hoje.
+
+**O que a "AI" faria se o modelo existisse** (`fixtures_service.py:2104`): `predict_1x2`
+roda XGBoost sobre 18 features (medias moveis de 5 jogos de gols, xG, posse, escanteios e
+finalizacoes, Elo, medias da liga) e `champion_vs_challenger` decide se substitui o 1X2 do
+Poisson. Escopo: **so 1X2**, mais chaves informativas `ml_*` em `stats`. Nao toca gols,
+escanteios, cartoes nem BTTS. Sem modelo, `champion_vs_challenger` cai em `odds_implied` —
+o espelho de mercado do #187, que e o que a liga tem hoje.
+
+**Dois criterios diferentes, e eles divergem.** O selo usa UM teste (`brier < 0.60`); o
+pipeline usa TRES (`is_ml_available`: brier < 0,60, `odds_value_added >= -0,015`,
+`ece <= 0,10`). Consequencia mensuravel: `professional-league` tem `ece = 0,1016 > 0,10`,
+entao o backend a suprimiria — e o selo a mostra como **AI**. Para a `primeira-liga` os tres
+gates passam (brier 0,5676; ece 0,0852; oddsval −0,0047), entao o selo estaria correto **se
+houvesse modelo**.
+
+**Um terceiro achado, no gate.** `odds_value_added` e definido em `train_model.py:604` como
+`brier_diff = avg_brier - no_odds["avg_brier"]`, onde `avg_brier` e a validacao do modelo
+COM as features de odds e `no_odds` a variante SEM elas. Brier menor e melhor, logo
+**negativo significa que as features de odds MELHORAM o modelo**. O gate em
+`predictor.py:228` suprime quando `odds_value < -0,015`, com o comentario *"Negative OddsVal
+means ML is worse than just trusting odds"* — afirmacao que nao decorre da definicao. Como
+esta, o gate suprime justamente os modelos que mais se apoiam nas odds. Efeito pratico hoje:
+**nenhum** — as 33 ligas tem `odds_value_added` entre −0,0136 e 0, e o gate nunca disparou.
+
+**Nao corrigido.** Alinhar selo e pipeline, e decidir se o gate segue a definicao ou o
+comentario, sao decisoes de produto. O fato registrado e: o painel afirma "modelo treinado
+com 802 jogos" onde nao ha modelo.
+
+### Licao aprendida
+O selo tinha numero, amostra e data — os tres sinais de medicao — e nada por tras. Foi
+preciso perguntar a producao (`/ml/status/all`) para descobrir; nenhuma tela, log ou metrica
+denunciava. E a mesma forma do #246: a decisao que o sistema toma sozinho nao aparece em
+lugar nenhum. Um selo que le arquivo estatico e nunca consulta o backend nao pode afirmar o
+estado do backend.
 

@@ -68,7 +68,34 @@ _MARKET_PATTERNS = [
     # "Double Chance 1X (odd 1.14)" passou sem detecção pelo padrão "DC".
     r"Double\s+Chance(?:\s*(?:1X|12|X2))?",
     r"\b1X2\b(?:\s*(?:Home|Away|Casa|Fora))?",
+    # #238-a: mencao NUA de linha, sem a familia colada. Observado em producao
+    # (Toronto x Nashville, 2026-09-09): "over 2.5 em 57.5% dos jogos" e
+    # "over 8.5 em 67.9%" — nenhum dos dois casava, porque o padrao de gols
+    # exige "gols" logo apos o numero e o de escanteios exige "Escanteios"
+    # logo antes. Duas mencoes de mercado num paragrafo, zero violacoes.
+    # `_market_in_approved` compara por substring nos dois sentidos, entao
+    # "over 8.5" continua casando com "Escanteios Over 8.5" aprovado — este
+    # padrao so ACRESCENTA deteccao, nunca remove.
+    r"\b(?:Over|Under)\s+\d+\.?\d*\b",
 ]
+
+# #238-a — probabilidade citada ao lado de um mercado.
+#
+# O contrato do #181 diz que a narrativa so pode citar a probabilidade
+# DEFLACIONADA. Ate aqui nada verificava isso: `validate_output` olhava QUAIS
+# mercados apareciam, nunca COM QUE NUMERO. No caso que motivou esta camada, o
+# prompt entrega `- Prob Over 2.5: 57.5% (raw)` — rotulado como raw, no meio das
+# estatisticas — e o texto saiu com "over 2.5 em 57.5% dos jogos". Deflacionada,
+# essa linha vale ~52%.
+#
+# Regra: um percentual ate 40 caracteres depois de uma mencao de mercado e
+# tratado como probabilidade DAQUELE mercado e tem de bater com a publicada
+# (tolerancia de 1 ponto, para absorver o arredondamento do card). Percentual
+# solto no texto ("clean sheet de 48%") nao e tocado — nao esta colado a
+# mercado nenhum.
+_JANELA_PROB = 40
+_PERCENTUAL = re.compile(r"(\d+[\.,]?\d*)\s*%")
+_TOLERANCIA_PP = 1.0
 
 # Pattern for "Mistral computed EV" — narrative must NEVER assert EV.
 # System computes EV; narrative narrates context.
@@ -106,9 +133,11 @@ def validate_output(text: str, approved: List[ApprovedPick]) -> dict:
 
     approved_markets = {p.market for p in approved}
     mentioned: set[str] = set()
+    ocorrencias: list[tuple[str, int]] = []          # #238-a: (mencao, fim)
     for pat in _MARKET_PATTERNS:
         for m in re.finditer(pat, text, re.IGNORECASE):
             mentioned.add(m.group())
+            ocorrencias.append((m.group(), m.end()))
 
     for mention in mentioned:
         if not _market_in_approved(mention, approved_markets):
@@ -116,6 +145,33 @@ def validate_output(text: str, approved: List[ApprovedPick]) -> dict:
                 f"Mercado fora da lista aprovada: '{mention.strip()}' "
                 f"(aprovados: {sorted(approved_markets)})"
             )
+
+    # #238-a — o numero citado ao lado do mercado tem de ser o PUBLICADO.
+    publicadas = {
+        round(float(p.prob_deflated_pct), 1)
+        for p in approved
+        if p.prob_deflated_pct is not None
+    }
+    ja_reportado: set[tuple[str, str]] = set()
+    for mencao, fim in ocorrencias:
+        m = _PERCENTUAL.search(text[fim:fim + _JANELA_PROB])
+        if not m:
+            continue
+        try:
+            citada = float(m.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        if any(abs(citada - p) <= _TOLERANCIA_PP for p in publicadas):
+            continue
+        chave = (mencao.strip().lower(), m.group(1))
+        if chave in ja_reportado:
+            continue
+        ja_reportado.add(chave)
+        violations.append(
+            f"Probabilidade citada nao e a publicada: '{mencao.strip()}' com "
+            f"{citada}% (publicadas: {sorted(publicadas) or 'nenhuma'}) — "
+            f"a narrativa so pode citar a probabilidade deflacionada (#181)"
+        )
 
     if _EV_COMPUTATION_PATTERN.search(text):
         violations.append(
