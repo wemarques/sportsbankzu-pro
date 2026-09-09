@@ -1325,3 +1325,42 @@ contrariar o backfill, isso e resultado, nao erro de medicao — e o gate BLOQUE
 de 0,25% (a publicada ainda tem o que ganhar sozinha); ou n < 300 jogos. Qualquer um
 dos tres, isolado, mantem `PROB_SOURCE=modelo`.
 
+---
+
+### #246-a — O corredor continua sendo decidido por PROBABILIDADE, nao por EV
+
+**Tipo:** Decisao de produto (fecha a pergunta aberta do #246/#247)
+**Decidido por:** Welligton, 2026-09-09
+**Relacionado:** [[#246]] (o mecanismo), [[#247]] (a alternativa medida), [[#241]], [[#244]]
+
+`_filter_corridor_bets` (#037/#113) mantem, do par `(Over X.5, Under (X+1).5)`, a linha de
+MAIOR probabilidade. O #247 mediu a alternativa — comparar por EV — e mostrou que ela
+inverteria a decisao nos tres corredores do jogo medido. **A regra fica como esta.**
+
+**Razao registrada (palavras do operador):** manter a linha mais provavel entrega uma
+DIRECAO REAL ao usuario, mesmo com EV negativo e mesmo sem outras informacoes. Direcao
+confiavel vale mais, para quem opera, do que a linha de menor perda esperada contra um preco.
+
+**O que essa decisao aceita conscientemente,** ja medido e portanto nao reabrivel como
+"descoberta":
+- A linha mantida e sistematicamente a mais BARATA (odd media 2,46 no lado Under contra 3,21
+  no lado Over, #247). O painel tende a exibir o lado facil.
+- No jogo medido a regra removeu `Over 2.5` (EV −11,7%), a melhor das seis linhas por EV, e
+  manteve `Under 3.5` (EV −20,5%).
+- `Over 2.5 gols` — a linha mais negociada do futebol — e publicada 156 vezes contra 832 de
+  `Under 3.5` (#246). Some do card, nao so da recomendacao.
+
+**Proibido**, em consequencia:
+- Reabrir a troca por EV como se fosse achado novo. Foi medida (#247) e recusada por decisao
+  de produto. Nova proposta so com argumento que o #247 nao cobriu.
+- Usar esta decisao para justificar OUTRO filtro que compare por probabilidade linhas de
+  dificuldade diferente. A decisao vale para o corredor, que tem justificativa propria
+  (direcao ao usuario); nao e um principio geral. Onde o proposito for medir valor, a
+  comparacao continua sendo por EV.
+- Descrever a linha mantida como "melhor aposta" ou "maior valor". Ela e a mais PROVAVEL —
+  esse e o criterio, e o rotulo tem de dizer isso. Ver [[#241]].
+
+**Em aberto, e nao bloqueado por esta decisao:** exibir a linha perdedora do corredor como
+INFO em vez de remove-la. A decisao acima e sobre QUAL linha sobrevive a comparacao, nao
+sobre a outra ter de sumir da tela.
+
