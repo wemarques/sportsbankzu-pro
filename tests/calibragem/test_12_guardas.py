@@ -63,3 +63,67 @@ def test_7_qualquer_b_positivo_preserva_a_ordem():
     for a, b in ((0.0, 0.1), (2.0, 3.0), (-1.5, 0.4)):
         corrigidos = [aplicar(p, a, b) for p in brutos]
         assert corrigidos == sorted(corrigidos), (a, b)
+
+
+# ─── C3: a trava contra a TERCEIRA ocorrencia da mesma classe de defeito ────
+#
+# Duas vezes um rotulo de producao deixou de resolver familia e o efeito foi
+# invisivel: na Task 3 os rotulos do ledger em ingles ("Corners Over 7.5")
+# caiam em Over/Under; no C3 os rotulos do serving ("Double Chance 1X")
+# levantavam ValueError que `aplicar_versao` engolia. Listar rotulos a mao
+# nao trava a terceira: um mercado novo entra em `ev_classification` e a
+# lista do teste continua verde. Este teste LE os rotulos direto das
+# chamadas a `_calibrar_com_detalhe` no fonte de producao.
+
+def _rotulos_das_chamadas_de_producao():
+    """Extrai, por AST, o 2o argumento de cada `_calibrar_com_detalhe(...)`.
+
+    Constantes entram como estao. f-strings viram o literal com cada campo
+    interpolado substituido por "2.5" — o token de familia vive sempre na
+    parte LITERAL do rotulo (`f"Over {threshold}"`, `f"Cartoes Over {line}"`),
+    entao o valor do campo nao muda a familia e um placeholder serve.
+    """
+    import ast
+
+    fonte = pathlib.Path("backend/services/ev_classification.py").read_text(
+        encoding="utf-8")
+    rotulos = []
+    for no in ast.walk(ast.parse(fonte)):
+        if not isinstance(no, ast.Call):
+            continue
+        alvo = no.func
+        nome = alvo.id if isinstance(alvo, ast.Name) else getattr(alvo, "attr", "")
+        if nome != "_calibrar_com_detalhe" or len(no.args) < 2:
+            continue
+        arg = no.args[1]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            rotulos.append(arg.value)
+        elif isinstance(arg, ast.JoinedStr):
+            partes = []
+            for p in arg.values:
+                if isinstance(p, ast.Constant) and isinstance(p.value, str):
+                    partes.append(p.value)
+                else:
+                    partes.append("2.5")
+            rotulos.append("".join(partes))
+    return sorted(set(rotulos))
+
+
+def test_todo_rotulo_chamado_em_producao_resolve_familia():
+    from backend.modeling.calibragem.curva import familia_do_mercado
+
+    rotulos = _rotulos_das_chamadas_de_producao()
+    assert len(rotulos) >= 8, (
+        "o scanner de AST nao achou as chamadas de producao — "
+        f"achou {rotulos}; o alvo ou a assinatura mudaram?")
+
+    sem_familia = []
+    for r in rotulos:
+        try:
+            familia_do_mercado(r)
+        except ValueError:
+            sem_familia.append(r)
+    assert not sem_familia, (
+        f"rotulos servidos em producao que nao resolvem familia: {sem_familia}. "
+        "Eles ficam presos na versao 0 para sempre, por mais que o estimador "
+        "aprenda a familia deles. Acrescente o token em curva._FAMILIAS.")

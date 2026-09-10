@@ -5,10 +5,13 @@ Matematica pura, sem I/O e sem dependencia externa. `a` e o deslocamento
 sistematico (positivo = o motor publica abaixo da realidade); `b` e a
 dispersao (b < 1 = o motor exagera nos extremos).
 """
+import logging
 import math
 from typing import Optional
 
 from backend.modeling.calibragem import VERSAO_LEGADO
+
+logger = logging.getLogger("sportsbankzu.calibragem.curva")
 
 # Prende p antes do logit. 1e-6 mantem logit em ~±13,8, longe de estourar em
 # float, e a diferenca em probabilidade e invisivel no card (0,0001%).
@@ -26,6 +29,12 @@ _FAMILIAS = (
     ("cartões", "Cards"),
     ("cards", "Cards"),
     ("btts", "BTTS"),
+    # "double chance" e o rotulo que o SERVING usa ("Double Chance 1X/12/X2",
+    # em `ev_classification`); "dc "/"dupla chance" sao as formas de tela e do
+    # ledger. Sem este token as tres linhas de DC levantavam ValueError dentro
+    # de `aplicar_versao`, que engolia a excecao — o estimador aprendia DC
+    # (600 picks) e o serving ignorava para sempre.
+    ("double chance", "Double Chance"),
     ("dc ", "Double Chance"),
     ("dupla chance", "Double Chance"),
     ("1x2", "1X2"),
@@ -104,6 +113,16 @@ def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
     try:
         familia = familia_do_mercado(market)
     except ValueError:
+        # NAO engolir em silencio: um rotulo do serving que nao resolve
+        # familia significa que aquele mercado NUNCA sai da versao 0, por
+        # mais que o estimador aprenda para ele. Foi assim que "Double
+        # Chance 1X/12/X2" ficou fora da camada sem uma linha no log.
+        logger.warning(
+            "[calibragem] mercado '%s' (liga=%s) nao resolve familia — "
+            "servido pela versao 0 (legado). Se este rotulo e de producao, "
+            "falta um token em curva._FAMILIAS.",
+            market, league_id or "-",
+        )
         return calibrar_legado(raw, market, league_id, regime)
 
     chave = (familia, league_id or "")

@@ -205,3 +205,64 @@ def test_calibrar_com_detalhe_reproduz_a_fixture_dourada_via_aplicar_versao():
             divergentes.append((c["market"], c["league_id"], c["raw"],
                                 c["final"], d.final))
     assert not divergentes, f"{len(divergentes)} divergencias: {divergentes[:5]}"
+
+
+# ─── C3: os rotulos REAIS do serving tem de resolver familia ────────────────
+#
+# `_FAMILIAS` tinha "dc " e "dupla chance", mas `ev_classification` chama
+# `_calibrar_com_detalhe` com "Double Chance 1X/12/X2" — as tres levantavam
+# ValueError e `aplicar_versao` engolia a excecao SEM LOG. O estimador
+# aprendia Double Chance (600 picks no ledger) e o serving ignorava para
+# sempre. E a mesma classe de defeito do Critico da Task 3, do outro lado
+# da fronteira: la o ledger (ingles) contra rotulos de tela (pt-BR), aqui o
+# serving (ingles) contra os mesmos rotulos.
+
+ROTULOS_DO_SERVING = {
+    # rotulo -> familia esperada
+    "Double Chance 1X": "Double Chance",
+    "Double Chance 12": "Double Chance",
+    "Double Chance X2": "Double Chance",
+    "1X2 Home": "1X2",
+    "1X2_home": "1X2",
+    "1X2_draw": "1X2",
+    "1X2_away": "1X2",
+    "Escanteios Over 7.5": "Corners",
+    "Escanteios Under 10.5": "Corners",
+    "Cartoes Over 2.5": "Cards",
+    "Cartoes Under 4.5": "Cards",
+    "Over 2.5 gols": "Over/Under",
+    "Under 3.5 gols": "Over/Under",
+    "Over 2.5": "Over/Under",
+    "Under 1.5": "Over/Under",
+    "BTTS — SIM": "BTTS",
+    "BTTS": "BTTS",
+}
+
+
+@pytest.mark.parametrize("rotulo,familia", sorted(ROTULOS_DO_SERVING.items()))
+def test_todo_rotulo_do_serving_resolve_familia(rotulo, familia):
+    assert familia_do_mercado(rotulo) == familia
+
+
+def test_aplicar_versao_usa_a_curva_nos_rotulos_de_double_chance():
+    """Nao basta resolver familia: com a celula de Double Chance no mapa, o
+    serving tem de de fato APLICAR a curva nos tres rotulos. Antes do #248-C3
+    os tres caiam no legado (a curva ficava inerte para a familia inteira)."""
+    versao, a, b = 4, 0.31, 0.88
+    parametros = {("Double Chance", ""): (versao, a, b)}
+    for rotulo in ("Double Chance 1X", "Double Chance 12", "Double Chance X2"):
+        d = aplicar_versao(0.7412, rotulo, "championship", "NORMAL", parametros)
+        assert d.final == pytest.approx(aplicar(0.7412, a, b), abs=1e-12), rotulo
+        assert d.tipo_banda == f"curva-v{versao}", rotulo
+
+
+def test_familia_desconhecida_deixa_rastro_no_log(caplog):
+    """A ValueError continua sendo engolida (falha aberta, de proposito),
+    mas agora com uma linha de WARNING nomeando o rotulo — o silencio foi o
+    que escondeu Double Chance."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="sportsbankzu.calibragem.curva"):
+        aplicar_versao(0.5, "Handicap Asiatico -1.5", "mls", "NORMAL",
+                       {("1X2", ""): (1, 0.1, 0.9)})
+    assert any("Handicap Asiatico -1.5" in r.getMessage()
+               for r in caplog.records), caplog.text
