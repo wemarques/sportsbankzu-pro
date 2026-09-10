@@ -451,6 +451,16 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
                     if _evaluate_pick_deterministic(pick_d, actual_result):
                         lm["safe_correct"] += 1
 
+    # #248: ciclo da camada de calibragem. Roda DEPOIS de registrar desfechos,
+    # para consumir os jogos liquidados nesta execucao. Falha aberta.
+    try:
+        from backend.modeling.calibragem.ciclo import executar as _ciclo_calibragem
+        _resumo_calibragem = _ciclo_calibragem(
+            caminho_semente=os.getenv("CALIBRAGEM_SEMENTE_PATH"))
+    except Exception as _e:                                  # noqa: BLE001
+        logger.error("[#248] ciclo de calibragem falhou: %s", _e)
+        _resumo_calibragem = {"erro": str(_e)}
+
     # ── Dupla (combinada) accuracy: INTRA and INTER ──
     # Build actual_result lookup by match ID for leg evaluation
     _actual_by_id: dict[str, dict] = {}

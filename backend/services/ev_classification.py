@@ -155,9 +155,21 @@ def _calibrar_com_detalhe(raw: float, market: str, league_id: str, regime: str) 
     2.5 (#113) — mudou inteiro para `calibragem/legado.py`, congelado, e passa
     a ser a VERSAO 0 da camada aprendida. Nao ha segundo caminho vivo: quem
     decide qual versao serve e `curva.aplicar_versao`.
+
+    Os parametros vigentes vem de `ciclo.parametros_vigentes()` — cache por
+    TTL, e banco fora do ar NUNCA vira identidade (cai no snapshot, e sem
+    snapshot no legado versao 0; #248). Quando a procedencia nao e 'banco', o
+    sufixo entra em `tipo_banda` e viaja ate o `band_type` do
+    `prediction_ledger` — um periodo servido de snapshot fica visivel na
+    tabela, nao so no log (#238 mostrou o custo do fallback silencioso).
     """
+    from backend.modeling.calibragem.ciclo import parametros_vigentes
     from backend.modeling.calibragem.curva import aplicar_versao
-    return aplicar_versao(raw, market, league_id, regime)
+    parametros, procedencia = parametros_vigentes()
+    detalhe = aplicar_versao(raw, market, league_id, regime, parametros)
+    if procedencia != "banco":
+        detalhe.tipo_banda = f"{detalhe.tipo_banda}|origem:{procedencia}"
+    return detalhe
 
 
 def _calibrate_and_deflate(raw: float, market: str, league_id: str, regime: str) -> float:
