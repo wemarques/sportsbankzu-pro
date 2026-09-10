@@ -89,6 +89,45 @@ def _limiares_atuais() -> Dict[str, dict]:
     }
 
 
+def janela_de_reversao(picks_da_celula, criada_em) -> list:
+    """Os picks que a versao vigente REALMENTE serviu.
+
+    #248, I1: `ciclo.executar` passava a amostra inteira para
+    `avaliar_reversao` — a mesma amostra em que a vigente foi ajustada. Um
+    MLE quase sempre ganha no proprio treino, entao o Brier da vigente vinha
+    menor que o da anterior por construcao e a acao era SEMPRE `manter`. A
+    reversao existia no codigo e nao podia disparar, que e a patologia do
+    #247 (o gate que nunca dispara) de novo.
+
+    A janela e `publicado_em > criada_em`, estrito: uma linha publicada no
+    mesmo instante da adocao nao foi servida por ela.
+
+    Sem `criada_em` (celula na versao 0, ou dublê de teste que nao informou)
+    a janela e VAZIA, nao a amostra inteira. `avaliar_reversao` entao devolve
+    `manter` por falta de jogos, com o numero no motivo — nao decidir por
+    falta de informacao e diferente de decidir com a informacao errada.
+    Pick sem `publicado_em` fica de fora pelo mesmo motivo.
+    """
+    if criada_em is None:
+        return []
+    dentro = []
+    for p in picks_da_celula:
+        quando = p.publicado_em
+        if quando is None:
+            continue
+        try:
+            if quando > criada_em:
+                dentro.append(p)
+        except TypeError:
+            # datetime ingenuo x com fuso: comparar levantaria. Fora da
+            # janela, e o motivo aparece no log em vez de virar excecao.
+            logger.warning(
+                "[calibragem] publicado_em (%r) e criada_em (%r) nao sao "
+                "comparaveis; pick fora da janela de reversao",
+                quando, criada_em)
+    return dentro
+
+
 def _vigente_da_celula(vigentes: Dict[tuple, dict], chave: tuple) -> Optional[dict]:
     """O `(a, b)` contra o qual a trava e os limiares medem.
 
@@ -166,7 +205,10 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
                     "n_jogos": proposta["n_jogos"], "origem": proposta["origem"],
                 }
                 continue
-            servidos = por_celula.get(chave, [])
+            # NAO e `por_celula[chave]` inteiro: so os jogos posteriores a
+            # adocao da vigente (#248, I1). Ver `janela_de_reversao`.
+            servidos = janela_de_reversao(por_celula.get(chave, []),
+                                          vig.get("criada_em"))
 
             # A reversao compara vigente contra ANTERIOR (a versao substituida
             # mais recente), nunca vigente contra ela mesma — isso faria os
@@ -205,11 +247,16 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
                 resultado = governanca.avaliar_proposta(
                     proposta, {"a": vig["a"], "b": vig["b"]},
                     proposta["n_jogos"], limite=limite)
-                if anterior is None:
-                    resultado = dict(resultado)
-                    resultado["motivo"] = (
-                        f"sem_anterior; {resultado['motivo']}"
-                        if resultado["motivo"] else "sem_anterior")
+                # O veredito da reversao entra no motivo TAMBEM quando e
+                # `manter` — senao a linha nao distingue "nao havia anterior"
+                # de "a janela estava vazia" de "a vigente ganhou". Com a
+                # janela agora fora da amostra (#248, I1), saber quantos
+                # jogos ela tinha e a unica forma de ler se a reversao esta
+                # viva ou so nao teve o que julgar.
+                resultado = dict(resultado)
+                resultado["motivo"] = "; ".join(
+                    parte for parte in (rev["motivo"], resultado["motivo"])
+                    if parte)
                 if resultado["status"] == "adotada":
                     resumo["adotadas"] += 1
                 elif resultado["status"] == "encurtada":

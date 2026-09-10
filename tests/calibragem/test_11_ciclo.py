@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """O ciclo e o fallback. Banco fora do ar NAO pode virar identidade."""
 import copy
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -108,11 +109,21 @@ class _ConexaoGravadora:
         return False
 
 
-def _servidos(n, liga="", p_raw=0.6, familia="Over/Under", y_periodico=5):
+# A janela de reversao (#248, I1) e `publicado_em > criada_em`, entao os
+# dubles precisam de datas: sem elas a janela e VAZIA de proposito e nenhuma
+# reversao dispara.
+ADOCAO = datetime(2026, 9, 1, 3, 0, tzinfo=timezone.utc)
+DEPOIS = ADOCAO + timedelta(days=1)
+ANTES = ADOCAO - timedelta(days=1)
+
+
+def _servidos(n, liga="", p_raw=0.6, familia="Over/Under", y_periodico=5,
+              publicado_em=DEPOIS):
     """Picks de um jogo cada, com odd ausente -- vale para os testes de
-    reversao/sem_anterior, que nao precisam de `ev`/`edge`."""
+    reversao/sem_anterior, que nao precisam de `ev`/`edge`. `publicado_em`
+    posterior a `ADOCAO` por padrao: sao os jogos que a vigente SERVIU."""
     return [Pick(f"jogo-{liga or 'g'}-{i}", familia, liga, p_raw,
-                 1 if i % y_periodico else 0)
+                 1 if i % y_periodico else 0, None, "", publicado_em)
             for i in range(n)]
 
 
@@ -148,7 +159,7 @@ def _linhas_persistidas(registro):
     return [params for _, params in registro if isinstance(params, dict)]
 
 
-RUIM = {"versao": 5, "a": -0.90, "b": 1.0}       # derruba a probabilidade
+RUIM = {"versao": 5, "a": -0.90, "b": 1.0, "criada_em": ADOCAO}
 BOA_ANTERIOR = {"versao": 4, "a": 0.45, "b": 1.0}  # sobe a probabilidade
 
 
@@ -372,3 +383,72 @@ def test_flag_ligada_executa_o_ciclo(monkeypatch, valor):
 def test_valores_falsos_mantem_desligado(monkeypatch, valor):
     monkeypatch.setenv("CALIBRAGEM_ENABLED", valor)
     assert ciclo.calibragem_habilitada() is False
+
+
+# --- I1: a janela de reversao e FORA da amostra de ajuste ---
+
+
+def test_janela_exclui_os_jogos_anteriores_a_versao():
+    """A funcao pura, direto: so o que foi publicado DEPOIS da adocao."""
+    antigos = _servidos(3, publicado_em=ANTES)
+    novos = _servidos(4, liga="n", publicado_em=DEPOIS)
+    na_janela = ciclo.janela_de_reversao(antigos + novos, ADOCAO)
+    assert len(na_janela) == 4
+    assert {p.publicado_em for p in na_janela} == {DEPOIS}
+
+
+def test_janela_e_estrita_no_instante_da_adocao():
+    """Publicado no MESMO instante nao foi servido pela versao adotada."""
+    assert ciclo.janela_de_reversao(_servidos(5, publicado_em=ADOCAO), ADOCAO) == []
+
+
+def test_janela_vazia_sem_criada_em_ou_sem_publicado_em():
+    """Falta de informacao nao vira 'a amostra inteira' — vira janela vazia,
+    e `avaliar_reversao` devolve `manter` por falta de jogos."""
+    assert ciclo.janela_de_reversao(_servidos(5), None) == []
+    assert ciclo.janela_de_reversao(_servidos(5, publicado_em=None), ADOCAO) == []
+
+
+def test_reversao_nao_dispara_quando_a_janela_e_toda_in_sample(monkeypatch):
+    """O defeito I1 pelo efeito: os MESMOS picks e a MESMA vigente ruim do
+    teste de reversao, so que publicados ANTES da adocao. Antes da correcao
+    a amostra inteira alimentava `avaliar_reversao` e estes 30 jogos
+    reverteriam; agora estao fora da janela e nada acontece.
+    """
+    picks = _servidos(30, publicado_em=ANTES)
+    ajuste = {("Over/Under", ""): {"a": -0.90, "b": 1.0, "n_jogos": 30,
+                                   "origem": "familia", "k_fixo": False}}
+    registro = _montar_ambiente(
+        monkeypatch, picks=picks, ajuste=ajuste,
+        vigentes={("Over/Under", ""): dict(RUIM)},
+        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+
+    resumo = ciclo.executar()
+
+    assert resumo["erro"] is None
+    assert resumo["revertidas"] == 0
+    linha = next(p for p in _linhas_persistidas(registro)
+                 if p["familia"] == "Over/Under")
+    assert linha["status"] != "revertida"
+    assert "0 jogos" in linha["motivo"], linha["motivo"]
+
+
+def test_a_janela_ignora_jogos_de_antes_mas_conta_os_de_depois(monkeypatch):
+    """O par do teste anterior: metade antes, metade depois. So a metade de
+    depois entra, e ela sozinha ja basta (>= MIN_N_JOGOS) para reverter."""
+    antigos = _servidos(25, liga="", publicado_em=ANTES)
+    novos = [p._replace(match_id=f"novo-{i}", publicado_em=DEPOIS)
+             for i, p in enumerate(_servidos(25))]
+    ajuste = {("Over/Under", ""): {"a": -0.90, "b": 1.0, "n_jogos": 50,
+                                   "origem": "familia", "k_fixo": False}}
+    registro = _montar_ambiente(
+        monkeypatch, picks=antigos + novos, ajuste=ajuste,
+        vigentes={("Over/Under", ""): dict(RUIM)},
+        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+
+    resumo = ciclo.executar()
+
+    assert resumo["revertidas"] == 1
+    linha = next(p for p in _linhas_persistidas(registro)
+                 if p["status"] == "revertida")
+    assert "em 25 jogos" in linha["motivo"], linha["motivo"]

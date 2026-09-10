@@ -48,6 +48,13 @@ class Pick(NamedTuple):
     y: int
     odd: Optional[float] = None
     selecao: str = ""
+    # Quando a linha foi PUBLICADA (`prediction_ledger.published_at`). Existe
+    # para a janela de reversao (#248, I1): uma versao so pode ser julgada
+    # pelos jogos que ela SERVIU, ou seja, os publicados depois de ela virar
+    # vigente. Sem este campo a janela era in-sample -- a vigente era avaliada
+    # sobre os mesmos jogos em que foi ajustada, um MLE quase sempre ganha no
+    # proprio treino, e a acao era sempre `manter`.
+    publicado_em: Optional[Any] = None
 
 
 def _conn():
@@ -153,7 +160,8 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
             continue
         saida.append(Pick(ln["match_id"], familia, ln["league_id"],
                           ln["raw_prob"], int(bool(int(ln["outcome"]))),
-                          ln["book_odd"], ln["selection"]))
+                          ln["book_odd"], ln["selection"],
+                          ln["published_at"]))
     if sem_familia:
         logger.warning("[calibragem] %d picks sem familia reconhecida", sem_familia)
     return saida
@@ -232,12 +240,20 @@ def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
 
 
 def carregar_vigentes() -> Dict[tuple, Dict[str, Any]]:
+    """As celulas vigentes, COM `criada_em`.
+
+    `criada_em` nao e enfeite de auditoria: e o inicio da janela de reversao
+    (#248, I1). Os jogos que uma versao pode julgar sao os que ela serviu, e
+    isso e exatamente `published_at > criada_em`.
+    """
     with _conn() as c, c.cursor() as cur:
         cur.execute("""
-            SELECT familia, liga, versao, a, b FROM calibragem_versoes
+            SELECT familia, liga, versao, a, b, criada_em
+              FROM calibragem_versoes
              WHERE status = 'vigente'
         """)
-        return {(r[0], r[1]): {"versao": r[2], "a": float(r[3]), "b": float(r[4])}
+        return {(r[0], r[1]): {"versao": r[2], "a": float(r[3]),
+                               "b": float(r[4]), "criada_em": r[5]}
                 for r in cur.fetchall()}
 
 

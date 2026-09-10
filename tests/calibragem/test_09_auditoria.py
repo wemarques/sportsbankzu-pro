@@ -6,6 +6,8 @@ ligas e ninguem sabia. O #246 so encontrou o filtro de corredor porque
 [CORRIDOR-DROPPED] vazou no log de um teste. Um sistema que muda o numero
 sozinho e so registra quando muda e um sistema onde a inacao e invisivel.
 """
+from datetime import datetime, timezone
+
 import pytest
 
 from backend.modeling.calibragem.repositorio import (
@@ -304,15 +306,21 @@ def test_gravar_ciclo_vazio_nao_abre_conexao(monkeypatch):
 
 
 def test_carregar_vigentes_formato(monkeypatch):
+    """`criada_em` viaja junto (#248, I1): e o inicio da janela de reversao,
+    sem ele a janela seria a amostra inteira (in-sample)."""
     import backend.modeling.calibragem.repositorio as repo
 
-    linhas = [("BTTS", "", 3, 0.1, 1.0), ("Over/Under", "mls", 5, -0.2, 0.9)]
+    t1 = datetime(2026, 8, 1, 3, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 9, 1, 3, 0, tzinfo=timezone.utc)
+    linhas = [("BTTS", "", 3, 0.1, 1.0, t1),
+              ("Over/Under", "mls", 5, -0.2, 0.9, t2)]
     monkeypatch.setattr(repo, "_conn",
                         lambda: _ConexaoGravadora(_CursorGravador(fetchall=linhas)))
 
     assert repo.carregar_vigentes() == {
-        ("BTTS", ""): {"versao": 3, "a": 0.1, "b": 1.0},
-        ("Over/Under", "mls"): {"versao": 5, "a": -0.2, "b": 0.9},
+        ("BTTS", ""): {"versao": 3, "a": 0.1, "b": 1.0, "criada_em": t1},
+        ("Over/Under", "mls"): {"versao": 5, "a": -0.2, "b": 0.9,
+                                "criada_em": t2},
     }
 
 
@@ -327,7 +335,8 @@ def test_carregar_vigentes_vazio(monkeypatch):
 def test_carregar_parametros_para_curva_formato(monkeypatch):
     import backend.modeling.calibragem.repositorio as repo
 
-    linhas = [("BTTS", "", 3, 0.1, 1.0)]
+    linhas = [("BTTS", "", 3, 0.1, 1.0,
+               datetime(2026, 8, 1, tzinfo=timezone.utc))]
     monkeypatch.setattr(repo, "_conn",
                         lambda: _ConexaoGravadora(_CursorGravador(fetchall=linhas)))
 
