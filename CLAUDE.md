@@ -71,6 +71,8 @@ Procedimento completo (pré-check obrigatório, update via S3, recriação da La
 
 `PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos no ledger); itens 2–4 do passo 4 já implementados (#232–#234). `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`. `LAMBDA_CORRECTIONS_TTL_S` (#231-a): cache por liga das correções do banco, padrão 300 s; `0` desliga.
 
+`CALIBRAGEM_ENABLED` (#248): liga o **ciclo de escrita** da camada de calibragem aprendida no cron. **Padrão `false` — deploy não é ativação.** Desligada, `ciclo.executar` devolve `{"status": "desligado"}` sem tocar o banco (nem DDL, nem leitura, nem escrita). Governa só a escrita: o *serving* segue ligado e, sem versões gravadas, delega ao legado (versão 0) — o painel publica o que publicava na véspera. Antes de ligar, ler a seção "C2" e "Pendência conhecida" da entrada #248 em `docs/REGISTRO_CORRECOES.md`: os limiares re-derivados ainda **não** são consumidos, e a trava de 2pp não é atingida no primeiro ciclo de uma célula na versão 0. `CALIBRAGEM_TTL_S` (#248): cache dos parâmetros vigentes no serving, padrão 300 s. `CALIBRAGEM_SEMENTE_PATH` (#248, opcional): artefato do backfill usado como semente.
+
 ## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
 
 ```

@@ -12977,6 +12977,95 @@ A medicao acima e UMA janela retida, nao os seis ciclos em producao — nao subs
 pre-registro, e a prova de que a implementacao funciona como projetada antes de ligar o ciclo
 automatico.
 
+### Onda de correcao pos-revisao final do ramo (2026-09-10)
+A revisao final do ramo de 27 commits achou 4 Criticos e 7 Importantes. Corrigidos nesta
+onda, cada um com commit proprio:
+
+- **C1 — a versao 0 nao e a identidade.** Tres lugares supunham `(a=0, b=1)` para a versao 0:
+  a trava de passo em `ciclo.executar`, o `parametros_antigos` da re-derivacao de limiares e o
+  teste de volume constante. A versao 0 delega a `calibrar_legado`, que fica 12-25 pontos
+  ABAIXO da identidade — a trava media contra uma curva que nunca foi publicada a ninguem.
+  Corrigido com `calibragem/linha_base.py`, que ajusta `(a0, b0)` a curva legada por minimos
+  quadrados no logit, um mercado representativo por familia (escolha documentada no modulo).
+  `curva.aplicar_versao` NAO mudou: a versao 0 continua servindo o legado byte a byte;
+  `(a0, b0)` e so referencial de medicao. MEDIDO contra o ledger (242 jogos, 5.484 picks), o
+  movimento real da probabilidade publicada no primeiro ciclo: Corners 25,07pp -> 16,95pp,
+  Cards 24,03pp -> 16,83pp (e Cards passava como **adotada**, nao encurtada), Double Chance
+  24,00 -> 16,79, 1X2 23,78 -> 16,76, BTTS 12,91 -> 9,33, Over/Under 12,63 -> 9,24.
+  **A trava de 2pp continua nao sendo atingida** — ver "Pendencia conhecida" abaixo.
+- **C2 — os limiares re-derivados sao escrita morta.** Ver a secao propria, abaixo.
+- **C3 — Double Chance nao resolvia familia no serving.** `_FAMILIAS` tinha `"dc "` e
+  `"dupla chance"`, mas `ev_classification` chama `_calibrar_com_detalhe` com
+  `"Double Chance 1X/12/X2"`: as tres levantavam `ValueError` e `aplicar_versao` engolia a
+  excecao SEM LOG. O estimador aprendia DC (600 picks) e o serving ignorava para sempre — a
+  mesma classe do Critico da Task 3, do outro lado da fronteira. Token acrescentado, o
+  `except` agora emite `logger.warning` nomeando o rotulo, e uma guarda por AST le os rotulos
+  direto das chamadas de producao em `ev_classification.py` (trava contra a terceira
+  ocorrencia).
+- **C4 — nao existia chave para desligar.** `CALIBRAGEM_ENABLED`, padrao `false`, no padrao do
+  `PROB_SOURCE` (#231) e do `PREDICTION_LEDGER_ENABLED` (#218). Desligada, `ciclo.executar`
+  devolve `{"status": "desligado"}` sem tocar o banco. Governa so a ESCRITA: o serving segue
+  ligado e, sem versoes gravadas, delega ao legado — o painel publica o que publicava na
+  vespera.
+- **I1 — a janela de reversao era in-sample.** `carregar_amostra()` sem `desde` e a amostra
+  INTEIRA alimentando `avaliar_reversao`: a vigente era julgada nos jogos em que foi ajustada,
+  um MLE quase sempre ganha no proprio treino, e a acao era sempre `manter`. `Pick` ganhou
+  `publicado_em`, `carregar_vigentes` devolve `criada_em`, e `ciclo.janela_de_reversao` filtra
+  `publicado_em > criada_em`. Sem essas datas a janela e VAZIA, nao a amostra inteira.
+- **I2 — `congelada` nao era pegajosa.** Ninguem lia o status de volta e a celula voltava a
+  adotar no ciclo seguinte. `repositorio.ultimo_status_de_ciclo` le a ultima DECISAO da celula
+  e o ciclo regrava `congelada` ate destravamento manual; o SQL de destravamento esta na
+  docstring da funcao.
+- **I6 — `connect_timeout` ausente.** `psycopg2.connect` sem prazo no caminho de `/fixtures`,
+  que ja namora o teto de 60s da Lambda. `connect_timeout=5` e um contextmanager `_conexao()`
+  que fecha no `finally` (`with conn` encerra a TRANSACAO, nao a conexao).
+- **I7 — nada impedia duas linhas `vigente`.** O indice parcial nao era `UNIQUE`. O antigo e
+  derrubado (mesmo nome, nao-unico: `CREATE ... IF NOT EXISTS` seria no-op) e nasce
+  `idx_calibragem_vigente_unico`, em transacao separada — banco com duplicatas anteriores
+  registra o erro nomeando as celulas em vez de quebrar `garantir_tabela`.
+- **A suite escrevia DDL na RDS de producao.** `test_11::test_executar_nunca_levanta_e_preenche_erro`
+  nao mockava `_conn`, entao `garantir_tabela()` rodava de verdade — foi assim que a tabela
+  `calibragem_versoes` nasceu la. O teste passou a mockar, e o `conftest.py` novo de
+  `tests/calibragem/` bloqueia `psycopg2.connect` no diretorio inteiro.
+
+### C2 — os limiares sao CALCULADOS e REGISTRADOS, mas ainda NAO CONSUMIDOS
+Precisa estar escrito sem rodeio: `ciclo.executar` chama `limiares.rederivar`, grava
+`safe_ev`, `neutro_ev`, `safe_edge` e `neutro_edge` na linha de `calibragem_versoes` — e
+**`_get_thresholds` em `ev_classification.py` nao le essa tabela**. Os quatro valores sao
+escrita morta hoje: existem para auditoria, nao servem numero a ninguem.
+
+Isso foi mantido DE PROPOSITO nesta onda, e ligar o consumo e **decisao separada**, pelo
+motivo medido: com a probabilidade corrigida e os limiares atuais, o volume publicado
+aproximadamente DOBRA (medido no #248: picks de EV positivo de 13,8% para 25,2%; SAFE de
+Corners de 106 para 306 no primeiro ciclo). A re-derivacao existe justamente para segurar
+isso, mas ela so segura o salto certo se a linha de base estiver certa — e a correcao C1
+acabou de mostrar que ela nao estava. Com `CALIBRAGEM_ENABLED` desligada, nada disso e risco
+vivo; e pendencia documentada.
+
+Ligar o consumo exige, na ordem: (1) `CALIBRAGEM_ENABLED=true` e alguns ciclos rodando com a
+linha de base corrigida; (2) conferir na tabela que os quatro valores gravados reproduzem o
+volume da versao anterior; (3) so entao ensinar `_get_thresholds` a le-los, com entrada
+propria no REGISTRO.
+
+### Pendencia conhecida: a trava de 2pp nao e atingida no primeiro ciclo
+A correcao C1 reduz o erro de referencia, nao o elimina. Dois parametros no logit **nao**
+reproduzem a pilha de bandas — a propria spec diz isso na secao 6.1, e a medicao confirma: o
+erro maximo do ajuste e 8,14pp no ramo de meia-banda (O/U, BTTS) e 15,47pp no de banda
+inteira (Corners, Cards, 1X2, Double Chance). E nao e culpa do metodo de ajuste: a melhor
+curva de dois parametros POSSIVEL (busca em grade minimizando o erro maximo em espaco de
+probabilidade) ainda erra 6,03pp e 9,45pp. A causa e a forma — o legado satura (p=0,98 sai em
+0,8575 / 0,7350 por causa da banda de 25%) enquanto qualquer logistica com `b>0` sobe ate 1.
+
+Consequencia pratica: enquanto a celula estiver na versao 0, a trava mede contra uma
+aproximacao, e o primeiro ciclo pode mover ate ~17pp em vez dos 2pp declarados. A partir do
+segundo ciclo o problema some (vigente e proposta sao ambas curvas `(a,b)`, e a distancia
+entre elas e exata). O conserto de verdade, se o primeiro ciclo precisar respeitar os 2pp, e
+a trava aceitar uma FUNCAO como vigente em vez de um par `(a,b)` — medindo
+`max |curva_nova(p) - legado(p)|` direto, com a busca do fator de encurtamento por varredura
+em `t` (a bisseccao atual depende da monotonicidade da distancia curva-contra-curva, que nao
+vale contra uma funcao arbitraria). Nao foi feito aqui porque esta fora do escopo desta onda
+e porque, com a flag desligada, nao ha risco vivo.
+
 ### Licao aprendida
 A pergunta certa nao era "a camada aprende?" — era "o que ela aprende alem de nao
 deflacionar?". A resposta, medida, e pouca: o ganho de aprendizado sobre o RAW e uma ordem de
