@@ -13,6 +13,7 @@ from typing import Any, Dict, List, NamedTuple, Optional
 from backend.modeling.calibragem.curva import (
     base_da_composicao, familia_do_mercado,
 )
+from backend.modeling.calibragem.limiares import CAMPOS as CAMPOS_LIMIAR
 
 logger = logging.getLogger("sportsbankzu.calibragem.repositorio")
 
@@ -504,22 +505,93 @@ def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
     return len(linhas)
 
 
+# A leitura de `vigente` e UMA so, e traz a curva E os limiares (#249). Duas
+# consultas seriam duas conexoes por container frio no caminho de `/fixtures`,
+# que ja namora o teto de 60s da Lambda — e, pior, curva e limiar poderiam vir
+# de instantes diferentes, que e exatamente a convivencia de dois regimes que
+# o #244 mediu. A ordem das quatro colunas vem de `limiares.CAMPOS`, entao a
+# lista nao existe duas vezes.
+SQL_VIGENTES = """
+    SELECT familia, liga, versao, a, b, criada_em, {campos}
+      FROM calibragem_versoes
+     WHERE status = 'vigente'
+""".format(campos=", ".join(CAMPOS_LIMIAR))
+
+
 def carregar_vigentes() -> Dict[tuple, Dict[str, Any]]:
-    """As celulas vigentes, COM `criada_em`.
+    """As celulas vigentes, COM `criada_em` e COM os limiares re-derivados.
 
     `criada_em` nao e enfeite de auditoria: e o inicio da janela de reversao
     (#248, I1). Os jogos que uma versao pode julgar sao os que ela serviu, e
     isso e exatamente `published_at > criada_em`.
+
+    `limiares` carrega so os campos NAO NULOS entre `safe_ev`, `neutro_ev`,
+    `safe_edge` e `neutro_edge` — a linha de uma celula sem re-derivacao
+    (familia sem pick com odd, por exemplo) grava os quatro como NULL, e
+    NULL nao pode virar 0,0 no caminho de decisao.
     """
     with _conexao() as c, c.cursor() as cur:
-        cur.execute("""
-            SELECT familia, liga, versao, a, b, criada_em
-              FROM calibragem_versoes
-             WHERE status = 'vigente'
-        """)
-        return {(r[0], r[1]): {"versao": r[2], "a": float(r[3]),
-                               "b": float(r[4]), "criada_em": r[5]}
-                for r in cur.fetchall()}
+        cur.execute(SQL_VIGENTES)
+        saida = {}
+        for r in cur.fetchall():
+            limiares = {campo: float(valor)
+                        for campo, valor in zip(CAMPOS_LIMIAR, r[6:])
+                        if valor is not None}
+            saida[(r[0], r[1])] = {"versao": r[2], "a": float(r[3]),
+                                   "b": float(r[4]), "criada_em": r[5],
+                                   "limiares": limiares}
+        return saida
+
+
+def limiares_por_familia(vigentes: Dict[tuple, Dict[str, Any]]) -> Dict[str, dict]:
+    """Os quatro limiares por FAMILIA, a partir das celulas vigentes.
+
+    `DEFAULT_THRESHOLDS` nao tem granularidade de liga, e a re-derivacao
+    tambem nao: `ciclo.executar` calcula um jogo de limiares por familia e
+    grava o MESMO em toda linha daquela familia. A celula canonica e
+    portanto `(familia, "")` — a celula-familia.
+
+    Fallback deliberado: se a celula-familia nao esta vigente (congelada num
+    ciclo anterior, por exemplo) mas alguma celula de liga da mesma familia
+    esta, os limiares saem da linha vigente mais recente da familia. Todas
+    carregam o mesmo valor por construcao; deixar a familia sem limiar
+    enquanto a curva de uma liga dela ja se moveu seria publicar volume
+    maior com o limiar velho — o defeito que a re-derivacao existe para
+    impedir.
+    """
+    saida: Dict[str, dict] = {}
+    reservas: Dict[str, tuple] = {}
+    for (familia, liga), cel in vigentes.items():
+        limiares = cel.get("limiares") or {}
+        if not limiares:
+            continue
+        if not liga:
+            saida[familia] = dict(limiares)
+            continue
+        anterior = reservas.get(familia)
+        criada_em = cel.get("criada_em")
+        if anterior is None or _mais_recente(criada_em, anterior[0]):
+            reservas[familia] = (criada_em, dict(limiares))
+    for familia, (_criada_em, limiares) in reservas.items():
+        if familia in saida:
+            continue
+        logger.warning(
+            "[calibragem] familia '%s' sem celula-familia vigente; limiares "
+            "servidos da linha de liga mais recente", familia)
+        saida[familia] = limiares
+    return saida
+
+
+def _mais_recente(candidata, atual) -> bool:
+    """`candidata > atual`, tolerante a `None` e a fusos incomparaveis."""
+    if atual is None:
+        return True
+    if candidata is None:
+        return False
+    try:
+        return candidata > atual
+    except TypeError:                                        # noqa: BLE001
+        return False
 
 
 def carregar_anterior(familia: str, liga: str) -> Optional[Dict[str, Any]]:

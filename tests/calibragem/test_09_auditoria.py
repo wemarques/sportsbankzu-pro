@@ -326,15 +326,21 @@ def test_carregar_vigentes_formato(monkeypatch):
 
     t1 = datetime(2026, 8, 1, 3, 0, tzinfo=timezone.utc)
     t2 = datetime(2026, 9, 1, 3, 0, tzinfo=timezone.utc)
-    linhas = [("BTTS", "", 3, 0.1, 1.0, t1),
-              ("Over/Under", "mls", 5, -0.2, 0.9, t2)]
+    # #249: a mesma leitura traz os quatro limiares re-derivados. A linha do
+    # BTTS os tem; a do Over/Under esta com os quatro NULL (celula sem
+    # re-derivacao) e tem de virar `{}` — NULL nao pode virar 0,0 no caminho
+    # de decisao.
+    linhas = [("BTTS", "", 3, 0.1, 1.0, t1, 0.07, 0.01, 0.05, 0.02),
+              ("Over/Under", "mls", 5, -0.2, 0.9, t2, None, None, None, None)]
     monkeypatch.setattr(repo, "_conn",
                         lambda: _ConexaoGravadora(_CursorGravador(fetchall=linhas)))
 
     assert repo.carregar_vigentes() == {
-        ("BTTS", ""): {"versao": 3, "a": 0.1, "b": 1.0, "criada_em": t1},
+        ("BTTS", ""): {"versao": 3, "a": 0.1, "b": 1.0, "criada_em": t1,
+                       "limiares": {"safe_ev": 0.07, "neutro_ev": 0.01,
+                                    "safe_edge": 0.05, "neutro_edge": 0.02}},
         ("Over/Under", "mls"): {"versao": 5, "a": -0.2, "b": 0.9,
-                                "criada_em": t2},
+                                "criada_em": t2, "limiares": {}},
     }
 
 

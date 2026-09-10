@@ -346,27 +346,75 @@ def _get_calibrated_threshold(league_id: str | None, market_category: str) -> Di
         return None
 
 
+# Os quatro campos que a camada de calibragem re-deriva (#249). A lista mora
+# em `limiares.CAMPOS`, junto de quem os calcula; aqui so se le. `safe_prob` e
+# `neutro_prob` NAO estao nela de proposito: a classificacao usa prob RAW
+# (proibicao 11 do CLAUDE.md), e o raw nao se move com a curva.
+_CAMPOS_DA_CALIBRAGEM = ("safe_ev", "neutro_ev", "safe_edge", "neutro_edge")
+
+
+def _limiares_da_calibragem(market_category: str) -> Dict[str, float]:
+    """Os limiares re-derivados da versao vigente da familia (#249).
+
+    `market_category` e `curva.familia_do_mercado` falam o MESMO vocabulario
+    — os seis rotulos de `DEFAULT_THRESHOLDS` — e
+    `tests/calibragem/test_14_consumo_limiares.py` trava a igualdade dos dois
+    conjuntos. Nao ha traducao aqui, e nao deve haver: uma tabela de
+    equivalencia e onde escanteios viraram gols no #248.
+
+    Devolve `{}` quando nao ha versao vigente, quando a camada nunca rodou ou
+    quando o banco esta fora — nos tres casos o chamador fica com os limiares
+    de hoje. Nunca levanta: isto roda por mercado, por jogo, por liga.
+    """
+    try:
+        from backend.modeling.calibragem.ciclo import limiares_vigentes
+        da_familia = limiares_vigentes().get(market_category) or {}
+    except Exception as e:                                   # noqa: BLE001
+        logger.warning(
+            "[threshold] limiares da calibragem indisponiveis para '%s' (%s) "
+            "— seguindo com os limiares atuais", market_category, e)
+        return {}
+    return {campo: float(valor) for campo, valor in da_familia.items()
+            if campo in _CAMPOS_DA_CALIBRAGEM and valor is not None}
+
+
 def _get_thresholds(market_category: str, league_id: str | None = None) -> Dict[str, float]:
-    """Get thresholds with priority: calibrated per-league > audit DB > defaults."""
+    """Thresholds por prioridade: calibragem (#249) > per-league > audit DB > defaults.
+
+    A camada de calibragem entra por ULTIMO e so nos quatro campos de
+    EV/edge (#249). Ela e a unica fonte que sabe qual limiar preserva o
+    volume publicado sob a curva que esta no ar: `ciclo.executar` re-deriva
+    os quatro na MESMA linha de auditoria em que grava `(a, b)`, e servir a
+    curva nova com o limiar velho e o que dobra o volume (medido no #248:
+    picks de EV positivo de 13,8% para 25,2%).
+
+    As fontes 1 e 2 continuam exatamente como estavam, inclusive o
+    curto-circuito: uma calibracao per-league presente PULA o audit DB. Elas
+    so tocam `safe_prob`/`neutro_prob` — medido contra o banco de producao
+    nas 22 ligas x 6 categorias, zero divergencia nos quatro campos de
+    EV/edge —, entao nao ha campo disputado entre as tres.
+    """
     base = dict(DEFAULT_THRESHOLDS.get(market_category, DEFAULT_THRESHOLDS["1X2"]))
 
     # 1. Check per-league calibration (#055)
     calibrated = _get_calibrated_threshold(league_id, market_category)
     if calibrated:
         base.update(calibrated)
-        return base
+    else:
+        # 2. Check audit DB dynamic thresholds
+        try:
+            from backend.services.market_service import _get_dynamic_thresholds
+            db_th = _get_dynamic_thresholds(market_category)
+            if db_th:
+                if "SAFE" in db_th:
+                    base["safe_prob"] = db_th["SAFE"]
+                if "NEUTRO" in db_th:
+                    base["neutro_prob"] = db_th["NEUTRO"]
+        except Exception:
+            pass
 
-    # 2. Check audit DB dynamic thresholds
-    try:
-        from backend.services.market_service import _get_dynamic_thresholds
-        db_th = _get_dynamic_thresholds(market_category)
-        if db_th:
-            if "SAFE" in db_th:
-                base["safe_prob"] = db_th["SAFE"]
-            if "NEUTRO" in db_th:
-                base["neutro_prob"] = db_th["NEUTRO"]
-    except Exception:
-        pass
+    # 3. Camada de calibragem aprendida (#249) — so os quatro de EV/edge.
+    base.update(_limiares_da_calibragem(market_category))
 
     return base
 
