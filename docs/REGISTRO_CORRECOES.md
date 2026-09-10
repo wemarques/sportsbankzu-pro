@@ -13134,3 +13134,125 @@ grandeza menor que o ganho de parar de deflacionar. Registrar os dois numeros se
 problema" quando o que resolveu foi desligar um mecanismo que, pelo #245, nunca deveria ter
 existido na intensidade atual em cinco das seis familias.
 
+## 249 — Os limiares re-derivados deixam de ser escrita morta: `_get_thresholds` passa a le-los
+**Data:** 2026-09-10 | **Arquivos:** `backend/services/ev_classification.py`, `backend/modeling/calibragem/repositorio.py`, `backend/modeling/calibragem/ciclo.py`, `scripts/ensaio_calibragem.py` (novo), `tests/calibragem/test_14_consumo_limiares.py` (novo), `tests/calibragem/fixtures/amostra_producao.json` (novo), `tests/calibragem/test_09_auditoria.py`, `tests/calibragem/test_11_ciclo.py` | **Severidade:** Critica (decide o volume publicado no dia em que a camada for ligada) | **Status:** Implementado — `CALIBRAGEM_ENABLED` continua DESLIGADA; com ela desligada este consumo e um no-op provado por teste
+
+### Por que entrada propria, e nao adendo ao #248
+O proprio #248 pre-registrou a ordem: "(3) so entao ensinar `_get_thresholds` a le-los, **com
+entrada propria no REGISTRO**". O #248 fecha o pacote que CALCULA e GRAVA; este fecha o que LE.
+Sao decisoes separaveis e reversiveis separadamente — desfazer este consumo nao desfaz a camada.
+
+### Problema identificado
+`ciclo.executar` re-deriva `safe_ev`, `neutro_ev`, `safe_edge` e `neutro_edge` por familia e os
+grava na mesma linha de `calibragem_versoes` em que grava `(a, b)`. Nenhum leitor existia: um
+`grep safe_ev` em `backend/services/` devolvia zero. Ligar a camada nesse estado publica a
+curva nova contra o limiar velho — **medido no #248: picks de EV positivo de 13,8% para 25,2%,
+Double Chance de 2 para 41**. Mais picks, nao picks melhores: exatamente o oposto do objetivo,
+e a razao de a re-derivacao existir.
+
+### Medicao de precedencia ANTES de implementar (o passo que decidia se dava para seguir)
+A re-derivacao usa `DEFAULT_THRESHOLDS` como linha de base (`ciclo._limiares_atuais`). Se
+alguma das duas fontes ja existentes de `_get_thresholds` sobrescrevesse EV/edge, a
+re-derivacao estaria computada contra a linha de base errada e o volume NAO seria preservado —
+e a correcao seria no `ciclo`, nao no consumidor. Medido contra a RDS de producao, 22 ligas x
+6 categorias = 132 combinacoes:
+
+| medicao | resultado |
+|---|---|
+| parametros distintos em `corrections` (status=applied, todas as ligas) | **0** — a fonte 1 esta inerte hoje |
+| retornos de `_get_calibrated_threshold` nas 132 combinacoes | 132 `None`, 0 dicts |
+| divergencia de `_get_thresholds` contra `DEFAULT_THRESHOLDS` nos 4 campos de EV/edge | **0 em 132** |
+| contraprova (a medicao nao e vacua): `safe_prob` sobrescrito | **110 de 132** combinacoes, pela fonte 2 (`_get_dynamic_thresholds`) |
+
+Ou seja: **nao ha conflito.** A fonte 1 so pode devolver `{"safe_prob": ...}` (o `param_map`
+mapeia seis chaves `safe_prob_*` e o `return` e literal) e hoje nem isso devolve; a fonte 2 so
+escreve `safe_prob`/`neutro_prob`. `DEFAULT_THRESHOLDS` e a linha de base certa e o trabalho
+seguiu.
+
+### Correcoes aplicadas
+1. **Terceira fonte em `_get_thresholds`, por ULTIMO e so nos quatro campos.**
+   `_limiares_da_calibragem(market_category)` le a versao vigente da familia e devolve apenas
+   os campos de `limiares.CAMPOS` nao nulos. `safe_prob`/`neutro_prob` continuam intocados —
+   a classificacao usa prob RAW (proibicao 11), e o raw nao se move com a curva.
+   O curto-circuito das fontes 1 e 2 (calibracao per-league presente PULA o audit DB) fica
+   como estava: a funcao passou a ter um `return` unico em vez de dois, para que a fonte nova
+   se aplique nos dois caminhos.
+2. **Vocabulario de familia verificado, nao presumido.** `_market_category` (consumidor) e
+   `curva.familia_do_mercado` (produtor) devolvem o MESMO conjunto de seis rotulos. Um teste
+   por AST le os `return` literais de `_market_category` e compara com os tokens de
+   `curva._FAMILIAS` e com as chaves de `DEFAULT_THRESHOLDS`: divergencia de vocabulario e a
+   classe de defeito que ja custou dois Criticos nesta linha (escanteios virando gols; DC sem
+   resolver familia).
+3. **Uma consulta serve curva E limiares.** `carregar_vigentes` passou a trazer as quatro
+   colunas na mesma leitura, e `ciclo` ganhou um cache unico (`_servir_com_cache`) que alimenta
+   `parametros_vigentes` e o novo `limiares_vigentes`. Duas consultas separadas custariam duas
+   conexoes por container frio no caminho de `/fixtures` (que ja namora o teto de 60s da
+   Lambda) e, pior, admitiriam um instante com a curva nova e o limiar velho — o volume
+   dobrando por causa de ordem de leitura.
+4. **NULL nao vira 0,0.** A linha de uma celula sem re-derivacao (familia sem pick com odd)
+   grava os quatro campos como NULL. `carregar_vigentes` os omite do dict em vez de converte-los;
+   `safe_ev = 0.0` publicaria tudo. Mesma familia da proibicao 15.
+5. **Falha de banco nao muda numero.** Cai nos limiares de hoje e registra. As duas pontas
+   ficam coerentes por construcao: sem parametros a curva e a versao 0, e os limiares de hoje
+   sao os que a versao 0 calibrou. O caso incoerente possivel (`_SNAPSHOT` com curva e sem
+   limiares) esta logado como erro nomeando o risco — hoje `_SNAPSHOT` e vazio.
+6. **`ciclo.planejar` extraida de `ciclo.executar`.** Mesmo miolo de decisao, sem escrever
+   nada; e o que o ensaio roda. Uma copia da decisao dentro do script seria a proibicao 5 e
+   divergiria do ciclo justamente no dia em que alguem confiasse no ensaio.
+7. **`scripts/ensaio_calibragem.py`.** Roda a computacao do primeiro ciclo contra producao e
+   imprime, por celula, o `(a, b)` proposto, o status da governanca, o fator de encurtamento,
+   o movimento em pontos de probabilidade e os quatro limiares re-derivados; no fim, a
+   contagem de picks por classe antes e depois. Nao chama `gravar_ciclo` nem `garantir_tabela`,
+   e uma guarda em tempo de execucao substitui os tres metodos de escrita por funcoes que
+   levantam.
+
+### Prova empirica (proibicao 14) — o ensaio do primeiro ciclo, contra a RDS
+5.578 picks / 246 jogos / 3.831 com odd; 0 celulas vigentes no banco (todas na versao 0). As
+seis celulas-familia saem `encurtada` com movimento de 2,00pp (a trava), e 12 celulas de liga
+tambem; as demais ficam `abaixo_do_piso`.
+
+```
+CONTAGEM DE PICKS POR CLASSE
+familia                     hoje    curva nova,    curva nova,
+                      (versao 0)   limiar velho    limiar novo
+BTTS          safe            14             15             14
+              neu             11             16             11
+Cards         safe            30             42             30
+              neu             22             29             22
+Corners       safe           109            126            109
+              neu             87            107             87
+Double Chance safe             1              1              1
+              neu              0              1              0
+Over/Under    safe           134            154            134
+              neu             84             80             84
+TOTAL                        492            571            492
+```
+
+**492 -> 492, exato.** Sem a re-derivacao seriam 571 (+16,1%) — e essa e a medicao que
+justifica a tarefa: o consumo nao e enfeite de auditoria, e o que impede o salto de volume.
+
+### Cenarios de borda e fallback (o que acontece quando falta algo)
+| situacao | comportamento | travado por |
+|---|---|---|
+| sem versao vigente (hoje) | limiares identicos aos de hoje | `test_sem_versao_vigente_...`, `test_com_a_camada_desligada_...` |
+| celula-familia congelada, celula de liga vigente | limiares saem da linha de liga mais recente, com WARNING | `test_celula_de_liga_supre_a_familia...` |
+| campo NULL no banco | aquele campo fica no valor de hoje | `test_limiar_NULO_no_banco_nao_vira_zero` |
+| banco fora do ar | limiares de hoje + ERROR nomeando a queda | `test_banco_fora_do_ar_...` |
+| falha inesperada no consumidor | limiares de hoje + WARNING | `test_falha_dentro_do_consumidor_...` |
+| `_get_thresholds` chamado 300x | 1 conexao (cache por TTL) | `test_uma_conexao_por_TTL_e_nao_por_chamada` |
+
+### Residuo conhecido, medido e NAO corrigido aqui
+`limiares._quantil_que_preserva` devolve `None` quando a contagem alvo e **zero**: uma familia
+que hoje publica 0 picks nao tem quantil que preserve 0 (preservar zero exigiria um corte acima
+do maximo). Os quatro limiares ficam inalterados e, se a curva subir, aquela familia pode sair
+de 0 para algum numero. Medido no ensaio: **1X2 e a unica familia nessa condicao (0 picks hoje)
+e continua em 0 com a curva nova** — nao ha efeito vivo. Fica registrado porque o dia em que
+1X2 sair de 0 e um dia em que este mecanismo nao segura o volume.
+
+### Licao aprendida
+A pergunta que decidia a tarefa nao era "como ler a tabela" — era "contra qual linha de base a
+re-derivacao foi computada, e alguem sobrescreve essa linha de base depois?". Medir as tres
+fontes contra o banco real ANTES de escrever codigo custou um script de 60 linhas e teria
+mudado o destino do trabalho inteiro (a correcao seria no `ciclo`, nao no consumidor) se a
+resposta fosse outra. A contraprova — mostrar que 110 de 132 combinacoes MUDAM `safe_prob` —
+e o que impede a medicao de ser vacuamente verdadeira por a consulta estar quebrada.
