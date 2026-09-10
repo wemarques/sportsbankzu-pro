@@ -103,19 +103,23 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
             resumo["celulas"] += 1
             vig = vigentes.get(chave) or {"versao": VERSAO_LEGADO, "a": 0.0, "b": 1.0}
             servidos = por_celula.get(chave, [])
-            reversoes = repositorio.contar_reversoes_seguidas(familia, liga)
 
             # A reversao compara vigente contra ANTERIOR (a versao substituida
             # mais recente), nunca vigente contra ela mesma — isso faria os
             # dois briers ficarem sempre iguais e a reversao nunca disparar.
             # Sem anterior (celula nova, caso normal nos primeiros ciclos) nao
             # ha para onde reverter: pula a avaliacao e segue para a proposta,
-            # marcando o motivo para a auditoria.
+            # marcando o motivo para a auditoria. `contar_reversoes_seguidas`
+            # so e usada dentro de `avaliar_reversao` — sem anterior essa
+            # avaliacao nem roda, entao a contagem fica dentro do ramo que a
+            # consome, em vez de uma ida ao banco descartada por celula nova
+            # em todo ciclo.
             anterior = repositorio.carregar_anterior(familia, liga)
             if anterior is None:
                 rev = {"acao": "manter", "motivo": "sem_anterior",
                       "limite_proximo": PASSO_MAXIMO_PP}
             else:
+                reversoes = repositorio.contar_reversoes_seguidas(familia, liga)
                 rev = governanca.avaliar_reversao(
                     servidos, {"a": vig["a"], "b": vig["b"]},
                     {"a": anterior["a"], "b": anterior["b"]}, reversoes)
