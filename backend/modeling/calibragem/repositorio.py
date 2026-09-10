@@ -10,7 +10,9 @@ import os
 from contextlib import contextmanager
 from typing import Any, Dict, List, NamedTuple, Optional
 
-from backend.modeling.calibragem.curva import familia_do_mercado
+from backend.modeling.calibragem.curva import (
+    base_da_composicao, familia_do_mercado,
+)
 
 logger = logging.getLogger("sportsbankzu.calibragem.repositorio")
 
@@ -75,6 +77,16 @@ class Pick(NamedTuple):
     # sobre os mesmos jogos em que foi ajustada, um MLE quase sempre ganha no
     # proprio treino, e a acao era sempre `manter`.
     publicado_em: Optional[Any] = None
+    # O que a VERSAO 0 publicaria para este pick: `legado(p_raw)`. E o
+    # REGRESSOR da camada desde a composicao (#248, C1) -- o estimador ajusta
+    # `(a, b)` sobre `logit(p_legado)`, a governanca mede o Brier sobre
+    # `aplicar(p_legado, a, b)`, e a re-derivacao de limiares conta volume
+    # sobre a mesma entrada. `None` e defeito de construcao, nunca fallback:
+    # `curva.entrada_da_curva` levanta em vez de cair em `p_raw`.
+    #
+    # Fica por ultimo, com default, para nao quebrar a construcao posicional
+    # de cinco argumentos que `test_03` ancora.
+    p_legado: Optional[float] = None
 
 
 # #248, I6: `_calibrar_com_detalhe` alcanca este modulo pelo caminho de
@@ -186,6 +198,133 @@ def classificar_familia(market: str, selection: str) -> Optional[str]:
         return None
 
 
+# O ledger NAO grava o regime (`prediction_ledger` nao tem a coluna, e
+# `inputs` tampouco carrega a chave -- verificado). "NORMAL" e o regime
+# padrao e o unico que o pacote pode assumir sem inventar dado. Efeito
+# medido do que se perde: `regime` so entra em `calibrate_prob` como a
+# SEGUNDA chave da cadeia de fallback (`market|""|regime`), consultada
+# apenas quando nao existe modelo `market|liga|""`; a deflacao por banda,
+# por liga e o ramo meia/inteira nao olham o regime. LACUNA REGISTRADA:
+# picks servidos em HIPER-OFENSIVA sao reconstruidos como NORMAL aqui.
+REGIME_DA_AMOSTRA = "NORMAL"
+
+
+def rotulo_do_legado(market: str, selection: str) -> Optional[str]:
+    """O rotulo de EXIBICAO que `calibrar_legado` espera, a partir do par
+    (market, selection) que o ledger grava em ingles.
+
+    Isto NAO e cosmetico e nao pode ser aproximado. O rotulo decide duas
+    coisas dentro da versao 0:
+
+      1. o MODELO ISOTONICO (`calibrator.calibrate_prob` procura o pickle
+         por `market|liga`, depois `market|regime`, depois `market|global`,
+         depois `familia|...`) -- rotulo errado, modelo errado;
+      2. o RAMO DA BANDA (`market.upper() == "BTTS"` -> meia-btts;
+         `market.lower().startswith(("over ","under "))` -> meia; qualquer
+         outro -> banda INTEIRA). Um escanteio que chegasse como
+         "Corners Over 9.5" comeca com "corners", cai no ramo `else` e
+         acerta a banda por acidente; um cartao que chegasse como
+         "Over 3.5" (a forma CRUA do ledger) cairia na meia banda -- a
+         familia inteira sairia da banda errada, e o `p_legado` iria com ela.
+
+    A tabela abaixo REPRODUZ o que `backend/services/ev_classification.py`
+    passa a `_calibrar_com_detalhe` em producao, lido linha a linha do
+    proprio arquivo (blocos de 1X2, O/U, BTTS, DC, escanteios e cartoes) e
+    conferido contra os 44 pares (market, selection) que o
+    `prediction_ledger` de fato guarda hoje:
+
+        ledger                                -> rotulo do legado
+        1X2            | Home/Draw/Away        -> 1X2_home / 1X2_draw / 1X2_away
+        Over/Under     | Over 2.5              -> Over 2.5            (identico)
+        BTTS           | BTTS Yes              -> BTTS
+        Double Chance  | DC 1X / DC 12 / DC X2 -> Double Chance 1X/12/X2
+        Corners        | Corners Over 9.5      -> Escanteios Over 9.5
+        Cards          | Over 3.5              -> Cartoes Over 3.5
+
+    `None` (nao um palpite) quando o `market` nao esta na tabela: sem o
+    rotulo certo nao ha `p_legado` correto, e treinar sobre um `p_legado`
+    da banda errada e pior que descartar o pick. O chamador loga e descarta.
+    """
+    m = (market or "").strip()
+    s = (selection or "").strip()
+    if not s and m != "BTTS":
+        return None
+    if m == "1X2":
+        return f"1X2_{s.lower()}"
+    if m == "Over/Under":
+        return s
+    if m == "BTTS":
+        return "BTTS"
+    if m == "Double Chance":
+        # "DC 1X" -> "Double Chance 1X". Ja veio em forma longa: passa reto.
+        if s.lower().startswith("dc "):
+            return f"Double Chance {s[3:].strip()}"
+        return s if s.lower().startswith("double chance") else None
+    if m == "Corners":
+        # "Corners Over 9.5" -> "Escanteios Over 9.5".
+        if s.lower().startswith("corners "):
+            return f"Escanteios {s[len('Corners '):].strip()}"
+        return s if s.lower().startswith("escanteios") else f"Escanteios {s}"
+    if m == "Cards":
+        # "Over 3.5" -> "Cartoes Over 3.5". Mesmo tratamento que
+        # `prediction_ledger.rotulo_para_avaliador` da ao avaliador.
+        if s.lower().startswith(("cart", "card")):
+            return s
+        return f"Cartoes {s}"
+    return None
+
+
+def _aquecer_correcoes_por_liga(ligas) -> int:
+    """Uma consulta por LIGA em vez de uma por PICK.
+
+    `calibrar_legado` chama `poisson_matrix._get_league_deflation(liga)`, que
+    chama `lambda_calculator.get_lambda_corrections(liga)` -- uma consulta ao
+    banco. Com ~5.000 picks e 20 ligas, o laco ingenuo dispararia uma
+    consulta por pick de O/U. `get_lambda_corrections` ja tem cache por liga
+    com TTL (#231-a), entao basta aquece-lo uma vez por liga ANTES do laco:
+    dai em diante toda chamada e acerto de cache.
+
+    RESSALVA MEDIDA, escrita aqui em vez de escondida: com
+    `LAMBDA_CORRECTIONS_TTL_S=0` o cache do #231-a esta DESLIGADO por
+    configuracao e este aquecimento nao compra nada -- o laco volta a uma
+    consulta por pick de O/U. Nao ha conserto local: forcar o cache aqui
+    seria contrariar a chave que o operador ligou de proposito.
+
+    Devolve quantas ligas foram aquecidas (o teste conta as consultas).
+    """
+    from backend.modeling.lambda_calculator import get_lambda_corrections
+    aquecidas = 0
+    for liga in sorted({l for l in ligas if l}):
+        try:
+            get_lambda_corrections(liga)
+            aquecidas += 1
+        except Exception as e:                               # noqa: BLE001
+            logger.warning("[calibragem] correcoes de '%s' nao aquecidas: %s",
+                           liga, e)
+    return aquecidas
+
+
+@contextmanager
+def _trace_do_legado_silenciado():
+    """Cala o GOLS-TRACE/CALIB-TRACE durante a reconstrucao de `p_legado`.
+
+    `calibrar_legado` emite uma linha INFO por chamada, no logger
+    `sportsbankzu.ev_classification`. Reconstruir 5.000 picks por ciclo
+    despejaria 5.000 linhas com o prefixo que o `REGRAS_ATIVAS` documenta
+    para grep de PRODUCAO -- e nenhuma delas corresponde a um pick
+    publicado. O rastro deixaria de servir para o que existe.
+
+    Escopo minimo e reversivel: o nivel volta ao que era no `finally`.
+    """
+    log_legado = logging.getLogger("sportsbankzu.ev_classification")
+    anterior = log_legado.level
+    log_legado.setLevel(logging.WARNING)
+    try:
+        yield
+    finally:
+        log_legado.setLevel(anterior)
+
+
 def escolher_ultima_geracao(linhas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Uma linha por (match_id, market, selection): a ultima ANTES do kickoff.
 
@@ -238,19 +377,43 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
             for r in cur.fetchall()
         ]
 
-    saida: List[Pick] = []
-    sem_familia = 0
+    # Primeira passada: familia e rotulo do legado, SEM tocar o legado ainda.
+    # A separacao existe para extrair as ligas distintas antes do laco caro e
+    # aquecer o cache de correcoes uma vez por liga (ver
+    # `_aquecer_correcoes_por_liga`).
+    preparadas = []
+    sem_familia = sem_rotulo = 0
     for ln in escolher_ultima_geracao(brutas):
         familia = classificar_familia(ln["market"], ln["selection"])
         if familia is None:
             sem_familia += 1
             continue
-        saida.append(Pick(ln["match_id"], familia, ln["league_id"],
-                          ln["raw_prob"], int(bool(int(ln["outcome"]))),
-                          ln["book_odd"], ln["selection"],
-                          ln["published_at"]))
+        rotulo = rotulo_do_legado(ln["market"], ln["selection"])
+        if rotulo is None:
+            sem_rotulo += 1
+            continue
+        preparadas.append((ln, familia, rotulo))
+
+    _aquecer_correcoes_por_liga(ln["league_id"] for ln, _, _ in preparadas)
+
+    saida: List[Pick] = []
+    with _trace_do_legado_silenciado():
+        for ln, familia, rotulo in preparadas:
+            p_legado = base_da_composicao(ln["raw_prob"], rotulo,
+                                          ln["league_id"], REGIME_DA_AMOSTRA)
+            saida.append(Pick(ln["match_id"], familia, ln["league_id"],
+                              ln["raw_prob"], int(bool(int(ln["outcome"]))),
+                              ln["book_odd"], ln["selection"],
+                              ln["published_at"], p_legado))
     if sem_familia:
         logger.warning("[calibragem] %d picks sem familia reconhecida", sem_familia)
+    if sem_rotulo:
+        logger.warning(
+            "[calibragem] %d picks com familia reconhecida mas SEM rotulo do "
+            "legado -- descartados. Um `market` novo entrou no ledger e nao "
+            "esta em `rotulo_do_legado`; sem o rotulo certo o `p_legado` sai "
+            "da banda errada e treinar sobre ele e pior que descartar.",
+            sem_rotulo)
     return saida
 
 
@@ -483,17 +646,34 @@ def carregar_semente_backfill(caminho: str) -> List[Pick]:
         logger.warning("[calibragem] semente ilegivel: %s", e)
         return []
 
-    saida: List[Pick] = []
+    preparadas = []
     for d in dados:
         market = d.get("market", "")
         selection = d.get("selection", "")
         familia = classificar_familia(market, selection)
         if familia is None:
             continue
+        rotulo = rotulo_do_legado(market, selection)
+        if rotulo is None:
+            continue
         raw, y = d.get("raw_prob"), d.get("outcome")
         if raw is None or y is None:
             continue
-        saida.append(Pick(d.get("match_id", ""), familia,
-                          d.get("league_id") or "", float(raw),
-                          int(bool(int(y))), None, selection))
+        preparadas.append((d, familia, rotulo, float(raw), int(bool(int(y))),
+                           selection))
+
+    # A semente alimenta `ajustar_hierarquico` igual ao ledger, entao ela
+    # precisa do MESMO regressor: `p_legado`. Sem isto a semente entraria com
+    # `p_legado=None` e `curva.entrada_da_curva` levantaria -- de proposito,
+    # e melhor do que a semente aprender sobre outra curva que a amostra.
+    _aquecer_correcoes_por_liga(d.get("league_id") or ""
+                                for d, _, _, _, _, _ in preparadas)
+
+    saida: List[Pick] = []
+    with _trace_do_legado_silenciado():
+        for d, familia, rotulo, raw, y, selection in preparadas:
+            liga = d.get("league_id") or ""
+            p_legado = base_da_composicao(raw, rotulo, liga, REGIME_DA_AMOSTRA)
+            saida.append(Pick(d.get("match_id", ""), familia, liga, raw, y,
+                              None, selection, None, p_legado))
     return saida

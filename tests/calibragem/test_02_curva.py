@@ -7,7 +7,8 @@ import pytest
 
 from backend.modeling.calibragem import VERSAO_LEGADO
 from backend.modeling.calibragem.curva import (
-    aplicar, aplicar_versao, distancia_maxima, familia_do_mercado,
+    aplicar, aplicar_versao, base_da_composicao, distancia_maxima,
+    entrada_da_curva, familia_do_mercado,
 )
 from backend.modeling.calibragem.legado import calibrar_legado
 
@@ -155,9 +156,12 @@ def test_aplicar_versao_fallback_para_chave_sem_liga():
     (familia, "") -- o fallback generico entra e A CURVA E APLICADA (versao
     != 0), provando que o fallback nao e apenas alcancado mas tambem usado."""
     a, b = 0.2, 0.9
+    liga = "outra-liga-sem-entrada"
     parametros = {("Over/Under", ""): (7, a, b)}
-    d = aplicar_versao(0.62, "Over 2.5", "outra-liga-sem-entrada", "NORMAL", parametros)
-    assert d.final == pytest.approx(aplicar(0.62, a, b), abs=1e-12)
+    d = aplicar_versao(0.62, "Over 2.5", liga, "NORMAL", parametros)
+    # COMPOSICAO (#248): a entrada da curva e a saida do legado, nao `raw`.
+    base = base_da_composicao(0.62, "Over 2.5", liga, "NORMAL")
+    assert d.final == pytest.approx(aplicar(base, a, b), abs=1e-12)
     assert d.tipo_banda == "curva-v7"
 
 
@@ -173,8 +177,13 @@ def test_aplicar_versao_com_celula_real_aplica_a_curva():
     parametros = {("Over/Under", "championship"): (versao, a, b)}
     d = aplicar_versao(raw, "Over 2.5", "championship", "NORMAL", parametros)
 
-    esperado_final = aplicar(raw, a, b)
+    # COMPOSICAO (#248, C1): `sigmoide(a + b*logit(legado(raw)))`. Trocar a
+    # entrada por `raw` aqui faria o teste passar a provar a versao ANTIGA.
+    base = base_da_composicao(raw, "Over 2.5", "championship", "NORMAL")
+    esperado_final = aplicar(base, a, b)
     assert d.final == pytest.approx(esperado_final, abs=1e-12)
+    assert esperado_final != pytest.approx(aplicar(raw, a, b), abs=1e-9), (
+        "a curva foi aplicada sobre `raw`, nao sobre a saida do legado")
     assert d.tipo_banda == f"curva-v{versao}"
     # a mutacao ocorreu sobre o DetalheCalibracao do legado (iso/banda/etc
     # continuam vindo do isotonico+deflacao -- so final e tipo_banda mudam)
@@ -251,7 +260,8 @@ def test_aplicar_versao_usa_a_curva_nos_rotulos_de_double_chance():
     parametros = {("Double Chance", ""): (versao, a, b)}
     for rotulo in ("Double Chance 1X", "Double Chance 12", "Double Chance X2"):
         d = aplicar_versao(0.7412, rotulo, "championship", "NORMAL", parametros)
-        assert d.final == pytest.approx(aplicar(0.7412, a, b), abs=1e-12), rotulo
+        base = base_da_composicao(0.7412, rotulo, "championship", "NORMAL")
+        assert d.final == pytest.approx(aplicar(base, a, b), abs=1e-12), rotulo
         assert d.tipo_banda == f"curva-v{versao}", rotulo
 
 
@@ -265,3 +275,41 @@ def test_familia_desconhecida_deixa_rastro_no_log(caplog):
                        {("1X2", ""): (1, 0.1, 0.9)})
     assert any("Handicap Asiatico -1.5" in r.getMessage()
                for r in caplog.records), caplog.text
+
+
+# ─── entrada_da_curva: `p_legado` e obrigatorio, e a ausencia LEVANTA ───────
+#
+# A camada aprende o residuo SOBRE o legado. Um fallback silencioso para
+# `p_raw` reintroduziria o C1 sem sintoma nenhum -- exatamente a classe de
+# defeito da proibicao 15 do CLAUDE.md.
+
+class _PickFalso:
+    def __init__(self, p_raw, p_legado):
+        self.p_raw = p_raw
+        self.p_legado = p_legado
+
+
+def test_entrada_da_curva_devolve_o_p_legado():
+    assert entrada_da_curva(_PickFalso(0.70, 0.52)) == pytest.approx(0.52)
+
+
+def test_entrada_da_curva_levanta_quando_p_legado_falta():
+    with pytest.raises(ValueError, match="p_legado"):
+        entrada_da_curva(_PickFalso(0.70, None))
+
+
+def test_entrada_da_curva_nao_cai_em_p_raw():
+    """A prova negativa: se houvesse fallback, isto devolveria 0.70."""
+    try:
+        valor = entrada_da_curva(_PickFalso(0.70, None))
+    except ValueError:
+        return
+    raise AssertionError(
+        f"entrada_da_curva devolveu {valor!r} em vez de levantar -- fallback "
+        "silencioso para p_raw reintroduz o C1")
+
+
+def test_base_da_composicao_e_o_final_do_legado():
+    esperado = calibrar_legado(0.62, "Over 2.5", "championship", "NORMAL")
+    assert base_da_composicao(0.62, "Over 2.5", "championship",
+                              "NORMAL") == esperado.final

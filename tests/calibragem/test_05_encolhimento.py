@@ -70,7 +70,9 @@ def _picks(prefixo, familia, liga, especificacoes):
     que `contar_jogos` conte exatamente `len(especificacoes)` jogos nesta
     celula -- a mesma garantia que `test_conta_jogos_nao_picks` cobre para
     `contar_jogos` isolado vale aqui na montagem do cenario."""
-    return [Pick(f"{prefixo}{i}", familia, liga, p, y)
+    # `p_legado=p` (legado = identidade) mantem estes cenarios sinteticos
+    # exercitando so a fiacao do encolhimento, sem a curva legada no meio.
+    return [Pick(f"{prefixo}{i}", familia, liga, p, y, p_legado=p)
             for i, (p, y) in enumerate(especificacoes)]
 
 

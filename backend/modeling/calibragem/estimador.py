@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 """Ajuste de (a, b) por celula. Sem I/O e sem dependencia externa.
 
-O modelo e regressao logistica com intercepto e UM regressor, logit(p_raw).
+O modelo e regressao logistica com intercepto e UM regressor,
+`logit(p_legado)` -- a saida do LEGADO, nao `p_raw` (#248, C1). A camada
+aprende o RESIDUO sobre o que a versao 0 ja publica, e por isso `(a=0, b=1)`
+e a versao 0 por construcao. O `p_legado` chega pronto do repositorio: o
+estimador continua sem tocar o banco.
 Com dois parametros, a matriz de informacao e 2x2 e a inversa se escreve a
 mao — nao ha motivo para dependencia de algebra linear ou cientifica externa,
 e a Layer do Lambda ja falhou em silencio uma vez (B-014, NB2 de cartoes
@@ -11,7 +15,9 @@ import logging
 import math
 from typing import Optional, Sequence, Tuple
 
-from backend.modeling.calibragem.curva import _logit, _sigmoide
+from backend.modeling.calibragem.curva import (
+    _logit, _sigmoide, entrada_da_curva,
+)
 
 logger = logging.getLogger("sportsbankzu.calibragem.estimador")
 
@@ -28,7 +34,10 @@ def ajustar(picks: Sequence) -> Optional[Tuple[float, float]]:
     if len(ys) < 2:
         return None    # todos 0 ou todos 1: sem maximo finito
 
-    xs = [_logit(p.p_raw) for p in picks]
+    # `entrada_da_curva` = `p.p_legado`, e levanta se faltar. NAO cair em
+    # `p_raw`: seria a camada aprendendo sobre uma curva que nunca foi
+    # publicada, que e o defeito C1 de volta e em silencio.
+    xs = [_logit(entrada_da_curva(p)) for p in picks]
     yv = [float(p.y) for p in picks]
 
     a, b = 0.0, 1.0

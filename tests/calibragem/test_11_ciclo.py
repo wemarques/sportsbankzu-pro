@@ -125,8 +125,11 @@ def _servidos(n, liga="", p_raw=0.6, familia="Over/Under", y_periodico=5,
     """Picks de um jogo cada, com odd ausente -- vale para os testes de
     reversao/sem_anterior, que nao precisam de `ev`/`edge`. `publicado_em`
     posterior a `ADOCAO` por padrao: sao os jogos que a vigente SERVIU."""
+    # `p_legado=p_raw`: cenario com o legado na identidade (#248,
+    # composicao). O que estes testes exercitam e a costura do ciclo, nao a
+    # curva legada -- fixar a base torna os Briers conferiveis a mao.
     return [Pick(f"jogo-{liga or 'g'}-{i}", familia, liga, p_raw,
-                 1 if i % y_periodico else 0, None, "", publicado_em)
+                 1 if i % y_periodico else 0, None, "", publicado_em, p_raw)
             for i in range(n)]
 
 
@@ -251,7 +254,8 @@ def test_limiares_sao_rederivados_e_chegam_na_linha_sem_mexer_no_default(monkeyp
     # odd variados para nao cair no atalho "sem preco -> nao mexe".
     picks = [
         Pick(f"jogoR{i}", "Over/Under", "", 0.30 + (i % 40) / 100.0,
-            1 if i % 5 else 0, odd=1.5 + (i % 9) / 10.0)
+            1 if i % 5 else 0, odd=1.5 + (i % 9) / 10.0,
+            p_legado=0.30 + (i % 40) / 100.0)
         for i in range(300)
     ]
     ajuste = {("Over/Under", ""): {"a": 0.5, "b": 1.0, "n_jogos": 300,

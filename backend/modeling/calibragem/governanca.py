@@ -9,7 +9,9 @@ import logging
 from typing import Optional, Sequence, Tuple
 
 from backend.modeling.calibragem import MIN_N_JOGOS, PASSO_MAXIMO_PP
-from backend.modeling.calibragem.curva import aplicar, distancia_maxima
+from backend.modeling.calibragem.curva import (
+    aplicar, distancia_maxima, entrada_da_curva,
+)
 
 logger = logging.getLogger("sportsbankzu.calibragem.governanca")
 
@@ -83,9 +85,12 @@ def avaliar_reversao(picks_servidos: Sequence, vigente: dict, anterior: dict,
                 "motivo": f"janela com {n_jogos} jogos < {MIN_N_JOGOS}",
                 "limite_proximo": PASSO_MAXIMO_PP}
 
-    b_vig = brier([(aplicar(p.p_raw, vigente["a"], vigente["b"]), p.y)
+    # A probabilidade PUBLICADA e a composta: `aplicar(legado(raw), a, b)`
+    # (#248, C1). Medir o Brier sobre `p_raw` compararia duas curvas que
+    # nenhuma das duas versoes serviu.
+    b_vig = brier([(aplicar(entrada_da_curva(p), vigente["a"], vigente["b"]), p.y)
                    for p in picks_servidos])
-    b_ant = brier([(aplicar(p.p_raw, anterior["a"], anterior["b"]), p.y)
+    b_ant = brier([(aplicar(entrada_da_curva(p), anterior["a"], anterior["b"]), p.y)
                    for p in picks_servidos])
     if b_vig is None or b_ant is None or b_vig <= b_ant:
         return {"acao": "manter",

@@ -13,7 +13,7 @@ import math
 from collections import defaultdict
 from typing import Dict, List, Sequence
 
-from backend.modeling.calibragem.curva import aplicar
+from backend.modeling.calibragem.curva import aplicar, entrada_da_curva
 
 logger = logging.getLogger("sportsbankzu.calibragem.limiares")
 
@@ -58,7 +58,12 @@ def contar_por_classe(picks: Sequence, parametros: Dict[str, dict],
         lim = limiares.get(pk.familia)
         if not par or not lim:
             continue
-        ev, edge = _ev_e_edge(aplicar(pk.p_raw, par["a"], par["b"]), pk.odd)
+        # A prob que gera EV e edge e a PUBLICADA, ou seja, a composta:
+        # `aplicar(legado(raw), a, b)` (#248, C1). Com `(a,b)=(0,1)` isso e
+        # exatamente o legado -- e por isso o volume de referencia da versao
+        # 0 e agora o volume REAL, nao o de uma curva idealizada.
+        ev, edge = _ev_e_edge(aplicar(entrada_da_curva(pk), par["a"], par["b"]),
+                              pk.odd)
         if ev is None:
             continue
         if ev >= lim["safe_ev"] and edge >= lim["safe_edge"]:
@@ -97,7 +102,8 @@ def rederivar(picks: Sequence, parametros_antigos: Dict[str, dict],
 
         evs, edges = [], []
         for pk in pk_familia:
-            ev, edge = _ev_e_edge(aplicar(pk.p_raw, par["a"], par["b"]), pk.odd)
+            ev, edge = _ev_e_edge(
+                aplicar(entrada_da_curva(pk), par["a"], par["b"]), pk.odd)
             if ev is not None:
                 evs.append(ev)
                 edges.append(edge)

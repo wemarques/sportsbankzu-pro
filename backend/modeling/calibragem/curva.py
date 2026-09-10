@@ -1,9 +1,26 @@
 # -*- coding: utf-8 -*-
-"""A curva de correcao: logit(p') = a + b*logit(p).
+"""A curva de correcao, COMPOSTA COM O LEGADO (#248, C1):
 
-Matematica pura, sem I/O e sem dependencia externa. `a` e o deslocamento
-sistematico (positivo = o motor publica abaixo da realidade); `b` e a
-dispersao (b < 1 = o motor exagera nos extremos).
+    p_corrigida = sigmoide(a + b * logit(legado(p_raw)))
+
+`aplicar(x, a, b)` continua sendo `sigmoide(a + b*logit(x))` e mais nada --
+matematica pura, sem I/O e sem dependencia externa. O que mudou foi o que se
+ALIMENTA a ela: a entrada nao e mais `p_raw`, e a saida do legado. `a` e o
+deslocamento sistematico sobre o legado (positivo = o legado publica abaixo
+da realidade); `b` e a dispersao (b < 1 = o legado exagera nos extremos).
+
+Por que compor, e nao medir contra: com a composicao, `(a=0, b=1)` E a versao
+0 POR CONSTRUCAO -- nao aproximadamente. A trava de 2pp de
+`governanca.avaliar_proposta` mede `distancia_maxima(0, 1, a_p, b_p)` e isso
+e exatamente a distancia ate a curva publicada na vespera, desde o primeiro
+ciclo. Antes, a versao 0 servia o legado e a trava media contra a identidade
+(ou contra uma logistica que aproximava o legado com erro de 5,89pp a 9,35pp
+-- piso de Chebyshev PROVADO, porque o legado satura em 0,8575 e nenhuma
+logistica com b>0 satura). Com a composicao esse erro nao diminui: SOME.
+
+Consequencia registrada: `legado.py` deixa de ser um modulo temporario. Ele
+nao morre quando as celulas saem da versao 0 -- passa a ser a camada base
+permanente sobre a qual a camada aprendida escreve o residuo.
 """
 import logging
 import math
@@ -62,8 +79,54 @@ def _sigmoide(x: float) -> float:
 
 
 def aplicar(p: float, a: float, b: float) -> float:
-    """logit(p_corrigida) = a + b * logit(p). Monotona crescente se b > 0."""
+    """logit(p_corrigida) = a + b * logit(p). Monotona crescente se b > 0.
+
+    NAO chama o legado, e nao deve chamar: esta funcao e matematica pura,
+    tem 24 chamadores no repositorio, e a fronteira declarada do desenho e
+    que `curva.py` nao faz I/O. Quem compoe e `aplicar_versao` (serving) e
+    quem alimenta `p_legado` e o `repositorio` (ajuste); os dois entregam a
+    ela uma probabilidade que JA passou pelo legado.
+    """
     return _sigmoide(a + b * _logit(p))
+
+
+def base_da_composicao(raw: float, market: str, league_id: str,
+                       regime: str) -> float:
+    """A ENTRADA da curva: o que a versao 0 publicaria para este pick.
+
+    Unico ponto do pacote, junto com `aplicar_versao`, que chama o legado --
+    e o motivo de `legado.py` continuar com um so chamador (`curva.py`), o
+    que a guarda `test_1b` de `tests/calibragem/test_12_guardas.py` trava.
+
+    O `repositorio` usa esta funcao para preencher `Pick.p_legado`, que e o
+    regressor do estimador. Chamar `calibrar_legado` direto de la
+    espalharia a pilha legada por um segundo modulo sem necessidade.
+    """
+    from backend.modeling.calibragem.legado import calibrar_legado
+    return calibrar_legado(raw, market, league_id, regime).final
+
+
+def entrada_da_curva(pick) -> float:
+    """`pick.p_legado`, com erro ALTO quando falta.
+
+    A camada aprende o residuo SOBRE O LEGADO. Cair em `p_raw` quando
+    `p_legado` esta ausente reintroduziria, em silencio, exatamente o defeito
+    que a composicao resolve (a camada aprendendo sobre uma curva que nunca
+    foi publicada). Nao ha alternativa aceitavel: `p_legado` ausente e
+    defeito de construcao do `Pick`, e tem de aparecer.
+
+    E a mesma regra da proibicao 15 do CLAUDE.md, do outro lado: o valor
+    legitimo pode ser qualquer float em (0, 1) -- inclusive baixo --, entao
+    nenhum sentinela numerico serve; so a ausencia e detectavel, e ela e erro.
+    """
+    p = getattr(pick, "p_legado", None)
+    if p is None:
+        raise ValueError(
+            "Pick sem `p_legado`: a camada de calibragem aprende o residuo "
+            "sobre o legado (#248), entao o regressor e a saida do legado, "
+            "nao `p_raw`. Quem constroi o Pick tem de preencher `p_legado` "
+            "(ver `repositorio.carregar_amostra`).")
+    return float(p)
 
 
 def familia_do_mercado(market: str) -> str:
@@ -104,6 +167,14 @@ def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
     `parametros` e o mapa {(familia, liga): (versao, a, b)} lido pelo
     repositorio e passado pelo chamador. Ausente, ou celula ausente dele,
     significa versao 0 — o comportamento de hoje.
+
+    Versao real: COMPOE (#248, C1). A curva e aplicada sobre `detalhe.final`
+    (a saida do legado), nao sobre `raw`. Com `(a, b) = (0, 1)` o resultado
+    e o proprio `detalhe.final`, a menos do erro de ida-e-volta
+    sigmoide(logit(.)) em ponto flutuante (< 1e-9; travado em
+    `tests/calibragem/test_13_composicao.py`). E isso que torna a trava de
+    2pp exata desde o primeiro ciclo, em vez de medir contra uma curva que
+    nunca foi publicada.
     """
     from backend.modeling.calibragem.legado import calibrar_legado
 
@@ -132,6 +203,7 @@ def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
 
     _versao, a, b = entrada
     detalhe = calibrar_legado(raw, market, league_id, regime)
-    detalhe.final = aplicar(raw, a, b)
+    # COMPOSICAO: a entrada da curva e a saida do legado, nao `raw`.
+    detalhe.final = aplicar(detalhe.final, a, b)
     detalhe.tipo_banda = f"curva-v{_versao}"
     return detalhe

@@ -15,7 +15,11 @@ RUIM = {"a": -0.90, "b": 1.0}    # derruba
 
 
 def _servidos(n=60, p_raw=0.60, y=1):
-    return [Pick(f"j{i}", "Over/Under", "l", p_raw, y if i % 4 else 0)
+    # #248 (composicao): o Brier da reversao e medido sobre a probabilidade
+    # PUBLICADA, `aplicar(p_legado, a, b)`. `p_legado=p_raw` mantem este
+    # cenario com o legado na identidade, isolando o criterio de reversao.
+    return [Pick(f"j{i}", "Over/Under", "l", p_raw, y if i % 4 else 0,
+                 p_legado=p_raw)
             for i in range(n)]
 
 
@@ -62,6 +66,7 @@ def test_janela_curta_nao_reverte():
 
 def test_conta_jogos_nao_picks_na_janela():
     """40 picks de UM jogo nao formam janela."""
-    picks = [Pick("jogo1", "Over/Under", "l", 0.6, 1) for _ in range(40)]
+    picks = [Pick("jogo1", "Over/Under", "l", 0.6, 1, p_legado=0.6)
+             for _ in range(40)]
     r = avaliar_reversao(picks, vigente=RUIM, anterior=BOA, reversoes_seguidas=0)
     assert r["acao"] == "manter"
