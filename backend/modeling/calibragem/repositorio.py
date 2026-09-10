@@ -7,6 +7,7 @@ ela aqui, e um teste guarda isso (inclusive contra o nome dela em comentario).
 """
 import logging
 import os
+from contextlib import contextmanager
 from typing import Any, Dict, List, NamedTuple, Optional
 
 from backend.modeling.calibragem.curva import familia_do_mercado
@@ -35,8 +36,27 @@ CREATE TABLE IF NOT EXISTS calibragem_versoes (
 );
 CREATE INDEX IF NOT EXISTS idx_calibragem_celula
     ON calibragem_versoes (familia, liga, versao DESC);
-CREATE INDEX IF NOT EXISTS idx_calibragem_vigente
-    ON calibragem_versoes (familia, liga) WHERE status = 'vigente';
+"""
+
+# #248, I7: o indice de `vigente` tem de ser UNICO. Sem isso, duas linhas
+# `vigente` para a mesma celula sao possiveis, e `carregar_vigentes` (que
+# monta um dict por (familia, liga)) escolheria uma das duas pela ordem de
+# retorno do Postgres — silenciosamente, e diferente a cada consulta.
+#
+# Migracao: o indice antigo NAO era unico e tinha este nome. `CREATE UNIQUE
+# INDEX IF NOT EXISTS` com o mesmo nome seria um no-op sobre o indice antigo,
+# entao ele e derrubado e o novo nasce com nome proprio — assim um banco a
+# meio caminho nunca fica com os dois.
+DROP_INDICE_VIGENTE_ANTIGO = "DROP INDEX IF EXISTS idx_calibragem_vigente"
+DDL_INDICE_VIGENTE_UNICO = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_calibragem_vigente_unico
+    ON calibragem_versoes (familia, liga) WHERE status = 'vigente'
+"""
+
+SQL_VIGENTES_DUPLICADAS = """
+    SELECT familia, liga, COUNT(*) FROM calibragem_versoes
+     WHERE status = 'vigente'
+     GROUP BY familia, liga HAVING COUNT(*) > 1
 """
 
 
@@ -57,19 +77,86 @@ class Pick(NamedTuple):
     publicado_em: Optional[Any] = None
 
 
+# #248, I6: `_calibrar_com_detalhe` alcanca este modulo pelo caminho de
+# `/fixtures`, que ja namora o teto de 60s da Lambda. Sem `connect_timeout` o
+# psycopg2 herda o do SO — na pratica, minutos — e uma RDS inalcancavel vira
+# timeout da funcao inteira em vez de um erro de 5s com fallback marcado.
+_CONNECT_TIMEOUT_S = 5
+
+
 def _conn():
     import psycopg2
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(os.environ["DATABASE_URL"],
+                            connect_timeout=_CONNECT_TIMEOUT_S)
+
+
+@contextmanager
+def _conexao():
+    """`with conn` do psycopg2 encerra a TRANSACAO, nao a conexao.
+
+    Todo uso do modulo passava por `with _conn() as c` e deixava o socket
+    aberto ate o coletor de lixo passar — numa Lambda que fica viva entre
+    invocacoes, isso acumula. Fechar e explicito, como em
+    `prediction_ledger.py` e `brier_service.py` (#248, I6).
+    """
+    c = _conn()
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
 
 
 def garantir_tabela() -> bool:
     try:
-        with _conn() as c, c.cursor() as cur:
+        with _conexao() as c, c.cursor() as cur:
             cur.execute(DDL)
-        return True
     except Exception as e:                                   # noqa: BLE001
         logger.warning("[calibragem] tabela nao garantida: %s", e)
         return False
+    # Transacao SEPARADA de proposito: se o indice unico falhar (banco com
+    # duplicatas anteriores a esta versao), o Postgres aborta a transacao
+    # inteira, e a criacao da tabela nao pode cair junto.
+    garantir_indice_vigente_unico()
+    return True
+
+
+def garantir_indice_vigente_unico() -> bool:
+    """Troca o indice de `vigente` por um UNIQUE. Nunca derruba o ciclo.
+
+    Um banco que ja tenha duas linhas `vigente` para a mesma celula recusa o
+    `CREATE UNIQUE INDEX`. Isso NAO pode quebrar `garantir_tabela`: a falha e
+    registrada com as celulas culpadas nomeadas, e o ciclo segue sem a
+    garantia — que e exatamente o estado de antes. Consertar as duplicatas e
+    acao humana; esconder que elas existem seria o defeito.
+    """
+    try:
+        with _conexao() as c, c.cursor() as cur:
+            cur.execute(DROP_INDICE_VIGENTE_ANTIGO)
+            cur.execute(DDL_INDICE_VIGENTE_UNICO)
+        return True
+    except Exception as e:                                   # noqa: BLE001
+        logger.error(
+            "[calibragem] indice UNIQUE de `vigente` NAO criado: %s — o banco "
+            "provavelmente ja tem celulas com duas linhas vigentes; "
+            "carregar_vigentes escolhe uma delas sem criterio ate isso ser "
+            "resolvido a mao", e)
+        _logar_vigentes_duplicadas()
+        return False
+
+
+def _logar_vigentes_duplicadas() -> None:
+    """Nomeia as celulas culpadas. Melhor esforco: se nem isso der, silencia
+    — o erro que importa ja foi registrado por quem chamou."""
+    try:
+        with _conexao() as c, c.cursor() as cur:
+            cur.execute(SQL_VIGENTES_DUPLICADAS)
+            duplicadas = cur.fetchall()
+        if duplicadas:
+            logger.error("[calibragem] celulas com vigente duplicada: %s",
+                         [(f, l, n) for f, l, n in duplicadas])
+    except Exception as e:                                   # noqa: BLE001
+        logger.warning("[calibragem] nao foi possivel listar duplicatas: %s", e)
 
 
 def classificar_familia(market: str, selection: str) -> Optional[str]:
@@ -140,7 +227,7 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
         sql += " AND l.published_at >= %s"
         params.append(desde)
 
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         cur.execute(sql, params)
         brutas = [
             {"match_id": r[0], "league_id": r[1] or "", "market": r[2],
@@ -227,7 +314,7 @@ def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
         UPDATE calibragem_versoes SET status = 'substituida'
          WHERE familia = %s AND liga = %s AND status = 'vigente'
     """
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         for ln in linhas:
             if ln["status"] in ("adotada", "encurtada", "revertida"):
                 cur.execute(promove, (ln["familia"], ln["liga"]))
@@ -246,7 +333,7 @@ def carregar_vigentes() -> Dict[tuple, Dict[str, Any]]:
     (#248, I1). Os jogos que uma versao pode julgar sao os que ela serviu, e
     isso e exatamente `published_at > criada_em`.
     """
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         cur.execute("""
             SELECT familia, liga, versao, a, b, criada_em
               FROM calibragem_versoes
@@ -267,7 +354,7 @@ def carregar_anterior(familia: str, liga: str) -> Optional[Dict[str, Any]]:
     esta tarefa existe para impedir. `None` quando nao ha anterior, o caso
     normal nos primeiros ciclos.
     """
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         cur.execute("""
             SELECT versao, a, b FROM calibragem_versoes
              WHERE familia = %s AND liga = %s AND status = 'substituida'
@@ -316,7 +403,7 @@ def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
     acima usa `inalterada` porque e o que descreve a verdade: nada mudou,
     so a trava saiu.
     """
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         cur.execute(
             """
             SELECT status FROM calibragem_versoes
@@ -330,7 +417,7 @@ def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
 
 
 def contar_reversoes_seguidas(familia: str, liga: str) -> int:
-    with _conn() as c, c.cursor() as cur:
+    with _conexao() as c, c.cursor() as cur:
         cur.execute("""
             SELECT status FROM calibragem_versoes
              WHERE familia = %s AND liga = %s

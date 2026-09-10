@@ -42,11 +42,19 @@ class _CursorGravador:
 
 
 class _ConexaoGravadora:
+    """#248, I6: `close()` faz parte do protocolo agora — `repositorio`
+    fecha a conexao explicitamente num `finally`. Dublê sem `close` faria o
+    teste passar com codigo que nunca fecha."""
+
     def __init__(self, cursor):
         self._cursor = cursor
+        self.fechada = False
 
     def cursor(self):
         return self._cursor
+
+    def close(self):
+        self.fechada = True
 
     def __enter__(self):
         return self
@@ -161,6 +169,9 @@ def test_carregar_anterior_formato_com_dublê(monkeypatch):
         def cursor(self):
             return _CursorFalso(self._linha)
 
+        def close(self):
+            pass
+
         def __enter__(self):
             return self
 
@@ -192,6 +203,9 @@ def test_carregar_anterior_devolve_none_quando_nao_existe(monkeypatch):
     class _ConexaoVazia:
         def cursor(self):
             return _CursorVazio()
+
+        def close(self):
+            pass
 
         def __enter__(self):
             return self
@@ -400,3 +414,104 @@ def test_ultimo_status_de_ciclo(monkeypatch, linha, esperado):
     # adotada) esconderia a decisao real.
     assert "vigente" not in params[2] and "substituida" not in params[2]
     assert "congelada" in params[2]
+
+
+# --- I6/I7: a conexao tem prazo e e fechada; `vigente` e unica no indice ---
+
+
+def test_conn_passa_connect_timeout(monkeypatch):
+    """Sem `connect_timeout` o psycopg2 herda o do SO (minutos). Este modulo
+    e alcancado pelo caminho de /fixtures, que ja namora o teto de 60s da
+    Lambda."""
+    import psycopg2
+
+    import backend.modeling.calibragem.repositorio as repo
+
+    capturado = {}
+
+    def _falso_connect(dsn, **kwargs):
+        capturado["dsn"] = dsn
+        capturado["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(psycopg2, "connect", _falso_connect)
+    monkeypatch.setenv("DATABASE_URL", "postgres://exemplo/db")
+    repo._conn()
+
+    assert capturado["kwargs"]["connect_timeout"] == 5
+
+
+def test_conexao_fecha_mesmo_quando_o_corpo_levanta(monkeypatch):
+    """`with conn` do psycopg2 encerra a TRANSACAO, nao a conexao — o socket
+    ficava aberto ate o coletor passar."""
+    import backend.modeling.calibragem.repositorio as repo
+
+    conexao = _ConexaoGravadora(_CursorGravador())
+    monkeypatch.setattr(repo, "_conn", lambda: conexao)
+
+    with pytest.raises(RuntimeError):
+        with repo._conexao():
+            raise RuntimeError("falha no meio do trabalho")
+
+    assert conexao.fechada is True
+
+
+def test_conexao_fecha_no_caminho_feliz(monkeypatch):
+    import backend.modeling.calibragem.repositorio as repo
+
+    conexao = _ConexaoGravadora(_CursorGravador())
+    monkeypatch.setattr(repo, "_conn", lambda: conexao)
+    with repo._conexao():
+        pass
+    assert conexao.fechada is True
+
+
+def test_indice_de_vigente_e_unico_e_troca_o_antigo(monkeypatch):
+    """O indice antigo tinha o mesmo nome e NAO era unico: `CREATE UNIQUE
+    INDEX IF NOT EXISTS` com o mesmo nome seria um no-op sobre ele. Por isso
+    o antigo e derrubado e o novo tem nome proprio."""
+    import backend.modeling.calibragem.repositorio as repo
+
+    registro = []
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora(
+        _CursorGravador(registro=registro)))
+
+    assert repo.garantir_indice_vigente_unico() is True
+
+    sqls = [sql for sql, _ in registro]
+    assert sqls[0].startswith("DROP INDEX IF EXISTS idx_calibragem_vigente")
+    assert "CREATE UNIQUE INDEX" in sqls[1]
+    assert "WHERE status = 'vigente'" in sqls[1]
+    assert "idx_calibragem_vigente_unico" in sqls[1]
+
+
+def test_indice_unico_falho_nao_derruba_garantir_tabela(monkeypatch, caplog):
+    """Banco com duplicatas anteriores recusa o UNIQUE. Isso NAO pode
+    quebrar a criacao da tabela, e as celulas culpadas tem de aparecer no
+    log — nao ha conserto automatico, mas tampouco silencio."""
+    import logging
+
+    import backend.modeling.calibragem.repositorio as repo
+
+    class _CursorQueRecusaIndice(_CursorGravador):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "CREATE UNIQUE INDEX" in sql:
+                raise RuntimeError(
+                    "could not create unique index: key (familia, liga)=(Corners, ) "
+                    "is duplicated")
+
+    def _conexao_falsa():
+        return _ConexaoGravadora(_CursorQueRecusaIndice(
+            fetchall=[("Corners", "", 2)]))
+
+    monkeypatch.setattr(repo, "_conn", _conexao_falsa)
+
+    with caplog.at_level(logging.ERROR,
+                         logger="sportsbankzu.calibragem.repositorio"):
+        assert repo.garantir_tabela() is True          # a tabela foi criada
+        assert repo.garantir_indice_vigente_unico() is False
+
+    texto = caplog.text
+    assert "NAO criado" in texto
+    assert "Corners" in texto, texto

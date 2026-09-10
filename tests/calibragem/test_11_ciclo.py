@@ -102,6 +102,9 @@ class _ConexaoGravadora:
     def cursor(self):
         return _CursorGravador(self._registro)
 
+    def close(self):   # #248, I6: `repositorio` fecha explicitamente
+        pass
+
     def __enter__(self):
         return self
 
