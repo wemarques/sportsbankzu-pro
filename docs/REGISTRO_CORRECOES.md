@@ -12981,18 +12981,14 @@ automatico.
 A revisao final do ramo de 27 commits achou 4 Criticos e 7 Importantes. Corrigidos nesta
 onda, cada um com commit proprio:
 
-- **C1 — a versao 0 nao e a identidade.** Tres lugares supunham `(a=0, b=1)` para a versao 0:
-  a trava de passo em `ciclo.executar`, o `parametros_antigos` da re-derivacao de limiares e o
-  teste de volume constante. A versao 0 delega a `calibrar_legado`, que fica 12-25 pontos
-  ABAIXO da identidade — a trava media contra uma curva que nunca foi publicada a ninguem.
-  Corrigido com `calibragem/linha_base.py`, que ajusta `(a0, b0)` a curva legada por minimos
-  quadrados no logit, um mercado representativo por familia (escolha documentada no modulo).
-  `curva.aplicar_versao` NAO mudou: a versao 0 continua servindo o legado byte a byte;
-  `(a0, b0)` e so referencial de medicao. MEDIDO contra o ledger (242 jogos, 5.484 picks), o
-  movimento real da probabilidade publicada no primeiro ciclo: Corners 25,07pp -> 16,95pp,
-  Cards 24,03pp -> 16,83pp (e Cards passava como **adotada**, nao encurtada), Double Chance
-  24,00 -> 16,79, 1X2 23,78 -> 16,76, BTTS 12,91 -> 9,33, Over/Under 12,63 -> 9,24.
-  **A trava de 2pp continua nao sendo atingida** — ver "Pendencia conhecida" abaixo.
+- **C1 — a versao 0 nao e a identidade. RESOLVIDO POR COMPOSICAO.** Tres lugares supunham
+  `(a=0, b=1)` para a versao 0: a trava de passo em `ciclo.executar`, o `parametros_antigos`
+  da re-derivacao de limiares e o teste de volume constante. A versao 0 delega a
+  `calibrar_legado`, que fica 12-25 pontos ABAIXO da identidade — a trava media contra uma
+  curva que nunca foi publicada a ninguem. A primeira tentativa (`calibragem/linha_base.py`,
+  ajuste de `(a0, b0)` a curva legada) reduziu o erro de referencia de 24,50pp para <=15,47pp
+  mas NAO restaurou a trava. **A correcao definitiva foi trocar a entrada da curva** — ver a
+  secao "C1 resolvido por composicao", abaixo, que substituiu a antiga "Pendencia conhecida".
 - **C2 — os limiares re-derivados sao escrita morta.** Ver a secao propria, abaixo.
 - **C3 — Double Chance nao resolvia familia no serving.** `_FAMILIAS` tinha `"dc "` e
   `"dupla chance"`, mas `ev_classification` chama `_calibrar_com_detalhe` com
@@ -13047,46 +13043,76 @@ linha de base corrigida; (2) conferir na tabela que os quatro valores gravados r
 volume da versao anterior; (3) so entao ensinar `_get_thresholds` a le-los, com entrada
 propria no REGISTRO.
 
-### Pendencia conhecida: a trava de 2pp nao e atingida no primeiro ciclo
-A correcao C1 reduz o erro de referencia, nao o elimina. Dois parametros no logit **nao**
-reproduzem a pilha de bandas — a propria spec diz isso na secao 6.1, e a medicao confirma: o
-erro maximo do ajuste e 8,14pp no ramo de meia-banda (O/U, BTTS) e 15,47pp no de banda
-inteira (Corners, Cards, 1X2, Double Chance). E nao e culpa do metodo de ajuste: a melhor
-curva de dois parametros POSSIVEL erra 5,89pp (meia banda) e 9,35pp (banda inteira) — numeros
-da busca minimax refinada da re-revisao, que confirmou o piso de forma independente: os otimos
-EQUIOSCILAM em quatro pontos, assinatura de Chebyshev de um minimo verdadeiro, e nao de uma
-grade grossa. A causa e a forma — o legado satura (`legado(0,98) = 0,8575` na meia banda,
-0,7350 na inteira, por causa da banda de 25%) enquanto qualquer logistica com `b>0` sobe ate 1.
-
-Consequencia pratica: enquanto a celula estiver na versao 0, a trava mede contra uma
-aproximacao, e o primeiro ciclo pode mover ate ~17pp em vez dos 2pp declarados. A partir do
-segundo ciclo o problema some (vigente e proposta sao ambas curvas `(a,b)`, e a distancia
-entre elas e exata).
-
-**O conserto e COMPOR com o legado, e nao medir contra ele.** A recomendacao que estava aqui
-antes — a trava aceitar uma FUNCAO como vigente e medir `max |curva_nova(p) - legado(p)|`
-direto — esta ERRADA, e o registro fica para quem tiver a mesma ideia daqui a seis meses.
-Motivo: em `governanca.avaliar_proposta` a bisseccao interpola de `t=0` (a propria vigente) ate
-`t=1` (a proposta). Se a referencia virar a funcao legado, entao `t=0` JA DISTA 5,89pp / 9,35pp
-— acima do limite de 2pp. Nenhum `t` cabe, a bisseccao converge para `fator=0`, e toda celula
-na versao 0 sai `encurtada` sem andar, para sempre. Seria a patologia do #247 (o gate que nunca
-dispara) reintroduzida exatamente no mecanismo que este trabalho existe para proteger.
-
-O que funciona e trocar a entrada da curva:
+### C1 resolvido por composicao — a camada aprende o residuo SOBRE o legado
+Esta secao substitui a "Pendencia conhecida: a trava de 2pp nao e atingida no primeiro ciclo".
+A pendencia **foi fechada**, e nao por medir melhor: por mudar o que se aprende.
 
 ```
-p' = sigmoide(a + b * logit(legado(p)))        em vez de   sigmoide(a + b * logit(p))
+p_corrigida = sigmoide(a + b * logit(legado(p_raw)))    em vez de   sigmoide(a + b * logit(p_raw))
 ```
 
-Assim `(a=0, b=1)` **E** a versao 0 por construcao. A trava de 2pp passa a valer exata desde o
-primeiro ciclo, e o erro de aproximacao nao diminui: SOME. `calibragem/linha_base.py` deixa de
-ser necessario. O custo e o estimador ajustar sobre `logit(legado(p_raw))` em vez de
-`logit(p_raw)` — uma chamada a `calibrar_legado` por pick por ciclo, cerca de 5,5 mil,
-cacheavel por `(p_raw, mercado, liga, regime)`.
+**Por que isso fecha.** Com a composicao, `(a=0, b=1)` **E** a versao 0 — por construcao, nao
+por aproximacao: `aplicar(x, 0, 1)` devolve `x`, e `x` e a saida do legado. Logo
+`distancia_maxima(0, 1, a_p, b_p)` mede exatamente a distancia ate a curva que o painel
+publicou na vespera, desde o **primeiro** ciclo. O erro de aproximacao nao diminui: **some**.
 
-NAO implementado nesta onda: e mudanca de DESENHO (muda o que a camada aprende, nao so como
-ela e medida), sobe como recomendacao para o Welligton decidir, e com a flag desligada nao ha
-risco vivo enquanto a decisao nao vem.
+**Por que a aproximacao nunca ia funcionar** (medido, e o registro fica para quem tiver a mesma
+ideia): dois parametros no logit nao reproduzem a pilha de bandas. A melhor curva de dois
+parametros POSSIVEL erra 5,89pp (meia banda) e 9,35pp (banda inteira) — busca minimax refinada,
+com os otimos EQUIOSCILANDO em quatro pontos, assinatura de Chebyshev de um minimo verdadeiro.
+A causa e a forma: o legado **satura** (`legado(0,98) = 0,8575` na meia banda, 0,7350 na
+inteira, por causa da banda de 25%) enquanto qualquer logistica com `b>0` sobe ate 1.
+
+**A ideia que NAO funciona, e por que.** Fazer a trava aceitar uma FUNCAO como vigente e medir
+`max |curva_nova(p) - legado(p)|` direto travaria a camada para sempre: em
+`governanca.avaliar_proposta` a bisseccao interpola de `t=0` (a propria vigente) ate `t=1`, e
+com a funcao legado como referencia o proprio `t=0` ja dista 5,89pp / 9,35pp — acima do limite.
+Nenhum `t` cabe, o fator converge para 0, e toda celula sai `encurtada` sem andar: a patologia
+do #247 (o gate que nunca dispara) reintroduzida no mecanismo que este trabalho protege.
+
+**O que mudou no codigo.**
+- `curva.aplicar(p, a, b)` **nao mudou** — segue `sigmoide(a + b*logit(p))`, matematica pura,
+  24 chamadores intactos, `curva.py` sem I/O. Quem compoe e `aplicar_versao`, que aplica a
+  curva sobre `detalhe.final` (a saida do legado) em vez de sobre `raw`.
+- `curva.base_da_composicao` e a unica porta nova para o legado, o que mantem `legado.py` com
+  um so chamador (`curva.py`); a guarda `test_1b` passou a ler IMPORTS por AST.
+- `curva.entrada_da_curva(pick)` **levanta** quando `p_legado` falta. Nao ha fallback para
+  `p_raw`: seria o C1 de volta, em silencio.
+- `Pick` ganhou `p_legado`. `repositorio.carregar_amostra` o calcula com
+  `rotulo_do_legado(market, selection)`, que reproduz o rotulo de EXIBICAO que
+  `ev_classification` passa a `_calibrar_com_detalhe` — o rotulo escolhe o modelo isotonico E
+  o ramo da banda, entao `Cards | Over 3.5` cru cairia na meia banda em vez da inteira.
+- `estimador`, `governanca` e `limiares` passaram a operar sobre `p_legado`.
+- **`calibragem/linha_base.py` foi REMOVIDO** (e `tests/calibragem/test_13_linha_base.py`
+  junto). `ciclo._vigente_da_celula` devolve `(0.0, 1.0)` para celula sem versao gravada.
+
+**Prova empirica** (RDS real, 5.484 picks / 242 jogos, somente SELECT):
+
+| medicao | resultado |
+|---|---|
+| controle positivo: `aplicar_versao(..., (versao, 0, 1))` contra `calibrar_legado` | divergencia < 1e-9 nos 13.524 pares da fixture dourada |
+| trava no primeiro ciclo, todas as 6 familias | `encurtada`, movimento REAL de 1,83pp a 2,00pp (limite: 2,00pp) |
+| movimento REAL antes da composicao (mesma amostra) | ate 16,95pp em escanteios |
+| `p_legado` medio contra `p_raw` | -3,10pp (BTTS) a -12,89pp (cartoes) |
+
+**Consequencia registrada:** com a composicao, `legado.py` deixa de ser um modulo temporario.
+Ele nao morre quando as celulas saem da versao 0 — passa a ser a **camada base permanente**
+sobre a qual a camada aprendida escreve o residuo. O cabecalho daquele arquivo (congelado, nao
+editavel) ainda promete que ele sera apagado um dia; a nota que corrige isso vive na lista
+`CHAMADORES_PERMITIDOS_DO_LEGADO` de `tests/calibragem/test_12_guardas.py`.
+
+**Custo, medido:** uma chamada ao legado por pick por ciclo. O ramo de Over/Under do legado
+consulta `get_lambda_corrections`, e o cache por liga do #231-a mantem isso em **20 consultas
+(uma por liga)** em vez de 1.237 (uma por pick de O/U) sob a configuracao padrao. Com
+`LAMBDA_CORRECTIONS_TTL_S=0` o cache esta desligado por escolha do operador e o numero volta a
+1.237 — registrado na docstring de `repositorio._aquecer_correcoes_por_liga`. Medicao de
+passagem: `p_legado` e IDENTICO com e sem as correcoes reais do banco nos 5.484 picks, porque
+`_get_league_deflation` so alimenta o campo `ou_defl` do detalhe, que nao entra em `final`.
+
+**Lacuna registrada:** o `prediction_ledger` nao grava o `regime`, entao `carregar_amostra`
+reconstroi `p_legado` sempre como `NORMAL`. Picks servidos em HIPER-OFENSIVA voltam como
+NORMAL. Efeito limitado: `regime` so entra em `calibrate_prob` como a segunda chave da cadeia
+de fallback, consultada apenas quando nao existe modelo `market|liga`.
 
 ### Licao aprendida
 A pergunta certa nao era "a camada aprende?" — era "o que ela aprende alem de nao
