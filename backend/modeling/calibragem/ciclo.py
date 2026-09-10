@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple
 
 from backend.modeling.calibragem import PASSO_MAXIMO_PP, VERSAO_LEGADO
 from backend.modeling.calibragem import (
-    estimador, governanca, limiares, linha_base, repositorio,
+    estimador, governanca, limiares, repositorio,
 )  # noqa: E402 -- pacote e submodulos, dois imports por legibilidade
 
 logger = logging.getLogger("sportsbankzu.calibragem.ciclo")
@@ -131,28 +131,30 @@ def janela_de_reversao(picks_da_celula, criada_em) -> list:
 def _vigente_da_celula(vigentes: Dict[tuple, dict], chave: tuple) -> Optional[dict]:
     """O `(a, b)` contra o qual a trava e os limiares medem.
 
-    Celula com versao gravada: o que esta no banco. Celula SEM versao gravada:
-    a versao 0 — e a versao 0 NAO e a identidade, e o legado (#248, C1). Sem
-    esta funcao, `{"a": 0.0, "b": 1.0}` fazia a trava de 2pp medir contra uma
-    curva 12-25 pontos acima da publicada, e o primeiro ciclo passava por
-    "adotada" um salto de ate 24,95pp.
+    Celula com versao gravada: o que esta no banco. Celula SEM versao
+    gravada: `(0, 1)`, a versao 0 — e agora isso e EXATO, nao uma
+    aproximacao (#248, C1, resolvido por composicao). A curva servida e
+    `sigmoide(a + b*logit(legado(p)))`, entao `(a=0, b=1)` devolve o proprio
+    legado, byte a byte, e `distancia_maxima(0, 1, a_p, b_p)` mede a
+    distancia real ate a curva publicada na vespera.
 
-    `None` quando a familia nao tem linha de base mensuravel (familia nova,
-    sem mercado representativo). O chamador rejeita a celula em vez de
-    inventar uma referencia — adotar sem saber de onde se parte e como o
-    defeito nasceu.
+    Historia, para nao se repetir: antes da composicao esta funcao chamava
+    `linha_base.linha_base(familia, liga)`, que ajustava uma logistica de
+    dois parametros a curva legada. A aproximacao errava de 8,14pp a 15,47pp
+    e o melhor par POSSIVEL ainda erraria 5,89pp / 9,35pp (piso de
+    Chebyshev, otimos equioscilando em quatro pontos) — porque o legado
+    satura e a logistica nao. A trava de 2pp nunca valia no primeiro ciclo.
+    Compondo, o erro nao diminui: some. `linha_base.py` foi APAGADO.
+
+    A assinatura devolve `Optional` porque o chamador ja trata `None`
+    (celula rejeitada); hoje nao ha caminho que devolva `None` — a versao 0
+    e a mesma para toda familia, e nao ha mais "familia sem mercado
+    representativo".
     """
     vig = vigentes.get(chave)
     if vig is not None:
         return vig
-    familia, liga = chave
-    try:
-        a0, b0 = linha_base.linha_base(familia, liga)
-    except ValueError as e:                                  # noqa: BLE001
-        logger.error("[calibragem] celula (%s, %s) sem linha de base: %s",
-                     familia, liga or "-", e)
-        return None
-    return {"versao": VERSAO_LEGADO, "a": a0, "b": b0, "criada_em": None}
+    return {"versao": VERSAO_LEGADO, "a": 0.0, "b": 1.0, "criada_em": None}
 
 
 def executar(caminho_semente: Optional[str] = None) -> dict:
@@ -302,10 +304,10 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
         # (familia, "") — a celula-familia, nao das celulas por liga.
         parametros_antigos: Dict[str, dict] = {}
         parametros_novos: Dict[str, dict] = {}
-        # #248, C1: `dec["vig"]` de uma celula sem versao gravada e a LINHA DE
-        # BASE DO LEGADO, nao mais a identidade. Sem isso a re-derivacao
-        # preservava o volume de uma curva que nunca publicou nada, e o volume
-        # real dobrava no primeiro ciclo (medido: SAFE de Corners 106 -> 306).
+        # #248, C1 (composicao): `dec["vig"]` de uma celula sem versao
+        # gravada e `(0, 1)`, e sobre `p_legado` isso E o legado. A
+        # re-derivacao preserva o volume que a versao 0 de fato publica —
+        # nao o de uma curva idealizada, que era o defeito.
         for (familia, liga), dec in decisoes.items():
             if liga:
                 continue

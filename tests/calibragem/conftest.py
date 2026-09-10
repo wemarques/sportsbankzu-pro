@@ -32,20 +32,18 @@ def _cache_limpo():
     aqueca o cache com a RDS real muda o resultado por ORDEM DE EXECUCAO.
     """
     from backend.modeling import lambda_calculator as LC
-    from backend.modeling.calibragem import ciclo, linha_base
+    from backend.modeling.calibragem import ciclo
 
     original = LC.get_lambda_corrections
     LC.get_lambda_corrections = lambda league: {}
     LC.limpar_cache_correcoes()
     ciclo.limpar_cache()
-    linha_base.limpar_cache()
     try:
         yield
     finally:
         LC.get_lambda_corrections = original
         LC.limpar_cache_correcoes()
         ciclo.limpar_cache()
-        linha_base.limpar_cache()
 
 
 @pytest.fixture(autouse=True)

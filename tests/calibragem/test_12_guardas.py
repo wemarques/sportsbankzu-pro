@@ -15,27 +15,61 @@ def test_9_nenhum_modulo_do_pacote_le_audit_results():
     assert not ofensores, ofensores
 
 
-# Lista FECHADA de quem pode chamar o legado. Nao e "quem chama hoje": e
-# quem morre junto com a versao 0.
-#   curva.py      — o serving: `aplicar_versao` delega quando a celula esta
-#                   na versao 0. E a razao de `legado.py` existir.
-#   linha_base.py — a MEDICAO da versao 0 (#248, C1): ajusta (a0, b0) a curva
-#                   legada para a trava de passo e a re-derivacao de limiares
-#                   terem contra o que medir. Nao serve numero a ninguem; some
-#                   no mesmo dia que `legado.py`.
-# Qualquer terceiro nome aqui significa que a pilha legada voltou a se
-# espalhar, e ai `legado.py` nunca mais e deletavel — que e o que este teste
-# existe para impedir.
-CHAMADORES_PERMITIDOS_DO_LEGADO = ["curva.py", "linha_base.py"]
+# Lista FECHADA de quem pode chamar o legado. UM nome so: `curva.py`.
+#
+# MUDANCA DE LEITURA (#248, Task 13): esta lista NAO significa mais "quem
+# morre junto com a versao 0". Com a composicao
+# (`p' = sigmoide(a + b*logit(legado(p)))`) o legado deixou de ser um estagio
+# temporario e virou a CAMADA BASE PERMANENTE: toda celula, em qualquer
+# versao, passa por ele. `legado.py` nao e mais deletavel, e o cabecalho dele
+# — congelado, nao editavel — ficou desatualizado nesse ponto especifico;
+# quem for reler aquele arquivo comeca por aqui.
+#
+# O que a lista guarda hoje, e continua valendo: a pilha legada nao pode se
+# ESPALHAR. Dois pontos em `curva.py` a tocam — `aplicar_versao` (serving) e
+# `base_da_composicao` (o `p_legado` que o repositorio poe em cada `Pick`) —
+# e nenhum outro modulo do pacote a importa.
+CHAMADORES_PERMITIDOS_DO_LEGADO = ["curva.py"]
+
+
+def _importa_o_legado(fonte: str) -> bool:
+    """Import REAL do modulo congelado, lido por AST.
+
+    Nao por substring: `repositorio.py` explica em comentario e docstring por
+    que NAO chama `calibrar_legado` direto, e uma varredura de texto o
+    acusaria de chamador. E a terceira vez que um teste-guarda deste pacote
+    tropeca na propria documentacao (T3 e T4 ja tiveram de reescrever
+    docstring por causa disso); o padrao certo ja existe no repo, em
+    `tests/test_225c_fallback_morto.py`.
+    """
+    import ast
+
+    for no in ast.walk(ast.parse(fonte)):
+        if isinstance(no, ast.ImportFrom) and (no.module or "").endswith(
+                "calibragem.legado"):
+            return True
+        if isinstance(no, ast.Import) and any(
+                a.name.endswith("calibragem.legado") for a in no.names):
+            return True
+    return False
 
 
 def test_1b_legado_so_tem_os_chamadores_permitidos():
-    """Enquanto houver celula na versao 0 o legado vive — com chamadores
-    contados, todos eles deletaveis junto com ele."""
+    """A pilha legada fica atras de uma porta so: `curva.py`."""
     chamadores = sorted(f.name for f in PACOTE.glob("*.py")
                         if f.name != "legado.py"
-                        and "calibrar_legado" in f.read_text(encoding="utf-8"))
+                        and _importa_o_legado(f.read_text(encoding="utf-8")))
     assert chamadores == sorted(CHAMADORES_PERMITIDOS_DO_LEGADO), chamadores
+
+
+def test_1b_a_guarda_do_legado_de_fato_pega_um_chamador_novo():
+    """A guarda por AST nao pode ser vacuamente verdadeira: um modulo que
+    importe o legado TEM de ser detectado."""
+    assert _importa_o_legado(
+        "from backend.modeling.calibragem.legado import calibrar_legado")
+    assert _importa_o_legado("import backend.modeling.calibragem.legado")
+    assert not _importa_o_legado(
+        "# comentario citando calibrar_legado e legado.py sem importar nada")
 
 
 def test_1b_legado_esta_marcado_como_congelado():
