@@ -661,3 +661,68 @@ export const SAFE_BET_TAG_CONFIG: Record<
     description: "Risco elevado — Partida bloqueada pelo motor de segurança",
   },
 };
+
+/* ------------------------------------------------------------------ */
+/*  #250 — canonical league-id vocabulary                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * #250 — ESPELHO EXATO de `backend/config/leagues_config.py::LEAGUE_ID_ALIASES`.
+ *
+ * Direcao: id do FRONTEND (prefixado, o mesmo de AVAILABLE_LEAGUES[].id)
+ * -> slug do BACKEND (o id de LEAGUES_CONFIG, que a FootyStats usa).
+ *
+ * Este projeto ja perdeu dois achados Criticos para divergencia de vocabulario
+ * (rotulo pt-BR contra dado em ingles). O selo de confianca repetiu a falha:
+ * o hook mantinha uma TERCEIRA tabela, escrita a mao, que divergia desta em
+ * 4 das 22 ligas. Quem precisar traduzir id de liga usa `toBackendLeagueId`
+ * e nao escreve tabela nova. O teste `e2e/league-ids.spec.ts` compara esta
+ * constante com o arquivo Python e falha se as duas se separarem.
+ *
+ * Medido em 2026-09-10 contra a Lambda de producao: `/fixtures` SEMPRE devolve
+ * `leagueId` no slug do backend, qualquer que seja a forma pedida
+ * (`?leagues=england-league-one` e `?leagues=league-one` devolvem ambos
+ * `leagueId: "league-one"`). Por isso a normalizacao aceita as duas formas.
+ */
+export const FRONTEND_TO_BACKEND_LEAGUE_ID: Record<string, string> = {
+  "premier-league": "premier-league",
+  "championship": "championship",
+  "a-league": "a-league",
+  "primera-division": "primera-division",
+  "pro-league": "pro-league",
+  "spain-la-liga": "la-liga",
+  "italy-serie-a": "serie-a",
+  "italy-serie-b": "serie-b",
+  "germany-bundesliga": "bundesliga",
+  "germany-2-bundesliga": "2-bundesliga",
+  "france-ligue-1": "ligue-1",
+  "brazil-serie-a": "brasileirao-serie-a",
+  "brazil-serie-b": "brasileirao-serie-b",
+  "netherlands-eredivisie": "eredivisie",
+  "portugal-liga-nos": "primeira-liga",
+  "scotland-premiership": "premiership",
+  "denmark-superliga": "superliga",
+  "turkey-super-lig": "super-lig",
+  "england-league-one": "league-one",
+  "usa-mls": "mls",
+  "colombia-primera-a": "colombian-primera-a",
+  "mexico-liga-mx": "liga-mx",
+};
+
+/** Slugs do backend (valores canonicos), para reconhecer a forma ja traduzida. */
+const BACKEND_LEAGUE_IDS: ReadonlySet<string> = new Set(
+  Object.values(FRONTEND_TO_BACKEND_LEAGUE_ID),
+);
+
+/**
+ * #250 — normaliza um id de liga para o slug do backend, aceitando as DUAS
+ * formas em circulacao no frontend (prefixada e slug). Retorna o proprio
+ * argumento quando nao reconhece, para nunca inventar liga.
+ */
+export function toBackendLeagueId(leagueId: string): string {
+  if (!leagueId) return leagueId;
+  const mapped = FRONTEND_TO_BACKEND_LEAGUE_ID[leagueId];
+  if (mapped) return mapped;
+  if (BACKEND_LEAGUE_IDS.has(leagueId)) return leagueId;
+  return leagueId;
+}
