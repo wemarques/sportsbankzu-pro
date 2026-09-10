@@ -159,6 +159,125 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
     return saida
 
 
+STATUS_VALIDOS = {
+    "vigente", "adotada", "encurtada", "rejeitada", "abaixo_do_piso",
+    "inalterada", "revertida", "congelada",
+}
+
+
+def montar_linha_auditoria(familia: str, liga: str, versao: int,
+                           resultado: dict, n_jogos: int, origem: str,
+                           brier, limiares: Optional[dict] = None) -> Dict[str, Any]:
+    """Uma linha por celula, em TODO ciclo — inclusive quando nada mudou.
+
+    `limiares`, quando presente, carrega as quatro chaves `safe_ev`,
+    `neutro_ev`, `safe_edge`, `neutro_edge` na mesma linha da curva: curva e
+    limiar mudam juntos, na mesma versao — separa-los recria a convivencia
+    de dois regimes que este trabalho existe para acabar.
+    """
+    status = resultado["status"]
+    if status not in STATUS_VALIDOS:
+        raise ValueError(f"status desconhecido: {status!r}")
+    limiares = limiares or {}
+    return {
+        "familia": familia, "liga": liga, "versao": versao,
+        "a": resultado["a"], "b": resultado["b"],
+        "n_jogos": n_jogos, "brier_validacao": brier, "origem": origem,
+        "status": status,
+        "fator_encurtamento": resultado.get("fator_encurtamento"),
+        "motivo": resultado.get("motivo", ""),
+        "safe_ev": limiares.get("safe_ev"),
+        "neutro_ev": limiares.get("neutro_ev"),
+        "safe_edge": limiares.get("safe_edge"),
+        "neutro_edge": limiares.get("neutro_edge"),
+    }
+
+
+def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
+    """Grava as linhas do ciclo e promove as adotadas a `vigente`."""
+    if not linhas:
+        return 0
+    sql = """
+        INSERT INTO calibragem_versoes
+            (familia, liga, versao, a, b, n_jogos, brier_validacao,
+             origem, status, fator_encurtamento, motivo,
+             safe_ev, neutro_ev, safe_edge, neutro_edge)
+        VALUES (%(familia)s, %(liga)s, %(versao)s, %(a)s, %(b)s, %(n_jogos)s,
+                %(brier_validacao)s, %(origem)s, %(status)s,
+                %(fator_encurtamento)s, %(motivo)s,
+                %(safe_ev)s, %(neutro_ev)s, %(safe_edge)s, %(neutro_edge)s)
+    """
+    promove = """
+        UPDATE calibragem_versoes SET status = 'substituida'
+         WHERE familia = %s AND liga = %s AND status = 'vigente'
+    """
+    with _conn() as c, c.cursor() as cur:
+        for ln in linhas:
+            if ln["status"] in ("adotada", "encurtada"):
+                cur.execute(promove, (ln["familia"], ln["liga"]))
+                cur.execute(sql, dict(ln, status="vigente"))
+                cur.execute(sql, ln)
+            else:
+                cur.execute(sql, ln)
+    logger.info("[calibragem] ciclo gravou %d linhas de auditoria", len(linhas))
+    return len(linhas)
+
+
+def carregar_vigentes() -> Dict[tuple, Dict[str, Any]]:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            SELECT familia, liga, versao, a, b FROM calibragem_versoes
+             WHERE status = 'vigente'
+        """)
+        return {(r[0], r[1]): {"versao": r[2], "a": float(r[3]), "b": float(r[4])}
+                for r in cur.fetchall()}
+
+
+def carregar_anterior(familia: str, liga: str) -> Optional[Dict[str, Any]]:
+    """A ultima versao 'substituida' da celula — a que estava vigente antes
+    da atual.
+
+    Sem isso, `avaliar_reversao` seria chamada com o MESMO dict como
+    `vigente` e `anterior`: os dois Briers ficariam sempre identicos, a acao
+    seria sempre `manter`, e a reversao nunca dispararia — a patologia que
+    esta tarefa existe para impedir. `None` quando nao ha anterior, o caso
+    normal nos primeiros ciclos.
+    """
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            SELECT versao, a, b FROM calibragem_versoes
+             WHERE familia = %s AND liga = %s AND status = 'substituida'
+             ORDER BY versao DESC LIMIT 1
+        """, (familia, liga))
+        linha = cur.fetchone()
+        if linha is None:
+            return None
+        return {"versao": linha[0], "a": float(linha[1]), "b": float(linha[2])}
+
+
+def carregar_parametros_para_curva() -> Dict[tuple, tuple]:
+    """Formato que `curva.aplicar_versao` consome."""
+    return {ch: (v["versao"], v["a"], v["b"])
+            for ch, v in carregar_vigentes().items()}
+
+
+def contar_reversoes_seguidas(familia: str, liga: str) -> int:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            SELECT status FROM calibragem_versoes
+             WHERE familia = %s AND liga = %s
+               AND status IN ('revertida', 'adotada', 'encurtada')
+             ORDER BY id DESC LIMIT 5
+        """, (familia, liga))
+        seguidas = 0
+        for (st,) in cur.fetchall():
+            if st == "revertida":
+                seguidas += 1
+            else:
+                break
+        return seguidas
+
+
 def carregar_semente_backfill(caminho: str) -> List[Pick]:
     """Le o artefato do backfill (#227) e devolve Picks no mesmo formato.
 
