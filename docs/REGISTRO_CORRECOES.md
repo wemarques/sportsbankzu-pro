@@ -13097,9 +13097,12 @@ do #247 (o gate que nunca dispara) reintroduzida no mecanismo que este trabalho 
 
 **Consequencia registrada:** com a composicao, `legado.py` deixa de ser um modulo temporario.
 Ele nao morre quando as celulas saem da versao 0 — passa a ser a **camada base permanente**
-sobre a qual a camada aprendida escreve o residuo. O cabecalho daquele arquivo (congelado, nao
-editavel) ainda promete que ele sera apagado um dia; a nota que corrige isso vive na lista
-`CHAMADORES_PERMITIDOS_DO_LEGADO` de `tests/calibragem/test_12_guardas.py`.
+sobre a qual a camada aprendida escreve o residuo. O cabecalho daquele arquivo foi reescrito
+(**so a docstring do modulo**; o corpo e byte a byte identico, verificado — o controle positivo
+de 13.524 pares depende disso): a promessa de delecao esta marcada como **CANCELADA**, e
+`PROIBIDO EDITAR` continua valendo por outro motivo — nao mais "e andaime temporario", e sim "e
+a REFERENCIA contra a qual a fixture dourada e o controle positivo da composicao medem". Dois
+testes em `test_12_guardas.py` travam esse texto.
 
 **Custo, medido:** uma chamada ao legado por pick por ciclo. O ramo de Over/Under do legado
 consulta `get_lambda_corrections`, e o cache por liga do #231-a mantem isso em **20 consultas
@@ -13109,10 +13112,19 @@ consulta `get_lambda_corrections`, e o cache por liga do #231-a mantem isso em *
 passagem: `p_legado` e IDENTICO com e sem as correcoes reais do banco nos 5.484 picks, porque
 `_get_league_deflation` so alimenta o campo `ou_defl` do detalhe, que nao entra em `final`.
 
-**Lacuna registrada:** o `prediction_ledger` nao grava o `regime`, entao `carregar_amostra`
-reconstroi `p_legado` sempre como `NORMAL`. Picks servidos em HIPER-OFENSIVA voltam como
-NORMAL. Efeito limitado: `regime` so entra em `calibrate_prob` como a segunda chave da cadeia
-de fallback, consultada apenas quando nao existe modelo `market|liga`.
+**Pendencia conhecida (nao defeito silencioso): o `regime` ausente no ledger.** O
+`prediction_ledger` nao tem coluna de regime, e `inputs` tampouco carrega a chave — verificado,
+nao suposto. Logo `repositorio.carregar_amostra` reconstroi `p_legado` sempre como `NORMAL`, e
+picks que foram servidos em HIPER-OFENSIVA voltam como NORMAL para o estimador.
+
+Avaliacao, e por que fica assim: o efeito e **limitado a segunda chave do fallback isotonico**.
+`regime` so aparece em `calibrator.calibrate_prob` na cadeia
+`market|liga` -> `market|regime` -> `market|global` -> `familia|...`, ou seja, so muda alguma
+coisa quando NAO existe modelo `market|liga` e existe um `market|regime`. A deflacao por banda,
+o fator por liga e a escolha do ramo meia/inteira — que e onde mora quase toda a distancia entre
+`p_raw` e `p_legado` — nao olham o regime. Fechar a lacuna exige gravar o regime no ledger, o
+que e mudanca no produtor (#218) e entrada propria; ate la, esta escrito na constante
+`repositorio.REGIME_DA_AMOSTRA` e aqui.
 
 ### Licao aprendida
 A pergunta certa nao era "a camada aprende?" — era "o que ela aprende alem de nao

@@ -1,25 +1,64 @@
 # -*- coding: utf-8 -*-
-"""CONGELADO — a pilha de deflacao anterior a camada aprendida.
+"""CONGELADO — a CAMADA BASE PERMANENTE da calibragem.
 
-PROIBIDO EDITAR. Este modulo existe por um motivo unico: ser a versao 0, para
-que o deploy da camada nao mude nenhum numero publicado (spec, secao 6.1).
-Cada celula que sai da versao 0 deixa de chama-lo. Quando nenhuma celula
-referenciar mais a versao 0, este arquivo e APAGADO — o teste 1b guarda essa
-transicao.
+PROIBIDO EDITAR. O motivo mudou; a proibicao nao.
 
-Unico chamador permitido: `calibragem.curva.aplicar_versao`.
+## O que este modulo e, hoje
+
+A pilha de deflacao (isotonico + banda + fator por liga) por onde passa TODO
+numero publicado, em qualquer versao da camada aprendida. Desde o #248
+(Task 13) a curva aprendida NAO substitui este modulo: ela escreve um
+residuo SOBRE ele.
+
+    p_publicada = sigmoide(a + b * logit(calibrar_legado(p_raw)))
+
+## A promessa de delecao FOI CANCELADA (#248, Task 13)
+
+O cabecalho anterior dizia: "este modulo existe para ser a versao 0; cada
+celula que sai da versao 0 deixa de chama-lo; quando nenhuma referenciar
+mais, este arquivo e APAGADO". Isso valia enquanto a camada aprendia sobre
+`p_raw` e a versao 0 apenas DELEGAVA aqui — o modulo era andaime.
+
+A composicao acabou com o andaime. Como a curva se aplica a SAIDA deste
+modulo, `(a=0, b=1)` E a versao 0 por construcao (e por isso a trava de 2pp
+vale exata desde o primeiro ciclo, que era o Critico C1). Mas o outro lado da
+mesma moeda e que uma celula na versao 7 continua chamando `calibrar_legado`
+tanto quanto uma na versao 0: nao existe estado futuro em que ninguem
+referencie este arquivo. Ele nao morre.
+
+## Por que continua PROIBIDO EDITAR
+
+Nao mais por ser temporario — por ser a REFERENCIA. Duas provas dependem de
+o comportamento aqui nao mudar, e as duas quebram junto se alguem mexer:
+
+  1. `tests/calibragem/test_01_legado_controle_positivo.py` — a fixture
+     dourada, 13.524 pares capturados do codigo anterior ao refactor, com
+     igualdade EXATA (nao tolerancia);
+  2. `tests/calibragem/test_13_composicao.py` — o controle positivo da
+     composicao, que exige que `aplicar_versao(..., (versao, 0, 1))`
+     reproduza `calibrar_legado` nos mesmos 13.524 pares.
+
+Mudar um digito aqui move todo numero publicado E invalida a base contra a
+qual a camada aprendeu. Recalibrar a base e uma decisao de produto, com
+entrada propria no `REGISTRO_CORRECOES` — nao um patch neste arquivo.
+
+## Unico chamador permitido: `calibragem.curva`
+
+Duas portas, as duas em `curva.py`: `aplicar_versao` (o serving) e
+`base_da_composicao` (o `p_legado` que o repositorio poe em cada `Pick`, o
+regressor do estimador). A guarda `test_1b` em
+`tests/calibragem/test_12_guardas.py` le os IMPORTS por AST e falha se
+qualquer outro modulo do pacote importar daqui. O que ela protege agora nao
+e a delecao futura — e a pilha legada nao voltar a se espalhar.
 
 #248 (correcao pos-revisao): as primitivas de deflacao por banda/liga
 (`_band_deflation`, `_league_deflation_factor`, `_canonical_league`,
 `_LEAGUE_DEFLATION`, `_DEFLATION_KNOTS`, `apply_probability_deflation`) NAO
 moram mais aqui — foram para `calibragem/bandas.py`, modulo normal, porque
-tem chamadores permanentes fora da versao 0 (braco shadow #240, gate SAFE
-#052/#185, threshold #055, `health.py`). Manter essas primitivas neste
-arquivo tornava a promessa do paragrafo acima falsa: o modulo nunca ficaria
-sem referencia. Este arquivo agora so contem `calibrar_legado`, que e o
-unico codigo que de fato so serve a versao 0.
+tem chamadores permanentes fora desta pilha (braco shadow #240, gate SAFE
+#052/#185, threshold #055, `health.py`). Este arquivo so contem
+`calibrar_legado`.
 """
-
 import logging
 
 from backend.modeling.calibrator import calibrate_prob

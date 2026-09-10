@@ -21,14 +21,14 @@ def test_9_nenhum_modulo_do_pacote_le_audit_results():
 # morre junto com a versao 0". Com a composicao
 # (`p' = sigmoide(a + b*logit(legado(p)))`) o legado deixou de ser um estagio
 # temporario e virou a CAMADA BASE PERMANENTE: toda celula, em qualquer
-# versao, passa por ele. `legado.py` nao e mais deletavel, e o cabecalho dele
-# — congelado, nao editavel — ficou desatualizado nesse ponto especifico;
-# quem for reler aquele arquivo comeca por aqui.
+# versao, passa por ele, e `legado.py` nao e mais deletavel. O cabecalho
+# daquele arquivo foi reescrito para dizer isso (a promessa de delecao esta
+# cancelada la, por escrito) — este comentario e o eco, nao a unica fonte.
 #
-# O que a lista guarda hoje, e continua valendo: a pilha legada nao pode se
-# ESPALHAR. Dois pontos em `curva.py` a tocam — `aplicar_versao` (serving) e
-# `base_da_composicao` (o `p_legado` que o repositorio poe em cada `Pick`) —
-# e nenhum outro modulo do pacote a importa.
+# O que a lista guarda hoje: a pilha legada nao pode se ESPALHAR. Dois pontos
+# em `curva.py` a tocam — `aplicar_versao` (serving) e `base_da_composicao`
+# (o `p_legado` que o repositorio poe em cada `Pick`) — e nenhum outro modulo
+# do pacote a importa.
 CHAMADORES_PERMITIDOS_DO_LEGADO = ["curva.py"]
 
 
@@ -73,8 +73,22 @@ def test_1b_a_guarda_do_legado_de_fato_pega_um_chamador_novo():
 
 
 def test_1b_legado_esta_marcado_como_congelado():
+    """`PROIBIDO EDITAR` continua valendo — por outro motivo (#248, Task 13).
+
+    Nao mais "e andaime temporario", e sim "e a REFERENCIA": a fixture
+    dourada (13.524 pares, igualdade exata) e o controle positivo da
+    composicao travam o comportamento deste modulo, e mudar um digito nele
+    quebra os dois. O cabecalho tem de dizer as duas coisas.
+    """
     fonte = (PACOTE / "legado.py").read_text(encoding="utf-8")
     assert "PROIBIDO EDITAR" in fonte
+    assert "CAMADA BASE PERMANENTE" in fonte, (
+        "o cabecalho de legado.py voltou a descrever o modulo como andaime "
+        "temporario; com a composicao ele e permanente")
+    assert "CANCELADA" in fonte, (
+        "a promessa de delecao ('quando nenhuma celula referenciar mais, "
+        "este arquivo e APAGADO') tem de estar marcada como cancelada — com "
+        "a composicao toda celula chama o legado, em qualquer versao")
 
 
 class _M:
