@@ -14,7 +14,9 @@ from typing import Dict, Optional, Tuple
 from backend.modeling.calibragem import (
     MIN_N_JOGOS, PASSO_MAXIMO_PP, VERSAO_LEGADO,
 )
-from backend.modeling.calibragem import estimador, governanca, limiares, repositorio
+from backend.modeling.calibragem import (
+    estimador, governanca, limiares, linha_base, repositorio,
+)
 
 logger = logging.getLogger("sportsbankzu.calibragem.ciclo")
 
@@ -87,6 +89,33 @@ def _limiares_atuais() -> Dict[str, dict]:
     }
 
 
+def _vigente_da_celula(vigentes: Dict[tuple, dict], chave: tuple) -> Optional[dict]:
+    """O `(a, b)` contra o qual a trava e os limiares medem.
+
+    Celula com versao gravada: o que esta no banco. Celula SEM versao gravada:
+    a versao 0 — e a versao 0 NAO e a identidade, e o legado (#248, C1). Sem
+    esta funcao, `{"a": 0.0, "b": 1.0}` fazia a trava de 2pp medir contra uma
+    curva 12-25 pontos acima da publicada, e o primeiro ciclo passava por
+    "adotada" um salto de ate 24,95pp.
+
+    `None` quando a familia nao tem linha de base mensuravel (familia nova,
+    sem mercado representativo). O chamador rejeita a celula em vez de
+    inventar uma referencia — adotar sem saber de onde se parte e como o
+    defeito nasceu.
+    """
+    vig = vigentes.get(chave)
+    if vig is not None:
+        return vig
+    familia, liga = chave
+    try:
+        a0, b0 = linha_base.linha_base(familia, liga)
+    except ValueError as e:                                  # noqa: BLE001
+        logger.error("[calibragem] celula (%s, %s) sem linha de base: %s",
+                     familia, liga or "-", e)
+        return None
+    return {"versao": VERSAO_LEGADO, "a": a0, "b": b0, "criada_em": None}
+
+
 def executar(caminho_semente: Optional[str] = None) -> dict:
     """Um ciclo completo. Nunca levanta: falha aberta, como o resto do cron."""
     resumo = {"status": "executado", "celulas": 0, "adotadas": 0,
@@ -127,7 +156,16 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
             if not familia:
                 continue
             resumo["celulas"] += 1
-            vig = vigentes.get(chave) or {"versao": VERSAO_LEGADO, "a": 0.0, "b": 1.0}
+            vig = _vigente_da_celula(vigentes, chave)
+            if vig is None:
+                decisoes[chave] = {
+                    "vig": {"versao": VERSAO_LEGADO, "a": None, "b": None},
+                    "resultado": {"a": None, "b": None, "status": "rejeitada",
+                                  "fator_encurtamento": None,
+                                  "motivo": f"sem linha de base para '{familia}'"},
+                    "n_jogos": proposta["n_jogos"], "origem": proposta["origem"],
+                }
+                continue
             servidos = por_celula.get(chave, [])
 
             # A reversao compara vigente contra ANTERIOR (a versao substituida
@@ -191,9 +229,15 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
         # (familia, "") — a celula-familia, nao das celulas por liga.
         parametros_antigos: Dict[str, dict] = {}
         parametros_novos: Dict[str, dict] = {}
+        # #248, C1: `dec["vig"]` de uma celula sem versao gravada e a LINHA DE
+        # BASE DO LEGADO, nao mais a identidade. Sem isso a re-derivacao
+        # preservava o volume de uma curva que nunca publicou nada, e o volume
+        # real dobrava no primeiro ciclo (medido: SAFE de Corners 106 -> 306).
         for (familia, liga), dec in decisoes.items():
             if liga:
                 continue
+            if dec["vig"]["a"] is None or dec["resultado"]["a"] is None:
+                continue   # celula rejeitada por falta de linha de base
             parametros_antigos[familia] = {"a": dec["vig"]["a"], "b": dec["vig"]["b"]}
             parametros_novos[familia] = {"a": dec["resultado"]["a"],
                                          "b": dec["resultado"]["b"]}

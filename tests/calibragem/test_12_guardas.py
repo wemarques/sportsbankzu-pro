@@ -17,12 +17,27 @@ def test_9_nenhum_modulo_do_pacote_le_audit_results():
     assert not ofensores, ofensores
 
 
-def test_1b_legado_so_tem_um_chamador():
-    """Enquanto houver celula na versao 0 o legado vive — com UM chamador."""
-    chamadores = [f.name for f in PACOTE.glob("*.py")
-                  if f.name != "legado.py"
-                  and "calibrar_legado" in f.read_text(encoding="utf-8")]
-    assert chamadores == ["curva.py"], chamadores
+# Lista FECHADA de quem pode chamar o legado. Nao e "quem chama hoje": e
+# quem morre junto com a versao 0.
+#   curva.py      — o serving: `aplicar_versao` delega quando a celula esta
+#                   na versao 0. E a razao de `legado.py` existir.
+#   linha_base.py — a MEDICAO da versao 0 (#248, C1): ajusta (a0, b0) a curva
+#                   legada para a trava de passo e a re-derivacao de limiares
+#                   terem contra o que medir. Nao serve numero a ninguem; some
+#                   no mesmo dia que `legado.py`.
+# Qualquer terceiro nome aqui significa que a pilha legada voltou a se
+# espalhar, e ai `legado.py` nunca mais e deletavel — que e o que este teste
+# existe para impedir.
+CHAMADORES_PERMITIDOS_DO_LEGADO = ["curva.py", "linha_base.py"]
+
+
+def test_1b_legado_so_tem_os_chamadores_permitidos():
+    """Enquanto houver celula na versao 0 o legado vive — com chamadores
+    contados, todos eles deletaveis junto com ele."""
+    chamadores = sorted(f.name for f in PACOTE.glob("*.py")
+                        if f.name != "legado.py"
+                        and "calibrar_legado" in f.read_text(encoding="utf-8"))
+    assert chamadores == sorted(CHAMADORES_PERMITIDOS_DO_LEGADO), chamadores
 
 
 def test_1b_legado_esta_marcado_como_congelado():
