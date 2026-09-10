@@ -1364,3 +1364,31 @@ confiavel vale mais, para quem opera, do que a linha de menor perda esperada con
 INFO em vez de remove-la. A decisao acima e sobre QUAL linha sobrevive a comparacao, nao
 sobre a outra ter de sumir da tela.
 
+---
+
+### #248 — Fonte de calibracao e sempre o ledger pre-jogo; `audit_results` proibido
+
+**Regra permanente:** `audit_results` e proibido como fonte de calibracao. A fonte e
+`prediction_ledger` x `ledger_outcomes`, **uma linha por (jogo, mercado, selecao)**, a
+**ultima geracao antes do kickoff** (`escolher_ultima_geracao`, que descarta qualquer geracao
+publicada no ou apos o kickoff — o defeito do #200). `n_efetivo` **conta jogos**, nao picks —
+picks do mesmo jogo compartilham o mesmo placar e nao sao observacoes independentes.
+
+**Razao:** o #200/#244 medem contaminacao mensuravel no `audit_results` (prognostico
+RECOMPUTADO pos-jogo — os picks de `Escanteios Over 11.5` caem em jogos de 13,6 escanteios em
+media e "acertam" 78,8%, e a tabela guarda um unico mercado por jogo por indice unico em
+`match_id`). A camada de calibragem aprendida (#248,
+`backend/modeling/calibragem/repositorio.py::carregar_amostra`) formaliza a regra em codigo E
+em teste-guarda: `tests/calibragem/test_12_guardas.py::test_9_nenhum_modulo_do_pacote_le_audit_results`
+varre todo `backend/modeling/calibragem/*.py` por ocorrencia textual de `audit_results` e falha
+se algum modulo do pacote a mencionar — inclusive em comentario, para nao deixar nascer um
+caminho de codigo morto que a cite.
+
+**Proibido:** qualquer modulo de calibracao (presente ou futuro, dentro ou fora do pacote
+`calibragem`) ler `audit_results` para ajustar parametro, medir erro ou validar decisao.
+Medicao de calibracao/erro/ROI a partir do `audit_results` ja e proibida pelo #244; esta regra
+estende a proibicao ao PIPELINE de ajuste automatico, nao so a relatorios manuais.
+
+**Relacionado:** [[#244]] (a fonte proibida, medida por primeiro), [[#200]] (a contaminacao
+original do `audit_results`).
+

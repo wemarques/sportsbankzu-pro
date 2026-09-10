@@ -15,8 +15,8 @@ camada aprendida:
 
 Ao contrário de `legado.py`, este módulo NÃO é deletável quando a versão 0
 sair de uso — sua vida útil é independente da migração para a camada
-aprendida. `legado.py` importa daqui o que `calibrar_legado` precisa; não
-duplica.
+aprendida. `legado.py` importa daqui o que a função congelada da versão 0
+precisa; não duplica.
 """
 
 # ── Probability deflation by band + per-league (#105) ──────────────────

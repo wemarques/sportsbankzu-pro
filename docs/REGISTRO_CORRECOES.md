@@ -12871,3 +12871,117 @@ denunciava. E a mesma forma do #246: a decisao que o sistema toma sozinho nao ap
 lugar nenhum. Um selo que le arquivo estatico e nunca consulta o backend nao pode afirmar o
 estado do backend.
 
+---
+
+## 248 — A camada de calibragem aprendida substitui a deflacao fixa: pacote fechado, prova empirica e guardas finais
+**Data:** 2026-09-09 | **Arquivos:** `backend/modeling/calibragem/` (pacote: `legado.py`, `bandas.py`, `curva.py`, `repositorio.py`, `estimador.py`, `governanca.py`, `limiares.py`, `ciclo.py`, `__init__.py`); `tests/calibragem/` (12 arquivos, incluindo `test_12_guardas.py` novo e `test_01_legado_controle_positivo.py` corrigido) | **Severidade:** Critica (substitui o calculo que decide todo numero publicado) | **Status:** Implementado — pacote construido e testado; ATIVACAO em producao (ligar o ciclo automatico) e decisao separada, condicionada aos seis ciclos do criterio de fracasso pre-registrado
+
+### O problema que motivou o trabalho (#244/#245)
+Medido no `prediction_ledger` x `ledger_outcomes` (fonte pre-jogo, sem vazamento), 18.378
+previsoes em 220 jogos: erro medio ponderado da probabilidade publicada de **-10,2 pontos**
+contra a frequencia real. Nos extremos, -29,5 pontos (`Corners Over 5.5`: real 91,3%,
+publicada 61,8%). A causa (#244/#245): `apply_probability_deflation` encolhe as duas pontas
+de todo par complementar, e a grade por familia (#245) mostrou que o melhor fator e **zero
+em cinco das seis familias** — o redutor nao esta mal repartido, esta errado. Este pacote e
+o que o substitui.
+
+### As seis decisoes da spec, com a razao
+Fonte: `docs/superpowers/specs/2026-09-09-camada-calibragem-aprendida-design.md`, secao 2.
+
+| # | Decisao | Razao |
+|---|---|---|
+| D1 | A camada aprende a **correcao** do que o motor produz, nao a previsao do zero | Com 220 jogos limpos, um preditor completo aprenderia ruido; a correcao tem poucos parametros e ataca o erro ja medido |
+| D2 | Atualizacao **automatica, com trava de passo e reversao** | Aprende continuamente sem poder dar um salto errado; cada mudanca vira linha auditavel |
+| D3 | Recorte **por familia, com a liga ganhando autonomia conforme a amostra** | Hoje se comporta como "uma curva por familia"; conforme os dados chegam, ligas com historico proprio se descolam sozinhas |
+| D4 | Os **limiares sao re-derivados junto**, mantendo o volume publicado constante | Sem isso a mudanca de calibracao e a de volume se misturam e a proxima medicao fica ilegivel |
+| D5 | A curva e **semeada pelo backfill com peso que decai** | Da sinal desde o primeiro dia; o backfill perde peso sozinho conforme o ledger cresce |
+| D6 | Forma da funcao: **dois parametros no espaco do logit** | E o que 220 jogos sustentam; e monotono por construcao; a trava e a reversao ficam triviais; e legivel |
+
+Implementadas nas Tasks 1-11 (fechadas antes desta entrada): `legado.py` (versao 0,
+congelado) + `curva.aplicar_versao` (D1/D6); `estimador.ajustar_hierarquico` (D3, encolhimento
+hierarquico global -> familia -> liga); `governanca` (D2 — trava, piso de amostra, reversao
+fora da amostra); `repositorio` + `limiares` (D4 — persistencia e re-derivacao de limiares na
+mesma linha de auditoria); `ciclo.executar` (D5 — semente do backfill com peso decrescente +
+orquestracao do ciclo).
+
+### Controle positivo do legado (Task 1, teste 1 da spec)
+`calibrar_legado` — a versao 0, movida do codigo anterior ao refactor — reproduz a producao
+com **igualdade exata em 13.524 pares** (fixture `tests/calibragem/fixtures/golden_legado.json`,
+`test_legado_reproduz_a_producao_exatamente`). Este e o teste que sustenta tudo o resto: se
+falhasse, a costura entre o codigo antigo e o pacote novo estaria errada e nenhum outro
+resultado do pacote importaria.
+
+### Regressao consertada antes desta entrega — mesmo defeito do #242, em outro teste
+A suite completa revelou `test_legado_preserva_o_detalhe_inteiro` falhando (`assert 1.0 ==
+0.9` no campo `ou_defl`) — passava isolado. Causa: `calibrar_legado` chama
+`_get_league_deflation(liga)` em `poisson_matrix.py`, que consulta `get_lambda_corrections(liga)`
+**no banco** via o cache TTL de 300s do #231-a, e so cai no padrao documentado 0,90 quando a
+consulta falha ou a liga nao tem `lambda_multiplier`. A fixture dourada foi capturada com o
+cache TTL **frio** (consulta falhou -> 0,90); na suite completa um teste anterior aquece esse
+cache com a RDS real, e 18 das 22 ligas tem `lambda_multiplier: 1.0` — o resultado diverge por
+**ORDEM de execucao**, nao por defeito de logica no calculo.
+
+Corrigido exatamente como o #242 corrigiu (`tests/test_233_classificacao_valor.py`): fixture
+`autouse` que, na entrada, limpa o cache de correcoes e faz `monkeypatch` de
+`get_lambda_corrections` para devolver `{}` — reproduzindo as condicoes exatas em que a
+fixture dourada foi capturada — e limpa o cache de novo na saida. **A fixture dourada NAO foi
+recapturada**: ela e o registro do comportamento anterior ao refactor, e recaptura-la agora
+seria circular, porque `calibrar_legado` **e** o codigo movido. O teste tem de fixar o estado,
+nao a fixture tem de seguir o estado.
+
+### As tres guardas finais (Task 12, testes 1b/7/9 da spec)
+`tests/calibragem/test_12_guardas.py`, 5 testes, todos verdes:
+- **#244 — nenhum modulo do pacote le `audit_results`.** Varredura textual de todo arquivo de
+  `backend/modeling/calibragem/`. Achou um falso positivo na primeira rodada — a docstring de
+  `bandas.py` mencionava `calibrar_legado` em prosa (explicando de onde `legado.py` importa),
+  nao uma chamada real; a guarda so busca o TOKEN. Corrigida a redacao da docstring, sem
+  mudanca de comportamento.
+- **O legado tem UM unico chamador** (`curva.py`) e o cabecalho de `legado.py` esta marcado
+  `PROIBIDO EDITAR`.
+- **A curva nao reordena linhas do corredor (#246-a).** Com numeros reais de Toronto x
+  Nashville SC (09/09/2026, geracao 03:09), `_filter_corridor_bets` decide os mesmos
+  sobreviventes com e sem a camada aplicada, testado em cinco pares `(a,b)` incluindo `b<1` e
+  `a` negativo — a monotonicidade da curva (`aplicar` e afim no logit, portanto nao-decrescente
+  para qualquer `b>0`) protege a decisao do corredor por construcao.
+
+### Prova empirica (Task 12, passo 4 — proibicao 14 do CLAUDE.md)
+Corte 70/30 por jogo, semente 227: 154 jogos de treino, 66 de teste, **1.482 picks** na janela
+retida. Amostra completa carregada por `carregar_amostra()`: **4.968 picks em 220 jogos** —
+Corners 1.974, Over/Under 1.122, Cards 765, Double Chance 600, 1X2 287, BTTS 220.
+
+```
+PUBLICADA (deflacao hoje)  Brier 0,19567    —
+RAW (sem deflacao)         Brier 0,17912   -0,01655
+CAMADA (a,b) aprendida     Brier 0,17902   -0,01665
+medias: publicada 49,6% | raw 59,0% | camada 60,4% | REAL 59,2%
+```
+
+O delta do script do brief (camada contra RAW) e **-0,00010**: negativo, entao a camada passa
+o criterio de fracasso pre-registrado. Mas o criterio que decide de verdade e contra a
+publicada, que e o que a camada substitui — e ai o delta e **-0,01665**, com folga confortavel
+sobre a deflacao vigente.
+
+**A leitura que importa, sem suavizar:** dos -0,01665 pontos de Brier ganhos contra a
+publicada, -0,01655 (99,4%) vem so de PARAR DE DEFLACIONAR — o RAW sozinho ja acerta a media
+quase na mosca (59,0% contra 59,2% real). Apenas -0,00010 (0,6%) vem da camada aprender algo
+alem disso. Bate exatamente com o #245 (melhor alpha = 0 em cinco de seis familias): com os
+dados de hoje, a camada esta redescobrindo "nao deflacione", nao encontrando um padrao novo.
+O valor dela e adaptacao futura, governanca e auditoria por ciclo — nao precisao presente
+sobre a amostra atual.
+
+### O criterio de fracasso pre-registrado (secao 8 da spec, decisao de Welligton)
+> Se depois de seis ciclos o Brier fora da amostra da camada nao for melhor que o da deflacao
+> atual, a camada e abandonada, nao ajustada.
+
+A medicao acima e UMA janela retida, nao os seis ciclos em producao — nao substitui o
+pre-registro, e a prova de que a implementacao funciona como projetada antes de ligar o ciclo
+automatico.
+
+### Licao aprendida
+A pergunta certa nao era "a camada aprende?" — era "o que ela aprende alem de nao
+deflacionar?". A resposta, medida, e pouca: o ganho de aprendizado sobre o RAW e uma ordem de
+grandeza menor que o ganho de parar de deflacionar. Registrar os dois numeros separados
+(contra RAW e contra PUBLICADA) e o que evita a leitura otimista de "a camada resolveu o
+problema" quando o que resolveu foi desligar um mecanismo que, pelo #245, nunca deveria ter
+existido na intensidade atual em cinco das seis familias.
+

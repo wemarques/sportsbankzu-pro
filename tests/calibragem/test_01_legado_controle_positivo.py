@@ -15,6 +15,25 @@ from backend.modeling.calibragem.legado import calibrar_legado
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "golden_legado.json"
 
 
+@pytest.fixture(autouse=True)
+def _sem_calibracao_por_liga(monkeypatch):
+    """#242 (mesmo defeito, outro teste) - `calibrar_legado` chama
+    `_get_league_deflation`, que consulta `get_lambda_corrections` no banco
+    via o cache TTL de 300s do #231-a. A fixture dourada foi capturada com o
+    cache frio (consulta falhou -> caiu no padrao 0.90 documentado). Num
+    proceso onde um teste anterior ja aqueceu o cache com a RDS real, 18 das
+    22 ligas devolvem `lambda_multiplier: 1.0` e o resultado diverge da
+    fixture por ORDEM de execucao, nao por defeito de logica. Aqui fixamos
+    o estado (cache limpo + get_lambda_corrections mockado para {}) para
+    reproduzir exatamente as condicoes em que a fixture foi capturada.
+    """
+    from backend.modeling import lambda_calculator as LC
+    LC.limpar_cache_correcoes()
+    monkeypatch.setattr(LC, "get_lambda_corrections", lambda league: {})
+    yield
+    LC.limpar_cache_correcoes()
+
+
 @pytest.fixture(scope="module")
 def casos():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
