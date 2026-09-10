@@ -157,3 +157,72 @@ def ajustar_hierarquico(picks: Sequence) -> Dict[Tuple[str, str], dict]:
                                   "origem": "liga" if proprio else "familia",
                                   "k_fixo": caiu_no_fixo}
     return saida
+
+
+from backend.modeling.calibragem import (
+    MIN_PICKS_PARA_VALIDAR_SEMENTE, N_PRIOR_NAO_VALIDADA, TETO_N_PRIOR,
+    TOLERANCIA_CONCORDANCIA,
+)
+
+
+def medir_concordancia(semente: Sequence, ledger: Sequence) -> Tuple[float, int]:
+    """Fracao dos picks sobrepostos em que as duas fontes ficam a < 2 pontos.
+
+    Sobreposicao e por (match_id, familia, liga, p_raw arredondado ao pick):
+    usamos (match_id, familia, liga) porque o Pick nao carrega a selecao — o
+    par e formado na ordem em que aparece dentro da chave.
+    """
+    idx = defaultdict(list)
+    for p in ledger:
+        idx[(p.match_id, p.familia, p.liga)].append(p.p_raw)
+
+    total = concordantes = 0
+    for p in semente:
+        candidatos = idx.get((p.match_id, p.familia, p.liga))
+        if not candidatos:
+            continue
+        total += 1
+        if min(abs(p.p_raw - q) for q in candidatos) < TOLERANCIA_CONCORDANCIA:
+            concordantes += 1
+    if total == 0:
+        return (0.0, 0)
+    return (concordantes / total, total)
+
+
+def n_prior_da_concordancia(concordancia: float, n_sobrepostos: int) -> Tuple[int, str]:
+    """(n_prior, status). Nada bloqueia: a semente entra de qualquer forma."""
+    if n_sobrepostos < MIN_PICKS_PARA_VALIDAR_SEMENTE:
+        return (N_PRIOR_NAO_VALIDADA, "semente_nao_validada")
+    n = int(round(TETO_N_PRIOR * max(0.0, min(1.0, concordancia))))
+    return (n, "semente_validada")
+
+
+def aplicar_semente(ajuste_ledger: Dict[Tuple[str, str], dict],
+                    ajuste_semente: Dict[Tuple[str, str], dict],
+                    n_prior: int) -> Dict[Tuple[str, str], dict]:
+    """theta = (n_ledger*ledger + n_prior*semente) / (n_ledger + n_prior).
+
+    O decaimento da semente nao e um mecanismo separado: e a propria
+    aritmetica da media ponderada. Conforme `n_jogos` do ledger cresce, o
+    peso de `n_prior` encolhe sozinho — nao ha fator de decaimento explicito
+    a manter em dia.
+    """
+    saida: Dict[Tuple[str, str], dict] = {}
+    for chave in set(ajuste_ledger) | set(ajuste_semente):
+        no_ledger = ajuste_ledger.get(chave)
+        na_semente = ajuste_semente.get(chave)
+        if no_ledger is None:
+            saida[chave] = dict(na_semente, origem="semente")
+            continue
+        if na_semente is None or n_prior <= 0:
+            saida[chave] = dict(no_ledger)
+            continue
+        n_l = no_ledger["n_jogos"]
+        peso = n_l / (n_l + n_prior)
+        saida[chave] = dict(
+            no_ledger,
+            a=peso * no_ledger["a"] + (1 - peso) * na_semente["a"],
+            b=peso * no_ledger["b"] + (1 - peso) * na_semente["b"],
+            origem=f"{no_ledger['origem']}+semente",
+        )
+    return saida

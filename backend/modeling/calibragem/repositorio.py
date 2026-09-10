@@ -156,3 +156,42 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
     if sem_familia:
         logger.warning("[calibragem] %d picks sem familia reconhecida", sem_familia)
     return saida
+
+
+def carregar_semente_backfill(caminho: str) -> List[Pick]:
+    """Le o artefato do backfill (#227) e devolve Picks no mesmo formato.
+
+    O arquivo e um JSON com uma lista de picks reconstruidos. Ausente ou
+    ilegivel devolve lista vazia — a semente e opcional por desenho, e o
+    ciclo continua sem ela.
+
+    Classificacao de familia usa `classificar_familia(market, selection)`,
+    nao `familia_do_mercado` direto no rotulo concatenado: e a mesma
+    correcao da rodada 1 (ver docstring de `classificar_familia`) — resolver
+    primeiro por `market` isolado evita que "Corners Over 7.5" perca para
+    "over " e va parar em Over/Under.
+    """
+    import json
+    if not os.path.exists(caminho):
+        logger.info("[calibragem] semente ausente em %s", caminho)
+        return []
+    try:
+        dados = json.loads(open(caminho, encoding="utf-8").read())
+    except Exception as e:                                   # noqa: BLE001
+        logger.warning("[calibragem] semente ilegivel: %s", e)
+        return []
+
+    saida: List[Pick] = []
+    for d in dados:
+        market = d.get("market", "")
+        selection = d.get("selection", "")
+        familia = classificar_familia(market, selection)
+        if familia is None:
+            continue
+        raw, y = d.get("raw_prob"), d.get("outcome")
+        if raw is None or y is None:
+            continue
+        saida.append(Pick(d.get("match_id", ""), familia,
+                          d.get("league_id") or "", float(raw),
+                          int(bool(int(y)))))
+    return saida
