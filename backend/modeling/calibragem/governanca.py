@@ -6,10 +6,10 @@ parametros separadamente e dificil de raciocinar: o mesmo delta em `a` move
 pouco no meio da escala e muito nas pontas.
 """
 import logging
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 from backend.modeling.calibragem import MIN_N_JOGOS, PASSO_MAXIMO_PP
-from backend.modeling.calibragem.curva import distancia_maxima
+from backend.modeling.calibragem.curva import aplicar, distancia_maxima
 
 logger = logging.getLogger("sportsbankzu.calibragem.governanca")
 
@@ -60,3 +60,50 @@ def avaliar_proposta(proposta: dict, vigente: dict, n_jogos: int,
     return {"a": a_f, "b": b_f, "status": "encurtada",
             "fator_encurtamento": baixo,
             "motivo": f"passo limitado a {limite:.4f} de probabilidade"}
+
+
+def brier(pares: Sequence[Tuple[float, int]]):
+    """Media de (p - y)^2. None se vazio."""
+    if not pares:
+        return None
+    return sum((p - y) ** 2 for p, y in pares) / len(pares)
+
+
+def avaliar_reversao(picks_servidos: Sequence, vigente: dict, anterior: dict,
+                     reversoes_seguidas: int) -> dict:
+    """Compara, NOS JOGOS QUE A VIGENTE SERVIU, vigente contra anterior.
+
+    Reverte pelo PONTO, sem esperar o IC excluir zero. A assimetria justifica:
+    reversao falsa volta para uma versao ja validada e custa quase nada;
+    reversao que nao acontece deixa uma versao ruim publicando mais um ciclo.
+    """
+    n_jogos = len({p.match_id for p in picks_servidos})
+    if n_jogos < MIN_N_JOGOS:
+        return {"acao": "manter",
+                "motivo": f"janela com {n_jogos} jogos < {MIN_N_JOGOS}",
+                "limite_proximo": PASSO_MAXIMO_PP}
+
+    b_vig = brier([(aplicar(p.p_raw, vigente["a"], vigente["b"]), p.y)
+                   for p in picks_servidos])
+    b_ant = brier([(aplicar(p.p_raw, anterior["a"], anterior["b"]), p.y)
+                   for p in picks_servidos])
+    if b_vig is None or b_ant is None or b_vig <= b_ant:
+        return {"acao": "manter",
+                "motivo": f"brier vigente {b_vig:.5f} <= anterior {b_ant:.5f}"
+                          if b_vig is not None and b_ant is not None else "sem brier",
+                "limite_proximo": PASSO_MAXIMO_PP}
+
+    if reversoes_seguidas >= 1:
+        logger.error(
+            "[calibragem] celula CONGELADA apos 2 reversoes seguidas: "
+            "brier vigente %.5f > anterior %.5f em %d jogos",
+            b_vig, b_ant, n_jogos,
+        )
+        return {"acao": "congelar",
+                "motivo": "duas reversoes seguidas; enviado para revisao humana",
+                "limite_proximo": 0.0}
+
+    return {"acao": "reverter",
+            "motivo": f"brier vigente {b_vig:.5f} > anterior {b_ant:.5f} "
+                      f"em {n_jogos} jogos",
+            "limite_proximo": PASSO_MAXIMO_PP / 2}
