@@ -34,6 +34,25 @@ def _ttl() -> float:
     return float(os.getenv("CALIBRAGEM_TTL_S", "300"))
 
 
+def calibragem_habilitada() -> bool:
+    """Chave de desligamento do ciclo de ESCRITA. Padrao: DESLIGADO.
+
+    Segue o padrao da casa (`PROB_SOURCE` do #231, `PREDICTION_LEDGER_ENABLED`
+    do #218): o deploy do codigo NAO e a ativacao do comportamento. Sem esta
+    chave, `cron_handler` chamaria `executar()` duas vezes por dia desde o
+    primeiro deploy, e o `REGISTRO_CORRECOES` do #248 — que afirma que ligar
+    em producao e decisao separada — seria falso na pratica.
+
+    Governa apenas a ESCRITA (`executar`). O SERVING (`parametros_vigentes`)
+    continua ligado de proposito: sem versoes gravadas ele devolve o mapa
+    vazio e `curva.aplicar_versao` delega ao legado, ou seja, publica
+    exatamente o que se publicava na vespera.
+    """
+    return os.getenv("CALIBRAGEM_ENABLED", "false").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+
+
 def limpar_cache() -> None:
     _CACHE.update({"parametros": None, "procedencia": None, "t": 0.0})
 
@@ -70,8 +89,15 @@ def _limiares_atuais() -> Dict[str, dict]:
 
 def executar(caminho_semente: Optional[str] = None) -> dict:
     """Um ciclo completo. Nunca levanta: falha aberta, como o resto do cron."""
-    resumo = {"celulas": 0, "adotadas": 0, "encurtadas": 0, "revertidas": 0,
-              "congeladas": 0, "jogos": 0, "erro": None}
+    resumo = {"status": "executado", "celulas": 0, "adotadas": 0,
+              "encurtadas": 0, "revertidas": 0, "congeladas": 0, "jogos": 0,
+              "erro": None}
+    if not calibragem_habilitada():
+        resumo["status"] = "desligado"
+        logger.info(
+            "[CALIBRAGEM] ciclo NAO executado: CALIBRAGEM_ENABLED desligada "
+            "(padrao). Nenhuma leitura, nenhuma escrita, nenhum DDL.")
+        return resumo
     try:
         repositorio.garantir_tabela()
         picks = repositorio.carregar_amostra()

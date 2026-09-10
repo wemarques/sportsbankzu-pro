@@ -8,6 +8,14 @@ from backend.modeling.calibragem import ciclo
 from backend.modeling.calibragem.repositorio import Pick
 
 
+@pytest.fixture(autouse=True)
+def _ciclo_ligado(monkeypatch):
+    """`CALIBRAGEM_ENABLED` e DESLIGADA por padrao (#248, C4). Os testes deste
+    modulo exercitam o corpo de `executar()`, entao ligam a chave
+    explicitamente — os dois testes da propria chave a sobrescrevem."""
+    monkeypatch.setenv("CALIBRAGEM_ENABLED", "true")
+
+
 def test_banco_fora_cai_no_legado_e_marca(monkeypatch):
     ciclo.limpar_cache()  # isola do cache que outro teste deste modulo deixou
     def explode():
@@ -306,3 +314,61 @@ def test_executar_nunca_levanta_e_preenche_erro(monkeypatch):
     assert "ledger indisponivel" in resumo["erro"]
     assert resumo["celulas"] == 0
     assert resumo["jogos"] == 0
+
+
+# --- C4: a chave de desligamento. Sem ela, o deploy E a ativacao, e o ciclo
+# roda >= 2x/dia contra a RDS de producao desde o primeiro cron. ---
+
+
+def test_flag_desligada_nao_toca_o_banco_e_devolve_desligado(monkeypatch):
+    """Padrao de fabrica: NADA acontece. Nem DDL, nem leitura, nem escrita.
+
+    A prova e por explosao: `_conn` levanta se for chamada, e as tres funcoes
+    de leitura do ciclo tambem. Se qualquer uma for alcancada, o teste falha
+    com a mensagem de quem foi alcancada — em vez de so olhar o resumo, que
+    passaria mesmo se o ciclo tivesse rodado e falhado por outro motivo.
+    """
+    import backend.modeling.calibragem.repositorio as repo
+
+    monkeypatch.delenv("CALIBRAGEM_ENABLED", raising=False)
+
+    def _proibido(*a, **k):
+        raise AssertionError("com a flag desligada nada pode ser chamado")
+
+    monkeypatch.setattr(repo, "_conn", _proibido)
+    monkeypatch.setattr(ciclo.repositorio, "garantir_tabela", _proibido)
+    monkeypatch.setattr(ciclo.repositorio, "carregar_amostra", _proibido)
+    monkeypatch.setattr(ciclo.repositorio, "carregar_vigentes", _proibido)
+    monkeypatch.setattr(ciclo.repositorio, "gravar_ciclo", _proibido)
+
+    resumo = ciclo.executar()
+
+    assert resumo["status"] == "desligado"
+    assert resumo["erro"] is None
+    assert resumo["celulas"] == 0 and resumo["jogos"] == 0
+
+
+@pytest.mark.parametrize("valor", ["1", "true", "TRUE", "yes", "on"])
+def test_flag_ligada_executa_o_ciclo(monkeypatch, valor):
+    """O outro estado: com a chave ligada (em qualquer das formas aceitas
+    pelo padrao da casa) o corpo roda e o status sai 'executado'."""
+    monkeypatch.setenv("CALIBRAGEM_ENABLED", valor)
+    picks = _servidos(25)
+    ajuste = {("Over/Under", ""): {"a": -0.90, "b": 1.0, "n_jogos": 25,
+                                   "origem": "familia", "k_fixo": False}}
+    _montar_ambiente(
+        monkeypatch, picks=picks, ajuste=ajuste,
+        vigentes={("Over/Under", ""): {"versao": 5, "a": -0.90, "b": 1.0}},
+        anterior_por_celula={})
+
+    resumo = ciclo.executar()
+
+    assert resumo["status"] == "executado"
+    assert resumo["erro"] is None
+    assert resumo["celulas"] == 1
+
+
+@pytest.mark.parametrize("valor", ["0", "false", "no", "off", ""])
+def test_valores_falsos_mantem_desligado(monkeypatch, valor):
+    monkeypatch.setenv("CALIBRAGEM_ENABLED", valor)
+    assert ciclo.calibragem_habilitada() is False

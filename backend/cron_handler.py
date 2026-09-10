@@ -453,6 +453,11 @@ def _run_batch_audit(date_filter: str, before_time_brt: str | None = None) -> di
 
     # #248: ciclo da camada de calibragem. Roda DEPOIS de registrar desfechos,
     # para consumir os jogos liquidados nesta execucao. Falha aberta.
+    # DESLIGADO por padrao: `executar()` verifica `CALIBRAGEM_ENABLED` (padrao
+    # false) e retorna {"status": "desligado"} sem tocar o banco. A chamada
+    # fica incondicional de proposito — quem decide e a variavel, nao o
+    # codigo, no padrao do `PROB_SOURCE` (#231) e do
+    # `PREDICTION_LEDGER_ENABLED` (#218).
     try:
         from backend.modeling.calibragem.ciclo import executar as _ciclo_calibragem
         _resumo_calibragem = _ciclo_calibragem(
