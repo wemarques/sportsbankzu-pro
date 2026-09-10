@@ -30,6 +30,12 @@ def _cache_limpo():
     `_get_league_deflation` cair nos padroes documentados — as condicoes em
     que a fixture dourada foi capturada. Sem isso, um teste anterior que
     aqueca o cache com a RDS real muda o resultado por ORDEM DE EXECUCAO.
+
+    A fixture YIELDA a funcao ORIGINAL. Quem precisa da funcao de verdade
+    (com o cache por liga do #231-a dentro dela) pede `_cache_limpo` pelo
+    nome e a recoloca -- e o caso do teste que conta consultas por liga em
+    `test_03`: substituir `get_lambda_corrections` inteira mede o numero
+    errado, porque o cache mora DENTRO dela.
     """
     from backend.modeling import lambda_calculator as LC
     from backend.modeling.calibragem import ciclo
@@ -39,7 +45,7 @@ def _cache_limpo():
     LC.limpar_cache_correcoes()
     ciclo.limpar_cache()
     try:
-        yield
+        yield original
     finally:
         LC.get_lambda_corrections = original
         LC.limpar_cache_correcoes()

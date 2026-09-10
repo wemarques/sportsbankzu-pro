@@ -118,3 +118,106 @@ def test_pick_aceita_cinco_argumentos_posicionais_e_odd_sai_none():
     assert p.p_raw == 0.61
     assert p.y == 1
     assert p.odd is None
+
+
+# ─── o custo de reconstruir `p_legado` (#248, Task 13) ──────────────────────
+#
+# `carregar_amostra` passou a chamar o legado uma vez por pick, e o ramo de
+# Over/Under do legado consulta `lambda_calculator.get_lambda_corrections`,
+# que vai ao banco. Sao 5.484 picks em producao. A invariante que este teste
+# trava: UMA consulta por LIGA, nunca uma por PICK.
+
+
+class _CursorDaAmostra:
+    """Devolve as linhas do SELECT de `carregar_amostra`, na ordem da query."""
+
+    def __init__(self, linhas):
+        self._linhas = linhas
+
+    def execute(self, sql, params=None):
+        pass
+
+    def fetchall(self):
+        return self._linhas
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _ConexaoDaAmostra:
+    def __init__(self, linhas):
+        self._linhas = linhas
+
+    def cursor(self):
+        return _CursorDaAmostra(self._linhas)
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _linhas_do_ledger(n_por_liga, ligas):
+    """Picks de Over/Under -- o unico ramo do legado que consulta o banco."""
+    saida = []
+    for liga in ligas:
+        for i in range(n_por_liga):
+            saida.append((f"m-{liga}-{i}", liga, "Over/Under", "Over 2.5",
+                          0.55 + (i % 7) / 100.0, None, None, 1.90, 1))
+    return saida
+
+
+def test_uma_consulta_de_correcoes_por_liga_nao_por_pick(monkeypatch,
+                                                         _cache_limpo):
+    """`_cache_limpo` yielda a `get_lambda_corrections` ORIGINAL.
+
+    Contar chamadas a ela mediria o numero errado: o cache por liga do
+    #231-a mora DENTRO dela. O que vai ao banco e
+    `backend.audit.get_active_corrections`, e e ele que este teste conta.
+    """
+    import backend.audit as audit
+    import backend.modeling.calibragem.repositorio as repo
+    from backend.modeling import lambda_calculator as LC
+
+    # O TTL e fixado: a invariante vale sob a configuracao PADRAO. Com
+    # `LAMBDA_CORRECTIONS_TTL_S=0` o operador desligou o cache do #231-a de
+    # proposito e o numero volta a ser um por pick -- verificado por mutacao
+    # (o teste cai com 200 consultas), e registrado na docstring de
+    # `repositorio._aquecer_correcoes_por_liga`.
+    monkeypatch.setenv("LAMBDA_CORRECTIONS_TTL_S", "300")
+
+    ligas = ["premier-league", "la-liga", "serie-a", "bundesliga"]
+    linhas = _linhas_do_ledger(50, ligas)          # 200 picks, 4 ligas
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoDaAmostra(linhas))
+
+    chamadas = []
+    monkeypatch.setattr(LC, "get_lambda_corrections", _cache_limpo)
+    monkeypatch.setattr(audit, "get_active_corrections",
+                        lambda league: chamadas.append(league) or {})
+    LC.limpar_cache_correcoes()
+
+    picks = repo.carregar_amostra()
+    assert len(picks) == 200
+    assert all(p.p_legado is not None for p in picks)
+    assert len(chamadas) == len(ligas), (
+        f"{len(chamadas)} consultas de correcoes para {len(ligas)} ligas e "
+        f"{len(picks)} picks -- a invariante 'uma por liga' quebrou")
+    assert set(chamadas) == set(ligas)
+
+
+def test_o_p_legado_reconstruido_fica_abaixo_do_raw(monkeypatch):
+    """Prova que o legado foi de fato aplicado, e nao que `p_legado` copiou
+    `p_raw`: a versao 0 deflaciona."""
+    import backend.modeling.calibragem.repositorio as repo
+
+    linhas = _linhas_do_ledger(5, ["premier-league"])
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoDaAmostra(linhas))
+    for p in repo.carregar_amostra():
+        assert p.p_legado < p.p_raw, (p.p_raw, p.p_legado)

@@ -275,24 +275,39 @@ def rotulo_do_legado(market: str, selection: str) -> Optional[str]:
 
 
 def _aquecer_correcoes_por_liga(ligas) -> int:
-    """Uma consulta por LIGA em vez de uma por PICK.
+    """Uma consulta por LIGA, antes do laco, em vez de uma por PICK dentro dele.
 
     `calibrar_legado` chama `poisson_matrix._get_league_deflation(liga)`, que
     chama `lambda_calculator.get_lambda_corrections(liga)` -- uma consulta ao
-    banco. Com ~5.000 picks e 20 ligas, o laco ingenuo dispararia uma
-    consulta por pick de O/U. `get_lambda_corrections` ja tem cache por liga
-    com TTL (#231-a), entao basta aquece-lo uma vez por liga ANTES do laco:
-    dai em diante toda chamada e acerto de cache.
+    banco por chamada. Com 5.484 picks isso seriam 1.237 consultas (uma por
+    pick da familia Over/Under, o unico ramo do legado que consulta).
 
-    RESSALVA MEDIDA, escrita aqui em vez de escondida: com
-    `LAMBDA_CORRECTIONS_TTL_S=0` o cache do #231-a esta DESLIGADO por
-    configuracao e este aquecimento nao compra nada -- o laco volta a uma
-    consulta por pick de O/U. Nao ha conserto local: forcar o cache aqui
-    seria contrariar a chave que o operador ligou de proposito.
+    O QUE ISTO COMPRA, MEDIDO -- e a resposta e menos do que parece, entao
+    fica escrito aqui e no relatorio em vez de virar folclore:
 
-    Devolve quantas ligas foram aquecidas (o teste conta as consultas).
+        configuracao                          sem aquecer   aquecendo
+        LAMBDA_CORRECTIONS_TTL_S=300 (padrao)      20            20
+        LAMBDA_CORRECTIONS_TTL_S=0 (desligado)  1.237         1.257
+
+    Quem transforma 1.237 em 20 e o cache por liga do #231-a, nao este
+    aquecimento: no padrao, a PRIMEIRA chamada de cada liga ja popula o
+    cache e as demais sao acerto. E com o cache DESLIGADO o aquecimento so
+    somaria 20 consultas inuteis -- por isso ele nao roda nesse caso.
+
+    Fica no codigo porque torna a invariante EXPLICITA e testavel ("uma
+    consulta por liga, nunca uma por pick"): sem ela, um dia em que o cache
+    do #231-a mude de forma, a regressao volta a 1.237 sem sintoma. Com ela,
+    o teste que conta consultas falha.
+
+    Devolve quantas ligas foram aquecidas.
     """
-    from backend.modeling.lambda_calculator import get_lambda_corrections
+    from backend.modeling.lambda_calculator import _ttl_correcoes, get_lambda_corrections
+    if _ttl_correcoes() <= 0:
+        # Cache desligado pelo operador (#231-a). Aquecer aqui so somaria
+        # consultas -- e reimplementar o cache que ele mandou desligar seria
+        # exatamente o tipo de comportamento invisivel que a chave existe
+        # para evitar.
+        return 0
     aquecidas = 0
     for liga in sorted({l for l in ligas if l}):
         try:
