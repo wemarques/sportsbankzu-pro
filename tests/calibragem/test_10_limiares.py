@@ -28,9 +28,13 @@ def _amostra(n=400):
 
 def test_sem_rederivacao_o_volume_sobe():
     picks = _amostra()
-    antes = contar_por_classe(picks, ANTIGO, ATUAIS)
-    depois = contar_por_classe(picks, NOVO, ATUAIS)
-    assert depois["Over/Under"]["neutro"] > antes["Over/Under"]["neutro"]
+    antes = contar_por_classe(picks, ANTIGO, ATUAIS)["Over/Under"]
+    depois = contar_por_classe(picks, NOVO, ATUAIS)["Over/Under"]
+    # "Volume publicado" e o TOTAL, nao a faixa do meio: quando a probabilidade
+    # sobe, picks migram de `neutro` para `safe` e outros entram em `neutro` por
+    # baixo — os fluxos se cancelam e o balde intermediario empata (medido:
+    # safe 230->311, neutro 21->21, total 251->332).
+    assert sum(depois.values()) > sum(antes.values())
 
 
 def test_rederivacao_devolve_o_volume_ao_que_era():
