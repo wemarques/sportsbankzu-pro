@@ -285,6 +285,50 @@ def carregar_parametros_para_curva() -> Dict[tuple, tuple]:
             for ch, v in carregar_vigentes().items()}
 
 
+# Status que representam a DECISAO de um ciclo sobre a celula. `vigente` e
+# `substituida` sao escrituracao (a copia promovida e a que ela substituiu),
+# nao decisao, e por isso ficam de fora de `ultimo_status_de_ciclo`.
+STATUS_DE_DECISAO = ("adotada", "encurtada", "revertida", "congelada",
+                     "rejeitada", "abaixo_do_piso", "inalterada")
+
+
+def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
+    """A ultima DECISAO tomada sobre a celula. `None` se nunca houve uma.
+
+    Existe para o congelamento ser pegajoso (#248, I2). `avaliar_reversao`
+    devolvia `congelar` depois de duas reversoes seguidas, o ciclo gravava a
+    linha, e no ciclo seguinte ninguem lia esse status de volta: a celula
+    voltava a adotar normalmente. A "revisao humana" prometida pela spec
+    (secao 5.3) era um `logger.error` e mais nada.
+
+    COMO DESTRAVAR uma celula congelada — e uma acao humana, deliberada, e
+    fica no historico como qualquer outra linha:
+
+        INSERT INTO calibragem_versoes
+            (familia, liga, versao, a, b, n_jogos, origem, status, motivo)
+        SELECT familia, liga, versao, a, b, 0, origem, 'inalterada',
+               'destravada manualmente por <quem>: <por que>'
+          FROM calibragem_versoes
+         WHERE familia = '<familia>' AND liga = '<liga>'
+         ORDER BY id DESC LIMIT 1;
+
+    Qualquer status de decisao que nao seja `congelada` destrava — o INSERT
+    acima usa `inalterada` porque e o que descreve a verdade: nada mudou,
+    so a trava saiu.
+    """
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """
+            SELECT status FROM calibragem_versoes
+             WHERE familia = %s AND liga = %s AND status = ANY(%s)
+             ORDER BY id DESC LIMIT 1
+            """,
+            (familia, liga, list(STATUS_DE_DECISAO)),
+        )
+        linha = cur.fetchone()
+        return linha[0] if linha else None
+
+
 def contar_reversoes_seguidas(familia: str, liga: str) -> int:
     with _conn() as c, c.cursor() as cur:
         cur.execute("""

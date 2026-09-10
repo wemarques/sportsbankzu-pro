@@ -195,6 +195,32 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
             if not familia:
                 continue
             resumo["celulas"] += 1
+
+            # Congelamento e PEGAJOSO (#248, I2): sem esta leitura a celula
+            # congelada por duas reversoes seguidas voltava a adotar no
+            # ciclo seguinte, e a "revisao humana" da spec (5.3) era so um
+            # logger.error. Ver `repositorio.ultimo_status_de_ciclo` para o
+            # procedimento de destravamento.
+            if repositorio.ultimo_status_de_ciclo(familia, liga) == "congelada":
+                resumo["congeladas"] += 1
+                congelada = vigentes.get(chave)
+                logger.error(
+                    "[calibragem] celula (%s, %s) CONGELADA em ciclo anterior; "
+                    "nada sera adotado ate destravamento manual",
+                    familia, liga or "-")
+                decisoes[chave] = {
+                    "vig": congelada if congelada is not None else {
+                        "versao": VERSAO_LEGADO, "a": None, "b": None},
+                    "resultado": {
+                        "a": congelada["a"] if congelada is not None else None,
+                        "b": congelada["b"] if congelada is not None else None,
+                        "status": "congelada", "fator_encurtamento": None,
+                        "motivo": "congelada em ciclo anterior; aguarda "
+                                  "destravamento manual"},
+                    "n_jogos": proposta["n_jogos"], "origem": proposta["origem"],
+                }
+                continue
+
             vig = _vigente_da_celula(vigentes, chave)
             if vig is None:
                 decisoes[chave] = {

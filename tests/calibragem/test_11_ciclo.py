@@ -452,3 +452,63 @@ def test_a_janela_ignora_jogos_de_antes_mas_conta_os_de_depois(monkeypatch):
     linha = next(p for p in _linhas_persistidas(registro)
                  if p["status"] == "revertida")
     assert "em 25 jogos" in linha["motivo"], linha["motivo"]
+
+
+# --- I2: `congelada` e pegajosa. Antes, ninguem lia o status de volta e a
+# celula voltava a adotar no ciclo seguinte. ---
+
+
+def _ambiente_de_celula_viva(monkeypatch, status_anterior):
+    """Uma celula que ADOTARIA sem problema (proposta perto da vigente, 30
+    jogos, sem anterior): assim a unica coisa que pode impedir a adocao e o
+    congelamento herdado."""
+    picks = _servidos(30)
+    ajuste = {("Over/Under", ""): {"a": 0.10, "b": 1.0, "n_jogos": 30,
+                                   "origem": "familia", "k_fixo": False}}
+    registro = _montar_ambiente(
+        monkeypatch, picks=picks, ajuste=ajuste,
+        vigentes={("Over/Under", ""): {"versao": 5, "a": 0.09, "b": 1.0,
+                                       "criada_em": ADOCAO}},
+        anterior_por_celula={})
+    monkeypatch.setattr(ciclo.repositorio, "ultimo_status_de_ciclo",
+                        lambda familia, liga: status_anterior)
+    return registro
+
+
+def test_celula_congelada_continua_congelada_no_ciclo_seguinte(monkeypatch):
+    registro = _ambiente_de_celula_viva(monkeypatch, "congelada")
+
+    resumo = ciclo.executar()
+
+    assert resumo["congeladas"] == 1
+    assert resumo["adotadas"] == 0 and resumo["encurtadas"] == 0
+    linhas = _linhas_persistidas(registro)
+    assert [p["status"] for p in linhas] == ["congelada"], linhas
+    assert "destravamento manual" in linhas[0]["motivo"]
+    # o (a, b) gravado e o da vigente congelada, nao o da proposta
+    assert linhas[0]["a"] == pytest.approx(0.09)
+
+
+def test_celula_congelada_nao_e_promovida_a_vigente(monkeypatch):
+    """`congelada` esta fora do conjunto de promocao de `gravar_ciclo` — a
+    prova pelo SQL: nenhuma UPDATE de promocao e emitida."""
+    registro = _ambiente_de_celula_viva(monkeypatch, "congelada")
+    ciclo.executar()
+    updates = [sql for sql, _ in registro if sql.strip().upper().startswith("UPDATE")]
+    assert updates == [], updates
+
+
+@pytest.mark.parametrize("status_anterior", [None, "inalterada", "adotada",
+                                             "abaixo_do_piso", "revertida"])
+def test_qualquer_status_que_nao_congelada_deixa_o_ciclo_seguir(
+        monkeypatch, status_anterior):
+    """O outro lado da trava: destravar e inserir uma linha de decisao com
+    qualquer outro status (o procedimento esta na docstring de
+    `repositorio.ultimo_status_de_ciclo`)."""
+    registro = _ambiente_de_celula_viva(monkeypatch, status_anterior)
+
+    resumo = ciclo.executar()
+
+    assert resumo["congeladas"] == 0
+    linhas = _linhas_persistidas(registro)
+    assert any(p["status"] in ("adotada", "encurtada") for p in linhas), linhas

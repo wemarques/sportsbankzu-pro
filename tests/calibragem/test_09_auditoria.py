@@ -373,3 +373,30 @@ def test_contar_reversoes_seguidas(monkeypatch, sequencia, esperado):
                         lambda: _ConexaoGravadora(_CursorGravador(fetchall=fetchall)))
 
     assert repo.contar_reversoes_seguidas("BTTS", "") == esperado
+
+
+# --- I2: o status congelado tem de ser LEGIVEL de volta, ou o congelamento
+# nao sobrevive ao proximo ciclo. ---
+
+
+@pytest.mark.parametrize("linha,esperado", [
+    (("congelada",), "congelada"),
+    (("adotada",), "adotada"),
+    (None, None),
+])
+def test_ultimo_status_de_ciclo(monkeypatch, linha, esperado):
+    import backend.modeling.calibragem.repositorio as repo
+
+    registro = []
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora(
+        _CursorGravador(fetchone=linha, registro=registro)))
+
+    assert repo.ultimo_status_de_ciclo("BTTS", "") == esperado
+
+    sql, params = registro[0]
+    assert "ORDER BY id DESC" in sql and "LIMIT 1" in sql
+    # `vigente` e `substituida` sao escrituracao, nao decisao: se entrassem
+    # no filtro, a copia promovida (sempre a mais recente para uma celula
+    # adotada) esconderia a decisao real.
+    assert "vigente" not in params[2] and "substituida" not in params[2]
+    assert "congelada" in params[2]
