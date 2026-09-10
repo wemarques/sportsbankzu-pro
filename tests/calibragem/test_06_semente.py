@@ -106,6 +106,53 @@ def test_semente_prioriza_market_isolado_sobre_token_da_selection():
     assert classificar_familia(market, selection) == "Cards"         # o jeito certo
 
 
+def test_concordancia_nao_mistura_linhas_diferentes_do_mesmo_jogo_e_familia():
+    """Regressao da rodada de correcao 1: `Pick` nao carregava `selecao`, e
+    `medir_concordancia` indexava so por (match_id, familia, liga). Duas
+    linhas distintas do mesmo jogo e familia (aqui, 'Corners Over 1.5' e
+    'Corners Over 2.5') caiam no mesmo balde; o pareamento escolhia a
+    `p_raw` mais proxima em vez de comparar a mesma aposta, e como o
+    candidato casado nao era consumido, o mesmo valor do ledger podia casar
+    com mais de uma linha da semente -- so subindo a concordancia, nunca
+    descendo.
+
+    Cenario: a linha 'Over 1.5' da semente (0.56) NAO concorda com a sua
+    propria linha no ledger (0.90, |diff|=0.34) -- discorda de verdade. A
+    linha 'Over 2.5' da semente (0.55) concorda com a sua (0.55). O
+    resultado certo e concordancia 0.5 (1 de 2), nao 1.0: com a indexacao
+    antiga (sem `selecao`), a linha 'Over 1.5' da semente casava por engano
+    com o valor 0.55 do ledger (que e de 'Over 2.5', |diff|=0.01) porque o
+    balde nao distinguia as duas linhas e o candidato nao era consumido --
+    inflando a concordancia para 1.0 nas duas.
+    """
+    ledger = [
+        Pick("m1", "Corners", "liga", 0.90, 1, None, "Corners Over 1.5"),
+        Pick("m1", "Corners", "liga", 0.55, 1, None, "Corners Over 2.5"),
+    ]
+    semente = [
+        Pick("m1", "Corners", "liga", 0.56, 1, None, "Corners Over 1.5"),
+        Pick("m1", "Corners", "liga", 0.55, 1, None, "Corners Over 2.5"),
+    ]
+    c, n = medir_concordancia(semente, ledger)
+    assert n == 2
+    assert c == pytest.approx(0.5)
+
+
+def test_pick_aceita_cinco_argumentos_posicionais_odd_e_selecao_saem_default():
+    """Ancora de compatibilidade para o setimo campo: tarefas anteriores
+    constroem `Pick` com cinco ou seis argumentos posicionais e nao podem
+    quebrar quando `selecao` e acrescentado no final. Mesmo espirito do
+    teste ja existente para `odd` em test_03_repositorio_amostra.py."""
+    p = Pick("m1", "Over/Under", "premier-league", 0.61, 1)
+    assert p.match_id == "m1"
+    assert p.familia == "Over/Under"
+    assert p.liga == "premier-league"
+    assert p.p_raw == 0.61
+    assert p.y == 1
+    assert p.odd is None
+    assert p.selecao == ""
+
+
 def test_semente_classifica_formas_reais_do_ledger(tmp_path):
     """Sanidade fim a fim com as formas reais de `market`/`selection` do
     ledger (mesmas usadas em test_03_repositorio_amostra.py) -- confirma que
@@ -123,3 +170,5 @@ def test_semente_classifica_formas_reais_do_ledger(tmp_path):
     saida = carregar_semente_backfill(str(caminho))
     familias = {p.familia for p in saida}
     assert familias == {"Corners", "Cards"}
+    selecoes = {p.selecao for p in saida}
+    assert selecoes == {"Corners Over 7.5", "Under 2.5"}

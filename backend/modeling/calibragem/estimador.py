@@ -168,22 +168,31 @@ from backend.modeling.calibragem import (
 def medir_concordancia(semente: Sequence, ledger: Sequence) -> Tuple[float, int]:
     """Fracao dos picks sobrepostos em que as duas fontes ficam a < 2 pontos.
 
-    Sobreposicao e por (match_id, familia, liga, p_raw arredondado ao pick):
-    usamos (match_id, familia, liga) porque o Pick nao carrega a selecao — o
-    par e formado na ordem em que aparece dentro da chave.
+    Sobreposicao e por (match_id, familia, liga, selecao) — a chave completa
+    do pick, agora que `Pick.selecao` existe (rodada de correcao 1). Sem a
+    selecao, duas linhas do mesmo jogo e familia (ex.: "Corners Over 1.5" e
+    "Corners Over 2.5") cairiam no mesmo balde e o pareamento escolheria a
+    `p_raw` mais proxima em vez de comparar a mesma aposta — e mais
+    candidatos no balde so ajudam a achar um mais proximo, entao a
+    concordancia nunca cairia, so subiria. Com a chave completa o balde vira
+    unitario no caso normal, e cada candidato casado e CONSUMIDO (`.pop`) para
+    que nenhum valor do ledger seja usado duas vezes.
     """
     idx = defaultdict(list)
     for p in ledger:
-        idx[(p.match_id, p.familia, p.liga)].append(p.p_raw)
+        idx[(p.match_id, p.familia, p.liga, p.selecao)].append(p.p_raw)
 
     total = concordantes = 0
     for p in semente:
-        candidatos = idx.get((p.match_id, p.familia, p.liga))
+        candidatos = idx.get((p.match_id, p.familia, p.liga, p.selecao))
         if not candidatos:
             continue
         total += 1
-        if min(abs(p.p_raw - q) for q in candidatos) < TOLERANCIA_CONCORDANCIA:
+        distancias = [abs(p.p_raw - q) for q in candidatos]
+        i_mais_proximo = distancias.index(min(distancias))
+        if distancias[i_mais_proximo] < TOLERANCIA_CONCORDANCIA:
             concordantes += 1
+        candidatos.pop(i_mais_proximo)
     if total == 0:
         return (0.0, 0)
     return (concordantes / total, total)

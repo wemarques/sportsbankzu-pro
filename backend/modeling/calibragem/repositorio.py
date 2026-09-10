@@ -47,6 +47,7 @@ class Pick(NamedTuple):
     p_raw: float
     y: int
     odd: Optional[float] = None
+    selecao: str = ""
 
 
 def _conn():
@@ -152,7 +153,7 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
             continue
         saida.append(Pick(ln["match_id"], familia, ln["league_id"],
                           ln["raw_prob"], int(bool(int(ln["outcome"]))),
-                          ln["book_odd"]))
+                          ln["book_odd"], ln["selection"]))
     if sem_familia:
         logger.warning("[calibragem] %d picks sem familia reconhecida", sem_familia)
     return saida
@@ -193,5 +194,5 @@ def carregar_semente_backfill(caminho: str) -> List[Pick]:
             continue
         saida.append(Pick(d.get("match_id", ""), familia,
                           d.get("league_id") or "", float(raw),
-                          int(bool(int(y)))))
+                          int(bool(int(y))), None, selection))
     return saida
