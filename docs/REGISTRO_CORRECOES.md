@@ -13343,3 +13343,132 @@ fontes contra o banco real ANTES de escrever codigo custou um script de 60 linha
 mudado o destino do trabalho inteiro (a correcao seria no `ciclo`, nao no consumidor) se a
 resposta fosse outra. A contraprova — mostrar que 110 de 132 combinacoes MUDAM `safe_prob` —
 e o que impede a medicao de ser vacuamente verdadeira por a consulta estar quebrada.
+
+## 250 — O selo de confianca deixa de recitar um backtest de marco: quem responde "existe modelo?" e o backend
+**Data:** 2026-09-10 | **Arquivos:** `frontend/next/src/hooks/useLeagueClassifications.ts`, `frontend/next/src/components/LeagueConfidenceBadge.tsx`, `frontend/next/src/app/api/ml/status/route.ts` (novo), `frontend/next/src/lib/leagues.ts`, `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/styles/scoretabs-dashboard.css`, `frontend/next/e2e/league-confidence.spec.ts` (novo) | **Severidade:** Alta (a interface afirmava capacidade de modelo que nao existe) | **Status:** Corrigido
+
+### Problema identificado
+Fecha o item (2) do #247, que so mediu. O painel exibia, ao lado da Liga NOS, o tooltip literal **"Modelo AI treinado com 802 jogos · Precisao: 55.5% · Calibracao (Brier): 0.568 · Atualizado em: 20/03/2026"**. A producao respondia outra coisa:
+
+```
+GET /ml/status?league=primeira-liga  -> {"available": false, "message": "No trained model found"}
+GET /ml/status/all                   -> 22 ligas, 0 com modelo disponivel
+```
+
+Tres defeitos somados:
+
+1. **O selo nunca perguntava nada ao backend.** `useLeagueClassifications` lia apenas `public/data/league_classifications.json` — retrato de um backtest offline de marco/2026 — e o exibia como se descrevesse o que roda hoje.
+2. **Criterio divergente.** O arquivo classificava por UM criterio (`brier < 0.60`); o pipeline usa TRES (`backend/ml/predictor.py::is_ml_available`: brier < 0,60, `odds_value_added >= -0,015`, `ece <= 0,10`). `professional-league` (`ece = 0,1016 > 0,10`) era **AI** no selo e **suprimida** no backend.
+3. **Data literal.** `LeagueConfidenceBadge.tsx` trazia `"20/03/2026"` como valor padrao, e o dashboard nunca passava `lastUpdated` — logo a data era SEMPRE o literal.
+
+### Causa raiz
+Um artefato de backtest foi promovido a fonte da verdade da interface. O arquivo estatico descreve o que um treino offline *conseguiu*; o selo afirma o que a producao *serve*. Sao perguntas diferentes, e nada no codigo obrigava as duas a coincidirem — nem existia caminho pelo qual pudessem, porque o hook nao tinha canal com o backend.
+
+### Caminho escolhido (opcao (a) do enunciado) e por que
+O backend passa a ser a fonte da verdade do NIVEL; o JSON estatico e rebaixado a fonte de metrica historica. Razoes:
+
+- **`is_ml_available` ja e o juizo certo, inteiro.** Replicar os tres gates no TypeScript seria criar um segundo lugar onde a regra pode divergir — exatamente o defeito 2 de novo. Delegar ao backend satisfaz o requisito 3 por construcao, nao por disciplina.
+- **A rota nao e cara — foi medida, nao suposta.** `/ml/status/all` contra a Lambda de producao, 3 chamadas seguidas: **cold start 20,35 s | warm 0,562 s | warm 0,580 s**, payload **2 056 bytes**. E leitura de metadado de modelo, nao recomputacao; o teto de 30 s do API Gateway do #114/#203 nao esta em jogo, e a Function URL (60 s) cobre o cold start.
+- **O selo nao pode derrubar liga da tela.** Os grupos de liga vem de `/api/matches/fetch`; este hook so decide o que o selo mostra. Rota lenta atrasa o SELO, nunca os jogos — o modo de falha do #114/#203 (liga cara some da tela) nao se reproduz aqui.
+- Cache em memoria na rota Next com TTL `ML_STATUS_TTL_S` (300 s, convencao do #231-a), mais uma repeticao contra cold start.
+
+### Correcoes aplicadas (com camadas)
+**Camada 1 — canal com a producao.** `GET /api/ml/status` (novo) faz proxy de `/ml/status/all` via `fetchBackend`, que concentra a guarda #114/#203. Trata o caso em que o backend responde **200 com `{"error": ...}`**: 200 aqui nao significa resposta utilizavel, e a rota devolve 503 honesto em vez de mapa vazio.
+
+**Camada 2 — nivel derivado do que o backend responde.** Quatro estados, cada um verificavel:
+
+| Estado | Condicao (`/ml/status/all`) | Selo | O que o tooltip diz |
+|---|---|---|---|
+| `ML_ACTIVE` | `available: true` | AI | "Modelo AI treinado com N jogos" + metricas + data de treino |
+| `POISSON` | `available: false`, `trained_at: null` | ST | "Sem modelo treinado em producao"; 1X2 = espelho de mercado de-vigado, gols/BTTS = Poisson |
+| `ML_SUPPRESSED` | `available: false`, `trained_at` presente | BS | "Modelo treinado, porem desativado"; reprovou um gate de calibracao |
+| `UNVERIFIED` | rota falhou | ? | "Nao foi possivel verificar o modelo em producao" |
+
+A frase "Modelo AI treinado com N jogos" existe **unicamente** no ramo `ML_ACTIVE` (requisito 1).
+
+**Camada 3 — degradacao honesta (requisito 2).** Com o backend fora, o selo NAO volta ao arquivo estatico e NAO cai para "BS". Cai para `UNVERIFIED`: nenhuma barra acende, rotulo `?`, contorno tracejado, e o texto diz que a verificacao falhou. A escolha e deliberada — apagar o selo esconderia que a verificacao falhou; mostrar "BS" seria trocar uma afirmacao nao verificavel por outra. `UNVERIFIED` nao e nivel baixo, e ausencia de nivel.
+
+**Camada 4 — proveniencia da metrica historica.** A `accuracy` do JSON so aparece se provar que descreve o MESMO modelo que o backend serve: `n_samples` igual e `brier` coincidente (< 5e-4). Retreino muda os dois, e a accuracy velha e descartada em vez de virar numero antigo com cara de atual. `brier`, `n_samples` e `trained_at` vem SEMPRE do backend.
+
+**Camada 5 — data nunca literal (requisito 4).** `formatTrainedAt` formata o `trained_at` ISO do backend; sem data verificada imprime "Data de treino nao reportada". O literal `"20/03/2026"` foi removido e ha asercao de teste contra ele.
+
+**Camada 6 — vocabulario de ids travado.** Ver secao abaixo.
+
+### O vocabulario de ids: a divergencia estava viva em 4 das 22 ligas
+Tres tabelas de traducao coexistiam. Comparadas **contra dados reais** (chaves de `/ml/status/all` em producao x `AVAILABLE_LEAGUES` x as duas tabelas do frontend):
+
+| slug do backend | tabela do hook | tabela do dashboard | veredito |
+|---|---|---|---|
+| `brasileirao-serie-a` | `brazil-serie-a` | `brasileirao-serie-a` | **MISMATCH** |
+| `brasileirao-serie-b` | `brazil-serie-b` | `brasileirao-serie-b` | **MISMATCH** |
+| `league-one` | `league-one` | `england-league-one` | **MISMATCH** |
+| `premiership` | `scotland-premiership` | `premiership` | **MISMATCH** |
+
+(as outras 18 coincidiam). A tabela do hook nem sequer tinha `league-one`, entao o selo da League One **nunca renderizou**: a chave produzida (`league-one`) nao existe em `AVAILABLE_LEAGUES` (`england-league-one`).
+
+**Direcao da traducao verificada empiricamente**, nao inferida: `/fixtures` de producao SEMPRE devolve `leagueId` no slug do backend, qualquer que seja a forma pedida — `?leagues=england-league-one` e `?leagues=league-one` devolvem **ambos** `leagueId: "league-one"`. Logo o id que chega ao frontend e o slug, e a traducao correta e slug -> id prefixado.
+
+Correcao: `FRONTEND_TO_BACKEND_LEAGUE_ID` + `toBackendLeagueId` em `lib/leagues.ts`, espelho exato de `backend/config/leagues_config.py::LEAGUE_ID_ALIASES` (o mapa canonico, que ja existia e que ninguem estava usando). `toBackendLeagueId` aceita as DUAS formas em circulacao, entao o selo funciona mesmo onde a normalizacao do dashboard ainda produz o slug cru. Teste `e2e/league-confidence.spec.ts` compara a constante TS com o arquivo Python e falha se as duas se separarem.
+
+### Prova empirica (ANTES x DEPOIS, ambos executados)
+**ANTES** — `buildTooltip` antigo (extraido de `HEAD` e executado em node) com a linha `primeira-liga` do JSON estatico, `lastUpdated` indefinido como no dashboard:
+
+```
+Modelo AI treinado com 802 jogos
+Precisão: 55.5% | Calibração (Brier): 0.568
+Atualizado em: 20/03/2026
+```
+
+**DEPOIS** — dashboard renderizado no browser contra a Lambda de **producao** (feed de jogos estubado para forcar o grupo da Liga NOS; `/api/ml/status` real):
+
+```
+data-confidence-level = POISSON      rotulo = ST
+Sem modelo treinado em produção
+1X2: espelho de mercado de-vigado (odds implícitas)
+Gols e BTTS: modelo estatístico Poisson
+Verificado agora no backend.
+```
+
+Nivel AI -> ST, afirmacao de 802 jogos removida, data literal eliminada. Diferenca real de execucao, nao leitura de codigo.
+
+**Suites:** `npx playwright test` (chromium + mobile) = **58 passed / 6 skipped / 6 failed**; as 6 falhas sao **pre-existentes** — confirmado com `git stash` da arvore inteira e nova execucao em `HEAD`, onde as MESMAS 6 falham (todas do projeto `mobile`, em `dashboard.spec.ts` e `navigation.spec.ts`). Os 5 casos novos passam no chromium; no `mobile` levam skip justificado, porque em <=1024px o painel de lista desaparece assim que um jogo e auto-selecionado (`dashboard/page.tsx:1935`) e nao ha selo para auditar. `npx tsc --noEmit` limpo; `lint:accents` de 25 para **22** ocorrencias (as 3 novas corrigidas, as 22 restantes pre-existentes e alheias a estes arquivos). `pytest` = **1321 passed / 8 skipped** — rodado por precaucao, ja que **nenhuma rota Python foi alterada**.
+
+### Residuos declarados (nao corrigidos aqui — cada um com entrada propria a fazer)
+
+**R1 — `LEAGUE_ID_ALIASES` local do dashboard esta incompleto (entrada propria a fazer).**
+`frontend/next/src/app/dashboard/page.tsx:476` — a tabela local (backend -> frontend) nao tem
+`brasileirao-serie-a`, `brasileirao-serie-b` nem `premiership`. Como `/fixtures` sempre devolve o
+slug do backend (medido, ver secao do vocabulario), para essas tres ligas `group.leagueId` fica no
+slug cru e:
+
+- `page.tsx:1704` — `AVAILABLE_LEAGUES.find((l) => l.id === leagueId)` devolve `undefined`, logo
+  nome e bandeira da liga caem no fallback;
+- `page.tsx:2362` — `isBrazilian = group.leagueId === "brazil-serie-a" || … "brazil-serie-b"` da
+  `false` para o Brasileirao, e `getBrazilPriority` (`page.tsx:1685`) nao prioriza o bloco
+  brasileiro — a ordenacao e o separador "Ligas Internacionais" saem errados.
+
+**O selo esta imune**, porque `toBackendLeagueId` aceita as duas formas em circulacao. Nao foi
+consertado aqui de proposito: mudaria comportamento de ordenacao e rotulo do dashboard, que nao e
+o escopo desta correcao de veracidade. **Exige entrada propria** — a correcao certa e derivar a
+tabela local do inverso de `FRONTEND_TO_BACKEND_LEAGUE_ID`, eliminando a terceira tabela.
+
+**R2 — `ST` e `BS` servem identicamente hoje (decisao de produto, do Welligton).**
+`LeagueConfidenceBadge.tsx:21-22` mantem `POISSON` no nivel 2 e `ML_SUPPRESSED` no nivel 1. Sem
+modelo, as duas ligas rodam **exatamente o mesmo caminho** (1X2 por espelho de mercado de-vigado,
+gols e BTTS por Poisson), entao o **ordenamento entre os dois niveis nao corresponde a diferenca
+de qualidade de servico** — `ML_SUPPRESSED` e um fato distinguivel (existe modelo, reprovado num
+gate), mas nao um servico pior. Os tres niveis foram mantidos porque o escopo proibia redesenhar a
+UI. **O caminho honesto, se o Welligton quiser, e colapsar em DOIS niveis (com modelo / sem
+modelo) mais `UNVERIFIED`.** Decisao de produto, nao de implementacao.
+
+**R3 — a guarda de acentuacao #189-j NAO roda no Windows (achado lateral).**
+`frontend/next/scripts/check-accents.mjs:17`: `const ROOT = new URL("../src",
+import.meta.url).pathname;` — em Windows `.pathname` devolve `/C:/…`, que o Node resolve como
+`C:\C:\…\src` e o script morre em `ENOENT` **antes de varrer qualquer arquivo**. Consequencia: em
+maquina Windows `npm run lint:accents` nao valida nada e falha por erro de caminho, nao por
+violacao. Rodei a guarda por copia temporaria com `fileURLToPath` para conferir os arquivos do
+#250 (25 -> 22 ocorrencias; as 3 minhas corrigidas). **Nao consertei** — e arquivo alheio a esta
+correcao. A correcao e trocar `.pathname` por `fileURLToPath(new URL(...))`.
+
+### Licao aprendida
+Artefato de backtest e resposta de producao respondem a perguntas diferentes; quando um componente de UI afirma capacidade ("modelo treinado"), a afirmacao tem de nascer de quem serve, nao de quem treinou. E quando um criterio existe em dois lugares — aqui `brier < 0.60` contra os tres gates — o certo nao e sincronizar os dois, e apagar um: o backend ja sabia a resposta, faltava perguntar. A divergencia de vocabulario de ids (4 em 22, com uma liga cujo selo nunca apareceu) confirma pela terceira vez o padrao dos dois achados Criticos anteriores — a unica defesa que funcionou foi comparar as tabelas **contra dados reais** e travar a comparacao em teste.
