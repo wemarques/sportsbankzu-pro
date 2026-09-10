@@ -543,12 +543,25 @@
   color: #ffa726;
 }
 
-/* DEACTIVATED */
+/* ML_SUPPRESSED */
 .confidence-badge--bs .bar.active {
   background: #666;
 }
 .confidence-badge--bs .confidence-label {
   color: #666;
+}
+
+/* #250 UNVERIFIED - ausencia de verificacao, nao nivel baixo.
+   Nenhuma barra acende e o contorno tracejado separa o estado
+   visualmente dos tres niveis afirmaveis. */
+.confidence-badge--unknown {
+  border: 1px dashed #555;
+}
+.confidence-badge--unknown .bar {
+  background: #2a2a2a;
+}
+.confidence-badge--unknown .confidence-label {
+  color: #777;
 }
 
 .confidence-label {
@@ -594,6 +607,9 @@
 }
 .legend-bars--bs .bar.active {
   background: #666;
+}
+.legend-bars--unknown .bar {
+  background: #2a2a2a;
 }
 
 /* ---- MATCH ROW ---- */

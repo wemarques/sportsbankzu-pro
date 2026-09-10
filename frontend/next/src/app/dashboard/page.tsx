@@ -743,7 +743,7 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
 
   // Hook para detectar se estamos em mobile/tablet
   const isMobile = useMediaQuery("(max-width: 1024px)");
-  const leagueClassifications = useLeagueClassifications();
+  const leagueConfidence = useLeagueClassifications();
   const [shareBusy, setShareBusy] = useState<"copy" | "whatsapp" | null>(null);
   const [appVersion, setAppVersion] = useState(VERSION_FALLBACK);
   const [combinadas, setCombinadas] = useState<CombinadasData | null>(null);
@@ -2380,14 +2380,13 @@ export default function Dashboard({ initialView = "matches" }: { initialView?: N
                       <span className="st-league-flag">{group.countryFlag}</span>
                       <span className="st-league-name">
                         {group.country ? <><span className="st-league-country">{group.country.toUpperCase()}</span>{" - "}</> : ""}{group.leagueName}
-                        {leagueClassifications[group.leagueId] && (
-                          <LeagueConfidenceBadge
-                            classification={leagueClassifications[group.leagueId].classification}
-                            accuracy={leagueClassifications[group.leagueId].accuracy}
-                            brier={leagueClassifications[group.leagueId].brier}
-                            nSamples={leagueClassifications[group.leagueId].n_samples}
-                          />
-                        )}
+                        {(() => {
+                          // #250 — o selo so aparece com estado verificado no
+                          // backend (ou explicitamente nao verificado). Enquanto
+                          // carrega, `get` devolve null e nada e afirmado.
+                          const conf = leagueConfidence.get(group.leagueId);
+                          return conf ? <LeagueConfidenceBadge confidence={conf} /> : null;
+                        })()}
                         <span className="st-league-count"> ({group.matches.length})</span>
                         {group.matches.some((m) => m.status === "live") && (
                           <span className="st-league-live-badge">
