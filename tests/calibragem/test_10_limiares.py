@@ -20,11 +20,18 @@ MERCADO = "Over 2.5"      # rotulo real do serving; ramo de meia banda (#165-e)
 
 
 class P:
-    """Dublê de `Pick` com os quatro campos que `limiares` de fato le."""
+    """Dublê de `Pick` com os campos que `limiares` de fato le.
 
-    def __init__(self, familia, p_raw, odd, p_legado):
+    `match_id` entrou com o piso de amostra do #249-a: o piso conta JOGOS
+    distintos, nao picks, porque picks do mesmo jogo dividem o placar. O
+    dublê tem de carregar o campo — afrouxar o piso para picks porque o
+    dublê nao tinha `match_id` seria deixar o teste ditar a regra.
+    """
+
+    def __init__(self, familia, p_raw, odd, p_legado, match_id="m0"):
         self.familia, self.p_raw, self.odd = familia, p_raw, odd
         self.p_legado = p_legado
+        self.match_id = match_id
 
 
 ATUAIS = {"Over/Under": {"safe_ev": 0.06, "neutro_ev": 0.00,
@@ -46,8 +53,11 @@ def _amostra(n=400, familia="Over/Under", mercado=MERCADO):
     saida = []
     for i in range(n):
         p_raw = 0.30 + (i % 60) / 100.0
+        # 4 picks por jogo: `n=400` da 100 jogos, folgado sobre o piso de 20
+        # do #249-a, que nao e o que estes testes medem.
         saida.append(P(familia, p_raw, 1.70 + (i % 9) / 10.0,
-                       base_da_composicao(p_raw, mercado, "", "NORMAL")))
+                       base_da_composicao(p_raw, mercado, "", "NORMAL"),
+                       match_id=f"m{i // 4}"))
     return saida
 
 
@@ -77,7 +87,7 @@ def test_sem_rederivacao_o_volume_sobe():
 def test_rederivacao_devolve_o_volume_ao_que_era():
     picks = _amostra()
     antes = contar_por_classe(picks, VERSAO_ZERO, ATUAIS)
-    novos = rederivar(picks, VERSAO_ZERO, NOVO, ATUAIS)
+    novos, _motivos = rederivar(picks, VERSAO_ZERO, NOVO, ATUAIS)
     depois = contar_por_classe(picks, NOVO, novos)
     for classe in ("safe", "neutro"):
         assert abs(depois["Over/Under"][classe] - antes["Over/Under"][classe]) <= 2, \
@@ -89,13 +99,16 @@ def test_familia_sem_odd_nao_move_limiar():
     picks = [P("Cards", 0.60, None, 0.45) for _ in range(50)]
     atuais = {"Cards": {"safe_ev": 0.06, "neutro_ev": 0.0,
                         "safe_edge": 0.05, "neutro_edge": 0.02}}
-    novos = rederivar(picks, {"Cards": {"a": 0.0, "b": 1.0}},
-                      {"Cards": {"a": 0.5, "b": 1.0}}, atuais)
+    novos, motivos = rederivar(picks, {"Cards": {"a": 0.0, "b": 1.0}},
+                               {"Cards": {"a": 0.5, "b": 1.0}}, atuais)
     assert novos["Cards"] == atuais["Cards"]
+    # #249-a: "sem odd" e "amostra insuficiente" nao podem sair iguais na
+    # linha de auditoria.
+    assert motivos["Cards"] == "limiares mantidos: nenhum pick com odd"
 
 
 def test_familia_ausente_da_amostra_e_preservada():
-    novos = rederivar([], VERSAO_ZERO, NOVO, ATUAIS)
+    novos, _motivos = rederivar([], VERSAO_ZERO, NOVO, ATUAIS)
     assert novos["Over/Under"] == ATUAIS["Over/Under"]
 
 

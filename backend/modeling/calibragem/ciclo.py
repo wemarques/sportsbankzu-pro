@@ -359,10 +359,11 @@ def planejar(picks, ajuste, vigentes) -> dict:
                                      "b": dec["resultado"]["b"]}
 
     limiares_atuais = _limiares_atuais()
-    limiares_novos = limiares.rederivar(
+    limiares_novos, motivos_limiares = limiares.rederivar(
         picks, parametros_antigos, parametros_novos, limiares_atuais)
 
     return {"decisoes": decisoes, "limiares": limiares_novos,
+            "motivos_limiares": motivos_limiares,
             "limiares_atuais": limiares_atuais,
             "parametros_antigos": parametros_antigos,
             "parametros_novos": parametros_novos,
@@ -403,8 +404,20 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
         linhas = []
         for (familia, liga), dec in decisoes.items():
             vig = dec["vig"]
+            # O motivo dos LIMIARES entra na mesma linha do motivo da curva
+            # (#249-a). Sem isso, "familia sem odd nenhuma" e "amostra
+            # insuficiente para re-derivar" produzem o mesmo silencio na
+            # tabela — quatro colunas iguais as da versao anterior, sem dizer
+            # por que. Sao coisas diferentes e a auditoria tem de separa-las.
+            resultado = dec["resultado"]
+            motivo_limiar = plano["motivos_limiares"].get(familia)
+            if motivo_limiar:
+                resultado = dict(resultado)
+                resultado["motivo"] = "; ".join(
+                    parte for parte in (resultado.get("motivo", ""),
+                                        motivo_limiar) if parte)
             linhas.append(repositorio.montar_linha_auditoria(
-                familia, liga, vig["versao"] + 1, dec["resultado"],
+                familia, liga, vig["versao"] + 1, resultado,
                 dec["n_jogos"], dec["origem"], None,
                 limiares=limiares_novos.get(familia)))
 

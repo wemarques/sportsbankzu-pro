@@ -41,10 +41,15 @@ FIXTURE = (pathlib.Path(__file__).parent / "fixtures" / "amostra_producao.json")
 
 
 class _Pick:
-    """Os tres campos que `limiares` de fato le."""
+    """Os campos que `limiares` de fato le.
 
-    def __init__(self, familia, p_legado, odd):
-        self.familia, self.p_legado, self.odd = familia, p_legado, odd
+    `match_id` entrou com o piso de amostra do #249-a: o piso conta JOGOS
+    distintos, porque picks do mesmo jogo dividem o placar.
+    """
+
+    def __init__(self, match_id, familia, p_legado, odd):
+        self.match_id, self.familia = match_id, familia
+        self.p_legado, self.odd = p_legado, odd
 
 
 def _picks_reais():
@@ -312,7 +317,7 @@ def test_volume_constante_PONTA_A_PONTA_com_picks_reais(banco):
 
     antes = contar_por_classe(picks, VERSAO_ZERO, atuais)
     sem_rederivacao = contar_por_classe(picks, PRIMEIRO_CICLO, atuais)
-    novos = rederivar(picks, VERSAO_ZERO, PRIMEIRO_CICLO, atuais)
+    novos, motivos = rederivar(picks, VERSAO_ZERO, PRIMEIRO_CICLO, atuais)
 
     # os limiares sobem para o banco e voltam pelo caminho de producao
     montar, _contador = banco
@@ -328,14 +333,111 @@ def test_volume_constante_PONTA_A_PONTA_com_picks_reais(banco):
     assert total(sem_rederivacao) > total(antes) + 50, (
         f"hoje={total(antes)} sem_rederivacao={total(sem_rederivacao)}")
 
-    # 2. e o consumo o devolve ao que era, familia a familia
+    # 2. as familias sob o piso do #249-a NAO re-derivam. Medido nesta
+    #    amostra: 1X2 sustenta 0 picks publicados e Double Chance sustenta 1,
+    #    de 1 jogo — abaixo dos 20 de #079 nos dois casos.
+    sob_o_piso = {f for f, m in motivos.items() if m.startswith("limiares mantidos")}
+    assert sob_o_piso == {"1X2", "Double Chance"}, sorted(sob_o_piso)
+    for familia in sob_o_piso:
+        assert servidos[familia] == atuais[familia]
+
+    # 3. onde a re-derivacao roda, o volume volta ao que era — familia a
+    #    familia, e nao so no total (compensacao entre familias esconderia
+    #    uma subindo e outra caindo).
     for familia in antes:
+        if familia in sob_o_piso:
+            continue
         for classe in ("safe", "neutro"):
             assert abs(depois[familia][classe] - antes[familia][classe]) <= 2, (
                 f"{familia}/{classe}: hoje={antes[familia][classe]} "
                 f"depois={depois[familia][classe]}")
-    assert total(depois) == total(antes), (
-        f"hoje={total(antes)} depois={total(depois)}")
+        assert (depois[familia]["safe"] + depois[familia]["neutro"]
+                == antes[familia]["safe"] + antes[familia]["neutro"]), familia
+
+    # 4. o preco de recusar a re-derivacao e a deriva das familias sob o
+    #    piso: +1 pick em Double Chance. Um limiar de UMA observacao custaria
+    #    mais que isso.
+    deriva = total(depois) - total(antes)
+    assert 0 <= deriva <= 2, f"hoje={total(antes)} depois={total(depois)}"
+    assert (total(depois) - sum(depois[f]["safe"] + depois[f]["neutro"]
+                                for f in sob_o_piso)
+            == total(antes) - sum(antes[f]["safe"] + antes[f]["neutro"]
+                                  for f in sob_o_piso)), (
+        "fora das familias sob o piso o volume tem de ser EXATO")
+
+
+# ─────────────── o piso de amostra do #249-a, isolado ───────────────
+
+def _sinteticos(n_jogos, picks_por_jogo, familia="Corners", p=0.70, odd=1.60):
+    return [_Pick(f"m{j}", familia, p, odd)
+            for j in range(n_jogos) for _ in range(picks_por_jogo)]
+
+
+def test_piso_do_ALVO_impede_limiar_estimado_de_um_jogo():
+    """O caso medido no primeiro ciclo real: Double Chance.
+
+    O conjunto COM PRECO era enorme (666 picks, 245 jogos) — o piso do pool
+    nao pega nada. O que era pequeno era o ALVO: 1 pick publicado, de 1 jogo.
+    Com alvo 1 o corte e o MAXIMO da amostra, e `safe_ev` saltava de 0,0400
+    para 0,2397 por causa daquele unico pick.
+    """
+    atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
+                          "safe_edge": 0.06, "neutro_edge": 0.02}}
+    # 200 jogos com preco, mas EV de todos abaixo do corte, menos um
+    picks = _sinteticos(200, 1, p=0.55, odd=1.60)          # ev = -0.12
+    picks.append(_Pick("mALVO", "Corners", 0.95, 1.60))    # ev = +0.52
+
+    novos, motivos = rederivar(picks, {"Corners": {"a": 0.0, "b": 1.0}},
+                               {"Corners": {"a": 0.5, "b": 1.0}}, atuais)
+    assert novos["Corners"] == atuais["Corners"]
+    assert "volume publicado apoiado em 1 jogos < 20" in motivos["Corners"]
+
+
+def test_piso_do_POOL_com_preco_tambem_existe_e_diz_outra_coisa():
+    """Familia com preco em pouquissimos jogos: a amostra inteira e fina.
+
+    Nao dispara em nenhuma familia real hoje (a mais fina, cartoes, tem 122
+    jogos com preco), e por isso o motivo tem de ser distinguivel do piso do
+    alvo — senao a tabela nao diz qual dos dois foi.
+    """
+    atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
+                          "safe_edge": 0.06, "neutro_edge": 0.02}}
+    picks = _sinteticos(5, 40, p=0.95, odd=1.60)   # 200 picks, 5 jogos
+    novos, motivos = rederivar(picks, {"Corners": {"a": 0.0, "b": 1.0}},
+                               {"Corners": {"a": 0.5, "b": 1.0}}, atuais)
+    assert novos["Corners"] == atuais["Corners"]
+    assert "5 jogos com preco < 20" in motivos["Corners"]
+
+
+def test_os_tres_motivos_de_nao_rederivar_sao_DISTINGUIVEIS():
+    """"Sem odd", "pool fino" e "alvo fino" viram a mesma linha muda se o
+    motivo nao viajar. Alguem lendo a tabela em tres meses precisa saber."""
+    atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
+                          "safe_edge": 0.06, "neutro_edge": 0.02}}
+    par = ({"Corners": {"a": 0.0, "b": 1.0}}, {"Corners": {"a": 0.5, "b": 1.0}})
+
+    sem_odd = [_Pick(f"m{i}", "Corners", 0.70, None) for i in range(60)]
+    pool_fino = _sinteticos(5, 40, p=0.95)
+    alvo_fino = _sinteticos(200, 1, p=0.55) + [_Pick("mA", "Corners", 0.95, 1.60)]
+
+    motivos = [rederivar(amostra, *par, atuais)[1]["Corners"]
+               for amostra in (sem_odd, pool_fino, alvo_fino)]
+    assert len(set(motivos)) == 3, motivos
+    assert all(m.startswith("limiares mantidos") for m in motivos)
+
+
+def test_o_piso_conta_JOGOS_e_nao_PICKS():
+    """40 picks de 5 jogos nao sao 40 observacoes — dividem o placar."""
+    atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
+                          "safe_edge": 0.06, "neutro_edge": 0.02}}
+    par = ({"Corners": {"a": 0.0, "b": 1.0}}, {"Corners": {"a": 0.5, "b": 1.0}})
+
+    # mesmos 200 picks; muda so a quantidade de jogos distintos
+    poucos_jogos = _sinteticos(5, 40, p=0.95)
+    muitos_jogos = _sinteticos(200, 1, p=0.95)
+
+    assert rederivar(poucos_jogos, *par, atuais)[0]["Corners"] == atuais["Corners"]
+    assert rederivar(muitos_jogos, *par, atuais)[0]["Corners"] != atuais["Corners"]
 
 
 def test_com_a_camada_desligada_o_volume_e_bit_a_bit_o_de_hoje(banco):

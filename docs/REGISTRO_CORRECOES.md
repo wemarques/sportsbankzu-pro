@@ -13246,8 +13246,95 @@ justifica a tarefa: o consumo nao e enfeite de auditoria, e o que impede o salto
 que hoje publica 0 picks nao tem quantil que preserve 0 (preservar zero exigiria um corte acima
 do maximo). Os quatro limiares ficam inalterados e, se a curva subir, aquela familia pode sair
 de 0 para algum numero. Medido no ensaio: **1X2 e a unica familia nessa condicao (0 picks hoje)
-e continua em 0 com a curva nova** — nao ha efeito vivo. Fica registrado porque o dia em que
-1X2 sair de 0 e um dia em que este mecanismo nao segura o volume.
+e continua em 0 com a curva nova** — nao ha efeito vivo.
+
+**FECHADO pelo #249-a, abaixo:** o piso de amostra do conjunto-alvo recusa a re-derivacao de
+qualquer familia sustentada por menos de 20 jogos, e 1X2 (alvo 0) e o primeiro caso. Nao foi
+preciso mecanismo novo.
+
+### 249-a — Piso de amostra na re-derivacao: o limiar estimado de UMA observacao
+**Data:** 2026-09-10 | **Arquivos:** `backend/modeling/calibragem/limiares.py`, `backend/modeling/calibragem/ciclo.py`, `scripts/ensaio_calibragem.py`, `tests/calibragem/test_10_limiares.py`, `tests/calibragem/test_14_consumo_limiares.py`, `tests/calibragem/fixtures/amostra_producao.json`
+
+**O problema, achado pelo ensaio acima.** Double Chance re-derivava `safe_ev` de `0,0400` para
+`0,2397` a partir de **um** pick. Correto para manter volume; ruido puro como limiar. Um numero
+sem conteudo ocupando o lugar de um numero calibrado — e que passa a decidir o que o operador ve.
+
+**A prescricao literal NAO resolvia, e isso foi medido antes de implementar.** A instrucao era
+pisar na familia cujo conjunto de picks COM PRECO nao alcance `MIN_N_JOGOS` jogos distintos.
+Medido na amostra real:
+
+| familia | picks | com preco | **jogos com preco** | alvo (safe) | alvo (ate neutro) | **jogos do alvo** |
+|---|---|---|---|---|---|---|
+| 1X2 | 322 | 320 | 245 | 0 | 0 | **0** |
+| BTTS | 246 | 233 | 233 | 14 | 25 | 25 |
+| Cards | 869 | 239 | 122 | 30 | 52 | 45 |
+| Corners | 2213 | 1178 | 235 | 109 | 196 | 123 |
+| **Double Chance** | 670 | 666 | **245** | 1 | 1 | **1** |
+| Over/Under | 1258 | 1195 | 239 | 134 | 218 | 130 |
+
+O piso do pool com preco **nao dispara em nenhuma familia** — Double Chance tem 245 jogos com
+preco. O que era estimado de uma observacao nao era o pool: era o **corte**. O corte e o
+`k`-esimo maior EV do pool, com `k` = tamanho do alvo; com `k = 1` o corte e o **maximo** da
+amostra, a estatistica mais ruidosa que existe. A amostra desta medida e o **conjunto que
+sustenta o volume publicado**, e e nele que o piso tem de estar.
+
+**Os dois pisos, porque sao a mesma regra em duas amostras.** `rederivar` mantem os limiares
+atuais quando:
+1. o pool com preco tem menos de `MIN_N_JOGOS` **jogos distintos** — a distribuicao empirica
+   inteira e fina (hoje inerte: a familia mais magra, cartoes, tem 122 jogos com preco);
+2. o conjunto-alvo tem menos de `MIN_N_JOGOS` **jogos distintos** — o corte seria um extremo
+   e nao um quantil (hoje dispara em 1X2, com 0, e em Double Chance, com 1).
+
+`MIN_N_JOGOS = 20` e a constante do #079 que a camada ja reusa no piso do encolhimento e da
+governanca; **jogos distintos, nao picks**, porque picks do mesmo jogo dividem o placar
+(`estimador.contar_jogos`, importada de la em vez de reescrita). `contar_por_classe` e o piso
+passaram a compartilhar `limiares.classificar`, para que a condicao de publicacao exista uma vez so.
+
+**O motivo vira coluna legivel.** `rederivar` devolve `(limiares, motivos)` — o motivo viaja
+separado, e nao como quinta chave num dict de floats que segue para `montar_linha_auditoria` e
+para `_get_thresholds`. `ciclo.executar` concatena o motivo dos limiares ao motivo da curva na
+mesma linha de auditoria. Os tres casos de "nao re-derivei" ficam distinguiveis na tabela:
+`nenhum pick com odd` / `N jogos com preco < 20 (#079)` / `volume publicado apoiado em N jogos
+< 20 (#079)`. Quando re-deriva, a linha diz sobre quantos jogos: `limiares re-derivados sobre
+235 jogos com preco (1178 picks); alvo apoiado em 123 jogos`.
+
+**Efeito medido (mesmo ensaio, mesma amostra).** Double Chance e 1X2 mantem os limiares de
+hoje; as outras quatro familias re-derivam e preservam a contagem exatamente. Volume total:
+
+```
+hoje (versao 0)                    492
+curva nova, limiar velho           571   (+16,1%)
+curva nova, limiar novo, sem piso  492   (exato, mas com safe_ev de DC vindo de 1 pick)
+curva nova, limiar novo, COM piso  493   (+1: Double Chance ganha 1 NEUTRO)
+```
+
+O preco de recusar a re-derivacao e **um pick**. Um limiar tirado de uma observacao custaria
+mais que isso na primeira semana em que aquele pick fosse ruim.
+
+**Efeito colateral desejado:** o piso do alvo cobre tambem a familia que publica ZERO (1X2,
+alvo 0). O residuo registrado no `#249` — "familia com volume zero nao e protegida pelo
+quantil" — **esta fechado por este piso**, sem mecanismo novo.
+
+### Pendencia conhecida do #249, que continua aberta
+**O portao de probabilidade nao entra na conta de volume.** A constancia provada e sobre as
+condicoes de EV/edge. O `classify_market` real exige antes `prob_for_class >= safe_prob`, e
+`prob_for_class` vem de `calibrator.calibrate_prob` (o isotonico), **nao** da curva da camada —
+entao o portao nao se move com a camada e a comparacao e justa. Mas o conjunto que passa nos
+cortes novos tem o mesmo TAMANHO com membros diferentes, e a intersecao com o portao pode
+deslocar a contagem publicada em alguns picks. O deslocamento e real e pequeno; medi-lo exige
+rodar `/fixtures` ponta a ponta antes e depois, porque o ledger nao guarda `prob_for_class` nem
+`data_quality_score`. Fica registrado, nao medido.
+
+### Achado lateral registrado, NAO corrigido (fora de escopo)
+`backend/services/ev_classification.py:549-553` — `classify_market` chama
+`calibrate_prob(raw, _market_category(output.market_type), league_id, "")`, passando a
+**categoria** (`"Over/Under"`) onde todo o resto do modulo passa o **rotulo de exibicao**
+(`"Over 2.5"`, `"Cartoes Over 3.5"`). O rotulo escolhe a chave do modelo isotonico na cadeia
+`mercado|liga -> mercado|regime -> mercado|global -> familia|...`, entao a categoria procura uma
+chave que os `.pkl` do #200 provavelmente nao tem e cai no fallback de familia. E a mesma classe
+de defeito de vocabulario que custou dois Criticos no #248, do lado do isotonico. Nao foi tocado
+aqui: esta no caminho de `prob_for_class`, sem relacao com o consumo dos limiares, e merece
+medicao propria.
 
 ### Licao aprendida
 A pergunta que decidia a tarefa nao era "como ler a tabela" — era "contra qual linha de base a

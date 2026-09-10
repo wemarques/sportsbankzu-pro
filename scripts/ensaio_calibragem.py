@@ -101,6 +101,7 @@ def main() -> int:
     decisoes = plano["decisoes"]
     novos = plano["limiares"]
     atuais = plano["limiares_atuais"]
+    motivos_limiares = plano["motivos_limiares"]
 
     print()
     print("-" * 78)
@@ -124,7 +125,8 @@ def main() -> int:
             antes, depois = lim_atual.get(campo), lim_novo.get(campo)
             marca = "  (inalterado)" if antes == depois else ""
             print(f"    {campo:<12} {_fmt(antes)} -> {_fmt(depois)}{marca}")
-        print(f"    motivo: {r.get('motivo', '')}")
+        print(f"    motivo (curva):   {r.get('motivo', '')}")
+        print(f"    motivo (limiares): {motivos_limiares.get(familia, '-')}")
 
     c = plano["contadores"]
     print()
