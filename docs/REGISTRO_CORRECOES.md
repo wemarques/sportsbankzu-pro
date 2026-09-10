@@ -13052,19 +13052,41 @@ A correcao C1 reduz o erro de referencia, nao o elimina. Dois parametros no logi
 reproduzem a pilha de bandas — a propria spec diz isso na secao 6.1, e a medicao confirma: o
 erro maximo do ajuste e 8,14pp no ramo de meia-banda (O/U, BTTS) e 15,47pp no de banda
 inteira (Corners, Cards, 1X2, Double Chance). E nao e culpa do metodo de ajuste: a melhor
-curva de dois parametros POSSIVEL (busca em grade minimizando o erro maximo em espaco de
-probabilidade) ainda erra 6,03pp e 9,45pp. A causa e a forma — o legado satura (p=0,98 sai em
-0,8575 / 0,7350 por causa da banda de 25%) enquanto qualquer logistica com `b>0` sobe ate 1.
+curva de dois parametros POSSIVEL erra 5,89pp (meia banda) e 9,35pp (banda inteira) — numeros
+da busca minimax refinada da re-revisao, que confirmou o piso de forma independente: os otimos
+EQUIOSCILAM em quatro pontos, assinatura de Chebyshev de um minimo verdadeiro, e nao de uma
+grade grossa. A causa e a forma — o legado satura (`legado(0,98) = 0,8575` na meia banda,
+0,7350 na inteira, por causa da banda de 25%) enquanto qualquer logistica com `b>0` sobe ate 1.
 
 Consequencia pratica: enquanto a celula estiver na versao 0, a trava mede contra uma
 aproximacao, e o primeiro ciclo pode mover ate ~17pp em vez dos 2pp declarados. A partir do
 segundo ciclo o problema some (vigente e proposta sao ambas curvas `(a,b)`, e a distancia
-entre elas e exata). O conserto de verdade, se o primeiro ciclo precisar respeitar os 2pp, e
-a trava aceitar uma FUNCAO como vigente em vez de um par `(a,b)` — medindo
-`max |curva_nova(p) - legado(p)|` direto, com a busca do fator de encurtamento por varredura
-em `t` (a bisseccao atual depende da monotonicidade da distancia curva-contra-curva, que nao
-vale contra uma funcao arbitraria). Nao foi feito aqui porque esta fora do escopo desta onda
-e porque, com a flag desligada, nao ha risco vivo.
+entre elas e exata).
+
+**O conserto e COMPOR com o legado, e nao medir contra ele.** A recomendacao que estava aqui
+antes — a trava aceitar uma FUNCAO como vigente e medir `max |curva_nova(p) - legado(p)|`
+direto — esta ERRADA, e o registro fica para quem tiver a mesma ideia daqui a seis meses.
+Motivo: em `governanca.avaliar_proposta` a bisseccao interpola de `t=0` (a propria vigente) ate
+`t=1` (a proposta). Se a referencia virar a funcao legado, entao `t=0` JA DISTA 5,89pp / 9,35pp
+— acima do limite de 2pp. Nenhum `t` cabe, a bisseccao converge para `fator=0`, e toda celula
+na versao 0 sai `encurtada` sem andar, para sempre. Seria a patologia do #247 (o gate que nunca
+dispara) reintroduzida exatamente no mecanismo que este trabalho existe para proteger.
+
+O que funciona e trocar a entrada da curva:
+
+```
+p' = sigmoide(a + b * logit(legado(p)))        em vez de   sigmoide(a + b * logit(p))
+```
+
+Assim `(a=0, b=1)` **E** a versao 0 por construcao. A trava de 2pp passa a valer exata desde o
+primeiro ciclo, e o erro de aproximacao nao diminui: SOME. `calibragem/linha_base.py` deixa de
+ser necessario. O custo e o estimador ajustar sobre `logit(legado(p_raw))` em vez de
+`logit(p_raw)` — uma chamada a `calibrar_legado` por pick por ciclo, cerca de 5,5 mil,
+cacheavel por `(p_raw, mercado, liga, regime)`.
+
+NAO implementado nesta onda: e mudanca de DESENHO (muda o que a camada aprende, nao so como
+ela e medida), sobe como recomendacao para o Welligton decidir, e com a flag desligada nao ha
+risco vivo enquanto a decisao nao vem.
 
 ### Licao aprendida
 A pergunta certa nao era "a camada aprende?" — era "o que ela aprende alem de nao

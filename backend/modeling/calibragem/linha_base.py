@@ -35,12 +35,37 @@ minimos quadrados no logit, sobre `p` em [0,02; 0,98]:
     Double Chance    Double Chance 1X            15,47 pp
 
 Os 2pp da trava NAO sao atingidos, e o residuo nao e do metodo de ajuste: a
-melhor curva de dois parametros POSSIVEL (busca em grade minimizando o erro
-maximo em espaco de probabilidade) ainda erra 6,03pp no ramo de meia-banda e
-9,45pp no de banda inteira. A causa e a forma: o legado satura (p=0,98 sai
-em 0,8575 / 0,7350 por causa da banda de 25%) enquanto qualquer logistica
-com b>0 continua subindo ate 1. O ganho da correcao e reduzir o erro de
-referencia de 24,50pp (identidade) para <=15,47pp, nao zera-lo.
+melhor curva de dois parametros POSSIVEL erra 5,89pp no ramo de meia-banda e
+9,35pp no de banda inteira (busca minimax refinada; os otimos EQUIOSCILAM em
+quatro pontos, assinatura de Chebyshev de um minimo verdadeiro). A causa e a
+forma: o legado satura (`legado(0,98) = 0,8575` na meia banda, 0,7350 na
+inteira, por causa da banda de 25%) enquanto qualquer logistica com b>0
+continua subindo ate 1. O ganho da correcao e reduzir o erro de referencia de
+24,50pp (identidade) para <=15,47pp, nao zera-lo.
+
+## Como este modulo deixa de ser necessario
+
+O conserto que fecha o buraco e COMPOR com o legado, trocando a entrada da
+curva:
+
+    p' = sigmoide(a + b * logit(legado(p)))   em vez de  sigmoide(a + b * logit(p))
+
+Assim `(a=0, b=1)` E a versao 0 por construcao: a trava de 2pp vale exata
+desde o primeiro ciclo, o erro de aproximacao nao diminui — SOME — e este
+arquivo perde a razao de existir junto com `legado.py`. O custo e o estimador
+ajustar sobre `logit(legado(p_raw))`: uma chamada a `calibrar_legado` por pick
+por ciclo, ~5,5 mil, cacheavel. E mudanca de DESENHO (muda o que a camada
+aprende, nao so como ela e medida) e esta como recomendacao para Welligton
+decidir, nao implementada.
+
+NAO confundir com "a trava aceitar uma FUNCAO como vigente e medir
+`max |curva_nova(p) - legado(p)|` direto". Essa ideia — que esteve escrita
+aqui e no #248 — TRAVA A CAMADA PARA SEMPRE: em `governanca.avaliar_proposta`
+a bisseccao interpola de `t=0` (a propria vigente) ate `t=1` (a proposta), e
+com a funcao legado como referencia o proprio `t=0` ja dista 5,89pp / 9,35pp,
+acima do limite de 2pp. Nenhum `t` cabe, o fator converge para 0, e toda
+celula na versao 0 sai `encurtada` sem andar — a patologia do #247 (o gate
+que nunca dispara) reintroduzida no mecanismo que ela deveria proteger.
 """
 import logging
 from typing import Dict, Tuple
