@@ -13134,6 +13134,51 @@ grandeza menor que o ganho de parar de deflacionar. Registrar os dois numeros se
 problema" quando o que resolveu foi desligar um mecanismo que, pelo #245, nunca deveria ter
 existido na intensidade atual em cinco das seis familias.
 
+## 248-a — Adendo ao #248: "nao configurado" nao e "fora do ar" — o sufixo `|origem:legado` quebrava o CI e travava o deploy
+**Data:** 2026-09-10 | **Arquivos:** `backend/modeling/calibragem/ciclo.py`, `backend/modeling/calibragem/repositorio.py`, `backend/services/ev_classification.py`, `tests/calibragem/test_11_ciclo.py`, `tests/calibragem/test_14_consumo_limiares.py` | **Severidade:** Alta (o CI vermelho barrava o job de deploy; producao ficou parada em `10a5598`) | **Status:** Corrigido
+
+### Problema identificado
+Desde `40ee6cc` o CI do GitHub Actions falhava, e `deploy-lambda.yml` so publica depois de `pytest -q` passar. Nada do trabalho da camada de calibragem (#248/#249/#250) chegou a producao — o Lambda continuou rodando `10a5598`.
+
+```
+FAILED tests/unit/test_separacao_calibrador_216.py::test_tipo_de_banda_por_familia
+assert 'meia|origem:legado' == 'meia'
+1 failed, 1320 passed, 8 skipped
+```
+
+Localmente passava: o ambiente de desenvolvimento tem `DATABASE_URL`; o runner Ubuntu do CI nao.
+
+### Causa raiz
+`ciclo.parametros_vigentes()` chama `repositorio.carregar_vigentes()`. Sem `DATABASE_URL`, `_conn` levanta `KeyError` na primeira linha, o `except` do `_servir()` captura e devolve procedencia `legado`. `_calibrar_com_detalhe` (#248) trata **qualquer** procedencia diferente de `banco` como degradacao e acrescenta `|origem:<procedencia>` ao `tipo_banda` — logo, em toda calibracao, de todo teste, de todo ambiente sem banco.
+
+O defeito nao esta no sufixo: esta em `legado` significar duas coisas incompativeis.
+
+1. **`DATABASE_URL` definida e a conexao falhou.** Degradacao real: o painel deveria servir o banco e esta servindo o legado. Tem de ser marcada e logada como erro — foi o #238 que mostrou o custo de um fallback silencioso servindo texto estatico por horas.
+2. **`DATABASE_URL` nem esta definida.** A camada nao esta configurada. E o estado de dev, de CI e de qualquer execucao sem banco. Nao ha degradacao: publica-se o legado versao 0, ou seja, exatamente o numero da vespera. Marcar isso e ruido — e foi o ruido que quebrou o CI.
+
+### Correcoes aplicadas (camadas)
+- **Camada 1 — o predicado, onde mora a chave.** `repositorio.banco_configurado()` responde "`DATABASE_URL` esta no ambiente?" (e explicitamente NAO "o banco responde"). Fica em `repositorio` porque este e o unico modulo que toca o banco; ler `os.environ["DATABASE_URL"]` em dois lugares seria duas versoes do mesmo contrato.
+- **Camada 2 — a terceira procedencia.** No `except` de `ciclo._servir()`, sem snapshot e sem `DATABASE_URL`, a procedencia passa a ser `sem_banco`, com log em nivel **INFO** ("comportamento normal sem banco"). Com `DATABASE_URL` definida, nada muda: `legado` (ou `snapshot`), log de **ERROR**. A checagem fica DENTRO do `except`, nao antes do `try`: um pre-check curto-circuitaria `carregar_vigentes` e quebraria os testes de `test_14` que substituem `repositorio._conn` por dublê sem tocar no ambiente.
+- **Camada 3 — o consumidor.** `ciclo.PROCEDENCIAS_SEM_MARCA = {"banco", "sem_banco"}`, e `_calibrar_com_detalhe` passa a testar `procedencia not in PROCEDENCIAS_SEM_MARCA` em vez de `!= "banco"`. A lista de procedencias que NAO marcam mora junto de quem as produz, para nao divergir.
+- **Camada 4 — os dois lados travados por teste.** `test_sem_DATABASE_URL_o_tipo_de_banda_sai_LIMPO` prova que sem a chave o `tipo_banda` sai `"meia"`, sem sufixo. `test_com_DATABASE_URL_e_conexao_caida_o_sufixo_CONTINUA` prova que com a chave definida e a conexao caindo o `tipo_banda` sai `"meia|origem:legado"` — e a garantia que o conserto nao podia perder. Mais `test_sem_DATABASE_URL_a_procedencia_e_sem_banco` no nivel do ciclo.
+- **Camada 5 — os testes existentes passam a dizer o que testam.** `test_banco_fora_cai_no_legado_e_marca` (test_11) e `test_banco_fora_do_ar_devolve_os_limiares_de_hoje_e_REGISTRA` (test_14) simulavam "banco fora do ar" derrubando `carregar_vigentes`, mas nunca definiam `DATABASE_URL` — dependiam do ambiente de quem rodasse. Agora fazem `monkeypatch.setenv` explicito: o cenario e "configurado E caido", nao "sem banco".
+
+O teste `test_tipo_de_banda_por_familia` NAO foi alterado. Ele afirma o contrato do `tipo_banda` e estava certo; quem estava errado era o codigo.
+
+### Prova empirica (SDD, proibicao 14)
+Falha reproduzida ANTES do patch, no modo do CI (sem `DATABASE_URL` no ambiente), com o log confirmando a origem exata:
+
+```
+E       AssertionError: assert 'meia|origem:legado' == 'meia'
+ERROR sportsbankzu.calibragem.ciclo [calibragem] parametros do banco indisponiveis
+      ('DATABASE_URL'); servindo de 'legado'
+```
+
+Depois do patch, suite completa nos dois modos, ambos 0 failed — numeros em `.superpowers/sdd/2026-09-09-camada-calibragem-aprendida/task-16-report.md`.
+
+### Licao aprendida
+Um marcador de degradacao que dispara no estado normal deixa de ser marcador. `except Exception` colapsou "a dependencia caiu" e "a dependencia nao existe neste ambiente" numa procedencia so, e o sinal que existia para ser raro virou constante — o mesmo desgaste do alarme que toca sempre. Marcador de fallback precisa de um predicado que separe "deveria funcionar e nao funcionou" de "nem era para estar ligado"; a checagem barata de configuracao (`DATABASE_URL` no ambiente) e o que faz essa separacao, e ela e diferente da checagem cara (o banco responde).
+
 ## 249 — Os limiares re-derivados deixam de ser escrita morta: `_get_thresholds` passa a le-los
 **Data:** 2026-09-10 | **Arquivos:** `backend/services/ev_classification.py`, `backend/modeling/calibragem/repositorio.py`, `backend/modeling/calibragem/ciclo.py`, `scripts/ensaio_calibragem.py` (novo), `tests/calibragem/test_14_consumo_limiares.py` (novo), `tests/calibragem/fixtures/amostra_producao.json` (novo), `tests/calibragem/test_09_auditoria.py`, `tests/calibragem/test_11_ciclo.py` | **Severidade:** Critica (decide o volume publicado no dia em que a camada for ligada) | **Status:** Implementado — `CALIBRAGEM_ENABLED` continua DESLIGADA; com ela desligada este consumo e um no-op provado por teste
 

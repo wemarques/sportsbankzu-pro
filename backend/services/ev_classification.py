@@ -158,16 +158,24 @@ def _calibrar_com_detalhe(raw: float, market: str, league_id: str, regime: str) 
 
     Os parametros vigentes vem de `ciclo.parametros_vigentes()` — cache por
     TTL, e banco fora do ar NUNCA vira identidade (cai no snapshot, e sem
-    snapshot no legado versao 0; #248). Quando a procedencia nao e 'banco', o
-    sufixo entra em `tipo_banda` e viaja ate o `band_type` do
-    `prediction_ledger` — um periodo servido de snapshot fica visivel na
-    tabela, nao so no log (#238 mostrou o custo do fallback silencioso).
+    snapshot no legado versao 0; #248). Quando a procedencia denuncia uma
+    DEGRADACAO ('legado' ou 'snapshot'), o sufixo entra em `tipo_banda` e
+    viaja ate o `band_type` do `prediction_ledger` — um periodo servido de
+    snapshot fica visivel na tabela, nao so no log (#238 mostrou o custo do
+    fallback silencioso).
+
+    Sem `DATABASE_URL` no ambiente nao ha degradacao nenhuma: a camada nao
+    esta configurada, publica-se o legado versao 0 como sempre, e o
+    `tipo_banda` sai LIMPO (#248-a). Marcar isso quebrava o contrato do
+    `tipo_banda` em todo dev e em todo CI.
     """
-    from backend.modeling.calibragem.ciclo import parametros_vigentes
+    from backend.modeling.calibragem.ciclo import (
+        PROCEDENCIAS_SEM_MARCA, parametros_vigentes,
+    )
     from backend.modeling.calibragem.curva import aplicar_versao
     parametros, procedencia = parametros_vigentes()
     detalhe = aplicar_versao(raw, market, league_id, regime, parametros)
-    if procedencia != "banco":
+    if procedencia not in PROCEDENCIAS_SEM_MARCA:
         detalhe.tipo_banda = f"{detalhe.tipo_banda}|origem:{procedencia}"
     return detalhe
 

@@ -5,6 +5,13 @@ Serving: `parametros_vigentes()` com cache por TTL, no padrao do #231-a. Banco
 fora do ar NUNCA vira identidade — publicar `raw` de repente seria mudar todo
 numero de uma vez por causa de rede. Cai no snapshot empacotado; sem snapshot,
 cai no legado (versao 0), e a procedencia sai marcada.
+
+"Fora do ar" e "nao configurado" NAO sao a mesma coisa (#248-a). Com
+`DATABASE_URL` definida e a conexao falhando ha degradacao: procedencia
+`legado` (ou `snapshot`), log de erro e sufixo visivel no `tipo_banda`. Sem
+`DATABASE_URL` no ambiente a camada simplesmente nao esta ligada — dev, CI,
+qualquer execucao sem banco: procedencia `sem_banco`, log informativo e
+NENHUM sufixo, porque o comportamento e exatamente o de sempre.
 """
 import logging
 import os
@@ -24,6 +31,13 @@ _SNAPSHOT: Dict[tuple, tuple] = {}
 
 _CACHE: Dict[str, object] = {"parametros": None, "limiares": None,
                              "procedencia": None, "t": 0.0}
+
+# Procedencias que NAO marcam o `tipo_banda` (#248-a): o painel esta servindo
+# exatamente o que deveria servir. `banco` e o caminho feliz; `sem_banco` e a
+# camada desligada, que publica o legado versao 0 — o mesmo numero da vespera.
+# `legado` e `snapshot` ficam de fora de proposito: sao degradacao, e o #238
+# mostrou o custo de um fallback silencioso.
+PROCEDENCIAS_SEM_MARCA = frozenset({"banco", "sem_banco"})
 
 # Os quatro campos de `DEFAULT_THRESHOLDS` que a re-derivacao move. A lista
 # mora em `limiares.CAMPOS`, que e quem os re-deriva; havia uma copia literal
@@ -95,6 +109,16 @@ def _servir() -> Tuple[Dict[tuple, tuple], Dict[str, dict], str]:
                 "[calibragem] servindo curva de SNAPSHOT sem limiares "
                 "correspondentes: o volume publicado pode subir enquanto o "
                 "banco estiver fora")
+        elif not repositorio.banco_configurado():
+            # `DATABASE_URL` nem definida: a camada nao esta configurada.
+            # Nao ha degradacao a anunciar — o painel publica exatamente o
+            # que publicava antes desta camada existir, delegando ao legado
+            # versao 0. Marcar isso enche o `tipo_banda` de ruido em todo
+            # dev e em todo CI (#248-a).
+            logger.info(
+                "[calibragem] DATABASE_URL nao definida; servindo o legado "
+                "versao 0 (comportamento normal sem banco)")
+            return {}, {}, "sem_banco"
         else:
             parametros, procedencia = {}, "legado"
         logger.error(

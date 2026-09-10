@@ -18,6 +18,13 @@ def _ciclo_ligado(monkeypatch):
 
 
 def test_banco_fora_cai_no_legado_e_marca(monkeypatch):
+    """Banco CONFIGURADO e fora do ar: degradacao, marcada (#248-a).
+
+    O `setenv` nao e decorativo. Sem `DATABASE_URL` no ambiente a procedencia
+    seria `sem_banco` — "a camada nao esta ligada", que nao e degradacao. O
+    que este teste guarda e o outro caso: a chave existe, a conexao caiu.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://irrelevante/x")
     ciclo.limpar_cache()  # isola do cache que outro teste deste modulo deixou
     def explode():
         raise RuntimeError("connection refused")
@@ -28,7 +35,23 @@ def test_banco_fora_cai_no_legado_e_marca(monkeypatch):
     assert procedencia == "legado"
 
 
+def test_sem_DATABASE_URL_a_procedencia_e_sem_banco(monkeypatch):
+    """Chave AUSENTE: a camada nao esta configurada, e isso nao e falha.
+
+    Este e o estado de dev, de CI e de qualquer execucao sem banco. Serve-se
+    o legado versao 0 — exatamente o que se publicava antes desta camada —,
+    entao nao ha degradacao a anunciar.
+    """
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    ciclo.limpar_cache()
+    monkeypatch.setattr(ciclo, "_SNAPSHOT", {})
+    parametros, procedencia = ciclo.parametros_vigentes()
+    assert parametros == {}
+    assert procedencia == "sem_banco"
+
+
 def test_banco_fora_usa_o_snapshot_quando_existe(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://irrelevante/x")
     ciclo.limpar_cache()  # isola do cache que outro teste deste modulo deixou
     def explode():
         raise RuntimeError("connection refused")
@@ -48,6 +71,43 @@ def test_nunca_devolve_identidade_por_falha(monkeypatch):
     monkeypatch.setattr(ciclo, "_SNAPSHOT", {})
     parametros, _ = ciclo.parametros_vigentes()
     assert all(v[1:] != (0.0, 1.0) for v in parametros.values())
+
+
+# --- O contrato do `tipo_banda` (#248-a). O sufixo `|origem:` existe para
+# tornar VISIVEL uma degradacao. So que `legado` cobria duas situacoes
+# diferentes, e a que nao era degradacao — `DATABASE_URL` nem definida —
+# marcava toda calibracao de todo ambiente sem banco, quebrando o CI. Os dois
+# testes abaixo travam os dois lados da distincao; perder o segundo seria
+# perder a garantia que o sufixo existe para dar. ---
+
+
+def test_sem_DATABASE_URL_o_tipo_de_banda_sai_LIMPO(monkeypatch):
+    from backend.services import ev_classification as ev
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(ciclo, "_SNAPSHOT", {})
+    ciclo.limpar_cache()
+    detalhe = ev._calibrar_com_detalhe(0.70, "Over 2.5", "championship", "NORMAL")
+    assert detalhe.tipo_banda == "meia"
+    assert "|origem:" not in detalhe.tipo_banda
+
+
+def test_com_DATABASE_URL_e_conexao_caida_o_sufixo_CONTINUA(monkeypatch):
+    """A garantia que nao pode ser perdida no conserto do CI.
+
+    Banco configurado + conexao falhando = o painel esta servindo o legado
+    quando deveria servir o banco. Isso tem de aparecer no `band_type` do
+    `prediction_ledger`, nao so no log (#238).
+    """
+    from backend.services import ev_classification as ev
+    monkeypatch.setenv("DATABASE_URL", "postgresql://irrelevante/x")
+
+    def explode():
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(ciclo.repositorio, "carregar_vigentes", explode)
+    monkeypatch.setattr(ciclo, "_SNAPSHOT", {})
+    ciclo.limpar_cache()
+    detalhe = ev._calibrar_com_detalhe(0.70, "Over 2.5", "championship", "NORMAL")
+    assert detalhe.tipo_banda == "meia|origem:legado"
 
 
 def test_cache_evita_segunda_ida_ao_banco(monkeypatch):

@@ -97,6 +97,19 @@ class Pick(NamedTuple):
 _CONNECT_TIMEOUT_S = 5
 
 
+def banco_configurado() -> bool:
+    """`DATABASE_URL` esta no ambiente? NAO diz que o banco responde.
+
+    Separa duas coisas que `_conn` levantando confundia (#248-a): "a camada
+    nao esta configurada" (dev, CI, qualquer execucao sem banco — comporta-se
+    como sempre, delegando ao legado) e "esta configurada e caiu" (degradacao,
+    que tem de ser marcada e logada como erro). Mora aqui porque este modulo e
+    o dono da chave de ambiente; ler `os.environ["DATABASE_URL"]` em dois
+    lugares seria duas versoes do mesmo contrato.
+    """
+    return bool(os.getenv("DATABASE_URL", "").strip())
+
+
 def _conn():
     import psycopg2
     return psycopg2.connect(os.environ["DATABASE_URL"],

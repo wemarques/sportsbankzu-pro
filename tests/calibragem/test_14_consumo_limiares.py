@@ -229,6 +229,11 @@ def test_limiar_NULO_no_banco_nao_vira_zero(banco):
 
 def test_banco_fora_do_ar_devolve_os_limiares_de_hoje_e_REGISTRA(
         monkeypatch, caplog):
+    # Banco CONFIGURADO e fora do ar. Sem `DATABASE_URL` a procedencia seria
+    # `sem_banco` e o log, informativo — outro caso, e nao o deste teste
+    # (#248-a).
+    monkeypatch.setenv("DATABASE_URL", "postgresql://irrelevante/x")
+
     def explode():
         raise RuntimeError("connection refused")
     monkeypatch.setattr(repositorio, "carregar_vigentes", explode)
