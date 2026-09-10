@@ -317,7 +317,19 @@ def test_toda_celula_gera_linha_em_todo_ciclo(monkeypatch):
 
 def test_executar_nunca_levanta_e_preenche_erro(monkeypatch):
     """Falha aberta: uma excecao na leitura da amostra nao propaga -- o
-    resumo devolve `erro` preenchido."""
+    resumo devolve `erro` preenchido.
+
+    `_conn` MOCKADO (#248): este era o unico teste do diretorio que chamava
+    `ciclo.executar()` sem dublê de conexao, entao `garantir_tabela()` rodava
+    de verdade e a suite emitia DDL contra a RDS de PRODUCAO. Foi assim que
+    a tabela `calibragem_versoes` nasceu la. O `conftest.py` do diretorio
+    hoje bloqueia `psycopg2.connect` como rede de seguranca, mas o dublê
+    aqui e explicito: o teste diz do que precisa.
+    """
+    import backend.modeling.calibragem.repositorio as repo
+
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora([]))
+
     def explode(desde=None):
         raise RuntimeError("ledger indisponivel")
     monkeypatch.setattr(ciclo.repositorio, "carregar_amostra", explode)

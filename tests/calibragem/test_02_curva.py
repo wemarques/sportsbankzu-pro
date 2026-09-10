@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """A curva de dois parametros: identidade, monotonicidade, bordas, versao 0."""
 import json
-import math
 import pathlib
 
 import pytest

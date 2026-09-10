@@ -15,23 +15,11 @@ from backend.modeling.calibragem.legado import calibrar_legado
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "golden_legado.json"
 
 
-@pytest.fixture(autouse=True)
-def _sem_calibracao_por_liga(monkeypatch):
-    """#242 (mesmo defeito, outro teste) - `calibrar_legado` chama
-    `_get_league_deflation`, que consulta `get_lambda_corrections` no banco
-    via o cache TTL de 300s do #231-a. A fixture dourada foi capturada com o
-    cache frio (consulta falhou -> caiu no padrao 0.90 documentado). Num
-    proceso onde um teste anterior ja aqueceu o cache com a RDS real, 18 das
-    22 ligas devolvem `lambda_multiplier: 1.0` e o resultado diverge da
-    fixture por ORDEM de execucao, nao por defeito de logica. Aqui fixamos
-    o estado (cache limpo + get_lambda_corrections mockado para {}) para
-    reproduzir exatamente as condicoes em que a fixture foi capturada.
-    """
-    from backend.modeling import lambda_calculator as LC
-    LC.limpar_cache_correcoes()
-    monkeypatch.setattr(LC, "get_lambda_corrections", lambda league: {})
-    yield
-    LC.limpar_cache_correcoes()
+# A fixture de isolamento de cache que ficava aqui (#242: cache TTL por liga
+# do #231-a quente muda o resultado por ordem de execucao) mudou para
+# `tests/calibragem/conftest.py`, `autouse` para o diretorio inteiro. Ela
+# estava duplicada com `tests/test_233_classificacao_valor.py` e era a
+# dependencia de ordem que ja custou dois defeitos a este repositorio.
 
 
 @pytest.fixture(scope="module")

@@ -11,12 +11,14 @@ separa-los recria a convivencia de dois regimes que o #244 mediu.
 import logging
 import math
 from collections import defaultdict
-from typing import Any, Dict, List, Sequence
+from typing import Dict, List, Sequence
 
 from backend.modeling.calibragem.curva import aplicar
 
 logger = logging.getLogger("sportsbankzu.calibragem.limiares")
 
+# Os quatro campos que a re-derivacao move. Fonte unica: `ciclo` importa
+# daqui em vez de manter a propria copia.
 CAMPOS = ("safe_ev", "neutro_ev", "safe_edge", "neutro_edge")
 
 
@@ -27,9 +29,14 @@ def _arredondar_para_baixo(x: float, casas: int = 4) -> float:
     ordenacao). Com dados discretos ha clusters de empates exatos nesse valor
     (visto empiricamente: 5 picks empatados em 0.12149539... arredondado para
     0.1215 os excluiu todos do `>=`, porque 0.1215 > 0.12149539...). Arredondar
-    sempre para baixo mantem o cluster do corte incluido; o preco e, quando a
-    faixa entre o corte cru e o arredondado cruza outro valor real, incluir
-    alguns picks a mais — e exatamente a folga de ate 2 que o teste aceita.
+    sempre para baixo mantem o cluster do corte incluido.
+
+    A folga de +-2 picks que o teste de volume aceita NAO vem daqui. Medido
+    pelo revisor da Task 10: neutralizando o arredondamento, o residuo e o
+    MESMO. A causa dominante sao os EMPATES exatos no quantil cru — o corte
+    e um valor que varios picks compartilham, e `>=` leva o bloco inteiro,
+    nao os `k` primeiros. Arredondar para baixo pode acrescentar alguns
+    poucos por cima disso, e e um efeito de segunda ordem.
     """
     fator = 10 ** casas
     return math.floor(x * fator) / fator

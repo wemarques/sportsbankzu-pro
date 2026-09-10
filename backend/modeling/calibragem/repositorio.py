@@ -417,6 +417,33 @@ def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
 
 
 def contar_reversoes_seguidas(familia: str, liga: str) -> int:
+    """Quantas reversoes seguidas a celula acumulou, da mais recente para tras.
+
+    Duas reversoes seguidas congelam a celula (spec 5.3), entao o que conta
+    como "seguida" decide quando alguem e chamado para olhar. A regra, para
+    TODOS os status que podem aparecer no historico — antes so `inalterada`
+    tinha sido decidida em voz alta, e `congelada`/`rejeitada` estavam fora
+    da contagem por efeito colateral da clausula `IN`, sem ninguem ter
+    escolhido isso:
+
+      revertida              conta +1 e a varredura segue para tras.
+      adotada / encurtada    ZERAM. Uma adocao bem-sucedida encerra a
+                             sequencia — e o unico evento que encerra.
+      inalterada             IGNORADA: um ciclo sem dado novo nao e uma
+                             tentativa, entao nao conta nem zera. Tres
+                             reversoes com uma pausa no meio SAO tres
+                             fracassos.
+      congelada              IGNORADA. Alem do mesmo motivo, `congelada` e
+                             CONSEQUENCIA de duas reversoes: se zerasse, o
+                             congelamento se desfaria sozinho no ciclo
+                             seguinte, e o congelamento pegajoso (#248, I2)
+                             deixaria de existir.
+      rejeitada              IGNORADA: a proposta foi barrada (b <= 0) e
+      abaixo_do_piso         nunca chegou a publicar. Nao ha o que fracassar.
+
+    O `LIMIT 5` e o alcance: sequencia mais longa que isso ja congelou muito
+    antes.
+    """
     with _conexao() as c, c.cursor() as cur:
         cur.execute("""
             SELECT status FROM calibragem_versoes

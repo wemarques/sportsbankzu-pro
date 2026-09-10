@@ -11,12 +11,10 @@ import os
 import time
 from typing import Dict, Optional, Tuple
 
-from backend.modeling.calibragem import (
-    MIN_N_JOGOS, PASSO_MAXIMO_PP, VERSAO_LEGADO,
-)
+from backend.modeling.calibragem import PASSO_MAXIMO_PP, VERSAO_LEGADO
 from backend.modeling.calibragem import (
     estimador, governanca, limiares, linha_base, repositorio,
-)
+)  # noqa: E402 -- pacote e submodulos, dois imports por legibilidade
 
 logger = logging.getLogger("sportsbankzu.calibragem.ciclo")
 
@@ -26,10 +24,12 @@ _SNAPSHOT: Dict[tuple, tuple] = {}
 
 _CACHE: Dict[str, object] = {"parametros": None, "procedencia": None, "t": 0.0}
 
-# Os quatro campos de `DEFAULT_THRESHOLDS` que a re-derivacao de limiares
-# move. `safe_prob`/`neutro_prob`/`min_quality` nao entram: a classificacao
-# usa prob RAW (proibicao 11), entao esses nao se movem com a curva.
-_CAMPOS_LIMIAR = ("safe_ev", "neutro_ev", "safe_edge", "neutro_edge")
+# Os quatro campos de `DEFAULT_THRESHOLDS` que a re-derivacao move. A lista
+# mora em `limiares.CAMPOS`, que e quem os re-deriva; havia uma copia literal
+# aqui, e duas listas do mesmo conjunto so tem um destino.
+# `safe_prob`/`neutro_prob`/`min_quality` ficam de fora: a classificacao usa
+# prob RAW (proibicao 11), entao esses nao se movem com a curva.
+_CAMPOS_LIMIAR = limiares.CAMPOS
 
 
 def _ttl() -> float:

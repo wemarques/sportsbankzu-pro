@@ -112,9 +112,16 @@ def estimar_k(celulas: Dict[Any, Sequence]) -> Tuple[float, bool]:
     media = sum(ajustes) / len(ajustes)
     var_entre = sum((x - media) ** 2 for x in ajustes) / (len(ajustes) - 1)
     n_medio = sum(ns) / len(ns)
-    # Variancia da estimativa de `a` cai com n; var_dentro ~ c/n_medio, e a
-    # constante se cancela na razao. Aproximacao deliberada: o que importa e a
-    # ordem de grandeza de k, e o piso duro de 20 jogos ja protege o resto.
+    # Variancia da estimativa de `a` cai com n: var_dentro ~ 1/n_medio. O que
+    # se cancela na conta abaixo NAO e "a constante" — e o proprio `n_medio`:
+    #     k = var_dentro / var_entre * n_medio = (1/n_medio) / var_entre * n_medio
+    #       = 1 / var_entre
+    # ou seja, `k` e o INVERSO da dispersao entre celulas, e nao uma contagem
+    # de jogos, apesar de ser comparado com `n_efetivo` (que e). A escala
+    # implicita esta na constante de proporcionalidade que foi tomada como 1.
+    # Aproximacao deliberada: o que importa e a ordem de grandeza de `k`, o
+    # resultado e preso em [1, 500] logo abaixo, e o piso duro de 20 jogos
+    # (#079) protege o resto.
     var_dentro = 1.0 / max(n_medio, 1.0)
     if var_entre <= 0:
         return (float(K_FIXO), True)

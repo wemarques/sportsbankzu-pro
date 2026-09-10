@@ -2,8 +2,6 @@
 """Testes 1b, 7 e 9 da spec — os invariantes que atravessam modulos."""
 import pathlib
 
-import pytest
-
 from backend.modeling.calibragem.curva import aplicar
 from backend.services.ev_classification import _filter_corridor_bets
 

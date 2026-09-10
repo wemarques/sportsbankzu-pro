@@ -515,3 +515,65 @@ def test_indice_unico_falho_nao_derruba_garantir_tabela(monkeypatch, caplog):
     texto = caplog.text
     assert "NAO criado" in texto
     assert "Corners" in texto, texto
+
+
+# Os status que a consulta de `contar_reversoes_seguidas` deixa passar. O
+# teste abaixo emula o filtro; este par de asserções impede que a emulacao
+# e o SQL de producao andem separados.
+STATUS_QUE_A_CONSULTA_TRAZ = ("revertida", "adotada", "encurtada")
+
+
+def test_a_consulta_de_reversoes_filtra_exatamente_esses_status(monkeypatch):
+    import backend.modeling.calibragem.repositorio as repo
+
+    registro = []
+    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora(
+        _CursorGravador(fetchall=[], registro=registro)))
+    repo.contar_reversoes_seguidas("BTTS", "")
+
+    sql = registro[0][0]
+    for st in STATUS_QUE_A_CONSULTA_TRAZ:
+        assert f"'{st}'" in sql, st
+    for st in ("inalterada", "congelada", "rejeitada", "abaixo_do_piso"):
+        assert f"'{st}'" not in sql, st
+
+
+@pytest.mark.parametrize("historico,esperado", [
+    (["revertida"], 1),
+    (["revertida", "revertida"], 2),
+    # So a ADOCAO zera.
+    (["adotada", "revertida"], 0),
+    (["encurtada", "revertida", "revertida"], 0),
+    # Ciclos sem tentativa nao contam nem zeram -- a regra completa esta na
+    # docstring de `contar_reversoes_seguidas`. `congelada` em especial NAO
+    # pode zerar: ela e consequencia de duas reversoes, e zerar desfaria o
+    # congelamento sozinho no ciclo seguinte.
+    (["inalterada", "revertida"], 1),
+    (["congelada", "revertida"], 1),
+    (["rejeitada", "revertida"], 1),
+    (["abaixo_do_piso", "revertida"], 1),
+    (["congelada", "revertida", "revertida"], 2),
+])
+def test_contagem_de_reversoes_para_um_historico_completo(
+        monkeypatch, historico, esperado):
+    """`historico` e o que esta NA TABELA, mais recente primeiro — inclusive
+    os status que a consulta nao traz. O dublê aplica o mesmo filtro do
+    `WHERE` (travado pelo teste acima) e o resultado e a regra composta:
+    consulta + laco, que e o que roda em producao."""
+    import backend.modeling.calibragem.repositorio as repo
+
+    fetchall = [(s,) for s in historico if s in STATUS_QUE_A_CONSULTA_TRAZ]
+    monkeypatch.setattr(repo, "_conn",
+                        lambda: _ConexaoGravadora(_CursorGravador(fetchall=fetchall)))
+
+    assert repo.contar_reversoes_seguidas("BTTS", "") == esperado
+
+
+def test_guarda_de_conexao_do_conftest_esta_armada():
+    """O `conftest.py` deste diretorio bloqueia `psycopg2.connect`. Se esta
+    guarda cair, a suite volta a poder emitir DDL contra a RDS de producao —
+    foi assim que `calibragem_versoes` nasceu la."""
+    import psycopg2
+
+    with pytest.raises(AssertionError, match="conexao real"):
+        psycopg2.connect("postgres://o-que-for")
