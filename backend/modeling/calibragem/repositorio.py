@@ -194,7 +194,15 @@ def montar_linha_auditoria(familia: str, liga: str, versao: int,
 
 
 def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
-    """Grava as linhas do ciclo e promove as adotadas a `vigente`."""
+    """Grava as linhas do ciclo e promove `adotada`/`encurtada`/`revertida`
+    a `vigente`.
+
+    `revertida` entra no conjunto de promocao: sem isso a versao ruim
+    continuava `vigente` e continuava publicando, e a reversao virava
+    so uma linha de log. O `(a, b)` que essa linha carrega e
+    responsabilidade de quem monta `linhas` (o ciclo) -- aqui so promove o
+    que recebe, sem reinterpretar.
+    """
     if not linhas:
         return 0
     sql = """
@@ -213,7 +221,7 @@ def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
     """
     with _conn() as c, c.cursor() as cur:
         for ln in linhas:
-            if ln["status"] in ("adotada", "encurtada"):
+            if ln["status"] in ("adotada", "encurtada", "revertida"):
                 cur.execute(promove, (ln["familia"], ln["liga"]))
                 cur.execute(sql, dict(ln, status="vigente"))
                 cur.execute(sql, ln)
