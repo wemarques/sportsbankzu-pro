@@ -6,6 +6,21 @@
 
 Ler nesta ordem: `docs/BACKLOG.md` (P0/P1) → `docs/REGRAS_ATIVAS.md` → `docs/INDICE_REGRAS.md`. Consultar `docs/REGISTRO_CORRECOES.md` quando precisar do histórico de um fix `#N`.
 
+## Protocolo de Execução Silenciosa (precede o SDD)
+
+Estas regras têm precedência sobre o estilo de resposta. Violá-las invalida a entrega, mesmo que o código esteja correto.
+
+1. **Proibido narrar descoberta antes de agir.** Se encontrou um problema, corrija ou reporte em 1 linha factual. Proibido: "descobri que...", "o que isso revela...", "a ironia é...", "vou parar aqui porque...". Formato permitido de reporte:
+   `CORREÇÃO: <campo> afetado por <causa>. Fix: <ação>. Impacto: <N>.`
+
+2. **Proibido parar para pedir permissão em tarefa já autorizada.** Se o usuário disse "sim" a um plano, execute até o fim. Só pare em bloqueio que exija decisão nova, e pare em 1 linha.
+
+3. **Proibido oferecer escolha binária quando existe ordem correta demonstrável.** Se a análise indica que A deve vir antes de B, execute A e diga "fiz A, próximo é B, confirma?". Nunca pergunte "A ou B?".
+
+4. **Toda descoberta retroativa vira regra ANTES de virar correção.** Se descobriu que o SDD não pegou X, adicione X ao SDD e só então corrija o código afetado. Sem isso, o mesmo vão reaparece na próxima tarefa e a sessão vira firefighting.
+
+5. **Máximo 2 linhas de texto entre ações de código.** Código antes de prosa. Fatos antes de hedging. Sem preâmbulo, sem pós-escrito.
+
 ## Protocolo SDD (Spec-Driven Development) — Obrigatório para qualquer alteração
 
 Toda tarefa de ajuste de cálculo, modelo, pipeline ou tela deve seguir rigorosamente as 4 etapas antes de qualquer commit:
@@ -21,6 +36,16 @@ Antes de alterar qualquer código, descrever explicitamente:
 - É proibido adicionar `.get("chave")` em um consumidor sem inspecionar e provar que o produtor e a rota de fixtures/pipeline serializam essa chave no dicionário.
 - Proibido criar contratos de ordem invisíveis (como `.pop()` pós-consumo).
 
+### 2-bis. Contratos de Saída (extensão obrigatória da Etapa 2)
+A Etapa 2 original audita o caminho de entrada do dado (produtor → intermediário → consumidor). Esta extensão audita o caminho de **saída**: o que a mudança **escreve** e quem, **fora do escopo da mudança**, lê.
+
+Antes de alterar qualquer campo, listar:
+- **Campos escritos pela mudança.** Nome exato, tabela exata.
+- **Consumidores externos desses campos.** Quem lê, em qual subsistema, para qual finalidade. Incluir: ledgers, gates, métricas, dashboards, auditorias, jobs de avaliação.
+- **Contrato implícito.** O que o consumidor assume sobre o campo? Ex: "`calibrated_prob` é a probabilidade pura do modelo, imune a camadas". Se a mudança viola essa suposição, é proibido prosseguir sem atualizar o consumidor ou isolar o campo.
+
+**Rejeição automática:** se a mudança escreve em um campo que outro subsistema lê, e essa leitura não foi auditada, a entrega está rejeitada — mesmo que todos os testes internos passem.
+
 ### 3. Implementação Guiada
 - Implementar estritamente o que foi delimitado na Spec. Não adicionar refatorações paralelas ou suposições não documentadas.
 
@@ -28,6 +53,17 @@ Antes de alterar qualquer código, descrever explicitamente:
 - **Proibido declarar sucesso com base apenas na leitura do código escrito.**
 - Executar teste unitário ou script de validação comparando o estado **ANTES** e **DEPOIS** com um payload real ou fixture completa.
 - Se o teste de saída apresentar resultados idênticos (como no caso do `EARLY_SEASON_FALLBACK`), a entrega está **rejeitada** e deve-se rastrear o elo faltante na cadeia de dados.
+
+### 5. Efeito Acumulado (obrigatório para alterações que rodam em laço)
+Vale para qualquer mudança que execute N vezes: ciclos de calibragem, jobs agendados, retries, backfills, qualquer coisa que rode em produção mais de uma vez sem intervenção humana.
+
+Antes de ativar, declarar por escrito:
+- **Comportamento esperado após 1 ciclo, 10 ciclos, 100 ciclos.** Números, não adjetivos. Ex: "a=0,23 → a=0,25 → a=0,27 (trava em 0,30)".
+- **Condição de parada (rede de segurança).** O que faz a mudança parar ou reverter sozinha.
+- **Prova de que a rede de segurança DISPARA.** Não basta existir no código. É obrigatório um teste com condição forçada que mostre a reversão/parada acionando. Se a condição nunca ocorre naturalmente, o teste tem que forçá-la.
+- **Campo de saída lido por outros subsistemas** (ver Etapa 2-bis). Declarar quem lê, o que espera, e o que acontece se o valor mudar.
+
+**Rejeição automática:** se a rede de segurança existe mas nunca foi vista disparar em teste, a entrega está rejeitada. Existir no código não é prova.
 
 ## Comandos
 
@@ -72,6 +108,8 @@ Procedimento completo (pré-check obrigatório, update via S3, recriação da La
 `PROB_SOURCE` (#231): `modelo` (padrão) | `mercado`. **Não ligar `mercado`** antes do gate #230 (300 jogos no ledger); itens 2–4 do passo 4 já implementados (#232–#234). `TAXAS_BASE_PATH` (opcional) aponta o artefato de taxas-base; padrão `backend/config/taxas_base.json`. `LAMBDA_CORRECTIONS_TTL_S` (#231-a): cache por liga das correções do banco, padrão 300 s; `0` desliga.
 
 `CALIBRAGEM_ENABLED` (#248): liga o **ciclo de escrita** da camada de calibragem aprendida no cron. **Padrão `false` — deploy não é ativação.** Desligada, `ciclo.executar` devolve `{"status": "desligado"}` sem tocar o banco (nem DDL, nem leitura, nem escrita). Governa só a escrita: o *serving* segue ligado e, sem versões gravadas, delega ao legado (versão 0) — o painel publica o que publicava na véspera. Os dois avisos que este parágrafo trazia foram resolvidos e não valem mais: a trava de 2pp é **exata desde o primeiro ciclo** (#248 Task 13 — a curva compõe com o legado, `p' = σ(a + b·logit(legado(p)))`, então `(0,1)` **é** a versão 0 por construção), e os limiares re-derivados **são consumidos** por `_get_thresholds` (#249), com piso de amostra do #079 (#249-a). Antes de ligar, rodar `python scripts/ensaio_calibragem.py`: ele mostra exatamente o que o primeiro ciclo faria, **sem escrever nada**. Medido em 2026-09-10: 126 células, 18 encurtadas em 2,00pp, 0 adotadas, 0 revertidas, volume publicado 492 → 493. `CALIBRAGEM_TTL_S` (#248): cache dos parâmetros vigentes no serving, padrão 300 s. `CALIBRAGEM_SEMENTE_PATH` (#248, opcional): artefato do backfill usado como semente.
+
+**⚠️ ATENÇÃO — contaminação do gate #230 (descoberta em 2026-09-14):** enquanto `CALIBRAGEM_ENABLED=true`, cada ciclo grava em `calibrated_probability`, que é lido pelo `prediction_ledger` via `_prob_do_modelo` como se fosse a probabilidade pura do modelo. Com `PROB_SOURCE=modelo` (padrão), `_prob_do_modelo` cai em `calibrated_probability` — ou seja, a série do gate #230 fica contaminada pela camada. **Manter `CALIBRAGEM_ENABLED=false` até que `_prob_do_modelo` seja corrigido para gravar a probabilidade do modelo independente de `prob_source`.** Ver Etapa 2-bis do SDD.
 
 ## Pipeline ativo (V2 — REGRAS #028, ativado em #035)
 
@@ -143,6 +181,8 @@ Os 7 pontos obrigatórios estão na skill `novo-mercado` (`.claude/skills/novo-m
 13. **Auditor de premissas reimplementa a matemática de referência (#209)** — NÃO deduplicar contra o pipeline; a duplicação é o mecanismo. Campo novo da FootyStats entra no manifesto (#210).
 14. **Proibido afirmar efeito ou concluir patch sem medição empírica (SDD)** — Alterações de cálculo, filtro ou classificação exigem diff de execução real (antes vs. depois). Hipóteses teóricas não substituem teste de payload ponta a ponta.
 15. **Proibido `.get(k, alternativa)` no caminho de decisão (#225-c)** — `.get` só usa a alternativa quando a chave está AUSENTE; o record cria as chaves sempre, então a alternativa é inalcançável por construção (#201, #208, #217, #225-b são a mesma falha). Use `primeiro_valido`/`pegar` de `backend/utils/valores.py`, que preservam `0`, `""` e `False`. Inventário: `python3 scripts/varredura_get.py`. Gate: `tests/test_225c_fallback_morto.py`.
+16. **Proibido ativar alteração em laço sem Etapa 5 declarada e testada** — rede de segurança que nunca disparou em teste não conta como rede. A camada de calibragem (#248) é o caso de referência: a reversão existia no código, mas a janela de versões ficava vazia a cada ciclo e ela nunca disparou em 10 ciclos.
+17. **Proibido alterar campo lido por outro subsistema sem auditar o consumidor externo (Etapa 2-bis)** — vale mesmo que o teste interno passe e o SDD original (etapas 1–4) tenha sido cumprido. O caso `calibrated_prob` ↔ gate #230 é o precedente: a camada escrevia no campo, o ledger lia, e ninguém auditou o contrato de saída.
 
 ## Finalização obrigatória pós-alteração
 
