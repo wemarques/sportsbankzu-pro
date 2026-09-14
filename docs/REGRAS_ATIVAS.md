@@ -1399,3 +1399,37 @@ estende a proibicao ao PIPELINE de ajuste automatico, nao so a relatorios manuai
 **Relacionado:** [[#244]] (a fonte proibida, medida por primeiro), [[#200]] (a contaminacao
 original do `audit_results`).
 
+
+---
+
+### #252 — Consumidor do ledger que precisa de prognostico conta so geracao publicada ANTES do kickoff, e kickoff desconhecido EXCLUI
+
+**Tipo:** Regra (Ledger / Gate / Calibracao)
+**Data:** 2026-09-14
+**Relacionado:** [[#200]], [[#230]], [[#230-a]], [[#244]], [[#248]], [[#251]]
+
+`prediction_ledger` e append-only e o cron regrava o jogo em ciclos posteriores ao apito (medido
+em 2026-09-14: os 53 jogos com desfecho gravados apos o deploy b2eec7d tinham kickoff em 13/09 e
+foram publicados em 14/09 05:00). Geracao posterior ao kickoff nao e prognostico. A coluna
+`kickoff_utc` esta NULA em 100% das linhas (`linhas_do_bundle` nunca a preenche), entao todo filtro
+escrito como "descarta se `published_at >= kickoff_utc`" e INERTE: ele deixa passar quando o
+kickoff falta. Medido: dos 250 jogos com desfecho publicados antes da camada #248, so **188** tem
+alguma geracao anterior ao apito.
+
+**Regra:**
+1. Todo consumidor do ledger que mede, calibra ou decide (gate #230, estimador #248, qualquer
+   relatorio de acerto) filtra `published_at < kickoff`.
+2. O kickoff vem de `kickoff_utc` e, na falta, do sufixo epoch do `match_id`
+   (`{liga}-{casa}-{fora}-{ts}`). Sem nenhum dos dois, a linha **sai** da amostra e e contada como
+   `sem_kickoff` — falha FECHADA. Filtro que mantem a linha quando o kickoff falta e o defeito
+   desta regra.
+3. O consumidor imprime quantas linhas/jogos sairam por `pos_kickoff` e por `sem_kickoff`. Filtro
+   silencioso nao conta.
+
+**Proibido:** criar opcao que desligue o filtro no gate #230; contar como "jogo limpo" um jogo
+cuja unica geracao com desfecho e posterior ao apito.
+
+**Estado de aplicacao:** `scripts/comparar_com_mercado.py` (gate #230) aplica desde #252.
+`backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) tem o MESMO filtro
+inerte (mantem a linha quando `kickoff_utc` e None) — **em aberto**, sem efeito hoje porque
+`CALIBRAGEM_ENABLED=false`, e bloqueia religar a camada junto com a proibicao 16.

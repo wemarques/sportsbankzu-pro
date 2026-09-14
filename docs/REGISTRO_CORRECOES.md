@@ -13580,3 +13580,56 @@ Campo escrito: `prediction_ledger.calibrated_prob` (e, no objeto, `MarketOutput.
 
 ### Lição aprendida
 O `and prob_source is not None` do #231 era, no dia em que foi escrito, uma redundância inofensiva: `calibrated_probability` **era** o modelo, então a condição só confirmava o óbvio. Redundância inofensiva é uma suposição sobre o resto do sistema escrita em forma de código, e ela envelhece em silêncio — o #248 mudou o que `calibrated_probability` significa e a condição virou um bug sem que uma linha dela fosse tocada. O sinal de alarme não era "o código está errado", era "esta condição nunca é falsa; por que está aqui?". Vale também o contrapositivo: a camada #248 passou pelas etapas 1–4 do SDD e por 1324 testes, e ainda assim quebrou um consumidor — porque nenhuma delas pergunta *quem mais lê o que eu escrevo*. É a Etapa 2-bis, e este é o caso que a gerou.
+
+---
+
+## 252 — O gate #230 só conta geração publicada ANTES do apito: 76% dos picks eram regravações pós-jogo
+**Data:** 2026-09-14 | **Arquivos:** `scripts/comparar_com_mercado.py`, `tests/test_252_gate_so_pre_kickoff.py` (novo), `docs/REGRAS_ATIVAS.md` | **Severidade:** Crítica (o veredito do gate se inverte) | **Status:** Corrigido (gate) / Em aberto (estimador #248)
+
+### Problema identificado
+Ao verificar se os 50 jogos limpos que faltavam para o gate #230 tinham acumulado depois do deploy b2eec7d, os 53 jogos com desfecho gravados após o deploy tinham **todos** kickoff em 13/09 (sufixo epoch do `match_id`, ex. `2-bundesliga-Heidenheim-Holstein Kiel-1789299000.0` = 13/09 11:30 UTC) e publicação em 14/09 05:00 — regravação pós-jogo pelo cron. Nenhum era prognóstico. O `_do_ledger` do gate não filtrava `published_at` contra o kickoff.
+
+### Causa raiz
+1. `prediction_ledger` é append-only e o cron regrava o jogo em ciclos posteriores ao apito.
+2. `kickoff_utc` está **nula em 100% das linhas**: `linhas_do_bundle` nunca passa `kickoff_utc` a `montar_linha`.
+3. O único filtro pré-jogo existente (`calibragem/repositorio.py::escolher_ultima_geracao`, #248) mantém a linha quando `kickoff_utc is None` — falha **aberta**, inerte por construção. O gate nem esse filtro tinha.
+
+### Correções aplicadas
+**Regra antes da correção (Protocolo, item 4):** `REGRAS_ATIVAS` #252 — consumidor do ledger que mede/calibra/decide conta só `published_at < kickoff`; kickoff de `kickoff_utc` ou, na falta, do sufixo epoch do `match_id`; sem nenhum dos dois a linha **sai** (falha fechada) e é contada; proibida opção que desligue o filtro no gate.
+
+**Camada 1 — `_kickoff_da_linha`:** `kickoff_utc` gravado tem precedência; senão epoch do sufixo; `-todays-` (#236, termina em id de fixture) e epoch anterior a 2020-01-01 devolvem `None` — um id `12345` não vira kickoff em 1970.
+
+**Camada 2 — `_so_pre_jogo`:** mantém só `published_at < kickoff` (no apito também sai); conta picks e **jogos que sumiram** por `pos_kickoff` e `sem_kickoff`.
+
+**Camada 3 — `_do_ledger`:** seleciona `l.published_at, l.kickoff_utc` e passa pelo filtro antes de devolver os picks; `main` imprime a linha `#252 so pre-kickoff: fora ...`.
+
+### Prova empírica (Etapa 4)
+Mesmo comando, `--ledger --desde 2026-09-03`, código em HEAD contra código com o patch:
+
+```
+ANTES:  17197 picks em 418 jogos | TODAS 11246 picks 414 jogos  modelo 0.1921 mercado 0.1975 dif -0.0054 [-0.0105, -0.0005]  MODELO melhor
+DEPOIS:  4143 picks em 205 jogos | TODAS  2798 picks 204 jogos  modelo 0.2087 mercado 0.1991 dif +0.0096 [+0.0047, +0.0146]  MERCADO melhor
+        #252: fora 13054 picks publicados no/apos o apito (213 jogos sumiram), 0 sem kickoff
+LOG-LOSS ANTES dif -0.0146 [-0.0272, -0.0027] | DEPOIS dif +0.0234 [+0.0113, +0.0365]
+skill do modelo vs piso deixa-um-jogo-fora: ANTES +7.67% | DEPOIS +1.16%
+```
+
+O veredito **inverte**. As regravações pós-apito eram 76% dos picks e favoreciam o modelo. Leitura NÃO decisória: a amostra pós-filtro ainda mistura a janela contaminada pela camada #248 (2026-09-10 23:02 → 2026-09-14 04:50) e não chega a 300 jogos limpos (#230-a).
+
+Gate: `tests/test_252_gate_so_pre_kickoff.py`, 7 casos; contra o script antigo, **7 falham**.
+
+### Contratos de saída (Etapa 2-bis)
+O script não escreve em tabela nenhuma; a saída é stdout lida pelo operador para a decisão do gate #230 (`PROB_SOURCE`). Consumidor afetado: a própria decisão pré-registrada — o critério (#230-a, limite superior do IC < 0,005) não muda; muda a amostra, que passa a ser a que o critério sempre supôs (prognóstico pré-jogo). `tests/test_230_*`, `test_235_*`, `test_227_*` verdes sem alteração.
+
+### Efeito acumulado (Etapa 5)
+Não se aplica: o script é leitura pura, executado à mão, e não grava nada que volte a ser entrada de execução posterior.
+
+### Em aberto (não corrigido nesta entrada)
+1. `escolher_ultima_geracao` (#248) com o mesmo filtro inerte — sem efeito com `CALIBRAGEM_ENABLED=false`; bloqueia religar a camada.
+2. `linhas_do_bundle` não grava `kickoff_utc` (backend; exige deploy).
+3. O gate não exclui a janela contaminada da camada #248 — hoje só por `--desde`, que não tem limite superior.
+4. Contagem para o gate #230: jogos com geração pré-apito e desfecho = **188** antes da camada + **0** pós-deploy; faltam **112** para 300.
+
+### Lição aprendida
+"Descarta se `published_at >= kickoff`" parece um filtro e é uma suposição: a de que `kickoff` existe. Com a coluna nula, o `if kickoff is not None and ...` transforma a falta do dado em aprovação. Filtro de validade de amostra falha **fechado** e **conta o que tirou**; um filtro que nunca tirou nada não foi visto funcionar (a mesma exigência da Etapa 5, aplicada a filtro).
+

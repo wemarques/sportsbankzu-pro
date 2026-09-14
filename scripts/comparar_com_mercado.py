@@ -465,6 +465,59 @@ def _jogos(picks: Sequence[Dict[str, Any]]) -> int:
     return len({p.get("match_id") for p in picks})
 
 
+_EPOCH_MINIMO = 1577836800.0   # 2020-01-01 UTC: abaixo disto nao e kickoff do ledger
+
+
+def _kickoff_da_linha(match_id: Any, kickoff_utc: Any):
+    """#252: `kickoff_utc` gravado, senao o sufixo epoch do match_id
+    (`{liga}-{casa}-{fora}-{ts}`). Sem nenhum dos dois, None — nunca inventa."""
+    from datetime import datetime, timezone
+    if kickoff_utc is not None:
+        return kickoff_utc
+    # "{liga}-todays-{id}" (#236) termina em id de fixture, nao em epoch.
+    if "-todays-" in str(match_id):
+        return None
+    try:
+        ts = float(str(match_id).rsplit("-", 1)[1])
+    except (IndexError, ValueError):
+        return None
+    if not math.isfinite(ts) or ts < _EPOCH_MINIMO:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def _so_pre_jogo(linhas: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """#252: so geracao publicada ANTES do apito e prognostico.
+
+    O cron regrava o jogo depois do kickoff e `kickoff_utc` esta nula em todas
+    as linhas — o filtro que mantinha a linha quando o kickoff faltava deixava
+    passar tudo. Aqui a falha e FECHADA: kickoff desconhecido tambem sai, e
+    as duas saidas sao contadas para o relatorio.
+    """
+    mantidas: List[Dict[str, Any]] = []
+    pos, sem = [], []
+    for ln in linhas:
+        kickoff = _kickoff_da_linha(ln.get("match_id"), ln.get("kickoff_utc"))
+        if kickoff is None:
+            sem.append(ln)
+        elif ln.get("published_at") is None or ln["published_at"] >= kickoff:
+            pos.append(ln)
+        else:
+            mantidas.append(ln)
+    ficaram = {ln.get("match_id") for ln in mantidas}
+    contagem = {
+        "pos_kickoff": len(pos),
+        "sem_kickoff": len(sem),
+        # jogo que SUMIU da amostra: nenhuma geracao dele sobreviveu
+        "jogos_pos_kickoff": len({ln.get("match_id") for ln in pos} - ficaram),
+        "jogos_sem_kickoff": len({ln.get("match_id") for ln in sem} - ficaram),
+    }
+    return mantidas, contagem
+
+
+_CONTAGEM_PRE_JOGO: Dict[str, int] = {}
+
+
 def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[Dict[str, Any]]:
     """#230 - producao contra mercado, nos mesmos picks, com desfecho.
 
@@ -485,7 +538,8 @@ def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[
         f"""
         SELECT l.match_id, l.league_id,
                l.market || ' ' || COALESCE(l.selection, '') AS market,
-               l.{campo}, l.prob_mercado, l.mercado_metodo, o.outcome
+               l.{campo}, l.prob_mercado, l.mercado_metodo, o.outcome,
+               l.published_at, l.kickoff_utc
           FROM prediction_ledger l
           JOIN ledger_outcomes o
             ON o.match_id = l.match_id
@@ -502,11 +556,13 @@ def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[
     # margem inteira da casa (5-7 pp) e inflaria o Brier do mercado — o
     # "modelo melhor por 0,006" do #230-d era em parte isso: Draw (n=79) e
     # os overs sem par entravam com margem dentro.
-    picks = [{
+    global _CONTAGEM_PRE_JOGO
+    picks, _CONTAGEM_PRE_JOGO = _so_pre_jogo([{
         "match_id": r[0], "league_id": r[1], "market": r[2],
         "prob_modelo": float(r[3]), "prob": float(r[4]),
         "mercado_metodo": r[5], "outcome": int(r[6]),
-    } for r in cur.fetchall()]
+        "published_at": r[7], "kickoff_utc": r[8],
+    } for r in cur.fetchall()])
 
     # #230-d: a cobertura por selecao, filtro a filtro. Sem isto, "Over 2.5
     # n=5 e Over 4.5 n=88" ou "Draw 79, Home 21" parecem dado — e podem ser
@@ -617,7 +673,11 @@ def main() -> int:
             return 1
         print(f"fonte: prediction_ledger ({args.campo} x prob_mercado), "
               f"{len(picks)} picks em {_jogos(picks)} jogos com desfecho desde {args.desde}"
-              f"{' (so de-vigados)' if not args.incluir_implicita else ' (inclui 1/odd)'}\n")
+              f"{' (so de-vigados)' if not args.incluir_implicita else ' (inclui 1/odd)'}")
+        c = _CONTAGEM_PRE_JOGO
+        print(f"#252 so pre-kickoff: fora {c.get('pos_kickoff', 0)} picks publicados no/apos o apito "
+              f"({c.get('jogos_pos_kickoff', 0)} jogos sumiram) e {c.get('sem_kickoff', 0)} sem kickoff "
+              f"conhecido ({c.get('jogos_sem_kickoff', 0)} jogos sumiram)\n")
     elif args.arquivo:
         with open(args.arquivo, encoding="utf-8") as f:
             picks = json.load(f)
