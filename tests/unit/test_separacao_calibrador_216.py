@@ -21,9 +21,33 @@ Ou seja: `calibrated_probability` sempre foi o PRODUTO de dois passos, e medir
 so o produto atribuia ao calibrador o que era da deflacao. Estes testes travam
 a separacao.
 """
+import pytest
+
 import backend.services.comparador_ancora as ca
 import backend.services.ev_classification as ev
 from backend.models.market_output import MarketOutput
+
+
+@pytest.fixture(autouse=True)
+def _sem_camada_aprendida(monkeypatch):
+    """A versao 0 da camada (#248), sempre — estes testes sao sobre o legado.
+
+    Defeito de ISOLAMENTO, pre-existente ao #251 e reproduzido na arvore
+    anterior a ele: quando um teste anterior da suite carrega o `.env` (via
+    `load_dotenv` de `backend/ai/mistral_client.py`), `DATABASE_URL` entra no
+    processo, a camada de calibragem passa a SERVIR a RDS de producao e
+    `tipo_banda` vira `curva-v12` em vez de `meia`. O resultado do arquivo
+    dependia de ORDEM DE EXECUCAO e de a maquina alcancar a producao.
+
+    Mesma prescricao de `tests/calibragem/conftest.py`, aqui restrita a este
+    arquivo: nenhum destes testes fala sobre a camada aprendida.
+    """
+    from backend.modeling.calibragem import ciclo
+    ciclo.limpar_cache()
+    monkeypatch.setattr(ciclo, "parametros_vigentes",
+                        lambda: ({}, "sem_banco"), raising=False)
+    yield
+    ciclo.limpar_cache()
 
 
 # ── o detalhe existe e separa os dois passos ─────────────────────────

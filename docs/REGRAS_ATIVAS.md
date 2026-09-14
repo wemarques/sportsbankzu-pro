@@ -1131,6 +1131,13 @@ padrao.
    comparador mede o modelo por padrao (`--campo calibrated_prob`) e o
    publicado por `--campo published_prob`. Quebrar esta separacao apaga a
    medicao que autoriza a flag.
+   **#251 — "qualquer estado da flag" vale tambem para `CALIBRAGEM_ENABLED`.**
+   A camada aprendida (#248) COMPOE sobre o legado e sobrescreve o valor
+   publicado; o do modelo e o PRE-camada, guardado em
+   `DetalheCalibracao.modelo` e propagado a `MarketOutput.model_probability`.
+   `_prob_do_modelo` le `model_probability` sempre que existir — condicionar
+   essa leitura a `prob_source` (ou a qualquer outra flag) devolve a
+   contaminacao. Gate: `pytest tests/test_251_calibrated_prob_e_o_modelo.py`.
 4. A taxa-base vem do backfill (#227) via `scripts/gerar_taxas_base.py`,
    nunca de um numero escolhido; regenerar quando o backfill for rodado de
    novo. O artefato e `backend/config/taxas_base.json`.

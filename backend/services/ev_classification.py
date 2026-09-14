@@ -145,6 +145,23 @@ class DetalheCalibracao:
     ou_defl: float
     under25_extra: bool
     final: float
+    # #251 - a probabilidade DO MODELO, imune a camada de pos-processamento.
+    # `final` e o numero PUBLICADO: quando a camada aprendida (#248) serve uma
+    # versao real, `curva.aplicar_versao` sobrescreve `final` com
+    # sigmoide(a + b*logit(legado)) e o valor do legado — que e a saida do
+    # modelo — se perdia ali. `modelo` guarda esse valor antes da composicao.
+    # O ledger grava `modelo` em `calibrated_prob` (a serie que o gate #230
+    # mede) e `final` em `published_prob`.
+    #
+    # Default + `__post_init__` em vez de campo obrigatorio porque quem
+    # constroi o DetalheCalibracao e `calibragem/legado.py`, CONGELADO
+    # (PROIBIDO EDITAR — a fixture dourada de 13.524 pares depende dele). Sem
+    # camada, `modelo == final` por construcao: o comportamento de hoje.
+    modelo: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.modelo is None:
+            self.modelo = self.final
 
 
 def _calibrar_com_detalhe(raw: float, market: str, league_id: str, regime: str) -> DetalheCalibracao:
@@ -979,6 +996,7 @@ def evaluate_match_markets(
             raw_probability=raw,
             calibrated_probability=calibrated,
             iso_probability=_det_calibrated.iso,                 # #216
+            model_probability=_det_calibrated.modelo,       # #251
             deflation_band_type=_det_calibrated.tipo_banda,      # #216
             book_odd=book_odd,
             odds_available=book_odd is not None,
@@ -1029,6 +1047,7 @@ def evaluate_match_markets(
                 raw_probability=raw_over,
                 calibrated_probability=calibrated,
                 iso_probability=_det_calibrated.iso,                 # #216
+                model_probability=_det_calibrated.modelo,       # #251
                 deflation_band_type=_det_calibrated.tipo_banda,      # #216
                 book_odd=book_odd,
                 odds_available=book_odd is not None,
@@ -1069,6 +1088,7 @@ def evaluate_match_markets(
                 raw_probability=raw_under,
                 calibrated_probability=calibrated,
                 iso_probability=_det_calibrated.iso,                 # #216
+                model_probability=_det_calibrated.modelo,       # #251
                 deflation_band_type=_det_calibrated.tipo_banda,      # #216
                 book_odd=under_odd,
                 odds_available=under_odd is not None,
@@ -1091,6 +1111,7 @@ def evaluate_match_markets(
             raw_probability=raw_btts,
             calibrated_probability=calibrated,
             iso_probability=_det_calibrated.iso,                 # #216
+            model_probability=_det_calibrated.modelo,       # #251
             deflation_band_type=_det_calibrated.tipo_banda,      # #216
             book_odd=btts_odd,
             odds_available=btts_odd is not None,
@@ -1136,6 +1157,7 @@ def evaluate_match_markets(
             raw_probability=dc_1x,
             calibrated_probability=calibrated,
             iso_probability=_det_calibrated.iso,                 # #216
+            model_probability=_det_calibrated.modelo,       # #251
             deflation_band_type=_det_calibrated.tipo_banda,      # #216
             book_odd=dc_odd,
             odds_available=dc_odd is not None,
@@ -1164,6 +1186,7 @@ def evaluate_match_markets(
             market_type="Double Chance", selection="DC 12",
             raw_probability=dc_12, calibrated_probability=cal_12,
             iso_probability=_det_cal_12.iso,                 # #216
+            model_probability=_det_cal_12.modelo,       # #251
             deflation_band_type=_det_cal_12.tipo_banda,      # #216
             book_odd=dc_12_odd, odds_available=dc_12_odd is not None,
             data_quality_score=quality, source_flags=source_flags,
@@ -1190,6 +1213,7 @@ def evaluate_match_markets(
             market_type="Double Chance", selection="DC X2",
             raw_probability=dc_x2, calibrated_probability=cal_x2,
             iso_probability=_det_cal_x2.iso,                 # #216
+            model_probability=_det_cal_x2.modelo,       # #251
             deflation_band_type=_det_cal_x2.tipo_banda,      # #216
             book_odd=dc_x2_odd, odds_available=dc_x2_odd is not None,
             data_quality_score=quality, source_flags=source_flags,
@@ -1302,6 +1326,7 @@ def evaluate_match_markets(
             raw_probability=raw,
             calibrated_probability=calibrated,
             iso_probability=_det_calibrated.iso,                 # #216
+            model_probability=_det_calibrated.modelo,       # #251
             deflation_band_type=_det_calibrated.tipo_banda,      # #216
             book_odd=corner_odd,
             odds_available=corner_odd is not None,
@@ -1379,6 +1404,7 @@ def evaluate_match_markets(
             raw_probability=p_under,
             calibrated_probability=calibrated,
             iso_probability=_det_calibrated.iso,                 # #216
+            model_probability=_det_calibrated.modelo,       # #251
             deflation_band_type=_det_calibrated.tipo_banda,      # #216
             book_odd=under_odd,
             odds_available=under_odd is not None,
@@ -1453,6 +1479,7 @@ def evaluate_match_markets(
                     raw_probability=over_prob,
                     calibrated_probability=calibrated_over,
                     iso_probability=_det_calibrated_over.iso,                 # #216
+                    model_probability=_det_calibrated_over.modelo,       # #251
                     deflation_band_type=_det_calibrated_over.tipo_banda,      # #216
                     book_odd=over_odd,
                     odds_available=over_odd is not None,
@@ -1478,6 +1505,7 @@ def evaluate_match_markets(
                     raw_probability=under_prob,
                     calibrated_probability=calibrated_under,
                     iso_probability=_det_calibrated_under.iso,                 # #216
+                    model_probability=_det_calibrated_under.modelo,       # #251
                     deflation_band_type=_det_calibrated_under.tipo_banda,      # #216
                     book_odd=under_odd,
                     odds_available=under_odd is not None,

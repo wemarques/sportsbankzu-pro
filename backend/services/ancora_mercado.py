@@ -182,7 +182,14 @@ def _trocar_uma(m, odds, liga, prob_mercado_do_pick, contagem) -> None:
     market = getattr(m, "market_type", "") or ""
     selection = getattr(m, "selection", "") or ""
     modelo = m.calibrated_probability if m.calibrated_probability is not None else m.raw_probability
-    m.model_probability = modelo
+    # #251 - NAO sobrescrever o que o construtor do MarketOutput ja escreveu.
+    # Quem monta o pick (`ev_classification`) conhece a probabilidade do modelo
+    # ANTES da camada de calibragem aprendida (#248); aqui so se ve o valor ja
+    # composto pela camada. Escrever por cima devolveria a contaminacao que o
+    # #251 tirou do `calibrated_prob` do ledger. Sem camada os dois valores sao
+    # o mesmo numero, entao o comportamento do #231 nao muda.
+    if m.model_probability is None:
+        m.model_probability = modelo
 
     ancora = prob_mercado_do_pick(market, selection, odds)
     m.ancora_referencia = {                                  # #233

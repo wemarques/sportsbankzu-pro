@@ -229,7 +229,15 @@ def test_ponta_a_ponta_flag_desligada_versus_ligada(monkeypatch):
     assert fontes == {"mercado", "modelo_sem_referencia"}
     for m0, m1 in zip(b0.markets, b1.markets):
         assert (m0.market_type, m0.selection) == (m1.market_type, m1.selection)
-        assert m1.model_probability == m0.calibrated_probability
+        # #251: o modelo e o mesmo com ou sem a flag. A asserção original era
+        # `m1.model_probability == m0.calibrated_probability`, que so vale
+        # enquanto a `calibrated_probability` FOR o modelo — e ela deixou de
+        # ser no dia em que a camada de calibragem (#248) passou a compor
+        # sobre o legado. Numa maquina que alcanca a RDS de producao (camada
+        # servindo v12) a igualdade quebrava: 0,234 (modelo) x 0,235 (camada).
+        # Comparar os dois `model_probability` diz o que o #231 quis dizer,
+        # sem depender de qual camada esta servindo.
+        assert m1.model_probability == m0.model_probability
         assert m1.reason_codes and m1.reason_codes[0] in (       # #233: reclassificado
             ReasonCode.ANCHOR_MARKET, ReasonCode.ANCHOR_STALE,
             ReasonCode.BASE_RATE_ONLY, ReasonCode.MODEL_ONLY)
@@ -240,7 +248,9 @@ def test_ponta_a_ponta_flag_desligada_versus_ligada(monkeypatch):
             assert m1.ev is None
         else:
             assert m1.calibrated_probability == m0.calibrated_probability
-    # o ledger, nos dois casos, mede o modelo
+    # o ledger, nos dois casos, mede o modelo — e o MODELO, nao a publicada.
+    # #251: `m0.calibrated_probability` deixou de servir de referencia aqui
+    # pelo mesmo motivo da asserção acima (a camada #248 compoe sobre ela).
     led = L.linhas_do_bundle(b1, _MATCH, _MATCH["stats"])
-    assert all(l["calibrated_prob"] == m0.calibrated_probability
+    assert all(l["calibrated_prob"] == m0.model_probability
                for l, m0 in zip(led, b0.markets))

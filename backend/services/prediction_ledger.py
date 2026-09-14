@@ -568,9 +568,31 @@ def registrar_desfechos_do_jogo(match_id: str, actual_result: Dict[str, Any]) ->
 
 
 def _prob_do_modelo(m) -> Optional[float]:
-    """#231 - a probabilidade do modelo, esteja a flag ligada ou nao."""
+    """A probabilidade do MODELO, imune a qualquer camada de pos-processamento.
+
+    #231 criou `model_probability` para a troca de fonte (PROB_SOURCE=mercado)
+    e condicionava a leitura a `prob_source is not None` — condicao que so e
+    verdadeira com a flag ligada. Com o padrao `modelo`, a funcao caia em
+    `calibrated_probability`.
+
+    #251: `calibrated_probability` deixou de ser o modelo no dia em que a
+    camada de calibragem aprendida (#248) passou a compor sobre o legado —
+    `curva.aplicar_versao` sobrescreve o valor publicado e, com
+    `CALIBRAGEM_ENABLED=true`, o ledger gravava a saida da CAMADA na coluna
+    `calibrated_prob`, que e a serie medida pelo gate #230
+    (`scripts/comparar_com_mercado.py --campo calibrated_prob`). O gate media
+    a camada contra o mercado achando que media o modelo.
+
+    Agora `model_probability` vale sempre que existir, sem a condicao de
+    `prob_source`: ele e escrito no proprio construtor do MarketOutput
+    (`ev_classification`, a partir de `DetalheCalibracao.modelo`) e a ancora
+    do #231 nao o sobrescreve. So cai em `calibrated_probability` quando o
+    pick nao passou por `_calibrar_com_detalhe` (mercado sem familia, pick
+    montado a mao em teste) — casos em que `calibrated_probability` E a saida
+    do legado, ou seja, ja e o modelo.
+    """
     modelo = getattr(m, "model_probability", None)
-    if modelo is not None and getattr(m, "prob_source", None) is not None:
+    if modelo is not None:
         return modelo
     return getattr(m, "calibrated_probability", None)
 

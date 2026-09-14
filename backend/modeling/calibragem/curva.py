@@ -203,6 +203,11 @@ def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
 
     _versao, a, b = entrada
     detalhe = calibrar_legado(raw, market, league_id, regime)
+    # #251: guarda a probabilidade DO MODELO antes de sobrescrever `final`.
+    # Sem esta linha o valor do legado morre aqui, e o ledger passa a gravar a
+    # saida da camada em `calibrated_prob` — a serie que o gate #230 mede.
+    # Tem de vir ANTES da composicao: depois, `detalhe.final` ja e a curva.
+    detalhe.modelo = detalhe.final
     # COMPOSICAO: a entrada da curva e a saida do legado, nao `raw`.
     detalhe.final = aplicar(detalhe.final, a, b)
     detalhe.tipo_banda = f"curva-v{_versao}"

@@ -13517,3 +13517,66 @@ correcao. A correcao e trocar `.pathname` por `fileURLToPath(new URL(...))`.
 
 ### Licao aprendida
 Artefato de backtest e resposta de producao respondem a perguntas diferentes; quando um componente de UI afirma capacidade ("modelo treinado"), a afirmacao tem de nascer de quem serve, nao de quem treinou. E quando um criterio existe em dois lugares — aqui `brier < 0.60` contra os tres gates — o certo nao e sincronizar os dois, e apagar um: o backend ja sabia a resposta, faltava perguntar. A divergencia de vocabulario de ids (4 em 22, com uma liga cujo selo nunca apareceu) confirma pela terceira vez o padrao dos dois achados Criticos anteriores — a unica defesa que funcionou foi comparar as tabelas **contra dados reais** e travar a comparacao em teste.
+
+## 251 — `calibrated_prob` voltou a ser a probabilidade do modelo: a camada de calibragem contaminava o gate #230
+**Data:** 2026-09-14 | **Arquivos:** `backend/services/ev_classification.py`, `backend/modeling/calibragem/curva.py`, `backend/services/ancora_mercado.py`, `backend/services/prediction_ledger.py`, `tests/test_251_calibrated_prob_e_o_modelo.py` (novo) | **Severidade:** Crítica (a série que autoriza a troca de fonte media a si mesma) | **Status:** Corrigido
+
+### Problema identificado
+`prediction_ledger.calibrated_prob` é, por contrato (`REGRAS_ATIVAS`, #230/#231), **a probabilidade do modelo em qualquer estado da flag** — é a série que o gate #230 compara com o mercado (`scripts/comparar_com_mercado.py --campo calibrated_prob`, o padrão). Com `CALIBRAGEM_ENABLED=true`, a coluna passava a carregar a **saída da camada de calibragem aprendida** (#248). O gate mediria a camada contra o mercado achando que media o modelo — e a camada é justamente o que o gate não pode ter no numerador.
+
+### Causa raiz
+Dois elos, os dois corretos isoladamente:
+
+1. `curva.aplicar_versao` **compõe** sobre o legado (#248, C1): obtém `detalhe = calibrar_legado(...)` e sobrescreve `detalhe.final = aplicar(detalhe.final, a, b)`. O valor do legado — que **é** a saída do modelo — morria nessa linha. Não havia campo onde ele sobrevivesse.
+2. `_prob_do_modelo` (#231) só devolvia `model_probability` quando `prob_source is not None` — condição verdadeira apenas sob `PROB_SOURCE=mercado`. Com o padrão `modelo`, caía em `calibrated_probability`, isto é, no valor **já composto**.
+
+O #231 escreveu a condição quando `calibrated_probability` ainda era o modelo: o `and prob_source is not None` era redundante, não errado. O #248 tirou a redundância sem que ninguém auditasse o consumidor externo do campo — exatamente a falha que a Etapa 2-bis do SDD e a proibição 17 passaram a proibir.
+
+### Correções aplicadas (por camada)
+
+**Camada 1 — o valor pré-camada passa a existir.** `DetalheCalibracao` (em `ev_classification.py`) ganha o campo `modelo`, com default `None` e `__post_init__` que o iguala a `final` quando não preenchido. O default existe porque quem **constrói** o `DetalheCalibracao` é `calibragem/legado.py`, **congelado** (a fixture dourada de 13.524 pares do `test_01` depende de igualdade exata) — o campo não podia ser obrigatório nem preenchido lá.
+
+**Camada 2 — a composição guarda antes de sobrescrever.** `curva.aplicar_versao`, no ramo que compõe, faz `detalhe.modelo = detalhe.final` **antes** de `detalhe.final = aplicar(...)`. Nos três ramos que delegam ao legado (sem parâmetros, família desconhecida, versão 0) nada muda: `__post_init__` já igualou os dois.
+
+**Camada 3 — a propagação até o `MarketOutput`.** Os 11 pontos de construção de `MarketOutput` em `ev_classification` passam `model_probability=_det_*.modelo`, ao lado do `iso_probability` do #216. O payload da API **não muda**: `to_legacy_mercado` só serializa `model_probability` quando `prob_source is not None` (#231).
+
+**Camada 4 — a ordem contra a âncora.** `ancora_mercado._trocar_uma` passa a escrever `model_probability` **só se ainda for `None`**. Justificativa da ordem: a âncora roda no fim do `evaluate_match_markets`, quando `calibrated_probability` já é o valor **composto** — o único valor que ela consegue observar é o contaminado. Quem monta o pick conhece o valor pré-camada. Sem camada os dois números são o mesmo, então o #231 não muda.
+
+**Camada 5 — a leitura.** `_prob_do_modelo` devolve `model_probability` sempre que não for `None`, sem a condição de `prob_source`. Só cai em `calibrated_probability` quando o pick nunca passou por `_calibrar_com_detalhe` (mercado sem família reconhecida, pick montado à mão em teste) — casos em que `calibrated_probability` **é** a saída do legado, ou seja, já é o modelo.
+
+### Prova empírica (Etapa 4)
+Payload real do `test_231` por `evaluate_match_markets`, camada servindo versão 7 com `(a=0,12; b=0,98)` em 6 famílias, mesma árvore, mesmo script, antes e depois do patch (`git stash`):
+
+```
+ANTES:  21 picks — calibrated_prob == published_prob em 21/21   (|dif| média 0,00pp)
+DEPOIS: 21 picks — calibrated_prob != published_prob em 21/21   (|dif| média 2,43pp)
+```
+
+O `published_prob` do DEPOIS é **idêntico**, dígito a dígito, ao par contaminado do ANTES (ex.: BTTS Yes 0,565399) — o que foi publicado não mudou. O que mudou é que `calibrated_prob` agora carrega o legado (BTTS Yes 0,536441), 2,90pp abaixo. Camada inativa: 21/21 iguais nas duas árvores.
+
+Gate: `tests/test_251_calibrated_prob_e_o_modelo.py`, 7 casos. Rodado contra o código antigo, **3 falham** (o teste não passa por acaso).
+
+**Achado não previsto — a contaminação já estava em produção.** A suíte completa acusou `assert 'curva-v12' == 'meia'` em `test_separacao_calibrador_216`. `curva-v12` só aparece com a camada **servindo uma versão 12 de verdade**, e não há versão 12 em fixture nenhuma: a origem é o `load_dotenv()` de `backend/ai/mistral_client.py`, que injeta o `DATABASE_URL` do `.env` no processo e faz o serving ler a **RDS de produção**. Ou seja, a RDS tem células na versão 12 e o serving está ligado (`CALIBRAGEM_ENABLED` governa só a escrita). A contaminação do `calibrated_prob` não era um risco condicionado a ligar a flag — **já estava acontecendo** em todo pick cuja célula tenha versão ≠ 0.
+
+**Dois testes alterados, e não foi para fazer passar.** (1) `test_231::test_ponta_a_ponta` trocou `assert m1.model_probability == m0.calibrated_probability` por `== m0.model_probability`: com a camada servindo, a antiga quebra (`0,234` modelo × `0,2351` camada) porque ela afirma que a publicada **é** o modelo — a premissa que o #248 derrubou. Travá-la seria congelar a contaminação num teste. (2) `test_separacao_calibrador_216` ganhou fixture de isolamento (cache do ciclo + versão 0, mesma prescrição de `tests/calibragem/conftest.py`): o arquivo fala sobre a banda do legado, e falhava **também na árvore anterior a esta correção** — defeito pré-existente de isolamento, verificado com `git stash`.
+
+### Contratos de saída auditados (Etapa 2-bis)
+Campo escrito: `prediction_ledger.calibrated_prob` (e, no objeto, `MarketOutput.model_probability`). Consumidores externos:
+
+| Consumidor | Assume | Efeito |
+|---|---|---|
+| `scripts/comparar_com_mercado.py --campo calibrated_prob` (gate #230) | "é o modelo" | **restaurado** |
+| `scripts/medir_inclinacao.py --campo calibrated_prob` | uma das três colunas do #216 | **restaurado** (media o modelo, não a camada) |
+| `scripts/grade_deflacao_por_familia.py` | `alpha=1` reproduz o Brier da coluna | controle positivo é auto-consistente, continua passando; com a camada ativa a grade passa a medir `raw → legado`, que é a deflação que ela diz medir. Para medir a curva publicada, `published_prob` |
+| `scripts/cruzar_apostas.py` | exibe o pick publicado | **única divergência semântica**: com a camada ativa passa a exibir o modelo. Diferença ≈2,4pp num relatório de conferência de apostas, não em cálculo. Marcado, não alterado |
+| `tests/test_218`, `test_230` | ledger grava o modelo | verdes sem alteração |
+| `tests/test_231` | idem | verde; **uma asserção ajustada** (ver acima) — a antiga só valia com a camada inativa |
+| `frontend .../fonteProbabilidade.ts` | `model_probability` do payload | só aparece com `PROB_SOURCE=mercado`; passa a mostrar o modelo pré-camada, que é o que o rótulo diz |
+
+### Efeito acumulado (Etapa 5)
+**Não se aplica — e eis a justificativa.** `_prob_do_modelo` é leitura pura por pick: recebe um `MarketOutput`, devolve um float, não mantém estado entre chamadas e não escreve em nada que volte a alimentá-la. `DetalheCalibracao.modelo` é derivado de `raw` dentro da mesma chamada de `_calibrar_com_detalhe`. Nenhuma das cinco camadas grava em fonte que seja entrada de execução posterior — em particular, **não escreve em `prediction_ledger.raw_prob`**, que é o regressor do estimador da camada (#248). Logo N execuções produzem N valores independentes: não há trajetória, não há ponto fixo, e não há rede de segurança a provar. A afirmação é verificável por construção: o único ponto onde a mudança escreve é um campo do objeto do pick corrente, descartado ao fim do pedido.
+
+**Suíte:** 1331 passed, 8 skipped, 0 failed — medida nos **dois estados** da camada (inativa, e servindo v12 forçada por plugin de sessão), porque o estado "servindo" é intermitente na suíte e um verde num só estado não prova nada aqui.
+
+### Lição aprendida
+O `and prob_source is not None` do #231 era, no dia em que foi escrito, uma redundância inofensiva: `calibrated_probability` **era** o modelo, então a condição só confirmava o óbvio. Redundância inofensiva é uma suposição sobre o resto do sistema escrita em forma de código, e ela envelhece em silêncio — o #248 mudou o que `calibrated_probability` significa e a condição virou um bug sem que uma linha dela fosse tocada. O sinal de alarme não era "o código está errado", era "esta condição nunca é falsa; por que está aqui?". Vale também o contrapositivo: a camada #248 passou pelas etapas 1–4 do SDD e por 1324 testes, e ainda assim quebrou um consumidor — porque nenhuma delas pergunta *quem mais lê o que eu escrevo*. É a Etapa 2-bis, e este é o caso que a gerou.
