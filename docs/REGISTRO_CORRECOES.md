@@ -13633,3 +13633,51 @@ Não se aplica: o script é leitura pura, executado à mão, e não grava nada q
 ### Lição aprendida
 "Descarta se `published_at >= kickoff`" parece um filtro e é uma suposição: a de que `kickoff` existe. Com a coluna nula, o `if kickoff is not None and ...` transforma a falta do dado em aprovação. Filtro de validade de amostra falha **fechado** e **conta o que tirou**; um filtro que nunca tirou nada não foi visto funcionar (a mesma exigência da Etapa 5, aplicada a filtro).
 
+---
+
+## 252-a — O gate #230 exclui a janela em que `calibrated_prob` era a saída da camada #248
+**Data:** 2026-09-14 | **Arquivos:** `scripts/comparar_com_mercado.py`, `tests/test_252a_gate_exclui_janela_contaminada.py` (novo), `docs/REGRAS_ATIVAS.md`, `CLAUDE.md` | **Severidade:** Alta (a contagem dos 300 jogos incluía série contaminada) | **Status:** Corrigido (gate) / Em aberto (`medir_inclinacao.py`, `grade_deflacao_por_familia.py`)
+
+### Problema identificado
+Depois do #252 o gate contava 205 jogos desde 03/09, mas 17 deles só tinham geração pré-apito dentro da janela em que `calibrated_prob` carregava a camada de calibragem (#251). O script só aceitava `--desde`, sem limite superior: não havia como tirar um intervalo do meio da série.
+
+### Causa raiz
+A contaminação do #251 foi corrigida para frente (deploy `b2eec7d`), mas as linhas já gravadas continuam no ledger — append-only, sem marca de qual versão da camada as produziu. O consumidor era o único ponto onde a janela podia ser excluída, e nenhum consumidor a conhecia.
+
+### Correções aplicadas
+**Regra antes da correção:** `REGRAS_ATIVAS` #252-a — limites medidos: início `2026-09-10 23:02:06 UTC` (primeira linha de `calibragem_versoes` com `(a,b) != (0,1)`; o TTL de 300 s do serving torna o corte conservador) e fim `2026-09-14 04:50:22 UTC` (conclusão do Deploy Lambda de `b2eec7d`). Intervalo `[início, fim)`. Só `calibrated_prob` é cortada.
+
+**Camada 1 — `_JANELA_CONTAMINADA_251` e `_fora_da_janela_contaminada(linhas, campo)`:** devolve as linhas fora da janela e a contagem de picks e **jogos que sumiram**; `raw_prob`, `iso_prob` e `published_prob` passam inteiras.
+
+**Camada 2 — `_do_ledger`:** aplica o corte depois do filtro pré-apito do #252; `main` imprime `#252-a janela contaminada ...`. Sem flag para desligar.
+
+### Prova empírica (Etapa 4)
+Mesmo comando `--ledger --desde 2026-09-03`, `0161bd6` contra o patch:
+
+```
+ANTES:  4143 picks em 205 jogos | TODAS 2798 picks 204 jogos  modelo 0.2087 mercado 0.1991 dif +0.0096 [+0.0047, +0.0146]
+DEPOIS: 3815 picks em 188 jogos | TODAS 2554 picks 187 jogos  modelo 0.2076 mercado 0.1992 dif +0.0084 [+0.0030, +0.0142]  MERCADO melhor
+        #252-a: fora 328 picks pré-apito da janela (17 jogos sumiram)
+LOG-LOSS ANTES dif +0.0234 | DEPOIS dif +0.0206 [+0.0061, +0.0353]
+skill vs piso deixa-um-jogo-fora: modelo +1.38%, mercado +5.37%
+```
+
+Controle negativo: `--campo published_prob` imprime `#252-a ... fora 0 picks (0 jogos sumiram)` — a coluna que o #251 não afetou passa inteira (2322 picks em 64 jogos; `published_prob` só existe desde o #231).
+
+Os 188 jogos batem com a contagem independente feita direto no banco antes desta correção (188 pré-apito com desfecho antes da camada + 0 pós-deploy). Leitura **não decisória**: 188 < 300 (#230-a).
+
+Gate: `tests/test_252a_gate_exclui_janela_contaminada.py`, 5 casos; contra o script de `0161bd6`, **5 falham**.
+
+### Contratos de saída (Etapa 2-bis)
+O script não escreve em tabela; a saída é stdout para a decisão do gate #230. O critério pré-registrado (#230-a) não muda; a amostra passa a ser só o modelo. Consumidores com o mesmo contrato (`calibrated_prob` = modelo) ainda sem o corte: `scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` — registrados em aberto.
+
+### Efeito acumulado (Etapa 5)
+Não se aplica: leitura pura, executada à mão, sem escrita que realimente execução posterior. A janela é constante: nada a derivar a cada rodada.
+
+### Em aberto
+1. `medir_inclinacao.py` e `grade_deflacao_por_familia.py` sem o corte do #252-a (e sem o filtro pré-apito do #252).
+2. Contagem do gate #230: **188** jogos limpos; faltam **112**. Novos jogos entram só se publicados antes do apito e depois de `2026-09-14 04:50:22 UTC`.
+
+### Lição aprendida
+Correção para frente não limpa o passado de uma tabela append-only. Toda contaminação de série gravada precisa sair com dois artefatos: o fix do produtor **e** a janela medida que os consumidores excluem — sem o segundo, a série limpa e a contaminada continuam somando na mesma contagem.
+

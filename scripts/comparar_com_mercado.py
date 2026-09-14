@@ -518,6 +518,39 @@ def _so_pre_jogo(linhas: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
 _CONTAGEM_PRE_JOGO: Dict[str, int] = {}
 
 
+def _janela_251():
+    from datetime import datetime, timezone
+    return (datetime(2026, 9, 10, 23, 2, 6, tzinfo=timezone.utc),
+            datetime(2026, 9, 14, 4, 50, 22, tzinfo=timezone.utc))
+
+
+# #252-a: `calibrated_prob` carregou a saida da camada #248 nesta janela (#251).
+# Inicio = primeira versao (a,b) != (0,1) em calibragem_versoes; fim = Deploy
+# Lambda de b2eec7d. [inicio, fim). Mover so com nova medicao registrada.
+_JANELA_CONTAMINADA_251 = _janela_251()
+
+
+def _fora_da_janela_contaminada(linhas: Sequence[Dict[str, Any]], campo: str
+                                ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """#252-a: tira da serie `calibrated_prob` o que foi publicado na janela
+    contaminada. As outras colunas nao passaram pela camada e ficam inteiras."""
+    if campo != "calibrated_prob":
+        return list(linhas), {"contaminados": 0, "jogos_contaminados": 0}
+    ini, fim = _JANELA_CONTAMINADA_251
+    mantidas, fora = [], []
+    for ln in linhas:
+        pub = ln.get("published_at")
+        (fora if pub is not None and ini <= pub < fim else mantidas).append(ln)
+    ficaram = {ln.get("match_id") for ln in mantidas}
+    return mantidas, {
+        "contaminados": len(fora),
+        "jogos_contaminados": len({ln.get("match_id") for ln in fora} - ficaram),
+    }
+
+
+_CONTAGEM_CONTAMINADA: Dict[str, int] = {}
+
+
 def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[Dict[str, Any]]:
     """#230 - producao contra mercado, nos mesmos picks, com desfecho.
 
@@ -556,13 +589,14 @@ def _do_ledger(desde: str, campo: str, incluir_implicita: bool = False) -> List[
     # margem inteira da casa (5-7 pp) e inflaria o Brier do mercado — o
     # "modelo melhor por 0,006" do #230-d era em parte isso: Draw (n=79) e
     # os overs sem par entravam com margem dentro.
-    global _CONTAGEM_PRE_JOGO
+    global _CONTAGEM_PRE_JOGO, _CONTAGEM_CONTAMINADA
     picks, _CONTAGEM_PRE_JOGO = _so_pre_jogo([{
         "match_id": r[0], "league_id": r[1], "market": r[2],
         "prob_modelo": float(r[3]), "prob": float(r[4]),
         "mercado_metodo": r[5], "outcome": int(r[6]),
         "published_at": r[7], "kickoff_utc": r[8],
     } for r in cur.fetchall()])
+    picks, _CONTAGEM_CONTAMINADA = _fora_da_janela_contaminada(picks, campo)
 
     # #230-d: a cobertura por selecao, filtro a filtro. Sem isto, "Over 2.5
     # n=5 e Over 4.5 n=88" ou "Draw 79, Home 21" parecem dado — e podem ser
@@ -677,7 +711,11 @@ def main() -> int:
         c = _CONTAGEM_PRE_JOGO
         print(f"#252 so pre-kickoff: fora {c.get('pos_kickoff', 0)} picks publicados no/apos o apito "
               f"({c.get('jogos_pos_kickoff', 0)} jogos sumiram) e {c.get('sem_kickoff', 0)} sem kickoff "
-              f"conhecido ({c.get('jogos_sem_kickoff', 0)} jogos sumiram)\n")
+              f"conhecido ({c.get('jogos_sem_kickoff', 0)} jogos sumiram)")
+        k = _CONTAGEM_CONTAMINADA
+        print(f"#252-a janela contaminada da camada (#251): fora {k.get('contaminados', 0)} picks "
+              f"pre-apito publicados entre 2026-09-10 23:02:06 e 2026-09-14 04:50:22 UTC "
+              f"({k.get('jogos_contaminados', 0)} jogos sumiram)\n")
     elif args.arquivo:
         with open(args.arquivo, encoding="utf-8") as f:
             picks = json.load(f)

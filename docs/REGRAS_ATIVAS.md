@@ -1433,3 +1433,29 @@ cuja unica geracao com desfecho e posterior ao apito.
 `backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) tem o MESMO filtro
 inerte (mantem a linha quando `kickoff_utc` e None) — **em aberto**, sem efeito hoje porque
 `CALIBRAGEM_ENABLED=false`, e bloqueia religar a camada junto com a proibicao 16.
+
+---
+
+### #252-a — A serie `calibrated_prob` publicada entre 2026-09-10 23:02:06 e 2026-09-14 04:50:22 UTC nao e o modelo: fica fora de toda medicao
+
+**Tipo:** Regra (Ledger / Gate #230)
+**Data:** 2026-09-14
+**Relacionado:** [[#230]], [[#230-a]], [[#248]], [[#251]], [[#252]]
+
+Nessa janela `prediction_ledger.calibrated_prob` carregou a saida da camada #248 em vez do
+modelo (#251). Limites medidos, nao arbitrados:
+- **inicio** `2026-09-10 23:02:06 UTC` — primeira linha de `calibragem_versoes` com `(a,b) != (0,1)`
+  (o serving le com TTL de 300 s, entao o inicio real e igual ou posterior: o corte e conservador);
+- **fim** `2026-09-14 04:50:22 UTC` — conclusao do Deploy Lambda de `b2eec7d` (#251). Depois dele a
+  camada nao consegue mais escrever em `calibrated_prob`, sirva a versao que servir.
+
+**Regra:** todo consumidor que le `calibrated_prob` para medir, calibrar ou decidir exclui
+`published_at` em `[inicio, fim)` e imprime quantos picks/jogos sairam. `raw_prob`, `iso_prob` e
+`published_prob` nao foram afetados pelo #251 e nao sao cortados.
+
+**Proibido:** opcao que desligue o corte no gate #230; mover os limites sem nova medicao registrada;
+contar jogo dessa janela entre os 300 do gate.
+
+**Estado de aplicacao:** `scripts/comparar_com_mercado.py` desde #252-a. **Em aberto:**
+`scripts/medir_inclinacao.py --campo calibrated_prob` (sem este corte e sem o filtro pre-apito #252)
+e `scripts/grade_deflacao_por_familia.py`.
