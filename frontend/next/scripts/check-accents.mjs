@@ -12,9 +12,10 @@
  * ex.: o sub-tab "ultimos" e as chaves de bandeira "serie a"/"serie b").
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("../src", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("../src", import.meta.url));
 
 // Palavras proibidas em texto exibido (minúsculas; o match ignora caixa).
 const FORBIDDEN = [
@@ -59,6 +60,7 @@ const ALLOWLIST = new Set([
   "lib/localAudit.ts:media",                // valor de severidade
   "lib/mockMatches.ts:sao",                 // nomes de times/estádios espelhando a API
   "lib/mockMatches.ts:estadio",
+  "lib/tokens.ts:confianca",                // nome de token (#254): chave interna, nao texto exibido
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.
@@ -91,7 +93,7 @@ function literalChunks(line) {
 
 let violations = [];
 for (const file of walk(ROOT)) {
-  const rel = relative(ROOT, file);
+  const rel = relative(ROOT, file).split(sep).join("/");
   const lines = readFileSync(file, "utf8").split("\n");
   lines.forEach((line, i) => {
     const t = line.trim();
