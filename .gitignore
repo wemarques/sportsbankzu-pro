@@ -68,3 +68,6 @@ decisions.log
 # #238-a: saida do backfill (regeneravel; 90k picks, ~30 MB)
 todas_mercado.json
 picks_historicos.json
+
+# workspaces de brainstorming/SDD (mockups, ledgers de sessao)
+.superpowers/
