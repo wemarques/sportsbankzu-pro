@@ -81,7 +81,7 @@
 
 /* Tipografia de Odds */
 .odds-value {
-  font-family: 'Inter', 'Roboto Mono', monospace;
+  font-family: var(--font-sans), 'Roboto Mono', monospace;
   letter-spacing: -0.02em;
 }
 

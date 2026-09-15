@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "lint:accents": "node scripts/check-accents.mjs",
+    "lint:fonts": "node scripts/check-fonts.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

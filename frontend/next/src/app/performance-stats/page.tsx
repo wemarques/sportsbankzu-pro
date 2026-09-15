@@ -248,7 +248,7 @@ export default function PerformanceStats() {
 
   const ci = snap?.model_beats_house_ci;
   return (
-    <main style={{ background: "#0a0a0a", minHeight: "100vh", padding: "28px 16px", fontFamily: "'Inter',-apple-system,sans-serif" }}>
+    <main style={{ background: "#0a0a0a", minHeight: "100vh", padding: "28px 16px", fontFamily: "var(--font-sans),-apple-system,sans-serif" }}>
       <div style={{ maxWidth: 880, margin: "0 auto" }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: T.t1, margin: "0 0 4px" }}>Confiabilidade do Modelo</h1>
         <p style={{ fontSize: 12.5, color: T.t2, margin: "0 0 18px" }}>

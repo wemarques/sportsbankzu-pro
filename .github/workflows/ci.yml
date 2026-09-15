@@ -67,6 +67,10 @@ jobs:
         run: npm ci
       - name: Lint de acentuação da interface (#189-j)
         run: npm run lint:accents
+      - name: Lint de família tipográfica (#254)
+        run: npm run lint:fonts
+      - name: Unit tests
+        run: npm run test:unit
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Build Next.js

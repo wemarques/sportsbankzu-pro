@@ -56,7 +56,7 @@ export default function MatchAnalysis({
       style={{
         background: C.bg,
         padding: 16,
-        fontFamily: "'Inter',-apple-system,sans-serif",
+        fontFamily: "var(--font-sans),-apple-system,sans-serif",
       }}
     >
       <div

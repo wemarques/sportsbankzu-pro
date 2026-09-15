@@ -1,9 +1,13 @@
 import "./globals.css";
 import "@/styles/scoretabs-dashboard.css";
 import "@/styles/match-detail-card.css";
+import { Zilla_Slab, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { SessionProvider } from "../components/SessionProvider";
+
+const slab = Zilla_Slab({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-slab", display: "swap" });
+const sans = Source_Sans_3({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-sans", display: "swap" });
 
 export const metadata = {
   title: "SportsBankZU Pro",
@@ -12,14 +16,8 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <head>
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
-        />
-      </head>
-      <body style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}>
+    <html lang="pt-BR" suppressHydrationWarning className={`${slab.variable} ${sans.variable}`}>
+      <body>
         <SessionProvider>
           <ThemeProvider>
             <ThemeToggle />
