@@ -1433,9 +1433,15 @@ cuja unica geracao com desfecho e posterior ao apito.
 `scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b. Os tres
 importam os filtros de UM modulo, `scripts/amostra_ledger.py` — reimplementar o filtro num
 consumidor e proibido (proibicao 5).
-`backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) tem o MESMO filtro
-inerte (mantem a linha quando `kickoff_utc` e None) — **em aberto**, sem efeito hoje porque
-`CALIBRAGEM_ENABLED=false`, e bloqueia religar a camada junto com a proibicao 16.
+`backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) falha FECHADA desde
+#252-c (antes mantinha a linha quando `kickoff_utc` era None).
+
+**Produtor (#252-c):** `prediction_ledger.linhas_do_bundle` grava `kickoff_utc` a partir do
+`datetime` do record (ISO com fuso; sem fuso nao se adivinha) e, na falta, do sufixo epoch do
+`match_id`. Medido em 79 records reais de 6 ligas: `datetime` == sufixo em 79/79. `kickoff_utc`
+NAO entra no `payload_hash` — gravar o kickoff nao cria geracao nova. A regra de resolucao do
+kickoff tem UMA implementacao, `prediction_ledger.kickoff_da_linha`; `scripts/amostra_ledger.py`
+e `calibragem/repositorio.py` a importam.
 
 ---
 

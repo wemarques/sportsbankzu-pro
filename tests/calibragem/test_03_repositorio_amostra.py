@@ -54,11 +54,25 @@ def test_selecoes_diferentes_do_mesmo_jogo_sobrevivem_as_duas():
     assert len(escolher_ultima_geracao(linhas)) == 2
 
 
-def test_sem_kickoff_mantem_a_ultima_publicacao():
-    """kickoff_utc e nulo em parte do historico; a regra degrada, nao quebra."""
+def test_sem_kickoff_conhecido_exclui():
+    """#252-c: kickoff_utc nulo E match_id sem epoch -> a linha SAI (falha fechada).
+
+    Antes deste fix a regra "degradava" mantendo a ultima publicacao — com
+    kickoff_utc nulo em 100% do ledger, isso deixava passar toda geracao
+    pos-apito (76% dos picks, #252)."""
     linhas = [
         _linha("m1", "BTTS", "BTTS Yes", dt.datetime(2026, 9, 9, 3, 9, tzinfo=dt.timezone.utc), None, 0.55),
         _linha("m1", "BTTS", "BTTS Yes", dt.datetime(2026, 9, 9, 11, 9, tzinfo=dt.timezone.utc), None, 0.57),
+    ]
+    assert escolher_ultima_geracao(linhas) == []
+
+
+def test_sem_kickoff_utc_usa_o_sufixo_epoch_do_match_id():
+    """#252-c: kickoff 2026-09-09 20:30 UTC = 1788985800."""
+    mid = "mls-Toronto-Nashville SC-1788985800.0"
+    linhas = [
+        _linha(mid, "BTTS", "BTTS Yes", dt.datetime(2026, 9, 9, 11, 9, tzinfo=dt.timezone.utc), None, 0.57),
+        _linha(mid, "BTTS", "BTTS Yes", dt.datetime(2026, 9, 9, 23, 0, tzinfo=dt.timezone.utc), None, 0.99),
     ]
     saida = escolher_ultima_geracao(linhas)
     assert len(saida) == 1 and saida[0]["raw_prob"] == 0.57
@@ -165,12 +179,17 @@ class _ConexaoDaAmostra:
 
 
 def _linhas_do_ledger(n_por_liga, ligas):
-    """Picks de Over/Under -- o unico ramo do legado que consulta o banco."""
+    """Picks de Over/Under -- o unico ramo do legado que consulta o banco.
+
+    #252-c: cada linha e um prognostico VALIDO (publicado antes do kickoff).
+    Com `published_at`/`kickoff_utc` nulos a amostra sai vazia e os testes
+    abaixo que iteram sobre ela passariam sem verificar nada."""
+    publicado = dt.datetime(2026, 9, 9, 11, 9, tzinfo=dt.timezone.utc)
     saida = []
     for liga in ligas:
         for i in range(n_por_liga):
             saida.append((f"m-{liga}-{i}", liga, "Over/Under", "Over 2.5",
-                          0.55 + (i % 7) / 100.0, None, None, 1.90, 1))
+                          0.55 + (i % 7) / 100.0, publicado, KICK, 1.90, 1))
     return saida
 
 

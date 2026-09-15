@@ -13740,3 +13740,64 @@ Não se aplica: leitura pura, executada à mão.
 ### Lição aprendida
 Filtro de validade de amostra que nasce dentro de um consumidor protege só aquele consumidor. O conserto do #252 deixou dois scripts vizinhos, com o mesmo contrato, medindo a amostra errada — e um deles era a fonte de uma conclusão já usada como premissa de projeto (#245 → #248). Validade de amostra mora num módulo que todo consumidor importa.
 
+---
+
+## 252-c — O ledger grava `kickoff_utc`, e a camada #248 exclui geração sem kickoff conhecido
+**Data:** 2026-09-15 | **Arquivos:** `backend/services/prediction_ledger.py`, `backend/modeling/calibragem/repositorio.py`, `scripts/amostra_ledger.py`, `tests/test_252c_ledger_grava_kickoff.py` (novo), `tests/calibragem/test_03_repositorio_amostra.py`, `docs/REGRAS_ATIVAS.md`, `CLAUDE.md` | **Severidade:** Alta | **Status:** Corrigido
+
+### Problema identificado
+Dois itens em aberto do #252: (1) `prediction_ledger.kickoff_utc` nula em 100% das linhas — `linhas_do_bundle` nunca passava o kickoff a `montar_linha`; (2) `calibragem/repositorio.py::escolher_ultima_geracao` mantinha a linha quando `kickoff_utc` era None — filtro pré-apito da camada #248 inerte por construção. `tests/calibragem/test_03::test_sem_kickoff_mantem_a_ultima_publicacao` travava esse comportamento como correto ("a regra degrada, não quebra").
+
+### Causa raiz
+O parâmetro `kickoff_utc` existia em `montar_linha` desde o #218, com default `None`; o único chamador não o passava e nada falhava. O consumidor foi escrito tolerando a ausência — e a tolerância virou aprovação de 100% das linhas.
+
+### Correções aplicadas
+**Camada 1 — uma regra de resolução (proibição 5):** `prediction_ledger.kickoff_da_linha(match_id, kickoff_utc)` (movida de `scripts/amostra_ledger.py`, sem mudança de comportamento) e `kickoff_do_record(match_data, match_id)`: `datetime` ISO do record com fuso; ISO sem fuso **não** se adivinha; na falta, sufixo epoch do `match_id`. `scripts/amostra_ledger.py` e `repositorio.py` importam de `prediction_ledger`.
+
+**Camada 2 — produtor:** `linhas_do_bundle` resolve o kickoff uma vez por bundle e passa `kickoff_utc` a cada linha. `kickoff_utc` **não** entra no `payload_hash` (teste `test_kickoff_utc_nao_entra_no_hash`): gravar o kickoff não cria geração nova.
+
+**Camada 3 — consumidor da camada:** `escolher_ultima_geracao` usa `kickoff_da_linha` e **exclui** quando o kickoff é desconhecido. `test_03`: o teste antigo virou `test_sem_kickoff_conhecido_exclui`, mais `test_sem_kickoff_utc_usa_o_sufixo_epoch_do_match_id`. A fixture `_linhas_do_ledger` do mesmo arquivo gerava linhas com `published_at` e `kickoff_utc` nulos: com a falha fechada a amostra saiu vazia, `test_uma_consulta_de_correcoes_por_liga_nao_por_pick` caiu (`0 == 200`) e **`test_o_p_legado_reconstruido_fica_abaixo_do_raw` passou sem verificar nada** (o `assert` fica dentro de um `for` sobre lista vazia). A fixture passou a gerar prognósticos válidos (publicado 09/09 11:09, kickoff 20:30); os dois voltam a exercitar 200 e 5 picks.
+
+### Contrato de entrada (Etapa 2)
+Os dois produtores de record serializam `datetime`: `fixtures_service.py` (`dt` de `parse_date`, que devolve UTC com fuso; string com `Z`) e o complemento `routes/fixtures.py` (`utcfromtimestamp(date_unix)` + `Z`). Medido na Lambda (`/fixtures?leagues=...&date=week`, 6 ligas): `datetime` == sufixo do `id` em **79/79** records.
+
+### Prova empírica (Etapa 4)
+Produtor — 24 records reais → `evaluate_match_markets` → `linhas_do_bundle`, HEAD `45f94ce` contra o patch:
+
+```
+ANTES:  422 linhas | kickoff_utc nulo 422 | igual ao sufixo   0
+DEPOIS: 422 linhas | kickoff_utc nulo   0 | igual ao sufixo 422 | diferente 0
+```
+
+Consumidor da camada — mesmas 35.511 linhas do ledger com desfecho, regra antiga × nova:
+
+```
+ANTIGA: 9716 picks em 437 jogos   (toda geração pós-apito passava)
+NOVA:   4850 picks em 221 jogos
+```
+
+Gate #230 com o código de HEAD (worktree) e com o patch, rodados **ao mesmo tempo** contra o mesmo banco: **saída idêntica** (3965 picks em 201 jogos; TODAS +0.0083 [+0.0030, +0.0137]). Mover a resolução do kickoff para o backend não mudou nenhum número.
+
+Gate: `tests/test_252c_ledger_grava_kickoff.py`, 7 casos; contra `45f94ce`, **6 falham** e o do hash (controle) passa nos dois. `test_03`: 2 casos novos falham contra `45f94ce`.
+
+### Contratos de saída (Etapa 2-bis)
+Campo escrito: `prediction_ledger.kickoff_utc`. Consumidores:
+
+| Consumidor | Assume | Efeito |
+|---|---|---|
+| `calibragem/repositorio.py::carregar_amostra` (#248) | kickoff real ou None | amostra de 437 → 221 jogos (medido acima); só tem efeito com `CALIBRAGEM_ENABLED=true` |
+| `scripts/amostra_ledger.py` (gate #230, `medir_inclinacao`, `grade_deflacao`) | `kickoff_utc` tem precedência sobre o sufixo | linhas novas: igual ao sufixo (422/422), sem mudança de número; linhas antigas: nulas, caem no sufixo como antes |
+| `payload_hash` / índice único `(match_id, market, payload_hash)` | hash define "mesmo prognóstico" | inalterado: `kickoff_utc` fora do hash |
+| frontend | — | nenhum leitor (varredura por `kickoff_utc`) |
+
+### Efeito acumulado (Etapa 5)
+**Produtor (roda nos 3 crons/dia):** o valor gravado é função pura do record do jogo, constante entre ciclos. 1 ciclo: toda linha nova com `kickoff_utc`. 10 e 100 ciclos: idem; o número de gerações por jogo não muda, porque o campo não entra no hash. Não há realimentação: nenhum cálculo lê `kickoff_utc` para produzir probabilidade.
+
+**Consumidor (ciclo da camada, só com `CALIBRAGEM_ENABLED=true`):** hoje 0 ciclos (flag `false`). Se ligada, a amostra de cada ciclo passa a ser só pré-apito; o filtro não tem estado e não se acumula. A rede que dispara é a falha fechada, provada em teste com condição forçada (`test_sem_kickoff_conhecido_exclui`: kickoff nulo e id sem epoch → amostra vazia). **Isto não autoriza religar a camada** — a proibição 16 (janela de reversão) continua bloqueando.
+
+### Prova pós-deploy (a fazer)
+Depois do próximo cron: `kickoff_utc` não nula nas linhas novas e igual ao sufixo do `match_id`.
+
+### Lição aprendida
+Parâmetro opcional com default `None` num gravador é um campo que ninguém é obrigado a preencher — e ninguém preencheu por 12 dias. Coluna de validade (kickoff, fuso, versão) não pode ter default silencioso no produtor, e o consumidor não pode tratar a ausência dela como "passa".
+

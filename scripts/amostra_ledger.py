@@ -15,11 +15,14 @@ As linhas de entrada sao dicts com `match_id`, `published_at` e `kickoff_utc`.
 """
 from __future__ import annotations
 
-import math
+import os
+import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Sequence, Tuple
 
-EPOCH_MINIMO = 1577836800.0   # 2020-01-01 UTC: abaixo disto nao e kickoff do ledger
+_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _RAIZ not in sys.path:
+    sys.path.insert(0, _RAIZ)
 
 # Inicio = primeira versao (a,b) != (0,1) em calibragem_versoes; fim = Deploy
 # Lambda de b2eec7d (#251). Mover so com nova medicao registrada.
@@ -30,22 +33,8 @@ JANELA_CONTAMINADA_251 = (
 
 Linhas = Sequence[Dict[str, Any]]
 
-
-def kickoff_da_linha(match_id: Any, kickoff_utc: Any):
-    """`kickoff_utc` gravado, senao o sufixo epoch do match_id
-    (`{liga}-{casa}-{fora}-{ts}`). Sem nenhum dos dois, None — nunca inventa."""
-    if kickoff_utc is not None:
-        return kickoff_utc
-    # "{liga}-todays-{id}" (#236) termina em id de fixture, nao em epoch.
-    if "-todays-" in str(match_id):
-        return None
-    try:
-        ts = float(str(match_id).rsplit("-", 1)[1])
-    except (IndexError, ValueError):
-        return None
-    if not math.isfinite(ts) or ts < EPOCH_MINIMO:
-        return None
-    return datetime.fromtimestamp(ts, tz=timezone.utc)
+# #252-c: a resolucao do kickoff tem UMA implementacao, no backend.
+from backend.services.prediction_ledger import kickoff_da_linha  # noqa: E402,F401
 
 
 def so_pre_jogo(linhas: Linhas) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:

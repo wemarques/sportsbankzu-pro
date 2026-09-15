@@ -14,6 +14,8 @@ from backend.modeling.calibragem.curva import (
     base_da_composicao, familia_do_mercado,
 )
 from backend.modeling.calibragem.limiares import CAMPOS as CAMPOS_LIMIAR
+# #252-c: a resolucao do kickoff tem UMA implementacao (proibicao 5).
+from backend.services.prediction_ledger import kickoff_da_linha
 
 logger = logging.getLogger("sportsbankzu.calibragem.repositorio")
 
@@ -360,12 +362,16 @@ def escolher_ultima_geracao(linhas: List[Dict[str, Any]]) -> List[Dict[str, Any]
     O ledger e append-only com varias geracoes por jogo. A que vale e a que o
     operador viu por ultimo, e ela tem de ser anterior ao apito — geracao
     posterior ao kickoff nao e prognostico, e o defeito do #200.
+
+    #252-c: kickoff desconhecido (nem `kickoff_utc` nem sufixo epoch) EXCLUI.
+    Antes a linha passava quando o kickoff faltava — com `kickoff_utc` nula em
+    100% do ledger, o filtro nunca tirou nada.
     """
     melhor: Dict[tuple, Dict[str, Any]] = {}
     for ln in linhas:
-        kickoff = ln.get("kickoff_utc")
+        kickoff = kickoff_da_linha(ln.get("match_id"), ln.get("kickoff_utc"))
         publicado = ln.get("published_at")
-        if kickoff is not None and publicado is not None and publicado >= kickoff:
+        if kickoff is None or publicado is None or publicado >= kickoff:
             continue
         chave = (ln.get("match_id"), ln.get("market"), ln.get("selection"))
         atual = melhor.get(chave)

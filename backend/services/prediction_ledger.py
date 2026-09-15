@@ -226,6 +226,49 @@ def _hash(linha: Dict[str, Any]) -> str:
     return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
 
 
+_EPOCH_MINIMO = 1577836800.0   # 2020-01-01 UTC: abaixo disto nao e kickoff do ledger
+
+
+def kickoff_da_linha(match_id: Any, kickoff_utc: Any) -> Optional[datetime]:
+    """#252/#252-c - UMA regra de resolucao do kickoff de uma linha do ledger.
+
+    `kickoff_utc` gravado tem precedencia; senao o sufixo epoch do match_id
+    (`{liga}-{casa}-{fora}-{ts}`, fixtures_service). `-todays-` termina em id de
+    fixture (#236) e epoch anterior a 2020 nao e kickoff: None, nunca inventa.
+    Consumidores (`scripts/amostra_ledger.py`, `calibragem/repositorio.py`)
+    importam daqui — reimplementar e proibido (proibicao 5).
+    """
+    import math
+    if kickoff_utc is not None:
+        return kickoff_utc
+    if "-todays-" in str(match_id):
+        return None
+    try:
+        ts = float(str(match_id).rsplit("-", 1)[1])
+    except (IndexError, ValueError):
+        return None
+    if not math.isfinite(ts) or ts < _EPOCH_MINIMO:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def kickoff_do_record(match_data: Optional[Dict[str, Any]], match_id: Any) -> Optional[datetime]:
+    """#252-c - kickoff para GRAVAR: `datetime` ISO do record (com fuso), senao
+    o sufixo do match_id. ISO sem fuso nao se adivinha.
+
+    Medido em 79 records reais de 6 ligas: `datetime` == sufixo em 79/79.
+    """
+    bruto = match_data.get("datetime") if isinstance(match_data, dict) else None
+    if isinstance(bruto, str) and bruto:
+        try:
+            dt = datetime.fromisoformat(bruto.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                return dt
+        except ValueError:
+            pass
+    return kickoff_da_linha(match_id, None)
+
+
 def montar_linha(
     *,
     match_id: str,
@@ -647,6 +690,10 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
         "data_quality_score": getattr(bundle, "data_quality_score", None),
     }
     odds = (match_data.get("odds") or {}) if isinstance(match_data, dict) else {}
+    _match_id = getattr(bundle, "match_id", "") or match_data.get("id", "")
+    # #252-c: sem isto `kickoff_utc` era nula em 100% do ledger e todo filtro
+    # pre-apito ficava inerte. Nao entra no payload_hash: nao cria geracao nova.
+    _kickoff = kickoff_do_record(match_data, _match_id)
     linhas: List[Dict[str, Any]] = []
     for m in getattr(bundle, "markets", []) or []:
         ancora = prob_mercado_do_pick(getattr(m, "market_type", "") or "",
@@ -657,8 +704,9 @@ def linhas_do_bundle(bundle, match_data: Optional[Dict[str, Any]] = None,
         if getattr(m, "corner_veto", None):
             gov["veto"] = m.corner_veto
         linhas.append(montar_linha(
-            match_id=getattr(bundle, "match_id", "") or match_data.get("id", ""),
+            match_id=_match_id,
             league_id=getattr(bundle, "league_id", None),
+            kickoff_utc=_kickoff,
             market=getattr(m, "market_type", "") or "",
             selection=getattr(m, "selection", None),
             raw_prob=getattr(m, "raw_probability", None),
