@@ -13981,3 +13981,49 @@ A re-derivação roda uma vez por ciclo e não guarda estado: cada ciclo re-deri
 ### Lição aprendida
 Quando o mesmo mapa é consultado em três lugares, "qual chave vale" é uma regra, e regra copiada diverge. O serving estava certo, a governança também, e a re-derivação — a peça que garante "volume constante" — tinha a versão simplificada. O ensaio herdou o erro porque consumia os mesmos mapas: um instrumento que reusa a hipótese que devia testar não testa nada. A medição que pegou o defeito foi a que montou o mapa de serving por fora.
 
+---
+
+## 254 — Reformulação do frontend, fase 0: guardas de design
+**Data:** 2026-09-15 | **Arquivos:** `frontend/next/src/lib/tokens.ts`, `formato.ts`, `copy.ts`, `reasonCodes.ts`, `bancaStore.ts`, `frontend/next/tests/unit/*` (novo), `frontend/next/vitest.config.ts` (novo), `frontend/next/src/app/layout.tsx`, `globals.css`, `components/marca/fonteMarca.ts` (novo), `scripts/check-fonts.mjs` (novo), `scripts/check-accents.mjs`, `frontend/next/src/app/performance-stats/page.tsx`, `components/MatchAnalysis/MatchAnalysis.tsx`, `styles/ai-audit.css`, `.github/workflows/ci.yml`, `docs/superpowers/specs/2026-09-15-reformulacao-frontend-design.md`, `docs/superpowers/plans/2026-09-15-reformulacao-frontend-fases-0-2-3.md` | **Severidade:** Média (guardas, sem mudança de cálculo) | **Status:** Implementado
+
+### Problema identificado
+A reformulação do frontend (spec `docs/superpowers/specs/2026-09-15-reformulacao-frontend-design.md`, plano `docs/superpowers/plans/2026-09-15-reformulacao-frontend-fases-0-2-3.md`) precisa de guardas — tokens de cor com contraste provado, tipografia definida, formatação pt-BR, copy centralizada e um estado de banca bem definido — antes de qualquer tela nova ser construída nas fases seguintes.
+
+### Causa raiz
+Não é correção de defeito; é fundação (Task 1–6 do plano) que a Task 7 fecha com registro, espelho e push.
+
+### Correções aplicadas (por camada)
+**Task 1 (5a53939, f66f336) — tokens e Vitest:** `src/lib/tokens.ts` com os 12 tokens da spec §2 e `PARES_PERMITIDOS`; `tests/unit/tokens.test.ts` calcula o contraste WCAG de cada par (falha < 4,5:1), afirma que `confianca × talao` não existe na lista, que não há verde na paleta, e que `globals.css` carrega os mesmos hex (`--sb-*`). `vitest.config.ts` com `css: { postcss: { plugins: [] } }` — sem isso o Vite subia até o `postcss.config.js` da raiz do repo e falhava com "Cannot find module 'tailwindcss'"; um `postcss.config.mjs` em `frontend/next` foi recusado por mudar o build do Next.
+
+**Task 2 (80f64aa, bcccda1) — tipografia:** `layout.tsx` troca Inter (link do Google Fonts + style inline) por Zilla Slab 600/700 (`--font-slab`) e Source Sans 3 400/600 (`--font-sans`) via `next/font/google`; `body { font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif; }` em `globals.css` (o primeiro commit deixou o body sem fonte — pego na revisão, corrigido no segundo). `components/marca/fonteMarca.ts` isola Barlow Condensed só para a marca. `scripts/check-fonts.mjs` (`npm run lint:fonts`) barra Barlow fora de `components/marca`/`app/page.tsx` e barra Inter em qualquer lugar. Três telas legadas tinham `'Inter'` hardcoded e passaram a `var(--font-sans)`: `app/performance-stats/page.tsx:251`, `components/MatchAnalysis/MatchAnalysis.tsx:59`, `styles/ai-audit.css:84` — mudança visual consciente em telas que a fase 6 apaga. `.github/workflows/ci.yml` ganhou `npm run lint:fonts` e `npm run test:unit` após `lint:accents`.
+
+**Task 3 (74a8b8e) — formatação pt-BR:** `src/lib/formato.ts` (`fmtReais`, `fmtOdd`, `fmtDelta`, `fmtPct`, `fmtHora`, `fmtDataCurta`, `fmtLigaHora`; fuso America/Sao_Paulo; vírgula decimal; ex. "MLS, 20:30"), 5 testes.
+
+**Task 4 (2cb8c37) — copy centralizada:** `src/lib/copy.ts` (`frequencia`, `linhaPreco`, `stake`, `avaliados`, `direcao`, `resultadoOntem`, `comTermos` com tokens `{term:x|texto}`, `COPIAR`, `VAZIOS`) e `src/lib/reasonCodes.ts` (`motivoRecusa`, 16 códigos → duas palavras), 9 testes.
+
+**Task 5 (744704d) — estado de banca:** `src/lib/bancaStore.ts` — `getBanca(): number | null` (indefinida sem gravação e com `localStorage` corrompido), `setBanca`, `useBanca`, `calcStake` delegando a `calcQuarterKelly` de `BankrollCard.tsx` (conferido à mão: prob 0,58, odd 1,75, banca 1000, SAFE → R$ 5,00, `BankrollCard.tsx:73`). Mesma chave `sportsbankzu-bankroll`; `bankrollStore.ts` antigo intocado. 6 testes.
+
+**Task 6 (ac7801e) — lint de acentos no Windows:** `scripts/check-accents.mjs` trocado para `fileURLToPath` (antes `.pathname` dava `/C:/...` e ENOENT) e `relative(...).split(sep).join("/")` (antes o ALLOWLIST com `/` não casava com `\` e 22 entradas já permitidas apareciam como violações no Windows; no CI Linux o lint sempre foi verde); allowlist ganhou `lib/tokens.ts:confianca` (nome de token, chave interna).
+
+### Prova empírica (Etapa 4)
+Suíte completa rodada sobre o commit `ac7801e` (Step 1 já executado pelo controlador, não repetido aqui):
+- `npm run lint:accents` → `✓ lint:accents — nenhuma palavra sem acento em texto de interface.`
+- `npm run lint:fonts` → `✓ lint:fonts — familias no lugar.`
+- `npx tsc --noEmit` → limpo
+- `npx vitest run` → 25 passed (25)
+- `npx playwright test --project=chromium` → 33 passed, 1 skipped, 1 failed: `e2e/dashboard.spec.ts:23 "renders PRO badge"`.
+
+Falha classificada como ambiental pré-existente, não regressão: o selo lê `version` de `/api/audit/status`; sem backend local (`localhost:5001` recusando conexão) a rota Next devolve `version: "unknown"` (`frontend/next/src/app/api/audit/status/route.ts:10` e `:59`) e o teste espera "pro V". `git diff 1849fc0 ac7801e --stat` vazio em `frontend/next/src/app/dashboard/`, `frontend/next/src/app/api/audit/` e `frontend/next/e2e/` — a fase 0 não tocou nenhum desses caminhos. O CI, que tem `PY_BACKEND_URL` configurado, é o árbitro desse teste.
+
+### Contratos de saída (Etapa 2-bis)
+Nenhum campo de backend escrito ou lido de forma nova. Únicas mudanças visíveis ao usuário: a fonte do corpo (Inter → Source Sans 3, consciente) e as três telas legadas listadas acima. Nenhuma rota nova, nenhum consumidor externo.
+
+### Efeito acumulado (Etapa 5)
+Não se aplica — nada roda em laço; tokens, formatação, copy e lint são módulos puros e scripts de CI, sem persistência nem repetição autônoma.
+
+### Lição aprendida
+Lint que só roda num SO não é guarda — os dois bugs de `check-accents.mjs` (path do Windows, separador `\`) ficaram invisíveis porque o CI é Linux e só apareceram ao rodar localmente no Windows. E "remover" não é "substituir": tirar a fonte inline do body sem pôr a nova deixaria o app no fallback do Tailwind — pego só porque a revisão nomeou o risco antes de mergear.
+
+### Minors deferidos para a revisão final
+`formato.ts` usa os glifos U+00A0/U+2212 literais no fonte em vez de escapes; comentário "nao" sem acento dentro de `check-accents.mjs`; trailers de coautoria dos commits dos subagentes nomeiam `Claude Haiku 4.5` (o modelo que os escreveu).
+

@@ -77,6 +77,8 @@ cd frontend/next && npm run dev
 # Tests
 pytest -q
 cd frontend/next && npm run test:e2e
+cd frontend/next && npm run test:unit
+cd frontend/next && npm run lint:fonts
 ```
 
 ## API Lambda — armadilhas conhecidas
