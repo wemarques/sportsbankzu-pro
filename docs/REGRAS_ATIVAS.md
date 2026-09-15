@@ -1468,3 +1468,43 @@ contar jogo dessa janela entre os 300 do gate.
 **Estado de aplicacao:** `scripts/comparar_com_mercado.py` desde #252-a;
 `scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b, todos via
 `scripts/amostra_ledger.py`.
+
+---
+
+### #253 — A governanca da camada #248 julga contra uma ANCORA validada, com teto de deriva acumulada
+
+**Tipo:** Regra (Calibracao / Governanca do laco)
+**Data:** 2026-09-15
+**Relacionado:** [[#248]], [[#252-c]], proibicao 16 (CLAUDE.md)
+
+**O defeito que esta regra fecha.** A janela de reversao era `publicado_em > criada_em` da VIGENTE.
+Com a trava de 2pp encurtando a proposta todo ciclo, toda celula ganhava versao nova a cada cron
+(3/dia): `criada_em` zerava a cada 8h, a janela nunca juntava 20 jogos, a reversao nunca disparou em
+10 ciclos, e Corners/familia andou de `a=0,05` a `a=0,63` (2pp por ciclo, sem teto acumulado).
+
+**Regra:**
+1. Cada celula tem uma **ancora**: os `(a, b)` validados por ultimo. Sem validacao, a ancora e a
+   versao 0 (`(0, 1)` = legado). A ancora so muda por linha `ancorada` (validacao) ou `revertida`
+   (volta a ela); o instante dessa linha e o `desde` da ancora.
+2. **Janela = picks publicados depois do `desde` da ancora**, nao da vigente. Versao nova nao
+   zera a janela.
+3. Cada pick da janela e pontuado com a versao que **estava vigente quando ele foi publicado**
+   (historico `vigente`/`substituida`), nao com a vigente atual: avaliacao fora da amostra por
+   construcao, mesmo com versoes girando a cada ciclo.
+4. **Teto de deriva:** enquanto a ancora nao for revalidada, a vigente fica a no maximo
+   `TETO_DERIVA_PP = 2 x PASSO_MAXIMO_PP = 0,04` de probabilidade da ancora. A trava de 2pp por
+   ciclo continua valendo por cima.
+5. Com janela >= `MIN_N_JOGOS` (20 jogos): Brier(servido) > Brier(ancora) -> **reverte para a
+   ancora**; duas reversoes seguidas -> congela (pegajoso, #248 I2). Brier(servido) <=
+   Brier(ancora) e vigente != ancora -> **`ancorada`**: a vigente vira a nova ancora e a janela
+   recomeca.
+
+**Escala medida (nao reabrir como descoberta):** a janela e por CELULA DE LIGA. Na amostra
+pre-apito (221 jogos, 11,1 dias, 20 ligas) cada liga junta de 0,27 a 3,62 jogos por dia: nenhuma
+liga chega a 20 jogos em 10 ciclos, 14 de 20 chegam em 100 ciclos. Por semanas, quem segura a curva
+e o TETO, nao a reversao. Julgar mais cedo exige somar ligas da mesma familia — mudanca de desenho,
+com Etapa 5 propria.
+
+**Proibido:** medir a janela a partir da `criada_em` da vigente; julgar a janela com a vigente
+atual em vez da versao que serviu cada pick; remover o teto de deriva ou eleva-lo sem nova
+medicao registrada; ligar `CALIBRAGEM_ENABLED` sem a Etapa 5 do #253 provada em teste.

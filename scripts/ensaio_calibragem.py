@@ -11,7 +11,7 @@ mantem o volume publicado ou o dobra.
 Nao escreve nada, por construcao:
   * nao chama `gravar_ciclo` nem `garantir_tabela` (nenhum DDL, nenhum INSERT);
   * so usa `planejar`, que e o mesmo miolo de `executar`, e cujas idas ao
-    banco sao SELECTs (`ultimo_status_de_ciclo`, `carregar_anterior`);
+    banco sao SELECTs (`carregar_historico`, #253);
   * uma guarda em tempo de execucao substitui `gravar_ciclo`,
     `garantir_tabela` e `garantir_indice_vigente_unico` por funcoes que
     levantam — se um refactor futuro fizer o ciclo escrever, o ensaio quebra
@@ -135,7 +135,7 @@ def main() -> int:
     print("-" * 78)
     print(f"celulas={c['celulas']} adotadas={c['adotadas']} "
           f"encurtadas={c['encurtadas']} revertidas={c['revertidas']} "
-          f"congeladas={c['congeladas']}")
+          f"ancoradas={c['ancoradas']} congeladas={c['congeladas']}")
 
     antes = limiares.contar_por_classe(picks, plano["parametros_antigos"], atuais)
     depois_sem = limiares.contar_por_classe(picks, plano["parametros_novos"], atuais)

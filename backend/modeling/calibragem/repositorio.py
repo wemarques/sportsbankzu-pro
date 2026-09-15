@@ -455,6 +455,9 @@ def carregar_amostra(desde: Optional[str] = None) -> List[Pick]:
 STATUS_VALIDOS = {
     "vigente", "adotada", "encurtada", "rejeitada", "abaixo_do_piso",
     "inalterada", "revertida", "congelada",
+    # #253: a vigente foi validada fora da amostra e virou a nova ancora.
+    # Nao e promovida (a vigente nao muda); so abre uma janela nova.
+    "ancorada",
 }
 
 
@@ -486,6 +489,22 @@ def montar_linha_auditoria(familia: str, liga: str, versao: int,
     }
 
 
+STATUS_DE_PROMOCAO = ("adotada", "encurtada", "revertida")
+
+
+def operacoes_de_gravacao(linhas: List[Dict[str, Any]]) -> List[tuple]:
+    """O plano de escrita de um ciclo, sem I/O (#253).
+
+    `("promover", linha)`: rebaixa a vigente da celula a `substituida`, grava
+    a copia `vigente` e depois a linha de decisao. `("inserir", linha)`: so a
+    linha de decisao. `gravar_ciclo` executa este plano em SQL; a simulacao
+    multi-ciclo de `tests/calibragem/test_15` executa o MESMO plano em
+    memoria -- a prova da Etapa 5 roda a regra de producao, nao uma copia.
+    """
+    return [("promover" if ln["status"] in STATUS_DE_PROMOCAO else "inserir", ln)
+            for ln in linhas]
+
+
 def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
     """Grava as linhas do ciclo e promove `adotada`/`encurtada`/`revertida`
     a `vigente`.
@@ -513,13 +532,11 @@ def gravar_ciclo(linhas: List[Dict[str, Any]]) -> int:
          WHERE familia = %s AND liga = %s AND status = 'vigente'
     """
     with _conexao() as c, c.cursor() as cur:
-        for ln in linhas:
-            if ln["status"] in ("adotada", "encurtada", "revertida"):
+        for op, ln in operacoes_de_gravacao(linhas):
+            if op == "promover":
                 cur.execute(promove, (ln["familia"], ln["liga"]))
                 cur.execute(sql, dict(ln, status="vigente"))
-                cur.execute(sql, ln)
-            else:
-                cur.execute(sql, ln)
+            cur.execute(sql, ln)
     logger.info("[calibragem] ciclo gravou %d linhas de auditoria", len(linhas))
     return len(linhas)
 
@@ -613,26 +630,66 @@ def _mais_recente(candidata, atual) -> bool:
         return False
 
 
-def carregar_anterior(familia: str, liga: str) -> Optional[Dict[str, Any]]:
-    """A ultima versao 'substituida' da celula — a que estava vigente antes
-    da atual.
+def carregar_historico() -> List[Dict[str, Any]]:
+    """Todas as linhas de `calibragem_versoes`, em ordem de gravacao (#253).
 
-    Sem isso, `avaliar_reversao` seria chamada com o MESMO dict como
-    `vigente` e `anterior`: os dois Briers ficariam sempre identicos, a acao
-    seria sempre `manter`, e a reversao nunca dispararia — a patologia que
-    esta tarefa existe para impedir. `None` quando nao ha anterior, o caso
-    normal nos primeiros ciclos.
+    UMA leitura por ciclo. Ancora, vigencia, ultimo status e reversoes
+    seguidas saem daqui por funcoes puras -- testaveis sem banco, e a
+    simulacao multi-ciclo usa as mesmas.
     """
     with _conexao() as c, c.cursor() as cur:
-        cur.execute("""
-            SELECT versao, a, b FROM calibragem_versoes
-             WHERE familia = %s AND liga = %s AND status = 'substituida'
-             ORDER BY versao DESC LIMIT 1
-        """, (familia, liga))
-        linha = cur.fetchone()
-        if linha is None:
-            return None
-        return {"versao": linha[0], "a": float(linha[1]), "b": float(linha[2])}
+        cur.execute(SQL_HISTORICO)
+        return [{"id": r[0], "familia": r[1], "liga": r[2], "versao": r[3],
+                 "status": r[4], "a": r[5], "b": r[6], "criada_em": r[7]}
+                for r in cur.fetchall()]
+
+
+SQL_HISTORICO = (
+    "SELECT id, familia, liga, versao, status, a, b, criada_em "
+    "FROM calibragem_versoes ORDER BY id"
+)
+
+
+def _em_ordem(linhas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(linhas, key=lambda r: r.get("id") or 0)
+
+
+STATUS_DE_ANCORA = ("ancorada", "revertida")
+STATUS_DE_VIGENCIA = ("vigente", "substituida")
+
+
+def ancoras_do_historico(linhas: List[Dict[str, Any]]) -> Dict[tuple, Dict[str, Any]]:
+    """A ancora de cada celula: `{"a", "b", "desde"}` (#253).
+
+    Ultima linha `ancorada` ou `revertida` da celula -> seus `(a, b)`, e
+    `desde` = seu `criada_em`. Sem nenhuma, a versao 0 `(0, 1)` desde a
+    PRIMEIRA linha da celula -- o instante em que a camada comecou a decidir
+    sobre ela. Celula sem linha nenhuma nao aparece (o ciclo usa `(0, 1)`
+    com `desde=None`, janela vazia). `(a, b)` nulos numa linha antiga valem
+    `(0, 1)`.
+    """
+    saida: Dict[tuple, Dict[str, Any]] = {}
+    for r in _em_ordem(linhas):
+        chave = (r["familia"], r["liga"])
+        if chave not in saida:
+            saida[chave] = {"a": 0.0, "b": 1.0, "desde": r.get("criada_em")}
+        if r["status"] in STATUS_DE_ANCORA:
+            nulos = r.get("a") is None or r.get("b") is None
+            saida[chave] = {"a": 0.0 if nulos else float(r["a"]),
+                            "b": 1.0 if nulos else float(r["b"]),
+                            "desde": r.get("criada_em")}
+    return saida
+
+
+def vigencia_do_historico(linhas: List[Dict[str, Any]]) -> Dict[tuple, List[tuple]]:
+    """`(criada_em, a, b)` de cada copia `vigente`/`substituida`, por celula,
+    em ordem de gravacao: a sequencia de curvas que o serving de fato leu."""
+    saida: Dict[tuple, List[tuple]] = {}
+    for r in _em_ordem(linhas):
+        if r["status"] in STATUS_DE_VIGENCIA and r.get("a") is not None:
+            saida.setdefault((r["familia"], r["liga"]), []).append(
+                (r.get("criada_em"), float(r["a"]), float(r["b"])))
+    return saida
 
 
 def carregar_parametros_para_curva() -> Dict[tuple, tuple]:
@@ -643,21 +700,24 @@ def carregar_parametros_para_curva() -> Dict[tuple, tuple]:
 
 # Status que representam a DECISAO de um ciclo sobre a celula. `vigente` e
 # `substituida` sao escrituracao (a copia promovida e a que ela substituiu),
-# nao decisao, e por isso ficam de fora de `ultimo_status_de_ciclo`.
+# nao decisao, e por isso ficam de fora de `ultimo_status_do_historico`.
 STATUS_DE_DECISAO = ("adotada", "encurtada", "revertida", "congelada",
-                     "rejeitada", "abaixo_do_piso", "inalterada")
+                     "rejeitada", "abaixo_do_piso", "inalterada", "ancorada")
 
 
-def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
+def _da_celula(linhas, familia, liga):
+    return [r for r in _em_ordem(linhas)
+            if r["familia"] == familia and r["liga"] == liga]
+
+
+def ultimo_status_do_historico(linhas: List[Dict[str, Any]], familia: str,
+                               liga: str) -> Optional[str]:
     """A ultima DECISAO tomada sobre a celula. `None` se nunca houve uma.
 
-    Existe para o congelamento ser pegajoso (#248, I2). `avaliar_reversao`
-    devolvia `congelar` depois de duas reversoes seguidas, o ciclo gravava a
-    linha, e no ciclo seguinte ninguem lia esse status de volta: a celula
-    voltava a adotar normalmente. A "revisao humana" prometida pela spec
-    (secao 5.3) era um `logger.error` e mais nada.
+    Existe para o congelamento ser pegajoso (#248, I2): sem ler o status de
+    volta, a celula congelada voltava a adotar no ciclo seguinte.
 
-    COMO DESTRAVAR uma celula congelada — e uma acao humana, deliberada, e
+    COMO DESTRAVAR uma celula congelada -- e uma acao humana, deliberada, e
     fica no historico como qualquer outra linha:
 
         INSERT INTO calibragem_versoes
@@ -668,65 +728,36 @@ def ultimo_status_de_ciclo(familia: str, liga: str) -> Optional[str]:
          WHERE familia = '<familia>' AND liga = '<liga>'
          ORDER BY id DESC LIMIT 1;
 
-    Qualquer status de decisao que nao seja `congelada` destrava — o INSERT
-    acima usa `inalterada` porque e o que descreve a verdade: nada mudou,
-    so a trava saiu.
+    Qualquer status de decisao que nao seja `congelada` destrava. Destravar
+    NAO zera as reversoes seguidas (so `ancorada` zera, #253): a proxima
+    reversao sem validacao no meio congela de novo.
     """
-    with _conexao() as c, c.cursor() as cur:
-        cur.execute(
-            """
-            SELECT status FROM calibragem_versoes
-             WHERE familia = %s AND liga = %s AND status = ANY(%s)
-             ORDER BY id DESC LIMIT 1
-            """,
-            (familia, liga, list(STATUS_DE_DECISAO)),
-        )
-        linha = cur.fetchone()
-        return linha[0] if linha else None
+    for r in reversed(_da_celula(linhas, familia, liga)):
+        if r["status"] in STATUS_DE_DECISAO:
+            return r["status"]
+    return None
 
 
-def contar_reversoes_seguidas(familia: str, liga: str) -> int:
-    """Quantas reversoes seguidas a celula acumulou, da mais recente para tras.
+def reversoes_seguidas_do_historico(linhas: List[Dict[str, Any]], familia: str,
+                                    liga: str) -> int:
+    """Quantas reversoes a celula acumulou desde a ultima VALIDACAO (#253).
 
-    Duas reversoes seguidas congelam a celula (spec 5.3), entao o que conta
-    como "seguida" decide quando alguem e chamado para olhar. A regra, para
-    TODOS os status que podem aparecer no historico — antes so `inalterada`
-    tinha sido decidida em voz alta, e `congelada`/`rejeitada` estavam fora
-    da contagem por efeito colateral da clausula `IN`, sem ninguem ter
-    escolhido isso:
-
-      revertida              conta +1 e a varredura segue para tras.
-      adotada / encurtada    ZERAM. Uma adocao bem-sucedida encerra a
-                             sequencia — e o unico evento que encerra.
-      inalterada             IGNORADA: um ciclo sem dado novo nao e uma
-                             tentativa, entao nao conta nem zera. Tres
-                             reversoes com uma pausa no meio SAO tres
-                             fracassos.
-      congelada              IGNORADA. Alem do mesmo motivo, `congelada` e
-                             CONSEQUENCIA de duas reversoes: se zerasse, o
-                             congelamento se desfaria sozinho no ciclo
-                             seguinte, e o congelamento pegajoso (#248, I2)
-                             deixaria de existir.
-      rejeitada              IGNORADA: a proposta foi barrada (b <= 0) e
-      abaixo_do_piso         nunca chegou a publicar. Nao ha o que fracassar.
-
-    O `LIMIT 5` e o alcance: sequencia mais longa que isso ja congelou muito
-    antes.
+      revertida   conta +1 e a varredura segue para tras.
+      ancorada    ZERA: a curva foi validada fora da amostra -- e o unico
+                  evento que encerra a sequencia.
+      o resto     IGNORADO. `adotada`/`encurtada` zeravam no #248; com a
+                  versao trocando todo ciclo sempre havia uma entre duas
+                  reversoes e o congelamento nunca chegaria -- movimento nao
+                  e validacao. `congelada` e consequencia de duas reversoes
+                  e nao pode desfazer a propria causa.
     """
-    with _conexao() as c, c.cursor() as cur:
-        cur.execute("""
-            SELECT status FROM calibragem_versoes
-             WHERE familia = %s AND liga = %s
-               AND status IN ('revertida', 'adotada', 'encurtada')
-             ORDER BY id DESC LIMIT 5
-        """, (familia, liga))
-        seguidas = 0
-        for (st,) in cur.fetchall():
-            if st == "revertida":
-                seguidas += 1
-            else:
-                break
-        return seguidas
+    seguidas = 0
+    for r in reversed(_da_celula(linhas, familia, liga)):
+        if r["status"] == "revertida":
+            seguidas += 1
+        elif r["status"] == "ancorada":
+            break
+    return seguidas
 
 
 def carregar_semente_backfill(caminho: str) -> List[Pick]:

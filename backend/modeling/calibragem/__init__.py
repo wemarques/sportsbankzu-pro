@@ -13,6 +13,15 @@ MIN_N_JOGOS = 20
 # Trava: mudanca maxima de probabilidade que um pick pode sofrer num ciclo.
 PASSO_MAXIMO_PP = 0.02
 
+# #253: deriva maxima acumulada contra a ANCORA (ultimos parametros validados
+# fora da amostra). Sem este teto a trava por ciclo somava: Corners/familia
+# andou 2pp por ciclo durante 10 ciclos (a de 0,05 a 0,63) sem nenhum
+# julgamento. Dois passos: o maximo que a curva de uma celula anda enquanto a
+# janela da ancora nao junta 20 jogos. A janela e POR CELULA DE LIGA, e uma
+# liga tipica leva semanas para juntar 20 jogos (medido no #253): e o teto,
+# nao a reversao, que segura a curva nesse intervalo.
+TETO_DERIVA_PP = 2 * PASSO_MAXIMO_PP
+
 # `k` do encolhimento quando ha celulas de menos para estima-lo dos dados.
 # O dobro do piso: uma celula precisa do dobro do minimo para valer tanto
 # quanto o pai.

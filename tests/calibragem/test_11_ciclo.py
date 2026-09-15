@@ -203,7 +203,7 @@ ANTES = ADOCAO - timedelta(days=1)
 def _servidos(n, liga="", p_raw=0.6, familia="Over/Under", y_periodico=5,
               publicado_em=DEPOIS):
     """Picks de um jogo cada, com odd ausente -- vale para os testes de
-    reversao/sem_anterior, que nao precisam de `ev`/`edge`. `publicado_em`
+    reversao/janela vazia, que nao precisam de `ev`/`edge`. `publicado_em`
     posterior a `ADOCAO` por padrao: sao os jogos que a vigente SERVIU."""
     # `p_legado=p_raw`: cenario com o legado na identidade (#248,
     # composicao). O que estes testes exercitam e a costura do ciclo, nao a
@@ -213,8 +213,7 @@ def _servidos(n, liga="", p_raw=0.6, familia="Over/Under", y_periodico=5,
             for i in range(n)]
 
 
-def _montar_ambiente(monkeypatch, *, picks, ajuste, vigentes,
-                     anterior_por_celula, reversoes_por_celula=None):
+def _montar_ambiente(monkeypatch, *, picks, ajuste, vigentes, historico=None):
     """Liga os dubles: leitura por monkeypatch direto em `repositorio.*`
     (como o resto deste arquivo ja faz com `carregar_parametros_para_curva`),
     escrita (`garantir_tabela`/`gravar_ciclo`) REAL, contra um `_conn` falso
@@ -227,13 +226,10 @@ def _montar_ambiente(monkeypatch, *, picks, ajuste, vigentes,
     monkeypatch.setattr(ciclo.repositorio, "carregar_amostra",
                         lambda desde=None: picks)
     monkeypatch.setattr(ciclo.repositorio, "carregar_vigentes", lambda: vigentes)
-    monkeypatch.setattr(
-        ciclo.repositorio, "carregar_anterior",
-        lambda familia, liga: anterior_por_celula.get((familia, liga)))
-    reversoes = reversoes_por_celula or {}
-    monkeypatch.setattr(
-        ciclo.repositorio, "contar_reversoes_seguidas",
-        lambda familia, liga: reversoes.get((familia, liga), 0))
+    # #253: ancora, vigencia, ultimo status e reversoes seguidas saem do
+    # historico por funcoes puras; o duble e so a lista de linhas.
+    monkeypatch.setattr(ciclo.repositorio, "carregar_historico",
+                        lambda: list(historico or []))
     monkeypatch.setattr(ciclo.estimador, "ajustar_hierarquico",
                         lambda picks: dict(ajuste))
     return registro
@@ -246,23 +242,34 @@ def _linhas_persistidas(registro):
 
 
 RUIM = {"versao": 5, "a": -0.90, "b": 1.0, "criada_em": ADOCAO}
-BOA_ANTERIOR = {"versao": 4, "a": 0.45, "b": 1.0}  # sobe a probabilidade
+BOA_ANCORA = {"versao": 4, "a": 0.45, "b": 1.0}  # sobe a probabilidade
 
 
-def test_reversao_dispara_quando_vigente_e_pior_que_a_anterior(monkeypatch):
-    """Correcao A, prova pelo efeito observavel: SE `avaliar_reversao`
-    recebesse o mesmo dict como `vigente` e `anterior` (o bug do brief
-    literal), os dois Briers seriam sempre iguais e a acao seria sempre
-    'manter'. Aqui `carregar_anterior` devolve uma versao DIFERENTE e
-    melhor (BOA_ANTERIOR sobe a probabilidade; RUIM, a vigente, derruba) --
-    com p_raw=0.6 e y=1 na maioria dos jogos, a vigente tem de perder."""
+def _historico_ancora_boa_vigente_ruim(celula=("Over/Under", "")):
+    """#253: a BOA foi validada (`ancorada`) antes; a RUIM virou vigente na
+    ADOCAO e serviu tudo o que foi publicado depois dela."""
+    familia, liga = celula
+    return [
+        {"id": 1, "familia": familia, "liga": liga, "versao": 4,
+         "status": "ancorada", "a": BOA_ANCORA["a"], "b": BOA_ANCORA["b"],
+         "criada_em": ANTES},
+        {"id": 2, "familia": familia, "liga": liga, "versao": 5,
+         "status": "vigente", "a": RUIM["a"], "b": RUIM["b"],
+         "criada_em": ADOCAO},
+    ]
+
+
+def test_reversao_dispara_quando_a_servida_e_pior_que_a_ancora(monkeypatch):
+    """#253, pelo efeito observavel no ciclo: a ancora e a BOA (sobe a
+    probabilidade), a RUIM serviu os 30 jogos da janela (derruba) -- com
+    p_raw=0.6 e y=1 na maioria dos jogos, a servida tem de perder."""
     picks = _servidos(30)   # >= MIN_N_JOGOS
     ajuste = {("Over/Under", ""): {"a": -0.90, "b": 1.0, "n_jogos": 30,
                                     "origem": "familia", "k_fixo": False}}
     registro = _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
         vigentes={("Over/Under", ""): dict(RUIM)},
-        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+        historico=_historico_ancora_boa_vigente_ruim())
 
     resumo = ciclo.executar()
 
@@ -272,10 +279,9 @@ def test_reversao_dispara_quando_vigente_e_pior_que_a_anterior(monkeypatch):
     assert any(p["status"] == "revertida" for p in linhas)
 
 
-def test_valor_revertido_persistido_vem_da_anterior_nao_da_vigente(monkeypatch):
-    """Correcao B, no mesmo cenario do teste anterior: o (a, b) que de fato
-    seria GRAVADO no banco (via `gravar_ciclo` real) tem de ser o da
-    ANTERIOR, nao o da vigente abandonada. Valores bem distintos (0.45 vs
+def test_valor_revertido_persistido_vem_da_ancora_nao_da_vigente(monkeypatch):
+    """No mesmo cenario: o (a, b) GRAVADO (via `gravar_ciclo` real) tem de ser
+    o da ANCORA, nao o da vigente abandonada. Valores bem distintos (0.45 vs
     -0.90) para a asserção nao passar por coincidencia."""
     picks = _servidos(30)
     ajuste = {("Over/Under", ""): {"a": -0.90, "b": 1.0, "n_jogos": 30,
@@ -283,35 +289,33 @@ def test_valor_revertido_persistido_vem_da_anterior_nao_da_vigente(monkeypatch):
     registro = _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
         vigentes={("Over/Under", ""): dict(RUIM)},
-        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+        historico=_historico_ancora_boa_vigente_ruim())
 
     ciclo.executar()
 
     linhas = _linhas_persistidas(registro)
     revertida = next(p for p in linhas if p["status"] == "revertida")
-    assert revertida["a"] == pytest.approx(BOA_ANTERIOR["a"])
-    assert revertida["b"] == pytest.approx(BOA_ANTERIOR["b"])
+    assert revertida["a"] == pytest.approx(BOA_ANCORA["a"])
+    assert revertida["b"] == pytest.approx(BOA_ANCORA["b"])
     assert revertida["a"] != pytest.approx(RUIM["a"])
-    # A copia promovida a "vigente" tambem tem de carregar o par da anterior
+    # A copia promovida a "vigente" tambem tem de carregar o par da ancora
     # -- e ela, nao a da vigente abandonada, que vale a partir daqui.
     vigente_promovida = next(
         p for p in linhas if p.get("status") == "vigente")
-    assert vigente_promovida["a"] == pytest.approx(BOA_ANTERIOR["a"])
-    assert vigente_promovida["b"] == pytest.approx(BOA_ANTERIOR["b"])
+    assert vigente_promovida["a"] == pytest.approx(BOA_ANCORA["a"])
+    assert vigente_promovida["b"] == pytest.approx(BOA_ANCORA["b"])
 
 
-def test_reversao_pulada_sem_anterior_e_motivo_registra(monkeypatch):
-    """Correcao A, o outro ramo: `carregar_anterior` devolve `None` (celula
-    nova, o caso normal nos primeiros ciclos) -- a avaliacao de reversao e
-    PULADA (nao ha erro, nao ha tentativa de reverter para nada) e o motivo
-    da linha persistida contem 'sem_anterior'."""
+def test_celula_sem_historico_tem_janela_vazia_e_motivo_registra(monkeypatch):
+    """#253: celula sem nenhuma linha no historico (o caso normal no primeiro
+    ciclo) -- a ancora e o legado sem `desde`, a janela e VAZIA (nao a amostra
+    inteira) e o motivo da linha persistida diz quantos jogos havia."""
     picks = _servidos(30, liga="x")
     ajuste = {("Over/Under", "x"): {"a": -0.90, "b": 1.0, "n_jogos": 30,
                                      "origem": "liga", "k_fixo": False}}
     registro = _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
-        vigentes={("Over/Under", "x"): {"versao": 5, "a": -0.90, "b": 1.0}},
-        anterior_por_celula={})   # sem anterior para NENHUMA celula
+        vigentes={("Over/Under", "x"): {"versao": 5, "a": -0.90, "b": 1.0}})   # historico vazio
 
     resumo = ciclo.executar()
 
@@ -320,7 +324,7 @@ def test_reversao_pulada_sem_anterior_e_motivo_registra(monkeypatch):
     linhas = _linhas_persistidas(registro)
     linha = next(p for p in linhas
                 if p["familia"] == "Over/Under" and p["liga"] == "x")
-    assert "sem_anterior" in linha["motivo"]
+    assert "janela da ancora com 0 jogos" in linha["motivo"], linha["motivo"]
 
 
 def test_limiares_sao_rederivados_e_chegam_na_linha_sem_mexer_no_default(monkeypatch):
@@ -342,8 +346,7 @@ def test_limiares_sao_rederivados_e_chegam_na_linha_sem_mexer_no_default(monkeyp
                                     "origem": "familia", "k_fixo": False}}
     registro = _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
-        vigentes={("Over/Under", ""): {"versao": 2, "a": 0.0, "b": 1.0}},
-        anterior_por_celula={})
+        vigentes={("Over/Under", ""): {"versao": 2, "a": 0.0, "b": 1.0}})
 
     resumo = ciclo.executar()
     assert resumo["erro"] is None
@@ -387,8 +390,7 @@ def test_toda_celula_gera_linha_em_todo_ciclo(monkeypatch):
         vigentes={
             ("Over/Under", ""): {"versao": 5, "a": -0.90, "b": 1.0},
             ("Over/Under", "y"): {"versao": 3, "a": -0.90, "b": 1.0},
-        },
-        anterior_por_celula={})
+        })
 
     resumo = ciclo.executar()
 
@@ -468,8 +470,7 @@ def test_flag_ligada_executa_o_ciclo(monkeypatch, valor):
                                    "origem": "familia", "k_fixo": False}}
     _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
-        vigentes={("Over/Under", ""): {"versao": 5, "a": -0.90, "b": 1.0}},
-        anterior_por_celula={})
+        vigentes={("Over/Under", ""): {"versao": 5, "a": -0.90, "b": 1.0}})
 
     resumo = ciclo.executar()
 
@@ -520,7 +521,7 @@ def test_reversao_nao_dispara_quando_a_janela_e_toda_in_sample(monkeypatch):
     registro = _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
         vigentes={("Over/Under", ""): dict(RUIM)},
-        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+        historico=_historico_ancora_boa_vigente_ruim())
 
     resumo = ciclo.executar()
 
@@ -543,7 +544,7 @@ def test_a_janela_ignora_jogos_de_antes_mas_conta_os_de_depois(monkeypatch):
     registro = _montar_ambiente(
         monkeypatch, picks=antigos + novos, ajuste=ajuste,
         vigentes={("Over/Under", ""): dict(RUIM)},
-        anterior_por_celula={("Over/Under", ""): dict(BOA_ANTERIOR)})
+        historico=_historico_ancora_boa_vigente_ruim())
 
     resumo = ciclo.executar()
 
@@ -561,17 +562,19 @@ def _ambiente_de_celula_viva(monkeypatch, status_anterior):
     """Uma celula que ADOTARIA sem problema (proposta perto da vigente, 30
     jogos, sem anterior): assim a unica coisa que pode impedir a adocao e o
     congelamento herdado."""
-    picks = _servidos(30)
+    # Picks ANTES da ancora: janela vazia, entao nada e julgado e a unica
+    # coisa que pode impedir a adocao e o congelamento herdado.
+    picks = _servidos(30, publicado_em=ANTES)
     ajuste = {("Over/Under", ""): {"a": 0.10, "b": 1.0, "n_jogos": 30,
                                    "origem": "familia", "k_fixo": False}}
-    registro = _montar_ambiente(
+    historico = [] if status_anterior is None else [
+        {"id": 1, "familia": "Over/Under", "liga": "", "versao": 5,
+         "status": status_anterior, "a": 0.09, "b": 1.0, "criada_em": ADOCAO}]
+    return _montar_ambiente(
         monkeypatch, picks=picks, ajuste=ajuste,
         vigentes={("Over/Under", ""): {"versao": 5, "a": 0.09, "b": 1.0,
                                        "criada_em": ADOCAO}},
-        anterior_por_celula={})
-    monkeypatch.setattr(ciclo.repositorio, "ultimo_status_de_ciclo",
-                        lambda familia, liga: status_anterior)
-    return registro
+        historico=historico)
 
 
 def test_celula_congelada_continua_congelada_no_ciclo_seguinte(monkeypatch):
@@ -603,7 +606,7 @@ def test_qualquer_status_que_nao_congelada_deixa_o_ciclo_seguir(
         monkeypatch, status_anterior):
     """O outro lado da trava: destravar e inserir uma linha de decisao com
     qualquer outro status (o procedimento esta na docstring de
-    `repositorio.ultimo_status_de_ciclo`)."""
+    `repositorio.ultimo_status_do_historico`)."""
     registro = _ambiente_de_celula_viva(monkeypatch, status_anterior)
 
     resumo = ciclo.executar()

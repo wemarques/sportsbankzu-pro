@@ -166,26 +166,22 @@ def _limiares_atuais() -> Dict[str, dict]:
     }
 
 
-def janela_de_reversao(picks_da_celula, criada_em) -> list:
-    """Os picks que a versao vigente REALMENTE serviu.
+def janela_de_reversao(picks_da_celula, desde) -> list:
+    """Os picks publicados DEPOIS do `desde` da ancora (#253).
 
-    #248, I1: `ciclo.executar` passava a amostra inteira para
-    `avaliar_reversao` — a mesma amostra em que a vigente foi ajustada. Um
-    MLE quase sempre ganha no proprio treino, entao o Brier da vigente vinha
-    menor que o da anterior por construcao e a acao era SEMPRE `manter`. A
-    reversao existia no codigo e nao podia disparar, que e a patologia do
-    #247 (o gate que nunca dispara) de novo.
+    #248, I1: julgar na amostra inteira era in-sample (o MLE ganha no proprio
+    treino). #253: julgar desde a `criada_em` da VIGENTE zerava a janela todo
+    ciclo, porque a versao troca a cada cron; em 10 ciclos de producao ela
+    nunca chegou a 20 jogos. O ponto de partida e a ancora, que so muda por
+    validacao ou reversao. Quem garante "fora da amostra" nao e mais a janela,
+    e a pontuacao de cada pick pela versao que o serviu
+    (`governanca.curva_servida`).
 
-    A janela e `publicado_em > criada_em`, estrito: uma linha publicada no
-    mesmo instante da adocao nao foi servida por ela.
-
-    Sem `criada_em` (celula na versao 0, ou dublê de teste que nao informou)
-    a janela e VAZIA, nao a amostra inteira. `avaliar_reversao` entao devolve
-    `manter` por falta de jogos, com o numero no motivo — nao decidir por
-    falta de informacao e diferente de decidir com a informacao errada.
-    Pick sem `publicado_em` fica de fora pelo mesmo motivo.
+    `publicado_em > desde`, estrito. Sem `desde` (celula sem historico) a
+    janela e VAZIA, nao a amostra inteira; pick sem `publicado_em` fica de
+    fora pelo mesmo motivo.
     """
-    if criada_em is None:
+    if desde is None:
         return []
     dentro = []
     for p in picks_da_celula:
@@ -193,15 +189,15 @@ def janela_de_reversao(picks_da_celula, criada_em) -> list:
         if quando is None:
             continue
         try:
-            if quando > criada_em:
+            if quando > desde:
                 dentro.append(p)
         except TypeError:
             # datetime ingenuo x com fuso: comparar levantaria. Fora da
             # janela, e o motivo aparece no log em vez de virar excecao.
             logger.warning(
-                "[calibragem] publicado_em (%r) e criada_em (%r) nao sao "
+                "[calibragem] publicado_em (%r) e desde (%r) nao sao "
                 "comparaveis; pick fora da janela de reversao",
-                quando, criada_em)
+                quando, desde)
     return dentro
 
 
@@ -234,28 +230,29 @@ def _vigente_da_celula(vigentes: Dict[tuple, dict], chave: tuple) -> Optional[di
     return {"versao": VERSAO_LEGADO, "a": 0.0, "b": 1.0, "criada_em": None}
 
 
-def planejar(picks, ajuste, vigentes) -> dict:
+def planejar(picks, ajuste, vigentes, historico=None) -> dict:
     """Todas as decisoes de um ciclo, SEM escrever uma linha.
 
     Extraida de `executar` para que o ensaio (`scripts/ensaio_calibragem.py`)
     rode EXATAMENTE a mesma computacao antes de qualquer escrita. Uma segunda
-    copia da decisao no script seria a proibicao 5 do CLAUDE.md e, pior,
-    divergiria do ciclo justamente no dia em que alguem confiasse no ensaio
-    para ligar a camada.
+    copia da decisao no script seria a proibicao 5 do CLAUDE.md.
 
-    Faz SELECTs (`ultimo_status_de_ciclo`, `carregar_anterior`); nao faz DDL,
-    INSERT nem UPDATE.
+    `historico`: as linhas de `calibragem_versoes` (#253). `None` le do banco
+    uma vez (`repositorio.carregar_historico`, um SELECT). A simulacao
+    multi-ciclo dos testes passa a lista em memoria. Ancora, vigencia, ultimo
+    status e reversoes seguidas saem dela por funcoes puras.
     """
+    if historico is None:
+        historico = repositorio.carregar_historico()
+    ancoras = repositorio.ancoras_do_historico(historico)
+    vigencia = repositorio.vigencia_do_historico(historico)
+
     contadores = {"celulas": 0, "adotadas": 0, "encurtadas": 0,
-                  "revertidas": 0, "congeladas": 0}
+                  "revertidas": 0, "congeladas": 0, "ancoradas": 0}
     por_celula = {}
     for p in picks:
         por_celula.setdefault((p.familia, p.liga), []).append(p)
 
-    # Primeira passada: decide o (a, b) de cada celula. Guardado antes de
-    # montar as linhas porque a re-derivacao de limiares (abaixo) precisa
-    # do "antigo" e do "novo" por FAMILIA (nao por celula) para chamar
-    # `limiares.rederivar` uma unica vez por familia.
     decisoes: Dict[tuple, dict] = {}
     for chave, proposta in ajuste.items():
         familia, liga = chave
@@ -263,12 +260,9 @@ def planejar(picks, ajuste, vigentes) -> dict:
             continue
         contadores["celulas"] += 1
 
-        # Congelamento e PEGAJOSO (#248, I2): sem esta leitura a celula
-        # congelada por duas reversoes seguidas voltava a adotar no
-        # ciclo seguinte, e a "revisao humana" da spec (5.3) era so um
-        # logger.error. Ver `repositorio.ultimo_status_de_ciclo` para o
-        # procedimento de destravamento.
-        if repositorio.ultimo_status_de_ciclo(familia, liga) == "congelada":
+        # Congelamento e PEGAJOSO (#248, I2). Procedimento de destravamento na
+        # docstring de `repositorio.ultimo_status_do_historico`.
+        if repositorio.ultimo_status_do_historico(historico, familia, liga) == "congelada":
             contadores["congeladas"] += 1
             congelada = vigentes.get(chave)
             logger.error(
@@ -298,30 +292,16 @@ def planejar(picks, ajuste, vigentes) -> dict:
                 "n_jogos": proposta["n_jogos"], "origem": proposta["origem"],
             }
             continue
-        # NAO e `por_celula[chave]` inteiro: so os jogos posteriores a
-        # adocao da vigente (#248, I1). Ver `janela_de_reversao`.
-        servidos = janela_de_reversao(por_celula.get(chave, []),
-                                      vig.get("criada_em"))
 
-        # A reversao compara vigente contra ANTERIOR (a versao substituida
-        # mais recente), nunca vigente contra ela mesma — isso faria os
-        # dois briers ficarem sempre iguais e a reversao nunca disparar.
-        # Sem anterior (celula nova, caso normal nos primeiros ciclos) nao
-        # ha para onde reverter: pula a avaliacao e segue para a proposta,
-        # marcando o motivo para a auditoria. `contar_reversoes_seguidas`
-        # so e usada dentro de `avaliar_reversao` — sem anterior essa
-        # avaliacao nem roda, entao a contagem fica dentro do ramo que a
-        # consome, em vez de uma ida ao banco descartada por celula nova
-        # em todo ciclo.
-        anterior = repositorio.carregar_anterior(familia, liga)
-        if anterior is None:
-            rev = {"acao": "manter", "motivo": "sem_anterior",
-                  "limite_proximo": PASSO_MAXIMO_PP}
-        else:
-            reversoes = repositorio.contar_reversoes_seguidas(familia, liga)
-            rev = governanca.avaliar_reversao(
-                servidos, {"a": vig["a"], "b": vig["b"]},
-                {"a": anterior["a"], "b": anterior["b"]}, reversoes)
+        # #253: a janela abre na ANCORA, nao na vigente; cada pick e julgado
+        # pela versao que o serviu. Ver `janela_de_reversao` e
+        # `governanca.avaliar_reversao`.
+        ancora = ancoras.get(chave, {"a": 0.0, "b": 1.0, "desde": None})
+        servidos = janela_de_reversao(por_celula.get(chave, []), ancora["desde"])
+        rev = governanca.avaliar_reversao(
+            servidos, vigencia.get(chave, []), ancora,
+            {"a": vig["a"], "b": vig["b"]},
+            repositorio.reversoes_seguidas_do_historico(historico, familia, liga))
         limite = rev["limite_proximo"]
 
         if rev["acao"] == "congelar":
@@ -329,27 +309,26 @@ def planejar(picks, ajuste, vigentes) -> dict:
                          "fator_encurtamento": None, "motivo": rev["motivo"]}
         elif rev["acao"] == "reverter":
             contadores["revertidas"] += 1
-            # O (a, b) gravado vem da ANTERIOR — reverter e voltar para
-            # ela. Gravar o da vigente (a que esta sendo abandonada)
-            # faria `gravar_ciclo` promover a celula a "vigente" dela
-            # mesma, e a reversao nao mudaria nada.
-            resultado = {"a": anterior["a"], "b": anterior["b"],
+            # Volta para a ANCORA: a ultima curva validada (ou o legado).
+            resultado = {"a": ancora["a"], "b": ancora["b"],
                          "status": "revertida", "fator_encurtamento": None,
                          "motivo": rev["motivo"]}
+        elif rev["acao"] == "ancorar":
+            contadores["ancoradas"] += 1
+            # A vigente NAO muda: a linha so marca a validacao e abre uma
+            # janela nova. Um evento por celula por ciclo -- a proposta fica
+            # para o proximo, ja medida contra a ancora nova.
+            resultado = {"a": vig["a"], "b": vig["b"], "status": "ancorada",
+                         "fator_encurtamento": None, "motivo": rev["motivo"]}
         else:
-            resultado = governanca.avaliar_proposta(
+            resultado = dict(governanca.avaliar_proposta(
                 proposta, {"a": vig["a"], "b": vig["b"]},
-                proposta["n_jogos"], limite=limite)
-            # O veredito da reversao entra no motivo TAMBEM quando e
-            # `manter` — senao a linha nao distingue "nao havia anterior"
-            # de "a janela estava vazia" de "a vigente ganhou". Com a
-            # janela agora fora da amostra (#248, I1), saber quantos
-            # jogos ela tinha e a unica forma de ler se a reversao esta
-            # viva ou so nao teve o que julgar.
-            resultado = dict(resultado)
+                proposta["n_jogos"], limite=limite, ancora=ancora))
+            # O veredito da reversao entra no motivo TAMBEM quando e `manter`:
+            # quantos jogos a janela da ancora tinha e a unica forma de ler se
+            # a reversao esta viva ou so nao teve o que julgar.
             resultado["motivo"] = "; ".join(
-                parte for parte in (rev["motivo"], resultado["motivo"])
-                if parte)
+                parte for parte in (rev["motivo"], resultado["motivo"]) if parte)
             if resultado["status"] == "adotada":
                 contadores["adotadas"] += 1
             elif resultado["status"] == "encurtada":
@@ -394,11 +373,37 @@ def planejar(picks, ajuste, vigentes) -> dict:
             "contadores": contadores}
 
 
+def linhas_do_plano(plano: dict) -> list:
+    """As linhas de auditoria de um plano, prontas para `gravar_ciclo`.
+
+    Extraida de `executar` (#253) para a simulacao multi-ciclo dos testes
+    gravar exatamente o que o ciclo grava.
+    """
+    linhas = []
+    for (familia, liga), dec in plano["decisoes"].items():
+        vig = dec["vig"]
+        # O motivo dos LIMIARES entra na mesma linha do motivo da curva
+        # (#249-a): "familia sem odd nenhuma" e "amostra insuficiente para
+        # re-derivar" nao podem produzir o mesmo silencio na tabela.
+        resultado = dec["resultado"]
+        motivo_limiar = plano["motivos_limiares"].get(familia)
+        if motivo_limiar:
+            resultado = dict(resultado)
+            resultado["motivo"] = "; ".join(
+                parte for parte in (resultado.get("motivo", ""),
+                                    motivo_limiar) if parte)
+        linhas.append(repositorio.montar_linha_auditoria(
+            familia, liga, vig["versao"] + 1, resultado,
+            dec["n_jogos"], dec["origem"], None,
+            limiares=plano["limiares"].get(familia)))
+    return linhas
+
+
 def executar(caminho_semente: Optional[str] = None) -> dict:
     """Um ciclo completo. Nunca levanta: falha aberta, como o resto do cron."""
     resumo = {"status": "executado", "celulas": 0, "adotadas": 0,
-              "encurtadas": 0, "revertidas": 0, "congeladas": 0, "jogos": 0,
-              "erro": None}
+              "encurtadas": 0, "revertidas": 0, "congeladas": 0,
+              "ancoradas": 0, "jogos": 0, "erro": None}
     if not calibragem_habilitada():
         resumo["status"] = "desligado"
         logger.info(
@@ -421,37 +426,16 @@ def executar(caminho_semente: Optional[str] = None) -> dict:
 
         vigentes = repositorio.carregar_vigentes()
         plano = planejar(picks, ajuste, vigentes)
-        decisoes = plano["decisoes"]
-        limiares_novos = plano["limiares"]
         resumo.update(plano["contadores"])
 
-        linhas = []
-        for (familia, liga), dec in decisoes.items():
-            vig = dec["vig"]
-            # O motivo dos LIMIARES entra na mesma linha do motivo da curva
-            # (#249-a). Sem isso, "familia sem odd nenhuma" e "amostra
-            # insuficiente para re-derivar" produzem o mesmo silencio na
-            # tabela — quatro colunas iguais as da versao anterior, sem dizer
-            # por que. Sao coisas diferentes e a auditoria tem de separa-las.
-            resultado = dec["resultado"]
-            motivo_limiar = plano["motivos_limiares"].get(familia)
-            if motivo_limiar:
-                resultado = dict(resultado)
-                resultado["motivo"] = "; ".join(
-                    parte for parte in (resultado.get("motivo", ""),
-                                        motivo_limiar) if parte)
-            linhas.append(repositorio.montar_linha_auditoria(
-                familia, liga, vig["versao"] + 1, resultado,
-                dec["n_jogos"], dec["origem"], None,
-                limiares=limiares_novos.get(familia)))
-
-        repositorio.gravar_ciclo(linhas)
+        repositorio.gravar_ciclo(linhas_do_plano(plano))
         limpar_cache()
         logger.info(
             "[CALIBRAGEM] ciclo: %d celulas, %d jogos | adotadas=%d encurtadas=%d "
-            "revertidas=%d congeladas=%d",
+            "revertidas=%d ancoradas=%d congeladas=%d",
             resumo["celulas"], resumo["jogos"], resumo["adotadas"],
-            resumo["encurtadas"], resumo["revertidas"], resumo["congeladas"],
+            resumo["encurtadas"], resumo["revertidas"], resumo["ancoradas"],
+            resumo["congeladas"],
         )
     except Exception as e:                                   # noqa: BLE001
         resumo["erro"] = str(e)

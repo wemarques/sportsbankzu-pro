@@ -13808,3 +13808,71 @@ Deploy Lambda de `99798cf`: `update-function-code` 06:10:16, função ativa 06:1
 ### Lição aprendida
 Parâmetro opcional com default `None` num gravador é um campo que ninguém é obrigado a preencher — e ninguém preencheu por 12 dias. Coluna de validade (kickoff, fuso, versão) não pode ter default silencioso no produtor, e o consumidor não pode tratar a ausência dela como "passa".
 
+---
+
+## 253 — Governança da camada #248 por âncora: a janela de reversão deixa de zerar e a deriva ganha teto
+**Data:** 2026-09-15 | **Arquivos:** `backend/modeling/calibragem/__init__.py`, `governanca.py`, `repositorio.py`, `ciclo.py`, `scripts/ensaio_calibragem.py`, `tests/calibragem/test_08_reversao.py`, `test_09_auditoria.py`, `test_11_ciclo.py`, `test_15_governanca_por_ancora.py` (novo), `docs/superpowers/specs/2026-09-15-governanca-por-ancora.md` (novo), `docs/REGRAS_ATIVAS.md`, `CLAUDE.md` | **Severidade:** Crítica (rede de segurança de um laço em produção que nunca podia disparar) | **Status:** Implementado — camada continua DESLIGADA
+
+### Problema identificado
+A reversão da camada #248 nunca disparou. Medido em `calibragem_versoes`, Corners/família:
+
+```
+09-10 23:02  v1  encurtada  a=0.0515 b=1.0527
+09-11 02:46  v2  encurtada  a=0.1050 b=1.1091
+...          (encurtada todo ciclo, 2pp por ciclo)
+09-13 23:03  v10 encurtada  a=0.6303 b=1.7250
+09-14 01:29  v11 revertida  a=0      b=1        (restauração manual)
+```
+
+### Causa raiz
+1. **A janela zerava a cada ciclo.** Era `publicado_em > criada_em` da **vigente**; a trava encurtava a proposta todo ciclo, então toda célula ganhava versão nova a cada cron e `criada_em` nunca tinha mais de 8h.
+2. **Não havia teto acumulado.** A trava limitava 2pp por ciclo e nada limitava a soma.
+3. **"Duas reversões seguidas" zerava em `adotada`/`encurtada`.** Com versões girando, sempre haveria uma entre duas reversões: o congelamento também nunca chegaria (encontrado ao escrever o teste de congelamento com versões girando).
+
+### Correções aplicadas
+**Regra antes do código:** `REGRAS_ATIVAS` #253. **Spec:** `docs/superpowers/specs/2026-09-15-governanca-por-ancora.md`.
+
+**Camada 1 — âncora (`repositorio.ancoras_do_historico`, pura):** última linha `ancorada`/`revertida` da célula; sem nenhuma, `(0, 1)` desde a primeira linha da célula. Status novo `ancorada` (não promovido).
+
+**Camada 2 — janela e pontuação (`ciclo.janela_de_reversao(picks, desde)`, `governanca.curva_servida`, `governanca.avaliar_reversao`):** a janela abre no `desde` da âncora; cada pick é pontuado pela versão vigente no instante em que foi publicado (`repositorio.vigencia_do_historico`, cópias `vigente`/`substituida`). Servida pior que a âncora com ≥ 20 jogos → reverte **para a âncora**; não pior e vigente ≠ âncora → `ancorada`.
+
+**Camada 3 — teto (`governanca.avaliar_proposta(..., ancora=)`):** `TETO_DERIVA_PP = 2 × PASSO_MAXIMO_PP = 0,04` contra a âncora, além da trava por ciclo. Movimento abaixo de 0,001 vira `inalterada` (não cria versão, não gira `criada_em`).
+
+**Camada 4 — reversões seguidas (`repositorio.reversoes_seguidas_do_historico`, pura):** só `ancorada` zera.
+
+**Camada 5 — uma leitura por ciclo:** `planejar(..., historico=None)` lê `calibragem_versoes` uma vez (`carregar_historico`) e deriva tudo por funções puras. `gravar_ciclo` executa `operacoes_de_gravacao(linhas)`; `linhas_do_plano(plano)` sai de `executar`. Removidos `carregar_anterior` e as versões SQL de `ultimo_status_de_ciclo`/`contar_reversoes_seguidas` (testes migrados para as funções puras, mesmos casos mais os de `ancorada`).
+
+### Prova empírica (Etapas 4 e 5)
+`tests/calibragem/test_15_governanca_por_ancora.py` (18 casos) roda o `ciclo.planejar` **real** em laço, grava pelo **mesmo** `operacoes_de_gravacao` em memória e relê pelas **mesmas** funções puras. Contra o código de `a3eb497` o arquivo nem importa (`TETO_DERIVA_PP` inexistente); os controles dentro dos testes medem o desenho antigo nos mesmos cenários:
+
+| cenário forçado | #253 | controle (desenho antigo) |
+|---|---|---|
+| proposta distante, 10 ciclos, sem jogos (formato de produção) | vigente ≤ 4pp da âncora em todo ciclo; `encurtada, encurtada`, depois `inalterada` × 8 | 10 ciclos de `avaliar_proposta` sem âncora: > 15pp |
+| versões girando todo ciclo, 5 jogos/ciclo, servida pior | `revertida` no ciclo 5, com "20 jogos" no motivo | janela pela `criada_em` da vigente no ciclo 5: 5 jogos |
+| versões girando, servida melhor | `ancorada` no ciclo 5; ciclo 9 a mais de 4pp do legado e ≤ 4pp da âncora nova | — |
+| versões girando, servida pior, 10 ciclos | `revertida` no 5, `congelada` no 9 e no 10 | a contagem antiga zeraria nas `adotada` do meio |
+
+`test_08::test_cada_pick_e_julgado_pela_versao_que_o_serviu`: 30 picks servidos pela BOA e 30 pela RUIM, âncora a=−0,60 — julgar tudo pela vigente atual reverte; julgar pela versão que serviu cada pick ancora (Brier servido 0,2589 < âncora ≈ 0,277 < RUIM 0,3253).
+
+Suíte da camada: `tests/calibragem` 324 passed.
+
+Ensaio do primeiro ciclo contra o banco de produção (só leitura), código de HEAD (worktree) e código novo rodados no mesmo instante: **plano idêntico** — 105 células com `(a, b, status)` iguais; os dois com `celulas=126 adotadas=0 encurtadas=18 revertidas=0 congeladas=0` e `VOLUME: 402 -> 403 (+1)`; o novo com `ancoradas=0`. Todas as janelas de âncora das células-família com 0 jogos (nenhum pick é servido por elas); células de liga com 0 a 4 jogos desde a âncora de 09-14 04:28.
+
+### Escala medida — o que o desenho faz e o que não faz
+A janela é **por célula de liga** (o estimador cria célula para toda liga da amostra; a célula-família não serve pick hoje e fica com janela vazia por construção). Na amostra pré-apito, 221 jogos em 11,1 dias, 20 ligas: de 0,27 (bundesliga) a 3,62 (mls) jogos por dia. **Nenhuma liga junta 20 jogos em 10 ciclos; 14 de 20 juntam em 100.** O #253 faz a reversão poder chegar e limita o dano até lá (pior caso por célula: 4pp da última curva validada, antes ilimitado). Não faz ela chegar rápido: isso exigiria somar ligas da mesma família, com Etapa 5 própria.
+
+### Contratos de saída (Etapa 2-bis)
+Escrito: linhas `ancorada` em `calibragem_versoes`. `carregar_vigentes`, serving, `limiares_por_familia` e o índice único filtram `status = 'vigente'`: nenhum efeito. `ultimo_status_do_historico` enxerga `ancorada`; `reversoes_seguidas_do_historico` zera nela. `scripts/ensaio_calibragem.py` ganhou `ancoradas`. Nenhum leitor fora do pacote e do ensaio (varredura por `calibragem_versoes`, `carregar_anterior`, `STATUS_*`). O serving (`curva.aplicar_versao`) não foi tocado.
+
+### Efeito acumulado (Etapa 5)
+| horizonte | antes | depois |
+|---|---|---|
+| 1 ciclo | ≤ 2pp da vigente | ≤ 2pp da vigente e ≤ 4pp da âncora |
+| 10 ciclos | até 20pp, janela 0 jogos | ≤ 4pp da âncora; nenhuma liga julgada — o teto é a rede ativa |
+| 100 ciclos | sem limite, nunca julgada | ≤ 4pp da âncora vigente; 14/20 ligas julgadas ao menos uma vez; 6 presas no teto |
+
+Redes: teto (para), reversão à âncora (desfaz), congelamento após duas reversões sem validação (trava para humano) — as três vistas disparando em `test_15`. **`CALIBRAGEM_ENABLED` segue `false`: este item não liga a camada.**
+
+### Lição aprendida
+Uma janela de avaliação ancorada no objeto que está sendo avaliado se move junto com ele. Se o laço troca a versão mais rápido do que a janela enche, a avaliação nunca acontece — e o sintoma é silêncio, não erro. A âncora tem de ser algo que só muda por julgamento. O mesmo vale para contadores de "falhas seguidas": o evento que zera tem de ser um sucesso **medido**, não uma atividade qualquer do laço.
+

@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.modeling.calibragem.repositorio import (
-    carregar_anterior, montar_linha_auditoria,
+    montar_linha_auditoria, reversoes_seguidas_do_historico,
+    ultimo_status_do_historico,
 )
 
 
@@ -138,83 +139,6 @@ def test_sem_limiares_os_quatro_saem_none():
     assert ln["neutro_ev"] is None
     assert ln["safe_edge"] is None
     assert ln["neutro_edge"] is None
-
-
-# --- Correcao B: `carregar_anterior` nao pode devolver o mesmo dict do
-# vigente, ou `avaliar_reversao` nunca reverte (dois Briers sempre iguais). ---
-
-def test_carregar_anterior_formato_com_dublê(monkeypatch):
-    import backend.modeling.calibragem.repositorio as repo
-
-    class _CursorFalso:
-        def __init__(self, linha):
-            self._linha = linha
-
-        def execute(self, *a, **k):
-            pass
-
-        def fetchone(self):
-            return self._linha
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    class _ConexaoFalsa:
-        def __init__(self, linha):
-            self._linha = linha
-
-        def cursor(self):
-            return _CursorFalso(self._linha)
-
-        def close(self):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr(repo, "_conn",
-                        lambda: _ConexaoFalsa((5, 0.12, 0.98)))
-    anterior = repo.carregar_anterior("BTTS", "")
-    assert anterior == {"versao": 5, "a": 0.12, "b": 0.98}
-
-
-def test_carregar_anterior_devolve_none_quando_nao_existe(monkeypatch):
-    import backend.modeling.calibragem.repositorio as repo
-
-    class _CursorVazio:
-        def execute(self, *a, **k):
-            pass
-
-        def fetchone(self):
-            return None
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    class _ConexaoVazia:
-        def cursor(self):
-            return _CursorVazio()
-
-        def close(self):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoVazia())
-    assert repo.carregar_anterior("BTTS", "") is None
 
 
 # --- Rodada de correcao 1: reversao tem de promover, e a promocao precisa
@@ -371,55 +295,24 @@ def test_carregar_parametros_para_curva_vazio(monkeypatch):
     assert repo.carregar_parametros_para_curva() == {}
 
 
-@pytest.mark.parametrize("sequencia,esperado", [
-    ([], 0),
-    (["revertida"], 1),
-    (["revertida", "revertida"], 2),
-    (["adotada", "revertida"], 0),
-])
-def test_contar_reversoes_seguidas(monkeypatch, sequencia, esperado):
-    """Sequencia na ordem devolvida pelo SQL (`ORDER BY id DESC`): a mais
-    recente primeiro. `["adotada", "revertida"]` da zero — a adocao mais
-    recente zera o contador; nao e uma tentativa que soma.
-
-    `inalterada` fica de fora do `WHERE` de proposito (decisao do
-    coordenador, nao um defeito): um ciclo sem tentativa nao zera a
-    sequencia de reversoes, so uma adocao bem-sucedida zera.
-    """
-    import backend.modeling.calibragem.repositorio as repo
-
-    fetchall = [(s,) for s in sequencia]
-    monkeypatch.setattr(repo, "_conn",
-                        lambda: _ConexaoGravadora(_CursorGravador(fetchall=fetchall)))
-
-    assert repo.contar_reversoes_seguidas("BTTS", "") == esperado
-
-
 # --- I2: o status congelado tem de ser LEGIVEL de volta, ou o congelamento
 # nao sobrevive ao proximo ciclo. ---
 
 
-@pytest.mark.parametrize("linha,esperado", [
-    (("congelada",), "congelada"),
-    (("adotada",), "adotada"),
-    (None, None),
+@pytest.mark.parametrize("historico,esperado", [
+    (["adotada", "congelada"], "congelada"),
+    (["congelada", "adotada"], "adotada"),
+    (["encurtada", "vigente", "substituida"], "encurtada"),
+    (["revertida", "ancorada"], "ancorada"),
+    ([], None),
 ])
-def test_ultimo_status_de_ciclo(monkeypatch, linha, esperado):
-    import backend.modeling.calibragem.repositorio as repo
-
-    registro = []
-    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora(
-        _CursorGravador(fetchone=linha, registro=registro)))
-
-    assert repo.ultimo_status_de_ciclo("BTTS", "") == esperado
-
-    sql, params = registro[0]
-    assert "ORDER BY id DESC" in sql and "LIMIT 1" in sql
-    # `vigente` e `substituida` sao escrituracao, nao decisao: se entrassem
-    # no filtro, a copia promovida (sempre a mais recente para uma celula
-    # adotada) esconderia a decisao real.
-    assert "vigente" not in params[2] and "substituida" not in params[2]
-    assert "congelada" in params[2]
+def test_ultimo_status_do_historico(historico, esperado):
+    """Em ordem de gravacao (mais antiga primeiro). `vigente` e `substituida`
+    sao escrituracao, nao decisao: se contassem, a copia promovida (sempre a
+    mais recente numa celula adotada) esconderia a decisao real."""
+    linhas = [{"id": i, "familia": "BTTS", "liga": "", "status": st}
+              for i, st in enumerate(historico, 1)]
+    assert ultimo_status_do_historico(linhas, "BTTS", "") == esperado
 
 
 # --- I6/I7: a conexao tem prazo e e fechada; `vigente` e unica no indice ---
@@ -523,56 +416,30 @@ def test_indice_unico_falho_nao_derruba_garantir_tabela(monkeypatch, caplog):
     assert "Corners" in texto, texto
 
 
-# Os status que a consulta de `contar_reversoes_seguidas` deixa passar. O
-# teste abaixo emula o filtro; este par de asserções impede que a emulacao
-# e o SQL de producao andem separados.
-STATUS_QUE_A_CONSULTA_TRAZ = ("revertida", "adotada", "encurtada")
-
-
-def test_a_consulta_de_reversoes_filtra_exatamente_esses_status(monkeypatch):
-    import backend.modeling.calibragem.repositorio as repo
-
-    registro = []
-    monkeypatch.setattr(repo, "_conn", lambda: _ConexaoGravadora(
-        _CursorGravador(fetchall=[], registro=registro)))
-    repo.contar_reversoes_seguidas("BTTS", "")
-
-    sql = registro[0][0]
-    for st in STATUS_QUE_A_CONSULTA_TRAZ:
-        assert f"'{st}'" in sql, st
-    for st in ("inalterada", "congelada", "rejeitada", "abaixo_do_piso"):
-        assert f"'{st}'" not in sql, st
-
-
 @pytest.mark.parametrize("historico,esperado", [
     (["revertida"], 1),
     (["revertida", "revertida"], 2),
-    # So a ADOCAO zera.
-    (["adotada", "revertida"], 0),
-    (["encurtada", "revertida", "revertida"], 0),
-    # Ciclos sem tentativa nao contam nem zeram -- a regra completa esta na
-    # docstring de `contar_reversoes_seguidas`. `congelada` em especial NAO
-    # pode zerar: ela e consequencia de duas reversoes, e zerar desfaria o
+    # #253: so a VALIDACAO zera. Movimento (adotada/encurtada) nao zera mais:
+    # com a versao trocando todo ciclo, sempre haveria uma entre duas
+    # reversoes e o congelamento nunca chegaria.
+    (["revertida", "ancorada"], 0),
+    (["revertida", "adotada"], 1),
+    (["revertida", "revertida", "encurtada"], 2),
+    (["ancorada", "revertida", "adotada", "revertida"], 2),
+    # Ciclos sem tentativa nao contam nem zeram. `congelada` em especial NAO
+    # pode zerar: e consequencia de duas reversoes, e zerar desfaria o
     # congelamento sozinho no ciclo seguinte.
-    (["inalterada", "revertida"], 1),
-    (["congelada", "revertida"], 1),
-    (["rejeitada", "revertida"], 1),
-    (["abaixo_do_piso", "revertida"], 1),
-    (["congelada", "revertida", "revertida"], 2),
+    (["revertida", "inalterada"], 1),
+    (["revertida", "congelada"], 1),
+    (["revertida", "rejeitada"], 1),
+    (["revertida", "abaixo_do_piso"], 1),
+    (["revertida", "revertida", "congelada"], 2),
 ])
-def test_contagem_de_reversoes_para_um_historico_completo(
-        monkeypatch, historico, esperado):
-    """`historico` e o que esta NA TABELA, mais recente primeiro — inclusive
-    os status que a consulta nao traz. O dublê aplica o mesmo filtro do
-    `WHERE` (travado pelo teste acima) e o resultado e a regra composta:
-    consulta + laco, que e o que roda em producao."""
-    import backend.modeling.calibragem.repositorio as repo
-
-    fetchall = [(s,) for s in historico if s in STATUS_QUE_A_CONSULTA_TRAZ]
-    monkeypatch.setattr(repo, "_conn",
-                        lambda: _ConexaoGravadora(_CursorGravador(fetchall=fetchall)))
-
-    assert repo.contar_reversoes_seguidas("BTTS", "") == esperado
+def test_contagem_de_reversoes_para_um_historico_completo(historico, esperado):
+    """`historico` em ordem de gravacao (mais antiga primeiro)."""
+    linhas = [{"id": i, "familia": "BTTS", "liga": "", "status": st}
+              for i, st in enumerate(historico, 1)]
+    assert reversoes_seguidas_do_historico(linhas, "BTTS", "") == esperado
 
 
 def test_guarda_de_conexao_do_conftest_esta_armada():
