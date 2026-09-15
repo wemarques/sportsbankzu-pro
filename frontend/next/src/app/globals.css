@@ -145,3 +145,23 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* #254 tokens da reformulacao — copia de src/lib/tokens.ts (o teste trava os hex) */
+:root {
+  --sb-tinta: #15161A;
+  --sb-painel: #22242B;
+  --sb-linha: #2C2E36;
+  --sb-hover: #262830;
+  --sb-texto: #E6E4DD;
+  --sb-texto-apagado: #93959C;
+  --sb-talao: #E3D9AE;
+  --sb-tinta-do-talao: #1B1710;
+  --sb-tinta-apoiada: #4A4436;
+  --sb-confianca: #4FB3BF;
+  --sb-contra-texto: #E8665A;
+  --sb-contra: #E0533F;
+  --sb-raio-talao: 4px;
+  --sb-raio-painel: 8px;
+}
+.tnum { font-variant-numeric: tabular-nums; }
+.sb-foco:focus-visible { outline: 2px solid var(--sb-texto); outline-offset: 2px; }
