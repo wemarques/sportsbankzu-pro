@@ -28,7 +28,7 @@ Tema escuro único. Nada da identidade atual é sagrado além do nome.
 
 ## 2. Tokens
 
-Cada cor tem um significado, e só um. Contrastes (WCAG 2.1) na coluna da direita foram calculados sobre `painel = #1E2026`; com `painel = #22242B` caem alguns décimos e são **recalculados pelo teste de contraste da fase 0**, que é a fonte de verdade.
+Cada cor tem um significado, e só um. Contrastes (WCAG 2.1) na coluna da direita foram calculados sobre `painel = #1E2026`; com `painel = #22242B` caem alguns décimos e são **recalculados pelo teste de contraste da fase 0**, que é a fonte de verdade. A matriz do teste **deriva dos usos reais**, hover incluído: todo par (texto, superfície) que algum componente produz entra nela.
 
 | Token | Hex | Significa | Contraste |
 |---|---|---|---|
@@ -37,7 +37,7 @@ Cada cor tem um significado, e só um. Contrastes (WCAG 2.1) na coluna da direit
 | `linha` | `#2C2E36` | divisórias | — |
 | `hover` | `#262830` | superfície um passo acima; único estado de hover | — |
 | `texto` | `#E6E4DD` | leitura | 12,8–14,2:1 sobre tinta/painel |
-| `texto-apagado` | `#8B8D94` | apoio, amostra, "sem preço", "amostra curta" | 4,9–5,5:1 |
+| `texto-apagado` | `#93959C` | apoio, amostra, "sem preço", "amostra curta". Subiu de `#8B8D94` porque sobre `hover` dava 4,43:1 | 4,91:1 sobre hover · 5,18:1 sobre painel · 6,04:1 sobre tinta |
 | `talao` | `#E3D9AE` | **o pick recomendado, e nada mais.** Só envolve veredito, frequência e linha de preço | — |
 | `tinta-do-talao` | `#1B1710` | texto e números dentro do talão (bold para chance e preço) | 12,6:1 sobre talão |
 | `tinta-apoiada` | `#4A4436` | apoio dentro do talão | 6,8:1 sobre talão |
@@ -180,7 +180,7 @@ Todas as frases vivem em `lib/copy.ts` (templates com tokens `{term:edge}` que v
 
 **Banca (`/banca`).** Input "Sua banca" (foco ao entrar, vírgula decimal), consequência em texto ("cada pick sugere uma fração dela, hoje até R$ 25 por jogo"), link "como a fração é calculada → glossário#stake". Validação inline em `contra-texto` ("banca precisa ser um valor em reais"); confirmação "banca salva" no mesmo slot. Indefinida: input vazio + "Defina a banca para ver quanto apostar em cada jogo." localStorage corrompido → indefinida, sem throw.
 
-**Desempenho (`/desempenho`).** Ordem: desfecho, depois calibração. Filtros na URL: período (7 dias, 30 dias, temporada), família, liga.
+**Desempenho (`/desempenho`).** Ordem: desfecho, depois calibração. Filtros na URL: período (7 dias, 30 dias, temporada), família, liga. O período ativo aparece por extenso ao lado do segmento ("03/09–hoje"), para o operador não confiar em palavra mágica.
 
 ```
 Acerto              58 de cada 100 picks · 221 jogos
