@@ -143,3 +143,56 @@ escopo deste item.
 (desfaz), congelamento após duas reversões sem validação (trava para humano).
 
 **Isto não liga a camada.** `CALIBRAGEM_ENABLED` segue `false`; ligar é decisão separada.
+
+---
+
+## 8. Emenda #253-a — julgamento por família
+
+### 8.1 Motivo
+A janela por célula de liga (§7) não junta 20 jogos em 10 ciclos em nenhuma das 20 ligas. Somando as
+ligas da família, sobre as publicações reais de 09-03 a 09-14 (28 inícios de janela a cada 8h):
+**mediana 5,5 ciclos, p90 10, máximo 11** até 20 jogos.
+
+### 8.2 Desenho
+`governanca.julgar_familia(janela, vigencia, ancoras, vigentes, reversoes_seguidas)` substitui
+`avaliar_reversao`. Entradas por célula da família: `vigencia[(f, l)]`, `ancoras[(f, l)]`,
+`vigentes[(f, l)]`.
+
+- **Curva servida do pick** (`governanca.curva_servida_do_pick`): última cópia vigente da célula
+  `(f, liga do pick)` com `criada_em < publicado_em`; sem ela, a da célula `(f, "")`; sem ela, `(0, 1)`.
+  É a ordem de `curva.aplicar_versao` (`parametros.get((f, l)) or parametros.get((f, ""))`).
+- **Âncora do pick** (`governanca.ancora_do_pick`): `ancoras[(f, liga)]`, senão `ancoras[(f, "")]`,
+  senão `(0, 1)`.
+- **Janela:** picks da família com `publicado_em > desde`, `desde` = âncora de `(f, "")`; sem histórico
+  dela, o `desde` mais recente entre as células da família; nenhum → vazia.
+- **Veredito:** < 20 jogos → `manter`. Servido pior → `reverter` (ou `congelar` com reversões seguidas
+  da família ≥ 1, contadas na célula `(f, "")`). Não pior e alguma célula vigente ≠ sua âncora →
+  `ancorar`. Senão `manter`.
+- **Aplicação** (`ciclo.planejar`): o veredito ≠ `manter` gera linha para **todas** as células da
+  família — as do ajuste e as vigentes fora dele (`n_jogos=0`, `origem="julgamento-familia"`).
+  Congelamento pegajoso por célula continua. `manter` → `avaliar_proposta` por célula, com teto contra a
+  própria âncora.
+
+### 8.3 Critérios de aceite
+1. 5 ligas, 1 jogo por liga por ciclo, servida pior: a família reverte no ciclo 5, todas as células; o
+   controle por liga teria 4 jogos.
+2. Mesmo cenário, servida melhor: todas `ancorada` no ciclo 5.
+3. Servida pior por 9 ciclos: `revertida` no 5, `congelada` em todas no 9.
+4. Pick publicado antes de a liga ter vigente própria é pontuado pela curva da família.
+5. Célula vigente fora do ajuste também reverte.
+6. Teto de 4pp por célula continua valendo em todo ciclo.
+
+### 8.4 Efeito acumulado (Etapa 5)
+| horizonte | #253 (por liga) | #253-a (por família) |
+|---|---|---|
+| 1 ciclo | ≤ 2pp; ≤ 4pp da âncora | igual |
+| 10 ciclos | nenhuma liga julgada; teto é a única rede | cada família julgada ao menos uma vez em 90% dos inícios medidos (p90 = 10 ciclos) |
+| 100 ciclos | 14/20 ligas julgadas ≥ 1 vez | uma janela nova a cada ~5,5 ciclos: ~18 julgamentos por família; cada `ancorada` move a âncora ≤ 4pp e exige 20 jogos novos sem perder |
+
+Redes provadas em teste forçado: teto (para), reversão da família (desfaz), congelamento da família
+(trava para humano).
+
+### 8.5 Contratos de saída (Etapa 2-bis)
+Mesmos status do #253; muda **quantas** linhas um veredito escreve (todas as células da família). Os
+leitores (`carregar_vigentes`, serving, `limiares_por_familia`, ensaio) não mudam de contrato.
+`avaliar_reversao` sai do código (sem chamador em produção).

@@ -230,6 +230,28 @@ def _vigente_da_celula(vigentes: Dict[tuple, dict], chave: tuple) -> Optional[di
     return {"versao": VERSAO_LEGADO, "a": 0.0, "b": 1.0, "criada_em": None}
 
 
+def desde_da_familia(ancoras: Dict[tuple, dict], familia: str, celulas) -> object:
+    """Onde a janela da FAMILIA abre (#253-a).
+
+    O `desde` da ancora da celula-familia `(familia, "")`: todo veredito da
+    familia grava linha nela, entao ela marca o ultimo julgamento. Sem
+    historico dela, o `desde` mais recente entre as celulas da familia —
+    conservador: nao julga jogos anteriores a qualquer celula existir.
+    Nenhum -> None (janela vazia).
+    """
+    propria = ancoras.get((familia, ""))
+    if propria is not None:
+        return propria.get("desde")
+    desdes = [ancoras[c]["desde"] for c in celulas
+              if c in ancoras and ancoras[c].get("desde") is not None]
+    if not desdes:
+        return None
+    try:
+        return max(desdes)
+    except TypeError:
+        return None
+
+
 def planejar(picks, ajuste, vigentes, historico=None) -> dict:
     """Todas as decisoes de um ciclo, SEM escrever uma linha.
 
@@ -239,8 +261,12 @@ def planejar(picks, ajuste, vigentes, historico=None) -> dict:
 
     `historico`: as linhas de `calibragem_versoes` (#253). `None` le do banco
     uma vez (`repositorio.carregar_historico`, um SELECT). A simulacao
-    multi-ciclo dos testes passa a lista em memoria. Ancora, vigencia, ultimo
-    status e reversoes seguidas saem dela por funcoes puras.
+    multi-ciclo dos testes passa a lista em memoria.
+
+    #253-a: o julgamento e POR FAMILIA (`governanca.julgar_familia`), somando
+    as ligas; o veredito vale para TODAS as celulas da familia, inclusive as
+    vigentes que nao entraram no ajuste deste ciclo. Sem veredito, cada
+    celula segue na trava e no teto contra a propria ancora.
     """
     if historico is None:
         historico = repositorio.carregar_historico()
@@ -249,12 +275,36 @@ def planejar(picks, ajuste, vigentes, historico=None) -> dict:
 
     contadores = {"celulas": 0, "adotadas": 0, "encurtadas": 0,
                   "revertidas": 0, "congeladas": 0, "ancoradas": 0}
-    por_celula = {}
+    picks_por_familia: Dict[str, list] = {}
     for p in picks:
-        por_celula.setdefault((p.familia, p.liga), []).append(p)
+        picks_por_familia.setdefault(p.familia, []).append(p)
+
+    # Um veredito por familia, antes de olhar celula por celula.
+    familias = sorted({f for f, _l in ajuste if f})
+    vereditos: Dict[str, dict] = {}
+    for familia in familias:
+        celulas = {c for c in ajuste if c[0] == familia} | {c for c in vigentes if c[0] == familia}
+        desde = desde_da_familia(ancoras, familia, celulas)
+        vereditos[familia] = governanca.julgar_familia(
+            janela_de_reversao(picks_por_familia.get(familia, []), desde),
+            vigencia, ancoras,
+            {c: {"a": v["a"], "b": v["b"]} for c, v in vigentes.items() if c[0] == familia},
+            repositorio.reversoes_seguidas_do_historico(historico, familia, ""))
+
+    # Celulas vigentes fora do ajuste tambem recebem o veredito da familia:
+    # revertida so no ajuste deixaria uma liga sem amostra neste ciclo
+    # publicando a curva que a familia acabou de reprovar.
+    itens = list(ajuste.items())
+    for chave in sorted(vigentes):
+        familia = chave[0]
+        if chave in ajuste or familia not in vereditos:
+            continue
+        if vereditos[familia]["acao"] == "manter":
+            continue
+        itens.append((chave, {"n_jogos": 0, "origem": "julgamento-familia"}))
 
     decisoes: Dict[tuple, dict] = {}
-    for chave, proposta in ajuste.items():
+    for chave, proposta in itens:
         familia, liga = chave
         if not familia:
             continue
@@ -293,40 +343,32 @@ def planejar(picks, ajuste, vigentes, historico=None) -> dict:
             }
             continue
 
-        # #253: a janela abre na ANCORA, nao na vigente; cada pick e julgado
-        # pela versao que o serviu. Ver `janela_de_reversao` e
-        # `governanca.avaliar_reversao`.
-        ancora = ancoras.get(chave, {"a": 0.0, "b": 1.0, "desde": None})
-        servidos = janela_de_reversao(por_celula.get(chave, []), ancora["desde"])
-        rev = governanca.avaliar_reversao(
-            servidos, vigencia.get(chave, []), ancora,
-            {"a": vig["a"], "b": vig["b"]},
-            repositorio.reversoes_seguidas_do_historico(historico, familia, liga))
-        limite = rev["limite_proximo"]
+        rev = vereditos[familia]
+        a_anc, b_anc = governanca.ancora_do_pick(ancoras, familia, liga)
+        ancora = {"a": a_anc, "b": b_anc}
 
         if rev["acao"] == "congelar":
             resultado = {"a": vig["a"], "b": vig["b"], "status": "congelada",
                          "fator_encurtamento": None, "motivo": rev["motivo"]}
         elif rev["acao"] == "reverter":
             contadores["revertidas"] += 1
-            # Volta para a ANCORA: a ultima curva validada (ou o legado).
-            resultado = {"a": ancora["a"], "b": ancora["b"],
-                         "status": "revertida", "fator_encurtamento": None,
-                         "motivo": rev["motivo"]}
+            # Volta para a ANCORA da celula: a ultima curva validada (ou a da
+            # familia, ou o legado — a mesma ordem que pontuou os picks).
+            resultado = {"a": a_anc, "b": b_anc, "status": "revertida",
+                         "fator_encurtamento": None, "motivo": rev["motivo"]}
         elif rev["acao"] == "ancorar":
             contadores["ancoradas"] += 1
             # A vigente NAO muda: a linha so marca a validacao e abre uma
-            # janela nova. Um evento por celula por ciclo -- a proposta fica
-            # para o proximo, ja medida contra a ancora nova.
+            # janela nova. Um evento por celula por ciclo.
             resultado = {"a": vig["a"], "b": vig["b"], "status": "ancorada",
                          "fator_encurtamento": None, "motivo": rev["motivo"]}
         else:
             resultado = dict(governanca.avaliar_proposta(
                 proposta, {"a": vig["a"], "b": vig["b"]},
-                proposta["n_jogos"], limite=limite, ancora=ancora))
-            # O veredito da reversao entra no motivo TAMBEM quando e `manter`:
-            # quantos jogos a janela da ancora tinha e a unica forma de ler se
-            # a reversao esta viva ou so nao teve o que julgar.
+                proposta["n_jogos"], limite=rev["limite_proximo"], ancora=ancora))
+            # O veredito da familia entra no motivo TAMBEM quando e `manter`:
+            # quantos jogos a janela tinha e a unica forma de ler se o
+            # julgamento esta vivo ou so nao teve o que julgar.
             resultado["motivo"] = "; ".join(
                 parte for parte in (rev["motivo"], resultado["motivo"]) if parte)
             if resultado["status"] == "adotada":

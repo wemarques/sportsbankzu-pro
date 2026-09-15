@@ -13876,3 +13876,57 @@ Redes: teto (para), reversão à âncora (desfaz), congelamento após duas rever
 ### Lição aprendida
 Uma janela de avaliação ancorada no objeto que está sendo avaliado se move junto com ele. Se o laço troca a versão mais rápido do que a janela enche, a avaliação nunca acontece — e o sintoma é silêncio, não erro. A âncora tem de ser algo que só muda por julgamento. O mesmo vale para contadores de "falhas seguidas": o evento que zera tem de ser um sucesso **medido**, não uma atividade qualquer do laço.
 
+---
+
+## 253-a — O julgamento da camada #248 passa a ser por família, somando as ligas
+**Data:** 2026-09-15 | **Arquivos:** `backend/modeling/calibragem/governanca.py`, `ciclo.py`, `tests/calibragem/test_08_reversao.py`, `test_11_ciclo.py`, `test_16_julgamento_por_familia.py` (novo), `tests/calibragem/simulacao.py` (novo), `docs/superpowers/specs/2026-09-15-governanca-por-ancora.md` (§8), `docs/REGRAS_ATIVAS.md`, `CLAUDE.md` | **Severidade:** Alta | **Status:** Implementado — camada continua DESLIGADA
+
+### Problema identificado
+No #253 a janela de julgamento era por célula de liga. Medido: cada liga junta de 0,27 a 3,62 jogos pré-apito com desfecho por dia; **nenhuma das 20 ligas chegava a 20 jogos em 10 ciclos**, e 6 não chegavam nem em 100. Por semanas a única rede ativa era o teto de 4pp.
+
+### Causa raiz
+A amostra de uma família é dividida entre ~20 ligas, e o estimador cria célula para toda liga. Julgar cada célula na própria amostra divide o sinal pelo número de ligas.
+
+### Correções aplicadas
+**Regra antes do código:** `REGRAS_ATIVAS` #253-a. **Spec:** §8 de `docs/superpowers/specs/2026-09-15-governanca-por-ancora.md`.
+
+**Camada 1 — o pick e sua curva (`governanca.curva_servida_do_pick`, `governanca.ancora_do_pick`):** a curva que serviu o pick segue a ordem de `curva.aplicar_versao` — a vigente da liga no instante da publicação; sem ela, a da família; sem ela, o legado. A âncora do pick é a da liga, senão a da família, senão o legado.
+
+**Camada 2 — um veredito por família (`governanca.julgar_familia`, substitui `avaliar_reversao`):** janela = picks de todas as ligas da família publicados desde o `desde` da âncora de `(família, "")` (`ciclo.desde_da_familia`; sem histórico dela, o mais recente entre as células). Servido pior com ≥ 20 jogos → `reverter` (ou `congelar` com reversões seguidas da família ≥ 1); não pior e alguma célula fora da âncora → `ancorar`.
+
+**Camada 3 — aplicação (`ciclo.planejar`):** o veredito ≠ `manter` gera linha para **todas** as células da família, inclusive vigentes fora do ajuste (`n_jogos=0`, `origem="julgamento-familia"`). `manter` → trava e teto por célula, como no #253.
+
+### Prova empírica (Etapas 4 e 5)
+`tests/calibragem/test_16_julgamento_por_familia.py` (8 casos), com `tests/calibragem/simulacao.py` rodando o `ciclo.planejar` real em laço (mesmo plano de gravação, mesmas funções puras). Contra o código de `ab8dfbe` a coleta falha (`julgar_familia` inexistente).
+
+| cenário forçado (5 ligas, 1 jogo por liga por ciclo) | resultado | controle |
+|---|---|---|
+| servida pior | as 6 células `revertida` no ciclo 5, "20 jogos" no motivo, todas de volta a `(0, 1)` | a janela de uma liga no mesmo ciclo: 4 jogos |
+| servida melhor | as 6 células `ancorada` no ciclo 5 | — |
+| servida pior, 10 ciclos | `revertida` no 5; as 6 `congelada` no 9 e no 10 | — |
+| liga fora do ajuste, vigente | `revertida` junto com a família, `origem=julgamento-familia`, vigente `(0, 1)` | — |
+| proposta distante, 8 ciclos | toda célula ≤ 4pp da própria âncora em todo ciclo | — |
+
+`test_16` também trava a ordem do serving: pick publicado antes de a liga ter vigente é pontuado pela curva da família; liga sem célula usa a da família; antes de qualquer vigente, o legado.
+
+Suíte da camada: `tests/calibragem` 332 passed.
+
+Ensaio do primeiro ciclo contra o banco de produção (só leitura), código de `ab8dfbe` (worktree) e código novo **no mesmo instante**: plano idêntico — 105 células com `(a, b, status)` iguais; os dois `celulas=126 adotadas=0 encurtadas=18 revertidas=0 ancoradas=0 congeladas=0`, `VOLUME: 402 -> 403 (+1)`. A janela das seis famílias passou de **0 jogos** (célula-família sem picks próprios) para **16 jogos** desde a âncora de 09-14 04:28 — a 4 do piso.
+
+### Contratos de saída (Etapa 2-bis)
+Mesmos status e colunas do #253. Muda **quantas** linhas um veredito escreve (todas as células da família). `carregar_vigentes`, serving, `limiares_por_familia`, índice único e ensaio não mudam de contrato. `avaliar_reversao` removida (sem chamador).
+
+### Efeito acumulado (Etapa 5)
+Medido sobre as publicações reais de 09-03 a 09-14 (28 inícios de janela a cada 8h): a janela da família junta 20 jogos em **mediana de 5,5 ciclos, p90 10, máximo 11**.
+
+| horizonte | #253 (por liga) | #253-a (por família) |
+|---|---|---|
+| 1 ciclo | ≤ 2pp; ≤ 4pp da âncora | igual |
+| 10 ciclos | nenhuma liga julgada | família julgada em 90% dos inícios medidos |
+| 100 ciclos | 14/20 ligas julgadas ≥ 1 vez | ~18 julgamentos por família; cada `ancorada` move a âncora ≤ 4pp e exige 20 jogos novos sem perder |
+
+Redes provadas em teste forçado: teto (para), reversão da família (desfaz), congelamento da família (trava para humano). **`CALIBRAGEM_ENABLED` segue `false`.**
+
+### Lição aprendida
+Uma rede de segurança tem de ser dimensionada pela taxa de chegada de dados da unidade em que ela julga, não pela da unidade em que o modelo aprende. O estimador pode encolher cada liga para a família e aprender com pouca amostra; o julgamento não tem esse atalho. Com 20 ligas dividindo ~20 jogos por dia, julgar por liga é esperar semanas.
+

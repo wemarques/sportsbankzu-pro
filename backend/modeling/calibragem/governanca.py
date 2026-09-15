@@ -5,14 +5,14 @@ A trava e expressa em pontos de PROBABILIDADE, nao em `a` e `b`. Limitar os
 parametros separadamente e dificil de raciocinar: o mesmo delta em `a` move
 pouco no meio da escala e muito nas pontas.
 
-#253 - dois limites, e um julgamento contra a ANCORA:
+#253 - dois limites por celula, contra a ANCORA:
   * trava por ciclo: `distancia(vigente, final) <= PASSO_MAXIMO_PP`;
-  * teto acumulado: `distancia(ancora, final) <= TETO_DERIVA_PP`;
-  * reversao/validacao: a curva que de fato SERVIU cada pick contra a ancora,
-    na janela aberta desde a ancora (nao desde a vigente, que troca todo ciclo).
+  * teto acumulado: `distancia(ancora, final) <= TETO_DERIVA_PP`.
+#253-a - o julgamento (reverter/ancorar/congelar) e POR FAMILIA, somando as
+ligas: por liga, nenhuma das 20 juntava 20 jogos em 10 ciclos.
 """
 import logging
-from typing import Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 from backend.modeling.calibragem import (
     MIN_N_JOGOS, PASSO_MAXIMO_PP, TETO_DERIVA_PP,
@@ -31,16 +31,18 @@ _ITER_BUSCA = 40
 # a cada ciclo, que e a forma do defeito que o teto existe para fechar.
 _MOVIMENTO_MINIMO = 0.001
 
+_LEGADO = (0.0, 1.0)
+
 
 def curva_servida(vigencia: Sequence[tuple], instante) -> Tuple[float, float]:
-    """O `(a, b)` que estava vigente quando o pick foi publicado.
+    """O `(a, b)` que estava vigente numa celula quando o pick foi publicado.
 
     `vigencia` e a lista `(criada_em, a, b)` das copias `vigente`/`substituida`
     da celula, em ordem de gravacao. Vale a ultima com `criada_em < instante`
     (estrito: publicado no instante da troca nao foi servido por ela). Antes
     da primeira, a versao 0, `(0, 1)`.
     """
-    a, b = 0.0, 1.0
+    a, b = _LEGADO
     if instante is None:
         return a, b
     for criada_em, a_v, b_v in vigencia:
@@ -52,6 +54,44 @@ def curva_servida(vigencia: Sequence[tuple], instante) -> Tuple[float, float]:
         except TypeError:
             break
     return a, b
+
+
+def _vigorava(vigencia: Sequence[tuple], instante) -> bool:
+    if instante is None:
+        return False
+    for criada_em, _a, _b in vigencia:
+        try:
+            if criada_em < instante:
+                return True
+        except TypeError:
+            return False
+        break
+    return False
+
+
+def curva_servida_do_pick(vigencia: Dict[tuple, Sequence[tuple]], pick) -> Tuple[float, float]:
+    """A curva que SERVIU o pick, na ordem do serving (#253-a).
+
+    `curva.aplicar_versao` usa `parametros.get((familia, liga)) or
+    parametros.get((familia, ""))`: a celula da liga quando ela tem vigente,
+    senao a celula-familia. No instante da publicacao: se a liga ja tinha
+    vigente propria, a dela; senao a da familia; senao o legado.
+    """
+    familia, liga, instante = pick.familia, pick.liga, pick.publicado_em
+    if liga:
+        propria = vigencia.get((familia, liga), [])
+        if _vigorava(propria, instante):
+            return curva_servida(propria, instante)
+    return curva_servida(vigencia.get((familia, ""), []), instante)
+
+
+def ancora_do_pick(ancoras: Dict[tuple, dict], familia: str, liga: str) -> Tuple[float, float]:
+    """A ancora da celula que responde pelo pick: a da liga, senao a da
+    familia, senao o legado."""
+    anc = ancoras.get((familia, liga)) or ancoras.get((familia, ""))
+    if not anc:
+        return _LEGADO
+    return float(anc["a"]), float(anc["b"])
 
 
 def avaliar_proposta(proposta: dict, vigente: dict, n_jogos: int,
@@ -133,49 +173,55 @@ def brier(pares: Sequence[Tuple[float, int]]):
     return sum((p - y) ** 2 for p, y in pares) / len(pares)
 
 
-def avaliar_reversao(janela: Sequence, vigencia: Sequence[tuple], ancora: dict,
-                     vigente: dict, reversoes_seguidas: int) -> dict:
-    """Julga, na janela da ANCORA, a curva que serviu cada pick contra a ancora.
+def julgar_familia(janela: Sequence, vigencia: Dict[tuple, Sequence[tuple]],
+                   ancoras: Dict[tuple, dict], vigentes: Dict[tuple, dict],
+                   reversoes_seguidas: int) -> dict:
+    """Um veredito para a FAMILIA inteira (#253-a).
 
-    `janela`: picks publicados depois do `desde` da ancora (#253). Cada um e
-    pontuado com a versao vigente no instante em que foi publicado
-    (`curva_servida`) — ajustada antes de o desfecho dele existir, logo fora
-    da amostra por construcao, mesmo com a versao trocando todo ciclo.
+    `janela`: picks da familia, de todas as ligas, publicados depois do
+    `desde` da ancora da familia. Cada um e pontuado pela curva que o serviu
+    (`curva_servida_do_pick`, ajustada antes de o desfecho dele existir: fora
+    da amostra por construcao) e pela ancora da sua celula (`ancora_do_pick`).
+    `vigentes`: as celulas vigentes da familia, para saber se alguma ja saiu
+    da ancora.
 
-    Reverte pelo PONTO, sem esperar o IC excluir zero. A assimetria justifica:
-    reversao falsa volta para uma curva ja validada e custa quase nada;
-    reversao que nao acontece deixa uma curva ruim publicando mais um ciclo.
-    Pelo mesmo motivo, `ancorar` exige so nao perder: a ancora nova ainda fica
-    sob o teto e sob a proxima janela.
+    Reverte pelo PONTO, sem esperar o IC excluir zero: reversao falsa volta
+    para curvas ja validadas e custa quase nada; reversao que nao acontece
+    deixa curvas ruins publicando mais um ciclo. `ancorar` exige so nao
+    perder: a ancora nova continua sob o teto e sob a proxima janela.
     """
     n_jogos = len({p.match_id for p in janela})
     if n_jogos < MIN_N_JOGOS:
         return {"acao": "manter",
-                "motivo": f"janela da ancora com {n_jogos} jogos < {MIN_N_JOGOS}",
-                "limite_proximo": PASSO_MAXIMO_PP}
+                "motivo": f"janela da familia com {n_jogos} jogos < {MIN_N_JOGOS}",
+                "limite_proximo": PASSO_MAXIMO_PP, "n_jogos": n_jogos}
 
-    a_anc, b_anc = float(ancora["a"]), float(ancora["b"])
     # A probabilidade PUBLICADA e a composta: `aplicar(legado(raw), a, b)`
     # (#248, C1). Medir o Brier sobre `p_raw` compararia curvas que nenhuma
     # versao serviu.
-    b_serv = brier([(aplicar(entrada_da_curva(p), *curva_servida(vigencia, p.publicado_em)), p.y)
+    b_serv = brier([(aplicar(entrada_da_curva(p), *curva_servida_do_pick(vigencia, p)), p.y)
                     for p in janela])
-    b_ancora = brier([(aplicar(entrada_da_curva(p), a_anc, b_anc), p.y) for p in janela])
-    placar = f"brier servido {b_serv:.5f} x ancora {b_ancora:.5f} em {n_jogos} jogos"
+    b_anc = brier([(aplicar(entrada_da_curva(p), *ancora_do_pick(ancoras, p.familia, p.liga)), p.y)
+                   for p in janela])
+    placar = f"brier servido {b_serv:.5f} x ancora {b_anc:.5f} em {n_jogos} jogos"
 
-    if b_serv > b_ancora:
+    if b_serv > b_anc:
         if reversoes_seguidas >= 1:
             logger.error(
-                "[calibragem] celula CONGELADA apos 2 reversoes seguidas sem "
+                "[calibragem] familia CONGELADA apos 2 reversoes seguidas sem "
                 "validacao no meio: %s", placar)
             return {"acao": "congelar",
                     "motivo": f"duas reversoes seguidas; enviado para revisao humana; {placar}",
-                    "limite_proximo": 0.0}
+                    "limite_proximo": 0.0, "n_jogos": n_jogos}
         return {"acao": "reverter", "motivo": placar,
-                "limite_proximo": PASSO_MAXIMO_PP / 2}
+                "limite_proximo": PASSO_MAXIMO_PP / 2, "n_jogos": n_jogos}
 
-    if (float(vigente["a"]), float(vigente["b"])) != (a_anc, b_anc):
+    fora_da_ancora = any(
+        (float(v["a"]), float(v["b"])) != ancora_do_pick(ancoras, cel[0], cel[1])
+        for cel, v in vigentes.items())
+    if fora_da_ancora:
         return {"acao": "ancorar", "motivo": placar,
-                "limite_proximo": PASSO_MAXIMO_PP}
-    return {"acao": "manter", "motivo": f"vigente ja e a ancora; {placar}",
-            "limite_proximo": PASSO_MAXIMO_PP}
+                "limite_proximo": PASSO_MAXIMO_PP, "n_jogos": n_jogos}
+    return {"acao": "manter",
+            "motivo": f"todas as celulas ja estao na ancora; {placar}",
+            "limite_proximo": PASSO_MAXIMO_PP, "n_jogos": n_jogos}

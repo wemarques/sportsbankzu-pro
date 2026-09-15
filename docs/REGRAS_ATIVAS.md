@@ -1503,8 +1503,37 @@ Com a trava de 2pp encurtando a proposta todo ciclo, toda celula ganhava versao 
 pre-apito (221 jogos, 11,1 dias, 20 ligas) cada liga junta de 0,27 a 3,62 jogos por dia: nenhuma
 liga chega a 20 jogos em 10 ciclos, 14 de 20 chegam em 100 ciclos. Por semanas, quem segura a curva
 e o TETO, nao a reversao. Julgar mais cedo exige somar ligas da mesma familia — mudanca de desenho,
-com Etapa 5 propria.
+com Etapa 5 propria: FEITA no [[#253-a]] (julgamento por familia, mediana de 5,5 ciclos ate 20 jogos).
 
 **Proibido:** medir a janela a partir da `criada_em` da vigente; julgar a janela com a vigente
 atual em vez da versao que serviu cada pick; remover o teto de deriva ou eleva-lo sem nova
 medicao registrada; ligar `CALIBRAGEM_ENABLED` sem a Etapa 5 do #253 provada em teste.
+
+---
+
+### #253-a — O julgamento da camada #248 e POR FAMILIA, somando as ligas; a acao vale para todas as celulas da familia
+
+**Tipo:** Regra (Calibracao / Governanca do laco)
+**Data:** 2026-09-15
+**Relacionado:** [[#253]], proibicao 16
+
+**Por que:** no #253 a janela era por celula de liga. Medido: cada liga junta de 0,27 a 3,62 jogos por
+dia; nenhuma das 20 ligas chegava a 20 jogos em 10 ciclos. Somando as ligas da familia, a janela junta
+20 jogos em mediana de 5,5 ciclos (p90 10, max 11, 28 inicios de janela sobre as publicacoes reais de
+09-03 a 09-14).
+
+**Regra:**
+1. Um veredito por FAMILIA por ciclo. Janela = picks da familia (todas as ligas) publicados depois do
+   `desde` da ancora da celula-familia `(familia, "")` (sem historico dela: o `desde` mais recente entre
+   as celulas da familia).
+2. Cada pick e pontuado pela curva que o serviu **na ordem do serving** (`curva.aplicar_versao`): a
+   vigente da celula da liga naquele instante; sem ela, a da celula-familia; sem ela, `(0, 1)`. E
+   comparado com a ancora da SUA celula (liga, senao familia, senao legado).
+3. Veredito com >= 20 jogos: servido pior -> TODAS as celulas da familia revertem para as proprias
+   ancoras; servido nao pior e alguma celula fora da ancora -> TODAS `ancorada`; duas reversoes seguidas
+   da familia sem validacao -> TODAS `congelada`. "Todas" inclui celula vigente que nao entrou no ajuste
+   do ciclo.
+4. Sem veredito (`manter`), cada celula segue na trava de 2pp e no teto de 4pp contra a propria ancora.
+
+**Proibido:** julgar por celula de liga isolada; aplicar o veredito so as celulas do ajuste; pontuar o
+pick com a curva da familia quando a liga tinha vigente propria no instante da publicacao.

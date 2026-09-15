@@ -324,7 +324,7 @@ def test_celula_sem_historico_tem_janela_vazia_e_motivo_registra(monkeypatch):
     linhas = _linhas_persistidas(registro)
     linha = next(p for p in linhas
                 if p["familia"] == "Over/Under" and p["liga"] == "x")
-    assert "janela da ancora com 0 jogos" in linha["motivo"], linha["motivo"]
+    assert "janela da familia com 0 jogos" in linha["motivo"], linha["motivo"]
 
 
 def test_limiares_sao_rederivados_e_chegam_na_linha_sem_mexer_no_default(monkeypatch):
