@@ -8,4 +8,5 @@ export default defineConfig({
     setupFiles: ["tests/unit/setup.ts"],
   },
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  css: { postcss: { plugins: [] } },
 });
