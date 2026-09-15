@@ -35,7 +35,9 @@ PRIMEIRO_CICLO = {
     "Double Chance": {"a": 0.056, "b": 1.048},
     "Over/Under":    {"a": 0.047, "b": 1.057},
 }
-VERSAO_ZERO = {familia: {"a": 0.0, "b": 1.0} for familia in PRIMEIRO_CICLO}
+# #253-b: mapas de parametros sao por CELULA; aqui so a celula-familia.
+PRIMEIRO_CICLO = {(familia, ""): par for familia, par in PRIMEIRO_CICLO.items()}
+VERSAO_ZERO = {celula: {"a": 0.0, "b": 1.0} for celula in PRIMEIRO_CICLO}
 
 FIXTURE = (pathlib.Path(__file__).parent / "fixtures" / "amostra_producao.json")
 
@@ -392,8 +394,8 @@ def test_piso_do_ALVO_impede_limiar_estimado_de_um_jogo():
     picks = _sinteticos(200, 1, p=0.55, odd=1.60)          # ev = -0.12
     picks.append(_Pick("mALVO", "Corners", 0.95, 1.60))    # ev = +0.52
 
-    novos, motivos = rederivar(picks, {"Corners": {"a": 0.0, "b": 1.0}},
-                               {"Corners": {"a": 0.5, "b": 1.0}}, atuais)
+    novos, motivos = rederivar(picks, {("Corners", ""): {"a": 0.0, "b": 1.0}},
+                               {("Corners", ""): {"a": 0.5, "b": 1.0}}, atuais)
     assert novos["Corners"] == atuais["Corners"]
     assert "volume publicado apoiado em 1 jogos < 20" in motivos["Corners"]
 
@@ -408,8 +410,8 @@ def test_piso_do_POOL_com_preco_tambem_existe_e_diz_outra_coisa():
     atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
                           "safe_edge": 0.06, "neutro_edge": 0.02}}
     picks = _sinteticos(5, 40, p=0.95, odd=1.60)   # 200 picks, 5 jogos
-    novos, motivos = rederivar(picks, {"Corners": {"a": 0.0, "b": 1.0}},
-                               {"Corners": {"a": 0.5, "b": 1.0}}, atuais)
+    novos, motivos = rederivar(picks, {("Corners", ""): {"a": 0.0, "b": 1.0}},
+                               {("Corners", ""): {"a": 0.5, "b": 1.0}}, atuais)
     assert novos["Corners"] == atuais["Corners"]
     assert "5 jogos com preco < 20" in motivos["Corners"]
 
@@ -419,7 +421,7 @@ def test_os_tres_motivos_de_nao_rederivar_sao_DISTINGUIVEIS():
     motivo nao viajar. Alguem lendo a tabela em tres meses precisa saber."""
     atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
                           "safe_edge": 0.06, "neutro_edge": 0.02}}
-    par = ({"Corners": {"a": 0.0, "b": 1.0}}, {"Corners": {"a": 0.5, "b": 1.0}})
+    par = ({("Corners", ""): {"a": 0.0, "b": 1.0}}, {("Corners", ""): {"a": 0.5, "b": 1.0}})
 
     sem_odd = [_Pick(f"m{i}", "Corners", 0.70, None) for i in range(60)]
     pool_fino = _sinteticos(5, 40, p=0.95)
@@ -435,7 +437,7 @@ def test_o_piso_conta_JOGOS_e_nao_PICKS():
     """40 picks de 5 jogos nao sao 40 observacoes — dividem o placar."""
     atuais = {"Corners": {"safe_ev": 0.08, "neutro_ev": 0.02,
                           "safe_edge": 0.06, "neutro_edge": 0.02}}
-    par = ({"Corners": {"a": 0.0, "b": 1.0}}, {"Corners": {"a": 0.5, "b": 1.0}})
+    par = ({("Corners", ""): {"a": 0.0, "b": 1.0}}, {("Corners", ""): {"a": 0.5, "b": 1.0}})
 
     # mesmos 200 picks; muda so a quantidade de jogos distintos
     poucos_jogos = _sinteticos(5, 40, p=0.95)

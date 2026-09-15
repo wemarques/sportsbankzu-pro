@@ -160,6 +160,23 @@ def distancia_maxima(a1: float, b1: float, a2: float, b2: float,
     return pior
 
 
+def celula_que_serve(mapa, familia: str, liga: str):
+    """Qual celula responde por um pick: a da LIGA, senao a da FAMILIA (#253-b).
+
+    UMA implementacao da ordem do serving. `aplicar_versao` escolhe a curva
+    publicada por aqui; a re-derivacao de limiares, o ensaio e a governanca
+    (ancora e curva servida de cada pick) usam a mesma funcao. Quando cada um
+    tinha a sua copia, a re-derivacao aplicava a curva da familia a toda liga
+    e o volume "preservado" (402 -> 403) nao era o que o serving publicaria
+    (365). `None` quando nenhuma das duas esta no mapa.
+    """
+    if liga and (familia, liga) in mapa:
+        return (familia, liga)
+    if (familia, "") in mapa:
+        return (familia, "")
+    return None
+
+
 def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
                    parametros: Optional[dict] = None):
     """Aplica a versao vigente da celula. Versao 0 delega ao legado.
@@ -196,8 +213,8 @@ def aplicar_versao(raw: float, market: str, league_id: str, regime: str,
         )
         return calibrar_legado(raw, market, league_id, regime)
 
-    chave = (familia, league_id or "")
-    entrada = parametros.get(chave) or parametros.get((familia, ""))
+    celula = celula_que_serve(parametros, familia, league_id or "")
+    entrada = parametros.get(celula) if celula else None
     if not entrada or entrada[0] == VERSAO_LEGADO:
         return calibrar_legado(raw, market, league_id, regime)
 

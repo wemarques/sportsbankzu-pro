@@ -40,8 +40,8 @@ ATUAIS = {"Over/Under": {"safe_ev": 0.06, "neutro_ev": 0.00,
 # A VERSAO 0, exata. Sobre `p_legado`, `aplicar(p, 0, 1) == p`, entao esta
 # entrada reproduz `calibrar_legado` byte a byte — nao "aproximadamente", e
 # e essa a diferenca que a Task 13 comprou.
-VERSAO_ZERO = {"Over/Under": {"a": 0.0, "b": 1.0}}
-NOVO = {"Over/Under": {"a": 0.45, "b": 1.0}}     # sobe ~10 pontos
+VERSAO_ZERO = {("Over/Under", ""): {"a": 0.0, "b": 1.0}}
+NOVO = {("Over/Under", ""): {"a": 0.45, "b": 1.0}}     # sobe ~10 pontos
 
 
 def _amostra(n=400, familia="Over/Under", mercado=MERCADO):
@@ -99,8 +99,8 @@ def test_familia_sem_odd_nao_move_limiar():
     picks = [P("Cards", 0.60, None, 0.45) for _ in range(50)]
     atuais = {"Cards": {"safe_ev": 0.06, "neutro_ev": 0.0,
                         "safe_edge": 0.05, "neutro_edge": 0.02}}
-    novos, motivos = rederivar(picks, {"Cards": {"a": 0.0, "b": 1.0}},
-                               {"Cards": {"a": 0.5, "b": 1.0}}, atuais)
+    novos, motivos = rederivar(picks, {("Cards", ""): {"a": 0.0, "b": 1.0}},
+                               {("Cards", ""): {"a": 0.5, "b": 1.0}}, atuais)
     assert novos["Cards"] == atuais["Cards"]
     # #249-a: "sem odd" e "amostra insuficiente" nao podem sair iguais na
     # linha de auditoria.
@@ -142,7 +142,7 @@ def test_medir_sobre_p_raw_inflaria_a_referencia():
             self.p_raw = self.p_legado = pk.p_raw
 
     atuais = dict(ATUAIS, Corners=dict(ATUAIS["Over/Under"]))
-    versao_zero = dict(VERSAO_ZERO, Corners={"a": 0.0, "b": 1.0})
+    versao_zero = {**VERSAO_ZERO, ("Corners", ""): {"a": 0.0, "b": 1.0}}
     picks = _amostra(familia="Corners", mercado="Escanteios Over 9.5")
 
     do_legado = sum(

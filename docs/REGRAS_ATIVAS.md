@@ -1537,3 +1537,27 @@ dia; nenhuma das 20 ligas chegava a 20 jogos em 10 ciclos. Somando as ligas da f
 
 **Proibido:** julgar por celula de liga isolada; aplicar o veredito so as celulas do ajuste; pontuar o
 pick com a curva da familia quando a liga tinha vigente propria no instante da publicacao.
+
+---
+
+### #253-b — Re-derivacao de limiares e ensaio pontuam cada pick pela curva que o SERVING usaria
+
+**Tipo:** Regra (Calibracao / Limiares)
+**Data:** 2026-09-15
+**Relacionado:** [[#249]], [[#249-a]], [[#253]], [[#253-a]]
+
+**Por que:** `limiares.rederivar` e o ensaio aplicavam a curva da CELULA-FAMILIA a todo pick da
+familia. O serving (`curva.aplicar_versao`) usa a celula da LIGA quando ela tem vigente, e 9 de 20
+ligas tem. Medido no ensaio de 2026-09-15: o ensaio dizia volume 402 -> 403; pontuando cada pick pela
+curva do serving, 402 -> **365** (-9,2%). As ligas com vigente propria em `(0, 1)` ficavam na curva
+legada e herdavam limiares por familia calibrados para a curva nova.
+
+**Regra:**
+1. A ordem "celula da liga, senao celula-familia, senao `(0, 1)`" tem UMA implementacao
+   (`curva.celula_que_serve`), usada pelo serving, pela re-derivacao, pelo ensaio e pela governanca.
+2. `parametros_antigos` e `parametros_novos` sao POR CELULA: as vigentes antes do ciclo e as vigentes
+   depois dele (promocoes aplicadas). Nunca so a celula-familia.
+3. O volume que a re-derivacao preserva e o volume que o serving publicaria.
+
+**Proibido:** re-derivar limiar ou contar volume com um mapa por familia; reimplementar a ordem do
+serving fora de `curva.celula_que_serve`.

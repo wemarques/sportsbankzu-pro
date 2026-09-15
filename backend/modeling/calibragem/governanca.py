@@ -18,7 +18,7 @@ from backend.modeling.calibragem import (
     MIN_N_JOGOS, PASSO_MAXIMO_PP, TETO_DERIVA_PP,
 )
 from backend.modeling.calibragem.curva import (
-    aplicar, distancia_maxima, entrada_da_curva,
+    aplicar, celula_que_serve, distancia_maxima, entrada_da_curva,
 )
 
 logger = logging.getLogger("sportsbankzu.calibragem.governanca")
@@ -70,25 +70,26 @@ def _vigorava(vigencia: Sequence[tuple], instante) -> bool:
 
 
 def curva_servida_do_pick(vigencia: Dict[tuple, Sequence[tuple]], pick) -> Tuple[float, float]:
-    """A curva que SERVIU o pick, na ordem do serving (#253-a).
+    """A curva que SERVIU o pick, na ordem do serving (#253-a, #253-b).
 
-    `curva.aplicar_versao` usa `parametros.get((familia, liga)) or
-    parametros.get((familia, ""))`: a celula da liga quando ela tem vigente,
-    senao a celula-familia. No instante da publicacao: se a liga ja tinha
-    vigente propria, a dela; senao a da familia; senao o legado.
+    A ordem e `curva.celula_que_serve` — a mesma de `curva.aplicar_versao`:
+    a celula da liga quando ela tem vigente, senao a celula-familia. Aqui ela
+    e aplicada ao INSTANTE da publicacao: so disputam as celulas que ja
+    vigoravam naquele momento; nenhuma -> o legado.
     """
     familia, liga, instante = pick.familia, pick.liga, pick.publicado_em
-    if liga:
-        propria = vigencia.get((familia, liga), [])
-        if _vigorava(propria, instante):
-            return curva_servida(propria, instante)
-    return curva_servida(vigencia.get((familia, ""), []), instante)
+    # So disputam a ordem do serving as celulas que ja vigoravam no instante.
+    vigoravam = {c: vigencia[c] for c in ((familia, liga), (familia, ""))
+                 if c in vigencia and _vigorava(vigencia[c], instante)}
+    celula = celula_que_serve(vigoravam, familia, liga)
+    return curva_servida(vigoravam[celula], instante) if celula else _LEGADO
 
 
 def ancora_do_pick(ancoras: Dict[tuple, dict], familia: str, liga: str) -> Tuple[float, float]:
     """A ancora da celula que responde pelo pick: a da liga, senao a da
     familia, senao o legado."""
-    anc = ancoras.get((familia, liga)) or ancoras.get((familia, ""))
+    celula = celula_que_serve(ancoras, familia, liga)
+    anc = ancoras.get(celula) if celula else None
     if not anc:
         return _LEGADO
     return float(anc["a"]), float(anc["b"])

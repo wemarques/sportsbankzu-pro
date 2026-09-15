@@ -7,6 +7,12 @@ que consomem a probabilidade corrigida.
 
 Curva e limiar mudam juntos, na mesma versao e na mesma linha de auditoria:
 separa-los recria a convivencia de dois regimes que o #244 mediu.
+
+#253-b: os mapas de parametros sao POR CELULA `(familia, liga)`, e cada pick e
+pontuado pela celula que o SERVING usaria (`curva.celula_que_serve`: liga,
+senao familia). Os limiares continuam por familia. Com um mapa so da
+celula-familia, o volume "preservado" era o de uma curva que 9 de 20 ligas
+nao recebiam: o ensaio dizia 402 -> 403 e o serving publicaria 365.
 """
 import logging
 import math
@@ -14,7 +20,9 @@ from collections import defaultdict
 from typing import Dict, List, Sequence, Tuple
 
 from backend.modeling.calibragem import MIN_N_JOGOS
-from backend.modeling.calibragem.curva import aplicar, entrada_da_curva
+from backend.modeling.calibragem.curva import (
+    aplicar, celula_que_serve, entrada_da_curva,
+)
 from backend.modeling.calibragem.estimador import contar_jogos
 
 logger = logging.getLogger("sportsbankzu.calibragem.limiares")
@@ -51,7 +59,13 @@ def _ev_e_edge(p_corr: float, odd) -> tuple:
     return (p_corr * odd - 1.0, p_corr - 1.0 / odd)
 
 
-def classificar(picks: Sequence, parametros: Dict[str, dict],
+def _curva_do_pick(parametros: Dict[tuple, dict], pk):
+    """Os `(a, b)` da celula que serve o pick, ou None se nenhuma serve."""
+    celula = celula_que_serve(parametros, pk.familia, getattr(pk, "liga", "") or "")
+    return parametros.get(celula) if celula else None
+
+
+def classificar(picks: Sequence, parametros: Dict[tuple, dict],
                 limiares: Dict[str, dict]):
     """`(pick, classe)` de cada pick que a condicao de EV/edge publica.
 
@@ -60,7 +74,7 @@ def classificar(picks: Sequence, parametros: Dict[str, dict],
     condicao divergiriam no dia em que uma delas mudasse.
     """
     for pk in picks:
-        par = parametros.get(pk.familia)
+        par = _curva_do_pick(parametros, pk)
         lim = limiares.get(pk.familia)
         if not par or not lim:
             continue
@@ -78,7 +92,7 @@ def classificar(picks: Sequence, parametros: Dict[str, dict],
             yield pk, "neutro"
 
 
-def contar_por_classe(picks: Sequence, parametros: Dict[str, dict],
+def contar_por_classe(picks: Sequence, parametros: Dict[tuple, dict],
                       limiares: Dict[str, dict]) -> Dict[str, Dict[str, int]]:
     """Quantos picks caem em cada classe, por familia."""
     saida: Dict[str, Dict[str, int]] = defaultdict(lambda: {"safe": 0, "neutro": 0})
@@ -97,11 +111,15 @@ def _quantil_que_preserva(valores: List[float], quantos: int):
     return ordenados[quantos - 1]
 
 
-def rederivar(picks: Sequence, parametros_antigos: Dict[str, dict],
-              parametros_novos: Dict[str, dict],
+def rederivar(picks: Sequence, parametros_antigos: Dict[tuple, dict],
+              parametros_novos: Dict[tuple, dict],
               limiares_atuais: Dict[str, dict]
               ) -> Tuple[Dict[str, dict], Dict[str, str]]:
     """Os quatro valores por familia que reproduzem a contagem anterior.
+
+    `parametros_antigos`/`parametros_novos`: POR CELULA (#253-b) — as curvas
+    que o serving usaria antes e depois do ciclo. Cada pick entra com a
+    celula que o serve; o volume preservado e o que o serving publicaria.
 
     Devolve `(limiares, motivos)`. O motivo viaja SEPARADO, e nao como uma
     quinta chave dentro do dict de limiares, por dois motivos: aquele dict
@@ -140,14 +158,16 @@ def rederivar(picks: Sequence, parametros_antigos: Dict[str, dict],
     motivos: Dict[str, str] = {}
     for familia, atual in limiares_atuais.items():
         pk_familia = por_familia.get(familia) or []
-        par = parametros_novos.get(familia)
-        if not par:
+        if not any(celula[0] == familia for celula in parametros_novos):
             saida[familia] = dict(atual)
             motivos[familia] = "limiares mantidos: sem curva nova para a familia"
             continue
 
         evs, edges, com_preco = [], [], []
         for pk in pk_familia:
+            par = _curva_do_pick(parametros_novos, pk)
+            if not par:
+                continue
             ev, edge = _ev_e_edge(
                 aplicar(entrada_da_curva(pk), par["a"], par["b"]), pk.odd)
             if ev is not None:

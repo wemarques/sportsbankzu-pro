@@ -13930,3 +13930,54 @@ Redes provadas em teste forçado: teto (para), reversão da família (desfaz), c
 ### Lição aprendida
 Uma rede de segurança tem de ser dimensionada pela taxa de chegada de dados da unidade em que ela julga, não pela da unidade em que o modelo aprende. O estimador pode encolher cada liga para a família e aprender com pouca amostra; o julgamento não tem esse atalho. Com 20 ligas dividindo ~20 jogos por dia, julgar por liga é esperar semanas.
 
+---
+
+## 253-b — Re-derivação de limiares e ensaio passam a contar cada pick pela curva que o serving usaria
+**Data:** 2026-09-15 | **Arquivos:** `backend/modeling/calibragem/curva.py`, `limiares.py`, `governanca.py`, `ciclo.py`, `tests/calibragem/test_17_limiares_na_ordem_do_serving.py` (novo), `test_10_limiares.py`, `test_14_consumo_limiares.py`, `docs/superpowers/specs/2026-09-15-governanca-por-ancora.md` (§9), `docs/REGRAS_ATIVAS.md`, `CLAUDE.md` | **Severidade:** Alta (o número que autoriza ligar a camada estava errado) | **Status:** Corrigido — camada continua DESLIGADA
+
+### Problema identificado
+Welligton rodou `scripts/ensaio_calibragem.py` para decidir se liga a camada. O ensaio dizia volume publicado **402 → 403**. Medido pontuando cada pick pela curva que o serving de fato usaria: **402 → 365** (−9,2%).
+
+### Causa raiz
+Três implementações da mesma pergunta — "qual célula responde por este pick?" — e só a do serving estava certa:
+- `curva.aplicar_versao` (serving): célula da liga se ela tem vigente, senão a da família.
+- `limiares.classificar`/`rederivar`: `parametros.get(pk.familia)` — um mapa **só da célula-família**, aplicado a todo pick.
+- `ciclo.planejar`: montava `parametros_antigos`/`parametros_novos` só com as células `(família, "")`.
+
+9 de 20 ligas têm célula vigente própria em `(0, 1)` (restauração de 09-14). No primeiro ciclo essas células ficam `abaixo_do_piso` e não são promovidas: seguem publicando o legado. A re-derivação calculava limiares por família como se toda liga recebesse a curva nova, e as 9 ligas ficavam com a curva velha **e** o limiar novo, mais alto.
+
+### Correções aplicadas
+**Regra antes do código:** `REGRAS_ATIVAS` #253-b.
+
+**Camada 1 — uma implementação da ordem (`curva.celula_que_serve`):** liga, senão família, senão `None`. `aplicar_versao` passa a usá-la (comportamento idêntico: `test_13` e a fixture dourada do `test_01` verdes); `governanca.ancora_do_pick` e `curva_servida_do_pick` também.
+
+**Camada 2 — limiares por célula (`limiares.classificar`, `rederivar`):** mapas `Dict[(família, liga), (a, b)]`; cada pick entra com a curva da célula que o serve. Os limiares continuam por família.
+
+**Camada 3 — mapas do ciclo (`ciclo.planejar`):** `parametros_antigos` = vigentes antes do ciclo (célula-família sempre presente, `(0, 1)` sem vigente); `parametros_novos` = os mesmos com as promoções do ciclo (`adotada`/`encurtada`/`revertida`). O ensaio consome esses mapas sem mudança.
+
+Testes `test_10`/`test_14`: mapas convertidos de chave-família para chave `(família, "")` — mesma semântica, 12 literais.
+
+### Prova empírica (Etapa 4)
+`test_17` (6 casos) contra `288deb4`: **4 falham** (ordem na contagem, volume preservado na ordem do serving, mapas por célula no `planejar`, `celula_que_serve` inexistente); os 2 controles (serving e âncora já usavam a ordem) passam nos dois. Suíte da camada: 338 passed.
+
+Ensaio no banco de produção, mesma amostra (4.850 picks, 221 jogos), e medição **independente** (mapa de serving montado fora do `planejar`, a partir de `carregar_vigentes` + promoções do plano):
+
+```
+                        hoje   curva nova + limiar velho   curva nova + limiar novo
+ANTES  ensaio            402            497                        403
+ANTES  serving real      402             —                         365   <- o defeito
+DEPOIS ensaio            402            445                        403
+DEPOIS serving real      402            445                        403   <- ensaio e serving batem
+```
+
+Limiares re-derivados, antes → depois da correção: Over/Under `safe_ev` 0,2051 → 0,1799, `neutro_ev` 0,0841 → 0,0696; Corners `safe_ev` 0,1841 → 0,1785, `neutro_ev` 0,0707 → 0,0560; Cards `safe_ev` 0,1565 → 0,1412; BTTS `safe_ev` 0,1030 → 0,1046. 1X2 e Double Chance mantidos (volume apoiado em 0 jogos, #249-a).
+
+### Contratos de saída (Etapa 2-bis)
+Escrito: os quatro limiares por família em `calibragem_versoes` — mesmas colunas, valores diferentes. Leitor: `ev_classification._get_thresholds` via `limiares_por_familia` — mesmo formato. `plano["parametros_antigos"/"novos"]` mudam de chave (família → célula); leitores: `ciclo.planejar` (interno) e `scripts/ensaio_calibragem.py`, que só os repassa a `contar_por_classe`. Nenhum leitor fora do pacote e do ensaio.
+
+### Efeito acumulado (Etapa 5)
+A re-derivação roda uma vez por ciclo e não guarda estado: cada ciclo re-deriva a partir dos limiares atuais e das vigentes daquele ciclo. Com a correção, o volume publicado **no serving** fica constante a cada ciclo, com o resíduo de empates (+1 medido). Sem ela, cada ciclo em que uma liga com vigente própria ficasse abaixo do piso reduziria o volume dessa liga — em 1 ciclo, −37 picks (−9,2%). A rede que isso exige é o próprio ensaio: ele agora mede o que o serving publicaria, e é o número que autoriza ligar a camada.
+
+### Lição aprendida
+Quando o mesmo mapa é consultado em três lugares, "qual chave vale" é uma regra, e regra copiada diverge. O serving estava certo, a governança também, e a re-derivação — a peça que garante "volume constante" — tinha a versão simplificada. O ensaio herdou o erro porque consumia os mesmos mapas: um instrumento que reusa a hipótese que devia testar não testa nada. A medição que pegou o defeito foi a que montou o mapa de serving por fora.
+

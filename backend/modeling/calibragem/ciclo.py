@@ -385,23 +385,24 @@ def planejar(picks, ajuste, vigentes, historico=None) -> dict:
 
     # Re-derivacao dos limiares: curva e limiar mudam juntos, na mesma
     # versao e na mesma linha de auditoria (#244). Os limiares sao por
-    # FAMILIA (DEFAULT_THRESHOLDS nao tem granularidade de liga), entao
-    # o "antigo"/"novo" que alimentam `rederivar` vem das celulas
-    # (familia, "") — a celula-familia, nao das celulas por liga.
-    parametros_antigos: Dict[str, dict] = {}
-    parametros_novos: Dict[str, dict] = {}
-    # #248, C1 (composicao): `dec["vig"]` de uma celula sem versao
-    # gravada e `(0, 1)`, e sobre `p_legado` isso E o legado. A
-    # re-derivacao preserva o volume que a versao 0 de fato publica —
-    # nao o de uma curva idealizada, que era o defeito.
-    for (familia, liga), dec in decisoes.items():
-        if liga:
-            continue
-        if dec["vig"]["a"] is None or dec["resultado"]["a"] is None:
-            continue   # celula rejeitada por falta de linha de base
-        parametros_antigos[familia] = {"a": dec["vig"]["a"], "b": dec["vig"]["b"]}
-        parametros_novos[familia] = {"a": dec["resultado"]["a"],
-                                     "b": dec["resultado"]["b"]}
+    # FAMILIA (DEFAULT_THRESHOLDS nao tem granularidade de liga), mas a curva
+    # que gera o EV de cada pick e a que o SERVING usaria (#253-b): mapas POR
+    # CELULA, com as vigentes antes do ciclo e as vigentes depois dele. Mover
+    # so a celula-familia e contar todo pick com ela dizia volume 402 -> 403
+    # quando o serving publicaria 365 (9 de 20 ligas tinham vigente propria).
+    parametros_antigos: Dict[tuple, dict] = {
+        celula: {"a": v["a"], "b": v["b"]} for celula, v in vigentes.items()
+        if celula[0] and v.get("a") is not None}
+    # A celula-familia esta sempre no mapa: sem vigente ela e a versao 0, que
+    # e o que o serving publica para liga sem celula propria (#248, C1).
+    for familia in familias:
+        parametros_antigos.setdefault((familia, ""), {"a": 0.0, "b": 1.0})
+    parametros_novos: Dict[tuple, dict] = {
+        celula: dict(par) for celula, par in parametros_antigos.items()}
+    for celula, dec in decisoes.items():
+        r = dec["resultado"]
+        if r["status"] in repositorio.STATUS_DE_PROMOCAO and r["a"] is not None:
+            parametros_novos[celula] = {"a": r["a"], "b": r["b"]}
 
     limiares_atuais = _limiares_atuais()
     limiares_novos, motivos_limiares = limiares.rederivar(

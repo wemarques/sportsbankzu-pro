@@ -196,3 +196,24 @@ Redes provadas em teste forçado: teto (para), reversão da família (desfaz), c
 Mesmos status do #253; muda **quantas** linhas um veredito escreve (todas as células da família). Os
 leitores (`carregar_vigentes`, serving, `limiares_por_familia`, ensaio) não mudam de contrato.
 `avaliar_reversao` sai do código (sem chamador em produção).
+
+---
+
+## 9. Emenda #253-b — limiares na ordem do serving
+
+**Defeito medido (ensaio de 2026-09-15):** volume 402 → 403 no ensaio; 402 → 365 no serving real.
+`limiares.classificar`/`rederivar` e `ciclo.planejar` usavam um mapa só da célula-família; o serving
+(`curva.aplicar_versao`) usa a célula da liga quando ela tem vigente — e 9 de 20 ligas têm.
+
+**Desenho:** `curva.celula_que_serve(mapa, familia, liga)` é a única implementação da ordem (liga, senão
+família). Serving, limiares, ensaio e governança a usam. `parametros_antigos`/`parametros_novos` são por
+célula: vigentes antes do ciclo (família sempre presente, `(0, 1)` sem vigente) e as mesmas com as
+promoções do ciclo aplicadas.
+
+**Aceite:** ensaio e medição independente (mapa de serving montado fora do `planejar`) dão o mesmo
+volume — medido 402 → 403 nos dois. `test_17` prova a ordem na contagem, a preservação do volume do
+serving na re-derivação e os mapas por célula.
+
+**Etapa 5:** a re-derivação não guarda estado entre ciclos; o volume do serving fica constante a cada
+ciclo, com o resíduo de empates. Sem a correção, cada ciclo com liga de vigente própria abaixo do piso
+tirava volume dela (−37 picks no primeiro ciclo medido).
