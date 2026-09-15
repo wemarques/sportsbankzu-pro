@@ -77,7 +77,8 @@ def carregar(conn) -> List[Dict[str, Any]]:
     cur.execute(
         """
         SELECT l.match_id, l.market, l.selection, l.league_id,
-               l.raw_prob, l.calibrated_prob, o.outcome
+               l.raw_prob, l.calibrated_prob, o.outcome,
+               l.published_at, l.kickoff_utc
           FROM prediction_ledger l
           JOIN ledger_outcomes o
             ON o.match_id  = l.match_id
@@ -89,7 +90,8 @@ def carregar(conn) -> List[Dict[str, Any]]:
         """
     )
     picks: List[Dict[str, Any]] = []
-    for match_id, market, selection, league, raw, cal, outcome in cur.fetchall():
+    for (match_id, market, selection, league, raw, cal, outcome,
+         publicado, kickoff) in cur.fetchall():
         try:
             y = int(bool(int(outcome)))
         except (TypeError, ValueError):
@@ -103,8 +105,16 @@ def carregar(conn) -> List[Dict[str, Any]]:
                 "raw": float(raw),
                 "publicada": float(cal),
                 "y": y,
+                "published_at": publicado,
+                "kickoff_utc": kickoff,
             }
         )
+    # #252-b: so pre-apito (#252) e fora da janela em que calibrated_prob era a
+    # camada (#252-a). O controle positivo continua valendo: os dois lados dele
+    # leem a mesma amostra filtrada.
+    from scripts.amostra_ledger import filtrar_amostra, descrever
+    picks, contagem = filtrar_amostra(picks, "calibrated_prob")
+    print(descrever(contagem))
     return picks
 
 

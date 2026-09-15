@@ -465,89 +465,17 @@ def _jogos(picks: Sequence[Dict[str, Any]]) -> int:
     return len({p.get("match_id") for p in picks})
 
 
-_EPOCH_MINIMO = 1577836800.0   # 2020-01-01 UTC: abaixo disto nao e kickoff do ledger
-
-
-def _kickoff_da_linha(match_id: Any, kickoff_utc: Any):
-    """#252: `kickoff_utc` gravado, senao o sufixo epoch do match_id
-    (`{liga}-{casa}-{fora}-{ts}`). Sem nenhum dos dois, None — nunca inventa."""
-    from datetime import datetime, timezone
-    if kickoff_utc is not None:
-        return kickoff_utc
-    # "{liga}-todays-{id}" (#236) termina em id de fixture, nao em epoch.
-    if "-todays-" in str(match_id):
-        return None
-    try:
-        ts = float(str(match_id).rsplit("-", 1)[1])
-    except (IndexError, ValueError):
-        return None
-    if not math.isfinite(ts) or ts < _EPOCH_MINIMO:
-        return None
-    return datetime.fromtimestamp(ts, tz=timezone.utc)
-
-
-def _so_pre_jogo(linhas: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    """#252: so geracao publicada ANTES do apito e prognostico.
-
-    O cron regrava o jogo depois do kickoff e `kickoff_utc` esta nula em todas
-    as linhas — o filtro que mantinha a linha quando o kickoff faltava deixava
-    passar tudo. Aqui a falha e FECHADA: kickoff desconhecido tambem sai, e
-    as duas saidas sao contadas para o relatorio.
-    """
-    mantidas: List[Dict[str, Any]] = []
-    pos, sem = [], []
-    for ln in linhas:
-        kickoff = _kickoff_da_linha(ln.get("match_id"), ln.get("kickoff_utc"))
-        if kickoff is None:
-            sem.append(ln)
-        elif ln.get("published_at") is None or ln["published_at"] >= kickoff:
-            pos.append(ln)
-        else:
-            mantidas.append(ln)
-    ficaram = {ln.get("match_id") for ln in mantidas}
-    contagem = {
-        "pos_kickoff": len(pos),
-        "sem_kickoff": len(sem),
-        # jogo que SUMIU da amostra: nenhuma geracao dele sobreviveu
-        "jogos_pos_kickoff": len({ln.get("match_id") for ln in pos} - ficaram),
-        "jogos_sem_kickoff": len({ln.get("match_id") for ln in sem} - ficaram),
-    }
-    return mantidas, contagem
-
+# #252 / #252-a: os filtros vivem em scripts/amostra_ledger.py, compartilhados
+# com medir_inclinacao e grade_deflacao_por_familia (#252-b). Os nomes com
+# underscore ficam como alias para os testes do #252/#252-a.
+from scripts.amostra_ledger import (   # noqa: E402
+    JANELA_CONTAMINADA_251 as _JANELA_CONTAMINADA_251,
+    fora_da_janela_contaminada as _fora_da_janela_contaminada,
+    kickoff_da_linha as _kickoff_da_linha,
+    so_pre_jogo as _so_pre_jogo,
+)
 
 _CONTAGEM_PRE_JOGO: Dict[str, int] = {}
-
-
-def _janela_251():
-    from datetime import datetime, timezone
-    return (datetime(2026, 9, 10, 23, 2, 6, tzinfo=timezone.utc),
-            datetime(2026, 9, 14, 4, 50, 22, tzinfo=timezone.utc))
-
-
-# #252-a: `calibrated_prob` carregou a saida da camada #248 nesta janela (#251).
-# Inicio = primeira versao (a,b) != (0,1) em calibragem_versoes; fim = Deploy
-# Lambda de b2eec7d. [inicio, fim). Mover so com nova medicao registrada.
-_JANELA_CONTAMINADA_251 = _janela_251()
-
-
-def _fora_da_janela_contaminada(linhas: Sequence[Dict[str, Any]], campo: str
-                                ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    """#252-a: tira da serie `calibrated_prob` o que foi publicado na janela
-    contaminada. As outras colunas nao passaram pela camada e ficam inteiras."""
-    if campo != "calibrated_prob":
-        return list(linhas), {"contaminados": 0, "jogos_contaminados": 0}
-    ini, fim = _JANELA_CONTAMINADA_251
-    mantidas, fora = [], []
-    for ln in linhas:
-        pub = ln.get("published_at")
-        (fora if pub is not None and ini <= pub < fim else mantidas).append(ln)
-    ficaram = {ln.get("match_id") for ln in mantidas}
-    return mantidas, {
-        "contaminados": len(fora),
-        "jogos_contaminados": len({ln.get("match_id") for ln in fora} - ficaram),
-    }
-
-
 _CONTAGEM_CONTAMINADA: Dict[str, int] = {}
 
 

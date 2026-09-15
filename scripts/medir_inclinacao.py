@@ -39,7 +39,8 @@ def _do_ledger(desde: str, campo: str):
         f"""
         SELECT l.match_id, l.league_id,
                l.market || ' ' || COALESCE(l.selection, '') AS market,
-               l.{campo}, o.outcome
+               l.{campo}, o.outcome,
+               l.published_at, l.kickoff_utc
           FROM prediction_ledger l
           JOIN ledger_outcomes o
             ON o.match_id = l.match_id
@@ -49,11 +50,16 @@ def _do_ledger(desde: str, campo: str):
         """,
         (desde,),
     )
-    linhas = [
+    # #252-b: so pre-apito (#252) e, para calibrated_prob, fora da janela da
+    # camada (#252-a). Os filtros sao os do gate, do mesmo modulo.
+    from scripts.amostra_ledger import filtrar_amostra, descrever
+    linhas, contagem = filtrar_amostra([
         {"match_id": r[0], "league_id": r[1], "market": r[2],
-         "prob": float(r[3]), "outcome": int(r[4])}
+         "prob": float(r[3]), "outcome": int(r[4]),
+         "published_at": r[5], "kickoff_utc": r[6]}
         for r in cur.fetchall()
-    ]
+    ], campo)
+    print(descrever(contagem))
     cur.close()
     conn.close()
     return linhas

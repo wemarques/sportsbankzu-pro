@@ -13681,3 +13681,62 @@ Não se aplica: leitura pura, executada à mão, sem escrita que realimente exec
 ### Lição aprendida
 Correção para frente não limpa o passado de uma tabela append-only. Toda contaminação de série gravada precisa sair com dois artefatos: o fix do produtor **e** a janela medida que os consumidores excluem — sem o segundo, a série limpa e a contaminada continuam somando na mesma contagem.
 
+---
+
+## 252-b — `medir_inclinacao` e `grade_deflacao_por_familia` aplicam #252 e #252-a, de um módulo só
+**Data:** 2026-09-15 | **Arquivos:** `scripts/amostra_ledger.py` (novo), `scripts/comparar_com_mercado.py`, `scripts/medir_inclinacao.py`, `scripts/grade_deflacao_por_familia.py`, `tests/test_252b_consumidores_do_ledger.py` (novo), `docs/REGRAS_ATIVAS.md` | **Severidade:** Alta (a conclusão do #245 muda) | **Status:** Corrigido
+
+### Problema identificado
+Os dois scripts leem `prediction_ledger.calibrated_prob` como "o modelo" (Etapa 2-bis do #251) e liam o ledger inteiro: geração pós-apito (#252) e a janela em que a coluna era a camada (#252-a). O `grade_deflacao_por_familia.py` é a fonte do #245 ("melhor fator zero em cinco das seis famílias"), que motivou a camada #248.
+
+### Causa raiz
+Os filtros do #252/#252-a nasceram dentro de `comparar_com_mercado.py`. Levá-los aos outros consumidores copiando o código repetiria a divergência silenciosa que a proibição 5 proíbe.
+
+### Correções aplicadas
+**Camada 1 — `scripts/amostra_ledger.py`:** `kickoff_da_linha`, `so_pre_jogo`, `fora_da_janela_contaminada`, `JANELA_CONTAMINADA_251`, `filtrar_amostra` (#252 e depois #252-a) e `descrever` (as duas linhas de relatório). Movidos de `comparar_com_mercado.py`, sem mudança de comportamento; lá ficam só os aliases com underscore que os testes do #252/#252-a usam.
+
+**Camada 2 — `medir_inclinacao._do_ledger`:** seleciona `l.published_at, l.kickoff_utc`, filtra e imprime a contagem. O corte #252-a só atua com `--campo calibrated_prob`.
+
+**Camada 3 — `grade_deflacao_por_familia.carregar`:** idem, sempre com `calibrated_prob` (a coluna que ela interpola). O controle positivo #227 continua exato: os dois lados leem a mesma amostra filtrada.
+
+### Prova empírica (Etapa 4)
+`grade_deflacao_por_familia.py`, HEAD `ac2b6ab` contra o patch:
+
+```
+ANTES:  35511 picks / 437 jogos | controle positivo erro 0.00e+00
+DEPOIS:  7922 picks / 201 jogos | controle positivo erro 0.00e+00
+        #252: fora 26744 picks pós-apito (216 jogos sumiram) | #252-a: fora 845 picks (20 jogos sumiram)
+
+família        melhor α ANTES               melhor α DEPOIS
+Corners        0.0  -0.0207 SIGNIFICATIVA   0.0  -0.0157 [-0.0241, -0.0061] SIGNIFICATIVA
+Over/Under     0.0  -0.0045 SIGNIFICATIVA   0.4  -0.0019 [-0.0045, +0.0009] não exclui zero
+Double Chance  0.0  -0.0117 SIGNIFICATIVA   0.0  -0.0172 [-0.0237, -0.0106] SIGNIFICATIVA
+Cards          0.0  -0.0257 SIGNIFICATIVA   0.2  -0.0173 [-0.0252, -0.0089] SIGNIFICATIVA
+1X2            0.1  -0.0028 não exclui 0    0.0  -0.0049 [-0.0110, +0.0014] não exclui zero
+BTTS           0.0  -0.0021 não exclui 0    0.5  -0.0003 [-0.0033, +0.0030] não exclui zero
+TODAS          0.0  -0.0140 SIGNIFICATIVA   0.1  -0.0106 [-0.0137, -0.0077] SIGNIFICATIVA
+```
+
+`medir_inclinacao.py --ledger --desde 2026-09-03` (`calibrated_prob`):
+
+```
+ANTES:  n=35511 picks em 437 jogos | inclinação 1.3166 IC95 [1.2356, 1.3987] | intercepto 0.4362 | prob média 0.5227 vs frequência 0.6129 | veredito "previsoes conservadoras demais"
+DEPOIS: n=7922 picks em 201 jogos | inclinação 1.1808 IC95 [1.0481, 1.3138] | intercepto 0.3816 | prob média 0.4969 vs frequência 0.5765 | veredito "forma adequada"
+```
+
+O veredito geral troca de "conservadoras demais" para "forma adequada" porque o ponto da inclinação cai de 1,3166 para 1,1808, abaixo do corte `b <= 1.25` de `calibracao_slope.veredito` (que lê só o ponto). O IC [1,0481; 1,3138] **ainda exclui 1** e a probabilidade média segue 8,0pp abaixo da frequência (era 9,0pp): o motor continua conservador, só menos. Células INCONCLUSIVAS: 240 → 41, com a amostra 4,5× menor.
+
+Gate: `tests/test_252b_consumidores_do_ledger.py`, 4 casos; contra `ac2b6ab`, **3 falham** e o de `raw_prob` (controle: coluna fora da janela não perde linha) passa nos dois.
+
+### Revisão retroativa do #245
+A frase "o melhor fator é **zero em cinco das seis famílias**" foi medida em amostra com 75% de picks pós-apito e com a janela contaminada. Na amostra válida: zero só em Corners, Double Chance e 1X2 (este sem significância); Over/Under e BTTS ficam sem diferença demonstrável contra produção; Cards pede 0,2. A direção geral se mantém (TODAS: menos deflação é melhor, α=0,1, significativo), mas "a deflação está errada em todas" **não** se sustenta para gols e BTTS. O #245 não é reescrito — fica a leitura da época —; quem o citar cita esta revisão junto.
+
+### Contratos de saída (Etapa 2-bis)
+Nenhum script escreve em tabela; saída é stdout. `comparar_com_mercado.py` mantém comportamento idêntico (os 12 testes de #252/#252-a passam sem alteração, pelos aliases).
+
+### Efeito acumulado (Etapa 5)
+Não se aplica: leitura pura, executada à mão.
+
+### Lição aprendida
+Filtro de validade de amostra que nasce dentro de um consumidor protege só aquele consumidor. O conserto do #252 deixou dois scripts vizinhos, com o mesmo contrato, medindo a amostra errada — e um deles era a fonte de uma conclusão já usada como premissa de projeto (#245 → #248). Validade de amostra mora num módulo que todo consumidor importa.
+

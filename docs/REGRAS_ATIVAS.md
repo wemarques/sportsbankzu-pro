@@ -1429,7 +1429,10 @@ alguma geracao anterior ao apito.
 **Proibido:** criar opcao que desligue o filtro no gate #230; contar como "jogo limpo" um jogo
 cuja unica geracao com desfecho e posterior ao apito.
 
-**Estado de aplicacao:** `scripts/comparar_com_mercado.py` (gate #230) aplica desde #252.
+**Estado de aplicacao:** `scripts/comparar_com_mercado.py` (gate #230) aplica desde #252;
+`scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b. Os tres
+importam os filtros de UM modulo, `scripts/amostra_ledger.py` — reimplementar o filtro num
+consumidor e proibido (proibicao 5).
 `backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) tem o MESMO filtro
 inerte (mantem a linha quando `kickoff_utc` e None) — **em aberto**, sem efeito hoje porque
 `CALIBRAGEM_ENABLED=false`, e bloqueia religar a camada junto com a proibicao 16.
@@ -1456,6 +1459,6 @@ modelo (#251). Limites medidos, nao arbitrados:
 **Proibido:** opcao que desligue o corte no gate #230; mover os limites sem nova medicao registrada;
 contar jogo dessa janela entre os 300 do gate.
 
-**Estado de aplicacao:** `scripts/comparar_com_mercado.py` desde #252-a. **Em aberto:**
-`scripts/medir_inclinacao.py --campo calibrated_prob` (sem este corte e sem o filtro pre-apito #252)
-e `scripts/grade_deflacao_por_familia.py`.
+**Estado de aplicacao:** `scripts/comparar_com_mercado.py` desde #252-a;
+`scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b, todos via
+`scripts/amostra_ledger.py`.
