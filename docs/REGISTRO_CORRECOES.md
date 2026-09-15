@@ -13795,8 +13795,15 @@ Campo escrito: `prediction_ledger.kickoff_utc`. Consumidores:
 
 **Consumidor (ciclo da camada, só com `CALIBRAGEM_ENABLED=true`):** hoje 0 ciclos (flag `false`). Se ligada, a amostra de cada ciclo passa a ser só pré-apito; o filtro não tem estado e não se acumula. A rede que dispara é a falha fechada, provada em teste com condição forçada (`test_sem_kickoff_conhecido_exclui`: kickoff nulo e id sem epoch → amostra vazia). **Isto não autoriza religar a camada** — a proibição 16 (janela de reversão) continua bloqueando.
 
-### Prova pós-deploy (a fazer)
-Depois do próximo cron: `kickoff_utc` não nula nas linhas novas e igual ao sufixo do `match_id`.
+### Prova pós-deploy
+Deploy Lambda de `99798cf`: `update-function-code` 06:10:16, função ativa 06:10:28, aquecimento das 22 ligas 06:10:28 → 06:12:43 UTC. Linhas do ledger em 2026-09-15:
+
+```
+05:37-05:39 (cron, código anterior): 2553 linhas | kickoff_utc preenchida    0
+06:11-06:12 (aquecimento, código novo): 260 linhas | kickoff_utc preenchida  260 | igual ao sufixo 260 | diferente 0 | publicadas antes do apito 260
+```
+
+`/health` → 200.
 
 ### Lição aprendida
 Parâmetro opcional com default `None` num gravador é um campo que ninguém é obrigado a preencher — e ninguém preencheu por 12 dias. Coluna de validade (kickoff, fuso, versão) não pode ter default silencioso no produtor, e o consumidor não pode tratar a ausência dela como "passa".
