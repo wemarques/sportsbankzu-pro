@@ -110,7 +110,13 @@ export const DESEMPENHO = {
   tituloRetorno: "Na sua banca atual",
   tituloCalibracao: "Calibração",
   semPicksFechados: "sem picks fechados neste período",
+  // #257: retornoIndisponivel fica sem uso em Painel.tsx a partir desta tarefa
+  // (substituido pelo calculo retroativo) — nao removido para nao quebrar o
+  // teste que a citava antes; nenhuma tela mais renderiza esta string.
   retornoIndisponivel: "retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger",
+  definaBanca: "defina sua banca para ver o retorno em dinheiro",
+  retornoNaBancaAtual: "seguindo o stake sugerido, na sua banca atual",
+  retornoSemPicks: "sem picks fechados com preço neste período",
 };
 
 export const NAVEGACAO = { jogos: "Jogos", banca: "Banca", desempenho: "Desempenho", glossario: "Glossário", rotuloNav: "navegação principal" } as const;

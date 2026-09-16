@@ -74,3 +74,11 @@ describe("DESEMPENHO (#256) — rotulos centralizados", () => {
     expect(C.DESEMPENHO.retornoIndisponivel).toBe("retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger");
   });
 });
+
+describe("DESEMPENHO (#257) — retorno retroativo", () => {
+  it("tem os rotulos novos do bloco de dinheiro", () => {
+    expect(C.DESEMPENHO.definaBanca).toBe("defina sua banca para ver o retorno em dinheiro");
+    expect(C.DESEMPENHO.retornoNaBancaAtual).toBe("seguindo o stake sugerido, na sua banca atual");
+    expect(C.DESEMPENHO.retornoSemPicks).toBe("sem picks fechados com preço neste período");
+  });
+});

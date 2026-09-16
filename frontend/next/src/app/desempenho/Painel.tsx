@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getLedgerAgregado, type LedgerAgregado } from "@/lib/ledgerApi";
+import { useBanca } from "@/lib/bancaStore";
+import { getLedgerAgregado, getLedgerPicks, type LedgerAgregado } from "@/lib/ledgerApi";
+import { retornoRetroativo } from "@/lib/retornoRetroativo";
 import { lerDesempenhoUrl, escreverDesempenhoUrl, periodoPorExtenso, type Periodo } from "@/lib/desempenhoUrl";
 import { ACTIVE_LEAGUES } from "@/lib/leagues";
 import { fmtPct, fmtReais } from "@/lib/formato";
@@ -11,6 +13,42 @@ import { TabelaSegmentos } from "@/components/desempenho/TabelaSegmentos";
 import { GraficoCalibracao } from "@/components/desempenho/GraficoCalibracao";
 
 const ROTULO: Record<Periodo, string> = { "7d": "7 dias", "30d": "30 dias", temporada: "Temporada" };
+
+function BlocoRetorno({ periodo, familia, liga }: { periodo: Periodo; familia: string | null; liga: string | null }) {
+  const [banca] = useBanca();
+  const [retorno, setRetorno] = useState<{ valor: number; pctBanca: number; n: number } | null>(null);
+  const [semPicks, setSemPicks] = useState(false);
+  const geracao = useRef(0);
+
+  useEffect(() => {
+    if (banca == null) { setRetorno(null); setSemPicks(false); return; }
+    const minha = ++geracao.current;
+    getLedgerPicks(periodo, familia ?? undefined, liga ?? undefined).then((r) => {
+      if (minha !== geracao.current) return;   // outra carga mais nova ja partiu (mesma guarda de Feed.tsx)
+      if (!r.ok) { setRetorno(null); setSemPicks(false); return; }
+      const calculo = retornoRetroativo(r.dados.picks, banca);
+      if (calculo.n === 0) { setRetorno(null); setSemPicks(true); return; }
+      setSemPicks(false);
+      setRetorno(calculo);
+    });
+  }, [periodo, familia, liga, banca]);
+
+  if (banca == null) {
+    return (
+      <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+        {DESEMPENHO.definaBanca}{" "}
+        <Link href="/banca" className="sb-foco underline">definir banca</Link>
+      </p>
+    );
+  }
+  if (semPicks) return <p className="text-[14px] text-[var(--sb-texto-apagado)]">{DESEMPENHO.retornoSemPicks}</p>;
+  if (!retorno) return null;
+  return (
+    <p className="tnum text-[16px]">
+      {fmtReais(retorno.valor)} ({fmtPct(retorno.pctBanca)}%) — {DESEMPENHO.retornoNaBancaAtual} ({retorno.n} picks com preço)
+    </p>
+  );
+}
 
 export function Painel() {
   const router = useRouter();
@@ -71,11 +109,7 @@ export function Painel() {
 
           <section className="mt-4">
             <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{DESEMPENHO.tituloRetorno}</h2>
-            {dados.retorno.valor == null ? (
-              <p className="text-[14px] text-[var(--sb-texto-apagado)]">{DESEMPENHO.retornoIndisponivel}</p>
-            ) : (
-              <p className="tnum text-[16px]">{fmtReais(dados.retorno.valor)} ({fmtPct(dados.retorno.pct_banca ?? 0)}%)</p>
-            )}
+            <BlocoRetorno periodo={url.periodo} familia={url.familia} liga={url.liga} />
           </section>
 
           <section className="mt-6"><div className="overflow-x-auto"><TabelaSegmentos titulo="Por família" linhas={dados.por_familia} /></div></section>
