@@ -34,7 +34,7 @@ import { fmtMercado, getClassificationDisplay, getPickDisplay } from "@/lib/clas
 import { useRole } from "@/hooks/useRole";
 import { getBankroll, setBankroll as persistBankroll, subscribeBankroll } from "@/lib/bankrollStore";
 import { applyPickLedgerToAll } from "@/lib/pickLedger";
-import { normalizeMatch, deduplicateMatches, resolveTeamAlias, normalizeTeamName, safeOdd } from "@/lib/normalizeMatch";
+import { normalizeMatch, deduplicateMatches, resolveTeamAlias, safeOdd } from "@/lib/normalizeMatch";
 import {
   Star,
   ChevronLeft,

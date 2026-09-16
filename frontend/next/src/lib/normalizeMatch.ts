@@ -36,7 +36,7 @@ export function normalizeTeamName(name: string): string {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")  // Remove diacritics (é→e, ñ→n)
+    .replace(/[\u0300-\u036f]/g, "")  // Remove diacritics (é→e, ñ→n)
     .replace(/\./g, "")               // Remove periods (Dep. → Dep)
     .replace(/\s+/g, " ")
     .trim();
