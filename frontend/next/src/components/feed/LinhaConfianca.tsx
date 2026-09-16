@@ -1,9 +1,12 @@
 import type { LeagueConfidence } from "@/hooks/useLeagueClassifications";
 import { fraseConfianca } from "@/lib/confiancaLiga";
-import { useMediaDasLigas } from "@/hooks/useMediaDasLigas";
 
-export function LinhaConfianca({ confianca, ligaNome }: { confianca: LeagueConfidence | null; ligaNome: string }) {
-  const media = useMediaDasLigas();
+/** #256 fix round 1 — `media` chega por prop (buscada UMA vez pelo pai, ver
+ * `Feed.tsx`/`Detalhe.tsx`); antes cada card chamava `useMediaDasLigas()` e
+ * disparava um fetch identico por card (N cards = N requisicoes a
+ * `/ledger/agregado`). `media` opcional com default `null` preserva o piso
+ * documentado (`PISO_SEM_DADO` em `confiancaLiga.ts`) para quem nao passa. */
+export function LinhaConfianca({ confianca, ligaNome, media = null }: { confianca: LeagueConfidence | null; ligaNome: string; media?: number | null }) {
   const f = fraseConfianca(confianca, ligaNome, media);
   if (f.semBase || f.numero == null) return <p className="text-[13px] text-[var(--sb-texto-apagado)]">{f.texto}</p>;
   const [antes, depois] = f.texto.split(String(f.numero));

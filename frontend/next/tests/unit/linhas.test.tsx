@@ -26,6 +26,13 @@ describe("fraseConfianca (os 4 estados do #250 sem sigla)", () => {
   it("UNVERIFIED ou nulo: nao afirma nada", () => {
     expect(fraseConfianca(null, "MLS")).toEqual({ texto: "MLS: confiança não verificada", numero: null, semBase: true });
   });
+  it("media por parametro substitui o piso fixo (#256 fix round 1)", () => {
+    // accuracy 0.50 contra o piso 0.58 (default, sem 3o argumento) fica "abaixo"; contra
+    // media=0.50 explicito (mesma accuracy) fica "na media" — prova que o parametro,
+    // nao uma constante interna, decide o resultado.
+    expect(fraseConfianca(conf({ accuracy: 0.5 }), "MLS").texto).toContain("abaixo da média");
+    expect(fraseConfianca(conf({ accuracy: 0.5 }), "MLS", 0.5).texto).toContain("na média");
+  });
 });
 
 describe("linhas do card", () => {
@@ -45,6 +52,12 @@ describe("linhas do card", () => {
     expect(screen.getByText("40")).toHaveClass("text-[var(--sb-confianca)]");
     rerender(<LinhaConfianca confianca={null} ligaNome="MLS" />);
     expect(screen.getByText(/não verificada/)).toHaveClass("text-[var(--sb-texto-apagado)]");
+  });
+  it("media chega por prop, sem hook interno (#256 fix round 1)", () => {
+    const { rerender } = render(<LinhaConfianca confianca={conf({ accuracy: 0.5 })} ligaNome="MLS" media={0.5} />);
+    expect(screen.getByText(/na média/)).toBeInTheDocument();
+    rerender(<LinhaConfianca confianca={conf({ accuracy: 0.5 })} ligaNome="MLS" />);
+    expect(screen.getByText(/abaixo da média/)).toBeInTheDocument();
   });
   it("segundo pick: frase completa, sem botao", () => {
     render(<LinhaSegundoPick pick={pick} />);

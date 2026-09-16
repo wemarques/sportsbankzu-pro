@@ -9,6 +9,7 @@ import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, type Dia } from "
 import { getLedgerDia } from "@/lib/ledgerApi";
 import { agruparPorJogo, toJogoViewOntem } from "@/lib/jogoViewOntem";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
+import { useMediaDasLigas } from "@/hooks/useMediaDasLigas";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useLivePolling } from "@/hooks/useLivePolling";
 import { fmtHora, fmtDataCurta } from "@/lib/formato";
@@ -26,6 +27,8 @@ export function Feed() {
   const url = useMemo(() => lerFeedUrl(params), [params]);
   const isMobile = useMediaQuery("(max-width: 1024px)");
   const confianca = useLeagueClassifications();
+  // #256 fix round 1 — UMA chamada a /ledger/agregado por feed, nao uma por card.
+  const media = useMediaDasLigas();
   // #254-b: id do chip/URL no slug curto do backend (ex. "mls"), nao no id
   // prefixado do frontend (ex. "usa-mls") — e o que o filtro `.endsWith`
   // abaixo e o teste e2e esperam. Decisao minha: o snippet do brief usava
@@ -112,7 +115,7 @@ export function Feed() {
         <div className="space-y-3 py-3">
           {visiveis.map((j) => (
             <div key={j.id} data-liga={j.ligaId}>
-              <CardJogo jogo={j} confianca={confianca.get(j.ligaId)} selecionado={j.id === url.jogo}
+              <CardJogo jogo={j} confianca={confianca.get(j.ligaId)} selecionado={j.id === url.jogo} media={media}
                 hrefDetalhe={isMobile ? `/jogos/${encodeURIComponent(j.id)}` : escreverFeedUrl({ ...url, jogo: j.id })}
                 onAbrir={isMobile ? undefined : (id) => ir({ jogo: id }, true)} />
             </div>
