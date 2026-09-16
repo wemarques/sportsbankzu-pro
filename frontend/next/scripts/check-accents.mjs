@@ -67,6 +67,9 @@ const ALLOWLIST = new Set([
   "lib/jogoViewOntem.ts:cartoes",   // template ASCII que fmtMercado acentua; nao e texto exibido (#256)
   "lib/copy.ts:amanha",   // valor do tipo Dia na assinatura de feedNaoCarregou, nao texto exibido (#256)
   "lib/desempenhoUrl.ts:periodo",   // chave de URL do tipo Periodo, nao texto exibido (#256)
+  "lib/glossarioTermos.ts:calibracao",   // id de âncora URL (#glossario#calibracao); contrato: sem acento (#257)
+  "lib/glossarioTermos.ts:minimo",       // id de âncora URL (#glossario#minimo); contrato: sem acento (#257)
+  "lib/glossarioTermos.ts:direcao",      // id de âncora URL (#glossario#direcao); contrato: sem acento (#257)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.

@@ -1,11 +1,20 @@
-// #191: shareable URL for the Glossário section (same dashboard, deep-linked view).
-import Dashboard from "../dashboard/page";
+import { TERMOS } from "@/lib/glossarioTermos";
 
-export const metadata = {
-  title: "Glossário | SportsBankZU Pro",
-  description: "Termos, métricas e classificações do SportsBankZU Pro explicados.",
-};
+export const metadata = { title: "Glossário — SportsBankZU Pro" };
 
 export default function GlossarioPage() {
-  return <Dashboard initialView="glossario" />;
+  return (
+    <main className="mx-auto max-w-[720px] px-4 py-8 text-[var(--sb-texto)]">
+      <h1 className="font-[family-name:var(--font-slab)] text-[28px] font-bold">Glossário</h1>
+      <dl className="mt-6 space-y-6">
+        {TERMOS.map((t) => (
+          <div key={t.id} id={t.id} className="scroll-mt-4 border-t border-[var(--sb-linha)] pt-4">
+            <dt className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{t.titulo}</dt>
+            <dd className="mt-1 max-w-[70ch] text-[14px]">{t.explicacao}</dd>
+            <dd className="tnum mt-1 max-w-[70ch] text-[14px] text-[var(--sb-texto-apagado)]">{t.exemplo}</dd>
+          </div>
+        ))}
+      </dl>
+    </main>
+  );
 }
