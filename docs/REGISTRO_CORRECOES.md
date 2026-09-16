@@ -14027,3 +14027,32 @@ Lint que só roda num SO não é guarda — os dois bugs de `check-accents.mjs` 
 ### Minors deferidos para a revisão final
 `formato.ts` usa os glifos U+00A0/U+2212 literais no fonte em vez de escapes; comentário "nao" sem acento dentro de `check-accents.mjs`; trailers de coautoria dos commits dos subagentes nomeiam `Claude Haiku 4.5` (o modelo que os escreveu).
 
+## 254-a — Reformulação do frontend, fase 2: jogoView puro, zero mudança visual
+**Data:** 2026-09-15 | **Arquivos:** `frontend/next/src/app/dashboard/page.tsx`, `frontend/next/src/lib/normalizeMatch.ts` (novo), `frontend/next/src/lib/jogoView.ts` (novo), `frontend/next/tests/unit/normalizeMatch.test.ts` (novo), `frontend/next/tests/unit/jogoView.test.ts` (novo), `frontend/next/tests/unit/__snapshots__/jogoView.test.ts.snap` (novo), `frontend/next/tests/unit/fixtures.contract.test.ts` (novo), `frontend/next/tests/fixtures/fixtures.2026-09-15.v1.json` (novo), `frontend/next/tests/fixtures/README.md` (novo) | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+A fase 2 do plano (`docs/superpowers/plans/2026-09-15-reformulacao-frontend-fases-0-2-3.md`, Task 8–11) exige extrair a lógica de normalização de jogos e a derivação de estado de tela (`app/dashboard/page.tsx`) para módulos puros e testáveis, sem alterar o que o usuário vê, antes das telas novas da fase 3 poderem consumi-los.
+
+### Causa raiz
+Não é correção de defeito; é extração/fundação (Task 8–11) fechada aqui com registro, espelho e push.
+
+### Correções aplicadas (com camadas)
+**Task 8 (62fdfde) — `normalizeMatch` extraído:** `normalizeMatch` (+ `safeOdd`, `normalizeTeamName`, `resolveTeamAlias`, `deduplicateMatches`) movidos de `app/dashboard/page.tsx` para `src/lib/normalizeMatch.ts`, zero mudança visual — `page.tsx` passa a importar as mesmas funções.
+
+**Task 9 (abfd54d, 8db3a58) — fixture real pinada:** `tests/fixtures/fixtures.2026-09-15.v1.json` (8 jogos: 3 finalizados em 2026-09-15 + 5 agendados em 2026-09-16, capturados por `scripts/capturar-fixture.mjs`) e `tests/unit/fixtures.contract.test.ts`. Decisão de ruling nesta task: o plano pedia NO_BET dentro de `mercados`, o que é impossível — NO_BET nunca chega a `mercados`, vive em `stats.rejected_insights` (`backend/services/ev_classification.py:743`); o teste passou a afirmar SAFE/NEUTRO_QUALIFICADO presentes, NEUTRO presente, `rejected_insights > 0`, um jogo agendado.
+
+**Task 10 (13bb002, f212773) — correções de implementação:** import não usado removido de `normalizeMatch.ts`; escape de regex `̀-ͯ` restaurado como escape ASCII literal na fonte — a ferramenta Write decodifica sequências `\uXXXX` em glifo real ao escrever o arquivo, e o glifo quebra o regex em runtime. O mesmo bug já havia aparecido na Task anterior do mesmo dia (fase 0/1) com `–`; aqui foi pego de novo e verificado com dump hexadecimal do arquivo gravado, não só releitura visual. `f212773`: `tests/unit/fixtures.contract.test.ts` trocou spread de `Set` por `Array.from(set)` — o `tsconfig.json` do projeto não define `target`, e o TypeScript rejeita `[...set]` sem `--downlevelIteration`/ES2015+ explícito.
+
+**Task 11 (033278b) — `jogoView.ts` puro:** `toJogoView(match, agora)` função pura; enum `EstadoJogo = vale | direcao | nada | amanha_sem_preco | em_jogo | ontem | ontem_sem_desfecho`; talão = maior edge entre picks SAFE/NEUTRO_QUALIFICADO, empate de edge decide por maior probabilidade (`escolherTalao`); `totalAvaliados = picks.length + rejectedInsights.length`. `tests/unit/jogoView.test.ts`: 13 testes + snapshot dos 8 jogos da fixture real. Correção nesta entrega: `tests/fixtures/README.md` tinha a coluna "Estado ilustrado" errada em 5 das 8 linhas (jogos 3 e 5 rotulados `amanha_sem_preco`, quando na verdade caem em `direcao` — têm mercado NEUTRO com `book_odd` presente, então nunca passam pelo ramo `talao && talao.bookOdd === null`; jogo 6 rotulado "vale + direcao" em vez de só `vale`). Corrigido para os 8 valores exatos lidos do snapshot (`__snapshots__/jogoView.test.ts.snap`), coluna renomeada para `Estado (toJogoView, agora=2026-09-15T12:00Z)`, e a seção "Cobertura de estados" reescrita para não alegar cobertura por jogo real onde não há: só 3 dos 7 estados (`ontem_sem_desfecho`, `direcao`, `vale`) ocorrem nesta fixture; `amanha_sem_preco`, `nada`, `em_jogo` são cobertos só por caso sintético em `jogoView.test.ts`; `ontem` (com placar do ledger) não é produzido por nenhum caminho do `switch` atual — está no enum mas é inalcançável na implementação de hoje, e não é coberto nem por jogo real nem por teste sintético.
+
+### Prova empírica (Etapa 4)
+Zero mudança visual: `/dashboard` em 1440×900 com o feed stubado por spec Playwright temporário (não commitado), screenshot antes (`0490a9c`) vs depois (`033278b`): PNG idêntico, SHA-256 `42fae80aaac5698e09e99c17f9a4aa29208d7c980fe4fd4d9bf01aa3fe8e337e` (169.301 bytes) nos dois; `body.innerText` idêntico, SHA-256 `f1f2b6c9062d67ae6656d2f8393036b410660715f3bf48f2e65c1b80122f1631` (1.488 bytes) nos dois.
+
+Suíte completa sobre `033278b`: `lint:accents` ✓, `lint:fonts` ✓, `tsc --noEmit` limpo, `vitest run` 7 arquivos / 43 passed, `playwright --project=chromium` 34 passed / 1 failed (`renders PRO badge`, ambiental: `/api/audit/status` devolve `version: "unknown"` sem backend local — mesma falha da fase 0; os 34 incluem o spec temporário do snapshot, então 33 dos rastreados no repo). Nenhum campo de backend tocado; `git diff --stat 0490a9c..033278b` = 10 arquivos, +6714/−294 (a maior parte é o JSON da fixture).
+
+### Contratos de saída (Etapa 2-bis)
+Nenhum campo de backend escrito ou lido de forma nova; `jogoView.ts` e `normalizeMatch.ts` só leem o payload já existente (`Match`, `MatchPrediction`) e produzem tipos de view novos (`JogoView`, `PickView`) consumidos só por `app/dashboard/page.tsx` e pelos testes desta fase — nenhum consumidor externo ao frontend.
+
+### Lição aprendida
+A ferramenta Write decodifica sequências `\uXXXX` em glifo real ao gravar a fonte — quem escreve regex com faixa Unicode escapada (`̀-ͯ`, `–`) precisa conferir com dump hexadecimal do arquivo gravado, não só reler o texto, porque o glifo decodificado passa despercebido em revisão visual e só quebra em runtime. E documentação de fixture (README de teste) é código: a coluna "Estado ilustrado" errada em 5 de 8 linhas ficou parada desde a Task 9 até ser pega na revisão da Task 10 — só existe fixture "boa" quando a doc que a descreve é conferida contra a saída real da função, não escrita de memória.
+
