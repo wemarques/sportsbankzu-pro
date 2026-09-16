@@ -5,7 +5,8 @@ import type { JogoView, PickView } from "@/lib/jogoView";
 
 const p = (o: Partial<PickView>): PickView => ({ mercado: "Mais de 6,5 escanteios", prob01: 0.585, fairOdd: 1.67, bookOdd: 1.75, edge: 0.08, ev: 0.02, classification: "SAFE", motivo: "", vale: true, ...o });
 const base: JogoView = { id: "j1", ligaId: "mls", ligaNome: "MLS", casa: "Toronto", fora: "Nashville SC", kickoffIso: "2026-09-09T23:30:00Z",
-  estado: "vale", talao: p({}), segundo: null, direcao: null, mercados: [p({})], totalAvaliados: 12, totalValem: 1, aoVivo: null, resultado: null };
+  estado: "vale", talao: p({}), segundo: null, direcao: null, mercados: [p({})], totalAvaliados: 12, totalValem: 1, aoVivo: null, resultado: null,
+  origem: { golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null } };
 const render_ = (j: JogoView) => render(<CardJogo jogo={j} confianca={null} selecionado={false} onAbrir={() => {}} hrefDetalhe="/jogos/j1" />);
 
 describe("CardJogo e um switch sobre o estado (spec §4.2)", () => {

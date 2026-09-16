@@ -66,6 +66,16 @@ export const COPIAR = {
   falhou: "não deu pra copiar — selecione o número",
 };
 
+const umaCasa = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+export interface Origem { golsCasa: number | null; golsFora: number | null; golsLiga: number | null; escanteiosCasa: number | null; escanteiosFora: number | null; escanteiosLiga: number | null }
+export function fraseOrigem(o: Origem, casa: string, fora: string, liga: string): string | null {
+  if (o.golsCasa != null && o.golsFora != null && o.golsLiga != null)
+    return `${casa} faz ${umaCasa.format(o.golsCasa)} gols por jogo em casa; ${fora} sofre ${umaCasa.format(o.golsFora)} fora; a ${liga} tem ${umaCasa.format(o.golsLiga)} por jogo.`;
+  if (o.escanteiosCasa != null && o.escanteiosFora != null && o.escanteiosLiga != null)
+    return `${casa} força ${umaCasa.format(o.escanteiosCasa)} escanteios por jogo em casa; ${fora} ${umaCasa.format(o.escanteiosFora)} fora; a ${liga} tem ${umaCasa.format(o.escanteiosLiga)} por jogo.`;
+  return null;
+}
+
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,

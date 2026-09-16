@@ -7,6 +7,7 @@ import type { Match, MatchPrediction } from "@/lib/leagues";
 import { fmtMercado } from "@/lib/classifications";
 import { motivoRecusa } from "@/lib/reasonCodes";
 import { getLiveClock } from "@/lib/liveClock";
+import { type Origem } from "@/lib/copy";
 
 export type EstadoJogo = "vale" | "direcao" | "nada" | "amanha_sem_preco" | "em_jogo" | "ontem" | "ontem_sem_desfecho";
 
@@ -22,6 +23,7 @@ export interface JogoView {
   mercados: PickView[]; totalAvaliados: number; totalValem: number;
   aoVivo: { periodo: string | null; minuto: number | null; placar: string | null } | null;
   resultado: { acertou: boolean; detalhe: string } | null;
+  origem: Origem;
 }
 
 const VALE = new Set(["SAFE", "NEUTRO_QUALIFICADO"]);
@@ -69,10 +71,16 @@ export function toJogoView(m: Match, agora: Date): JogoView {
 
   const totalAvaliados = picks.length + (m.rejectedInsights?.length ?? 0);
 
+  const n = (v: unknown) => (typeof v === "number" && v > 0 ? v : null);
+  const origem: Origem = {
+    golsCasa: n(m.stats.homeAvgTotalGoals), golsFora: n(m.stats.awayAvgTotalGoals), golsLiga: n(m.stats.avgGoals),
+    escanteiosCasa: n(m.stats.homeCornersPerMatch), escanteiosFora: n(m.stats.awayCornersPerMatch), escanteiosLiga: n(m.stats.leagueAvgCorners),
+  };
+
   return {
     id: m.id, ligaId: m.leagueId, ligaNome: m.leagueName, casa: m.homeTeam.name, fora: m.awayTeam.name,
     kickoffIso: m.datetime, estado, talao, segundo, direcao, mercados: ordenados,
     totalAvaliados, totalValem: picks.filter((p) => p.vale).length,
-    aoVivo, resultado: null,
+    aoVivo, resultado: null, origem,
   };
 }

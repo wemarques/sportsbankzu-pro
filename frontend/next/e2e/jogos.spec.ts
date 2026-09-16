@@ -71,4 +71,18 @@ test.describe("/jogos (#254-b)", () => {
     const outline = await page.evaluate(() => getComputedStyle(document.activeElement as Element).outlineWidth);
     expect(outline).not.toBe("0px");
   });
+  test("/jogos/[id] inexistente: 'jogo não encontrado' + link", async ({ page }) => {
+    await stub(page);
+    await page.goto("/jogos/nao-existe");
+    await expect(page.getByText("jogo não encontrado")).toBeVisible();
+    await expect(page.getByRole("link", { name: "ver os jogos de hoje" })).toHaveAttribute("href", "/jogos");
+  });
+  test("Mistral indisponivel: a secao some inteira", async ({ page }) => {
+    await stub(page);
+    await page.route("**/api/ai/match/**", (route) => route.fulfill({ status: 503, body: "{}" }));
+    const id = encodeURIComponent(feed.matches[0].id);
+    await page.goto(`/jogos/${id}`);
+    await expect(page.getByRole("heading", { name: /Todos os mercados avaliados/ })).toBeVisible();
+    await expect(page.getByText("Como o modelo vê o jogo")).toHaveCount(0);
+  });
 });
