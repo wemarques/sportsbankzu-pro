@@ -68,11 +68,18 @@ export const COPIAR = {
 
 const umaCasa = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export interface Origem { golsCasa: number | null; golsFora: number | null; golsLiga: number | null; escanteiosCasa: number | null; escanteiosFora: number | null; escanteiosLiga: number | null }
+/**
+ * #254-b fix round 1 — golsCasa/golsFora vem de `average_total_goals_per_match`
+ * (fixtures_service.py:1336-1337; FootyStats seasonAVG_overall) e escanteiosCasa/
+ * escanteiosFora de `team_corners_per_match` (fixtures_service.py:1263-1264):
+ * media do TIME na temporada inteira, sem separar jogos de casa/fora. A frase
+ * nao pode afirmar "em casa"/"fora" — descreve o dado como ele e.
+ */
 export function fraseOrigem(o: Origem, casa: string, fora: string, liga: string): string | null {
   if (o.golsCasa != null && o.golsFora != null && o.golsLiga != null)
-    return `${casa} faz ${umaCasa.format(o.golsCasa)} gols por jogo em casa; ${fora} sofre ${umaCasa.format(o.golsFora)} fora; a ${liga} tem ${umaCasa.format(o.golsLiga)} por jogo.`;
+    return `Nos jogos do ${casa} saem ${umaCasa.format(o.golsCasa)} gols por partida na temporada; nos do ${fora}, ${umaCasa.format(o.golsFora)}; média da ${liga}: ${umaCasa.format(o.golsLiga)}.`;
   if (o.escanteiosCasa != null && o.escanteiosFora != null && o.escanteiosLiga != null)
-    return `${casa} força ${umaCasa.format(o.escanteiosCasa)} escanteios por jogo em casa; ${fora} ${umaCasa.format(o.escanteiosFora)} fora; a ${liga} tem ${umaCasa.format(o.escanteiosLiga)} por jogo.`;
+    return `${casa} cobra ${umaCasa.format(o.escanteiosCasa)} escanteios por jogo na temporada; ${fora}, ${umaCasa.format(o.escanteiosFora)}; média da ${liga}: ${umaCasa.format(o.escanteiosLiga)}.`;
   return null;
 }
 

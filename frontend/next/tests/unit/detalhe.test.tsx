@@ -29,9 +29,9 @@ describe("detalhe (spec §4.3)", () => {
   });
   it("de onde vem o numero: frase com unidade; campo ausente some", () => {
     expect(fraseOrigem({ golsCasa: 3, golsFora: 2.5, golsLiga: 4.9, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null }, "Toronto", "Nashville", "MLS"))
-      .toBe("Toronto faz 3,0 gols por jogo em casa; Nashville sofre 2,5 fora; a MLS tem 4,9 por jogo.");
+      .toBe("Nos jogos do Toronto saem 3,0 gols por partida na temporada; nos do Nashville, 2,5; média da MLS: 4,9.");
     expect(fraseOrigem({ golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: 5.1, escanteiosFora: 4.6, escanteiosLiga: 9.8 }, "Toronto", "Nashville", "MLS"))
-      .toBe("Toronto força 5,1 escanteios por jogo em casa; Nashville 4,6 fora; a MLS tem 9,8 por jogo.");
+      .toBe("Toronto cobra 5,1 escanteios por jogo na temporada; Nashville, 4,6; média da MLS: 9,8.");
     expect(fraseOrigem({ golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null }, "a", "b", "c")).toBeNull();
   });
 });
