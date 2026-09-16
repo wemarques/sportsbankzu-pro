@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { Talao } from "@/components/feed/Talao";
+import { BotaoCopiar } from "@/components/feed/BotaoCopiar";
 
 // prob01 fora de fronteira de arredondamento (0,585 daria 59 — ruling do controller)
 const pick = { mercado: "Mais de 6,5 escanteios", prob01: 0.58, fairOdd: 1.67, bookOdd: 1.75,
@@ -46,5 +47,15 @@ describe("Talao (spec §4.1)", () => {
   it("nada dentro do talao usa a cor confianca", () => {
     const { container } = render(<Talao pick={pick} futuro={false} preJogo={false} />);
     expect(container.innerHTML).not.toContain("--sb-confianca");
+  });
+  it("falha de copia dentro do talao nao usa contra-texto", async () => {
+    const original = navigator.clipboard;
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("negado")) }, configurable: true });
+    render(<BotaoCopiar odd={1.75} sobre="talao" />);
+    fireEvent.click(screen.getByRole("button", { name: "copiar odd 1,75" }));
+    const aviso = await screen.findByText("não deu pra copiar — selecione o número");
+    expect(aviso.className).toContain("tinta-do-talao");
+    expect(aviso.className).not.toContain("contra-texto");
+    Object.defineProperty(navigator, "clipboard", { value: original, configurable: true });
   });
 });

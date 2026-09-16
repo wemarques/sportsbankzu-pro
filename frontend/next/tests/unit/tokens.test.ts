@@ -16,6 +16,10 @@ describe("tokens (#254, spec §2)", () => {
     expect(PARES_PERMITIDOS.some(([t, f]) => t === "confianca" && f === "talao")).toBe(false);
   });
 
+  it("contra-texto sobre talao nao e um par permitido — o aviso de copia usa tinta-do-talao la dentro", () => {
+    expect(PARES_PERMITIDOS.some(([t, f]) => t === "contra-texto" && f === "talao")).toBe(false);
+  });
+
   it("texto-apagado sobre hover e o par mais fraco e ainda passa", () => {
     expect(contraste(TOKENS["texto-apagado"], TOKENS.hover)).toBeGreaterThanOrEqual(4.5);
   });
