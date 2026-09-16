@@ -20,8 +20,8 @@ export function Navegacao() {
   if (ESCONDIDA.has(pathname)) return null;
 
   return (
-    <nav aria-label={NAVEGACAO.rotuloNav} className="lg:self-stretch">
-      <ul className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[var(--sb-linha)] bg-[var(--sb-painel)] py-2 lg:static lg:inset-auto lg:z-auto lg:min-h-screen lg:w-[200px] lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:py-6">
+    <nav aria-label={NAVEGACAO.rotuloNav} className="lg:w-[200px] lg:self-stretch lg:border-r lg:border-[var(--sb-linha)] lg:bg-[var(--sb-painel)]">
+      <ul className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[var(--sb-linha)] bg-[var(--sb-painel)] py-2 lg:static lg:inset-auto lg:z-auto lg:flex-col lg:justify-start lg:gap-1 lg:border-t-0 lg:bg-transparent lg:py-6">
         {ITENS.map((item, i) => (
           <li key={item.href} className={i === 3 ? "hidden lg:block" : ""}>
             <Link
