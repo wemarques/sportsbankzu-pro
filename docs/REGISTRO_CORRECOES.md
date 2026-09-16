@@ -14073,6 +14073,8 @@ A reformulação do frontend (spec `docs/superpowers/specs/2026-09-15-reformulac
 5. **Prova de contrato existente (Task 5, commits `d6a3325`, tip `14940a9`):** `tests/test_255_fair_odd_book_odd.py` confirma que `fair_odd`/`book_odd` já eram campos separados em `MarketOutput`/`to_legacy_mercado` — a spec listava como pendente por engano (ver "Contradições spec × código" no plano). Fast-tracked (transcrição verbatim do brief), depois corrigido por dependência de ordem: o teste comparava `fair_odd` (prob sem arredondar, `compute_display`) contra `round(1/p arredondada a 4 casas, 2)` do dict legado; numa fronteira de arredondamento (p=0,56983) isso dá 1,75 vs 1,76, e o conjunto de mercados na fronteira muda com estado global — `tests/test_226_retrain_escanteios.py` deixa o modelo ML de escanteios carregável porque `backend/modeling/corners/ml_regression.py:37` calcula `_MODELS_DIR` a partir de `DATA_ROOT` no import (vazamento de import-time pré-existente, fora do escopo, registrado como achado, não corrigido). Teste reescrito para comparar contra `MarketOutput.calibrated_probability` sem arredondar; par test_226+test_255 = 14 passed.
 6. **Camada de vocabulário (Task 6, commits `033336e`, `9af8e7d`):** `backend/ai/mistral_contract.py::validate_output` ganha a quarta camada de rejeição (`_VOCABULARIO_INTERNO`: lambda/deflação/banda); `SEM_RECOMENDACAO` unificado entre `aligned_recommendation` e o prompt; prompt v3.1 troca os exemplos que ensinavam o vocabulário interno. O regex do brief para "deflação" (`\bdeflac(?:a|ã)[a-zç]*`) não casava "deflação" (ç) nem "deflacionad*" — defeito do plano, escalado corretamente pelo implementer em vez de patcheado; corrigido para `\bdefla[cç][a-zçã]*`. Review aprovou o escopo (4 arquivos, 0 Critical/Important) e apontou mais duas frases fora do regex mas dentro do espírito da regra: "quando character existir" → "quando disponível" (inglês perdido no prompt) e, no ramo com picks, "EV negativo apos deflacao" → "EV negativo" (o modelo poderia parafrasear e a camada nova rejeitaria o próprio vocabulário do prompt). Ambas corrigidas em fix round; 44 passed nos 4 arquivos-alvo + vizinhos (#238-a, enforcement, #082, #181).
 
+7. **CI (hotfix `1d74c3f`, pós-push):** o run automático `Deploy Lambda` 35055565326 e o CI sobre `e4c9100` falharam em `tests/test_255_rotas_ledger.py::test_rotas_registradas_no_app` (`'_IncludedRouter' object has no attribute 'path'`). Causa: `backend/requirements.txt` pina `fastapi>=0.110.0` sem teto, o CI instalou fastapi 0.141.1 / starlette 1.6.0, e a partir do Starlette 1.0 os routers incluídos aparecem em `app.routes` como `_IncludedRouter`, sem `.path`; localmente (0.128 / 0.50) o teste passava. Defeito do plano (teste frágil à versão), corrigido pelo controller: o registro é provado por `app.openapi()["paths"]`, que resolve a inclusão em qualquer versão — verificado num venv descartável com as versões do CI. O commit só tocou `tests/`, então o deploy foi disparado à mão (`gh workflow run deploy-lambda.yml --ref main`, run 35055950216, success). **Achado fora do escopo:** sem teto no requirements, cada deploy leva a fastapi/starlette do dia — a Lambda em produção roda hoje starlette 1.6.
+
 ### Etapa 2-bis — contrato de saída: consumidores do ledger
 
 | Campo escrito | Tabela | Consumidor externo | Contrato implícito assumido |
@@ -14094,8 +14096,37 @@ Revisões por tarefa: Tasks 1, 3, 4, 6 Approved com 0 Critical/Important na prim
 
 Prova pós-deploy (curls contra a Function URL de produção):
 ```
-[PREENCHER com a saída real dos curls — ver Step 6 do brief da Task 7. Etapa 4 do SDD
-proíbe inventar números; este é o único placeholder permitido no registro.]
+Deploy: run manual `Deploy Lambda` 35055950216 sobre `1d74c3f` (2026-09-16, success; o run
+automático 35055565326 sobre `e4c9100` falhou no job test — ver Correções, item CI). Medido em
+2026-09-16 ~04:55 UTC:
+
+$ curl -s "$BASE/health"
+{"status":"ok"}
+
+$ curl -s "$BASE/ledger/dia?data=2026-09-14" | head -c 500
+{"data":"2026-09-14","picks":[{"match_id":"liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+"league_id":"liga-mx","kickoff_utc":"2026-09-14T01:07:00+00:00","familia":"Over/Under",
+"market":"Over/Under","selection":"Under 3.5","published_prob":0.8243911983829003,
+"fair_odd":1.21,"book_odd":1.5,"classification":"SAFE","outcome":1,"detail":"3 gols"}, ...
+
+$ curl -s "$BASE/ledger/agregado?periodo=7d"            -> HTTP 200 em 0,87 s
+{"periodo":"7d","familia":null,"liga":null,"acerto":{"picks":73,"acertos":38,"jogos":37},
+"retorno":{"valor":null,"pct_banca":null,"motivo":"stake_nao_gravado_no_ledger"},"brier":0.2529,
+"amostra_curta":false,"por_familia":{"Over/Under":{"picks":34,"acertos":22,"n_jogos":26,
+"brier":0.2183},"BTTS":{"picks":9,"acertos":5,"n_jogos":6,"brier":null},"Corners":{"picks":13,
+"acertos":3,"n_jogos":11,"brier":null},"Cards":{"picks":17,"acertos":8,"n_jogos":15,"brier":null}, ...
+
+$ curl -s "$BASE/ledger/agregado?periodo=temporada"     -> HTTP 200 em 0,88 s
+{"periodo":"temporada","familia":null,"liga":null,"acerto":{"picks":83,"acertos":41,"jogos":45},
+"retorno":{...,"motivo":"stake_nao_gravado_no_ledger"},"brier":0.2624,"amostra_curta":false,
+"por_familia":{"Over/Under":{"picks":38,"acertos":24,"n_jogos":30,"brier":0.2295}, ...},
+por_liga: 16 ligas, buckets: 10, chaves: acerto, amostra_curta, brier, buckets, familia, liga,
+periodo, por_familia, por_liga, retorno
+
+$ curl -s -o /dev/null -w "%{http_code}
+" "$BASE/ledger/dia?data=14-09-2026"    -> 400
+$ curl -s -o /dev/null -w "%{http_code}
+" "$BASE/ledger/agregado?periodo=1ano"  -> 400
 ```
 
 ### Lição aprendida
