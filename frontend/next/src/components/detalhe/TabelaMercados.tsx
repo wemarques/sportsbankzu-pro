@@ -4,6 +4,7 @@ import { BotaoCopiar } from "@/components/feed/BotaoCopiar";
 
 function status(p: PickView) {
   if (p.vale) return { texto: "vale", classe: "" };
+  if (p.classification === "NO_BET") return { texto: p.motivo || "não vale", classe: "" };
   if (p.bookOdd == null) return { texto: "sem preço", classe: "" };
   if (p.bookOdd < p.fairOdd) return { texto: "↓ abaixo do mínimo", classe: "text-[var(--sb-contra-texto)]" };
   return { texto: p.motivo || "não vale", classe: "" };

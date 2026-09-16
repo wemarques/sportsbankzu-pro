@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/fixtures.2026-09-15.v1.json";
 import { normalizeMatch } from "@/lib/normalizeMatch";
+import { toJogoView } from "@/lib/jogoView";
 import type { Match, MatchPrediction } from "@/lib/leagues";
 
 /**
@@ -39,5 +40,18 @@ describe("fixture pinado x type do payload", () => {
     const brutos = fixture.matches as (Bruto & { status?: string; stats?: { rejected_insights?: unknown[] } })[];
     expect(brutos.some((r) => (r.stats?.rejected_insights?.length ?? 0) > 0), "falta um jogo com mercados recusados").toBe(true);
     expect(brutos.some((r) => r.status === "scheduled"), "falta um jogo ainda por jogar (date=tomorrow)").toBe(true);
+  });
+
+  it("recusados do fixture real viram linhas NO_BET e a contagem bate", () => {
+    const views = (fixture.matches as { leagueId: string }[]).map((r) => toJogoView(normalizeMatch(r, r.leagueId, 0), new Date("2026-09-15T12:00:00Z")));
+    const comRecusados = views.filter((v) => v.mercados.some((p) => p.classification === "NO_BET"));
+    expect(comRecusados.length).toBeGreaterThan(0);
+    for (const v of views) {
+      expect(v.totalAvaliados).toBe(v.mercados.length);
+      for (const p of v.mercados.filter((x) => x.classification === "NO_BET")) {
+        expect(p.prob01).toBeGreaterThan(0); expect(p.prob01).toBeLessThan(1);
+        expect(p.bookOdd).toBeNull(); expect(p.motivo).not.toBe("");
+      }
+    }
   });
 });

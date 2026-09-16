@@ -27,6 +27,12 @@ describe("detalhe (spec §4.3)", () => {
     expect(screen.getAllByRole("button", { name: /copiar odd/ })).toHaveLength(1);
     expect(screen.getByText("Ambos marcam").closest("tr")).toHaveClass("text-[var(--sb-texto-apagado)]");
   });
+  it("recusado mostra o motivo, nao 'sem preço'", () => {
+    render(<TabelaMercados mercados={[p({ mercado: "Mais de 3,5 gols", prob01: 0.35, fairOdd: 2.86, bookOdd: null, classification: "NO_BET", vale: false, motivo: "amostra curta" })]} />);
+    expect(screen.getByText("amostra curta")).toBeInTheDocument();
+    expect(screen.queryByText("sem preço")).toBeNull();
+    expect(screen.queryByRole("button", { name: /copiar odd/ })).toBeNull();
+  });
   it("de onde vem o numero: frase com unidade; campo ausente some", () => {
     expect(fraseOrigem({ golsCasa: 3, golsFora: 2.5, golsLiga: 4.9, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null }, "Toronto", "Nashville", "MLS"))
       .toBe("Nos jogos do Toronto saem 3,0 gols por partida na temporada; nos do Nashville, 2,5; média da MLS: 4,9.");

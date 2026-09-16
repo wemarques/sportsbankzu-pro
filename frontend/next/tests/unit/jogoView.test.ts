@@ -46,7 +46,7 @@ describe("toJogoView — estados (spec §4.2)", () => {
   });
   it("recusados entram em mercados como NO_BET sem preco e contam em totalAvaliados", () => {
     const v = view({ ...base, mercados: [merc("SAFE")], stats: { ...base.stats, rejected_insights: [
-      { market: "Over 3.5 gols", raw_prob: 0.4, deflated_prob: 0.35, ev: -0.05, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] },
+      { market: "Over 3.5 gols", raw_prob: 40, deflated_prob: 35, ev: -5, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] },
     ] } });
     expect(v.mercados).toHaveLength(2);
     const r = v.mercados[1];
@@ -54,6 +54,7 @@ describe("toJogoView — estados (spec §4.2)", () => {
     expect(r.vale).toBe(false);
     expect(r.bookOdd).toBeNull();
     expect(r.fairOdd).toBe(2.86);
+    expect(r.ev).toBe(-0.05);
     expect(r.motivo).toBe("sem valor");
     expect(v.totalAvaliados).toBe(v.mercados.length);
     expect(v.estado).toBe("vale");
@@ -66,7 +67,7 @@ describe("toJogoView — estados (spec §4.2)", () => {
     expect(view({ ...base, mercados: [merc("NO_BET", { reason_codes: ["NEGATIVE_EV"] })] }).estado).toBe("nada");
   });
   it("nada: mercados vazio (o pipeline nao envia NO_BET; eles vivem em rejected_insights)", () => {
-    const v = view({ ...base, mercados: [], stats: { rejected_insights: [{ market: "Over 2.5", raw_prob: 0.45, deflated_prob: 0.4, ev: -0.03, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] }] } });
+    const v = view({ ...base, mercados: [], stats: { rejected_insights: [{ market: "Over 2.5", raw_prob: 45, deflated_prob: 40, ev: -3, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] }] } });
     expect(v.estado).toBe("nada"); expect(v.totalAvaliados).toBe(1); expect(v.totalValem).toBe(0);
     expect(v.mercados).toHaveLength(1); expect(v.mercados[0].classification).toBe("NO_BET");
   });

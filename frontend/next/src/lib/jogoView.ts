@@ -46,11 +46,13 @@ function toPick(p: MatchPrediction): PickView | null {
 /** #254-b — mercado recusado antes de virar pick (spec §4.3: linha em texto-apagado, motivo curto).
  *  NO_BET nunca chega a `predictions` (ev_classification.py:743); vive em `stats.rejected_insights`. */
 function toPickRecusado(r: RejectedInsight): PickView | null {
-  const prob = r.deflated_prob;
-  if (!(typeof prob === "number" && prob > 0 && prob < 1)) return null;
+  // Produtor (ev_classification.py `_insights_rejeitados`) grava deflated_prob em 0-100.
+  const bruto = r.deflated_prob;
+  const prob = typeof bruto === "number" ? (bruto > 1 ? bruto / 100 : bruto) : NaN;
+  if (!(prob > 0 && prob < 1)) return null;
   return {
     mercado: fmtMercado(r.market), prob01: prob, fairOdd: Math.round(100 / prob) / 100, bookOdd: null,
-    edge: null, ev: r.ev ?? null, classification: "NO_BET",
+    edge: null, ev: typeof r.ev === "number" ? r.ev / 100 : null, classification: "NO_BET",
     motivo: r.reason_codes?.length ? motivoRecusa(r.reason_codes) : (r.reason || motivoRecusa([])),
     vale: false,
   };
