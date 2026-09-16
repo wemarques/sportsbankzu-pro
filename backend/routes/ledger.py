@@ -38,3 +38,17 @@ async def ledger_agregado(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:                                    # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"falha ao ler o ledger: {e}")
+
+
+@router.get("/ledger/picks")
+async def ledger_picks(
+    periodo: str = Query("30d", description="7d|30d|temporada"),
+    familia: Optional[str] = Query(None),
+    liga: Optional[str] = Query(None),
+):
+    try:
+        return ledger_leitura.picks(periodo, familia, liga)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:                                    # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"falha ao ler o ledger: {e}")

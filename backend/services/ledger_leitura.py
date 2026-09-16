@@ -319,3 +319,33 @@ def agregado(periodo: str, familia: Optional[str] = None,
         "por_liga": por_liga,
         "buckets": buckets,
     }
+
+
+def picks(periodo: str, familia: Optional[str] = None,
+         liga: Optional[str] = None, hoje: Optional[datetime] = None
+         ) -> Dict[str, Any]:
+    """#257 — linhas individuais RESOLVIDAS do periodo, cruas (sem agregar),
+    para o /desempenho calcular o retorno retroativo no cliente (stake nunca
+    gravado no ledger — Global Constraint da fase 4). Mesma janela e mesmo
+    filtro de `agregado()` — nao reimplementar a regra em paralelo
+    (proibicao 5); teste `tests/test_257_ledger_picks.py` prova que
+    `len(picks) == agregado()["acerto"]["resolvidos"]` nos mesmos dubles."""
+    inicio, fim = _janela_periodo(periodo, hoje)
+    linhas = _buscar_janela(inicio - timedelta(days=_FOLGA_PUBLICACAO_DIAS), fim)
+    na_janela = [l for l in linhas
+                 if l.get("kickoff_utc") is not None and inicio <= l["kickoff_utc"] < fim]
+
+    contados = na_janela
+    if liga:
+        contados = [l for l in contados if l["league_id"] == liga]
+    if familia:
+        contados = [l for l in contados
+                   if classificar_familia(l["market"], l["selection"]) == familia]
+
+    resolvidos = [l for l in contados
+                  if l["classification"] in _PICKS_CONTADOS and l["outcome"] is not None]
+
+    return {
+        "periodo": periodo, "familia": familia, "liga": liga,
+        "picks": [_pick_json(l) for l in resolvidos],
+    }
