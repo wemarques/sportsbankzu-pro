@@ -64,6 +64,7 @@ const ALLOWLIST = new Set([
   "components/feed/CardJogo.tsx:periodo",   // chave de dado do jogo ao vivo (#254)
   "lib/feedUrl.ts:amanha",                  // valor do tipo Dia / chave de URL, nao texto exibido (#254-b)
   "components/feed/DiaTabs.tsx:amanha",     // valor do tipo Dia / chave de URL, nao texto exibido (#254-b)
+  "lib/jogoViewOntem.ts:cartoes",   // template ASCII que fmtMercado acentua; nao e texto exibido (#256)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.
