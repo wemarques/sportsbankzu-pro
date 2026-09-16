@@ -38,4 +38,15 @@ describe("CardJogo e um switch sobre o estado (spec §4.2)", () => {
     render_({ ...base, estado: "ontem_sem_desfecho" });
     expect(screen.getByText("resultado ainda não conferido")).toBeInTheDocument();
   });
+  it("amanha sem preco: talao com 'ainda sem preço', sem stake", () => {
+    render_({ ...base, estado: "amanha_sem_preco", talao: p({ bookOdd: null }), mercados: [p({ bookOdd: null })] });
+    expect(screen.getByText("vale a partir de 1,67, mercado ainda sem preço")).toBeInTheDocument();
+    expect(screen.queryByText(/na sua banca atual/)).toBeNull();
+  });
+  it("com onAbrir o titulo e botao; sem onAbrir e link", () => {
+    render_({ ...base });
+    expect(screen.getByRole("button", { name: "Toronto × Nashville SC" })).toBeInTheDocument();
+    render(<CardJogo jogo={base} confianca={null} selecionado hrefDetalhe="/jogos/j1" />);
+    expect(screen.getByRole("link", { name: "Toronto × Nashville SC" })).toHaveAttribute("href", "/jogos/j1");
+  });
 });
