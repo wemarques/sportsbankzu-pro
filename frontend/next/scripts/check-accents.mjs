@@ -61,6 +61,7 @@ const ALLOWLIST = new Set([
   "lib/mockMatches.ts:sao",                 // nomes de times/estádios espelhando a API
   "lib/mockMatches.ts:estadio",
   "lib/tokens.ts:confianca",                // nome de token (#254): chave interna, nao texto exibido
+  "components/feed/CardJogo.tsx:periodo",   // chave de dado do jogo ao vivo (#254)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.
