@@ -5,6 +5,7 @@ import { Zilla_Slab, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "../components/theme-provider";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { SessionProvider } from "../components/SessionProvider";
+import { Navegacao } from "@/components/nav/Navegacao";
 
 const slab = Zilla_Slab({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-slab", display: "swap" });
 const sans = Source_Sans_3({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-sans", display: "swap" });
@@ -21,7 +22,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SessionProvider>
           <ThemeProvider>
             <ThemeToggle />
-            {children}
+            <div className="lg:flex">
+              <Navegacao />
+              <div className="flex-1 pb-16 lg:pb-0">{children}</div>
+            </div>
           </ThemeProvider>
         </SessionProvider>
       </body>

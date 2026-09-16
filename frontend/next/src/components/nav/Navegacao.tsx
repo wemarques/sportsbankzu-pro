@@ -1,0 +1,37 @@
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const ITENS = [
+  { href: "/jogos", rotulo: "Jogos" },
+  { href: "/banca", rotulo: "Banca" },
+  { href: "/desempenho", rotulo: "Desempenho" },
+  { href: "/glossario", rotulo: "Glossário" },
+] as const;
+
+/** #257 — celular: barra inferior com 3 (sem Glossário, spec §3); desktop:
+ * sidebar com os 4. Um componente, CSS decide o layout por breakpoint — evita
+ * duas árvores de link divergindo. Some em "/" (hero), "/login", "/register". */
+export function Navegacao() {
+  const pathname = usePathname();
+  const ESCONDIDA = new Set(["/", "/login", "/register"]);
+  if (ESCONDIDA.has(pathname)) return null;
+
+  return (
+    <nav aria-label="navegação principal">
+      <ul className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[var(--sb-linha)] bg-[var(--sb-painel)] py-2 lg:static lg:inset-auto lg:z-auto lg:w-[200px] lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:py-6">
+        {ITENS.map((item, i) => (
+          <li key={item.href} className={i === 3 ? "hidden lg:block" : ""}>
+            <Link
+              href={item.href}
+              aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+              className="sb-foco block rounded-[var(--sb-raio-painel)] px-3 py-2 text-center text-[13px] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--sb-texto)] lg:text-left lg:text-[14px]"
+            >
+              {item.rotulo}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
