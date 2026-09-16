@@ -78,4 +78,12 @@ test.describe("/jogos (#254-b)", () => {
     await expect(page.getByRole("heading", { name: /Todos os mercados avaliados/ })).toBeVisible();
     await expect(page.getByText("Como o modelo vê o jogo")).toHaveCount(0);
   });
+  test("numeros alinham pela virgula: 1,67 e 1,75 tem a mesma largura", async ({ page }) => {
+    await stub(page); await page.goto("/jogos");
+    const w = await page.evaluate(() => {
+      const s = (t: string) => { const el = document.createElement("span"); el.className = "tnum"; el.style.font = getComputedStyle(document.body).font; el.textContent = t; document.body.append(el); const r = el.getBoundingClientRect().width; el.remove(); return r; };
+      return [s("1,67"), s("1,75")];
+    });
+    expect(Math.abs(w[0] - w[1])).toBeLessThan(0.5);
+  });
 });
