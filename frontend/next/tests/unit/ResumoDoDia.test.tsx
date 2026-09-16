@@ -10,7 +10,7 @@ describe("ResumoDoDia (#256, spec §4.5 — sem reais por pick em ontem)", () =>
   it("quando todos os picks estão pendentes, mostra mensagem de resultado pendente", () => {
     render(<ResumoDoDia resumo={{ picks: 5, acertos: 0, jogos: 4, resolvidos: 0 }} />);
     expect(screen.getByText("resultado ainda não conferido")).toBeInTheDocument();
-    expect(screen.getByText("resultado ainda não conferido")).toHaveClass("texto-apagado");
+    expect(screen.getByText("resultado ainda não conferido")).toHaveClass("text-[var(--sb-texto-apagado)]");
   });
   it("resumo nulo (ainda carregando), nao renderiza nada", () => {
     const { container } = render(<ResumoDoDia resumo={null} />);

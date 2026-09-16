@@ -8,7 +8,7 @@ export function ResumoDoDia({ resumo }: { resumo: LedgerResumo | null }) {
   if (!resumo) return null;
   if (resumo.resolvidos === 0)
     return (
-      <p className="tnum my-2 text-[14px] texto-apagado" role="status">
+      <p className="tnum my-2 text-[14px] text-[var(--sb-texto-apagado)]" role="status">
         {VAZIOS.resultadoPendente}
       </p>
     );
