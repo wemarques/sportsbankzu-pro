@@ -86,7 +86,10 @@ export function fraseOrigem(o: Origem, casa: string, fora: string, liga: string)
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,
-  feedNaoCarregou: "Os jogos de hoje não carregaram.",
+  /** #256 — parametrizado por dia; sem argumento continua igual ao texto que
+   * o plano 1 já testa ("Os jogos de hoje não carregaram."). */
+  feedNaoCarregou: (dia: "ontem" | "hoje" | "amanha" = "hoje") =>
+    `Os jogos ${dia === "ontem" ? "de ontem" : dia === "amanha" ? "de amanhã" : "de hoje"} não carregaram.`,
   tentarDeNovo: "Tentar de novo",
   carimbo: (hora: string) => `de ${hora}`,
   ligaSemDados: (liga: string) => `${liga}: sem dados da rodada`,

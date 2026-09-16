@@ -32,7 +32,8 @@ test.describe("/jogos (#254-b)", () => {
     await expect(page.locator("article[data-estado]")).toHaveCount(4);
     await stub(page, { erro: true });
     await page.getByRole("tab", { name: "Amanhã" }).click();
-    await expect(page.getByText("Os jogos de hoje não carregaram.")).toBeVisible();
+    // #256: a mensagem segue a aba ativa (antes dizia "hoje" em qualquer aba)
+    await expect(page.getByText("Os jogos de amanhã não carregaram.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Tentar de novo" })).toBeVisible();
     await expect(page.getByText(/^de \d\d:\d\d$/)).toBeVisible();
     await expect(page.locator("article[data-estado]")).toHaveCount(4);

@@ -1,0 +1,256 @@
+{
+  "ok": true,
+  "data": "2026-09-14",
+  "picks": [
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Over/Under",
+      "market": "Over/Under",
+      "selection": "Under 3.5",
+      "published_prob": 0.8243911983829003,
+      "fair_odd": 1.21,
+      "book_odd": 1.5,
+      "classification": "SAFE",
+      "outcome": 1,
+      "detail": "3 gols"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Over/Under",
+      "market": "Over/Under",
+      "selection": "Under 4.5",
+      "published_prob": 0.90451665156307,
+      "fair_odd": 1.11,
+      "book_odd": 1.13,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "3 gols"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Corners",
+      "market": "Corners",
+      "selection": "Corners Over 4.5",
+      "published_prob": 0.8588637577712843,
+      "fair_odd": 1.16,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "10 escanteios"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Corners",
+      "market": "Corners",
+      "selection": "Corners Over 5.5",
+      "published_prob": 0.8222283092264766,
+      "fair_odd": 1.22,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "10 escanteios"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Corners",
+      "market": "Corners",
+      "selection": "Corners Over 6.5",
+      "published_prob": 0.7886889306676935,
+      "fair_odd": 1.27,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "10 escanteios"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Corners",
+      "market": "Corners",
+      "selection": "Corners Under 10.5",
+      "published_prob": 0.7044281525816897,
+      "fair_odd": 1.42,
+      "book_odd": 1.58,
+      "classification": "NEUTRO_QUALIFICADO",
+      "outcome": 1,
+      "detail": "10 escanteios"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Cards",
+      "market": "Cards",
+      "selection": "Over 1.5",
+      "published_prob": 0.8644537901326135,
+      "fair_odd": 1.16,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "3 cartÃµes"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Cards",
+      "market": "Cards",
+      "selection": "Over 2.5",
+      "published_prob": 0.7929807989597077,
+      "fair_odd": 1.26,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "3 cartÃµes"
+    },
+    {
+      "match_id": "liga-mx-Guadalajara-Pumas UNAM-1789348020.0",
+      "league_id": "liga-mx",
+      "kickoff_utc": "2026-09-14T01:07:00+00:00",
+      "familia": "Cards",
+      "market": "Cards",
+      "selection": "Over 3.5",
+      "published_prob": 0.7046779113634583,
+      "fair_odd": 1.42,
+      "book_odd": 1.62,
+      "classification": "NEUTRO_QUALIFICADO",
+      "outcome": 0,
+      "detail": "3 cartÃµes"
+    },
+    {
+      "match_id": "primeira-liga-Sporting Braga-GD Estoril Praia-1789415100.0",
+      "league_id": "primeira-liga",
+      "kickoff_utc": "2026-09-14T19:45:00+00:00",
+      "familia": "Cards",
+      "market": "Cards",
+      "selection": "Over 1.5",
+      "published_prob": 0.688725,
+      "fair_odd": 1.45,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "4 cartÃµes"
+    },
+    {
+      "match_id": "primeira-liga-Sporting Braga-GD Estoril Praia-1789415100.0",
+      "league_id": "primeira-liga",
+      "kickoff_utc": "2026-09-14T19:45:00+00:00",
+      "familia": "Cards",
+      "market": "Cards",
+      "selection": "Over 2.5",
+      "published_prob": 0.6130880000000001,
+      "fair_odd": 1.63,
+      "book_odd": null,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "4 cartÃµes"
+    },
+    {
+      "match_id": "primeira-liga-Sporting Braga-GD Estoril Praia-1789415100.0",
+      "league_id": "primeira-liga",
+      "kickoff_utc": "2026-09-14T19:45:00+00:00",
+      "familia": "Over/Under",
+      "market": "Over/Under",
+      "selection": "Under 3.5",
+      "published_prob": 0.7002031576170598,
+      "fair_odd": 1.43,
+      "book_odd": 1.45,
+      "classification": "NEUTRO",
+      "outcome": 1,
+      "detail": "1 gols"
+    }
+  ],
+  "resumo": {
+    "picks": 3,
+    "acertos": 2,
+    "jogos": 1,
+    "resolvidos": 3
+  },
+  "semana": {
+    "Over/Under": {
+      "picks": 1,
+      "acertos": 1,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "BTTS": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    },
+    "Corners": {
+      "picks": 1,
+      "acertos": 1,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "Cards": {
+      "picks": 1,
+      "acertos": 0,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "1X2": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    },
+    "Double Chance": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    }
+  },
+  "mes": {
+    "Over/Under": {
+      "picks": 1,
+      "acertos": 1,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "BTTS": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    },
+    "Corners": {
+      "picks": 1,
+      "acertos": 1,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "Cards": {
+      "picks": 1,
+      "acertos": 0,
+      "jogos": 1,
+      "resolvidos": 1
+    },
+    "1X2": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    },
+    "Double Chance": {
+      "picks": 0,
+      "acertos": 0,
+      "jogos": 0,
+      "resolvidos": 0
+    }
+  }
+}
