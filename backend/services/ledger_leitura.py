@@ -167,6 +167,7 @@ def _resumo(linhas: List[Dict[str, Any]]) -> Dict[str, int]:
         "picks": len(contados),
         "acertos": sum(1 for l in resolvidos if l["outcome"]),
         "jogos": len({l["match_id"] for l in resolvidos}),
+        "resolvidos": len(resolvidos),
     }
 
 
@@ -233,7 +234,7 @@ def _janela_periodo(periodo: str, hoje: Optional[datetime] = None
 
 
 def _segmento(linhas: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Picks/acertos/n_jogos + Brier com o piso MIN_N=20 em JOGOS (#079).
+    """Picks/acertos/n_jogos/resolvidos + Brier com o piso MIN_N=20 em JOGOS (#079).
     Retorna `n_jogos` (nao `jogos`) para o contrato de saida de `por_familia`/`por_liga`."""
     r = _resumo(linhas)
     resolvidos = [l for l in linhas
@@ -244,7 +245,8 @@ def _segmento(linhas: List[Dict[str, Any]]) -> Dict[str, Any]:
             [l["published_prob"] for l in resolvidos],
             [l["outcome"] for l in resolvidos],
         ), 4)
-    return {"picks": r["picks"], "acertos": r["acertos"], "n_jogos": r["jogos"], "brier": brier}
+    return {"picks": r["picks"], "acertos": r["acertos"], "n_jogos": r["jogos"],
+            "resolvidos": r["resolvidos"], "brier": brier}
 
 
 def _buckets_calibracao(resolvidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -301,7 +303,7 @@ def agregado(periodo: str, familia: Optional[str] = None,
     return {
         "periodo": periodo, "familia": familia, "liga": liga,
         "acerto": {"picks": resumo_geral["picks"], "acertos": resumo_geral["acertos"],
-                  "jogos": resumo_geral["n_jogos"]},
+                  "jogos": resumo_geral["n_jogos"], "resolvidos": resumo_geral["resolvidos"]},
         # #255: stake nunca e gravado no ledger — ver Global Constraints do plano.
         "retorno": {"valor": None, "pct_banca": None,
                    "motivo": "stake_nao_gravado_no_ledger"},
