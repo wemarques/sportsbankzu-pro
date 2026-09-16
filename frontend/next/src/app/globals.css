@@ -166,3 +166,8 @@
 }
 .tnum { font-variant-numeric: tabular-nums; }
 .sb-foco:focus-visible { outline: 2px solid var(--sb-texto); outline-offset: 2px; }
+.sb-talao::before, .sb-talao::after {
+  content: ""; position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px;
+  border-radius: 50%; background: var(--sb-painel);
+}
+.sb-talao::before { left: -7px; } .sb-talao::after { right: -7px; }
