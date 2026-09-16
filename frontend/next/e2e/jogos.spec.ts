@@ -23,9 +23,10 @@ test.describe("/jogos (#254-b)", () => {
     await page.goto("/jogos");
     await page.getByRole("tab", { name: "Amanhã" }).click();
     await expect(page).toHaveURL(/dia=amanha/);
-    await page.getByRole("button", { name: "MLS" }).click();
-    await expect(page).toHaveURL(/liga=mls/);
-    await expect(page.locator("article[data-estado]")).toHaveCount(await page.locator("article[data-liga='mls']").count());
+    await page.getByRole("button", { name: "Championship" }).click();
+    await expect(page).toHaveURL(/liga=championship/);
+    await expect(page.locator("div[data-liga='championship'] article")).toHaveCount(2);
+    await expect(page.locator("article[data-estado]")).toHaveCount(2);
   });
   test("dia sem jogos: frase e link para o proximo dia", async ({ page }) => {
     await stub(page, { vazio: true });

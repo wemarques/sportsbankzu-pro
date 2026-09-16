@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getMatchesByLeague } from "@/lib/api";
 import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
@@ -19,7 +19,6 @@ import { Detalhe } from "@/components/detalhe/Detalhe";
 
 export function Feed() {
   const router = useRouter();
-  const pathname = usePathname();
   const params = useSearchParams();
   const url = useMemo(() => lerFeedUrl(params), [params]);
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -35,13 +34,16 @@ export function Feed() {
   const [erro, setErro] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const ultimoBom = useRef<JogoView[]>([]);
+  const geracao = useRef(0);
 
   const carregar = useCallback(async () => {
     const date = diaParaApi(url.dia);
     if (!date) { setJogos([]); setCarregando(false); return; }   // ontem: plano 3
+    const minha = ++geracao.current;
     setCarregando(true);
     try {
       const res = await getMatchesByLeague(ligas.map((l) => l.id).join(","), date);
+      if (minha !== geracao.current) return;   // outra carga mais nova ja partiu: esta e obsoleta
       if (res._error) throw new Error(res._error.message);
       const agora = new Date();
       const views = deduplicateMatches((res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)))
@@ -49,8 +51,9 @@ export function Feed() {
         .sort((a, b) => Number(b.estado === "em_jogo") - Number(a.estado === "em_jogo") || a.kickoffIso.localeCompare(b.kickoffIso));
       ultimoBom.current = views; setJogos(views); setCarimbo(fmtHora(agora.toISOString())); setErro(false);
     } catch {
+      if (minha !== geracao.current) return;
       setErro(true); setJogos(ultimoBom.current);
-    } finally { setCarregando(false); }
+    } finally { if (minha === geracao.current) setCarregando(false); }
   }, [url.dia, ligas]);
 
   useEffect(() => { carregar(); }, [carregar]);
@@ -79,7 +82,7 @@ export function Feed() {
         {!carregando && visiveis.length === 0 && !erro && (
           <p className="my-6 text-[14px] text-[var(--sb-texto-apagado)]">
             {VAZIOS.diaSemJogos(fmtDataCurta(new Date().toISOString()))}{" "}
-            <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
+            <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} replace className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
           </p>
         )}
         <div className="space-y-3 py-3">
