@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { CardJogo } from "@/components/feed/CardJogo";
 import type { JogoView, PickView } from "@/lib/jogoView";
 
@@ -43,10 +43,12 @@ describe("CardJogo e um switch sobre o estado (spec §4.2)", () => {
     expect(screen.getByText("vale a partir de 1,67, mercado ainda sem preço")).toBeInTheDocument();
     expect(screen.queryByText(/na sua banca atual/)).toBeNull();
   });
-  it("com onAbrir o titulo e botao; sem onAbrir e link", () => {
-    render_({ ...base });
-    expect(screen.getByRole("button", { name: "Toronto × Nashville SC" })).toBeInTheDocument();
-    render(<CardJogo jogo={base} confianca={null} selecionado hrefDetalhe="/jogos/j1" />);
-    expect(screen.getByRole("link", { name: "Toronto × Nashville SC" })).toHaveAttribute("href", "/jogos/j1");
+  it("o titulo e sempre link; com onAbrir o clique e interceptado", () => {
+    const abrir = vi.fn();
+    render(<CardJogo jogo={base} confianca={null} selecionado={false} onAbrir={abrir} hrefDetalhe="/jogos?jogo=j1" />);
+    const link = screen.getByRole("link", { name: "Toronto × Nashville SC" });
+    expect(link).toHaveAttribute("href", "/jogos?jogo=j1");
+    fireEvent.click(link);
+    expect(abrir).toHaveBeenCalledWith("j1");
   });
 });

@@ -55,15 +55,10 @@ export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe }:
       className="space-y-2 rounded-[var(--sb-raio-painel)] border border-[var(--sb-linha)] bg-[var(--sb-painel)] p-4 hover:bg-[var(--sb-hover)] data-[selecionado=true]:border-[var(--sb-texto)]">
       <header className="flex items-baseline justify-between gap-3">
         <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">
-          {onAbrir ? (
-            <button type="button" onClick={() => onAbrir(jogo.id)} className="sb-foco text-left">
-              {jogo.casa} × {jogo.fora}
-            </button>
-          ) : (
-            <Link href={hrefDetalhe} className="sb-foco">
-              {jogo.casa} × {jogo.fora}
-            </Link>
-          )}
+          <Link href={hrefDetalhe} className="sb-foco"
+            onClick={onAbrir ? (e) => { e.preventDefault(); onAbrir(jogo.id); } : undefined}>
+            {jogo.casa} × {jogo.fora}
+          </Link>
         </h2>
         <span className="tnum text-[13px] text-[var(--sb-texto-apagado)]">{topo}</span>
       </header>

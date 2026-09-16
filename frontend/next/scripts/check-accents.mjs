@@ -62,6 +62,8 @@ const ALLOWLIST = new Set([
   "lib/mockMatches.ts:estadio",
   "lib/tokens.ts:confianca",                // nome de token (#254): chave interna, nao texto exibido
   "components/feed/CardJogo.tsx:periodo",   // chave de dado do jogo ao vivo (#254)
+  "lib/feedUrl.ts:amanha",                  // valor do tipo Dia / chave de URL, nao texto exibido (#254-b)
+  "components/feed/DiaTabs.tsx:amanha",     // valor do tipo Dia / chave de URL, nao texto exibido (#254-b)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.

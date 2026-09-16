@@ -9,7 +9,7 @@ export function ThemeToggle() {
   return (
     <button
       aria-label="Alternar tema"
-      className="fixed top-3 right-3 z-10 px-3 py-2 rounded-md border border-border bg-card text-card-foreground hover:bg-accent transition-colors"
+      className="sb-foco fixed top-3 right-3 z-10 px-3 py-2 rounded-md border border-border bg-card text-card-foreground hover:bg-accent transition-colors"
       onClick={toggleTheme}
     >
       {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
