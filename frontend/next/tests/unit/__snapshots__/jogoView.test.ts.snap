@@ -1,0 +1,54 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`toJogoView — estados (spec §4.2) > snapshot do fixture real 1`] = `
+[
+  {
+    "estado": "ontem_sem_desfecho",
+    "id": "championship-Middlesbrough-Millwall-1789497900.0",
+    "talao": "BTTS — SIM",
+    "valem": 1,
+  },
+  {
+    "estado": "ontem_sem_desfecho",
+    "id": "championship-Bristol City-Lincoln City-1789497900.0",
+    "talao": "Under 2.5 gols",
+    "valem": 1,
+  },
+  {
+    "estado": "ontem_sem_desfecho",
+    "id": "eredivisie-Ajax-Willem II-1789495200.0",
+    "talao": "BTTS — SIM",
+    "valem": 1,
+  },
+  {
+    "estado": "direcao",
+    "id": "brasileirao-serie-a-Botafogo-Grêmio-1789597800.0",
+    "talao": null,
+    "valem": 0,
+  },
+  {
+    "estado": "vale",
+    "id": "la-liga-Atlético Madrid-CA Osasuna-1789578000.0",
+    "talao": "BTTS — SIM",
+    "valem": 1,
+  },
+  {
+    "estado": "direcao",
+    "id": "la-liga-Deportivo La Coruña-Sevilla FC-1789578000.0",
+    "talao": null,
+    "valem": 0,
+  },
+  {
+    "estado": "vale",
+    "id": "la-liga-Levante UD-Athletic Club Bilbao-1789587000.0",
+    "talao": "Cartões Under 4.5",
+    "valem": 2,
+  },
+  {
+    "estado": "vale",
+    "id": "la-liga-FC Barcelona-Racing Santander-1789587000.0",
+    "talao": "Under 4.5 gols",
+    "valem": 1,
+  },
+]
+`;
