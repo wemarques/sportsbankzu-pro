@@ -2,7 +2,8 @@
 import Link from "next/link";
 import type { PickView } from "@/lib/jogoView";
 import { useBanca, calcStake } from "@/lib/bancaStore";
-import { stake } from "@/lib/copy";
+import { stake, stakeComTermo } from "@/lib/copy";
+import { TextoComTermos } from "@/components/TextoComTermos";
 
 export function LinhaStake({ pick }: { pick: PickView }) {
   const [banca] = useBanca();
@@ -12,7 +13,7 @@ export function LinhaStake({ pick }: { pick: PickView }) {
   const valor = calcStake(pick.prob01, pick.bookOdd, banca, pick.classification);
   return (
     <p className="tnum flex justify-between text-[14px]">
-      <span>{stake(banca, valor)}</span>
+      <span><TextoComTermos texto={stakeComTermo(banca, valor)} /></span>
       <Link href="/banca" className="sb-foco underline">ajustar</Link>
     </p>
   );
