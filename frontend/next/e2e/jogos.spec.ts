@@ -52,6 +52,7 @@ test.describe("/jogos (#254-b)", () => {
     await page.locator("article[data-estado='vale'] h2 a").click();
     await expect(page).toHaveURL(/jogo=/);
     await expect(page.getByRole("complementary", { name: "detalhe do jogo" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "detalhe do jogo" })).toBeFocused();
     await page.goBack();
     await expect(page).not.toHaveURL(/jogo=/);
     await expect(page.getByRole("complementary", { name: "detalhe do jogo" })).toBeHidden();

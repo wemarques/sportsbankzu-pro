@@ -67,6 +67,8 @@ export function Feed() {
   };
   const visiveis = url.liga === "todas" ? jogos : jogos.filter((j) => j.ligaId === url.liga || j.ligaId.endsWith(url.liga));
   const aberto = visiveis.find((j) => j.id === url.jogo) ?? null;
+  const painelRef = useRef<HTMLElement>(null);
+  useEffect(() => { if (aberto) painelRef.current?.focus(); }, [aberto?.id]);
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-3 text-[var(--sb-texto)] lg:grid lg:grid-cols-[minmax(340px,1fr)_minmax(420px,1.2fr)] lg:gap-6">
@@ -96,7 +98,7 @@ export function Feed() {
         </div>
       </div>
       {!isMobile && aberto && (
-        <aside aria-label="detalhe do jogo" className="sticky top-4 self-start">
+        <aside aria-label="detalhe do jogo" className="sticky top-4 self-start" ref={painelRef} tabIndex={-1}>
           <Detalhe jogo={aberto} confianca={confianca.get(aberto.ligaId)} />
         </aside>
       )}

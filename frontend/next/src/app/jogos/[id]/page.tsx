@@ -63,6 +63,7 @@ function DetalhePagina() {
 
   return (
     <div className="mx-auto max-w-[700px] px-4 py-4">
+      <p className="pb-3 text-[14px]"><Link href="/jogos" className="sb-foco underline">{VAZIOS.verFeedDeHoje}</Link></p>
       <Detalhe jogo={jogo} confianca={confianca.get(jogo.ligaId)} />
     </div>
   );
