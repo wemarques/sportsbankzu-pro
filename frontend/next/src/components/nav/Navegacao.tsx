@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -14,6 +15,22 @@ const ITENS = [
  * duas árvores de link divergindo. Some em "/" (hero), "/login", "/register". */
 export function Navegacao() {
   const pathname = usePathname();
+
+  // #257 fix round 1 — evidencia: window.scrollY fica 0 do load ate 1s depois
+  // em /glossario#stake, em producao, mobile E chromium (medido com script de
+  // diagnostico); o navegador nunca rola para a ancora sozinho porque o corpo
+  // chega via streaming RSC (paths do App Router), nao HTML estatico puro no
+  // primeiro parse. So passava por acidente: o termo cabia no viewport alto
+  // do chromium (elTop 633 < innerHeight 720) mas nao no do celular (elTop
+  // 738 > innerHeight 664). scrollIntoView respeita scroll-margin-top (o
+  // scroll-mt-4 do termo em glossario/page.tsx), entao nao precisa de offset
+  // manual aqui.
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const alvo = document.getElementById(window.location.hash.slice(1));
+    alvo?.scrollIntoView({ block: "start" });
+  }, [pathname]);
+
   const ESCONDIDA = new Set(["/", "/login", "/register"]);
   if (ESCONDIDA.has(pathname)) return null;
 

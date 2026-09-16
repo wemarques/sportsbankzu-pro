@@ -70,6 +70,7 @@ const ALLOWLIST = new Set([
   "lib/glossarioTermos.ts:calibracao",   // id de âncora URL (#glossario#calibracao); contrato: sem acento (#257)
   "lib/glossarioTermos.ts:minimo",       // id de âncora URL (#glossario#minimo); contrato: sem acento (#257)
   "lib/glossarioTermos.ts:direcao",      // id de âncora URL (#glossario#direcao); contrato: sem acento (#257)
+  "components/nav/Navegacao.tsx:glossario",   // href de rota, nao texto exibido (#257)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.
