@@ -24,6 +24,10 @@ describe("copy (#254, spec §4.4)", () => {
     expect(C.stake(1000, 25)).toBe("Da sua banca de R$ 1.000,00: R$ 25,00");
     expect(C.stake(null, null)).toBe("stake: defina sua banca");
   });
+  it("stakeComTermo: token no valor com banca, sem token sem banca (#257 fix round 1)", () => {
+    expect(C.stakeComTermo(1000, 25)).toBe("Da sua banca de R$ 1.000,00: {term:stake|R$ 25,00}");
+    expect(C.stakeComTermo(null, null)).toBe("stake: defina sua banca");
+  });
   it("avaliados e direcao", () => {
     expect(C.avaliados(12, 2)).toBe("12 mercados avaliados, 2 valem");
     expect(C.avaliados(12, 0)).toBe("12 mercados avaliados, nenhum vale hoje");

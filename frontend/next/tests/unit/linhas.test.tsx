@@ -39,8 +39,11 @@ describe("linhas do card", () => {
   beforeEach(() => localStorage.clear());
   it("stake com banca definida", () => {
     setBanca(1000);
-    render(<LinhaStake pick={pick} />);
-    expect(screen.getByText(/Da sua banca de R\$ 1\.000,00: R\$/)).toBeInTheDocument();
+    // #257 fix round 1: o valor do stake agora e um link para o glossario, entao o
+    // texto do <p> nao fica mais num unico no de texto — checa via toHaveTextContent.
+    const { container } = render(<LinhaStake pick={pick} />);
+    expect(container.querySelector("p.tnum")).toHaveTextContent(/Da sua banca de R\$ 1\.000,00: R\$/);
+    expect(screen.getByRole("link", { name: "R$ 0,64" })).toHaveAttribute("href", "/glossario#stake");
     expect(screen.getByRole("link", { name: "ajustar" })).toHaveAttribute("href", "/banca");
   });
   it("stake sem banca: chama para definir", () => {

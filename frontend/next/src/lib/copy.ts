@@ -49,8 +49,8 @@ export function stake(banca: number | null, valor: number | null): string {
 /** Variante com token de glossário, para LinhaStake renderizar com TextoComTermos.
  * `stake()` (acima) continua devolvendo string pura. */
 export function stakeComTermo(banca: number | null, valor: number | null): string {
-  if (banca == null || valor == null) return "stake: defina sua {term:stake|banca}";
-  return `Da sua banca de ${fmtReais(banca)}: ${fmtReais(valor)}`;
+  if (banca == null || valor == null) return stake(null, null);
+  return `Da sua banca de ${fmtReais(banca)}: {term:stake|${fmtReais(valor)}}`;
 }
 
 export function avaliados(total: number, valem: number): string {
