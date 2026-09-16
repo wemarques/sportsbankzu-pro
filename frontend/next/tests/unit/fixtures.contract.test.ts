@@ -32,8 +32,12 @@ describe("fixture pinado x type do payload", () => {
 
   it("cobre os estados que o jogoView deriva", () => {
     const classes = new Set((fixture.matches as Bruto[]).flatMap((r) => (r.mercados ?? []).map((p) => p.classification)));
-    // #254-a-concern: NO_BET não encontrado no payload capturado 2026-09-15;
-    // fixture cobre SAFE/NEUTRO_QUALIFICADO/NEUTRO. Verificando cobertura parcial.
-    for (const c of ["SAFE", "NEUTRO"]) expect(classes, `falta um jogo com ${c}`).toContain(c);
+    // SAFE ou NEUTRO_QUALIFICADO = "vale"; NEUTRO = "direcao". NO_BET nunca chega a `mercados`
+    // (ev_classification.py:743): vive em stats.rejected_insights — e a prova de que o motor recusou.
+    expect([...classes].some((c) => c === "SAFE" || c === "NEUTRO_QUALIFICADO"), "falta um jogo que vale").toBe(true);
+    expect(classes, "falta um jogo com NEUTRO").toContain("NEUTRO");
+    const brutos = fixture.matches as (Bruto & { status?: string; stats?: { rejected_insights?: unknown[] } })[];
+    expect(brutos.some((r) => (r.stats?.rejected_insights?.length ?? 0) > 0), "falta um jogo com mercados recusados").toBe(true);
+    expect(brutos.some((r) => r.status === "scheduled"), "falta um jogo ainda por jogar (date=tomorrow)").toBe(true);
   });
 });
