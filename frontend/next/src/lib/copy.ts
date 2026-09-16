@@ -113,6 +113,8 @@ export const DESEMPENHO = {
   retornoIndisponivel: "retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger",
 };
 
+export const NAVEGACAO = { jogos: "Jogos", banca: "Banca", desempenho: "Desempenho", glossario: "Glossário", rotuloNav: "navegação principal" } as const;
+
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,
