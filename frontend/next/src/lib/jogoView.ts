@@ -3,7 +3,7 @@
  * parece "de view" (book_odd nulo + data futura, live) e derivado aqui; o
  * CardJogo e um switch sobre `estado` e nao calcula nada.
  */
-import type { Match, MatchPrediction } from "@/lib/leagues";
+import type { Match, MatchPrediction, RejectedInsight } from "@/lib/leagues";
 import { fmtMercado } from "@/lib/classifications";
 import { motivoRecusa } from "@/lib/reasonCodes";
 import { getLiveClock } from "@/lib/liveClock";
@@ -43,6 +43,19 @@ function toPick(p: MatchPrediction): PickView | null {
   };
 }
 
+/** #254-b — mercado recusado antes de virar pick (spec §4.3: linha em texto-apagado, motivo curto).
+ *  NO_BET nunca chega a `predictions` (ev_classification.py:743); vive em `stats.rejected_insights`. */
+function toPickRecusado(r: RejectedInsight): PickView | null {
+  const prob = r.deflated_prob;
+  if (!(typeof prob === "number" && prob > 0 && prob < 1)) return null;
+  return {
+    mercado: fmtMercado(r.market), prob01: prob, fairOdd: Math.round(100 / prob) / 100, bookOdd: null,
+    edge: null, ev: r.ev ?? null, classification: "NO_BET",
+    motivo: r.reason_codes?.length ? motivoRecusa(r.reason_codes) : (r.reason || motivoRecusa([])),
+    vale: false,
+  };
+}
+
 export function escolherTalao(picks: PickView[]): { talao: PickView | null; segundo: PickView | null } {
   const valem = picks.filter((p) => p.vale).sort((a, b) =>
     (b.edge ?? -Infinity) - (a.edge ?? -Infinity) || b.prob01 - a.prob01);
@@ -53,6 +66,7 @@ export function toJogoView(m: Match, agora: Date): JogoView {
   const picks = (m.predictions ?? []).map(toPick).filter((p): p is PickView => p !== null);
   const { talao, segundo } = escolherTalao(picks);
   const ordenados = [...picks].sort((a, b) => Number(b.vale) - Number(a.vale) || (b.edge ?? -1) - (a.edge ?? -1));
+  const recusados = (m.rejectedInsights ?? []).map(toPickRecusado).filter((p): p is PickView => p !== null);
   const kickoff = new Date(m.datetime).getTime();
   const clock = m.status === "live" ? getLiveClock(m, agora.getTime()) : null;
   const aoVivo = m.status === "live"
@@ -69,7 +83,7 @@ export function toJogoView(m: Match, agora: Date): JogoView {
   else if (direcao) estado = "direcao";
   else estado = "nada";
 
-  const totalAvaliados = picks.length + (m.rejectedInsights?.length ?? 0);
+  const totalAvaliados = picks.length + recusados.length;
 
   const n = (v: unknown) => (typeof v === "number" && v > 0 ? v : null);
   const origem: Origem = {
@@ -79,7 +93,7 @@ export function toJogoView(m: Match, agora: Date): JogoView {
 
   return {
     id: m.id, ligaId: m.leagueId, ligaNome: m.leagueName, casa: m.homeTeam.name, fora: m.awayTeam.name,
-    kickoffIso: m.datetime, estado, talao, segundo, direcao, mercados: ordenados,
+    kickoffIso: m.datetime, estado, talao, segundo, direcao, mercados: [...ordenados, ...recusados],
     totalAvaliados, totalValem: picks.filter((p) => p.vale).length,
     aoVivo, resultado: null, origem,
   };

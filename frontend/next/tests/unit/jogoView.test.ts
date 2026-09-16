@@ -44,6 +44,20 @@ describe("toJogoView — estados (spec §4.2)", () => {
     expect(v.segundo?.mercado).toBe("Cartões Over 2.5");
     expect(v.totalAvaliados).toBe(2); expect(v.totalValem).toBe(2);
   });
+  it("recusados entram em mercados como NO_BET sem preco e contam em totalAvaliados", () => {
+    const v = view({ ...base, mercados: [merc("SAFE")], stats: { ...base.stats, rejected_insights: [
+      { market: "Over 3.5 gols", raw_prob: 0.4, deflated_prob: 0.35, ev: -0.05, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] },
+    ] } });
+    expect(v.mercados).toHaveLength(2);
+    const r = v.mercados[1];
+    expect(r.classification).toBe("NO_BET");
+    expect(r.vale).toBe(false);
+    expect(r.bookOdd).toBeNull();
+    expect(r.fairOdd).toBe(2.86);
+    expect(r.motivo).toBe("sem valor");
+    expect(v.totalAvaliados).toBe(v.mercados.length);
+    expect(v.estado).toBe("vale");
+  });
   it("direcao: so NEUTRO", () => {
     const v = view({ ...base, mercados: [merc("NEUTRO", { mercado: "Over 2.5 gols", book_odd: 1.62, fair_odd: 1.75, edge: -0.13 })] });
     expect(v.estado).toBe("direcao"); expect(v.talao).toBeNull(); expect(v.direcao?.mercado).toBe("Over 2.5 gols");
@@ -52,8 +66,9 @@ describe("toJogoView — estados (spec §4.2)", () => {
     expect(view({ ...base, mercados: [merc("NO_BET", { reason_codes: ["NEGATIVE_EV"] })] }).estado).toBe("nada");
   });
   it("nada: mercados vazio (o pipeline nao envia NO_BET; eles vivem em rejected_insights)", () => {
-    const v = view({ ...base, mercados: [], stats: { rejected_insights: [{ market: "Over 2.5", reason: "NEGATIVE_EV" }] } });
+    const v = view({ ...base, mercados: [], stats: { rejected_insights: [{ market: "Over 2.5", raw_prob: 0.45, deflated_prob: 0.4, ev: -0.03, reason: "EV negativo", reason_codes: ["NEGATIVE_EV"] }] } });
     expect(v.estado).toBe("nada"); expect(v.totalAvaliados).toBe(1); expect(v.totalValem).toBe(0);
+    expect(v.mercados).toHaveLength(1); expect(v.mercados[0].classification).toBe("NO_BET");
   });
   it("amanha sem preco: data futura e book_odd nulo no talao", () => {
     const v = view({ ...base, datetime: "2026-09-16T23:30:00Z", mercados: [merc("SAFE", { book_odd: null })] });
