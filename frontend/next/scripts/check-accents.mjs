@@ -66,6 +66,7 @@ const ALLOWLIST = new Set([
   "components/feed/DiaTabs.tsx:amanha",     // valor do tipo Dia / chave de URL, nao texto exibido (#254-b)
   "lib/jogoViewOntem.ts:cartoes",   // template ASCII que fmtMercado acentua; nao e texto exibido (#256)
   "lib/copy.ts:amanha",   // valor do tipo Dia na assinatura de feedNaoCarregou, nao texto exibido (#256)
+  "lib/desempenhoUrl.ts:periodo",   // chave de URL do tipo Periodo, nao texto exibido (#256)
 ]);
 
 // Linhas que carregam chave/identificador, não texto exibido.
