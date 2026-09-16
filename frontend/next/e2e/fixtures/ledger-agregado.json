@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "periodo": "temporada",
+  "familia": null,
+  "liga": null,
+  "acerto": { "picks": 82, "acertos": 42, "jogos": 46, "resolvidos": 78 },
+  "retorno": { "valor": null, "pct_banca": null, "motivo": "stake_nao_gravado_no_ledger" },
+  "brier": 0.2603,
+  "amostra_curta": false,
+  "por_familia": {
+    "Over/Under": { "picks": 37, "acertos": 25, "n_jogos": 31, "resolvidos": 37, "brier": 0.2259 },
+    "BTTS": { "picks": 11, "acertos": 5, "n_jogos": 8, "resolvidos": 8, "brier": null },
+    "Corners": { "picks": 13, "acertos": 3, "n_jogos": 11, "resolvidos": 13, "brier": null },
+    "Cards": { "picks": 21, "acertos": 9, "n_jogos": 19, "resolvidos": 20, "brier": null },
+    "1X2": { "picks": 0, "acertos": 0, "n_jogos": 0, "resolvidos": 0, "brier": null },
+    "Double Chance": { "picks": 0, "acertos": 0, "n_jogos": 0, "resolvidos": 0, "brier": null }
+  },
+  "por_liga": {
+    "brasileirao-serie-a": { "picks": 1, "acertos": 1, "n_jogos": 1, "resolvidos": 1, "brier": null },
+    "brasileirao-serie-b": { "picks": 9, "acertos": 5, "n_jogos": 6, "resolvidos": 9, "brier": null },
+    "championship": { "picks": 4, "acertos": 3, "n_jogos": 2, "resolvidos": 4, "brier": null },
+    "colombian-primera-a": { "picks": 3, "acertos": 2, "n_jogos": 2, "resolvidos": 2, "brier": null },
+    "eredivisie": { "picks": 2, "acertos": 1, "n_jogos": 1, "resolvidos": 2, "brier": null },
+    "la-liga": { "picks": 4, "acertos": 0, "n_jogos": 1, "resolvidos": 1, "brier": null },
+    "league-one": { "picks": 2, "acertos": 2, "n_jogos": 1, "resolvidos": 2, "brier": null },
+    "liga-mx": { "picks": 10, "acertos": 3, "n_jogos": 5, "resolvidos": 10, "brier": null },
+    "mls": { "picks": 37, "acertos": 20, "n_jogos": 18, "resolvidos": 37, "brier": null },
+    "premier-league": { "picks": 0, "acertos": 0, "n_jogos": 0, "resolvidos": 0, "brier": null },
+    "premiership": { "picks": 4, "acertos": 1, "n_jogos": 3, "resolvidos": 4, "brier": null },
+    "primeira-liga": { "picks": 1, "acertos": 1, "n_jogos": 1, "resolvidos": 1, "brier": null },
+    "serie-a": { "picks": 4, "acertos": 3, "n_jogos": 4, "resolvidos": 4, "brier": null },
+    "serie-b": { "picks": 0, "acertos": 0, "n_jogos": 0, "resolvidos": 0, "brier": null },
+    "super-lig": { "picks": 0, "acertos": 0, "n_jogos": 0, "resolvidos": 0, "brier": null },
+    "superliga": { "picks": 1, "acertos": 0, "n_jogos": 1, "resolvidos": 1, "brier": null }
+  },
+  "buckets": [
+    { "prob_media": null, "freq_real": null, "n": 0 },
+    { "prob_media": null, "freq_real": null, "n": 0 },
+    { "prob_media": null, "freq_real": null, "n": 0 },
+    { "prob_media": null, "freq_real": null, "n": 0 },
+    { "prob_media": null, "freq_real": null, "n": 0 },
+    { "prob_media": 0.5761, "freq_real": 0.4615, "n": 13 },
+    { "prob_media": 0.6506, "freq_real": 0.4571, "n": 35 },
+    { "prob_media": 0.7362, "freq_real": 0.65, "n": 20 },
+    { "prob_media": 0.8569, "freq_real": 0.75, "n": 8 },
+    { "prob_media": 0.9042, "freq_real": 0.5, "n": 2 }
+  ]
+}

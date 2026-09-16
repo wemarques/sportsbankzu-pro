@@ -48,3 +48,22 @@ describe("copy (#254, spec §4.4)", () => {
     expect(C.resumoDoDia(3, 4, 4)).toBe("Ontem: 3 de 4 picks fechados acertaram em 4 jogos");
   });
 });
+
+describe("fraseAcerto (#256) — denominador e resolvidos, nunca jogos", () => {
+  it("38 acertos em 60 resolvidos, 37 jogos: 63 de cada 100", () => {
+    expect(C.fraseAcerto(38, 60, 37)).toBe("63 de cada 100 picks fechados · 37 jogos");
+  });
+  it("resolvidos zero nunca divide — chamada defensiva, mesmo que o chamador ja proteja", () => {
+    expect(C.fraseAcerto(0, 0, 0)).toBe("0 de cada 100 picks fechados · 0 jogos");
+  });
+});
+
+describe("DESEMPENHO (#256) — rotulos centralizados", () => {
+  it("tem os titulos e mensagens da tela", () => {
+    expect(C.DESEMPENHO.tituloAcerto).toBe("Acerto");
+    expect(C.DESEMPENHO.tituloRetorno).toBe("Na sua banca atual");
+    expect(C.DESEMPENHO.tituloCalibracao).toBe("Calibração");
+    expect(C.DESEMPENHO.semPicksFechados).toBe("sem picks fechados neste período");
+    expect(C.DESEMPENHO.retornoIndisponivel).toBe("retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger");
+  });
+});

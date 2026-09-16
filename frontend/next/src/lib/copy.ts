@@ -88,6 +88,23 @@ export function resumoDoDia(acertos: number, resolvidos: number, jogos: number):
   return `Ontem: ${acertos} de ${resolvidos} picks fechados acertaram em ${jogos} jogos`;
 }
 
+/** #256 — "de cada 100 picks FECHADOS" (resolvidos), nunca "jogos": jogos
+ * conta partidas distintas e pode ser MENOR que acertos quando mais de um
+ * pick acerta na mesma partida (medido em produção: 38 acertos, 37 jogos).
+ * `resolvidos` e sempre >= acertos, por construcao — nunca passa de 100%. */
+export function fraseAcerto(acertos: number, resolvidos: number, jogos: number): string {
+  const pct = resolvidos > 0 ? fmtPct(acertos / resolvidos) : 0;
+  return `${pct} de cada 100 picks fechados · ${jogos} jogos`;
+}
+
+export const DESEMPENHO = {
+  tituloAcerto: "Acerto",
+  tituloRetorno: "Na sua banca atual",
+  tituloCalibracao: "Calibração",
+  semPicksFechados: "sem picks fechados neste período",
+  retornoIndisponivel: "retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger",
+};
+
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,
