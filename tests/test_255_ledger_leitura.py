@@ -198,3 +198,38 @@ def test_agregado_filtra_por_familia_e_liga(monkeypatch):
     r_liga_certa = L.agregado("temporada", liga="premier-league",
                               hoje=datetime(2026, 9, 20, tzinfo=_UTC))
     assert r_liga_certa["acerto"]["jogos"] == 25
+
+
+def _dt(iso_str: str) -> datetime:
+    """Parse ISO datetime string like '2026-09-15T02:00:00Z' to tz-aware datetime."""
+    return datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+
+
+def test_linhas_com_kickoff_utc_nulo_entram_pelo_sufixo_do_match_id(monkeypatch):
+    """#252-c: kickoff_utc e NULL em todo o ledger anterior a 2026-09-15; o kickoff sai do
+    sufixo epoch do match_id. 1789430400 = 2026-09-15 00:00 UTC. published_at deve ser anterior."""
+    linhas = [_linha(match_id="championship-A-B-1789430400.0", kickoff_utc=None,
+                     published_at=_dt("2026-09-14T20:00:00Z"), classification="SAFE",
+                     market="Over/Under", selection="Over 2.5", prob=0.55, book_odd=1.80,
+                     outcome=1, detail={"total_goals": 3})]
+    monkeypatch.setattr(L, "_conn", lambda: _Conn(linhas))
+    d = L.dia("2026-09-15")
+    assert len(d["picks"]) == 1 and d["resumo"]["picks"] == 1
+
+
+def test_linha_sem_kickoff_resolvivel_sai(monkeypatch):
+    """Linha cujo kickoff nao pode ser resolvido (match_id invalido) e excluida."""
+    linhas = [_linha(match_id="liga-todays-12345", kickoff_utc=None,
+                     published_at=_dt("2026-09-15T02:00:00Z"), classification="SAFE",
+                     market="Over/Under", selection="Over 2.5", prob=0.55, book_odd=1.80,
+                     outcome=1, detail={"total_goals": 3})]
+    monkeypatch.setattr(L, "_conn", lambda: _Conn(linhas))
+    d = L.dia("2026-09-15")
+    assert d["picks"] == []
+
+
+def test_detalhe_textual_1x2_e_double_chance():
+    """Branch `1X2`/`Double Chance` em `_detalhe_textual`: retorna 'hg-ag'."""
+    assert L._detalhe_textual("1X2", {"home_goals": 2, "away_goals": 1}) == "2-1"
+    assert L._detalhe_textual("Double Chance", {"home_goals": 0, "away_goals": 0}) == "0-0"
+    assert L._detalhe_textual("1X2", {"home_goals": None}) is None

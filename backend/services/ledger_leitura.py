@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.modeling.calibragem.repositorio import (
     classificar_familia, escolher_ultima_geracao,
 )
-from backend.services.amostra_ledger import filtrar_amostra
+from backend.services.amostra_ledger import filtrar_amostra, kickoff_da_linha
 from backend.services.brier_service import MIN_N, _brier
 
 _FAMILIAS = ("Over/Under", "BTTS", "Corners", "Cards", "1X2", "Double Chance")
@@ -96,7 +96,13 @@ def _buscar_janela(inicio: datetime, fim: datetime) -> List[Dict[str, Any]]:
     finally:
         conn.close()
     mantidas, _ = filtrar_amostra(brutas, "published_prob")
-    return escolher_ultima_geracao(mantidas)
+    resultado = escolher_ultima_geracao(mantidas)
+    # #252-c: backfill kickoff_utc dos registros onde e NULL, usando kickoff_da_linha
+    # (que resolve a partir do sufixo epoch do match_id como fallback).
+    for l in resultado:
+        if l.get("kickoff_utc") is None:
+            l["kickoff_utc"] = kickoff_da_linha(l.get("match_id"), None)
+    return resultado
 
 
 def _fair_odd(published_prob: Optional[float]) -> Optional[float]:
@@ -227,7 +233,8 @@ def _janela_periodo(periodo: str, hoje: Optional[datetime] = None
 
 
 def _segmento(linhas: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Picks/acertos/jogos + Brier com o piso MIN_N=20 em JOGOS (#079)."""
+    """Picks/acertos/n_jogos + Brier com o piso MIN_N=20 em JOGOS (#079).
+    Retorna `n_jogos` (nao `jogos`) para o contrato de saida de `por_familia`/`por_liga`."""
     r = _resumo(linhas)
     resolvidos = [l for l in linhas
                   if l["classification"] in _PICKS_CONTADOS and l["outcome"] is not None]
@@ -237,7 +244,7 @@ def _segmento(linhas: List[Dict[str, Any]]) -> Dict[str, Any]:
             [l["published_prob"] for l in resolvidos],
             [l["outcome"] for l in resolvidos],
         ), 4)
-    return {**r, "brier": brier}
+    return {"picks": r["picks"], "acertos": r["acertos"], "n_jogos": r["jogos"], "brier": brier}
 
 
 def _buckets_calibracao(resolvidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -289,17 +296,17 @@ def agregado(periodo: str, familia: Optional[str] = None,
         for lg in sorted({l["league_id"] for l in contados if l["league_id"]})
     }
 
-    buckets = _buckets_calibracao(resolvidos) if resumo_geral["jogos"] >= MIN_N else None
+    buckets = _buckets_calibracao(resolvidos) if resumo_geral["n_jogos"] >= MIN_N else None
 
     return {
         "periodo": periodo, "familia": familia, "liga": liga,
         "acerto": {"picks": resumo_geral["picks"], "acertos": resumo_geral["acertos"],
-                  "jogos": resumo_geral["jogos"]},
+                  "jogos": resumo_geral["n_jogos"]},
         # #255: stake nunca e gravado no ledger — ver Global Constraints do plano.
         "retorno": {"valor": None, "pct_banca": None,
                    "motivo": "stake_nao_gravado_no_ledger"},
         "brier": resumo_geral["brier"],
-        "amostra_curta": resumo_geral["jogos"] < MIN_N,
+        "amostra_curta": resumo_geral["n_jogos"] < MIN_N,
         "por_familia": por_familia,
         "por_liga": por_liga,
         "buckets": buckets,
