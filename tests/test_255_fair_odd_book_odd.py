@@ -9,6 +9,15 @@ Achado da Etapa 1 (Validacao de Contrato): o contrato JA EXISTE em
 spec listava isto como "falta implementar"; nao falta — falta a prova, que e
 este arquivo. Payload no mesmo formato de
 `tests/test_251_calibrated_prob_e_o_modelo.py`.
+
+Achado da Etapa 4 (Prova Empirica): teste #3 era order-dependent (falhava na
+suite completa, passava sozinho). `fair_odd` e calculado em `compute_display`
+a partir da probabilidade SEM arredondar, enquanto `to_legacy_mercado`
+arredonda a 4 casas. Em fronteira de arredondamento (ex.: 0,56983 -> 0,5698)
+os resultados diferem por 0,01. A prova foi redesenhada para comparar contra
+o objeto nao-arredondado, eliminando a dependencia de estado global (se o
+modelo ML de escanteios e carregavel ou nao determina quais mercados caem na
+fronteira).
 """
 import copy
 
@@ -62,7 +71,16 @@ def test_fair_odd_e_book_odd_distintos_quando_ha_preco_de_casa():
 
 
 def test_fair_odd_e_o_inverso_da_probabilidade_calibrada():
-    mercados = _mercados()
-    for m in mercados:
-        if m["fair_odd"] is not None and m["calibrated_probability"]:
-            assert m["fair_odd"] == round(1.0 / m["calibrated_probability"], 2)
+    # A prob do dict legado e arredondada a 4 casas (`to_legacy_mercado`); `fair_odd`
+    # e calculada em `compute_display` a partir da prob SEM arredondar. Comparar
+    # contra a prob arredondada falha em fronteira de arredondamento (ex.: 0,56983
+    # -> 0,5698 -> 1/p = 1,755 -> 1,76, enquanto 1/0,56983 = 1,7549 -> 1,75), e o
+    # conjunto de mercados que cai na fronteira depende de estado global (modelo ML
+    # de escanteios carregavel ou nao). Por isso a prova usa o objeto.
+    bundle = evaluate_match_markets(copy.deepcopy(_MATCH), league_id="championship")
+    assert bundle.markets
+    for m in bundle.markets:
+        legado = m.to_legacy_mercado()
+        assert legado["fair_odd"] == m.fair_odd
+        if m.fair_odd is not None and m.calibrated_probability:
+            assert m.fair_odd == round(1.0 / m.calibrated_probability, 2)
