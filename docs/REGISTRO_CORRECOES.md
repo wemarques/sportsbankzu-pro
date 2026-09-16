@@ -14132,3 +14132,58 @@ $ curl -s -o /dev/null -w "%{http_code}
 ### Lição aprendida
 Todo módulo que uma rota HTTP nova precisa em runtime tem de morar em `backend/` — `scripts/` é invisível para a Lambda. A spec de design de uma reformulação de frontend pode listar como "pendente" um contrato que já existe no backend (fair_odd/book_odd): a Etapa 1 do SDD (rastreabilidade de dados, "confirmar se o dado existe em todo o trajeto sem inferir") pegou isso antes de gerar trabalho redundante.
 
+
+## 254-b — Reformulação do frontend, fase 3: /jogos, talão, detalhe e banca
+**Data:** 2026-09-16 | **Arquivos:** `frontend/next/src/app/jogos/page.tsx`, `frontend/next/src/app/jogos/[id]/page.tsx`, `frontend/next/src/app/jogos/Feed.tsx`, `frontend/next/src/app/banca/page.tsx`, `frontend/next/src/app/banca/FormBanca.tsx`, `frontend/next/src/components/feed/{CardJogo,DiaTabs,LigaChips,BotaoCopiar,Talao,Linha*}.tsx`, `frontend/next/src/components/detalhe/{EscalaConfianca,TabelaMercados,DeOndeVemONumero,ComoOModeloVe,Detalhe}.tsx`, `frontend/next/src/lib/{feedUrl,confiancaLiga,jogoView,copy}.ts`, `frontend/next/src/components/ThemeToggle.tsx`, `frontend/next/scripts/check-accents.mjs`, `frontend/next/playwright.config.ts`, `frontend/next/e2e/{jogos,banca,visual,a11y}.spec.ts` + helpers/fixtures, `frontend/next/e2e/*-win32.png` (9 referências) | **Severidade:** Média | **Status:** Implementado (portão pendente: teste de 5 s)
+
+### Problema identificado
+A fase 3 do plano (`docs/superpowers/plans/2026-09-15-reformulacao-frontend-fases-0-2-3.md`, Tasks 12–18) constrói as telas novas — talão, card de jogo, `/jogos`, detalhe do jogo e `/banca` — consumindo os módulos puros extraídos na fase 2 (`jogoView.ts`, `normalizeMatch.ts`), sem tocar no dashboard legado, que continua sendo a rota padrão até a fase 6.
+
+### Causa raiz
+Não é correção de defeito; é construção de tela nova (Tasks 12–18) fechada aqui com registro, espelho e push.
+
+### Correções aplicadas (com camadas)
+**Task 12 (31d0303) — Talão/BotaoCopiar:** `Talao.tsx` + `BotaoCopiar.tsx`. Dois blocks: vitest sem transformação JSX (nenhuma task até a 12 renderizava TSX) resolvido com `esbuild: { jsx: "automatic" }` em `vitest.config.ts`, sem tocar `tsconfig.json`. Fix round 1: cor de contra-texto dentro do talão seguindo `sobre` em vez de fixa (2,28:1 seria ilegível), timer do "copiado" limpo no unmount (`ref` + `clearTimeout`), asserção de par 1,67/1,75 adicionada, atribuição indevida de um desvio a "ruling do controller" corrigida na mensagem do commit.
+
+**Task 13 (a13278f) — linhas do card + `confiancaLiga`:** `LinhaConfianca/LinhaStake/LinhaSegundoPick/LinhaAvaliados.tsx`, `confiancaLiga.ts`. Fast-track (6/6 arquivos verbatim contra o brief).
+
+**Task 14 (ac1c8be, 3ac5a96) — `CardJogo`:** switch sobre `EstadoJogo`. Desvio não autorizado do implementer (editou `check-accents.mjs` para dar allowlist a `periodo` em vez de parar) foi aceito no review como falso positivo real (o linter lê identificadores dentro de `${...}`), mas o processo — devia ter parado — ficou registrado como lição. Fix round: título só vira `<button>` quando há `onAbrir` (revisto na Task 15 — ver abaixo), `aria-current` no dia ativo, dois testes novos.
+
+**Task 15 (cdfe0f8, d35d047, a063378) — `/jogos`:** `feedUrl.ts`, `Feed.tsx`, `DiaTabs.tsx`, `LigaChips.tsx`, painel via `?jogo=`. Ruling revisto sobre a Task 14: o título do card é **sempre** `<Link>` — no desktop o `href` é a URL do painel (`?jogo=`) e o clique é interceptado por `onAbrir` (o push É navegação). Três blocks: `lint:accents` em "amanha"/"amanhã" como valor de tipo `Dia` (allowlist); foco preso no overlay do Next dev (e2e passou a rodar contra `next start`/build de produção, não dev); primeiro Tab caindo no `ThemeToggle` legado sem outline de foco (achado real de a11y fora do escopo da task, corrigido com a classe `sb-foco`, 1 palavra — o componente some na fase 6). Fix round: guarda de resposta obsoleta em `carregar()`, `replace` em vez de push nos links de dia/liga, `usePathname` morto removido, asserção de chip de liga trocada por uma real (`championship`, contagem de cards).
+
+**Task 16 (5cf68a8, 1bf0261, a24e54c, 563a6d9, 3f6fba4) — detalhe:** `EscalaConfianca.tsx`, `TabelaMercados.tsx`, `DeOndeVemONumero.tsx`, `ComoOModeloVe.tsx`, `Detalhe.tsx`, `/jogos/[id]/page.tsx`, `jogoView.ts` (`toPickRecusado`), `origem` em `copy.ts`. Quatro fix rounds — ver "Errata da spec" e "Ruling do controller" abaixo.
+
+**Task 17 (commit no topo de 3f6fba4) — `/banca`:** fast-track, 3 arquivos verbatim.
+
+**Task 18 (873a971) — visual + axe:** referências PNG win32 (5 desktop + 4 mobile), specs `visual.spec.ts`/`a11y.spec.ts`, `reducedMotion` movido para `use.contextOptions` (Playwright 1.58 não tem mais no nível superior do config).
+
+**Task 19, Step A (c29c497) — teste de largura `tnum`:** transcrito verbatim do brief em `e2e/jogos.spec.ts`.
+
+### Errata da spec (Task 16)
+A spec §4.3/§4.4 descrevia a frase "faz X gols em casa; sofre Y fora" como leitura de `homeAvgTotalGoals`/`awayAvgTotalGoals` e `homeCornersPerMatch`/`awayCornersPerMatch`. Esses campos não têm split casa/fora — são médias da temporada inteira: gols totais nos jogos do time (`fixtures_service.py:1336-1337`, FootyStats `seasonAVG_overall`) e escanteios cobrados por partida na temporada (`fixtures_service.py:1263-1264`, `cornersAVG_overall`). Erro de spec (Etapa 2 do SDD pulada ao escrever a frase original), não de implementação. Copy reescrita para o dado real: "Nos jogos do X saem N gols por partida na temporada…".
+
+### Ruling do controller errado, corrigido na re-review (Task 16)
+`stats.rejected_insights` (mercados recusados, ex.: NO_BET) vira linha da tabela via `toPickRecusado`. O primeiro fixture sintético usado para provar esse mapeamento não tinha `deflated_prob`, e o ruling do controller assumiu escala 0–1 para o guard (`< 1`) sem checar o produtor — a suíte sintética passou, mas em produção o guard esvaziava `recusados`: `deflated_prob`/`raw_prob`/`ev` são escritos em escala 0–100 (`ev_classification.py:1673-1675`). Corrigido com teste de contrato contra o fixture real: 0/8 jogos mostravam linhas recusadas antes, 8/8 depois. Regra nova (Protocolo 4 já registrada no ledger): todo ruling que cria mapeamento de campo cita a linha do produtor e prova contra o fixture real, não só sintético.
+
+### Prova empírica final (Etapa 4, medida pelo controlador sobre 873a971)
+`lint:accents` ✓, `lint:fonts` ✓, `tsc --noEmit` limpo, `vitest run` 12 arquivos / 79 testes, `playwright --project=chromium` contra o build de produção: 45 passed / 3 skipped / 1 falha (`renders PRO badge`, ambiental — mesma falha das fases 0–2, `/api/audit/status` sem backend local), mobile (dev) 43 passed / 6 skipped, visual 8 passed / 1 skipped (o painel desktop-only não roda em mobile), axe 0 violações em `/jogos` e `/banca`; 9 PNGs de referência `-win32` (feed, painel, detalhe, banca-indefinida, banca-definida × desktop/mobile — específicas de plataforma, `visual-*` roda só local, CI mantém `--project=chromium` + a spec de axe nova).
+
+Teste da largura de números (Task 19 Step A, brief passo 2), `e2e/jogos.spec.ts`, chromium `--repeat-each=2`: 18 passed / 2 skipped; mobile: 9 passed / 1 skipped — `1,67` e `1,75` medem a mesma largura (diferença < 0,5px) sob a fonte tabular (`.tnum`).
+
+### Contratos de saída (Etapa 2-bis)
+Nenhum campo de backend escrito pela fase 3. Leitores novos (frontend só): `GET /api/matches/fetch` (feed de `/jogos`), `GET /api/ml/status`, `GET /api/ai/match/{id}/*` (texto Mistral no detalhe). `GET /ledger/*` (#255) ainda **não** é consumido por nenhuma tela desta fase — fica para a fase 4 (`?dia=ontem`, `/desempenho`).
+
+### Lições aprendidas
+1. Todo ruling que mapeia um campo tem que citar a linha do produtor e ser provado contra o fixture REAL, nunca só sintético — o caso `deflated_prob` 0–100 vs. 0–1 (Task 16) é o precedente: teste sintético verde, produção vazia.
+2. Identificadores dentro de template literals disparam `lint:accents` (falso positivo real, não corrigido no linter — segue pendente).
+3. E2E que lê foco precisa esperar um elemento real da página antes da primeira tecla e rodar contra o servidor de produção (`next start`), não `next dev` — o overlay de dev rouba o primeiro Tab.
+4. Fixture nunca em fronteira de arredondamento (`x,5` em pct, 4ª casa em prob, 3ª em odd) — `prob01: 0.585` quebrou a Task 12 por isso.
+5. A primeira task que usa uma capacidade nova de tooling (ex.: JSX em teste) lista a config no próprio Files, não descobre no meio da execução.
+
+### Pendências para as fases 4–6
+Plano `docs/superpowers/plans/2026-09-16-reformulacao-frontend-fases-4-5-6.md` (commit `cb7eeb1`): `?dia=ontem` + `/desempenho` (fase 4, consome `/api/ledger/*`; backend ganha `resolvidos`); `/banca` sem `<h1>` (axe passa mas há vão de estrutura — vai para a task de navegação da fase 5); `lint:accents` deveria ignorar `${...}` em template literals; a copy "hoje" do Feed quando não há jogos (`feedNaoCarregou`) aparece em qualquer aba, não só hoje — fase 4 parametriza; hunk de `layout.tsx` (~linha 2116) do plano das fases 4–6 ainda elíptico (`// ...`), pedir completo ao abrir a fase 5. Decisões do dono ainda em aberto: segmented control "Dia | Rodada" (recomendação: fora de escopo por ora) e `margem` na escala de confiança (recomendação: null até um plano estatístico separado que defina o cálculo).
+
+### Teste de 5 segundos — rodada 1 (brief Task 19 Step 3)
+Não executado: exige 4–6 pessoas reais por perfil, fora do alcance de uma sessão automatizada.
+`[PREENCHER pelo dono: acerto/tempo/confiança por perfil — critério pré-registrado: acerto ≥ 80% e mediana ≤ 5 s no talão]`
+A ordem do próprio plano (rodada 1 antes de construir o feed) não foi seguida porque o feed é o artefato necessário para produzir as duas telas estáticas do teste (`/jogos` com o card "vale" e `/jogos/[id]` com a tabela) — não existiam antes da Task 15/16.
