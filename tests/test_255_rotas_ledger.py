@@ -85,6 +85,9 @@ def test_agregado_falha_de_banco_503(monkeypatch):
 
 
 def test_rotas_registradas_no_app():
-    paths = {r.path for r in app.routes}
+    # Starlette >= 1.0 expoe routers incluidos como `_IncludedRouter` (sem
+    # `.path`) em `app.routes`; o schema OpenAPI resolve a inclusao em
+    # qualquer versao, entao a prova de registro usa ele.
+    paths = set(app.openapi()["paths"])
     assert "/ledger/dia" in paths
     assert "/ledger/agregado" in paths
