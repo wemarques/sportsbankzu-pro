@@ -92,6 +92,8 @@ Base: `https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/`
 | `/health` | `/api/health` (404) |
 | `/fixtures` | `/api/fixtures` (404) |
 | `/live-scores`, `/standings` | `/api/...` (404) |
+| `/ledger/dia?data=YYYY-MM-DD` (#255) | `/api/ledger/dia` (404) |
+| `/ledger/agregado?periodo=7d\|30d\|temporada&familia=&liga=` (#255) | `?periodo=1ano` etc. → 400, nunca 200 com dado inventado |
 | `/api/backtesting/...` | |
 | `POST /api/backtesting/calibrate?league=X` | `?league_id=X` |
 | `/api/backtesting/calibration-status` | |
@@ -153,6 +155,7 @@ FootyStats + API-Football v3
 - Sem `MISTRAL_API_KEY` ou Mistral indisponível → retorna default com `confidence=0`. **Não afeta** cálculos.
 - Não alterar o prompt sem preservar as 4 camadas anti-alucinação (#001, #002).
 - **Probs no prompt em duas camadas (#181):** "Estatísticas Poisson" carrega RAW (uso interno do modelo), "PICKS DO PIPELINE" carrega DEFLATED (única fonte legítima para narrativa). Mistral é instruído via prompt rules a só citar deflated. Validação `backend/ai/mistral_contract.py::validate_output` inspeciona resumo + key_points + recomendação (full text) e loga violações via `sportsbankzu.mistral.contract`. Camada 6 (`_validate_recommendation_vs_pipeline` em `mistral_analysis.py`) só inspeciona `recomendacao_principal` e direção Over/Under — limitação documentada na docstring da função.
+- **Vocabulário de operador — prompt v3.1 (#255).** A narrativa não pode citar "lambda", "deflação"/"deflacionado" nem "banda" — o operador lê "chance", "mínimo" (fair_odd), "paga" (book_odd), "gols/escanteios esperados por jogo". `validate_output` ganha uma quarta camada (`_VOCABULARIO_INTERNO`) sobre o mesmo texto completo das três anteriores. `SEM_RECOMENDACAO` (`backend/ai/mistral_contract.py`) é a única ocorrência do texto de "sem recomendação" — o prompt a importa em vez de repetir.
 
 ## Domínio
 

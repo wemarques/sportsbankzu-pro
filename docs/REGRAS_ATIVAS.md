@@ -1431,10 +1431,13 @@ cuja unica geracao com desfecho e posterior ao apito.
 
 **Estado de aplicacao:** `scripts/comparar_com_mercado.py` (gate #230) aplica desde #252;
 `scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b. Os tres
-importam os filtros de UM modulo, `scripts/amostra_ledger.py` — reimplementar o filtro num
-consumidor e proibido (proibicao 5).
+importam os filtros de UM modulo — desde #255, `backend/services/amostra_ledger.py`
+(`scripts/amostra_ledger.py` e reexportacao) — reimplementar o filtro num consumidor e proibido
+(proibicao 5).
 `backend/modeling/calibragem/repositorio.py::escolher_ultima_geracao` (#248) falha FECHADA desde
 #252-c (antes mantinha a linha quando `kickoff_utc` era None).
+Desde #255, `backend/services/ledger_leitura.py` (rotas `GET /ledger/dia` e `GET /ledger/agregado`)
+e o quarto consumidor, tambem via `backend/services/amostra_ledger.py`.
 
 **Produtor (#252-c):** `prediction_ledger.linhas_do_bundle` grava `kickoff_utc` a partir do
 `datetime` do record (ISO com fuso; sem fuso nao se adivinha) e, na falta, do sufixo epoch do
@@ -1467,7 +1470,13 @@ contar jogo dessa janela entre os 300 do gate.
 
 **Estado de aplicacao:** `scripts/comparar_com_mercado.py` desde #252-a;
 `scripts/medir_inclinacao.py` e `scripts/grade_deflacao_por_familia.py` desde #252-b, todos via
-`scripts/amostra_ledger.py`.
+`backend/services/amostra_ledger.py` desde #255 (`scripts/amostra_ledger.py` e reexportacao).
+Desde #255, `backend/services/ledger_leitura.py` chama `filtrar_amostra(linhas, "published_prob")`
+para `/ledger/dia` e `/ledger/agregado`: o corte desta regra e NO-OP nesse campo por desenho —
+`fora_da_janela_contaminada` so age sobre `calibrated_prob`. `published_prob` e o que o operador
+viu de verdade, contaminado ou nao pelo bug da camada #248; o ledger publico existe para mostrar
+o historico real, nao para proteger uma medicao de qualidade do MODELO — quem precisa do corte e
+o gate #230/#251.
 
 ---
 

@@ -14056,3 +14056,48 @@ Nenhum campo de backend escrito ou lido de forma nova; `jogoView.ts` e `normaliz
 ### Lição aprendida
 A ferramenta Write decodifica sequências `\uXXXX` em glifo real ao gravar a fonte — quem escreve regex com faixa Unicode escapada (`̀-ͯ`, `–`) precisa conferir com dump hexadecimal do arquivo gravado, não só reler o texto, porque o glifo decodificado passa despercebido em revisão visual e só quebra em runtime. E documentação de fixture (README de teste) é código: a coluna "Estado ilustrado" errada em 5 de 8 linhas ficou parada desde a Task 9 até ser pega na revisão da Task 10 — só existe fixture "boa" quando a doc que a descreve é conferida contra a saída real da função, não escrita de memória.
 
+## 255 — Fase 1 da reformulação: rotas de ledger e vocabulário Mistral
+**Data:** 2026-09-16 | **Arquivos:** `backend/services/amostra_ledger.py`, `scripts/amostra_ledger.py`, `backend/services/ledger_leitura.py`, `backend/routes/ledger.py`, `backend/main.py`, `frontend/next/src/app/api/ledger/{dia,agregado}/route.ts`, `backend/ai/mistral_contract.py`, `backend/services/mistral_analysis.py`, `tests/test_255_*.py`, `tests/test_238a_contrato_numerico.py` | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+A reformulação do frontend (spec `docs/superpowers/specs/2026-09-15-reformulacao-frontend-design.md`) depende de três contratos de backend que não existiam: nenhuma rota expunha `prediction_ledger × ledger_outcomes` (spec §0), o prompt Mistral ensinava vocabulário interno de cálculo ("lambda", "deflação", "banda") ao operador (spec §4.4), e os filtros de amostra do ledger (#252/#252-a) moravam em `scripts/`, inacessíveis a um caminho de produção.
+
+### Causa raiz
+`scripts/deploy_lambda.py:38` e `.github/workflows/deploy-lambda.yml:97` só empacotam `backend/` — qualquer módulo em `scripts/` que uma rota nova precisasse em runtime quebraria com `ModuleNotFoundError` na primeira chamada. O prompt Mistral v3.0 nunca teve uma regra de vocabulário porque a narrativa foi desenhada para auditoria interna primeiro (#082/#181/#238-a validam CONTEÚDO — mercado certo, número certo, sem EV computado —, nunca VOCABULÁRIO).
+
+### Correções aplicadas (com camadas)
+1. **Camada de origem (Task 1, commit `edacfee`):** `filtrar_amostra`/`so_pre_jogo`/`fora_da_janela_contaminada`/`descrever` movidos de `scripts/amostra_ledger.py` para `backend/services/amostra_ledger.py`; `scripts/amostra_ledger.py` vira reexportação. Mesmos objetos (`is`), mesmos testes #252b/#252c verdes sem alteração. Review: Approved, 0 achados.
+2. **Camada de leitura (Task 2, commits `4eaff30`, `add3e44`):** `backend/services/ledger_leitura.py::dia`/`agregado` — uma consulta por janela de `published_at`, LEFT JOIN em `ledger_outcomes`, `escolher_ultima_geracao` (#248) para uma linha por seleção, `classificar_familia` (#248) para a família, `MIN_N=20` (#079) para o piso de Brier/buckets. `fair_odd` derivado (`round(1/published_prob, 2)`) porque a coluna não existe no ledger. `retorno` sempre `null` com `motivo: "stake_nao_gravado_no_ledger"` — a coluna `stake` nunca é gravada (`linhas_do_bundle` não passa `stake=`). Review encontrou 1 Critical do PLANO (não da implementação): o filtro de janela usava `kickoff_utc` cru, que é `NULL` em toda linha gravada antes do #252-c — a série inteira sairia do corte. Corrigido com backfill `l["kickoff_utc"] = kickoff_da_linha(match_id, kickoff_utc)` logo após `_buscar_janela`; mais 1 Important (chave `por_familia`/`por_liga` era `jogos`, corrigida para `n_jogos`); 3 testes novos (kickoff nulo + sufixo, sem kickoff resolvível, ramo 1X2/DC). Fix round aplicado e re-revisado: 3/3 endereçados, 29 passed.
+3. **Camada HTTP (Task 3, commit `d866ad8`):** `backend/routes/ledger.py` — `GET /ledger/dia`, `GET /ledger/agregado`; `ValueError` → 400, qualquer outra exceção → 503; registrado em `backend/main.py` no padrão try/except dos demais routers. Review: Approved, 0 Critical/Important.
+4. **Camada de proxy (Task 4, commit `2bdddea`):** `frontend/next/src/app/api/ledger/{dia,agregado}/route.ts`, mesmo padrão de `api/ml/status/route.ts` (guarda #114/#203 via `fetchBackend`). Review: Approved, 0 achados; curls locais 200/400/200 contra uvicorn + `next dev`.
+5. **Prova de contrato existente (Task 5, commits `d6a3325`, tip `14940a9`):** `tests/test_255_fair_odd_book_odd.py` confirma que `fair_odd`/`book_odd` já eram campos separados em `MarketOutput`/`to_legacy_mercado` — a spec listava como pendente por engano (ver "Contradições spec × código" no plano). Fast-tracked (transcrição verbatim do brief), depois corrigido por dependência de ordem: o teste comparava `fair_odd` (prob sem arredondar, `compute_display`) contra `round(1/p arredondada a 4 casas, 2)` do dict legado; numa fronteira de arredondamento (p=0,56983) isso dá 1,75 vs 1,76, e o conjunto de mercados na fronteira muda com estado global — `tests/test_226_retrain_escanteios.py` deixa o modelo ML de escanteios carregável porque `backend/modeling/corners/ml_regression.py:37` calcula `_MODELS_DIR` a partir de `DATA_ROOT` no import (vazamento de import-time pré-existente, fora do escopo, registrado como achado, não corrigido). Teste reescrito para comparar contra `MarketOutput.calibrated_probability` sem arredondar; par test_226+test_255 = 14 passed.
+6. **Camada de vocabulário (Task 6, commits `033336e`, `9af8e7d`):** `backend/ai/mistral_contract.py::validate_output` ganha a quarta camada de rejeição (`_VOCABULARIO_INTERNO`: lambda/deflação/banda); `SEM_RECOMENDACAO` unificado entre `aligned_recommendation` e o prompt; prompt v3.1 troca os exemplos que ensinavam o vocabulário interno. O regex do brief para "deflação" (`\bdeflac(?:a|ã)[a-zç]*`) não casava "deflação" (ç) nem "deflacionad*" — defeito do plano, escalado corretamente pelo implementer em vez de patcheado; corrigido para `\bdefla[cç][a-zçã]*`. Review aprovou o escopo (4 arquivos, 0 Critical/Important) e apontou mais duas frases fora do regex mas dentro do espírito da regra: "quando character existir" → "quando disponível" (inglês perdido no prompt) e, no ramo com picks, "EV negativo apos deflacao" → "EV negativo" (o modelo poderia parafrasear e a camada nova rejeitaria o próprio vocabulário do prompt). Ambas corrigidas em fix round; 44 passed nos 4 arquivos-alvo + vizinhos (#238-a, enforcement, #082, #181).
+
+### Etapa 2-bis — contrato de saída: consumidores do ledger
+
+| Campo escrito | Tabela | Consumidor externo | Contrato implícito assumido |
+|---|---|---|---|
+| nenhum — leitura pura | — | `GET /ledger/dia`, `GET /ledger/agregado` (novas) | as duas rotas são as ÚNICAS leitoras destes campos; nenhum sistema existente lê `ledger_leitura.py` |
+| `recomendacao_principal` (texto Mistral, campo já existente) | não é tabela — resposta de `/api/ai/match/{id}/analysis` | `MatchDetailCard.tsx` (dashboard atual) exibe o texto ao operador; `tests/unit/test_recommendation_enforcement.py` checa só o prefixo `"Sem recomenda"` | o consumidor assume que o texto é seguro para exibir verbatim — a troca de vocabulário (Task 6) preserva esse contrato: o texto continua sendo prosa em português, só sem os três termos banidos |
+
+Nenhum campo do `prediction_ledger`/`ledger_outcomes` teve seu contrato de ESCRITA alterado (Task 1 só moveu onde a leitura mora; Tasks 2-5 são leitura nova). A Task 6 altera o TEXTO de um campo já existente (`recomendacao_principal`) — o consumidor (dashboard atual) não distingue por conteúdo, só renderiza a string, então a troca de vocabulário não quebra o contrato de exibição.
+
+### Etapa 5 — efeito acumulado
+Não se aplica: este trabalho é leitura pura (rotas HTTP sem estado, chamadas sob demanda) e troca de texto estático (prompt). Não há laço, cron nem retreino envolvido — proibição 16 do CLAUDE.md não incide aqui.
+
+### Prova empírica
+Suíte completa na ponta do branch antes do rebase (`d3fee3b`/`7a96ab1`): `1428 passed, 8 skipped em 23:05`. Por tarefa: Task 2, 15 testes; Task 3, 9; Task 5, 3; Task 6, 13 (+ vizinhos #238-a/enforcement/#082/#181 = 44 passed).
+
+Ponta a ponta local (uvicorn + `next dev`, proxies ligados): `GET /api/ledger/dia?data=2026-09-14` → 200 com picks; sem `data` → 400; `GET /api/ledger/agregado?periodo=7d` → 200 (leitura real da RDS).
+
+Revisões por tarefa: Tasks 1, 3, 4, 6 Approved com 0 Critical/Important na primeira passada (Task 6 com 1 Minor de brief, corrigido); Task 2 Approved após 1 fix round (1 Critical + 1 Important, ambos do plano); Task 5 fast-tracked (verbatim) e depois corrigida por dependência de ordem entre testes.
+
+Prova pós-deploy (curls contra a Function URL de produção):
+```
+[PREENCHER com a saída real dos curls — ver Step 6 do brief da Task 7. Etapa 4 do SDD
+proíbe inventar números; este é o único placeholder permitido no registro.]
+```
+
+### Lição aprendida
+Todo módulo que uma rota HTTP nova precisa em runtime tem de morar em `backend/` — `scripts/` é invisível para a Lambda. A spec de design de uma reformulação de frontend pode listar como "pendente" um contrato que já existe no backend (fair_odd/book_odd): a Etapa 1 do SDD (rastreabilidade de dados, "confirmar se o dado existe em todo o trajeto sem inferir") pegou isso antes de gerar trabalho redundante.
+
