@@ -326,7 +326,7 @@ Analise os dados fornecidos seguindo rigorosamente estas diretrizes:
 - **Coerência Over/Under (Corredores):** Se recomendar Over X e Under Y do MESMO mercado (gols, cartoes ou escanteios), explicar como CORREDOR com a faixa esperada. Ex: "Corredor de gols: 3 gols (Over 2.5 + Under 3.5)", "Corredor de cartoes: 3-4 cartoes (Over 2.5 + Under 4.5)", "Corredor de escanteios: 9-12 (Over 8.5 + Under 12.5)".
 - **REGRA #181 — Probabilidades narrativas:** Os números abaixo em "Estatísticas Poisson" são RAW (pré-deflação, usados internamente para classificação). Ao escrever resumo_analitico/key_points/recomendacao, **use APENAS as probabilidades dos PICKS DO PIPELINE** (mais abaixo, já deflated #105 — alinhadas ao display do operador). Citar o número raw em narrativa quebra o contrato da regra #082 e produz divergência operador-vs-Mistral.
 - **REGRA #181 — Cálculo de EV:** Você NUNCA computa EV. EV vem pronto em cada pick do pipeline. Não escreva "EV +X%" para mercados fora da lista, nem recompute para os da lista. Se quiser justificar valor, use "EV positivo" / "EV negativo" qualitativo, sem número.
-- **REGRA #255 — Vocabulário de operador:** Você é lida por um operador, não por um analista de dados. PROIBIDO escrever "lambda", "deflação"/"deflacionado" ou "banda" em resumo_analitico, key_points ou recomendacao_principal — mesmo que esses termos apareçam nos dados abaixo (eles são insumo interno do modelo). Troque por: "lambda" → "gols esperados por jogo" / "escanteios esperados"; "deflação"/"probabilidade deflacionada" → "chance" (o número já é o publicado, não precisa qualificar); "banda" → não mencione, é detalhe interno de calibração. Use "chance" para probabilidade, "mínimo" para a odd justa (fair_odd) e "paga" para a odd da casa (book_odd) quando character existir.
+- **REGRA #255 — Vocabulário de operador:** Você é lida por um operador, não por um analista de dados. PROIBIDO escrever "lambda", "deflação"/"deflacionado" ou "banda" em resumo_analitico, key_points ou recomendacao_principal — mesmo que esses termos apareçam nos dados abaixo (eles são insumo interno do modelo). Troque por: "lambda" → "gols esperados por jogo" / "escanteios esperados"; "deflação"/"probabilidade deflacionada" → "chance" (o número já é o publicado, não precisa qualificar); "banda" → não mencione, é detalhe interno de calibração. Use "chance" para probabilidade, "mínimo" para a odd justa (fair_odd) e "paga" para a odd da casa (book_odd) quando disponível.
 
 # Dados do Confronto
 
@@ -469,7 +469,7 @@ PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles):
 
 REGRA DE ALINHAMENTO (#096, endurecida):
 - Sua recomendacao_principal DEVE ser EXATAMENTE UM DOS picks listados acima. NENHUM outro mercado e permitido — "mercado complementar" NAO existe.
-- Mercados que NAO estao na lista acima foram REJEITADOS pelo pipeline (EV negativo apos deflacao ou sem odd). Recomenda-los contradiz a tabela exibida ao operador.
+- Mercados que NAO estao na lista acima foram REJEITADOS pelo pipeline (EV negativo ou sem odd). Recomenda-los contradiz a tabela exibida ao operador.
 - Se o pipeline selecionou Under 2.5, voce NAO pode recomendar Over 2.5 (sao opostos).
 - Se o pipeline selecionou Over 8.5 escanteios, voce NAO pode recomendar Under 8.5.
 - NUNCA contradiga a direcao (Over/Under) de um pick do pipeline.
