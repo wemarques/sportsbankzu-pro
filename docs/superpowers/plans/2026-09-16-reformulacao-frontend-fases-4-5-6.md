@@ -1654,6 +1654,527 @@ export default function Page() {
 
 Depende de: fase 3 (feed/talão pronto) e fase 4 (ledger no feed — o hero usa a frase de acerto do ledger).
 
+### Task 25-bis: linha de dinheiro do /desempenho — retorno retroativo "na sua banca atual"
+
+**Por quê.** O bloco de dinheiro de `/desempenho` (Task 25) hoje mostra sempre `DESEMPENHO.retornoIndisponivel` porque `retorno.valor` de `/ledger/agregado` é `null` — `stake` nunca foi gravado no ledger (Global Constraint da fase 4, `backend/services/ledger_leitura.py:314-315`) e este plano não muda o produtor (proibição 5, "não duplicar Kelly no backend"). Decisão do dono (Welligton, portão da fase 4), opção (a): calcular o retorno **no cliente**, aplicando a regra de stake de HOJE (`calcStake`, `frontend/next/src/lib/bancaStore.ts:59`) a cada pick FECHADO do período, usando os campos já publicados no ledger (`published_prob`, `book_odd`, `classification`, `outcome`) — nunca recalculando probabilidade nem Kelly no backend. O rótulo deixa claro que é retrospectivo ("na sua banca atual"), não uma promessa: o stake de ontem, se o operador tivesse banca definida e seguisse a régua atual, teria sido X.
+
+**Files:**
+- Modify: `backend/services/ledger_leitura.py`, `backend/routes/ledger.py`, `frontend/next/src/lib/ledgerApi.ts`, `frontend/next/src/lib/copy.ts`, `frontend/next/src/app/desempenho/Painel.tsx`, `frontend/next/e2e/helpers/stub.ts`, `frontend/next/e2e/desempenho.spec.ts`
+- Create: `frontend/next/src/app/api/ledger/picks/route.ts`, `frontend/next/src/lib/retornoRetroativo.ts`, `tests/test_257_ledger_picks.py`, `frontend/next/tests/unit/retornoRetroativo.test.ts`, `frontend/next/e2e/fixtures/ledger-picks.json`, `frontend/next/e2e/fixtures/ledger-picks.README.md`
+
+**Interfaces:**
+- Consumes: `_janela_periodo`, `_buscar_janela`, `_PICKS_CONTADOS`, `_pick_json`, `classificar_familia`, `_FOLGA_PUBLICACAO_DIAS` (todos já existem em `backend/services/ledger_leitura.py`); `calcStake(prob01: number, odd: number, banca: number, classification?: string): number` e `useBanca(): [number | null, ...]` (`frontend/next/src/lib/bancaStore.ts`); `LedgerPick`, `ResultadoLedger<T>` (`lib/ledgerApi.ts`); `fmtReais`, `fmtPct` (`lib/formato.ts`); `DESEMPENHO` (`lib/copy.ts`, Task 25).
+- Produces: `ledger_leitura.picks(periodo: str, familia: Optional[str] = None, liga: Optional[str] = None, hoje: Optional[datetime] = None) -> {periodo, familia, liga, picks: [...]}` (backend); `GET /ledger/picks?periodo=&familia=&liga=`; `getLedgerPicks(periodo, familia?, liga?): Promise<ResultadoLedger<LedgerPicks>>` e o tipo `LedgerPicks` (`lib/ledgerApi.ts`); `retornoRetroativo(picks: LedgerPick[], banca: number): { valor: number; pctBanca: number; n: number; semPreco: number }` (`lib/retornoRetroativo.ts`); `DESEMPENHO.definaBanca`, `DESEMPENHO.retornoNaBancaAtual`, `DESEMPENHO.retornoSemPicks` (`lib/copy.ts`) — usados só por `Painel.tsx` desta tarefa, nenhum outro consumidor.
+
+**Contrato de saída (Etapa 2-bis).** Campo novo: nenhum campo de banco é escrito — `picks()` é leitura pura, mesma classe de `dia()`/`agregado()`. Consumidor externo do endpoint novo `GET /ledger/picks`: só o proxy `app/api/ledger/picks/route.ts` e `Painel.tsx` desta tarefa; nenhuma rota nem script fora deste plano lê `ledger_leitura.picks`.
+
+- [ ] **Step 1: Teste do backend — `picks()` conta o mesmo que `agregado()["acerto"]["resolvidos"]`**
+
+`tests/test_257_ledger_picks.py`:
+```python
+# -*- coding: utf-8 -*-
+"""#257 — GET /ledger/picks: linhas individuais resolvidas do periodo, para o
+/desempenho calcular o retorno retroativo no cliente (stake nunca gravado no
+ledger). `picks()` usa a MESMA janela e o MESMO filtro de `agregado()`
+(_janela_periodo, _buscar_janela, classificar_familia) — o teste principal
+prova que as duas contagens batem nos mesmos dublês."""
+from datetime import datetime, timedelta, timezone
+
+from fastapi.testclient import TestClient
+
+from backend.main import app
+from backend.services import ledger_leitura as L
+from tests.test_256_resolvidos import _Conn, _linha
+
+_UTC = timezone.utc
+client = TestClient(app)
+
+
+def test_len_picks_bate_com_acerto_resolvidos_do_agregado(monkeypatch):
+    linhas = []
+    base = datetime(2026, 9, 10, 12, 0, tzinfo=_UTC)
+    for i in range(25):
+        kickoff = base + timedelta(hours=i)
+        linhas.append(_linha(
+            f"m{i}", "Over/Under", "Over 2.5", 0.6, 1.8, "SAFE",
+            kickoff - timedelta(hours=2), kickoff,
+            outcome=1 if i < 15 else 0, detail={"total_goals": 3},
+        ))
+    for i in range(25, 30):  # 5 picks sem desfecho — nao entram em picks()
+        kickoff = base + timedelta(hours=i)
+        linhas.append(_linha(f"m{i}", "Over/Under", "Over 2.5", 0.6, 1.8, "SAFE",
+                              kickoff - timedelta(hours=2), kickoff, outcome=None))
+    monkeypatch.setattr(L, "_conn", lambda: _Conn(linhas))
+    hoje = datetime(2026, 9, 20, tzinfo=_UTC)
+    agregado = L.agregado("temporada", hoje=hoje)
+    picks = L.picks("temporada", hoje=hoje)
+    assert len(picks["picks"]) == agregado["acerto"]["resolvidos"] == 25
+    assert all(p["outcome"] is not None for p in picks["picks"])
+
+
+def test_picks_filtra_por_familia_e_liga_como_agregado(monkeypatch):
+    k = datetime(2026, 9, 14, 20, 0, tzinfo=_UTC)
+    linhas = [
+        _linha("m1", "Over/Under", "Over 2.5", 0.6, 1.8, "SAFE",
+              datetime(2026, 9, 14, 10, 0, tzinfo=_UTC), k, outcome=1, league_id="mls"),
+        _linha("m2", "Corners", "Over 6.5", 0.58, 1.75, "SAFE",
+              datetime(2026, 9, 14, 10, 0, tzinfo=_UTC), k, outcome=1, league_id="premier-league"),
+    ]
+    monkeypatch.setattr(L, "_conn", lambda: _Conn(linhas))
+    hoje = datetime(2026, 9, 20, tzinfo=_UTC)
+    r = L.picks("temporada", familia="Over/Under", hoje=hoje)
+    assert len(r["picks"]) == 1
+    assert r["picks"][0]["match_id"] == "m1"
+    r2 = L.picks("temporada", liga="premier-league", hoje=hoje)
+    assert len(r2["picks"]) == 1
+    assert r2["picks"][0]["match_id"] == "m2"
+
+
+def test_rota_ledger_picks_registrada_e_ok(monkeypatch):
+    monkeypatch.setattr(L, "picks", lambda periodo, familia=None, liga=None: {
+        "periodo": periodo, "familia": familia, "liga": liga, "picks": [],
+    })
+    r = client.get("/ledger/picks", params={"periodo": "7d"})
+    assert r.status_code == 200
+    assert r.json()["periodo"] == "7d"
+    assert "/ledger/picks" in app.openapi()["paths"]
+
+
+def test_rota_ledger_picks_periodo_invalido_400(monkeypatch):
+    def _falha(periodo, familia=None, liga=None):
+        raise ValueError(f"periodo invalido: {periodo!r}")
+    monkeypatch.setattr(L, "picks", _falha)
+    r = client.get("/ledger/picks", params={"periodo": "1ano"})
+    assert r.status_code == 400
+```
+
+- [ ] **Step 2: Rodar e ver falhar** — `python -m pytest -q tests/test_257_ledger_picks.py`. Esperado: `AttributeError`/`ImportError` (`picks` não existe) e `404` na rota.
+
+- [ ] **Step 3: Implementar `picks()` em `backend/services/ledger_leitura.py`**
+
+Acrescentar após `agregado()` (fim do arquivo):
+```python
+def picks(periodo: str, familia: Optional[str] = None,
+         liga: Optional[str] = None, hoje: Optional[datetime] = None
+         ) -> Dict[str, Any]:
+    """#257 — linhas individuais RESOLVIDAS do periodo, cruas (sem agregar),
+    para o /desempenho calcular o retorno retroativo no cliente (stake nunca
+    gravado no ledger — Global Constraint da fase 4). Mesma janela e mesmo
+    filtro de `agregado()` — nao reimplementar a regra em paralelo
+    (proibicao 5); teste `tests/test_257_ledger_picks.py` prova que
+    `len(picks) == agregado()["acerto"]["resolvidos"]` nos mesmos dubles."""
+    inicio, fim = _janela_periodo(periodo, hoje)
+    linhas = _buscar_janela(inicio - timedelta(days=_FOLGA_PUBLICACAO_DIAS), fim)
+    na_janela = [l for l in linhas
+                 if l.get("kickoff_utc") is not None and inicio <= l["kickoff_utc"] < fim]
+
+    contados = na_janela
+    if liga:
+        contados = [l for l in contados if l["league_id"] == liga]
+    if familia:
+        contados = [l for l in contados
+                   if classificar_familia(l["market"], l["selection"]) == familia]
+
+    resolvidos = [l for l in contados
+                  if l["classification"] in _PICKS_CONTADOS and l["outcome"] is not None]
+
+    return {
+        "periodo": periodo, "familia": familia, "liga": liga,
+        "picks": [_pick_json(l) for l in resolvidos],
+    }
+```
+
+- [ ] **Step 4: Rota `GET /ledger/picks` em `backend/routes/ledger.py`**
+
+Acrescentar após `ledger_agregado`:
+```python
+@router.get("/ledger/picks")
+async def ledger_picks(
+    periodo: str = Query("30d", description="7d|30d|temporada"),
+    familia: Optional[str] = Query(None),
+    liga: Optional[str] = Query(None),
+):
+    try:
+        return ledger_leitura.picks(periodo, familia, liga)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:                                    # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"falha ao ler o ledger: {e}")
+```
+
+Rodar: `python -m pytest -q tests/test_257_ledger_picks.py`. Esperado: verde (4 testes). Commit — `git add backend/services/ledger_leitura.py backend/routes/ledger.py tests/test_257_ledger_picks.py && git commit -m "feat(backend): GET /ledger/picks — linhas resolvidas do periodo, leitura pura (#257)"`
+
+- [ ] **Step 5: Proxy Next `app/api/ledger/picks/route.ts`**
+
+Mesmo padrão de `app/api/ledger/agregado/route.ts` (linha por linha):
+```ts
+import { fetchBackend, getBackendUrl } from "@/lib/backend";
+
+/**
+ * #257 — proxy de `GET /ledger/picks` (Lambda). Mesmo padrao de
+ * `api/ledger/agregado/route.ts`.
+ */
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+function statusDoErro(kind?: string, message?: string): number {
+  if (kind === "HTTP_ERROR") {
+    const m = /^HTTP (\d+):/.exec(message ?? "");
+    if (m) return Number(m[1]);
+  }
+  return 503;
+}
+
+export async function GET(request: Request) {
+  if (!getBackendUrl()) {
+    return Response.json(
+      { ok: false, error: { kind: "NOT_CONFIGURED", message: "PY_BACKEND_URL não configurado" } },
+      { status: 503 },
+    );
+  }
+
+  const { searchParams } = new URL(request.url);
+  const periodo = searchParams.get("periodo") ?? "30d";
+  const params = new URLSearchParams({ periodo });
+  const familia = searchParams.get("familia");
+  const liga = searchParams.get("liga");
+  if (familia) params.set("familia", familia);
+  if (liga) params.set("liga", liga);
+
+  const result = await fetchBackend(`/ledger/picks?${params.toString()}`, { timeoutMs: 25_000 });
+  if (!result.ok) {
+    const status = statusDoErro(result.error?.kind, result.error?.message);
+    console.error(`[ledger/picks] ${result.error?.kind} | ${result.error?.message} | ${result.durationMs}ms`);
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          kind: result.error?.kind ?? "BACKEND_ERROR",
+          message: "Não foi possível carregar os picks do período.",
+        },
+      },
+      { status },
+    );
+  }
+  return Response.json({ ok: true, ...(result.data as Record<string, unknown>) });
+}
+```
+
+- [ ] **Step 6: `lib/ledgerApi.ts` — `LedgerPicks` e `getLedgerPicks`**
+
+Acrescentar a `tests/unit/ledgerApi.test.ts` (dentro do `describe("ledgerApi (#256)")` existente, mesmas funções `stubFetch`/`afterEach`):
+```ts
+it("getLedgerPicks: monta querystring e devolve os picks", async () => {
+  stubFetch({
+    ok: true, periodo: "30d", familia: null, liga: null,
+    picks: [{ match_id: "m1", league_id: "mls", kickoff_utc: null, familia: "Over/Under",
+             market: "Over/Under", selection: "Over 2.5", published_prob: 0.6, fair_odd: 1.67,
+             book_odd: 1.8, classification: "SAFE", outcome: 1, detail: null }],
+  });
+  const r = await getLedgerPicks("30d");
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.dados.picks).toHaveLength(1);
+  const chamada = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  expect(chamada).toContain("periodo=30d");
+});
+it("getLedgerPicks: erro estruturado vira 'erro'", async () => {
+  stubFetch({ ok: false, error: { kind: "BACKEND_ERROR", message: "falha" } }, 503);
+  const r = await getLedgerPicks("30d");
+  expect(r.ok).toBe(false);
+  if (r.ok === false) expect(r.erro.kind).toBe("BACKEND_ERROR");
+});
+```
+(acrescentar `getLedgerPicks` ao `import` do topo do arquivo.)
+
+Rodar e ver falhar (`getLedgerPicks` não existe); implementar em `src/lib/ledgerApi.ts`, logo após `LedgerAgregado`:
+```ts
+/** #257 — picks individuais RESOLVIDOS do período (sem agregar), para o
+ * retorno retroativo em `lib/retornoRetroativo.ts`. */
+export interface LedgerPicks {
+  periodo: string;
+  familia: string | null;
+  liga: string | null;
+  picks: LedgerPick[];
+}
+
+export function getLedgerPicks(
+  periodo: "7d" | "30d" | "temporada",
+  familia?: string,
+  liga?: string,
+): Promise<ResultadoLedger<LedgerPicks>> {
+  const params = new URLSearchParams({ periodo });
+  if (familia) params.set("familia", familia);
+  if (liga) params.set("liga", liga);
+  return chamar<LedgerPicks>(`/api/ledger/picks?${params.toString()}`);
+}
+```
+
+- [ ] **Step 7: Rodar e ver passar** — `npx vitest run tests/unit/ledgerApi.test.ts`. Commit — `git add frontend/next/src/lib/ledgerApi.ts frontend/next/src/app/api/ledger/picks frontend/next/tests/unit/ledgerApi.test.ts && git commit -m "feat(front): GET /api/ledger/picks + getLedgerPicks (#257)"`
+
+- [ ] **Step 8: `lib/retornoRetroativo.ts` — cálculo puro do P&L retroativo**
+
+`tests/unit/retornoRetroativo.test.ts` — fixture com dois picks calculados à mão, longe de fronteira de arredondamento:
+```ts
+import { describe, expect, it } from "vitest";
+import { retornoRetroativo } from "@/lib/retornoRetroativo";
+import type { LedgerPick } from "@/lib/ledgerApi";
+
+function pick(p: Partial<LedgerPick>): LedgerPick {
+  return {
+    match_id: "m", league_id: "mls", kickoff_utc: null, familia: "Over/Under",
+    market: "Over/Under", selection: "Over 2.5", published_prob: null, fair_odd: null,
+    book_odd: null, classification: "SAFE", outcome: null, detail: null, ...p,
+  };
+}
+
+describe("retornoRetroativo (#257) — aritmetica a mao, sem fronteira de arredondamento", () => {
+  it("dois picks com preco (um paga stake>0, um cai a 0 pelo cap) + um sem preco", () => {
+    const picks: LedgerPick[] = [
+      // A: prob=0.55, odd=2.2, SAFE, outcome=1, banca=1000.
+      //    b=1.2; kelly=(0.55*1.2-0.45)/1.2=(0.66-0.45)/1.2=0.175
+      //    qk=0.175*0.25=0.04375 (< cap 0.05, nao bate no teto)
+      //    stake=round(1000*0.04375*100)/100 = round(4375)/100 = 43.75
+      //    P&L = stake*(odd-1) = 43.75*1.2 = 52.5
+      pick({ match_id: "a", published_prob: 0.55, book_odd: 2.2, classification: "SAFE", outcome: 1 }),
+      // B: prob=0.52, odd=1.9, NEUTRO_QUALIFICADO, outcome=0, banca=1000.
+      //    b=0.9; kelly=(0.52*0.9-0.48)/0.9=(0.468-0.48)/0.9=-0.01333...
+      //    qk=-0.01333*0.15=-0.002 -> capped a 0 (kelly negativo, sem floor NQ)
+      //    stake=0 -> P&L=0 (ainda conta em n, tem preco)
+      pick({ match_id: "b", published_prob: 0.52, book_odd: 1.9, classification: "NEUTRO_QUALIFICADO", outcome: 0 }),
+      // C: sem book_odd — nunca precificado, nao entra no calculo de valor/n.
+      pick({ match_id: "c", published_prob: 0.6, book_odd: null, classification: "SAFE", outcome: 1 }),
+    ];
+    const r = retornoRetroativo(picks, 1000);
+    expect(r.valor).toBeCloseTo(52.5, 6);
+    expect(r.pctBanca).toBeCloseTo(0.0525, 6);
+    expect(r.n).toBe(2);
+    expect(r.semPreco).toBe(1);
+  });
+  it("banca zero ou picks vazio: zero seguro, sem divisao por zero", () => {
+    expect(retornoRetroativo([], 1000)).toEqual({ valor: 0, pctBanca: 0, n: 0, semPreco: 0 });
+  });
+});
+```
+
+- [ ] **Step 9: Rodar e ver falhar; implementar**
+
+`src/lib/retornoRetroativo.ts`:
+```ts
+/** #257 — retorno retroativo: aplica a regra de stake de HOJE (`calcStake`,
+ * Quarter Kelly — não duplicado, só chamado) a cada pick FECHADO do período,
+ * usando os campos já publicados no ledger. Nunca recalcula probabilidade
+ * nem Kelly no backend (proibição 5). `outcome` é `0|1` (nunca `null` aqui —
+ * `lib/ledgerApi.ts::getLedgerPicks` só devolve picks resolvidos). */
+import type { LedgerPick } from "@/lib/ledgerApi";
+import { calcStake } from "@/lib/bancaStore";
+
+export interface RetornoRetroativo {
+  valor: number;
+  pctBanca: number;
+  n: number;
+  semPreco: number;
+}
+
+export function retornoRetroativo(picks: LedgerPick[], banca: number): RetornoRetroativo {
+  let valor = 0;
+  let n = 0;
+  let semPreco = 0;
+  for (const p of picks) {
+    if (p.book_odd == null || p.published_prob == null) {
+      semPreco += 1;
+      continue;
+    }
+    const stake = calcStake(p.published_prob, p.book_odd, banca, p.classification);
+    valor += p.outcome ? stake * (p.book_odd - 1) : -stake;
+    n += 1;
+  }
+  return { valor, pctBanca: banca > 0 ? valor / banca : 0, n, semPreco };
+}
+```
+
+- [ ] **Step 10: Rodar e ver passar** — `npx vitest run tests/unit/retornoRetroativo.test.ts`. Commit — `git add frontend/next/src/lib/retornoRetroativo.ts frontend/next/tests/unit/retornoRetroativo.test.ts && git commit -m "feat(front): retornoRetroativo — P&L com o stake de hoje sobre picks fechados (#257)"`
+
+- [ ] **Step 11: `copy.ts` — rótulos novos (`retornoIndisponivel` fica, só não é mais usado por `Painel.tsx`)**
+
+Acrescentar a `tests/unit/copy.test.ts`:
+```ts
+describe("DESEMPENHO (#257) — retorno retroativo", () => {
+  it("tem os rotulos novos do bloco de dinheiro", () => {
+    expect(DESEMPENHO.definaBanca).toBe("defina sua banca para ver o retorno em dinheiro");
+    expect(DESEMPENHO.retornoNaBancaAtual).toBe("seguindo o stake sugerido, na sua banca atual");
+    expect(DESEMPENHO.retornoSemPicks).toBe("sem picks fechados com preço neste período");
+  });
+});
+```
+Em `src/lib/copy.ts`, dentro do objeto `DESEMPENHO` (acrescentar as três chaves, sem remover `retornoIndisponivel` — string órfã, inofensiva, documentada como tal no comentário):
+```ts
+export const DESEMPENHO = {
+  tituloAcerto: "Acerto",
+  tituloRetorno: "Na sua banca atual",
+  tituloCalibracao: "Calibração",
+  semPicksFechados: "sem picks fechados neste período",
+  // #257: retornoIndisponivel fica sem uso em Painel.tsx a partir desta tarefa
+  // (substituido pelo calculo retroativo) — nao removido para nao quebrar o
+  // teste que a citava antes; nenhuma tela mais renderiza esta string.
+  retornoIndisponivel: "retorno em dinheiro ainda não disponível — o stake de cada pick não é gravado no ledger",
+  definaBanca: "defina sua banca para ver o retorno em dinheiro",
+  retornoNaBancaAtual: "seguindo o stake sugerido, na sua banca atual",
+  retornoSemPicks: "sem picks fechados com preço neste período",
+};
+```
+Rodar: `npx vitest run tests/unit/copy.test.ts`; `npm run lint:accents`.
+
+- [ ] **Step 12: `Painel.tsx` — bloco de dinheiro**
+
+Trocar os imports do topo (`src/app/desempenho/Painel.tsx`) de:
+```ts
+import { useEffect, useMemo, useState } from "react";
+```
+para:
+```ts
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useBanca } from "@/lib/bancaStore";
+import { getLedgerPicks } from "@/lib/ledgerApi";
+import { retornoRetroativo } from "@/lib/retornoRetroativo";
+```
+(mantém os demais imports já existentes da Task 25: `getLedgerAgregado`, `lerDesempenhoUrl`/`escreverDesempenhoUrl`/`periodoPorExtenso`, `ACTIVE_LEAGUES`, `fmtPct`/`fmtReais`, `fraseAcerto`/`DESEMPENHO`, `TabelaSegmentos`, `GraficoCalibracao`.)
+
+Substituir a seção "Na sua banca atual" (Task 25, dentro de `<>...</>`) por um subcomponente novo, declarado no mesmo arquivo, acima de `Painel`:
+```tsx
+function BlocoRetorno({ periodo, familia, liga }: { periodo: Periodo; familia: string | null; liga: string | null }) {
+  const [banca] = useBanca();
+  const [retorno, setRetorno] = useState<{ valor: number; pctBanca: number; n: number } | null>(null);
+  const [semPicks, setSemPicks] = useState(false);
+  const geracao = useRef(0);
+
+  useEffect(() => {
+    if (banca == null) { setRetorno(null); setSemPicks(false); return; }
+    const minha = ++geracao.current;
+    getLedgerPicks(periodo, familia ?? undefined, liga ?? undefined).then((r) => {
+      if (minha !== geracao.current) return;   // outra carga mais nova ja partiu (mesma guarda de Feed.tsx)
+      if (!r.ok) { setRetorno(null); setSemPicks(false); return; }
+      const calculo = retornoRetroativo(r.dados.picks, banca);
+      if (calculo.n === 0) { setRetorno(null); setSemPicks(true); return; }
+      setSemPicks(false);
+      setRetorno(calculo);
+    });
+  }, [periodo, familia, liga, banca]);
+
+  if (banca == null) {
+    return (
+      <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+        {DESEMPENHO.definaBanca}{" "}
+        <Link href="/banca" className="sb-foco underline">definir banca</Link>
+      </p>
+    );
+  }
+  if (semPicks) return <p className="text-[14px] text-[var(--sb-texto-apagado)]">{DESEMPENHO.retornoSemPicks}</p>;
+  if (!retorno) return null;
+  return (
+    <p className="tnum text-[16px]">
+      {fmtReais(retorno.valor)} ({fmtPct(retorno.pctBanca)}%) — {DESEMPENHO.retornoNaBancaAtual} ({retorno.n} picks com preço)
+    </p>
+  );
+}
+```
+E, dentro de `Painel`, trocar o bloco:
+```tsx
+{dados.retorno.valor == null ? (
+  <p className="text-[14px] text-[var(--sb-texto-apagado)]">{DESEMPENHO.retornoIndisponivel}</p>
+) : (
+  <p className="tnum text-[16px]">{fmtReais(dados.retorno.valor)} ({fmtPct(dados.retorno.pct_banca ?? 0)}%)</p>
+)}
+```
+por:
+```tsx
+<BlocoRetorno periodo={url.periodo} familia={url.familia} liga={url.liga} />
+```
+
+- [ ] **Step 13: Rodar** — `npx tsc --noEmit`; `npm run lint:fonts`; `npm run lint:accents`.
+
+- [ ] **Step 14: Fixture real e README de proveniência**
+
+`ledger-agregado.README.md` (Task 25) documenta a captura real de 2026-09-16: 14 requisições `GET /ledger/dia?data=D` para D = 2026-09-03..2026-09-16 na Function URL de produção, das quais a união de `picks` filtrada por `classification ∈ {SAFE, NEUTRO_QUALIFICADO}` e `outcome != null` deu **78 linhas** (= `ledger-agregado.json.acerto.resolvidos`, conferido no arquivo). `ledger-picks.json` reusa a MESMA fonte, não uma nova captura:
+
+1. Repetir as mesmas 14 requisições `GET https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/ledger/dia?data=D` (D = 2026-09-03..2026-09-16).
+2. Unir os `picks` das 14 respostas, filtrar `classification ∈ {"SAFE", "NEUTRO_QUALIFICADO"}` e `outcome != null` — mesma regra de `ledger_leitura.picks()` (Step 3).
+3. Gravar `frontend/next/e2e/fixtures/ledger-picks.json`:
+```json
+{ "ok": true, "periodo": "temporada", "familia": null, "liga": null, "picks": [ /* as 78 linhas, cada uma no formato LedgerPick — match_id, league_id, kickoff_utc, familia, market, selection, published_prob, fair_odd, book_odd, classification, outcome, detail */ ] }
+```
+4. Verificação de consistência obrigatória antes de commitar: `picks.length === 78` (bate com `ledger-agregado.json.acerto.resolvidos`, já conferido nesta tarefa) e todo `outcome` é `0` ou `1`, nunca `null`.
+
+`frontend/next/e2e/fixtures/ledger-picks.README.md`:
+```markdown
+# `ledger-picks.json` — proveniência (Task 25-bis, #257)
+
+**Mesma fonte de `ledger-agregado.json`** (ver `ledger-agregado.README.md`), não uma nova captura: união dos `picks` das 14 respostas `GET /ledger/dia?data=D` (D=2026-09-03..2026-09-16) da Function URL de produção, filtrada por `classification ∈ {SAFE, NEUTRO_QUALIFICADO}` e `outcome != null` — mesma regra de `ledger_leitura.picks()`.
+
+`picks.length == 78`, igual a `ledger-agregado.json.acerto.resolvidos` — checagem cruzada obrigatória (as duas fixtures têm que concordar, senão os testes que comparam as duas telas ficam inconsistentes entre si).
+```
+
+- [ ] **Step 15: `e2e/helpers/stub.ts` — hermetizar o novo endpoint**
+
+```ts
+import ledgerPicks from "../fixtures/ledger-picks.json";
+```
+(acrescentar ao topo, junto dos outros imports de fixture) e, no corpo de `stub()`, após a rota `**/api/ledger/agregado**`:
+```ts
+// #257 — hermetiza qualquer tela que busque picks individuais (BlocoRetorno).
+await page.route("**/api/ledger/picks**", (route) =>
+  route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(ledgerPicks) }));
+```
+
+- [ ] **Step 16: `e2e/desempenho.spec.ts` — teste do valor renderizado com banca fixa**
+
+Seguindo o estilo já usado neste arquivo (cada teste estuba `**/api/ledger/agregado**` na mão, sem usar `stub()`), acrescentar um `page.route` dedicado para `**/api/ledger/picks**` com uma fixture pequena, calculada à mão (mesma aritmética do Step 8 — não a fixture real de 78 linhas, cujo P&L não é praticável de conferir à mão em um comentário):
+```ts
+test("retorno retroativo com banca definida", async ({ page, context }) => {
+  await page.route("**/api/ledger/agregado**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agregado) }));
+  // Mesmos dois picks e mesma conta do Step 8 (retornoRetroativo.test.ts):
+  // A: prob 0.55, odd 2.2, SAFE, outcome 1, banca 1000 -> stake 43.75, P&L +52.5
+  // B: prob 0.52, odd 1.9, NEUTRO_QUALIFICADO, outcome 0, banca 1000 -> stake 0, P&L 0
+  // total valor = 52.5; pctBanca = 52.5/1000 = 0.0525 -> fmtPct = 5; fmtReais(52.5) = "R$ 52,50"
+  await page.route("**/api/ledger/picks**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, periodo: "30d", familia: null, liga: null,
+      picks: [
+        { match_id: "a", league_id: "mls", kickoff_utc: null, familia: "Over/Under", market: "Over/Under",
+          selection: "Over 2.5", published_prob: 0.55, fair_odd: 1.82, book_odd: 2.2, classification: "SAFE", outcome: 1, detail: null },
+        { match_id: "b", league_id: "mls", kickoff_utc: null, familia: "Over/Under", market: "Over/Under",
+          selection: "Over 1.5", published_prob: 0.52, fair_odd: 1.92, book_odd: 1.9, classification: "NEUTRO_QUALIFICADO", outcome: 0, detail: null },
+      ],
+    }) }));
+  await context.addInitScript(() => window.localStorage.setItem("sportsbankzu-bankroll", "1000"));
+  await page.goto("/desempenho");
+  await expect(page.getByText("R$ 52,50")).toBeVisible();
+  await expect(page.getByText(/5%/)).toBeVisible();
+  await expect(page.getByText(DESEMPENHO_RETORNO_NA_BANCA)).toBeVisible();
+});
+test("sem banca definida: link honesto para /banca, nenhum numero inventado", async ({ page, context }) => {
+  await context.clearCookies();
+  await page.route("**/api/ledger/agregado**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agregado) }));
+  await page.route("**/api/ledger/picks**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, periodo: "30d", familia: null, liga: null, picks: [] }) }));
+  await page.goto("/desempenho");
+  await expect(page.getByRole("link", { name: "definir banca" })).toBeVisible();
+});
+```
+No topo do arquivo, junto do import de `agregado`, acrescentar a constante usada acima (string literal, não vinda de `@/lib/copy` — e2e não importa módulo de app):
+```ts
+const DESEMPENHO_RETORNO_NA_BANCA = "seguindo o stake sugerido, na sua banca atual";
+```
+Rodar: `npx playwright test e2e/desempenho.spec.ts`.
+
+- [ ] **Step 17: Screenshots para o dono (nota visual)** — `/desempenho` não é referência visual do design (Global Constraint da fase 3), mas toda tarefa de UI traz diff visual no relatório: capturar print do bloco "Na sua banca atual" nos três estados (banca indefinida, com retorno, sem picks com preço) e anexar ao relatório de code review desta tarefa.
+
+- [ ] **Step 18: Commit** — `git add frontend/next/src/app/desempenho/Painel.tsx frontend/next/src/lib/copy.ts frontend/next/tests/unit/copy.test.ts frontend/next/e2e/helpers/stub.ts frontend/next/e2e/desempenho.spec.ts frontend/next/e2e/fixtures/ledger-picks.json frontend/next/e2e/fixtures/ledger-picks.README.md && git commit -m "feat(front): retorno retroativo na banca atual em /desempenho, honesto quando sem banca/picks (#257)"`
+
+---
+
 ### Task 28: `components/marca/Hero.tsx` + `app/page.tsx`
 
 **Por quê.** `src/app/page.tsx` hoje faz `redirect("/dashboard")` (morto — o middleware intercepta antes, ver Task 29). A spec (§5) pede: headline em duas linhas (Slab/Barlow — linguagem A), frase de acerto vinda do ledger (some se `n < 20`), CTA "Ver os jogos de hoje" + "Entrar · Criar conta", e um talão real como prova (o de maior edge hoje; sem pick válido hoje, o de ontem com a faixa de resultado; sem nenhum, o slot some).
@@ -2542,10 +3063,11 @@ test.describe("rotas removidas (#258) — 404 previsivel, nunca 500 ou pagina em
 - §5 Hero: Task 28 (headline, frase de acerto do ledger com corte em n<20, CTA duplo, talão real, some se não houver nenhum — o `talaoProva` fica `null` e a seção não renderiza).
 - §5 `/banca`: já fechado na fase 3 (Task 17 do plano 1) — sem tarefa nova aqui.
 - §5 `/desempenho`: Task 25 (ordem desfecho→calibração, filtros na URL, período por extenso, retorno honesto quando `null`, calibração com leitura em uma frase + tabela sr-only, por liga com "amostra curta").
+- §5 `/desempenho`, retorno em dinheiro: Task 25-bis (decisão do dono, opção a — retorno retroativo calculado no cliente com o stake de hoje sobre picks fechados; honesto quando banca indefinida ou sem picks com preço).
 - §5 `/glossario`: Task 30 (dez termos, âncora por id, sem busca).
 - §5 estados vazios/erro transversais: "sem picks fechados" coberto na Task 25; os demais (dia sem jogos, backend fora, liga sem dados, `/jogos/[id]` inexistente, Mistral indisponível) já são da fase 3 (plano 1) — não repetidos aqui, só o de `/desempenho` que é novo desta fase.
 - §8 fase 4 (Ontem no feed, `/desempenho`): Tasks 20, 20-bis, 21-27.
-- §8 fase 5 (Hero, redirect por cookie, `/glossario`, navegação final, links contextuais): Tasks 28-33.
+- §8 fase 5 (Hero, redirect por cookie, `/glossario`, navegação final, links contextuais): Tasks 25-bis, 28-33.
 - §8 fase 6 (rodada 2, `/jogos` padrão, backup antes de apagar, corte do legado): Tasks 34-39.
 - §7 fonte única (`ResumoDoDia` de `/ontem` == agregado de `/desempenho` no mesmo período): ambos leem exclusivamente `/ledger/dia`/`/ledger/agregado`, nenhum recomputa — arquitetural, não precisa de teste de igualdade adicional porque não há dois caminhos de cálculo (só um: o backend).
 - §7 axe: Task 26 estende `a11y.spec.ts` (fase 3) para `/jogos?dia=ontem` e `/desempenho`.
