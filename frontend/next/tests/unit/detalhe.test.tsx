@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import { EscalaConfianca } from "@/components/detalhe/EscalaConfianca";
 import { TabelaMercados } from "@/components/detalhe/TabelaMercados";
+import { Detalhe } from "@/components/detalhe/Detalhe";
 import { fraseOrigem } from "@/lib/copy";
-import type { PickView } from "@/lib/jogoView";
+import type { JogoView, PickView } from "@/lib/jogoView";
 
 const p = (o: Partial<PickView>): PickView => ({ mercado: "x", prob01: 0.5, fairOdd: 2, bookOdd: 2.1, edge: 0.05, ev: 0.05, classification: "SAFE", motivo: "", vale: true, ...o });
 
@@ -39,5 +40,29 @@ describe("detalhe (spec §4.3)", () => {
     expect(fraseOrigem({ golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: 5.1, escanteiosFora: 4.6, escanteiosLiga: 9.8 }, "Toronto", "Nashville", "MLS"))
       .toBe("Toronto cobra 5,1 escanteios por jogo na temporada; Nashville, 4,6; média da MLS: 9,8.");
     expect(fraseOrigem({ golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null }, "a", "b", "c")).toBeNull();
+  });
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+const jogoConfianca: JogoView = {
+  id: "j1", ligaId: "mls", ligaNome: "MLS", casa: "Toronto", fora: "Nashville SC", kickoffIso: "2026-09-09T23:30:00Z",
+  estado: "vale", talao: p({}), segundo: null, direcao: null, mercados: [p({})], totalAvaliados: 1, totalValem: 1,
+  aoVivo: null, resultado: null,
+  origem: { golsCasa: null, golsFora: null, golsLiga: null, escanteiosCasa: null, escanteiosFora: null, escanteiosLiga: null },
+};
+
+describe("Detalhe usa nJogos do ledger nos dois lugares, nao mais o treino ML (#256)", () => {
+  it("nenhuma das duas chamadas mostra confianca.nSamples (999); DeOndeVemONumero mostra o numero do ledger (40)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({
+        ok: true, periodo: "temporada",
+        por_liga: { mls: { picks: 12, acertos: 7, n_jogos: 40, resolvidos: 12, brier: 0.24 } },
+      }),
+    }));
+    render(<Detalhe jogo={jogoConfianca} confianca={{ leagueId: "mls", level: "ML_ACTIVE", brier: 0.2, accuracy: 0.58, nSamples: 999, trainedAt: null }} />);
+    await waitFor(() => expect(screen.getByText(/40 jogos medidos/)).toBeInTheDocument());
+    expect(screen.queryByText(/999/)).toBeNull();
   });
 });
