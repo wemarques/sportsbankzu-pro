@@ -35,6 +35,7 @@ _FAMILIAS = ("Over/Under", "BTTS", "Corners", "Cards", "1X2", "Double Chance")
 _PICKS_CONTADOS = ("SAFE", "NEUTRO_QUALIFICADO")     # o talao, spec §4.2 estado `vale`
 _INICIO_TEMPORADA = "2026-09-03"                     # primeiro pick do ledger, spec §6.3
 _FOLGA_PUBLICACAO_DIAS = 3   # published_at pode anteceder o kickoff em ate 3 dias
+_DESLOCAMENTO_BRT = timedelta(hours=3)   # America/Sao_Paulo = UTC-3, fixo (#256)
 
 
 def _conn():
@@ -172,7 +173,8 @@ def _resumo(linhas: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def dia(data: str) -> Dict[str, Any]:
-    """Um dia: os picks cujo KICKOFF cai no dia `data` (UTC), mais os
+    """Um dia: os picks cujo KICKOFF cai no dia `data`
+    no relogio do operador (BRT, UTC-3), mais os
     acumulados de 7 e 30 dias terminando neste dia (inclusive), por familia.
 
     Decisao de implementacao (a spec §6.3 nao fixa o limite exato de
@@ -183,7 +185,11 @@ def dia(data: str) -> Dict[str, Any]:
     agregado de /desempenho para o mesmo periodo").
     """
     try:
-        dia_dt = datetime.strptime(data, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        # #256: `data` e o dia-calendario do OPERADOR (America/Sao_Paulo = UTC-3 fixo,
+        # sem horario de verao desde 2019); o dia comeca as 03:00Z. Antes, dia UTC:
+        # um jogo de 22:07 BRT caia no dia seguinte (prova: liga-mx 2026-09-14T01:07Z).
+        dia_dt = (datetime.strptime(data, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                  + _DESLOCAMENTO_BRT)
     except ValueError as e:
         raise ValueError(f"data invalida: {data!r} (esperado YYYY-MM-DD)") from e
 

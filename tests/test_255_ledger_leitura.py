@@ -207,13 +207,13 @@ def _dt(iso_str: str) -> datetime:
 
 def test_linhas_com_kickoff_utc_nulo_entram_pelo_sufixo_do_match_id(monkeypatch):
     """#252-c: kickoff_utc e NULL em todo o ledger anterior a 2026-09-15; o kickoff sai do
-    sufixo epoch do match_id. 1789430400 = 2026-09-15 00:00 UTC. published_at deve ser anterior."""
+    sufixo epoch do match_id. 1789430400 = 2026-09-15 00:00 UTC. published_at deve ser anterior. #256: 00:00Z = 21:00 BRT do dia 14 — o dia e o do operador."""
     linhas = [_linha(match_id="championship-A-B-1789430400.0", kickoff_utc=None,
                      published_at=_dt("2026-09-14T20:00:00Z"), classification="SAFE",
                      market="Over/Under", selection="Over 2.5", prob=0.55, book_odd=1.80,
                      outcome=1, detail={"total_goals": 3})]
     monkeypatch.setattr(L, "_conn", lambda: _Conn(linhas))
-    d = L.dia("2026-09-15")
+    d = L.dia("2026-09-14")
     assert len(d["picks"]) == 1 and d["resumo"]["picks"] == 1
 
 
