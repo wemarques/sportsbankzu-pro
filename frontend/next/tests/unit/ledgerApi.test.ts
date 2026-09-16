@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getLedgerDia, getLedgerAgregado } from "@/lib/ledgerApi";
+import { getLedgerDia, getLedgerAgregado, getLedgerPicks } from "@/lib/ledgerApi";
 
 function stubFetch(body: unknown, status = 200) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -42,5 +42,24 @@ describe("ledgerApi (#256)", () => {
     const chamada = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(chamada).not.toContain("familia=");
     expect(chamada).not.toContain("liga=");
+  });
+  it("getLedgerPicks: monta querystring e devolve os picks", async () => {
+    stubFetch({
+      ok: true, periodo: "30d", familia: null, liga: null,
+      picks: [{ match_id: "m1", league_id: "mls", kickoff_utc: null, familia: "Over/Under",
+               market: "Over/Under", selection: "Over 2.5", published_prob: 0.6, fair_odd: 1.67,
+               book_odd: 1.8, classification: "SAFE", outcome: 1, detail: null }],
+    });
+    const r = await getLedgerPicks("30d");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.dados.picks).toHaveLength(1);
+    const chamada = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(chamada).toContain("periodo=30d");
+  });
+  it("getLedgerPicks: erro estruturado vira 'erro'", async () => {
+    stubFetch({ ok: false, error: { kind: "BACKEND_ERROR", message: "falha" } }, 503);
+    const r = await getLedgerPicks("30d");
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.erro.kind).toBe("BACKEND_ERROR");
   });
 });

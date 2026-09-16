@@ -82,3 +82,23 @@ export function getLedgerAgregado(
   if (liga) params.set("liga", liga);
   return chamar<LedgerAgregado>(`/api/ledger/agregado?${params.toString()}`);
 }
+
+/** #257 — picks individuais RESOLVIDOS do período (sem agregar), para o
+ * retorno retroativo em `lib/retornoRetroativo.ts`. */
+export interface LedgerPicks {
+  periodo: string;
+  familia: string | null;
+  liga: string | null;
+  picks: LedgerPick[];
+}
+
+export function getLedgerPicks(
+  periodo: "7d" | "30d" | "temporada",
+  familia?: string,
+  liga?: string,
+): Promise<ResultadoLedger<LedgerPicks>> {
+  const params = new URLSearchParams({ periodo });
+  if (familia) params.set("familia", familia);
+  if (liga) params.set("liga", liga);
+  return chamar<LedgerPicks>(`/api/ledger/picks?${params.toString()}`);
+}
