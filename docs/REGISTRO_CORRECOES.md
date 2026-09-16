@@ -14218,7 +14218,8 @@ Suíte completa sobre `773c01d` (rodada pelo controlador): `lint:accents` ✓, `
 
 Backend: ``pytest -q` completo: 1433 passed, 8 skipped (37:32)`
 
-Prova pós-deploy: `[PREENCHER com a saída real dos curls pós-deploy: /ledger/dia?data=2026-09-13 contém o pick liga-mx de 01:07Z; /ledger/agregado?periodo=7d traz resolvidos]`
+Prova pós-deploy: `Deploy Lambda run 35141988209 sobre `f516902` (2026-09-16, success). Curls na Function URL, 2026-09-16:
+`/health` → `{"status":"ok"}`; `/ledger/dia?data=2026-09-13` → 9 picks, pick `liga-mx-Guadalajara-Pumas UNAM-1789348020.0` (`kickoff_utc 2026-09-14T01:07:00+00:00` = 13/09 22:07 BRT) PRESENTE, `resumo {picks 3, acertos 2, jogos 1, resolvidos 3}`; `/ledger/dia?data=2026-09-14` → 59 picks, esse pick AUSENTE (dia do operador, não UTC); `/ledger/agregado?periodo=7d` → HTTP 200 em 0,67 s, `acerto {picks 72, acertos 39, jogos 38, resolvidos 68}`, `por_familia.Over/Under {picks 33, acertos 23, n_jogos 27, resolvidos 33, brier 0.2145}`.`
 
 ### Lição aprendida
 Denominador de "acerto" só é válido quando conta a mesma unidade em todo lugar que exibe o número (picks resolvidos, nunca partidas) — a divergência `resolvidos` vs. `jogos`/`picks` já tinha produzido `acertos > jogos` em produção antes desta fase corrigir os quatro pontos de leitura (`ResumoDoDia`, média das ligas, `/desempenho`, ledger agregado). Fuso horário de um filtro por "dia" nunca é UTC por padrão quando o consumidor é um operador humano — o mesmo defeito (#252-a já havia medido kickoff/`published_at` em UTC cru) reapareceu em `dia()` e só foi pego porque o review re-derivou o fixture contra um jogo real de horário de virada (22:07 BRT / 01:07 UTC).
