@@ -44,4 +44,7 @@ describe("copy (#254, spec §4.4)", () => {
     expect(motivoRecusa(["NO_ODDS_AVAILABLE"])).toBe("sem preço");
     expect(motivoRecusa([])).toBe("não vale");
   });
+  it("resumoDoDia (#256)", () => {
+    expect(C.resumoDoDia(3, 4, 4)).toBe("Ontem: 3 de 4 picks fechados acertaram em 4 jogos");
+  });
 });

@@ -83,6 +83,11 @@ export function fraseOrigem(o: Origem, casa: string, fora: string, liga: string)
   return null;
 }
 
+/** #256 — spec §4.5: sem reais por pick em "ontem", só a contagem de acerto. */
+export function resumoDoDia(acertos: number, resolvidos: number, jogos: number): string {
+  return `Ontem: ${acertos} de ${resolvidos} picks fechados acertaram em ${jogos} jogos`;
+}
+
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,
