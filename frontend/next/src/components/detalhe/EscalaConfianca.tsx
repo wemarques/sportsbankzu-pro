@@ -3,7 +3,9 @@ export function EscalaConfianca({ prob01, margem, nJogos, liga }: { prob01: numb
   const p = fmtPct(prob01);
   const frase = margem && nJogos != null
     ? `${p} em cada 100, com margem de ${fmtPct(margem[0])} a ${fmtPct(margem[1])}, em ${nJogos} jogos medidos da ${liga}`
-    : `${p} em cada 100 na ${liga}`;
+    : nJogos != null
+      ? `${p} em cada 100 na ${liga}, em ${nJogos} jogos medidos`
+      : `${p} em cada 100 na ${liga}`;
   return (
     <figure>
       <div role="img" aria-label={frase} className="relative my-3 h-8">

@@ -27,7 +27,10 @@ describe("copy (#254, spec §4.4)", () => {
   it("avaliados e direcao", () => {
     expect(C.avaliados(12, 2)).toBe("12 mercados avaliados, 2 valem");
     expect(C.avaliados(12, 0)).toBe("12 mercados avaliados, nenhum vale hoje");
+    expect(C.avaliados(1, 1)).toBe("1 mercado avaliado, 1 vale");
+    expect(C.avaliados(1, 0)).toBe("1 mercado avaliado, nenhum vale hoje");
     expect(C.direcao("Mais de 2,5 gols", 0.57)).toBe("Direção: mais de 2,5 gols, 57 em cada 100 — sem preço que valha hoje");
+    expect(C.direcao("BTTS - Sim", 0.56)).toBe("Direção: BTTS - Sim, 56 em cada 100 — sem preço que valha hoje");
   });
   it("resultado de ontem", () => {
     expect(C.resultadoOntem(true, "8 escanteios")).toBe("✓ fechou com 8 escanteios");

@@ -47,12 +47,13 @@ export function stake(banca: number | null, valor: number | null): string {
 }
 
 export function avaliados(total: number, valem: number): string {
-  if (valem === 0) return `${total} mercados avaliados, nenhum vale hoje`;
-  return `${total} mercados avaliados, ${valem} ${valem === 1 ? "vale" : "valem"}`;
+  const avaliadosTxt = total === 1 ? "1 mercado avaliado" : `${total} mercados avaliados`;
+  if (valem === 0) return `${avaliadosTxt}, nenhum vale hoje`;
+  return `${avaliadosTxt}, ${valem} ${valem === 1 ? "vale" : "valem"}`;
 }
 
 export function direcao(mercado: string, p01: number): string {
-  const m = mercado.charAt(0).toLowerCase() + mercado.slice(1);
+  const m = /^[A-Z][a-z]/.test(mercado) ? mercado.charAt(0).toLowerCase() + mercado.slice(1) : mercado;
   return `Direção: ${m}, ${fmtPct(p01)} em cada 100 — sem preço que valha hoje`;
 }
 

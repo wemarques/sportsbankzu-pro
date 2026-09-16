@@ -15,6 +15,16 @@ describe("detalhe (spec §4.3)", () => {
     expect(fig).toHaveAttribute("aria-label", "58 em cada 100, com margem de 52 a 64, em 40 jogos medidos da MLS");
     expect(screen.getByText("50")).toHaveClass("text-[var(--sb-texto-apagado)]");
   });
+  it("escala sem margem com nJogos mostra o n", () => {
+    render(<EscalaConfianca prob01={0.58} margem={null} nJogos={40} liga="MLS" />);
+    const fig = screen.getByRole("img");
+    expect(fig).toHaveAttribute("aria-label", "58 em cada 100 na MLS, em 40 jogos medidos");
+  });
+  it("escala sem margem e sem nJogos nao mostra o n", () => {
+    render(<EscalaConfianca prob01={0.58} margem={null} nJogos={null} liga="MLS" />);
+    const fig = screen.getByRole("img");
+    expect(fig).toHaveAttribute("aria-label", "58 em cada 100 na MLS");
+  });
   it("tabela: cabecalhos, status em texto, copiar so em quem vale, recusados apagados", () => {
     render(<TabelaMercados mercados={[
       p({ mercado: "Mais de 6,5 escanteios", prob01: 0.58, fairOdd: 1.67, bookOdd: 1.75 }),
@@ -62,7 +72,8 @@ describe("Detalhe usa nJogos do ledger nos dois lugares, nao mais o treino ML (#
       }),
     }));
     render(<Detalhe jogo={jogoConfianca} confianca={{ leagueId: "mls", level: "ML_ACTIVE", brier: 0.2, accuracy: 0.58, nSamples: 999, trainedAt: null }} />);
-    await waitFor(() => expect(screen.getByText(/40 jogos medidos/)).toBeInTheDocument());
+    // #256: n aparece na escala e em "de onde vem" — os dois vindos do ledger
+    await waitFor(() => expect(screen.getAllByText(/40 jogos medidos/)).toHaveLength(2));
     expect(screen.queryByText(/999/)).toBeNull();
   });
 });
