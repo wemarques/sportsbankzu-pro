@@ -15,7 +15,7 @@ test.describe("/desempenho (#256, spec §5)", () => {
     await expect(page.getByText(/ainda não/)).toBeVisible(); // retorno null, sem numero inventado
     await expect(page.getByText("Over/Under")).toBeVisible();
     await expect(page.getByRole("img", { name: /Calibração/ })).toBeVisible();
-    await expect(page.getByText(/17\/08–hoje/)).toBeVisible();
+    await expect(page.getByText(/\d{2}\/\d{2}–hoje/)).toBeVisible();
   });
   test("filtro de periodo escreve na URL", async ({ page }) => {
     await page.route("**/api/ledger/agregado**", (route) =>

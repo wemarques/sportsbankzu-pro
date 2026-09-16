@@ -29,7 +29,7 @@ export function Painel() {
     return () => { vivo = false; };
   }, [url.periodo, url.familia, url.liga]);
 
-  const ir = (mudanca: Partial<typeof url>) => router.push(escreverDesempenhoUrl({ ...url, ...mudanca }));
+  const ir = (mudanca: Partial<typeof url>) => router.replace(escreverDesempenhoUrl({ ...url, ...mudanca }));
 
   if (erro) return <p className="p-4 text-[14px]">Os dados de desempenho não carregaram.</p>;
   if (!dados) return null;
@@ -78,7 +78,7 @@ export function Painel() {
             )}
           </section>
 
-          <section className="mt-6"><TabelaSegmentos titulo="Por família" linhas={dados.por_familia} /></section>
+          <section className="mt-6"><div className="overflow-x-auto"><TabelaSegmentos titulo="Por família" linhas={dados.por_familia} /></div></section>
 
           <section className="mt-6">
             <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{DESEMPENHO.tituloCalibracao}</h2>
@@ -86,7 +86,7 @@ export function Painel() {
           </section>
 
           <section className="mt-6">
-            <TabelaSegmentos titulo="Por liga" linhas={dados.por_liga} />
+            <div className="overflow-x-auto"><TabelaSegmentos titulo="Por liga" linhas={dados.por_liga} /></div>
           </section>
         </>
       )}

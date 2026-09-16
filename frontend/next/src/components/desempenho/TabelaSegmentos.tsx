@@ -1,6 +1,8 @@
 import type { LedgerSegmento } from "@/lib/ledgerApi";
 import { fmtPct } from "@/lib/formato";
 
+const MIN_N = 20; // #079 / proibicao 8: abaixo disso e diagnostico, nunca decisorio
+
 /** #256 — coluna "acerto" usa `resolvidos` (picks individuais com desfecho),
  * NUNCA `n_jogos` (partidas distintas) — o mesmo motivo do `acerto` de topo
  * de `Painel.tsx`: mais de um pick pode acertar na mesma partida, e
@@ -21,7 +23,7 @@ export function TabelaSegmentos({ titulo, linhas }: { titulo: string; linhas: Re
         <tr key={nome} className="border-t border-[var(--sb-linha)]">
           <td className="py-2">{nome}</td>
           <td className="tnum py-2 text-right">{s.picks}</td>
-          <td className="tnum py-2 text-right">{s.resolvidos > 0 ? `${fmtPct(s.acertos / s.resolvidos)}%` : "amostra curta"}</td>
+          <td className="tnum py-2 text-right">{s.resolvidos >= MIN_N ? `${fmtPct(s.acertos / s.resolvidos)}%` : "amostra curta"}</td>
           <td className="tnum py-2 text-right">{s.brier != null ? s.brier.toFixed(4) : "amostra curta"}</td>
         </tr>
       ))}</tbody>
