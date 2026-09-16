@@ -58,7 +58,7 @@ def test_probabilidade_raw_citada_e_reportada_com_o_numero():
 
 def test_percentual_publicado_nao_gera_violacao():
     """Citar exatamente o que o card mostra e o comportamento correto."""
-    texto = ("Escanteios Over 6.5 aparece com 59% apos deflacao e Cartoes Over 2.5 "
+    texto = ("Escanteios Over 6.5 aparece com 59% de chance e Cartoes Over 2.5 "
              "com 60%. Nenhum outro mercado foi aprovado.")
     assert _violacoes(texto, CARD) == []
 

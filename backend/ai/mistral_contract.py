@@ -101,6 +101,27 @@ _TOLERANCIA_PP = 1.0
 # System computes EV; narrative narrates context.
 _EV_COMPUTATION_PATTERN = re.compile(r"EV\s*[+\-]?\s*\d+[\.,]?\d*\s*%", re.IGNORECASE)
 
+# #255 — vocabulario de CALCULO INTERNO. O operador apontou "lambda" no
+# texto da Mistral como sem utilidade (spec docs/superpowers/specs/
+# 2026-09-15-reformulacao-frontend-design.md §4.4): "lambda"/"deflação"/
+# "banda" saem, "chance"/"mínimo"/"paga"/"gols por jogo" entram. O pipeline
+# continua usando esses termos internamente (prompt, logs, variaveis) — a
+# regra e so sobre o texto que o operador le.
+_VOCABULARIO_INTERNO = [
+    re.compile(r"\blambdas?\b", re.IGNORECASE),
+    re.compile(r"\bdefla[cç][a-zçã]*", re.IGNORECASE),   # deflação/deflacao/deflacionad*
+    re.compile(r"\bbandas?\b", re.IGNORECASE),
+]
+
+# #255 — unica ocorrencia do texto de "sem recomendacao". Antes duplicado
+# aqui (`aligned_recommendation`) e no prompt v3.0
+# (`mistral_analysis.py`, regra de alinhamento #096) — as duas mudavam
+# juntas so na teoria; a v3.0 -> v3.1 e o caso real em que uma mudaria e a
+# outra nao. O prompt agora IMPORTA esta constante em vez de repetir o texto.
+SEM_RECOMENDACAO = (
+    "Sem recomendação — nenhum mercado do pipeline vale a pena hoje."
+)
+
 
 def _market_in_approved(mention: str, approved_markets: set[str]) -> bool:
     """Fuzzy-match a market mention against the approved set."""
@@ -179,6 +200,16 @@ def validate_output(text: str, approved: List[ApprovedPick]) -> dict:
             "system computa EV, narrativa narra contexto."
         )
 
+    # #255 — vocabulario de operador (spec §4.4). Um match por padrao basta;
+    # nao precisa nomear cada ocorrencia como o #238-a faz com numero.
+    for padrao in _VOCABULARIO_INTERNO:
+        m = padrao.search(text)
+        if m:
+            violations.append(
+                f"Vocabulario interno de calculo na narrativa: '{m.group()}' — "
+                f"use vocabulario de operador (chance, mínimo, paga, gols por jogo), regra #255."
+            )
+
     return {"ok": len(violations) == 0, "violations": violations}
 
 
@@ -196,19 +227,23 @@ def aligned_recommendation(approved: List[ApprovedPick]) -> str:
 
     Usada como substituição quando a recomendacao_principal do Mistral
     viola o contrato (cita mercado fora da lista aprovada, i.e. rejeitado
-    pela tabela de EV deflacionado). Consome exatamente os mesmos valores
+    pela tabela de EV pos-calibracao). Consome exatamente os mesmos valores
     exibidos na tabela de mercados — nunca contradiz o display.
+
+    #255: vocabulario de operador — nao usa "deflação"/"lambda"/"banda",
+    porque este texto e o que o operador le quando a Camada 7
+    (`mistral_analysis.py::_enforce_recommendation_contract`) substitui a
+    recomendacao da Mistral e NAO revalida o resultado com validate_output.
     """
     if not approved:
         return (
-            "Sem recomendação — nenhum mercado com EV positivo após deflação "
-            "para este jogo. Consulte a tabela de mercados analisados."
+            f"{SEM_RECOMENDACAO} Consulte a tabela de mercados analisados."
         )
     top = max(approved, key=lambda p: p.ev_pct)
     return (
         f"Recomendação alinhada ao pipeline: {top.market} "
         f"({top.prob_deflated_pct:.0f}%, odd {top.odd:.2f}, EV {top.ev_pct:+.1f}%) — "
-        f"mercado com maior EV após deflação entre os aprovados pelo sistema."
+        f"mercado com maior EV entre os aprovados pelo sistema."
     )
 
 

@@ -106,12 +106,14 @@ class AIAnalysisResponse(BaseModel):
 # =====================================================================
 
 class MistralAnalysisService:
-    """Serviço para análise de jogos com MISTRAL AI — v3.0"""
+    """Serviço para análise de jogos com MISTRAL AI — v3.1 (#255: vocabulário
+    de operador — "lambda"/"deflação"/"banda" saem do texto lido pelo
+    usuário; o cálculo interno não muda)."""
 
-    VERSION = "3.0"
+    VERSION = "3.1"
 
     SYSTEM_PROMPT = (
-        "Você é o motor de análise estatística do SportsBankzu-Pro v3.0. "
+        "Você é o motor de análise estatística do SportsBankzu-Pro v3.1. "
         "Sua função é atuar como um Analista Sênior de Prognósticos Esportivos, "
         "transformando dados brutos em inteligência preditiva estruturada "
         "cobrindo TODOS os mercados: 1X2, Double Chance, Over/Under golos "
@@ -285,7 +287,7 @@ class MistralAnalysisService:
             print(f"[MistralV3] audit log skipped: {log_err}")
 
     # -----------------------------------------------------------------
-    # PROMPT BUILDER — v3.0
+    # PROMPT BUILDER — v3.1
     # -----------------------------------------------------------------
 
     def _build_prompt(
@@ -299,7 +301,7 @@ class MistralAnalysisService:
         pipeline_picks: Optional[list] = None,
         mercados_publicados: Optional[list] = None,   # #238-a
     ) -> str:
-        """Constrói o prompt v3.0 para a MISTRAL AI"""
+        """Constrói o prompt v3.1 para a MISTRAL AI (#255: vocabulário de operador)"""
 
         prompt = f"""# Contexto de Análise
 Analise os dados fornecidos seguindo rigorosamente estas diretrizes:
@@ -312,18 +314,19 @@ Analise os dados fornecidos seguindo rigorosamente estas diretrizes:
    - Over/Under: over_X + under_X = 1.0 para cada linha
    - BTTS: btts_sim + btts_nao = 1.0
    - Double Chance: derivado do 1X2 (dc_1x = vitoria_casa + empate)
-   - Escanteios: Use Poisson com lambda de escanteios quando disponível
+   - Escanteios: Use Poisson com a média esperada de escanteios quando disponível
 5. **Lesões — APENAS TITULARES:** Considere SOMENTE jogadores titulares com status [FORA] ou [DÚVIDA]. Reservas e jogadores do elenco secundário NÃO devem ser listados. Avalie o impacto na formação tática.
 
 # Regras de Ouro (Invioláveis)
 - **Restrição de Dados:** Use APENAS as informações presentes nos dados. Dado ausente = "Dado não disponível".
 - **Sem Determinismo:** Proibido "certeza", "vai ganhar", "garantido". Use "probabilidade", "tendência", "cenário provável".
-- **Justificativa Numérica:** Toda conclusão deve ter dado numérico (ex: "lambda_home de 1.45 indica média de 1.45 gols esperados").
-- **Seja Específico:** Nos key_points, cite lambdas, probabilidades, odds, %. Nunca genérico.
+- **Justificativa Numérica:** Toda conclusão deve ter dado numérico (ex: "média de 1,45 gols esperados em casa").
+- **Seja Específico:** Nos key_points, cite gols esperados por jogo, chance, mínimo, paga, %. Nunca genérico. Vocabulário de operador (regra #255) — sem "lambda".
 - **Escanteios obrigatórios:** Se dados de escanteios existirem, DEVE haver pelo menos 1 key_point sobre corners.
 - **Coerência Over/Under (Corredores):** Se recomendar Over X e Under Y do MESMO mercado (gols, cartoes ou escanteios), explicar como CORREDOR com a faixa esperada. Ex: "Corredor de gols: 3 gols (Over 2.5 + Under 3.5)", "Corredor de cartoes: 3-4 cartoes (Over 2.5 + Under 4.5)", "Corredor de escanteios: 9-12 (Over 8.5 + Under 12.5)".
 - **REGRA #181 — Probabilidades narrativas:** Os números abaixo em "Estatísticas Poisson" são RAW (pré-deflação, usados internamente para classificação). Ao escrever resumo_analitico/key_points/recomendacao, **use APENAS as probabilidades dos PICKS DO PIPELINE** (mais abaixo, já deflated #105 — alinhadas ao display do operador). Citar o número raw em narrativa quebra o contrato da regra #082 e produz divergência operador-vs-Mistral.
 - **REGRA #181 — Cálculo de EV:** Você NUNCA computa EV. EV vem pronto em cada pick do pipeline. Não escreva "EV +X%" para mercados fora da lista, nem recompute para os da lista. Se quiser justificar valor, use "EV positivo" / "EV negativo" qualitativo, sem número.
+- **REGRA #255 — Vocabulário de operador:** Você é lida por um operador, não por um analista de dados. PROIBIDO escrever "lambda", "deflação"/"deflacionado" ou "banda" em resumo_analitico, key_points ou recomendacao_principal — mesmo que esses termos apareçam nos dados abaixo (eles são insumo interno do modelo). Troque por: "lambda" → "gols esperados por jogo" / "escanteios esperados"; "deflação"/"probabilidade deflacionada" → "chance" (o número já é o publicado, não precisa qualificar); "banda" → não mencione, é detalhe interno de calibração. Use "chance" para probabilidade, "mínimo" para a odd justa (fair_odd) e "paga" para a odd da casa (book_odd) quando character existir.
 
 # Dados do Confronto
 
@@ -473,12 +476,13 @@ REGRA DE ALINHAMENTO (#096, endurecida):
 - Use APENAS as probabilidades listadas acima, NAO calcule probabilidades alternativas.
 """
         else:
-            prompt += """
+            from backend.ai.mistral_contract import SEM_RECOMENDACAO
+            prompt += f"""
 PICKS SELECIONADOS PELO PIPELINE (Dixon-Coles): NENHUM.
 
 REGRA DE ALINHAMENTO (#096, endurecida):
-- O pipeline NAO aprovou nenhum mercado (EV positivo apos deflacao) para este jogo.
-- Sua recomendacao_principal DEVE ser exatamente: "Sem recomendação — nenhum mercado com EV positivo após deflação para este jogo."
+- O pipeline NAO aprovou nenhum mercado com valor para este jogo.
+- Sua recomendacao_principal DEVE ser exatamente: "{SEM_RECOMENDACAO}"
 - NAO recomende nenhum mercado, mesmo com probabilidade alta.
 """
 
@@ -544,8 +548,8 @@ Responda exclusivamente no formato JSON abaixo. TODOS os campos são obrigatóri
   ],
 
   "key_points": [
-    "Ponto 1 — golos (com lambda/prob/odd)",
-    "Ponto 2 — 1X2 ou DC (com prob/odd)",
+    "Ponto 1 — golos (com gols esperados por jogo/chance/mínimo)",
+    "Ponto 2 — 1X2 ou DC (com chance/odd)",
     "Ponto 3 — BTTS (com % e odd)",
     "Ponto 4 — escanteios (com corners/jogo e potencial)",
     "Ponto 5 — contexto (forma, H2H, lesões de titulares)"
