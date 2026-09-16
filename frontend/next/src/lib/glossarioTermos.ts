@@ -4,7 +4,7 @@ export interface TermoGlossario { id: string; titulo: string; explicacao: string
 
 export const TERMOS: TermoGlossario[] = [
   { id: "chance", titulo: "Chance", explicacao: "a frequência que o modelo espera para esse resultado, em cada 100 jogos parecidos.", exemplo: "58 em cada 100 jogos assim terminam com mais de 6,5 escanteios." },
-  { id: "minimo", titulo: "Mínimo", explicacao: "a odd abaixo da qual apostar deixa de valer a pena, dada a chance calculada.", exemplo: "com chance de 58%, vale a partir de 1,67." },
+  { id: "minimo", titulo: "Mínimo", explicacao: "a odd abaixo da qual apostar deixa de valer a pena, dada a chance calculada.", exemplo: "com chance de 58%, vale a partir de 1,72." },
   { id: "paga", titulo: "Paga", explicacao: "a odd que a casa de apostas está oferecendo agora para esse mercado.", exemplo: "mercado paga 1,75." },
   { id: "edge", titulo: "Edge", explicacao: "a diferença entre a chance calculada e a chance implícita na odd da casa — quanto maior, mais a odd está \"errada\" a favor de quem aposta.", exemplo: "chance 58% − chance implícita em 1,75 (57%) = edge de 0,01 (1pp)." },
   { id: "stake", titulo: "Stake", explicacao: "quanto apostar nesse pick, calculado como uma fração da sua banca pelo critério de Kelly, reduzido a um quarto por segurança.", exemplo: "numa banca de R$ 1.000, um pick com edge de 8pp sugere R$ 25." },
