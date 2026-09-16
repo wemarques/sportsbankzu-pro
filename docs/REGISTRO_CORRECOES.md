@@ -14187,3 +14187,41 @@ Plano `docs/superpowers/plans/2026-09-16-reformulacao-frontend-fases-4-5-6.md` (
 Não executado: exige 4–6 pessoas reais por perfil, fora do alcance de uma sessão automatizada.
 `[PREENCHER pelo dono: acerto/tempo/confiança por perfil — critério pré-registrado: acerto ≥ 80% e mediana ≤ 5 s no talão]`
 A ordem do próprio plano (rodada 1 antes de construir o feed) não foi seguida porque o feed é o artefato necessário para produzir as duas telas estáticas do teste (`/jogos` com o card "vale" e `/jogos/[id]` com a tabela) — não existiam antes da Task 15/16.
+
+
+## 256 — Reformulação do frontend, fase 4: ontem no feed e /desempenho lendo o ledger
+**Data:** 2026-09-16 | **Arquivos:** `backend/services/ledger_leitura.py`, `frontend/next/src/lib/{ledgerApi,jogoViewOntem,feedUrl,copy,confiancaLiga,desempenhoUrl}.ts`, `frontend/next/src/app/jogos/Feed.tsx`, `frontend/next/src/app/desempenho/Painel.tsx`, `frontend/next/src/components/feed/{ResumoDoDia,LinhaConfianca}.tsx`, `frontend/next/src/components/detalhe/{Detalhe,EscalaConfianca}.tsx`, `frontend/next/src/components/desempenho/{TabelaSegmentos,GraficoCalibracao}.tsx`, `frontend/next/src/hooks/useMediaDasLigas.ts`, `frontend/next/scripts/check-accents.mjs`, `frontend/next/e2e/{jogos,desempenho,a11y,visual}.spec.ts` + fixtures/stub, `tests/test_256_*.py` | **Severidade:** Média | **Status:** Implementado (deploy: ver prova pós-deploy)
+
+### Problema identificado
+A aba "ontem" do Feed (`toJogoView`) nunca produzia o estado `ontem` (só `ontem_sem_desfecho`) e não havia tela de desempenho agregado honesta — as telas antigas liam `audit_results`/prognóstico recomputado. `acertos/jogos` podia passar de 100% (medido em produção: `picks=73, acertos=38, jogos=37` — mais de um pick acerta na mesma partida), achado no code review deste plano.
+
+### Causa raiz
+Nenhum consumidor do ledger existia no frontend antes desta fase; `jogos` (partidas distintas) nunca foi o denominador certo para "de cada 100 picks", porque `jogos` conta partidas, não picks resolvidos. Separadamente, `/ledger/dia` (#255) filtrava por dia em UTC — jogo de 22:07 BRT (`kickoff_utc` 01:07Z) caía no dia seguinte, achado do review da Task 22.
+
+### Correções aplicadas (com camadas)
+1. **Backend — denominador `resolvidos` (commit `cf62142`, Task 20-bis):** `backend/services/ledger_leitura.py` ganha `resolvidos` (picks com `outcome != null`) em `_resumo`/`_segmento`/`agregado()["acerto"|"por_familia"|"por_liga"]` — aditivo, sempre `>= acertos` por construção.
+2. **Cliente tipado (commit `235bb28`, Task 20):** `lib/ledgerApi.ts`, proxy de `/api/ledger/*`.
+3. **Mapeador puro (commit `4f48677`, Task 21):** `lib/jogoViewOntem.ts` converte picks do ledger em `JogoView`; rótulo de seleção reconstruído (`formatarSelecaoLedger`). Medição em produção do fallback (Step 5): 2026-09-13 0/72, 2026-09-14 0/58, 2026-09-15 1/46 ("Double Chance | DC 12") → combinado 1/176 = 0,57%, abaixo do critério de bloqueio de 10% — nenhum `case` novo adicionado ao switch.
+4. **Feed liga "ontem" ao ledger (commit `96b5e26`, Task 22):** `?dia=ontem` busca `getLedgerDia`, nunca recomputa via `/fixtures`; fixture e2e capturado de produção (`GET /ledger/dia?data=2026-09-14`, 2 `match_id` reais); `feedNaoCarregou(dia)` passa a ser parametrizada por aba.
+5. **Backend — dia do operador (commit `5ff27d6`, Task 22-bis):** `dia(data)` passa a contar o dia em America/Sao_Paulo (UTC-3 fixo), não o dia UTC. Prova real: pick liga-mx `kickoff_utc 2026-09-14T01:07:00Z` = 13/09 22:07 BRT, antes caía no dia 14.
+6. **`ResumoDoDia` (commits `66b0fc3`, `558cc9d`, Task 23):** "Ontem: A de R picks fechados acertaram em J jogos", denominador `resolvidos` (ruling: paridade com `/desempenho`); `resolvidos=0` → texto de resultado pendente.
+7. **Média das ligas via ledger (commits `fcf6bef`, `1754bba`, Task 24):** `useMediaDasLigas` calcula acertos/resolvidos da temporada, chamado UMA vez em `Feed.tsx`/`Detalhe.tsx` e passado por prop (`CardJogo` → `LinhaConfianca`); prova 3 → 1 requisição por card. `nJogos` do detalhe vem de `por_liga[liga].n_jogos`.
+8. **Escala de confiança (commit `d29c341`, Task 24 fix round 2):** mostra ", em N jogos medidos" sem margem (emenda da spec); "1 mercado avaliado" (singular/plural); sigla preservada em `direcao()` (não rebaixa "BTTS" para "bTTS").
+9. **`/desempenho` (commits `ad9bae6`, `03f2a85`, `ef00125`, Tasks 25 + fix rounds):** `desempenhoUrl.ts` (estado na URL), `TabelaSegmentos`, `GraficoCalibracao`, `Painel.tsx`. Fixture REAL (`e2e/fixtures/ledger-agregado.json`) derivada de 15 `GET` reais contra produção, com README documentando a proveniência e a aritmética re-derivada de forma independente. `retorno` nulo vira frase honesta (`stake_nao_gravado_no_ledger`), nunca um número inventado. Acerto por segmento só é mostrado com `n >= 20` (proibição 8), senão "amostra curta". Tabela ganha `overflow-x-auto`; e2e sem data literal; filtros usam `replace` (não `push`); stub e2e centraliza `/api/ledger/*`.
+10. **Axe (commit `773c01d`, Task 26):** `/jogos?dia=ontem` e `/desempenho` — 0 violações serious/critical.
+
+### Etapa 2-bis (contratos de saída)
+Campos novos escritos: `resolvidos` (em `_resumo`/`_segmento`/`dia()`/`agregado()["acerto"|"por_familia"|"por_liga"]`) e a semântica BRT de `dia(data)`. Ambos aditivos/comportamentais, sem remoção de campo existente. Consumidor de `resolvidos`: só o frontend novo desta fase (`lib/ledgerApi.ts` → `jogoViewOntem.ts`/`ResumoDoDia`/`useMediaDasLigas`/`/desempenho`) — nenhum ledger, gate, métrica ou job de avaliação lê `resolvidos`. Consumidor da semântica BRT de `dia()`: só `GET /api/ledger/dia` → Feed "ontem"; os consumidores de `agregado()` (gate #230, scripts de calibração) não chamam `dia()` e não são afetados. `agregado()` em si fica inalterado exceto pela chave aditiva `resolvidos`.
+
+### Prova empírica
+Suíte completa sobre `773c01d` (rodada pelo controlador): `lint:accents` ✓, `lint:fonts` ✓, `tsc --noEmit` limpo, `vitest run` 19 arquivos / 122 testes, `playwright --project=chromium` contra build de produção: 53 passed / 3 skipped / 1 falha ambiental (`renders PRO badge`, mesma falha pré-existente desde a fase 0 — sem backend local), mobile (dev) 50 passed / 6 skipped / 1 falha em `dashboard.spec` (legado) — re-executado isolado: 10 passed / 2 skipped, flaky do dashboard legado (nenhum arquivo legado tocado nesta fase). Visual: 4 passed / 1 skipped + 3 referências divergindo por mudança intencional (feed: "1 mercado avaliado", "BTTS"; painel/detalhe: ", em 2 jogos medidos" + bloco "De onde vem o número") — atualização das referências pendente do approve do dono, em commit separado. Axe: 0 violações em 4 rotas.
+
+Backend: ``pytest -q` completo: 1433 passed, 8 skipped (37:32)`
+
+Prova pós-deploy: `[PREENCHER com a saída real dos curls pós-deploy: /ledger/dia?data=2026-09-13 contém o pick liga-mx de 01:07Z; /ledger/agregado?periodo=7d traz resolvidos]`
+
+### Lição aprendida
+Denominador de "acerto" só é válido quando conta a mesma unidade em todo lugar que exibe o número (picks resolvidos, nunca partidas) — a divergência `resolvidos` vs. `jogos`/`picks` já tinha produzido `acertos > jogos` em produção antes desta fase corrigir os quatro pontos de leitura (`ResumoDoDia`, média das ligas, `/desempenho`, ledger agregado). Fuso horário de um filtro por "dia" nunca é UTC por padrão quando o consumidor é um operador humano — o mesmo defeito (#252-a já havia medido kickoff/`published_at` em UTC cru) reapareceu em `dia()` e só foi pego porque o review re-derivou o fixture contra um jogo real de horário de virada (22:07 BRT / 01:07 UTC).
+
+### Pendências
+Approve visual das 3 referências divergentes (feed/painel/detalhe); rodada 1 do teste de 5 s (portão da fase 5, segue com o dono); `/banca` sem `<h1>` (Task 31); linter `${...}` em identificadores dentro de template literal (rastrear, não afrouxar); "Double Chance" sem `case` próprio no rótulo reconstruído (0,57% do fallback, abaixo do critério de 10%, sem ação); `feedNaoCarregou` agora parametrizada por aba (já resolvido nesta fase); frase de confiança da liga não distingue média real de piso (`PISO_SEM_DADO`) — pré-existente da Task 13, ainda não corrigido.

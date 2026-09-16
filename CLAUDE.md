@@ -92,8 +92,8 @@ Base: `https://smjc75r2ob2oo53yknph7kbxb40aauko.lambda-url.us-east-1.on.aws/`
 | `/health` | `/api/health` (404) |
 | `/fixtures` | `/api/fixtures` (404) |
 | `/live-scores`, `/standings` | `/api/...` (404) |
-| `/ledger/dia?data=YYYY-MM-DD` (#255) | `/api/ledger/dia` (404) |
-| `/ledger/agregado?periodo=7d\|30d\|temporada&familia=&liga=` (#255) | `?periodo=1ano` etc. → 400, nunca 200 com dado inventado |
+| `/ledger/dia?data=YYYY-MM-DD` (#255) (dia do operador, BRT — #256) | `/api/ledger/dia` (404) |
+| `/ledger/agregado?periodo=7d\|30d\|temporada&familia=&liga=` (#255); `resolvidos` em `acerto`/`por_familia`/`por_liga` (#256) | `?periodo=1ano` etc. → 400, nunca 200 com dado inventado |
 | `/api/backtesting/...` | |
 | `POST /api/backtesting/calibrate?league=X` | `?league_id=X` |
 | `/api/backtesting/calibration-status` | |

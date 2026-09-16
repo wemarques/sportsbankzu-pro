@@ -1570,3 +1570,31 @@ legada e herdavam limiares por familia calibrados para a curva nova.
 
 **Proibido:** re-derivar limiar ou contar volume com um mapa por familia; reimplementar a ordem do
 serving fora de `curva.celula_que_serve`.
+
+---
+
+### #256 — Denominador de acerto e `resolvidos`; `/ledger/dia` conta o dia do operador (BRT)
+
+**Tipo:** Regra (Frontend / Ledger)
+**Data:** 2026-09-16
+**Relacionado:** [[#252]], [[#252-c]], [[#255]]
+
+**Regra:**
+1. Todo lugar que mostra "acerto" (percentual de picks certos) usa `resolvidos` (picks com
+   desfecho, `outcome != null`) como denominador — nunca `picks` (todos, inclusive sem desfecho)
+   nem `jogos` (partidas distintas, sempre `<= resolvidos` porque mais de um pick pode acertar na
+   mesma partida). Vale para `ResumoDoDia`, `/desempenho` e a media das ligas
+   (`useMediaDasLigas`). Medido em producao antes da correcao: `picks=73, acertos=38, jogos=37`
+   (acerto > 100% se dividido por `jogos`).
+2. `GET /ledger/dia?data=D` conta o dia do OPERADOR, America/Sao_Paulo (UTC-3 fixo), janela
+   `[D 03:00Z, D+1 03:00Z)` — nao o dia UTC cru. Prova real: pick liga-mx com `kickoff_utc`
+   `2026-09-14T01:07:00Z` (22:07 BRT do dia 13) caia no dia 14 antes da correcao.
+3. Acerto por segmento (`/desempenho`, familia/liga) so e exibido com `n >= 20` (piso do #079,
+   proibicao 8); abaixo disso a UI mostra "amostra curta", nunca um percentual.
+
+**Proibido:** usar `picks` ou `jogos` como denominador de acerto em tela nova; filtrar `/ledger/dia`
+por dia UTC cru; mostrar percentual de acerto por segmento com `n < 20`.
+
+**Estado de aplicacao:** `backend/services/ledger_leitura.py` (`resolvidos` em `_resumo`/`_segmento`/
+`agregado()`, `dia()` em BRT); `frontend/next/src/components/feed/ResumoDoDia.tsx`,
+`frontend/next/src/hooks/useMediaDasLigas.ts`, `frontend/next/src/app/desempenho/Painel.tsx`.
