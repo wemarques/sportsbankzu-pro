@@ -73,7 +73,7 @@ Princípio: o operador navega por **dia** e por **jogo**; o mercado é detalhe d
 | Rota | O que é | Substitui |
 |---|---|---|
 | `/` | Hero da marca (linguagem A) **só para primeira visita ou deslogado**; quem retorna (cookie lido no server, sem flash) é redirecionado para `/jogos?dia=hoje` | `page.tsx` |
-| `/jogos` | **O feed.** Segmented control Dia \| Rodada acima de três tabs (Ontem · Hoje · Amanhã); chips de liga ("todas" primeiro, scroll horizontal com fade, nunca em três linhas). Cada jogo é um card | `dashboard`, `destaques`, `campeonatos`, `duplas` |
+| `/jogos` | **O feed.** Segmented control Dia \| Rodada (Rodada é pós-reformulação, fora do escopo desta spec — emenda 2026-09-16, portão da fase 3) acima de três tabs (Ontem · Hoje · Amanhã; os três tabs não ganham um quarto item sem reabrir a regra do segmented control — emenda 2026-09-16, portão da fase 3); chips de liga ("todas" primeiro, scroll horizontal com fade, nunca em três linhas). Cada jogo é um card | `dashboard`, `destaques`, `campeonatos`, `duplas` |
 | `/jogos/[id]` | Detalhe em página cheia (celular) | `match/[id]`, `MatchDetailCard` |
 | `/jogos?dia=ontem` | **Alias, não tela:** o mesmo feed com o resultado no próprio talão (`✓`/`×`) e o resumo do dia no topo | novo |
 | `/banca` | Banca editável; alimenta o stake de todo talão | `bankroll` |
@@ -135,8 +135,8 @@ Toronto × Nashville SC                          MLS, 09/09, 20:30
 [o mesmo talão do feed]
 
 Confiança nesta liga
-0 ──┼────┼────┼────┼── 100        ticks; 50 rotulado em texto-apagado 13; zona teal = margem; marca = 58
-58 em cada 100, com margem de 52 a 64, em 40 jogos medidos da MLS   ← também é o aria-label
+0 ──┼────┼────┼────┼── 100        ticks; 50 rotulado em texto-apagado 13; marca = 58; sem zona (emenda 2026-09-16, portão da fase 3)
+58 em cada 100 na MLS, em 40 jogos medidos   ← também é o aria-label (emenda 2026-09-16, portão da fase 3: remove "com margem de 52 a 64" — zona sem margem medida repetia o defeito da banda 57–59; um intervalo de Wilson diria a precisão da frequência histórica, não desta previsão)
 
 Todos os mercados avaliados (12)                                 ← âncora #mercados
 mercado                 chance   mínima   paga    status
@@ -147,12 +147,17 @@ Ambos marcam              51%      —        —     sem preço
 … recusados em texto-apagado, motivo em duas palavras (mapa reason_code → frase em copy.ts)
 
 Como o modelo vê o jogo         ← texto Mistral em vocabulário de operador; some inteiro se indisponível
-De onde vem o número            ← "Toronto faz 3,0 gols por jogo em casa; Nashville sofre 2,5 fora; a MLS tem 4,9 por jogo."
+De onde vem o número            ← "Nos jogos do Toronto saem 3,0 gols por partida na temporada; nos do Nashville SC, 2,5; média da MLS: 4,9." e, em escanteios,
+                                   "Toronto cobra 3,0 escanteios por jogo na temporada; Nashville SC, 2,5; média da MLS: 4,9." (emenda 2026-09-16, portão da fase 3 —
+                                   errata: a frase anterior, "faz X gols por jogo em casa; sofre Y fora", descrevia dado que não existe)
+                                   fonte: homeAvgTotalGoals/awayAvgTotalGoals = média de gols totais nos jogos do time na temporada (FootyStats seasonAVG_overall);
+                                   homeCornersPerMatch/awayCornersPerMatch = escanteios que o time cobra por jogo na temporada (cornersAVG_overall); sem separação
+                                   casa/fora (emenda 2026-09-16, portão da fase 3)
                                    só com unidade e comparação; campo ausente → frase ausente
 40 jogos medidos nos últimos 60 dias — ver calibração em /desempenho
 ```
 
-A margem (incerteza da estimativa) vive **só** aqui, com a escala.
+A margem (incerteza da estimativa) fica **null** nesta entrega — nenhuma zona nem faixa numérica acompanha a escala; qualquer margem futura exige plano estatístico próprio, nova spec (emenda 2026-09-16, portão da fase 3).
 
 ### 4.4 Copy, antes → depois
 
@@ -164,7 +169,7 @@ A margem (incerteza da estimativa) vive **só** aqui, com a escala.
 | Odd mín (quando era o preço da casa) | mercado paga 1,75, acima do mínimo 1,67 (+0,08) |
 | AI / ST / BS / ? | MLS: 40 jogos medidos, acerto na média |
 | Mercados analisados — não recomendados | 12 mercados avaliados, 2 valem — ver todos |
-| Casa 3.0 Fora 2.5 Liga 4.9 | Toronto faz 3,0 gols por jogo em casa; Nashville sofre 2,5 fora; a MLS tem 4,9 por jogo |
+| Casa 3.0 Fora 2.5 Liga 4.9 | Nos jogos do Toronto saem 3,0 gols por partida na temporada; nos do Nashville SC, 2,5; média da MLS: 4,9 (emenda 2026-09-16, portão da fase 3 — errata da frase "faz X em casa; sofre Y fora", dado que não existe) |
 | "lambda", "deflação", "banda" (texto Mistral) | vocabulário de operador (item de backend) |
 
 Todas as frases vivem em `lib/copy.ts` (templates com tokens `{term:edge}` que viram links para `/glossario#edge`) e o formatador pt-BR (vírgula decimal, "R$ 1.000,00") num ponto só.
@@ -262,7 +267,7 @@ Cada item de backend segue o SDD completo (Etapas 1–5; 2-bis para os consumido
 | backend `/ledger/*` | pytest: só pré-apito, fora da janela contaminada, `n` mínimo → `null`, buckets somam ao total |
 | backend contrato | `fair_odd ≠ book_odd` na rota de fixtures; `validate_output` rejeita o vocabulário interno |
 
-**Teste de 5 segundos.** Duas rodadas: mostra uma tela por 5 s e pergunta "qual mercado e qual odd mínima?"; mede acerto, tempo e confiança declarada (1–5); perfis casual e analítico, 4 a 6 pessoas cada. **Rodada 1**, sobre mockups com os **tokens finais** (não o B do teste inicial), antes de construir o feed; **critério pré-registrado: acerto ≥ 80% por perfil e tempo mediano ≤ 5 s no objeto de decisão**; a divisão de perfil deve confirmar B para decisão e C para análise, senão a seção 4 muda enquanto é barato. **Rodada 2** sobre o produto construído, na fase 6. Resultados no REGISTRO com os números.
+**Teste de 5 segundos.** Duas rodadas: mostra uma tela por 5 s e pergunta "qual mercado e qual odd mínima?"; mede acerto, tempo e confiança declarada (1–5); perfis casual e analítico, 4 a 6 pessoas cada. **Rodada 1 é o portão da fase 5** (emenda 2026-09-16, portão da fase 3) — não mais sobre mockup antes de construir o feed, essa janela passou; roda sobre o `/jogos` já construído (fase 3), que serve como mockup e produto ao mesmo tempo; **critério pré-registrado, inalterado: acerto ≥ 80% por perfil e tempo mediano ≤ 5 s no objeto de decisão**; a divisão de perfil deve confirmar B para decisão e C para análise, senão a seção 4 muda enquanto é barato. Resultado da rodada 1 no REGISTRO #254-b (placeholder — emenda 2026-09-16, portão da fase 3). **Rodada 2** sobre o produto construído, na fase 6. Resultados no REGISTRO com os números.
 
 ## 8. Ordem de build
 
@@ -273,10 +278,10 @@ Sete fases, cada uma entregável, com entrada própria em `REGISTRO_CORRECOES`, 
 | 0 | Guardas: tokens em `globals.css`, fontes, lint de família, teste de contraste, `copy.ts` + `formato.ts`, `bancaStore` com indefinido, `lint:accents` no Windows | — |
 | 1 | Backend, em paralelo: contrato `fair_odd`/`book_odd`; `/ledger/dia` e `/ledger/agregado`; prompt Mistral | — |
 | 2 | `jogoView.ts` extraído do dashboard com snapshots e fixtures pinadas; **zero mudança visual** | 0 |
-| 3 | `/jogos`: feed, talão, estados hoje/amanhã/em jogo, `/banca`. **3b, se esticar:** detalhe (escala + tabela) vem depois — o objeto de decisão não espera pelo de rigor | 0, 2 |
+| 3 | `/jogos`: feed, talão, estados hoje/amanhã/em jogo, `/banca`. **3b, se esticar:** detalhe (escala + tabela) vem depois — o objeto de decisão não espera pelo de rigor. Este `/jogos` é o objeto da rodada 1 do teste de 5 s (emenda 2026-09-16, portão da fase 3) | 0, 2 |
 | 4 | Ontem no feed, `/desempenho` | 1, 3 |
-| 5 | Hero, redirect por cookie, `/glossario`, navegação final, links contextuais | 3, 4 |
-| 6 | Rodada 2 do teste de 5 s; `/jogos` vira padrão; **tag e branch de backup antes de apagar** `dashboard/page.tsx`, `duplas`, `destaques`, `campeonatos` e as rotas mortas | 5 |
+| 5 | Hero, redirect por cookie, `/glossario`, navegação final, links contextuais. **Portão de saída: Rodada 1 do teste de 5 s** (§7), resultado no REGISTRO #254-b (emenda 2026-09-16, portão da fase 3) | 3, 4 |
+| 6 | Rodada 2 do teste de 5 s (rodada 1 foi portão da fase 5); `/jogos` vira padrão; **tag e branch de backup antes de apagar** `dashboard/page.tsx`, `duplas`, `destaques`, `campeonatos` e as rotas mortas — o corte remove as visões de "rodada"/semana conscientemente (remoção de feature, não omissão — emenda 2026-09-16, portão da fase 3) | 5 |
 
 As rotas novas nascem ao lado das antigas; o corte só acontece na fase 6, depois da validação.
 

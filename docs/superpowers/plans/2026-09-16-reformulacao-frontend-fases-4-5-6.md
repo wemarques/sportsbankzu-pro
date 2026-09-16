@@ -44,6 +44,8 @@
 - Commits terminam com `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
 - **Armadilha de ferramenta (declarar antes de implementar):** a ferramenta `Write` decodifica escapes `\uXXXX` em glifos reais ao gravar código-fonte. Qualquer string com `\u2713` (✓), `\u00d7` (×), `\u2193` (↓), `\u2014` (—) ou similar deve ser escrita como o **glifo literal** no arquivo (copiar o caractere, não a sequência de escape) — se um passo desta tarefa colar uma sequência `\uXXXX`, o implementador confere com `xxd`/`hexdump` que o byte gravado é o do glifo (ex.: `✓` = `E2 9C 93` em UTF-8), não a string `\`, `u`, `2`, `7`... literal.
 - Nenhuma tarefa desta fase altera `backend/modeling/calibragem/` ou o ciclo de escrita do #248 — proibição 16 continua intacta; `CALIBRAGEM_ENABLED` continua `false`.
+- **Toda tarefa que toca UI traz o diff visual no relatório; approve do dono** (emenda 2026-09-16, portão da fase 3).
+- **Identificadores em template literal disparam `lint:accents`** — resolver com allowlist comentada, nunca afrouxando o lint (emenda 2026-09-16, portão da fase 3).
 
 ---
 
@@ -2037,7 +2039,7 @@ test("/glossario#stake ancora no termo certo (#257)", async ({ page }) => {
 
 **Files:**
 - Create: `frontend/next/src/components/nav/Navegacao.tsx`, `frontend/next/tests/unit/Navegacao.test.tsx`
-- Modify: `frontend/next/src/app/layout.tsx`
+- Modify: `frontend/next/src/app/layout.tsx`, `frontend/next/src/app/banca/page.tsx` (micro-fix: `<h1>Banca</h1>`, título da tela — spec §5; emenda 2026-09-16, portão da fase 3)
 
 **Interfaces:**
 - Produces: `<Navegacao />` — client component, um único componente decide barra vs. sidebar por CSS/breakpoint (evita duas árvores de link divergindo); esconde-se em `/`, `/login`, `/register`.
@@ -2110,27 +2112,62 @@ export function Navegacao() {
 }
 ```
 
-Em `src/app/layout.tsx`, importar e renderizar ao lado do conteúdo:
+`src/app/layout.tsx` real (verificado 2026-09-16) tem 30 linhas; substituir exatamente este trecho (emenda 2026-09-16, portão da fase 3, corrige o `// ...` elíptico da versão anterior deste plano) pelo conteúdo literal completo do arquivo depois da mudança:
 ```tsx
+import "./globals.css";
+import "@/styles/scoretabs-dashboard.css";
+import "@/styles/match-detail-card.css";
+import { Zilla_Slab, Source_Sans_3 } from "next/font/google";
+import { ThemeProvider } from "../components/theme-provider";
+import { ThemeToggle } from "../components/ThemeToggle";
+import { SessionProvider } from "../components/SessionProvider";
 import { Navegacao } from "@/components/nav/Navegacao";
-// ...
-<body>
-  <SessionProvider>
-    <ThemeProvider>
-      <ThemeToggle />
-      <div className="lg:flex">
-        <Navegacao />
-        <div className="flex-1 pb-16 lg:pb-0">{children}</div>
-      </div>
-    </ThemeProvider>
-  </SessionProvider>
-</body>
+
+const slab = Zilla_Slab({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-slab", display: "swap" });
+const sans = Source_Sans_3({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-sans", display: "swap" });
+
+export const metadata = {
+  title: "SportsBankZU Pro",
+  description: "Dashboard de análise esportiva profissional",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="pt-BR" suppressHydrationWarning className={`${slab.variable} ${sans.variable}`}>
+      <body>
+        <SessionProvider>
+          <ThemeProvider>
+            <ThemeToggle />
+            <div className="lg:flex">
+              <Navegacao />
+              <div className="flex-1 pb-16 lg:pb-0">{children}</div>
+            </div>
+          </ThemeProvider>
+        </SessionProvider>
+      </body>
+    </html>
+  );
+}
 ```
 (`pb-16` no conteúdo abre espaço para a barra inferior fixa no celular; a sidebar do desktop não precisa disso porque não é `fixed`.)
 
 - [ ] **Step 3: Rodar** — `npx vitest run tests/unit/Navegacao.test.tsx`; `npx tsc --noEmit`.
+- [ ] **Step 3-bis: Micro-fix — `<h1>` em `/banca`** (emenda 2026-09-16, portão da fase 3). `frontend/next/src/app/banca/page.tsx` hoje (verificado 2026-09-16) não tem título; substituir exatamente este trecho:
+```tsx
+    <main className="min-h-screen bg-[var(--sb-tinta)] px-4 py-6">
+      <FormBanca />
+    </main>
+```
+por:
+```tsx
+    <main className="min-h-screen bg-[var(--sb-tinta)] px-4 py-6">
+      <h1 className="mb-4 text-[22px] font-semibold text-[var(--sb-texto)]">Banca</h1>
+      <FormBanca />
+    </main>
+```
+**Referência visual:** este `<h1>` muda o layout de `/banca` — as duas capturas de `frontend/next/e2e/visual.spec.ts` (`banca-indefinida.png`, `banca-definida.png`) ficam desatualizadas; rodar `npx playwright test --update-snapshots -g "banca"` e **o dono (Welligton) aprova o diff antes do commit** (regra global desta seção).
 - [ ] **Step 4: Verificar visualmente que o dashboard antigo não quebrou** — `npm run dev`, abrir `/dashboard`: a barra/sidebar aparece ao lado (aceitável, registrar como mudança consciente — o dashboard sai de circulação na fase 6; não vale a pena esconder `Navegacao` ali também).
-- [ ] **Step 5: Commit** — `git add frontend/next/src/components/nav frontend/next/src/app/layout.tsx frontend/next/tests/unit/Navegacao.test.tsx && git commit -m "feat(front): navegacao final — barra inferior e sidebar (#257)"`
+- [ ] **Step 5: Commit** — `git add frontend/next/src/components/nav frontend/next/src/app/layout.tsx frontend/next/src/app/banca/page.tsx frontend/next/tests/unit/Navegacao.test.tsx frontend/next/e2e/visual.spec.ts-snapshots && git commit -m "feat(front): navegacao final — barra inferior, sidebar e titulo de /banca (#257)"`
 
 ---
 
@@ -2219,6 +2256,7 @@ Em `src/components/feed/LinhaStake.tsx` (fase 3), trocar `<span>{stake(banca, va
   - **Etapa 5:** não se aplica.
 - [ ] **Step 3:** Linha em `docs/INDICE_REGRAS.md`.
 - [ ] **Step 4:** Espelhar os 4 docs, commit `docs: REGISTRO #257 fase 5`, push, CI verde.
+- [ ] **Step 4-bis: Precondição do gate — rodada 1 do teste de 5 s** (emenda 2026-09-16, portão da fase 3). A spec §7 marca a rodada 1 como o portão desta fase (não mais mockup pré-build); confirmar que o REGISTRO #254-b tem o resultado real da rodada 1 preenchido (acerto por perfil, tempo mediano) **antes** do Step 5 — sem isso o Step 5 não abre.
 - [ ] **Step 5:** **Gate da fase:** aguardar o "ok" do dono antes de iniciar a fase 6.
 
 ---
@@ -2289,7 +2327,7 @@ test.describe("raiz e destino padrao (#258, spec §8)", () => {
 
 ### Task 36: Rodada 2 do teste de 5 segundos — preparar o material (o dono conduz)
 
-**Por quê.** Spec §7: "Rodada 2 sobre o produto construído, na fase 6", com o mesmo critério pré-registrado da rodada 1 (plano 1, Task 19, Step 3): **acerto ≥ 80% por perfil e tempo mediano ≤ 5 s no objeto de decisão**. Este plano **não executa** o teste com pessoas — só prepara o material e o molde de resultado. A condução (4-6 pessoas por perfil casual/analítico, mostrar a tela por 5 s, perguntar "qual mercado e qual odd mínima?") é do dono, fora do escopo de um agente.
+**Por quê.** Spec §7: "Rodada 2 sobre o produto construído, na fase 6", com o mesmo critério pré-registrado da rodada 1 (plano 1, Task 19, Step 3): **acerto ≥ 80% por perfil e tempo mediano ≤ 5 s no objeto de decisão**. Rodada 1 foi portão da fase 5 (emenda 2026-09-16, portão da fase 3). Este plano **não executa** o teste com pessoas — só prepara o material e o molde de resultado. A condução (4-6 pessoas por perfil casual/analítico, mostrar a tela por 5 s, perguntar "qual mercado e qual odd mínima?") é do dono, fora do escopo de um agente.
 
 **Files:**
 - Create: `frontend/next/scripts/capturar-telas-teste-5s.mjs`, `docs/superpowers/testes/2026-XX-XX-teste-5s-rodada-2-RESULTADO.md` (molde, preenchido pelo dono depois)
@@ -2382,7 +2420,7 @@ Preenchido por: __________ em __________.
 
 ### Task 37: Remover as rotas legadas
 
-**Por quê.** Spec §8: "tag e branch de backup antes de apagar `dashboard/page.tsx`, `duplas`, `destaques`, `campeonatos` e as rotas mortas". A tabela de IA da spec (§3, coluna "Substitui") dá a lista completa de "rotas mortas": `bankroll` (substituído por `/banca`), `match/[id]` (por `/jogos/[id]`), `performance-stats`, `ai-audit`, `admin/reliability` (pelos três, por `/desempenho`). `glossario` **não entra aqui** — seu caminho foi reaproveitado pela Task 30 (fase 5), já não é mais o dashboard reexportado.
+**Por quê.** Spec §8: "tag e branch de backup antes de apagar `dashboard/page.tsx`, `duplas`, `destaques`, `campeonatos` e as rotas mortas". A tabela de IA da spec (§3, coluna "Substitui") dá a lista completa de "rotas mortas": `bankroll` (substituído por `/banca`), `match/[id]` (por `/jogos/[id]`), `performance-stats`, `ai-audit`, `admin/reliability` (pelos três, por `/desempenho`). `glossario` **não entra aqui** — seu caminho foi reaproveitado pela Task 30 (fase 5), já não é mais o dashboard reexportado. **Remoção consciente, não omissão** (emenda 2026-09-16, portão da fase 3, espelha spec §3/§8 linha 6): este corte também remove as visões de "rodada"/semana que viviam no `dashboard` legado — não há substituto na reformulação, `Rodada` no segmented control de `/jogos` fica pós-reformulação (spec §3).
 
 **Pré-condição:** Task 34 (backup) concluída e verificada.
 
