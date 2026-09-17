@@ -29,7 +29,30 @@ export function Hero() {
       setFrase(fraseAcertoHero(acertos, resolvidos, jogos, MIN_N_HERO));
     }).catch(() => {});
 
-    getMatchesByLeague(ligas.map((l) => l.id).join(","), "today").then(async (res) => {
+    // #258: ledger de ontem dispara em PARALELO com o feed de hoje — nao mais
+    // sequencial apos hoje falhar/esvaziar, o que deixava ate ~7s sem
+    // nenhuma prova no hero. Hoje sempre vence quando produz talao (a
+    // qualquer momento, mesmo depois de ontem ja mostrado); ontem so entra
+    // como ponte se hoje nao respondeu com talao ate 1s; sem nenhum dos
+    // dois ate 2s, mostra a frase de ausencia (spec do dono, #258).
+    let mostrado: "nenhum" | "ontem" | "hoje" = "nenhum";
+    let ontemResolvido = false;
+    let ontemAchado: JogoView | null = null;
+
+    getLedgerDia(diaISOOntem(new Date())).then((rOntem) => {
+      if (!vivo) return;
+      ontemResolvido = true;
+      if (!rOntem.ok) return;
+      const porJogo = agruparPorJogo(rOntem.dados.picks);
+      for (const [matchId, picksDoJogo] of Array.from(porJogo)) {
+        const leagueId = picksDoJogo[0].league_id;
+        const liga = ligas.find((l) => l.id === leagueId);
+        const view = toJogoViewOntem(matchId, liga?.id ?? leagueId, liga?.nome ?? leagueId, picksDoJogo);
+        if (view.estado === "ontem" && view.talao) { ontemAchado = view; break; }
+      }
+    }).catch(() => { if (vivo) ontemResolvido = true; });
+
+    getMatchesByLeague(ligas.map((l) => l.id).join(","), "today").then((res) => {
       if (!vivo) return;
       const agora = new Date();
       const views = deduplicateMatches(
@@ -38,25 +61,29 @@ export function Hero() {
       // spec §5: o talão-prova é o de MAIOR edge de hoje; empate, maior chance
       const doHoje = views.filter((v) => v.talao)
         .sort((a, b) => (b.talao!.edge ?? -Infinity) - (a.talao!.edge ?? -Infinity) || b.talao!.prob01 - a.talao!.prob01)[0];
-      if (doHoje) { setJogoProva(doHoje); return; }
-
-      // #257: sem talao hoje — cai para o de ONTEM, so o que foi publicado no
-      // ledger (nunca /fixtures para dia passado — fonte unica, spec §6.3).
-      const rOntem = await getLedgerDia(diaISOOntem(new Date()));
-      if (!vivo) return;
-      if (!rOntem.ok) { setSemProva(true); return; }
-      const porJogo = agruparPorJogo(rOntem.dados.picks);
-      let achado: JogoView | null = null;
-      for (const [matchId, picksDoJogo] of Array.from(porJogo)) {
-        const leagueId = picksDoJogo[0].league_id;
-        const liga = ligas.find((l) => l.id === leagueId);
-        const view = toJogoViewOntem(matchId, liga?.id ?? leagueId, liga?.nome ?? leagueId, picksDoJogo);
-        if (view.estado === "ontem" && view.talao) { achado = view; break; }
+      if (doHoje) {
+        mostrado = "hoje";
+        setSemProva(false);
+        setJogoProva(doHoje);
       }
-      if (achado) setJogoProva(achado); else setSemProva(true);
-    }).catch(() => { if (vivo) setSemProva(true); });
+      // hoje sem talao: nao mexe no que ja esta na tela (ontem pode ter
+      // aparecido ou vir a aparecer pelo timer de 1s) nem antecipa a
+      // ausencia — quem decide a ausencia e o timer de 2s.
+    }).catch(() => {});
 
-    return () => { vivo = false; };
+    const t1 = setTimeout(() => {
+      if (!vivo || mostrado === "hoje") return;
+      if (ontemResolvido && ontemAchado) {
+        mostrado = "ontem";
+        setJogoProva(ontemAchado);
+      }
+    }, 1000);
+    const t2 = setTimeout(() => {
+      if (!vivo || mostrado !== "nenhum") return;
+      setSemProva(true);
+    }, 2000);
+
+    return () => { vivo = false; clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   return (
