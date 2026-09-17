@@ -2177,15 +2177,17 @@ Rodar: `npx playwright test e2e/desempenho.spec.ts`.
 
 ### Task 28: `components/marca/Hero.tsx` + `app/page.tsx`
 
-**Por quê.** `src/app/page.tsx` hoje faz `redirect("/dashboard")` (morto — o middleware intercepta antes, ver Task 29). A spec (§5) pede: headline em duas linhas (Slab/Barlow — linguagem A), frase de acerto vinda do ledger (some se `n < 20`), CTA "Ver os jogos de hoje" + "Entrar · Criar conta", e um talão real como prova (o de maior edge hoje; sem pick válido hoje, o de ontem com a faixa de resultado; sem nenhum, o slot some).
+**Por quê.** `src/app/page.tsx` hoje faz `redirect("/dashboard")` (morto — o middleware intercepta antes, ver Task 29). A spec (§5) pede: headline em duas linhas (Slab/Barlow — linguagem A), frase de acerto vinda do ledger (some se `n < 20`), CTA "Ver os jogos de hoje" + "Entrar"/"Criar conta" (auth desligada, #136 — os links existem, sem checagem de sessão), e um talão real como prova: o de hoje se houver algum que vale; sem isso, o de ONTEM vindo do ledger (`getLedgerDia`, nunca `/fixtures` para dia passado — fonte única, spec §6.3), renderizado com `CardJogo` e a faixa de resultado (✓/×); sem nenhum dos dois, o slot mostra uma frase honesta (`HERO.semTalao`), nunca um card inventado.
 
 **Files:**
 - Create: `frontend/next/src/components/marca/Hero.tsx`, `frontend/next/tests/unit/Hero.test.tsx`
-- Modify: `frontend/next/src/app/page.tsx`
+- Modify: `frontend/next/src/app/page.tsx`, `frontend/next/src/lib/copy.ts`, `frontend/next/tests/unit/copy.test.ts`
 
 **Interfaces:**
-- Consumes: `getLedgerAgregado("30d")` (Task 20), `getMatchesByLeague` + `normalizeMatch` + `deduplicateMatches` + `toJogoView` (fase 2/3, para o talão de hoje), `ACTIVE_LEAGUES`, `fonteMarca` (`components/marca/fonteMarca.ts`, fase 0), `Talao` (fase 3).
-- Produces: `<Hero />`, `fraseAcertoHero(acerto01: number, jogos: number, minimoJogos: number): string | null` (em `lib/copy.ts` — `null` quando `jogos < minimoJogos`, chamado com `minimoJogos=20`, mesmo piso `MIN_N_BRIER` do backend, spec §5 "some se n < 20 jogos"), `HERO` (objeto de rótulos: headline e os dois CTAs, também em `lib/copy.ts`).
+- Consumes: `getLedgerAgregado("30d")` e `getLedgerDia(data: string)` (`lib/ledgerApi.ts`, Task 20 — `LedgerAgregado.acerto = {picks, acertos, jogos, resolvidos}`), `diaISOOntem(agora: Date): string` (`lib/feedUrl.ts`), `agruparPorJogo`/`toJogoViewOntem` (`lib/jogoViewOntem.ts`, Task 21), `getMatchesByLeague` + `normalizeMatch` + `deduplicateMatches` + `toJogoView` (fase 2/3, para o talão de hoje), `ACTIVE_LEAGUES`/`toBackendLeagueId` (`lib/leagues.ts`), `fonteMarca` (`components/marca/fonteMarca.ts`, fase 0), `CardJogo` (`components/feed/CardJogo.tsx` — props `jogo: JogoView`, `confianca: LeagueConfidence | null`, `selecionado: boolean`, `onAbrir?`, `hrefDetalhe: string`, `media?: number | null`; já sabe renderizar a faixa "✓ fechou com" quando `jogo.estado === "ontem"` e `jogo.resultado` não é nulo — nada novo a implementar aí).
+- Produces: `<Hero />`, `fraseAcertoHero(acertos: number, resolvidos: number, jogos: number, minimoJogos = 20): string | null` (em `lib/copy.ts` — mesmo denominador `resolvidos` de `fraseAcerto` já existente, Task 20-bis; `null` quando `jogos < minimoJogos`, piso `MIN_N_BRIER=20`, proibição 8), `HERO` (objeto de rótulos em `lib/copy.ts`: headline, os três CTAs e a frase de vazio).
+
+Nota de contrato (Etapa 2 do protocolo SDD deste repo): nenhum campo novo é escrito — `Hero` só LÊ `LedgerAgregado.acerto` e `LedgerDia.picks` pelas mesmas rotas que `/desempenho` e `/jogos?dia=ontem` já leem (Tasks 20/22/25); não há consumidor externo a auditar porque não há saída nova.
 
 - [ ] **Step 1: Teste de `fraseAcertoHero` (puro, em `copy.ts`)**
 
@@ -2193,43 +2195,54 @@ Acrescentar a `tests/unit/copy.test.ts`:
 ```ts
 import { fraseAcertoHero, HERO } from "@/lib/copy";
 
-describe("fraseAcertoHero (#257, spec §5)", () => {
-  it("com amostra suficiente", () => {
-    expect(fraseAcertoHero(0.58, 221, 20)).toBe("nos últimos 30 dias: 58 de cada 100 picks acertaram em 221 jogos");
+describe("fraseAcertoHero (#257, spec §5) — mesmo denominador de fraseAcerto: resolvidos, nunca jogos", () => {
+  it("amostra suficiente (jogos=22 >= piso): acertos 26 / resolvidos 40 -> 65", () => {
+    expect(fraseAcertoHero(26, 40, 22)).toBe("65 de cada 100 picks fechados nos últimos 30 dias, em 22 jogos");
   });
-  it("abaixo do piso MIN_N_BRIER=20, nulo", () => {
-    expect(fraseAcertoHero(0.5, 10, 19)).toBeNull();
+  it("abaixo do piso MIN_N_BRIER=20 (jogos=19), nulo", () => {
+    expect(fraseAcertoHero(10, 15, 19)).toBeNull();
+  });
+  it("jogos=20, piso inclusive: mostra a frase (12/20 -> 60)", () => {
+    expect(fraseAcertoHero(12, 20, 20)).toBe("60 de cada 100 picks fechados nos últimos 30 dias, em 20 jogos");
   });
 });
 
-describe("HERO (#257) — headline e CTAs centralizados", () => {
-  it("tem as duas linhas do headline e os dois CTAs", () => {
+describe("HERO (#257) — headline, CTAs e frase de vazio", () => {
+  it("tem as duas linhas do headline, os tres CTAs e a frase de sem-talao", () => {
     expect(HERO.headlineLinha1).toBe("O veredito em primeiro plano.");
     expect(HERO.headlineLinha2).toBe("O rigor um nível abaixo.");
     expect(HERO.ctaJogos).toBe("Ver os jogos de hoje");
-    expect(HERO.ctaEntrar).toBe("Entrar · Criar conta");
+    expect(HERO.ctaEntrar).toBe("Entrar");
+    expect(HERO.ctaCriarConta).toBe("Criar conta");
+    expect(HERO.semTalao).toBe("Sem talão publicado hoje ou ontem.");
   });
 });
 ```
 Implementar em `src/lib/copy.ts`:
 ```ts
-/** #257 — frase de prova do hero (spec §5). Mesmo piso do backend (MIN_N_BRIER=20,
+/** #257 — frase de prova do hero (spec §5). Mesmo denominador de `fraseAcerto`
+ * (acima): `resolvidos`, nunca `jogos`/`picks` — `resolvidos` >= `acertos` por
+ * construção, nunca passa de 100%. Mesmo piso do backend (MIN_N_BRIER=20,
  * proibição 8) — abaixo dele a frase some em vez de afirmar sobre amostra curta. */
-export function fraseAcertoHero(acerto01: number, jogos: number, minimoJogos: number): string | null {
+export function fraseAcertoHero(acertos: number, resolvidos: number, jogos: number, minimoJogos = 20): string | null {
   if (jogos < minimoJogos) return null;
-  return `nos últimos 30 dias: ${fmtPct(acerto01)} de cada 100 picks acertaram em ${jogos} jogos`;
+  const pct = resolvidos > 0 ? fmtPct(acertos / resolvidos) : 0;
+  return `${pct} de cada 100 picks fechados nos últimos 30 dias, em ${jogos} jogos`;
 }
 
-/** #257 — headline (linguagem A, spec §5) e os dois CTAs do hero, centralizados
- * como o resto da copy do app. */
+/** #257 — headline (linguagem A, spec §5), os CTAs do hero (entrar/criar conta
+ * SEM checagem de sessão — auth desligada, #136) e a frase honesta para quando
+ * não há talão nem de hoje nem de ontem (nunca um card inventado). */
 export const HERO = {
   headlineLinha1: "O veredito em primeiro plano.",
   headlineLinha2: "O rigor um nível abaixo.",
   ctaJogos: "Ver os jogos de hoje",
-  ctaEntrar: "Entrar · Criar conta",
+  ctaEntrar: "Entrar",
+  ctaCriarConta: "Criar conta",
+  semTalao: "Sem talão publicado hoje ou ontem.",
 };
 ```
-(chamada como `fraseAcertoHero(acertos/picks, jogos, 20)` pelo componente — a função não conhece o piso por conta própria, recebe explícito, para o teste não depender de uma constante importada de outro módulo.)
+(`fraseAcertoHero` recebe `minimoJogos` com default 20 — o chamador não precisa passar, mas o teste acima passa explícito para não depender de uma constante importada de outro módulo.)
 
 - [ ] **Step 2: Teste do componente**
 
@@ -2241,32 +2254,84 @@ import { Hero } from "@/components/marca/Hero";
 
 afterEach(() => vi.unstubAllGlobals());
 
-function stubFetchSequence(respostas: Array<{ url: RegExp; body: unknown; status?: number }>) {
+const AGREGADO_OK = {
+  ok: true, periodo: "30d", familia: null, liga: null,
+  acerto: { picks: 40, acertos: 26, jogos: 22, resolvidos: 40 },
+  retorno: { valor: null, pct_banca: null, motivo: null },
+  brier: null, amostra_curta: false, por_familia: {}, por_liga: {}, buckets: null,
+};
+const AGREGADO_CURTO = { ...AGREGADO_OK, acerto: { picks: 8, acertos: 5, jogos: 5, resolvidos: 8 } };
+const FEED_VAZIO = { matches: [] };
+const FEED_COM_VALE = {
+  matches: [{
+    id: "championship-Middlesbrough-Millwall-1798920000",
+    leagueId: "championship", leagueName: "Championship",
+    homeTeam: { name: "Middlesbrough", logo: "", form: [], rating: 0 },
+    awayTeam: { name: "Millwall", logo: "", form: [], rating: 0 },
+    datetime: "2026-09-17T20:00:00Z", status: "scheduled",
+    mercados: [{
+      mercado: "Over 2.5 Gols", classification: "SAFE", reason_codes: [],
+      ev: 0.12, edge: 0.08, fair_odd: 1.55, book_odd: 1.75, calibrated_probability: 0.62,
+    }],
+    source: "footystats", lastUpdated: "2026-09-17T09:00:00Z",
+  }],
+};
+const LEDGER_DIA_VAZIO = { ok: true, data: "2026-09-16", picks: [], resumo: { picks: 0, acertos: 0, jogos: 0, resolvidos: 0 }, semana: {}, mes: {} };
+const LEDGER_DIA_COM_PICK = {
+  ok: true, data: "2026-09-16",
+  picks: [{
+    match_id: "championship-Middlesbrough-Millwall-1798840000", league_id: "championship",
+    kickoff_utc: "2026-09-16T20:00:00Z", familia: "Over/Under", market: "Over/Under",
+    selection: "Over 2.5 Gols", published_prob: 0.62, fair_odd: 1.61, book_odd: 1.75,
+    classification: "SAFE", outcome: 1, detail: "2–1, 3 gols",
+  }],
+  resumo: { picks: 1, acertos: 1, jogos: 1, resolvidos: 1 }, semana: {}, mes: {},
+};
+
+function stubFetchSequence(respostas: Array<{ url: RegExp; body: unknown }>): string[] {
+  const chamadas: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string) => {
+    chamadas.push(url);
     const achou = respostas.find((r) => r.url.test(url));
-    return Promise.resolve({ status: achou?.status ?? 200, json: () => Promise.resolve(achou?.body ?? {}) });
+    return Promise.resolve({ status: 200, json: () => Promise.resolve(achou?.body ?? {}) });
   }));
+  return chamadas;
 }
 
 describe("Hero (#257, spec §5)", () => {
-  it("mostra a frase de acerto quando ha amostra e o CTA duplo", async () => {
+  it("sem talao hoje: cai para o de ONTEM no ledger, com a faixa de resultado", async () => {
     stubFetchSequence([
-      { url: /ledger\/agregado/, body: { ok: true, acerto: { picks: 380, acertos: 221, jogos: 221 } } },
-      { url: /matches\/fetch/, body: { matches: [] } },
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_VAZIO },
+      { url: /ledger\/dia/, body: LEDGER_DIA_COM_PICK },
     ]);
     render(<Hero />);
-    await waitFor(() => expect(screen.getByText(/de cada 100 picks acertaram/)).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "Ver os jogos de hoje" })).toHaveAttribute("href", "/jogos");
-    expect(screen.getByRole("link", { name: /Entrar/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/✓ fechou com/)).toBeInTheDocument());
+    expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument();
   });
-  it("amostra curta: a frase de acerto some, o resto da tela continua", async () => {
+
+  it("talao de hoje existe: usa o de hoje, NAO chama /ledger/dia", async () => {
+    const chamadas = stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_COM_VALE },
+    ]);
+    render(<Hero />);
+    await waitFor(() => expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument());
+    expect(screen.queryByText(/✓ fechou com/)).toBeNull();
+    expect(chamadas.some((u) => /ledger\/dia/.test(u))).toBe(false);
+  });
+
+  it("amostra curta (jogos=5): a frase de acerto some, CTA duplo continua", async () => {
     stubFetchSequence([
-      { url: /ledger\/agregado/, body: { ok: true, acerto: { picks: 10, acertos: 5, jogos: 10 } } },
-      { url: /matches\/fetch/, body: { matches: [] } },
+      { url: /ledger\/agregado/, body: AGREGADO_CURTO },
+      { url: /matches\/fetch/, body: FEED_VAZIO },
+      { url: /ledger\/dia/, body: LEDGER_DIA_VAZIO },
     ]);
     render(<Hero />);
     await waitFor(() => expect(screen.getByRole("link", { name: "Ver os jogos de hoje" })).toBeInTheDocument());
-    expect(screen.queryByText(/de cada 100 picks acertaram/)).toBeNull();
+    expect(screen.queryByText(/de cada 100 picks fechados/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Entrar" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Criar conta" })).toHaveAttribute("href", "/register");
   });
 });
 ```
@@ -2278,39 +2343,58 @@ describe("Hero (#257, spec §5)", () => {
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getLedgerAgregado } from "@/lib/ledgerApi";
+import { getLedgerAgregado, getLedgerDia } from "@/lib/ledgerApi";
 import { getMatchesByLeague } from "@/lib/api";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
-import { ACTIVE_LEAGUES, type Match } from "@/lib/leagues";
+import { agruparPorJogo, toJogoViewOntem } from "@/lib/jogoViewOntem";
+import { diaISOOntem } from "@/lib/feedUrl";
+import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { fraseAcertoHero, HERO } from "@/lib/copy";
-import { Talao } from "@/components/feed/Talao";
+import { CardJogo } from "@/components/feed/CardJogo";
 import { fonteMarca } from "@/components/marca/fonteMarca";
 
 const MIN_N_HERO = 20; // mesmo piso do backend, MIN_N_BRIER (#079)
 
 export function Hero() {
   const [frase, setFrase] = useState<string | null>(null);
-  const [talaoProva, setTalaoProva] = useState<JogoView | null>(null);
+  const [jogoProva, setJogoProva] = useState<JogoView | null>(null);
+  const [semProva, setSemProva] = useState(false);
 
   useEffect(() => {
     let vivo = true;
+    const ligas = ACTIVE_LEAGUES().map((l) => ({ id: toBackendLeagueId(l.id), nome: l.name }));
+
     getLedgerAgregado("30d").then((r) => {
       if (!vivo || !r.ok) return;
-      const { picks, acertos, jogos } = r.dados.acerto;
-      setFrase(fraseAcertoHero(picks > 0 ? acertos / picks : 0, jogos, MIN_N_HERO));
+      const { acertos, jogos, resolvidos } = r.dados.acerto;
+      setFrase(fraseAcertoHero(acertos, resolvidos, jogos, MIN_N_HERO));
     }).catch(() => {});
 
-    const ligas = ACTIVE_LEAGUES().map((l) => l.id).join(",");
-    getMatchesByLeague(ligas, "today").then((res) => {
+    getMatchesByLeague(ligas.map((l) => l.id).join(","), "today").then(async (res) => {
       if (!vivo) return;
       const agora = new Date();
       const views = deduplicateMatches(
         (res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)),
       ).map((m: Match) => toJogoView(m, agora));
-      const valem = views.filter((v) => v.talao).sort((a, b) => (b.talao!.edge ?? -1) - (a.talao!.edge ?? -1));
-      if (valem[0]) setTalaoProva(valem[0]);
-    }).catch(() => {});
+      const doHoje = views.find((v) => v.talao);
+      if (doHoje) { setJogoProva(doHoje); return; }
+
+      // #257: sem talao hoje — cai para o de ONTEM, so o que foi publicado no
+      // ledger (nunca /fixtures para dia passado — fonte unica, spec §6.3).
+      const rOntem = await getLedgerDia(diaISOOntem(new Date()));
+      if (!vivo) return;
+      if (!rOntem.ok) { setSemProva(true); return; }
+      const porJogo = agruparPorJogo(rOntem.dados.picks);
+      let achado: JogoView | null = null;
+      for (const [matchId, picksDoJogo] of porJogo) {
+        const leagueId = picksDoJogo[0].league_id;
+        const liga = ligas.find((l) => l.id === leagueId);
+        const view = toJogoViewOntem(matchId, liga?.id ?? leagueId, liga?.nome ?? leagueId, picksDoJogo);
+        if (view.estado === "ontem" && view.talao) { achado = view; break; }
+      }
+      if (achado) setJogoProva(achado); else setSemProva(true);
+    }).catch(() => { if (vivo) setSemProva(true); });
 
     return () => { vivo = false; };
   }, []);
@@ -2327,16 +2411,21 @@ export function Hero() {
           {HERO.ctaJogos}
         </Link>
         <Link href="/login" className="sb-foco text-[14px] underline">{HERO.ctaEntrar}</Link>
+        <Link href="/register" className="sb-foco text-[14px] underline">{HERO.ctaCriarConta}</Link>
       </div>
-      {talaoProva?.talao && (
+      {jogoProva && (
         <div className="w-full max-w-[420px] text-left">
-          <Talao pick={talaoProva.talao} futuro={talaoProva.estado === "amanha_sem_preco"} preJogo={false} />
+          <CardJogo jogo={jogoProva} confianca={null} selecionado={false}
+            hrefDetalhe={`/jogos/${encodeURIComponent(jogoProva.id)}`} media={null} />
         </div>
       )}
+      {!jogoProva && semProva && <p className="text-[13px] text-[var(--sb-texto-apagado)]">{HERO.semTalao}</p>}
     </section>
   );
 }
 ```
+
+`CardJogo` já sabe renderizar tudo isso sozinho a partir de `jogo.estado` (Task 21/fase 3, sem alteração): estado `"vale"` mostra `Talao` + `LinhaStake`; estado `"ontem"` mostra `Talao` + a faixa `resultadoOntem` (✓/×) quando `jogo.resultado` não é nulo — exatamente o requisito de prova real com faixa. `confianca={null}`/`media={null}` evitam os fetches extra de `useLeagueClassifications`/`useMediaDasLigas` (`/api/ml/status`, ledger por liga) que o Hero não precisa — o orçamento de rede desta tela é só os três fetches acima (`getLedgerAgregado`, `getMatchesByLeague`, `getLedgerDia` condicional).
 
 - [ ] **Step 4: `app/page.tsx`**
 
@@ -2349,8 +2438,10 @@ export default function Page() {
 }
 ```
 
+Nota sobre e2e: esta tarefa NÃO adiciona um `e2e/hero.spec.ts` — enquanto o `middleware.ts` redireciona `/` incondicionalmente para `/dashboard` (código atual, ver `src/middleware.ts:9-11`), qualquer teste e2e que visite `/` nunca alcança o Hero. A remoção do redirect é a Task 29; o e2e do Hero (e a correção de `e2e/home.spec.ts`, que hoje afirma o redirect antigo) entra lá. Esta tarefa fecha com teste unitário (`Hero.test.tsx`, Step 2) + `tsc` + lints — suficiente para o componente isolado, sem depender de uma tarefa futura.
+
 - [ ] **Step 5: Rodar** — `npx vitest run tests/unit/Hero.test.tsx tests/unit/copy.test.ts`; `npx tsc --noEmit`; `npm run lint:fonts` (Barlow só aqui e em `app/page.tsx` — `fonteMarca` é importado só por `Hero.tsx`, que só é importado por `app/page.tsx`: guarda intacta).
-- [ ] **Step 6: Commit** — `git add frontend/next/src/components/marca/Hero.tsx frontend/next/src/app/page.tsx frontend/next/src/lib/copy.ts frontend/next/tests/unit/Hero.test.tsx frontend/next/tests/unit/copy.test.ts && git commit -m "feat(front): hero com prova real do ledger (#257)"`
+- [ ] **Step 6: Commit** — `git add frontend/next/src/components/marca/Hero.tsx frontend/next/src/app/page.tsx frontend/next/src/lib/copy.ts frontend/next/tests/unit/Hero.test.tsx frontend/next/tests/unit/copy.test.ts && git commit -m "feat(front): hero com prova real do ledger — hoje ou ontem com faixa (#257)"`
 
 ---
 
@@ -2450,7 +2541,32 @@ export const config = {
 `src/app/page.tsx` (Task 28) deixa de ser alcançável por quem já visitou — o middleware intercepta antes de renderizar, mesmo padrão de hoje.
 
 - [ ] **Step 4: Rodar** — `npx playwright test e2e/hero-redirect.spec.ts` → PASS.
-- [ ] **Step 5: Commit** — `git add frontend/next/src/middleware.ts frontend/next/e2e/hero-redirect.spec.ts && git commit -m "feat(front): redirect da raiz por cookie sbz_visitou, 180 dias (#257)"`
+
+- [ ] **Step 5: Atualizar `e2e/home.spec.ts`** — hoje afirma o redirect morto para `/dashboard` (`page.waitForURL("**/dashboard")`, `.st-nav__logo`, `.st-panel-left`, `.detail-card-section` — seletores do dashboard legado). Com o middleware desta tarefa, a primeira visita (sem cookie) fica em `/` e mostra o Hero (Task 28); só quem já tem `sbz_visitou` é redirecionado, e vai para `/jogos`, não `/dashboard`. Substituir o arquivo inteiro por:
+```ts
+import { test, expect } from "@playwright/test";
+
+test.describe("Home Page (#257 — hero substitui o redirect fixo para /dashboard)", () => {
+  test("primeira visita: fica em / e mostra o hero", async ({ page, context }) => {
+    await context.clearCookies();
+    await page.goto("/");
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("link", { name: "Ver os jogos de hoje" })).toBeVisible();
+  });
+
+  test("visita grava o cookie sbz_visitou; visita seguinte redireciona para /jogos", async ({ page, context }) => {
+    await context.clearCookies();
+    await page.goto("/");
+    const cookies = await context.cookies();
+    expect(cookies.find((c) => c.name === "sbz_visitou")?.value).toBe("1");
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/jogos/);
+  });
+});
+```
+Cobertura equivalente à de `e2e/hero-redirect.spec.ts` (Step 1) já existe lá em mais detalhe; este arquivo fica como o teste "de fumaça" da home, com o nome que o resto do repo já espera encontrar — não duplica asserções novas, só para de afirmar `/dashboard`.
+- [ ] **Step 6: Rodar** — `npx playwright test e2e/home.spec.ts` → PASS.
+- [ ] **Step 7: Commit** — `git add frontend/next/src/middleware.ts frontend/next/e2e/hero-redirect.spec.ts frontend/next/e2e/home.spec.ts && git commit -m "feat(front): redirect da raiz por cookie sbz_visitou, 180 dias (#257)"`
 
 ---
 
@@ -3060,7 +3176,7 @@ test.describe("rotas removidas (#258) — 404 previsivel, nunca 500 ou pagina em
 ## Auto-revisão
 
 **Cobertura da spec §5/§8 (itens que este plano precisava fechar):**
-- §5 Hero: Task 28 (headline, frase de acerto do ledger com corte em n<20, CTA duplo, talão real, some se não houver nenhum — o `talaoProva` fica `null` e a seção não renderiza).
+- §5 Hero: Task 28 (headline em duas linhas, frase de acerto do ledger via `fraseAcertoHero` com corte em `jogos<20` — mesmo denominador `resolvidos` de `fraseAcerto`/Task 20-bis —, CTA triplo "ver jogos"/"entrar"/"criar conta" sem checagem de sessão por conta do #136, talão real com fallback hoje→ontem via `getLedgerDia`/`toJogoViewOntem` renderizado com `CardJogo` — reaproveita a faixa "✓ fechou com" que o componente já sabe mostrar —, e frase honesta `HERO.semTalao` quando nem hoje nem ontem têm talão, nunca um card inventado).
 - §5 `/banca`: já fechado na fase 3 (Task 17 do plano 1) — sem tarefa nova aqui.
 - §5 `/desempenho`: Task 25 (ordem desfecho→calibração, filtros na URL, período por extenso, retorno honesto quando `null`, calibração com leitura em uma frase + tabela sr-only, por liga com "amostra curta").
 - §5 `/desempenho`, retorno em dinheiro: Task 25-bis (decisão do dono, opção a — retorno retroativo calculado no cliente com o stake de hoje sobre picks fechados; honesto quando banca indefinida ou sem picks com preço).
