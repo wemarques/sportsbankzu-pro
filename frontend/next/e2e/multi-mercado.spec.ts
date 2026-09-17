@@ -86,7 +86,8 @@ test.describe("multi-mercado — dois valem, um talao (#257)", () => {
     await expect(linhas.nth(1).locator("td").nth(0)).toHaveText(SEGUNDO_ROTULO);
     await expect(linhas.nth(1).locator("td").nth(4)).toHaveText("vale");
     await expect(linhas.nth(2).locator("td").nth(0)).toHaveText("Over 2.5 gols");
-    await expect(linhas.nth(2).locator("td").nth(4)).toHaveText("não vale");
+    // #258: NEUTRO com BORDERLINE_LINE_MARGIN mostra o motivo de duas palavras (antes caia no "nao vale" generico)
+    await expect(linhas.nth(2).locator("td").nth(4)).toHaveText("linha no limite");
   });
 
   test("celular: toca no titulo e navega para a pagina de detalhe com a mesma tabela", async ({ page }, info) => {
