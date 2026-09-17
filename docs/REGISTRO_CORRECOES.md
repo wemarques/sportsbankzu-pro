@@ -14287,3 +14287,24 @@ Cache incremental do `tsc` (`tsconfig.tsbuildinfo`, gitignorado) mascarou um err
 Fase 6: rodada 2 do teste de 5 s (portão, agora com item de compreensão do hero) e corte do legado (dashboard, duplas, destaques, campeonatos, rotas mortas) com tag de backup antes de remover; `/jogos` só vira rota padrão depois da rodada 2; remoção consciente do modo "Rodada". Menores, sem bloquear: nome acessível do link do stake (`aria-label`, hoje é só o valor em reais); bloco de filtro repetido entre `picks()`/`agregado()` em `ledger_leitura.py`; `DESEMPENHO.retornoIndisponivel` órfã em `copy.ts`; `tsconfig.json` sem `target` explícito e com `incremental` ligado (dois achados de tooling, fora do escopo desta fase); flake de `home.spec.ts` observado só em dev (HMR), verde 2x em produção.
 
 Dispensa da rodada 1: o dono dispensou a rodada 1 do teste de 5 s como portão pré-hero por indisponibilidade de participantes humanos — nada foi simulado. A validação humana integral fica inteira para a rodada 2 (portão da fase 6), agora com item de compreensão do hero; o corte de `/jogos` como rota padrão continua bloqueado pela rodada 2 (a rodada 1 prevalece se rodar antes dela). Texto integral da decisão do dono está registrado no #254-b.
+
+## 258 — Reformulação do frontend, fase 6 (em andamento): backup, nome acessível do link contextual e material da rodada 2
+
+**Data:** 2026-09-17 | **Arquivos:** `frontend/next/src/components/TextoComTermos.tsx`, `frontend/next/scripts/capturar-telas-teste-5s.mjs`, `docs/superpowers/testes/` | **Severidade:** Média | **Status:** Em andamento (o corte espera a rodada 2)
+
+### Problema identificado
+A fase 6 é o corte do legado (`dashboard`, `duplas`, `destaques`, `campeonatos`, rotas mortas, modo "Rodada") e a promoção de `/jogos` a rota padrão. Nada disso pode acontecer sem (1) um ponto de rollback marcado e (2) validação humana do objeto de decisão — a rodada 2 do teste de 5 segundos, portão do corte (ruling do dono no portão da fase 5; a rodada 1 foi dispensada, ver #254-b).
+
+### Correções aplicadas (com camadas)
+1. **Backup (Task 34, operação de git, sem código):** tag `backup-pre-corte-legado-fase6` e branch `backup-legado-fase6`, ambos em `821eef0782cec24f26e43816b2deff31708aa1ce` (o `main` do fechamento da fase 5), confirmados no remoto por `git ls-remote`. Quem precisar reverter o corte parte daqui.
+2. **Nome acessível do link contextual (item micro, commit `2dffeeb`):** `TextoComTermos` passa `aria-label`/`title` = "texto — o que é Termo" (título buscado em `glossarioTermos.ts`); o link do stake deixa de anunciar só um valor em reais. Testes ajustados (`R$ 0,64 — o que é Stake`, `edge — o que é Edge`); 146/146.
+3. **Material da rodada 2 (Task 36, commit `51b1955`):** `scripts/capturar-telas-teste-5s.mjs` captura do PRODUTO construído (build de produção contra a Lambda real, sem stub) três telas em celular e desktop: card com talão, tabela do detalhe e hero na primeira visita. Na captura, hoje não tinha jogo "vale"; amanhã tinha — Monza × Sassuolo (Serie A), BTTS-SIM, paga 1,67, mínimo 1,53. Molde em branco `docs/superpowers/testes/2026-XX-XX-teste-5s-rodada-2-RESULTADO.md` com o item 3 (compreensão do hero: "o que o painel faz, em uma frase?") e os critérios pré-registrados (acerto ≥ 80% por perfil, mediana ≤ 5 s no objeto de decisão). O resultado é preenchido pelo dono; nunca por agente.
+
+### Etapa 2-bis
+Nenhum campo de backend escrito; nenhuma rota removida ainda.
+
+### Prova empírica
+Micro: Vitest 146/146, `tsc` limpo sem cache, lints ✓, `e2e/jogos.spec.ts` mobile 9 passed / 1 skipped. Material: `node --check` ✓; seis PNGs legíveis em `docs/superpowers/testes/rodada-2-telas/` com `LEIA-ME.md`; servidor de captura encerrado (porta 3001 livre).
+
+### Pendências (portão interno da fase 6)
+Rodada 2 conduzida pelo dono → resultado no placeholder do #257-a → só então Tasks 35 (`/jogos` padrão), 37 (remoção do legado, com nota de corte incluindo "Rodada" e o dashboard), 38 (prova de 404/redirect) e 39 (fechamento, #258-a).
