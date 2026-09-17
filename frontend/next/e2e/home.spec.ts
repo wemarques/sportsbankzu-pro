@@ -1,17 +1,19 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Home Page", () => {
-  test("redirects to dashboard", async ({ page }) => {
+test.describe("Home Page (#257 — hero substitui o redirect fixo para /dashboard)", () => {
+  test("primeira visita: fica em / e mostra o hero", async ({ page, context }) => {
+    await context.clearCookies();
     await page.goto("/");
-    await page.waitForURL("**/dashboard");
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("link", { name: "Ver os jogos de hoje" })).toBeVisible();
   });
 
-  test("dashboard loads with scoretabs layout after redirect", async ({ page }) => {
+  test("visita grava o cookie sbz_visitou; visita seguinte redireciona para /jogos", async ({ page, context }) => {
+    await context.clearCookies();
     await page.goto("/");
-    await page.waitForURL("**/dashboard");
-    await expect(page.locator(".st-nav__logo")).toBeVisible();
-    await expect(page.locator(".st-panel-left")).toBeVisible();
-    await expect(page.locator(".detail-card-section")).toBeVisible();
+    const cookies = await context.cookies();
+    expect(cookies.find((c) => c.name === "sbz_visitou")?.value).toBe("1");
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/jogos/);
   });
 });
