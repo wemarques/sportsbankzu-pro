@@ -27,7 +27,7 @@ describe("glossarioTermos (#257, spec §5)", () => {
         const p = path.join(dir, nome);
         if (fs.statSync(p).isDirectory()) anda(p);
         else if (/\.(ts|tsx)$/.test(nome)) {
-          for (const m of fs.readFileSync(p, "utf8").matchAll(/\{term:([a-z0-9-]+)\|/g)) usados.add(m[1]);
+          for (const m of Array.from(fs.readFileSync(p, "utf8").matchAll(/\{term:([a-z0-9-]+)\|/g))) usados.add(m[1]);
         }
       }
     };
