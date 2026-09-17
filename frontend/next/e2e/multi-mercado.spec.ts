@@ -90,6 +90,30 @@ test.describe("multi-mercado — dois valem, um talao (#257)", () => {
     await expect(linhas.nth(2).locator("td").nth(4)).toHaveText("linha no limite");
   });
 
+  test("desktop: painel com altura maxima tem rolagem propria (#258)", async ({ page }, info) => {
+    test.skip(info.project.name === "mobile", "painel lateral so no desktop");
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await stub(page, { feed: "multi" });
+    await page.goto("/jogos");
+    const card = page.locator("article").filter({ hasText: TALAO_ROTULO });
+    await card.locator("h2 a").click();
+    await expect(page).toHaveURL(/jogo=/);
+
+    const painel = page.getByRole("complementary", { name: "detalhe do jogo" });
+    await expect(painel).toBeVisible();
+    const linhas = painel.locator("table#mercados tbody tr");
+    await expect(linhas).toHaveCount(N_AVALIADOS);
+
+    const { scrollHeight, clientHeight } = await painel.evaluate((el) => ({
+      scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+    }));
+    expect(scrollHeight).toBeGreaterThan(clientHeight);
+
+    const ultima = linhas.nth(N_AVALIADOS - 1);
+    await ultima.scrollIntoViewIfNeeded();
+    await expect(ultima).toBeInViewport();
+  });
+
   test("celular: toca no titulo e navega para a pagina de detalhe com a mesma tabela", async ({ page }, info) => {
     test.skip(info.project.name !== "mobile");
     await stub(page, { feed: "multi" });
