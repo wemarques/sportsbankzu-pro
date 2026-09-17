@@ -79,6 +79,7 @@ pytest -q
 cd frontend/next && npm run test:e2e
 cd frontend/next && npm run test:unit
 cd frontend/next && npm run lint:fonts
+cd frontend/next && rm -f tsconfig.tsbuildinfo && npx tsc --noEmit  # (cache incremental mascara erros — #257-a)
 ```
 
 ## API Lambda — armadilhas conhecidas

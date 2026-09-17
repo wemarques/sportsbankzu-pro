@@ -1619,11 +1619,22 @@ por dia UTC cru; mostrar percentual de acerto por segmento com `n < 20`.
    preco no periodo, a tela mostra frase honesta ("defina sua banca..." / "sem picks fechados com
    preco neste periodo") — nunca um numero.
 3. Navegacao (sidebar/barra inferior) NAO aparece em `/`, `/login`, `/register`.
+4. **(#257-a) `/` e o hero para visitante novo, `/jogos` para quem voltou.** Cookie `sbz_visitou`
+   (Max-Age 15552000 = 180 dias, Path `/`, SameSite Lax) gravado por `middleware.ts` na primeira
+   visita a `/` OU a `/jogos`; com o cookie presente, `/` redireciona para `/jogos` sem flash do
+   hero. Talao-prova do hero = o de MAIOR edge entre os jogos de HOJE (empate por chance); sem
+   talao hoje, cai para o de ONTEM com faixa de resultado (`getLedgerDia` -> `toJogoViewOntem`);
+   sem nenhum dos dois, frase honesta `HERO.semTalao` (nunca card vazio). Frase de acerto
+   (`fraseAcertoHero`) so aparece com >= 20 jogos no periodo — abaixo disso, `null` (nunca amostra
+   pequena). `tsconfig.tsbuildinfo` (cache incremental do tsc) mascara erros reais entre rodadas
+   locais — portao de fechamento SEMPRE apaga o arquivo antes de `tsc --noEmit`.
 
 **Proibido:** link de glossario fora do padrao de token; exibir "retorno" de `/desempenho` como
-resultado realizado ou historico gravado; navegacao visivel nas rotas publicas acima.
+resultado realizado ou historico gravado; navegacao visivel nas rotas publicas acima; rodar `tsc`
+de portao sem apagar `tsconfig.tsbuildinfo` antes (#257-a).
 
 **Estado de aplicacao:** `backend/routes/ledger.py` (`GET /ledger/picks`),
 `backend/services/ledger_leitura.py` (`picks()`), `frontend/next/src/components/TextoComTermos.tsx`,
 `frontend/next/src/lib/retornoRetroativo.ts`, `frontend/next/src/app/desempenho/Painel.tsx`,
-`frontend/next/src/components/nav/Navegacao.tsx`.
+`frontend/next/src/components/nav/Navegacao.tsx`, `frontend/next/src/middleware.ts`,
+`frontend/next/src/app/page.tsx`, `frontend/next/src/components/marca/Hero.tsx`.
