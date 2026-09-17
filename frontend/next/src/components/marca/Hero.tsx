@@ -88,7 +88,7 @@ export function Hero() {
 
   return (
     <section className="mx-auto flex min-h-screen max-w-[720px] flex-col items-center justify-center gap-6 px-4 text-center text-[var(--sb-texto)]">
-      <h1 className={`${fonteMarca.className} text-[36px] font-bold leading-tight`}>
+      <h1 className={`${fonteMarca.className} text-[26px] sm:text-[36px] font-bold leading-tight tracking-tight`}>
         {HERO.headlineLinha1}
         <br />{HERO.headlineLinha2}
       </h1>
