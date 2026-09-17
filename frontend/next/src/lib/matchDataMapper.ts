@@ -1,4 +1,4 @@
-import type { MatchDetailData } from "@/components/MatchDetailCard";
+import type { MatchDetailData } from "@/lib/matchDetailTypes";
 import type {
   AIAnalysisData,
   ClassificationKey,

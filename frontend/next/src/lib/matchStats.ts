@@ -1,4 +1,4 @@
-import type { MatchDetailData } from "@/components/MatchDetailCard";
+import type { MatchDetailData } from "@/lib/matchDetailTypes";
 
 type MatchStats = NonNullable<MatchDetailData["matchStats"]>;
 

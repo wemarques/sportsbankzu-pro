@@ -19,7 +19,7 @@ export default function LoginPage() {
     if (result?.error) {
       setError("Email ou senha incorretos");
     } else {
-      router.push("/dashboard");
+      router.push("/jogos");
     }
   }
 

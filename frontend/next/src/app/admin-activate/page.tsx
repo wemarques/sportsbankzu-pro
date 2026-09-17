@@ -14,7 +14,7 @@ export default function AdminActivatePage() {
     if (token === ADMIN_TOKEN) {
       localStorage.setItem("sbz_admin_token", token);
       setStatus("success");
-      setTimeout(() => router.push("/dashboard"), 1500);
+      setTimeout(() => router.push("/jogos"), 1500);
     } else {
       setStatus("invalid");
     }
@@ -33,7 +33,7 @@ export default function AdminActivatePage() {
         {status === "invalid" && (
           <>
             <p style={{ color: "#ef4444", fontSize: 18, fontWeight: 600 }}>Token invalido</p>
-            <a href="/dashboard" style={{ color: "#888", marginTop: 8, display: "block" }}>Voltar ao dashboard</a>
+            <a href="/jogos" style={{ color: "#888", marginTop: 8, display: "block" }}>Voltar aos jogos</a>
           </>
         )}
       </div>

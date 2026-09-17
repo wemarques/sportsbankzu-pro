@@ -7,7 +7,7 @@ export default function AdminDeactivatePage() {
 
   useEffect(() => {
     localStorage.removeItem("sbz_admin_token");
-    setTimeout(() => router.push("/dashboard"), 1000);
+    setTimeout(() => router.push("/jogos"), 1000);
   }, [router]);
 
   return (
