@@ -1,14 +1,15 @@
 import { test, expect } from "@playwright/test";
-import feed from "./fixtures/feed.json";
+import feedMulti from "./fixtures/feed-multi.json";
 import ledgerDia from "./fixtures/ledger-dia.json";
 import { stub } from "./helpers/stub";
 
 /**
  * Task 32-bis (#257) — "dois valem, um talao" (spec §4.1/§4.3) de ponta a ponta.
- * Fixture: feed.matches[4], copia verbatim de
- * tests/fixtures/fixtures.2026-09-15.v1.json ("la-liga-Levante UD-Athletic
- * Club Bilbao-1789587000.0" — ver e2e/fixtures/README.md para a conta e o
- * desvio de datetime).
+ * Fixture PROPRIA (feed-multi.json, servida so quando stub(page,{feed:"multi"})
+ * — feed.json/feed.matches padrao dos outros specs fica intocado, 4 jogos):
+ * matches[4], copia verbatim de tests/fixtures/fixtures.2026-09-15.v1.json
+ * ("la-liga-Levante UD-Athletic Club Bilbao-1789587000.0" — ver
+ * e2e/fixtures/README.md para a conta e o desvio de datetime).
  *
  * N "avaliados" (jogoView.ts toJogoView): picks = mercados.map(toPick).filter =
  * 3 (Cartoes Under 4.5 SAFE edge .1096, BTTS - SIM NEUTRO_QUALIFICADO edge
@@ -19,7 +20,7 @@ import { stub } from "./helpers/stub";
  * script node reproduzindo toPick/toPickRecusado/escolherTalao contra o
  * fixture final (task report).
  */
-const jogo = feed.matches[4];
+const jogo = feedMulti.matches[4];
 const id = jogo.id;
 const N_AVALIADOS = 15;
 const N_VALEM = 2;
@@ -28,13 +29,14 @@ const SEGUNDO_ROTULO = "BTTS — SIM"; // fmtMercado no-op (sem "Cartoes"/"Carta
 
 test.describe("multi-mercado — dois valem, um talao (#257)", () => {
   test("card do Levante: talao, segundo pick sem botao, linha de avaliados", async ({ page }, info) => {
-    await stub(page);
+    await stub(page, { feed: "multi" });
     await page.goto("/jogos");
     await expect(page.locator("article").first()).toBeVisible();
 
-    // feed.json ja tinha OUTRO "Levante UD x Athletic Club Bilbao" (matches[2],
-    // estado "nada", mercados: [] — data distinta, ver README). So o nosso
-    // card mostra o talao "Cartoes Under 4.5"; usa-lo para desambiguar.
+    // feed-multi.json tem os 4 jogos padrao (matches[2] ja e um OUTRO
+    // "Levante UD x Athletic Club Bilbao", estado "nada", mercados: [], data
+    // distinta, ver README) + o novo. So o nosso card mostra o talao
+    // "Cartoes Under 4.5"; usa-lo para desambiguar.
     const card = page.locator("article").filter({ hasText: TALAO_ROTULO });
     await expect(card).toHaveCount(1);
 
@@ -65,7 +67,7 @@ test.describe("multi-mercado — dois valem, um talao (#257)", () => {
 
   test("desktop: abre o painel e a tabela tem os 15 mercados avaliados", async ({ page }, info) => {
     test.skip(info.project.name === "mobile", "painel lateral so no desktop");
-    await stub(page);
+    await stub(page, { feed: "multi" });
     await page.goto("/jogos");
     const card = page.locator("article").filter({ hasText: TALAO_ROTULO });
     await card.locator("h2 a").click();
@@ -89,7 +91,7 @@ test.describe("multi-mercado — dois valem, um talao (#257)", () => {
 
   test("celular: toca no titulo e navega para a pagina de detalhe com a mesma tabela", async ({ page }, info) => {
     test.skip(info.project.name !== "mobile");
-    await stub(page);
+    await stub(page, { feed: "multi" });
     await page.goto("/jogos");
     const card = page.locator("article").filter({ hasText: TALAO_ROTULO });
     await card.locator("h2 a").click();

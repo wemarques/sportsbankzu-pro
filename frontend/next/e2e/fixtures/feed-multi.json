@@ -1,0 +1,914 @@
+{
+  "matches": [
+    {
+      "id": "championship-Middlesbrough-Millwall-1798920000",
+      "footystatsId": 8566447,
+      "leagueId": "championship",
+      "leagueName": "Championship",
+      "homeTeam": { "name": "Middlesbrough", "logo": "", "form": [], "rating": 0 },
+      "awayTeam": { "name": "Millwall", "logo": "", "form": [], "rating": 0 },
+      "datetime": "2026-12-01T20:00:00Z",
+      "stadium": "Riverside Stadium",
+      "status": "scheduled",
+      "score": null,
+      "period": null,
+      "minute": null,
+      "odds": { "home": 2.1, "draw": 3.3, "away": 3.4, "over25": 1.9, "under25": 1.9, "bttsYes": 1.8, "bttsNo": 2.0 },
+      "stats": { "homeWinProb": 40, "drawProb": 28, "awayWinProb": 32, "avgGoals": 2.4, "bttsProb": 55, "over25Prob": 52 },
+      "h2h": { "totalMatches": 4, "homeWins": 2, "draws": 1, "awayWins": 1, "avgGoals": 2.5 },
+      "mercados": [
+        {
+          "mercado": "Over 2.5 Gols",
+          "status": "SAFE",
+          "prob_min": 60,
+          "prob_max": 65,
+          "odd_minima": 1.55,
+          "classification": "SAFE",
+          "reason_codes": ["POSITIVE_EV", "STRONG_EDGE"],
+          "data_quality_score": 1,
+          "odds_available": true,
+          "ev": 0.12,
+          "edge": 0.08,
+          "fair_odd": 1.55,
+          "book_odd": 1.75,
+          "calibrated_probability": 0.62,
+          "raw_probability": 0.65
+        }
+      ],
+      "source": "footystats",
+      "lastUpdated": "2026-09-16T09:00:00Z"
+    },
+    {
+      "id": "championship-Bristol-City-Lincoln-City-1798924000",
+      "footystatsId": 8566448,
+      "leagueId": "championship",
+      "leagueName": "Championship",
+      "homeTeam": { "name": "Bristol City", "logo": "", "form": [], "rating": 0 },
+      "awayTeam": { "name": "Lincoln City", "logo": "", "form": [], "rating": 0 },
+      "datetime": "2026-12-01T20:00:00Z",
+      "stadium": "Ashton Gate",
+      "status": "scheduled",
+      "score": null,
+      "period": null,
+      "minute": null,
+      "odds": { "home": 1.9, "draw": 3.5, "away": 4.0, "over25": 2.0, "under25": 1.8, "bttsYes": 1.8, "bttsNo": 2.0 },
+      "stats": { "homeWinProb": 46, "drawProb": 27, "awayWinProb": 27, "avgGoals": 2.3, "bttsProb": 50, "over25Prob": 48 },
+      "h2h": { "totalMatches": 3, "homeWins": 2, "draws": 0, "awayWins": 1, "avgGoals": 2.2 },
+      "mercados": [
+        {
+          "mercado": "BTTS - Sim",
+          "status": "NEUTRO",
+          "prob_min": 55,
+          "prob_max": 58,
+          "odd_minima": 1.8,
+          "classification": "NEUTRO",
+          "reason_codes": ["INSUFFICIENT_EDGE"],
+          "data_quality_score": 1,
+          "odds_available": true,
+          "ev": 0.01,
+          "edge": 0.01,
+          "fair_odd": 1.85,
+          "book_odd": 1.8,
+          "calibrated_probability": 0.56,
+          "raw_probability": 0.58
+        }
+      ],
+      "source": "footystats",
+      "lastUpdated": "2026-09-16T09:00:00Z"
+    },
+    {
+      "id": "la-liga-Levante-UD-Athletic-Club-Bilbao-1798928000",
+      "footystatsId": 8566449,
+      "leagueId": "la-liga",
+      "leagueName": "La Liga",
+      "homeTeam": { "name": "Levante UD", "logo": "", "form": [], "rating": 0 },
+      "awayTeam": { "name": "Athletic Club Bilbao", "logo": "", "form": [], "rating": 0 },
+      "datetime": "2026-12-01T19:30:00Z",
+      "stadium": "Estadi Ciutat de Valencia",
+      "status": "scheduled",
+      "score": null,
+      "period": null,
+      "minute": null,
+      "odds": { "home": 3.2, "draw": 3.3, "away": 2.2, "over25": 2.0, "under25": 1.8, "bttsYes": 1.9, "bttsNo": 1.9 },
+      "stats": { "homeWinProb": 27, "drawProb": 27, "awayWinProb": 46, "avgGoals": 2.5, "bttsProb": 52, "over25Prob": 50 },
+      "h2h": { "totalMatches": 5, "homeWins": 1, "draws": 1, "awayWins": 3, "avgGoals": 2.6 },
+      "mercados": [],
+      "source": "footystats",
+      "lastUpdated": "2026-09-16T09:00:00Z"
+    },
+    {
+      "id": "la-liga-FC-Barcelona-Racing-Santander-1798932000",
+      "footystatsId": 8566450,
+      "leagueId": "la-liga",
+      "leagueName": "La Liga",
+      "homeTeam": { "name": "FC Barcelona", "logo": "", "form": [], "rating": 0 },
+      "awayTeam": { "name": "Racing Santander", "logo": "", "form": [], "rating": 0 },
+      "datetime": "2026-09-16T12:00:00Z",
+      "stadium": "Spotify Camp Nou",
+      "status": "live",
+      "score": { "home": 1, "away": 0 },
+      "period": "1T",
+      "minute": 30,
+      "odds": { "home": 1.2, "draw": 6.5, "away": 12.0, "over25": 1.5, "under25": 2.6, "bttsYes": 2.1, "bttsNo": 1.7 },
+      "stats": { "homeWinProb": 78, "drawProb": 15, "awayWinProb": 7, "avgGoals": 2.9, "bttsProb": 45, "over25Prob": 62 },
+      "h2h": { "totalMatches": 6, "homeWins": 5, "draws": 1, "awayWins": 0, "avgGoals": 3.1 },
+      "mercados": [
+        {
+          "mercado": "Over 1.5 Gols",
+          "status": "SAFE",
+          "prob_min": 70,
+          "prob_max": 75,
+          "odd_minima": 1.3,
+          "classification": "SAFE",
+          "reason_codes": ["POSITIVE_EV", "STRONG_EDGE"],
+          "data_quality_score": 1,
+          "odds_available": true,
+          "ev": 0.1,
+          "edge": 0.06,
+          "fair_odd": 1.32,
+          "book_odd": 1.45,
+          "calibrated_probability": 0.72,
+          "raw_probability": 0.74
+        }
+      ],
+      "source": "footystats",
+      "lastUpdated": "2026-09-16T09:00:00Z"
+    },
+    {
+      "id": "la-liga-Levante UD-Athletic Club Bilbao-1789587000.0",
+      "footystatsId": 8570398,
+      "leagueId": "la-liga",
+      "leagueName": "La Liga",
+      "league_stats": {
+        "avg_goals": 2.98,
+        "avg_corners": 9.8,
+        "avg_cards": 4.65,
+        "avg_fouls": 24.24,
+        "avg_shots": 25.74,
+        "home_advantage_pct": null,
+        "avg_goals_home": null,
+        "avg_goals_away": null,
+        "clean_sheets_pct": null,
+        "over25_pct": null,
+        "xg_avg": 2.95,
+        "matches_completed": 54,
+        "matchesCompleted": 54,
+        "matches_played": 54,
+        "total_matches": 380
+      },
+      "homeTeam": {
+        "name": "Levante UD",
+        "logo": "",
+        "form": [],
+        "rating": 0
+      },
+      "awayTeam": {
+        "name": "Athletic Club Bilbao",
+        "logo": "",
+        "form": [],
+        "rating": 0
+      },
+      "datetime": "2026-12-03T19:30:00Z",
+      "stadium": "Estadio Ciudad de Valencia",
+      "status": "scheduled",
+      "score": null,
+      "period": null,
+      "minute": null,
+      "odds": {
+        "home": 3.38,
+        "draw": 3.46,
+        "away": 2.13,
+        "over05": 1.03,
+        "under05": 9.5,
+        "over15": 1.29,
+        "under15": 3.6,
+        "over25": 1.85,
+        "under25": 2,
+        "over35": 3.3,
+        "under35": 1.33,
+        "over45": 6.5,
+        "under45": 1.13,
+        "dc_1x": 1.62,
+        "dc_12": 1.28,
+        "dc_x2": 1.33,
+        "bttsYes": 1.73,
+        "bttsNo": 2.1,
+        "cornersOver75": 1.26,
+        "cornersUnder75": 3.35,
+        "cornersOver85": 1.46,
+        "cornersUnder85": 2.48,
+        "cornersOver95": 1.75,
+        "cornersUnder95": 1.93,
+        "cornersOver105": 2.16,
+        "cornersUnder105": 1.6,
+        "cornersOver115": 3.2,
+        "cornersUnder115": 1.37,
+        "over55": 11,
+        "under55": 1.05,
+        "cards_over_4.5": 1.8,
+        "cards_under_4.5": 1.91
+      },
+      "stats": {
+        "homeWinProb": 28.1,
+        "drawProb": 27.4,
+        "awayWinProb": 44.5,
+        "predictionSource": "odds_implied",
+        "probSources": {
+          "oneXTwo": "odds_implied",
+          "overUnder": "poisson_lambda_ou",
+          "btts": "poisson_lambda",
+          "bttsFusion": "fusion:footystats+poisson+team_avg",
+          "fsPotentials": "footystats_prematch",
+          "cornersPotentials": "footystats_potential"
+        },
+        "avgGoals": 2.5,
+        "bttsProb": 67,
+        "bttsFusionProb": 52.1,
+        "over05Prob": 96.9,
+        "over15Prob": 86.2,
+        "over25Prob": 67.5,
+        "over35Prob": 45.9,
+        "over45Prob": 27.1,
+        "under05Prob": 3.1,
+        "under15Prob": 13.8,
+        "under25Prob": 32.5,
+        "under35Prob": 54.1,
+        "under45Prob": 72.9,
+        "lambdaHome": 1.503,
+        "lambdaAway": 1.976,
+        "lambdaTotal": 3.479,
+        "lambdaTotalOU": 3.479,
+        "ouDeflation": 1,
+        "fsPotentials": {
+          "over15": 100,
+          "over25": 50,
+          "over35": 50,
+          "over45": 50,
+          "btts": 50
+        },
+        "leagueAvgGoals": 2.98,
+        "totalGoals": 0,
+        "leagueRegime": "NORMAL",
+        "leagueVolatility": "ALTA",
+        "chaosDetected": false,
+        "chaosHome": "UNKNOWN",
+        "chaosAway": "UNKNOWN",
+        "chaosHomeCv": 0,
+        "chaosAwayCv": 0,
+        "homePossession": 40,
+        "awayPossession": 49,
+        "homeCornersPerMatch": 3.4,
+        "awayCornersPerMatch": 6.4,
+        "homeCardsPerMatch": 1,
+        "awayCardsPerMatch": 2.4,
+        "homeShotsOnTarget": 4.2,
+        "awayShotsOnTarget": 4.4,
+        "homeShotsPerMatch": 11.6,
+        "awayShotsPerMatch": 14,
+        "homeFoulsPerMatch": 10,
+        "awayFoulsPerMatch": 10.4,
+        "leagueAvgCorners": 9.8,
+        "leagueAvgCards": 4.65,
+        "leagueAvgFouls": 24.24,
+        "leagueAvgShots": 25.74,
+        "leagueHomeAdvantage": null,
+        "leagueAvgGoalsHome": null,
+        "leagueAvgGoalsAway": null,
+        "leagueCleanSheetsPct": null,
+        "leagueOver25Pct": null,
+        "leagueXgAvg": 2.95,
+        "homeBttsPercentage": 40,
+        "awayBttsPercentage": 40,
+        "homeCleanSheetPct": 40,
+        "awayCleanSheetPct": 40,
+        "homeFtsPercentage": 60,
+        "awayFtsPercentage": 20,
+        "homeOver25Percentage": 60,
+        "awayOver25Percentage": 40,
+        "homeWinPercentage": 20,
+        "awayWinPercentage": 40,
+        "homeXgForAvg": 1.31,
+        "awayXgForAvg": 1.57,
+        "homeXgAgainstAvg": 1.64,
+        "awayXgAgainstAvg": 1.3,
+        "homeCornersAgainstPerMatch": 5.6,
+        "awayCornersAgainstPerMatch": 5.6,
+        "homeCornersTotalAvg": 10.5,
+        "awayCornersTotalAvg": 14,
+        "matchesPlayed_home": 5,
+        "matchesPlayed_away": 5,
+        "matchesPlayed_overall": 5,
+        "corners_recorded_matches_num": 5,
+        "over65_corners_percentage": 80,
+        "over85_corners_percentage": 60,
+        "over95_corners_percentage": 60,
+        "over105_corners_percentage": 40,
+        "over115_corners_percentage": 40,
+        "over145_corners_percentage": 0,
+        "away_over65_corners_percentage": 100,
+        "away_over85_corners_percentage": 80,
+        "away_over95_corners_percentage": 80,
+        "away_over105_corners_percentage": 80,
+        "away_over115_corners_percentage": 40,
+        "away_over145_corners_percentage": 20,
+        "over15_cards_percentage": 90,
+        "over25_cards_percentage": 70,
+        "over35_cards_percentage": 30,
+        "over45_cards_percentage": 30,
+        "over55_cards_percentage": 30,
+        "over65_cards_percentage": 10,
+        "over75_cards_percentage": 0,
+        "home_over15_cards_percentage": 100,
+        "home_over25_cards_percentage": 60,
+        "home_over35_cards_percentage": 20,
+        "home_over45_cards_percentage": 20,
+        "home_over55_cards_percentage": 20,
+        "home_over65_cards_percentage": 0,
+        "home_over75_cards_percentage": 0,
+        "away_over15_cards_percentage": 80,
+        "away_over25_cards_percentage": 80,
+        "away_over35_cards_percentage": 40,
+        "away_over45_cards_percentage": 40,
+        "away_over55_cards_percentage": 40,
+        "away_over65_cards_percentage": 20,
+        "away_over75_cards_percentage": 0,
+        "homeCardsAgainstPerMatch": 1,
+        "awayCardsAgainstPerMatch": 0.5,
+        "homeLeaguePosition": 14,
+        "awayLeaguePosition": 9,
+        "homeAvgTotalGoals": 3.2,
+        "awayAvgTotalGoals": 2.6,
+        "cornersPotential": 10,
+        "cornerOver85Prob": 75,
+        "cornerOver95Prob": 75,
+        "cornerOver105Prob": 75,
+        "homeCornersCount": null,
+        "awayCornersCount": null,
+        "homeYellowCards": null,
+        "awayYellowCards": null,
+        "homeRedCards": null,
+        "awayRedCards": null,
+        "status": "NEUTRO",
+        "mercado_principal": "Cartoes Under 4.5",
+        "odd_minima": 1.91,
+        "data_quality_score": 1,
+        "rejected_insights": [
+          {
+            "market": "Over 1.5 gols",
+            "raw_prob": 86.7,
+            "deflated_prob": 75.9,
+            "ev": -2.1,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "HIGH_CALIBRATED_PROB"
+            ]
+          },
+          {
+            "market": "Under 4.5 gols",
+            "raw_prob": 73,
+            "deflated_prob": 66,
+            "ev": -25.4,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "HIGH_CALIBRATED_PROB"
+            ]
+          },
+          {
+            "market": "DC 1X (LEV/EMP)",
+            "raw_prob": 55.5,
+            "deflated_prob": 52.4,
+            "ev": -15,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE"
+            ]
+          },
+          {
+            "market": "DC 12 (LEV/ATH)",
+            "raw_prob": 72.6,
+            "deflated_prob": 59,
+            "ev": -24.5,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "HIGH_CALIBRATED_PROB"
+            ]
+          },
+          {
+            "market": "DC X2 (EMP/ATH)",
+            "raw_prob": 71.9,
+            "deflated_prob": 58.6,
+            "ev": -22,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE"
+            ]
+          },
+          {
+            "market": "Escanteios Over 4.5",
+            "raw_prob": 88.7,
+            "deflated_prob": 66.5,
+            "ev": null,
+            "reason": "sem odds disponíveis",
+            "reason_codes": [
+              "NO_ODDS_AVAILABLE",
+              "HIGH_CALIBRATED_PROB",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Over 5.5",
+            "raw_prob": 82.3,
+            "deflated_prob": 62.9,
+            "ev": null,
+            "reason": "sem odds disponíveis",
+            "reason_codes": [
+              "NO_ODDS_AVAILABLE",
+              "HIGH_CALIBRATED_PROB",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Over 6.5",
+            "raw_prob": 74.9,
+            "deflated_prob": 59.9,
+            "ev": null,
+            "reason": "sem odds disponíveis",
+            "reason_codes": [
+              "NO_ODDS_AVAILABLE",
+              "HIGH_CALIBRATED_PROB",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Over 7.5",
+            "raw_prob": 66.7,
+            "deflated_prob": 56.1,
+            "ev": -29.3,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Over 8.5",
+            "raw_prob": 58.3,
+            "deflated_prob": 53.5,
+            "ev": -22,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Under 10.5",
+            "raw_prob": 57.9,
+            "deflated_prob": 53.3,
+            "ev": -14.7,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          },
+          {
+            "market": "Escanteios Under 11.5",
+            "raw_prob": 65,
+            "deflated_prob": 55.3,
+            "ev": -24.3,
+            "reason": "EV negativo após deflação",
+            "reason_codes": [
+              "NEGATIVE_EV",
+              "INSUFFICIENT_EDGE",
+              "CORNER_ENGINE_NO_BET"
+            ]
+          }
+        ]
+      },
+      "h2h": {
+        "totalMatches": 2,
+        "homeWins": 0,
+        "draws": 2,
+        "awayWins": 0,
+        "avgGoals": 0
+      },
+      "homeForm": [
+        "L",
+        "D",
+        "W",
+        "D",
+        "L"
+      ],
+      "awayForm": [
+        "D",
+        "W",
+        "W",
+        "L",
+        "L"
+      ],
+      "ratings": {
+        "home": 6,
+        "away": 6
+      },
+      "xg": {
+        "home": null,
+        "away": null
+      },
+      "source": "footystats",
+      "dataSource": "FootyStats API (Tempo Real)",
+      "lastUpdated": "2026-09-16T01:35:51.040514",
+      "mercados": [
+        {
+          "mercado": "Cartoes Under 4.5",
+          "status": "NEUTRO",
+          "prob_min": 61,
+          "prob_max": 63,
+          "odd_minima": 1.91,
+          "classification": "SAFE",
+          "reason_codes": [
+            "POSITIVE_EV",
+            "STRONG_EDGE",
+            "HIGH_CALIBRATED_PROB"
+          ],
+          "data_quality_score": 0.65,
+          "odds_available": true,
+          "ev": 0.2093,
+          "edge": 0.1096,
+          "fair_odd": 1.58,
+          "book_odd": 1.91,
+          "calibrated_probability": 0.6331,
+          "raw_probability": 0.8368,
+          "iso_probability": 0.8368,
+          "banda": "curva-v2",
+          "rawClassification": "SAFE",
+          "marketReferenceSignal": "NEUTRO",
+          "marketReferenceReason": "Cards via engine NB2/Poisson — sem modelo ML dedicado (cards)",
+          "marketReferenceSource": "cards_engine_default",
+          "finalClassification": "NEUTRO",
+          "wasCappedByMarketSignal": true,
+          "family": "cards",
+          "family_winner": true
+        },
+        {
+          "mercado": "BTTS — SIM",
+          "status": "NEUTRO",
+          "prob_min": 60,
+          "prob_max": 62,
+          "odd_minima": 1.73,
+          "classification": "NEUTRO_QUALIFICADO",
+          "reason_codes": [],
+          "data_quality_score": 1,
+          "odds_available": true,
+          "ev": 0.0729,
+          "edge": 0.0422,
+          "fair_odd": 1.61,
+          "book_odd": 1.73,
+          "calibrated_probability": 0.6202,
+          "raw_probability": 0.6751,
+          "iso_probability": 0.6751,
+          "banda": "curva-v2",
+          "rawClassification": "NEUTRO",
+          "marketReferenceSignal": "NEUTRO",
+          "marketReferenceReason": "Pipeline Poisson/Dixon-Coles (#028) — sem modelo ML dedicado (btts)",
+          "marketReferenceSource": "poisson_pipeline",
+          "finalClassification": "NEUTRO",
+          "wasCappedByMarketSignal": false,
+          "family": "goals",
+          "family_winner": true
+        },
+        {
+          "mercado": "Over 2.5 gols",
+          "status": "NEUTRO",
+          "prob_min": 60,
+          "prob_max": 62,
+          "odd_minima": 1.85,
+          "classification": "NEUTRO",
+          "reason_codes": [
+            "STRONG_EDGE",
+            "HIGH_CALIBRATED_PROB",
+            "BORDERLINE_LINE_MARGIN"
+          ],
+          "data_quality_score": 1,
+          "odds_available": true,
+          "ev": 0.1473,
+          "edge": 0.0796,
+          "fair_odd": 1.61,
+          "book_odd": 1.85,
+          "calibrated_probability": 0.6202,
+          "raw_probability": 0.675,
+          "iso_probability": 0.675,
+          "banda": "curva-v2",
+          "rawClassification": "NEUTRO",
+          "marketReferenceSignal": "NEUTRO",
+          "marketReferenceReason": "Pipeline Poisson/Dixon-Coles (#028) — sem modelo ML dedicado (over25)",
+          "marketReferenceSource": "poisson_pipeline",
+          "finalClassification": "NEUTRO",
+          "wasCappedByMarketSignal": false,
+          "family": "goals",
+          "family_winner": false
+        }
+      ],
+      "cornerPredictions": {
+        "projectedTotalFT": 10.17,
+        "projectedTotal1H": 4.58,
+        "projectedTotal2H": 5.6,
+        "modelSource": "unknown",
+        "dataQualityTier": "LOW",
+        "governanceState": "RESTRICTED",
+        "recommendedLine": null,
+        "recommendedSide": null,
+        "recommendedEdge": null,
+        "noBet": true,
+        "engineVersion": "2.0.0"
+      },
+      "cardsPredictions": {
+        "projectedTotalCards": 2.9,
+        "cardsLambda": 2.869,
+        "cardsLambdaHome": 0.95,
+        "cardsLambdaAway": 2.28,
+        "cardsMultiplier": 0.95,
+        "overdispersion": 1.3,
+        "modelSource": "poisson_fallback",
+        "adjustments": {
+          "referee_factor": 1
+        },
+        "lines": {
+          "over_1.5": {
+            "prob": 78
+          },
+          "under_1.5": {
+            "prob": 22
+          },
+          "over_2.5": {
+            "prob": 54.7
+          },
+          "under_2.5": {
+            "prob": 45.3
+          },
+          "over_3.5": {
+            "prob": 32.3
+          },
+          "under_3.5": {
+            "prob": 67.7
+          },
+          "over_4.5": {
+            "prob": 16.3
+          },
+          "under_4.5": {
+            "prob": 83.7
+          },
+          "over_5.5": {
+            "prob": 7.1
+          },
+          "under_5.5": {
+            "prob": 92.9
+          },
+          "over_6.5": {
+            "prob": 2.7
+          },
+          "under_6.5": {
+            "prob": 97.3
+          }
+        }
+      },
+      "_mistral_context": {
+        "home_form": [
+          "L",
+          "D",
+          "W",
+          "D",
+          "L"
+        ],
+        "away_form": [
+          "D",
+          "W",
+          "W",
+          "L",
+          "L"
+        ],
+        "h2h": {
+          "totalMatches": 2,
+          "homeWins": 0,
+          "draws": 2,
+          "awayWins": 0,
+          "avgGoals": 0
+        },
+        "injuries": null,
+        "lineups": null,
+        "predictions": [
+          {
+            "mercado": "BTTS — SIM",
+            "status": "NEUTRO",
+            "prob_min": 60,
+            "prob_max": 62,
+            "odd_minima": 1.73,
+            "classification": "NEUTRO_QUALIFICADO",
+            "reason_codes": [],
+            "data_quality_score": 1,
+            "odds_available": true,
+            "ev": 0.0729,
+            "edge": 0.0422,
+            "fair_odd": 1.61,
+            "book_odd": 1.73,
+            "calibrated_probability": 0.6202,
+            "raw_probability": 0.6751,
+            "iso_probability": 0.6751,
+            "banda": "curva-v2",
+            "rawClassification": "NEUTRO",
+            "marketReferenceSignal": "NEUTRO",
+            "marketReferenceReason": "Pipeline Poisson/Dixon-Coles (#028) — sem modelo ML dedicado (btts)",
+            "marketReferenceSource": "poisson_pipeline",
+            "finalClassification": "NEUTRO",
+            "wasCappedByMarketSignal": false,
+            "family": "goals",
+            "family_winner": true
+          },
+          {
+            "mercado": "Over 2.5 gols",
+            "status": "NEUTRO",
+            "prob_min": 60,
+            "prob_max": 62,
+            "odd_minima": 1.85,
+            "classification": "NEUTRO",
+            "reason_codes": [
+              "STRONG_EDGE",
+              "HIGH_CALIBRATED_PROB",
+              "BORDERLINE_LINE_MARGIN"
+            ],
+            "data_quality_score": 1,
+            "odds_available": true,
+            "ev": 0.1473,
+            "edge": 0.0796,
+            "fair_odd": 1.61,
+            "book_odd": 1.85,
+            "calibrated_probability": 0.6202,
+            "raw_probability": 0.675,
+            "iso_probability": 0.675,
+            "banda": "curva-v2",
+            "rawClassification": "NEUTRO",
+            "marketReferenceSignal": "NEUTRO",
+            "marketReferenceReason": "Pipeline Poisson/Dixon-Coles (#028) — sem modelo ML dedicado (over25)",
+            "marketReferenceSource": "poisson_pipeline",
+            "finalClassification": "NEUTRO",
+            "wasCappedByMarketSignal": false,
+            "family": "goals",
+            "family_winner": false
+          },
+          {
+            "mercado": "Cartoes Over 1.5",
+            "status": "NEUTRO",
+            "prob_min": 59,
+            "prob_max": 61,
+            "odd_minima": 1.63,
+            "classification": "NEUTRO",
+            "reason_codes": [
+              "NO_ODDS_AVAILABLE",
+              "HIGH_CALIBRATED_PROB"
+            ],
+            "data_quality_score": 0.65,
+            "odds_available": false,
+            "ev": null,
+            "edge": null,
+            "fair_odd": 1.63,
+            "book_odd": null,
+            "calibrated_probability": 0.6125,
+            "raw_probability": 0.7804,
+            "iso_probability": 0.7804,
+            "banda": "curva-v2",
+            "rawClassification": "NEUTRO",
+            "marketReferenceSignal": "NEUTRO",
+            "marketReferenceReason": "Cards via engine NB2/Poisson — sem modelo ML dedicado (cards)",
+            "marketReferenceSource": "cards_engine_default",
+            "finalClassification": "NEUTRO",
+            "wasCappedByMarketSignal": false,
+            "family": "cards",
+            "family_winner": true
+          }
+        ]
+      },
+      "apiFootballFixtureId": 1570389,
+      "apiFootballStatus": "NS",
+      "source_flags": [
+        "api_football_odds",
+        "mercados_reclassified_after_odds",
+        "api_football_injuries"
+      ],
+      "injuries": {
+        "home": [
+          {
+            "player": "K. Etta Eyong",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "A. Primo",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Shoulder Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "H. Sotelo",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Knee Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "K. Etta Eyong",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "A. Primo",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Shoulder Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "H. Sotelo",
+            "team": "Levante",
+            "type": "Missing Fixture",
+            "reason": "Knee Injury",
+            "availability": "FORA"
+          }
+        ],
+        "away": [
+          {
+            "player": "U. Egiluz",
+            "team": "Athletic Club",
+            "type": "Missing Fixture",
+            "reason": "Knee Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "D. Vivian",
+            "team": "Athletic Club",
+            "type": "Missing Fixture",
+            "reason": "Hamstring Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "P. Canales",
+            "team": "Athletic Club",
+            "type": "Questionable",
+            "reason": "Muscle Injury",
+            "availability": "DUVIDA"
+          },
+          {
+            "player": "G. Guruzeta",
+            "team": "Athletic Club",
+            "type": "Questionable",
+            "reason": "Hamstring Injury",
+            "availability": "DUVIDA"
+          },
+          {
+            "player": "U. Egiluz",
+            "team": "Athletic Club",
+            "type": "Missing Fixture",
+            "reason": "Knee Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "D. Vivian",
+            "team": "Athletic Club",
+            "type": "Missing Fixture",
+            "reason": "Hamstring Injury",
+            "availability": "FORA"
+          },
+          {
+            "player": "P. Canales",
+            "team": "Athletic Club",
+            "type": "Questionable",
+            "reason": "Muscle Injury",
+            "availability": "DUVIDA"
+          },
+          {
+            "player": "G. Guruzeta",
+            "team": "Athletic Club",
+            "type": "Questionable",
+            "reason": "Hamstring Injury",
+            "availability": "DUVIDA"
+          }
+        ]
+      }
+    }
+  ]
+}

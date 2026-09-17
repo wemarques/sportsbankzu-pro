@@ -1,12 +1,14 @@
 import { type Page } from "@playwright/test";
 import feed from "../fixtures/feed.json";
+import feedMulti from "../fixtures/feed-multi.json";
 import ledgerAgregado from "../fixtures/ledger-agregado.json";
 import ledgerPicks from "../fixtures/ledger-picks.json";
 
-export async function stub(page: Page, opts: { vazio?: boolean; erro?: boolean } = {}) {
+export async function stub(page: Page, opts: { vazio?: boolean; erro?: boolean; feed?: "padrao" | "multi" } = {}) {
+  const dados = opts.feed === "multi" ? feedMulti : feed;
   await page.route("**/api/matches/fetch**", (route) => {
     if (opts.erro) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ matches: [], _error: { kind: "TIMEOUT", message: "x" } }) });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opts.vazio ? { matches: [] } : feed) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opts.vazio ? { matches: [] } : dados) });
   });
   await page.route("**/api/matches/live**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matches: [] }) }));
   await page.route("**/api/ml/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, leagues: {} }) }));
