@@ -26,6 +26,31 @@ const FEED_COM_VALE = {
     source: "footystats", lastUpdated: "2026-09-17T09:00:00Z",
   }],
 };
+const FEED_DOIS_VALEM = {
+  matches: [{
+    id: "championship-Middlesbrough-Millwall-1798920000",
+    leagueId: "championship", leagueName: "Championship",
+    homeTeam: { name: "Middlesbrough", logo: "", form: [], rating: 0 },
+    awayTeam: { name: "Millwall", logo: "", form: [], rating: 0 },
+    datetime: "2026-09-17T20:00:00Z", status: "scheduled",
+    mercados: [{
+      mercado: "Over 2.5 Gols", classification: "SAFE", reason_codes: [],
+      ev: 0.10, edge: 0.05, fair_odd: 1.67, book_odd: 1.9, calibrated_probability: 0.6,
+    }],
+    source: "footystats", lastUpdated: "2026-09-17T09:00:00Z",
+  }, {
+    id: "premier-league-Fulham-Brentford-1798930000",
+    leagueId: "premier-league", leagueName: "Premier League",
+    homeTeam: { name: "Fulham", logo: "", form: [], rating: 0 },
+    awayTeam: { name: "Brentford", logo: "", form: [], rating: 0 },
+    datetime: "2026-09-17T19:00:00Z", status: "scheduled",
+    mercados: [{
+      mercado: "BTTS - Sim", classification: "SAFE", reason_codes: [],
+      ev: 0.15, edge: 0.12, fair_odd: 1.72, book_odd: 1.8, calibrated_probability: 0.58,
+    }],
+    source: "footystats", lastUpdated: "2026-09-17T09:00:00Z",
+  }],
+};
 const LEDGER_DIA_VAZIO = { ok: true, data: "2026-09-16", picks: [], resumo: { picks: 0, acertos: 0, jogos: 0, resolvidos: 0 }, semana: {}, mes: {} };
 const LEDGER_DIA_COM_PICK = {
   ok: true, data: "2026-09-16",
@@ -68,6 +93,17 @@ describe("Hero (#257, spec §5)", () => {
     render(<Hero />);
     await waitFor(() => expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument());
     expect(screen.queryByText(/✓ fechou com/)).toBeNull();
+    expect(chamadas.some((u) => /ledger\/dia/.test(u))).toBe(false);
+  });
+
+  it("dois jogos valem hoje: usa o de MAIOR edge, NAO chama /ledger/dia (spec §5)", async () => {
+    const chamadas = stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_DOIS_VALEM },
+    ]);
+    render(<Hero />);
+    await waitFor(() => expect(screen.getByRole("link", { name: "Fulham × Brentford" })).toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: "Middlesbrough × Millwall" })).toBeNull();
     expect(chamadas.some((u) => /ledger\/dia/.test(u))).toBe(false);
   });
 

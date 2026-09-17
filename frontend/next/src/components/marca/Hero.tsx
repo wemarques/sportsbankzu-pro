@@ -35,7 +35,9 @@ export function Hero() {
       const views = deduplicateMatches(
         (res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)),
       ).map((m: Match) => toJogoView(m, agora));
-      const doHoje = views.find((v) => v.talao);
+      // spec §5: o talão-prova é o de MAIOR edge de hoje; empate, maior chance
+      const doHoje = views.filter((v) => v.talao)
+        .sort((a, b) => (b.talao!.edge ?? -Infinity) - (a.talao!.edge ?? -Infinity) || b.talao!.prob01 - a.talao!.prob01)[0];
       if (doHoje) { setJogoProva(doHoje); return; }
 
       // #257: sem talao hoje — cai para o de ONTEM, so o que foi publicado no
