@@ -95,16 +95,62 @@ if (!achado) {
   );
 }
 
-/** Tela 3 (hero, "/"): sempre em contexto novo/sem cookies — primeira visita real. */
+// #258 diagnostico-B-C: o texto exato de HERO.semTalao (frontend/next/src/lib/copy.ts)
+// — hardcoded aqui porque este script roda com node puro (.mjs), sem loader
+// de TypeScript, e nao pode importar copy.ts diretamente. Se o texto mudar
+// em copy.ts, atualizar esta constante junto.
+const HERO_SEM_TALAO = "Sem talão publicado hoje ou ontem.";
+
+/**
+ * Tela 3 (hero, "/"): sempre em contexto novo/sem cookies — primeira visita
+ * real. diagnostico-B-C mediu o card-prova levando ate ~7.3s (fan-out de 13
+ * ligas) para resolver — bem acima do waitForTimeout(1500) fixo que a rodada
+ * 1 usava. Aqui a espera e uma corrida (Promise.race) entre os dois
+ * desfechos possiveis do Hero.tsx: o <article> do card-prova OU a frase
+ * HERO.semTalao (fallback quando nao ha talao nem hoje nem ontem) — o que
+ * vier primeiro, ate 30s.
+ */
 async function capturarHero(viewport) {
   const ctx = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   await ctx.clearCookies();
   const page = await ctx.newPage();
+  const inicio = Date.now();
   await page.goto(`${BASE}/`, { waitUntil: "load" });
   await page.waitForSelector("main");
-  await page.waitForTimeout(1500); // fetches assincronos do Hero (ledger + jogo-prova) assentarem
+
+  const esperaCard = page.waitForSelector("article", { timeout: 30_000 }).then(() => "card");
+  const esperaFrase = page
+    .waitForFunction(
+      (texto) => document.body.textContent?.includes(texto) ?? false,
+      HERO_SEM_TALAO,
+      { timeout: 30_000 },
+    )
+    .then(() => "frase");
+
+  let ramo;
+  try {
+    ramo = await Promise.race([esperaCard, esperaFrase]);
+  } catch {
+    ramo = "timeout";
+  }
+  const segundos = Number(((Date.now() - inicio) / 1000).toFixed(2));
+
+  let detalhe;
+  if (ramo === "card") {
+    const cartao = page.locator("article").first();
+    const estado = await cartao.getAttribute("data-estado").catch(() => null);
+    const titulo = (await cartao.locator("h2 a").first().textContent().catch(() => null))?.trim();
+    detalhe = `card (${titulo ?? "titulo desconhecido"}, estado=${estado ?? "desconhecido"})`;
+  } else if (ramo === "frase") {
+    detalhe = "frase HERO.semTalao";
+  } else {
+    detalhe = "timeout — nem card nem frase renderizaram em 30s";
+  }
+  console.log(`[capturar-telas] hero ${viewport.label}: ${detalhe}, ${segundos}s desde o goto.`);
+
   await page.screenshot({ path: `${OUT}/tela-3-hero-${viewport.label}.png` });
   await ctx.close();
+  return { viewport: viewport.label, ramo: detalhe, segundos };
 }
 
 /** Telas 1 e 2 (talao + tabela), so se um jogo "vale" foi encontrado. */
@@ -127,13 +173,32 @@ async function capturarTalaoETabela(viewport, jogo) {
     await link.click();
   }
   await page.waitForSelector("table#mercados", { timeout: 15_000 });
+
+  // #258 diagnostico-B-C: o painel de detalhe e um <aside sticky> cuja altura
+  // de container e a propria altura do aside — ele "gruda" no topo e nunca
+  // desgruda por scroll. `locator.screenshot()` usa um clip do CDP limitado a
+  // viewport renderizada; se o rodape da tabela (rect.bottom) cai fora dela,
+  // essa regiao nunca foi pintada nesse frame e o buffer devolve a cor de
+  // fundo do body (o bloco navy solido do print). Fix: redimensionar a
+  // viewport para caber rect.bottom antes de tirar o print. Loop curto porque
+  // o reflow do redimensionamento pode mudar rect.bottom de novo.
+  let alturaViewport = viewport.height;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    const bottom = await page.locator("table#mercados").evaluate((el) => el.getBoundingClientRect().bottom);
+    const necessaria = Math.ceil(bottom + 16);
+    if (necessaria <= alturaViewport) break;
+    alturaViewport = necessaria;
+    await page.setViewportSize({ width: viewport.width, height: alturaViewport });
+  }
+
   await page.locator("table#mercados").screenshot({ path: `${OUT}/tela-2-tabela-${viewport.label}.png` });
 
   await ctx.close();
 }
 
+const resultadosHero = [];
 for (const vp of VIEWPORTS) {
-  await capturarHero(vp);
+  resultadosHero.push(await capturarHero(vp));
   if (achado) await capturarTalaoETabela(vp, achado);
 }
 
