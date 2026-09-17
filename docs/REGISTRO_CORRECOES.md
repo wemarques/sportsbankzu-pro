@@ -14306,5 +14306,8 @@ Nenhum campo de backend escrito; nenhuma rota removida ainda.
 ### Prova empírica
 Micro: Vitest 146/146, `tsc` limpo sem cache, lints ✓, `e2e/jogos.spec.ts` mobile 9 passed / 1 skipped. Material: `node --check` ✓; seis PNGs legíveis em `docs/superpowers/testes/rodada-2-telas/` com `LEIA-ME.md`; servidor de captura encerrado (porta 3001 livre).
 
+### Regra de apuração da rodada 2 (pré-registrada pelo dono em 2026-09-17, antes das sessões)
+Acerto do item 1 = mercado E mínimo corretos (meio acerto não conta). Passa por perfil: acertos ≥ ceil(0,8·n) — n=4 exige 4/4, n=5 exige 4, n=6 exige 5 — e mediana dos tempos do item 1 ≤ 5 s. Os dois perfis precisam passar para o corte. Item 3 relatado por pessoa (entendeu/não entendeu), sem número de corte. Item 2: síntese qualitativa por perfil, uma linha cada, no #257-a.
+
 ### Pendências (portão interno da fase 6)
 Rodada 2 conduzida pelo dono → resultado no placeholder do #257-a → só então Tasks 35 (`/jogos` padrão), 37 (remoção do legado, com nota de corte incluindo "Rodada" e o dashboard), 38 (prova de 404/redirect) e 39 (fechamento, #258-a).

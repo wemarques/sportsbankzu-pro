@@ -10,6 +10,14 @@ não acontece.
 **Critério pré-registrado (spec §7, mesmo da rodada 1):** acerto >= 80% por
 perfil e tempo mediano <= 5 s no objeto de decisão (tela 1, o talão).
 
+**Regra de apuração pré-registrada pelo dono (2026-09-17, antes das sessões):**
+- Acerto do item 1 = mercado E mínimo corretos (pergunta composta; meio acerto não conta).
+- Passa por perfil: acertos ≥ ceil(0,8 · n) — n=4 exige 4/4; n=5, 4; n=6, 5 — E mediana dos tempos do item 1 ≤ 5 s.
+- Os dois perfis precisam passar para o corte.
+- Item 3 entra relatado (entendeu / não entendeu por pessoa), sem número de corte.
+- Item 2: síntese qualitativa por perfil, uma linha cada, no #257-a.
+
+
 **Telas usadas** (`rodada-2-telas/`, capturadas do produto construído, não
 mockup):
 - `tela-1-talao-{mobile,desktop}.png` — objeto de decisão (card "vale" em `/jogos`)
