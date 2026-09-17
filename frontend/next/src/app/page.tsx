@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
-
+import { Hero } from "@/components/marca/Hero";
+export const metadata = { title: "SportsBankZU Pro" };
 export default function Page() {
-  redirect("/dashboard");
+  return <main className="min-h-screen bg-[var(--sb-tinta)]"><Hero /></main>;
 }

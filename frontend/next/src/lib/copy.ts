@@ -105,6 +105,28 @@ export function fraseAcerto(acertos: number, resolvidos: number, jogos: number):
   return `${pct} de cada 100 picks fechados · ${jogos} jogos`;
 }
 
+/** #257 — frase de prova do hero (spec §5). Mesmo denominador de `fraseAcerto`
+ * (acima): `resolvidos`, nunca `jogos`/`picks` — `resolvidos` >= `acertos` por
+ * construção, nunca passa de 100%. Mesmo piso do backend (MIN_N_BRIER=20,
+ * proibição 8) — abaixo dele a frase some em vez de afirmar sobre amostra curta. */
+export function fraseAcertoHero(acertos: number, resolvidos: number, jogos: number, minimoJogos = 20): string | null {
+  if (jogos < minimoJogos) return null;
+  const pct = resolvidos > 0 ? fmtPct(acertos / resolvidos) : 0;
+  return `${pct} de cada 100 picks fechados nos últimos 30 dias, em ${jogos} jogos`;
+}
+
+/** #257 — headline (linguagem A, spec §5), os CTAs do hero (entrar/criar conta
+ * SEM checagem de sessão — auth desligada, #136) e a frase honesta para quando
+ * não há talão nem de hoje nem de ontem (nunca um card inventado). */
+export const HERO = {
+  headlineLinha1: "O veredito em primeiro plano.",
+  headlineLinha2: "O rigor um nível abaixo.",
+  ctaJogos: "Ver os jogos de hoje",
+  ctaEntrar: "Entrar",
+  ctaCriarConta: "Criar conta",
+  semTalao: "Sem talão publicado hoje ou ontem.",
+};
+
 export const DESEMPENHO = {
   tituloAcerto: "Acerto",
   tituloRetorno: "Na sua banca atual",

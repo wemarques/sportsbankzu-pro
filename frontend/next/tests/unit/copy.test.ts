@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as C from "@/lib/copy";
 import { motivoRecusa } from "@/lib/reasonCodes";
+import { fraseAcertoHero, HERO } from "@/lib/copy";
 
 describe("copy (#254, spec §4.4)", () => {
   it("frequencia", () => {
@@ -80,5 +81,28 @@ describe("DESEMPENHO (#257) — retorno retroativo", () => {
     expect(C.DESEMPENHO.definaBanca).toBe("defina sua banca para ver o retorno em dinheiro");
     expect(C.DESEMPENHO.retornoNaBancaAtual).toBe("seguindo o stake sugerido, na sua banca atual");
     expect(C.DESEMPENHO.retornoSemPicks).toBe("sem picks fechados com preço neste período");
+  });
+});
+
+describe("fraseAcertoHero (#257, spec §5) — mesmo denominador de fraseAcerto: resolvidos, nunca jogos", () => {
+  it("amostra suficiente (jogos=22 >= piso): acertos 26 / resolvidos 40 -> 65", () => {
+    expect(fraseAcertoHero(26, 40, 22)).toBe("65 de cada 100 picks fechados nos últimos 30 dias, em 22 jogos");
+  });
+  it("abaixo do piso MIN_N_BRIER=20 (jogos=19), nulo", () => {
+    expect(fraseAcertoHero(10, 15, 19)).toBeNull();
+  });
+  it("jogos=20, piso inclusive: mostra a frase (12/20 -> 60)", () => {
+    expect(fraseAcertoHero(12, 20, 20)).toBe("60 de cada 100 picks fechados nos últimos 30 dias, em 20 jogos");
+  });
+});
+
+describe("HERO (#257) — headline, CTAs e frase de vazio", () => {
+  it("tem as duas linhas do headline, os tres CTAs e a frase de sem-talao", () => {
+    expect(HERO.headlineLinha1).toBe("O veredito em primeiro plano.");
+    expect(HERO.headlineLinha2).toBe("O rigor um nível abaixo.");
+    expect(HERO.ctaJogos).toBe("Ver os jogos de hoje");
+    expect(HERO.ctaEntrar).toBe("Entrar");
+    expect(HERO.ctaCriarConta).toBe("Criar conta");
+    expect(HERO.semTalao).toBe("Sem talão publicado hoje ou ontem.");
   });
 });
