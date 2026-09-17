@@ -10,10 +10,10 @@ import { LinhaAvaliados } from "@/components/feed/LinhaAvaliados";
 import { avaliados, direcao, resultadoOntem, VAZIOS } from "@/lib/copy";
 import { fmtLigaHora } from "@/lib/formato";
 
-interface Props { jogo: JogoView; confianca: LeagueConfidence | null; selecionado: boolean; onAbrir?: (id: string) => void; hrefDetalhe: string; media?: number | null; }
+interface Props { jogo: JogoView; confianca: LeagueConfidence | null; selecionado: boolean; onAbrir?: (id: string) => void; hrefDetalhe: string; media?: number | null; semConfianca?: boolean; }
 
 /** Nao calcula nada: le `jogo.estado` e escolhe o que mostrar (spec §4.2). */
-export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe, media = null }: Props) {
+export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe, media = null, semConfianca = false }: Props) {
   const topo = jogo.aoVivo
     ? `${jogo.aoVivo.periodo ?? ""}${jogo.aoVivo.minuto != null ? `, ${jogo.aoVivo.minuto}'` : ""}${jogo.aoVivo.placar ? ` ${jogo.aoVivo.placar}` : ""}`.trim()
     : fmtLigaHora(jogo.ligaNome, jogo.kickoffIso);
@@ -25,7 +25,7 @@ export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe, m
         return (
           <>
             <p className="text-[16px]">{direcao(jogo.direcao!.mercado, jogo.direcao!.prob01)}</p>
-            <LinhaConfianca confianca={confianca} ligaNome={jogo.ligaNome} media={media} />
+            {!semConfianca && <LinhaConfianca confianca={confianca} ligaNome={jogo.ligaNome} media={media} />}
             <LinhaAvaliados total={jogo.totalAvaliados} valem={0} href={`${hrefDetalhe}#mercados`} />
           </>
         );
@@ -42,7 +42,7 @@ export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe, m
             )}
             {jogo.estado === "ontem_sem_desfecho" && <p className="text-[13px] text-[var(--sb-texto-apagado)]">{VAZIOS.resultadoPendente}</p>}
             {(jogo.estado === "vale" || jogo.estado === "em_jogo") && <LinhaStake pick={t} />}
-            <LinhaConfianca confianca={confianca} ligaNome={jogo.ligaNome} media={media} />
+            {!semConfianca && <LinhaConfianca confianca={confianca} ligaNome={jogo.ligaNome} media={media} />}
             {jogo.segundo && <LinhaSegundoPick pick={jogo.segundo} />}
             <LinhaAvaliados total={jogo.totalAvaliados} valem={jogo.totalValem} href={`${hrefDetalhe}#mercados`} />
           </>

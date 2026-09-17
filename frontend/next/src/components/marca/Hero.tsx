@@ -103,7 +103,7 @@ export function Hero() {
       {jogoProva && (
         <div className="w-full max-w-[420px] text-left">
           <CardJogo jogo={jogoProva} confianca={null} selecionado={false}
-            hrefDetalhe={`/jogos/${encodeURIComponent(jogoProva.id)}`} media={null} />
+            hrefDetalhe={`/jogos/${encodeURIComponent(jogoProva.id)}`} media={null} semConfianca />
         </div>
       )}
       {!jogoProva && semProva && <p className="text-[13px] text-[var(--sb-texto-apagado)]">{HERO.semTalao}</p>}

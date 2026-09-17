@@ -44,6 +44,11 @@ describe("CardJogo e um switch sobre o estado (spec §4.2)", () => {
     expect(screen.getByText("vale a partir de 1,67, mercado ainda sem preço")).toBeInTheDocument();
     expect(screen.queryByText(/na sua banca atual/)).toBeNull();
   });
+  it("semConfianca: nao renderiza a linha de confianca (#258)", () => {
+    render(<CardJogo jogo={base} confianca={null} selecionado={false} onAbrir={() => {}} hrefDetalhe="/jogos/j1" semConfianca />);
+    expect(screen.queryByText(/confiança/i)).toBeNull();
+    expect(screen.queryByText(/não verificada/i)).toBeNull();
+  });
   it("o titulo e sempre link; com onAbrir o clique e interceptado", () => {
     const abrir = vi.fn();
     render(<CardJogo jogo={base} confianca={null} selecionado={false} onAbrir={abrir} hrefDetalhe="/jogos?jogo=j1" />);

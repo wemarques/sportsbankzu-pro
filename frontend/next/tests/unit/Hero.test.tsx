@@ -106,6 +106,19 @@ describe("Hero (#257, spec §5)", () => {
     expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument();
   });
 
+  // #258 (M3): o card do hero e prova, nao decisao — nunca mostra a linha de
+  // confianca da liga, mesmo com talao presente.
+  it("card do hero nunca mostra linha de confianca", async () => {
+    stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_COM_VALE },
+    ]);
+    render(<Hero />);
+    await waitFor(() => expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument());
+    expect(screen.queryByText(/confiança/i)).toBeNull();
+    expect(screen.queryByText(/não verificada/i)).toBeNull();
+  });
+
   // #258: contrato mudou — o ledger de ontem agora dispara SEMPRE, em
   // paralelo com o feed de hoje (nao mais so quando hoje falha/esvazia).
   // Hoje ainda vence quando tem talao; o nome reflete o que o teste prova.
