@@ -43,7 +43,7 @@ describe("linhas do card", () => {
     // texto do <p> nao fica mais num unico no de texto — checa via toHaveTextContent.
     const { container } = render(<LinhaStake pick={pick} />);
     expect(container.querySelector("p.tnum")).toHaveTextContent(/Da sua banca de R\$ 1\.000,00: R\$/);
-    expect(screen.getByRole("link", { name: "R$ 0,64" })).toHaveAttribute("href", "/glossario#stake");
+    expect(screen.getByRole("link", { name: "R$ 0,64 — o que é Stake" })).toHaveAttribute("href", "/glossario#stake");
     expect(screen.getByRole("link", { name: "ajustar" })).toHaveAttribute("href", "/banca");
   });
   it("stake sem banca: chama para definir", () => {
