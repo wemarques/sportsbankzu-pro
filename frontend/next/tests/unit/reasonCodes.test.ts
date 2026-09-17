@@ -116,7 +116,7 @@ describe("reasonCodes coverage (#258)", () => {
 
     // Check coverage
     const missingCodes: string[] = [];
-    for (const code of codes) {
+    for (const code of Array.from(codes)) {
       if (!mapaSet.has(code) && !INFORMATIVOS.has(code)) {
         missingCodes.push(code);
       }

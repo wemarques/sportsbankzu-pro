@@ -218,6 +218,75 @@ describe("Hero (#257, spec §5)", () => {
     expect(screen.getByText(/✓ fechou com/)).toBeInTheDocument();
   });
 
+  // fix round 1 (#258) (e): ontem so resolve DEPOIS do marco de 1s (o timer
+  // de 1s ja passou sem achar nada); hoje nunca resolve. Ontem tem que
+  // aparecer na hora que chega, nao ficar mudo para sempre.
+  it("(e) ontem chega depois de 1s, hoje nunca resolve: ontem aparece na hora que chega", async () => {
+    vi.useFakeTimers();
+    stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_VAZIO, delayMs: 999_999 },
+      { url: /ledger\/dia/, body: LEDGER_DIA_COM_PICK, delayMs: 1500 },
+    ]);
+    render(<Hero />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(screen.queryByText(/✓ fechou com/)).toBeNull();
+    expect(screen.queryByText(HERO.semTalao)).toBeNull();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); }); // total 1500ms
+    expect(screen.getByText(/✓ fechou com/)).toBeInTheDocument();
+    expect(screen.queryByText(HERO.semTalao)).toBeNull();
+  });
+
+  // (f): a frase de ausencia ja apareceu em 2s; ontem so resolve em 2,5s —
+  // tem que substituir a frase, nao ficar convivendo com ela.
+  it("(f) frase de ausencia em 2s, ontem chega depois (2,5s): substitui a frase", async () => {
+    vi.useFakeTimers();
+    stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_VAZIO, delayMs: 500 },
+      { url: /ledger\/dia/, body: LEDGER_DIA_COM_PICK, delayMs: 2500 },
+    ]);
+    render(<Hero />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText(HERO.semTalao)).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); }); // total 2500ms
+    expect(screen.queryByText(HERO.semTalao)).toBeNull();
+    expect(screen.getByText(/✓ fechou com/)).toBeInTheDocument();
+  });
+
+  // (g): os dois falham — so resta a frase de ausencia, no marco de 2s.
+  it("(g) hoje e ontem falham: frase de ausencia em ~2s", async () => {
+    vi.useFakeTimers();
+    stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, erro: true },
+      { url: /ledger\/dia/, erro: true },
+    ]);
+    render(<Hero />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText(HERO.semTalao)).toBeInTheDocument();
+  });
+
+  // (h): a frase de ausencia ja apareceu em 2s; hoje resolve com talao em 3s
+  // — hoje sempre sobrescreve, mesmo a frase.
+  it("(h) frase de ausencia em 2s, hoje chega com talao depois (3s): substitui a frase", async () => {
+    vi.useFakeTimers();
+    stubFetchSequence([
+      { url: /ledger\/agregado/, body: AGREGADO_OK },
+      { url: /matches\/fetch/, body: FEED_COM_VALE, delayMs: 3000 },
+      { url: /ledger\/dia/, body: LEDGER_DIA_VAZIO, delayMs: 300 },
+    ]);
+    render(<Hero />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText(HERO.semTalao)).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // total 3000ms
+    expect(screen.queryByText(HERO.semTalao)).toBeNull();
+    expect(screen.getByText("Middlesbrough × Millwall")).toBeInTheDocument();
+  });
+
   it("amostra curta (jogos=5): a frase de acerto some, CTA duplo continua", async () => {
     stubFetchSequence([
       { url: /ledger\/agregado/, body: AGREGADO_CURTO },

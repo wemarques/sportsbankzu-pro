@@ -38,6 +38,7 @@ export function Hero() {
     let mostrado: "nenhum" | "ontem" | "hoje" = "nenhum";
     let ontemResolvido = false;
     let ontemAchado: JogoView | null = null;
+    const inicio = Date.now();
 
     getLedgerDia(diaISOOntem(new Date())).then((rOntem) => {
       if (!vivo) return;
@@ -49,6 +50,17 @@ export function Hero() {
         const liga = ligas.find((l) => l.id === leagueId);
         const view = toJogoViewOntem(matchId, liga?.id ?? leagueId, liga?.nome ?? leagueId, picksDoJogo);
         if (view.estado === "ontem" && view.talao) { ontemAchado = view; break; }
+      }
+      // fix round 1 (#258): se ontem resolve DEPOIS do timer de 1s (ou depois
+      // da frase de ausencia ja ter entrado em cena), o timer de 1s ja
+      // passou e nunca mais le `ontemAchado` — sem isto, um ontem tardio
+      // ficava mudo pra sempre. `mostrado === "nenhum"` cobre os dois casos
+      // (nada mostrado ainda, ou a frase de ausencia mostrada) porque a
+      // frase nunca muda `mostrado`. Hoje continua sobrescrevendo sempre.
+      if (mostrado === "nenhum" && ontemAchado && Date.now() - inicio >= 1000) {
+        mostrado = "ontem";
+        setSemProva(false);
+        setJogoProva(ontemAchado);
       }
     }).catch(() => { if (vivo) ontemResolvido = true; });
 

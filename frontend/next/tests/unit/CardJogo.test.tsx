@@ -49,6 +49,10 @@ describe("CardJogo e um switch sobre o estado (spec §4.2)", () => {
     expect(screen.queryByText(/confiança/i)).toBeNull();
     expect(screen.queryByText(/não verificada/i)).toBeNull();
   });
+  it("sem semConfianca (default): a linha de confianca aparece normalmente (#258)", () => {
+    render_(base);
+    expect(screen.getByText(/confiança/i)).toBeInTheDocument();
+  });
   it("o titulo e sempre link; com onAbrir o clique e interceptado", () => {
     const abrir = vi.fn();
     render(<CardJogo jogo={base} confianca={null} selecionado={false} onAbrir={abrir} hrefDetalhe="/jogos?jogo=j1" />);
