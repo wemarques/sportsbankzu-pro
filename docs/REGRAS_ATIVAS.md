@@ -1598,3 +1598,32 @@ por dia UTC cru; mostrar percentual de acerto por segmento com `n < 20`.
 **Estado de aplicacao:** `backend/services/ledger_leitura.py` (`resolvidos` em `_resumo`/`_segmento`/
 `agregado()`, `dia()` em BRT); `frontend/next/src/components/feed/ResumoDoDia.tsx`,
 `frontend/next/src/hooks/useMediaDasLigas.ts`, `frontend/next/src/app/desempenho/Painel.tsx`.
+
+---
+
+### #257 — Links contextuais so via tokens `{term:}`; retorno em dinheiro e retroativo, nunca realizado
+
+**Tipo:** Regra (Frontend / Glossario, Navegacao, Ledger)
+**Data:** 2026-09-16
+**Relacionado:** [[#254-b]], [[#255]], [[#256]]
+
+**Regra:**
+1. Um termo de jargao vira link para `/glossario#id` SOMENTE atraves do token `{term:id|texto}`
+   consumido por `TextoComTermos` — nunca um `<Link>` ad hoc em copy solta. Todo id referenciado
+   por um token precisa existir em `glossarioTermos.ts`; teste varre `src/` por `{term:id|` para
+   garantir isso.
+2. `/desempenho` mostra retorno em dinheiro calculado de forma RETROATIVA no cliente
+   (`retornoRetroativo`): stake de HOJE (`calcStake` atual) aplicado sobre `published_prob`/
+   `book_odd` dos picks fechados do periodo, nunca um valor gravado ou realizado. Rotulo obrigatorio:
+   "seguindo o stake sugerido, na sua banca atual". Sem banca definida ou sem picks fechados com
+   preco no periodo, a tela mostra frase honesta ("defina sua banca..." / "sem picks fechados com
+   preco neste periodo") — nunca um numero.
+3. Navegacao (sidebar/barra inferior) NAO aparece em `/`, `/login`, `/register`.
+
+**Proibido:** link de glossario fora do padrao de token; exibir "retorno" de `/desempenho` como
+resultado realizado ou historico gravado; navegacao visivel nas rotas publicas acima.
+
+**Estado de aplicacao:** `backend/routes/ledger.py` (`GET /ledger/picks`),
+`backend/services/ledger_leitura.py` (`picks()`), `frontend/next/src/components/TextoComTermos.tsx`,
+`frontend/next/src/lib/retornoRetroativo.ts`, `frontend/next/src/app/desempenho/Painel.tsx`,
+`frontend/next/src/components/nav/Navegacao.tsx`.
