@@ -296,31 +296,6 @@ export interface AuditResult {
   match?: string;
 }
 
-export async function applyAuditCorrection(
-  matchId: string,
-  correction: {
-    correction_type: string;
-    parameter_name: string;
-    old_value: number;
-    new_value: number;
-    reason: string;
-    audit_confidence: number;
-  },
-): Promise<{ status: string; message: string } | null> {
-  try {
-    const res = await fetch(`/api/ai/match/${encodeURIComponent(matchId)}/audit/apply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(correction),
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 // ===== BATCH AUDIT API =====
 
 export interface BatchAuditPickEval {

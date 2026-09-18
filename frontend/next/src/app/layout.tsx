@@ -1,5 +1,4 @@
 import "./globals.css";
-import "@/styles/scoretabs-dashboard.css";
 import { Zilla_Slab, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "../components/theme-provider";
 import { SessionProvider } from "../components/SessionProvider";
