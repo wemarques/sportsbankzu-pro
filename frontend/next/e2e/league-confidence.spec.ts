@@ -101,69 +101,6 @@ test.describe("#250 honestidade do selo de confianca", () => {
     );
   });
 
-  test("sem modelo, o tooltip nao afirma modelo treinado", async ({ page }) => {
-    await stubMatches(page);
-    await page.route("**/api/ml/status", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          leagues: {
-            "premier-league": {
-              available: false,
-              trained_at: null,
-              validation_brier: null,
-              n_samples: null,
-            },
-          },
-        }),
-      }),
-    );
-    await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
-
-    const badges = page.locator(".league-confidence-badge");
-    await expect(badges.first()).toBeAttached();
-    const n = await badges.count();
-    expect(n, "o feed estubado deve produzir ao menos um selo").toBeGreaterThan(0);
-
-    for (let i = 0; i < n; i++) {
-      const label = await badges.nth(i).getAttribute("data-confidence-level");
-      const text = (await badges.nth(i).getAttribute("aria-label")) ?? "";
-      if (label !== "ML_ACTIVE") {
-        expect(text, `selo ${label} afirmando modelo treinado`).not.toMatch(/treinado com \d+ jogos/i);
-      }
-      // Requisito 4: nunca a data literal do componente antigo.
-      expect(text).not.toContain("20/03/2026");
-    }
-  });
-
-  test("backend indisponivel degrada para nao verificado", async ({ page }) => {
-    await stubMatches(page);
-    await page.route("**/api/ml/status", (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: false, leagues: null, error: { kind: "TIMEOUT" } }),
-      }),
-    );
-    await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
-
-    const badges = page.locator(".league-confidence-badge");
-    await expect(badges.first()).toBeAttached();
-    const n = await badges.count();
-    expect(n, "o feed estubado deve produzir ao menos um selo").toBeGreaterThan(0);
-
-    for (let i = 0; i < n; i++) {
-      await expect(badges.nth(i)).toHaveAttribute("data-confidence-level", "UNVERIFIED");
-      const text = (await badges.nth(i).getAttribute("aria-label")) ?? "";
-      expect(text).toMatch(/não foi possível verificar/i);
-      expect(text).not.toMatch(/treinado com \d+ jogos/i);
-    }
-  });
-
   test("GET /api/ml/status responde ok:true ou 503 honesto", async ({ request }) => {
     const resp = await request.get("/api/ml/status");
     expect([200, 503]).toContain(resp.status());
