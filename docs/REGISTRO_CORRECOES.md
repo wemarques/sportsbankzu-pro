@@ -14288,9 +14288,9 @@ Fase 6: rodada 2 do teste de 5 s (portão, agora com item de compreensão do her
 
 Dispensa da rodada 1: o dono dispensou a rodada 1 do teste de 5 s como portão pré-hero por indisponibilidade de participantes humanos — nada foi simulado. A validação humana integral fica inteira para a rodada 2 (portão da fase 6), agora com item de compreensão do hero; o corte de `/jogos` como rota padrão continua bloqueado pela rodada 2 (a rodada 1 prevalece se rodar antes dela). Texto integral da decisão do dono está registrado no #254-b.
 
-## 258 — Reformulação do frontend, fase 6 (em andamento): backup, nome acessível do link contextual e material da rodada 2
+## 258 — Reformulação do frontend, fase 6: backup, rodada 2 do teste de 5 s e corte do legado
 
-**Data:** 2026-09-17 | **Arquivos:** `frontend/next/src/components/TextoComTermos.tsx`, `frontend/next/scripts/capturar-telas-teste-5s.mjs`, `docs/superpowers/testes/` | **Severidade:** Média | **Status:** Em andamento (o corte espera a rodada 2)
+**Data:** 2026-09-17 | **Arquivos:** `frontend/next/src/components/TextoComTermos.tsx`, `frontend/next/scripts/capturar-telas-teste-5s.mjs`, `docs/superpowers/testes/` | **Severidade:** Média | **Status:** Implementado localmente (lote de corte aguarda o resultado da rodada 2 para o push único) (o corte espera a rodada 2)
 
 ### Problema identificado
 A fase 6 é o corte do legado (`dashboard`, `duplas`, `destaques`, `campeonatos`, rotas mortas, modo "Rodada") e a promoção de `/jogos` a rota padrão. Nada disso pode acontecer sem (1) um ponto de rollback marcado e (2) validação humana do objeto de decisão — a rodada 2 do teste de 5 segundos, portão do corte (ruling do dono no portão da fase 5; a rodada 1 foi dispensada, ver #254-b).
@@ -14308,14 +14308,84 @@ A fase 6 é o corte do legado (`dashboard`, `duplas`, `destaques`, `campeonatos`
 7. **Task 35 — `/jogos` como destino padrão (commit `6848627`):** prova formal, sem implementação nova. `e2e/rotas-legadas.spec.ts` (parte 1): `/` com o cookie `sbz_visitou=1` cai em `/jogos`; `/login` e `/register` seguem respondendo < 400 (rotas sem link, spec §3). 2/2 no chromium contra build de produção. A Task 38 acrescenta as rotas removidas ao mesmo arquivo depois do corte.
 8. **Inventário pré-corte da Task 37 (leitura pura, nada apagado):** `.superpowers/sdd/2026-09-16-reformulacao-frontend-fases-4-5-6/task-37-inventario.md`. Cinco desvios em relação ao plano, todos com proposta e aguardando ruling do dono: `ferramentas` importa o dashboard (sai junto); `MatchDetailCard` fornece `type MatchDetailData` a `matchDataMapper`, que fica vivo via `ComoOModeloVe` (mover tipos); três `push("/dashboard")` em `login`/`admin-activate`/`admin-deactivate` (viram `/jogos`); quatro specs e2e morrem com o legado (`dashboard`, `ai-audit`, `navigation`, dois testes de `league-confidence`); `ThemeToggle` e as rotas `api/ai/batch-audit` e `api/ai/match/[id]/audit` sem consumidor após o corte. O corte (Tasks 37–39) segue atrás da rodada 2.
 
+9. **Task 37 — corte do legado (commits locais `69847bc` A, `064b2dc` B, `83e7937` C; 6 rulings do dono em 2026-09-18 sobre o inventário do item 8):** A move os tipos `MatchDetailData`/`AIAnalysis`/`AuditResult`… de `components/MatchDetailCard.tsx` para `lib/matchDetailTypes.ts` (o consumidor vivo é `lib/matchDataMapper.ts`, via `ComoOModeloVe` do detalhe novo) e faz `login`, `admin-activate` e `admin-deactivate` apontarem para `/jogos` ("Voltar aos jogos"). B apaga as 9 pastas do plano mais `ferramentas` (wrapper do dashboard, ruling 1): `dashboard` (2.549 linhas), `duplas`, `destaques`, `campeonatos`, `ferramentas`, `bankroll`, `match/[id]`, `performance-stats`, `ai-audit`, `admin/reliability`; os componentes e libs que ficaram sem importador: `BankrollCalculator`, `MatchDetailCard`, `DestaquesDoDia`, `AuditReportCard`, `AIReviewDashboard`, `BatchAuditPanel`, `ReliabilityCard`, `LeagueConfidenceBadge`, `AuditBanner`, `EmptyState`, `matches-list`, `MatchList`, `MatchesList`, `lib/matchStats.ts`, `styles/match-detail-card.css`; `ThemeToggle` (ruling 6, conforme o approve visual da fase 4; `theme-provider` fica); as rotas de API `api/ai/batch-audit` (+`evaluate`, +`apply`) e `api/ai/match/[id]/audit` (+`apply`) — ruling 4, ramo "sem consumidor vivo": `postMatchAudit`, `postBatchAudit` e `fetchMistralEvaluation` só tinham definição, então saíram de `lib/api.ts` junto; `api/ai/match/[id]/analysis` fica (Mistral do detalhe). 34 arquivos, 14.969 linhas. C apaga os specs cujo alvo deixou de existir (ruling 5): `dashboard.spec.ts`, `ai-audit.spec.ts`, `navigation.spec.ts` inteiros e os dois testes de `league-confidence.spec.ts` que abriam `/dashboard`; cobertura substituta: `jogos.spec`, `hero-redirect.spec`, `a11y.spec`, `rotas-legadas.spec`. **Remoção consciente do modo "Rodada"** (emenda do portão da fase 3, spec §3): as visões de rodada/semana viviam só no dashboard e morrem com ele; "Rodada" no segmented control de `/jogos` fica pós-reformulação; as cinco mensagens "Use 'Auditar Rodada'" morreram com a rota `audit`. Saída literal do grep de órfãos (Task 37, Step 3 — por caminho de módulo, não por substring; cada um ANTES do `rm`):
+
+```
+=== BankrollCalculator ===
+=== MatchDetailCard ===
+src/app/api/ai/match/[id]/analysis/route.ts
+src/app/api/standings/route.ts
+src/lib/matchDetailTypes.ts
+src/lib/matchStats.ts
+=== DestaquesDoDia ===
+=== AuditReportCard ===
+src/components/BatchAuditPanel.tsx
+src/lib/api.ts
+=== AIReviewDashboard ===
+=== BatchAuditPanel ===
+=== ReliabilityCard ===
+=== LeagueConfidenceBadge ===
+=== AuditBanner ===
+=== EmptyState ===
+src/lib/mockMatches.ts
+=== MatchList ===
+=== MatchesList ===
+src/components/matches-list.tsx
+src/components/MatchList.tsx
+=== ThemeToggle ===
+src/app/layout.tsx
+=== matches-list.tsx (file, not symbol) ===
+src/components/BatchAuditPanel.tsx
+=== lib/matchStats.ts ===
+src/components/MatchDetailCard.tsx
+src/lib/matchDataMapper.ts
+src/lib/matchDetailTypes.ts
+--- module-path importers of lib/matchStats (precise) ---
+
+=== Refinamento (grep por linha de import real "from [caminho]", nao substring solta) ===
+--- MatchDetailCard: refs restantes sao comentario, nao import ---
+src/app/api/ai/match/[id]/analysis/route.ts:33:  // Use /legacy endpoint to get format expected by MatchDetailCard
+src/app/api/standings/route.ts:24:    // Normalize field names to match MatchDetailCard expectations
+--- EmptyState em mockMatches.ts: comentario, nao import ---
+8: * Em producao, o dashboard mostra um EmptyState com mensagem
+--- MatchesList: unico importador real era matches-list.tsx (barrel), que por sua vez tem zero importador real ---
+--- matches-list.tsx (barrel): zero importador real por caminho de modulo; a unica ocorrencia textual era classe CSS 'mdc-batch-audit__matches-list' em BatchAuditPanel.tsx, nao import ---
+grep: src/components/BatchAuditPanel.tsx: No such file or directory
+(BatchAuditPanel.tsx ja apagado neste ponto — resultado obtido antes da seq. de rm)
+--- AuditReportCard: unico importador real era BatchAuditPanel.tsx (from "./AuditReportCard"), apagado antes ---
+src/components/BatchAuditPanel.tsx:20:import AuditReportCard from "./AuditReportCard";
+--- BatchAuditPanel: zero importador real por caminho de modulo ---
+--- ThemeToggle: importador real era layout.tsx (removido no Commit B junto com <ThemeToggle /> e o import, ruling 6) ---
+src/app/layout.tsx:6:import { ThemeToggle } from "../components/ThemeToggle";  (import e uso removidos antes do rm do componente)
+--- lib/matchStats.ts: unico importador real por caminho de modulo era dashboard/page.tsx e match/[id]/page.tsx (ambos ja apagados) ---
+(sem resultado = zero importador — confirmado orfao)
+
+=== Evidencia precisa capturada ANTES dos rm (colada da sessao) ===
+--- MatchesList module importers (antes do corte) ---
+src/components/matches-list.tsx:1:export { default as MatchesList } from "./MatchesList";
+--- matches-list.tsx (barrel) module importers (antes do corte) ---
+(zero resultado)
+--- MatchList module importers (antes do corte) ---
+(zero resultado)
+--- AuditReportCard module importers (antes do corte) ---
+src/components/BatchAuditPanel.tsx:20:import AuditReportCard from "./AuditReportCard";
+--- BatchAuditPanel module importers (antes do corte) ---
+(zero resultado)
+```
+
+10. **Commit acessório (`8d0e18a`, ruling do dono):** `applyAuditCorrection` em `lib/api.ts` chamava `/audit/apply`, apagada em B, sem chamador em `src/`, `tests/`, `e2e/` → removida. `styles/scoretabs-dashboard.css` (1.751 linhas): grep de `st-odds-tab`, `st-nav`, `st-odds` e dos 5 prefixos mais frequentes (`st-match-row` 63×, `st-nav` 23×, `st-rec-card` 15×, `st-empty-state` 12×, `st-panel-right` 11×) em `src/` vivo = zero → arquivo e `import` no `layout.tsx` removidos, visual 9 aprovados / 0 diffs como prova. Quatro tipos de auditoria em `matchDetailTypes.ts` (`AuditPickEvaluation`, `AuditValidation`, `AuditCorrection`, `AuditResult`) ficaram sem uso e NÃO foram tocados (fora do escopo nomeado) — dívida nomeada.
+11. **Task 38 — prova de 404 (`a6c15c3`):** `rotas-legadas.spec.ts` passa a afirmar status por `request.get`/`request.post`, não `page.goto` (ruling do dono: o teste afirma status HTTP, não renderização; `goto` acoplava a asserção ao HMR do dev server e o teste da Task 35 falhava 3/3 no projeto mobile — classificado como ambiental, prod 6/6). Asserções idênticas: `/login` e `/register` `< 400`; as 10 rotas de página removidas `404`; as 5 rotas de API removidas `404` no método original (todas `POST`); `GET /api/ai/match/*/analysis` `≠ 404` (sobrevivente). O teste do cookie continua com `page` porque testa navegação. Chromium 18/18; mobile 54/54 em 3 repetições.
+
 ### Etapa 2-bis
-Nenhum campo de backend escrito; nenhuma rota removida ainda.
+Nenhum campo de backend escrito. Rotas do Next removidas: 10 de página e 5 de API; consumidores externos auditados por grep de caminho de módulo antes de cada `rm` (item 9); a única rota de API com consumidor vivo (`analysis`, via `lib/api.ts` → `ComoOModeloVe`) ficou. Contagem de `page.tsx`+`route.ts` em `src/app`: 48 → 33.
 
 ### Prova empírica
 Micro: Vitest 146/146, `tsc` limpo sem cache, lints ✓, `e2e/jogos.spec.ts` mobile 9 passed / 1 skipped. Material: `node --check` ✓; seis PNGs legíveis em `docs/superpowers/testes/rodada-2-telas/` com `LEIA-ME.md`; servidor de captura encerrado (porta 3001 livre).
+
+Lote de corte (HEAD `a6c15c3`, re-executado pelo controller sobre cada commit final): `lint:accents` ✓, `lint:fonts` ✓, `tsc` limpo sem cache, Vitest 163/163 (inalterado antes/depois), `next build` 23 rotas sem import quebrado, Playwright chromium contra build de produção 61 aprovados / 2 skipped (antes do corte: 45 + os 16 novos de `rotas-legadas`), mobile `rotas-legadas` 54/54 em 3 repetições, visual desktop+mobile 9 aprovados / 1 skipped / 0 diffs (uma execução mostrou 8/1 com a saída truncada; a repetição deu 9/1 — registrado, não escondido). Specs e2e: 25 → 22 arquivos; testes e2e listados 152 → 104 (Task 37) → 120 (Task 38). Diff total do lote sobre `c1eed11`: 45 arquivos, +293 / −17.224. Resultado da rodada 2: no #257-a, escrito pelo dono.
 
 ### Regra de apuração da rodada 2 (pré-registrada pelo dono em 2026-09-17, antes das sessões)
 Acerto do item 1 = mercado E mínimo corretos (meio acerto não conta). Passa por perfil: acertos ≥ ceil(0,8·n) — n=4 exige 4/4, n=5 exige 4, n=6 exige 5 — e mediana dos tempos do item 1 ≤ 5 s. Os dois perfis precisam passar para o corte. Item 3 relatado por pessoa (entendeu/não entendeu), sem número de corte. Item 2: síntese qualitativa por perfil, uma linha cada, no #257-a.
 
 ### Pendências (portão interno da fase 6)
-Rodada 2 conduzida pelo dono → resultado no placeholder do #257-a → só então Tasks 35 (`/jogos` padrão), 37 (remoção do legado, com nota de corte incluindo "Rodada" e o dashboard), 38 (prova de 404/redirect) e 39 (fechamento, #258-a).
+O lote A–C + acessório + Task 38 + este registro está commitado localmente e NÃO vai para `main` até o resultado da rodada 2 passar nos dois perfis (#257-a). Passando: push único, CI, validação em produção (`/`, `/jogos`, `/dashboard` → 404) e fechamento. Não passando: a §4 da spec reabre, o lote fica no branch e a tag `backup-pre-corte-legado-fase6` (`821eef0`) segue intocada.
