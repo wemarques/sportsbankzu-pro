@@ -1,9 +1,7 @@
 import "./globals.css";
 import "@/styles/scoretabs-dashboard.css";
-import "@/styles/match-detail-card.css";
 import { Zilla_Slab, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "../components/theme-provider";
-import { ThemeToggle } from "../components/ThemeToggle";
 import { SessionProvider } from "../components/SessionProvider";
 import { Navegacao } from "@/components/nav/Navegacao";
 import { AncoraDoHash } from "@/components/nav/AncoraDoHash";
@@ -22,7 +20,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <SessionProvider>
           <ThemeProvider>
-            <ThemeToggle />
             <div className="min-h-screen bg-[var(--sb-tinta)] lg:flex">
               <AncoraDoHash />
               <Navegacao />
