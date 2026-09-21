@@ -24,6 +24,8 @@ mockup):
 - `tela-2-tabela-{mobile,desktop}.png` — objeto de rigor (tabela de mercados no detalhe)
 - `tela-3-hero-{mobile,desktop}.png` — compreensão (`/`, primeira visita, hero)
 
+**Ruling do dono que define a apuração (2026-09-21, verbatim):** As oito sessões da segunda remessa foram conduzidas com pessoas reais olhando as telas aprovadas. As duas sessões analíticas da primeira remessa ficam fora da apuração por terem sido feitas sobre jogos diferentes das telas do protocolo.
+
 ## Item 1 — Objeto de decisão (tela 1, talão)
 
 Mostrar a tela por 5 s, perguntar: "qual mercado e qual odd mínima?"
@@ -32,23 +34,27 @@ Mostrar a tela por 5 s, perguntar: "qual mercado e qual odd mínima?"
 
 | # | Acertou mercado? | Acertou odd mínima? | Tempo (s) | Confiança (1-5) |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
+| 1 | sim | sim | 4,2 | 4 |
+| 2 | não (Under 2.5) | não (1,59) | 3,2 | 5 |
+| 3 | sim | sim | 3,6 | 4 |
+| 4 | sim | sim | 4,1 | 3 |
+| 5 | sim | sim | 4,4 | 4 |
+| 6 | sim | sim | 4,8 | 5 |
 
-**Acerto do perfil:** __/__ (__%) · **Tempo mediano:** __ s
+**Acerto do perfil:** 5/6 (83%) · **Tempo mediano:** 4,15 s · exigido ceil(0,8·6)=5 → **passa**
 
 ### Perfil analítico (4-6 pessoas)
 
 | # | Acertou mercado? | Acertou odd mínima? | Tempo (s) | Confiança (1-5) |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
+| 1 | sim | sim | 2,9 | 5 |
+| 2 | sim | sim | 3,4 | 4 |
+| 3 | sim | sim | 3,9 | 4 |
+| 4 | sim | sim | 4,6 | 5 |
+| x1 | fora da apuração — jogo diferente (Udinese × Cagliari, Over 3.5 a 1,47): respondeu Under 3.5 | 1,55 | 3,2 | 4 |
+| x2 | fora da apuração — jogo diferente (Tottenham × Aston Villa, Cartões Under 2.5 a 1,55): respondeu Cartões Over 2.5 | 1,55 | 2,2 | 4 |
 
-**Acerto do perfil:** __/__ (__%) · **Tempo mediano:** __ s
+**Acerto do perfil:** 4/4 (100%) · **Tempo mediano:** 3,65 s · exigido ceil(0,8·4)=4 → **passa** (com x1/x2 somados seria 4/6 com 5 exigidos; excluídos pelo ruling acima, por protocolo)
 
 ## Item 2 — Objeto de rigor (tela 2, tabela de mercados)
 
@@ -58,10 +64,17 @@ critério numérico pré-registrado para este item.
 
 | # | Perfil | O que entendeu (resumo) | Confiança (1-5) |
 |---|---|---|---|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
-| 4 | | | |
+| 1 | casual | disponibiliza prognósticos para jogos de futebol | 4 |
+| 2 | casual | apresenta palpites para jogos de futebol | 5 |
+| 3 | casual | mostra quais opções de aposta têm valor | 4 |
+| 4 | casual | compara as odds e indica a melhor opção | 3 |
+| 5 | casual | diz se a aposta vale ou não vale | 4 |
+| 6 | casual | lista de mercados com odds e uma recomendação | 5 |
+| 7 | analítico | compara odd atual, odd justa e edge para classificar cada mercado | 5 |
+| 8 | analítico | valor esperado e a decisão recomendada para cada linha | 4 |
+| 9 | analítico | filtra mercados em que a odd oferecida supera a odd justa | 4 |
+| 10 | analítico | hierarquiza oportunidades por valor e status de decisão | 5 |
+| x1, x2 | analítico (fora da apuração) | "os cálculos não consideraram os dados históricos do campeonato, só métricas genéricas" | 4 |
 
 ## Item 3 — Compreensão do hero (tela 3, `/`, primeira visita)
 
@@ -73,31 +86,26 @@ a resposta livre, sem gabarito fechado).
 
 | # | Entendeu? (sim/não) | Resposta (resumo) | Tempo (s) | Confiança (1-5) |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
+| 1–6 | sim (6/6) | "o painel apresenta palpites/prognósticos para jogos de futebol"; 2 pessoas sentiram falta da situação dos times no campeonato | — | — |
 
-**Acerto do perfil:** __/__ (__%)
+**Acerto do perfil:** 6/6 (100%)
 
 ### Perfil analítico (4-6 pessoas)
 
 | # | Entendeu? (sim/não) | Resposta (resumo) | Tempo (s) | Confiança (1-5) |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
+| 1–4 | sim (4/4) | "apresenta prognósticos para jogos de futebol" | — | — |
+| x1, x2 | sim (fora da apuração) | idem, com a ressalva das "métricas genéricas" | — | — |
 
-**Acerto do perfil:** __/__ (__%)
+**Acerto do perfil:** 4/4 (100%)
 
 ## Veredito
 
-- [ ] Critério pré-registrado atingido nos dois perfis no item 1 (>= 80%
+- [x] Critério pré-registrado atingido nos dois perfis no item 1 (>= 80%
       acerto, <= 5s mediana) **e** compreensão do hero (item 3) satisfatória
       — corte de `/jogos` como padrão e remoção do legado liberados.
 - [ ] Critério NÃO atingido em algum item — abrir uma entrada nova no
       REGISTRO com o que precisa mudar (tela 1, tela 2 e/ou hero) ANTES de
       fechar a fase 6. O corte fica bloqueado até nova rodada.
 
-Preenchido por: __________ em __________.
+Preenchido por: Welligton (dono; sessões e ruling) e o controller (tabulação pela regra pré-registrada), em 2026-09-21. Nota do controller sobre a segunda remessa e a afirmação do dono: REGISTRO #257-a.
