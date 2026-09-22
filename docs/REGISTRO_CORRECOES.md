@@ -14461,3 +14461,27 @@ Vitest 30 arquivos / 205 testes; lints; `tsc` sem cache; build 23 rotas; Playwri
 
 ### Lição aprendida
 Quando dois produtores descrevem o mesmo objeto (feed recalculado × ledger publicado), o casamento tem de ser por atributos estáveis (liga, kickoff, times) e o dado de verdade tem de vir do produtor que congela (o ledger). O feed recalculado depois do jogo já mudava a linha do mercado no mesmo dia.
+
+## 260 — Jogo remarcado deixava picks órfãos com desfecho nulo para sempre na leitura do ledger
+
+**Data:** 2026-09-22 | **Arquivos:** `backend/services/amostra_ledger.py`, `backend/services/ledger_leitura.py`, `tests/test_260_ledger_remarcado.py` | **Severidade:** Média | **Status:** Corrigido
+
+### Problema identificado
+Medido em produção em 2026-09-22: `/ledger/dia?data=2026-09-21` devolvia 7 picks de `brasileirao-serie-b-Criciúma-Operário PR-1790029800.0` (kickoff 21/09 22:30Z) com `outcome` nulo. O FootyStats moveu o jogo para 22/09 22:30Z e o cron gravou picks novos sob o id `…-1790116200.0`. O cron de desfechos nunca resolve o id antigo (aquele kickoff não aconteceu), então os picks ficavam "pendentes" para sempre em `/ledger/dia`, `/ledger/agregado` e `/ledger/picks`, e a aba Ontem mostrava o card com talão e "resultado ainda não conferido" (visto em produção pelo controller antes do deploy).
+
+### Causa raiz
+O ledger é append-only por `match_id`, e o `match_id` carrega o epoch do kickoff: remarcação = id novo. Nenhuma leitura reconhecia a relação entre o id antigo e o novo.
+
+### Correções aplicadas (com camadas)
+1. **Regra de leitura, sem escrita no banco** (`amostra_ledger.remover_remarcados`, ao lado de `filtrar_amostra`, mesmo padrão mantidas/removidas): a linha L sai quando existe M com a mesma base de `match_id` (tudo antes do sufixo epoch), epoch maior, kickoff de M até 14 dias depois do de L (`_JANELA_REMARCACAO_DIAS`), e L sem desfecho. Com desfecho, L fica (ida e volta entre os mesmos times). Base sem epoch parseável nunca entra; mesmo epoch não é remarcação. `kickoff_da_linha` reutilizada (regra única de kickoff, #252-c). Limitação declarada: remarcação para mais de 14 dias fica pendente.
+2. **Fix round 1 (ruling do controller antes do commit):** a regra só enxerga o id novo se ele estiver na mesma consulta, mas `_buscar_janela` cortava `published_at < fim`, e o id novo é publicado depois do dia consultado (o de 22/09 foi gravado em 22/09; `dia("2026-09-21")` cortava em 22/09 03:00Z). A consulta passa a buscar até `fim + 14 dias`, aplica `filtrar_amostra` → `escolher_ultima_geracao` → backfill de kickoff → `remover_remarcados`, e depois descarta `published_at >= fim` para restaurar o contrato original. É seguro porque toda linha admitida só pela folga tem kickoff > published_at ≥ fim e os readers filtram por kickoff < fim. O teste original passava só porque o dublê de cursor ignorava os parâmetros do SQL; o fix round trouxe `_ConnHonraJanela`, que filtra por `published_at` como o banco, e o caso real ficou vermelho antes e verde depois.
+3. Log `info` com a contagem removida por chamada.
+
+### Etapa 2-bis (contratos de saída)
+Nenhum campo escrito. Consumidores das rotas `/ledger/*`: Feed (Ontem e, desde #261, Hoje), Hero (talão de ontem), `/desempenho`, retorno retroativo (`/ledger/picks`). Todos passam a ver menos linhas pendentes; nenhum campo muda de forma. O resumo de 21/09 já ignorava essas linhas na contagem (só geração pré-apito), então acerto e Brier não mudam.
+
+### Prova empírica
+Teste `test_260_ledger_remarcado.py` (10 casos: remarcado sai; com desfecho fica; mesmo epoch fica; >14 dias fica; base sem epoch fica; `dia`/`agregado`/`picks` sem o id antigo; caso real do fix round com dublê que honra a janela) vermelho antes, verde depois. Ledger: 37 + 9 + 4 + 6 testes das entradas #255/#256/#257/#252-b/#231-a verdes no commit (re-executados pelo controller). Regra pura aplicada às capturas de produção de 21/09 e 22/09 (`.superpowers/sdd/pos-corte/260-antes-*.json`): 21 linhas → 14 mantidas, 7 removidas, todas do id antigo do Criciúma × Operário e todas com desfecho nulo; nenhuma linha resolvida removida. Depois do deploy: `/ledger/dia?data=2026-09-21` sem o id antigo e a aba Ontem sem o card órfão (registrado no ledger `pos-corte`).
+
+### Lição aprendida
+Dublê de banco que ignora os parâmetros do SQL prova menos do que parece: o teste do caso real passou com a regra cega. Todo teste de leitura por janela precisa de um dublê que aplique a janela. Achado colateral, fora do escopo e registrado como dívida: `tests/test_231a_cache_correcoes.py::test_pipeline_abre_o_banco_uma_vez_por_liga` falhou uma vez na suíte completa (20 min, sob carga concorrente) e passa isolada nas duas árvores; hipótese: TTL de 300 s do cache de correções vencendo dentro do teste sob carga.
