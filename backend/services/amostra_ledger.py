@@ -26,8 +26,10 @@ As linhas de entrada sao dicts com `match_id`, `published_at` e `kickoff_utc`.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Sequence, Tuple
+import logging
+import math
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # #252-c: a resolucao do kickoff tem UMA implementacao, no proprio backend.
 from backend.services.prediction_ledger import kickoff_da_linha  # noqa: F401
@@ -40,6 +42,13 @@ JANELA_CONTAMINADA_251 = (
 )
 
 Linhas = Sequence[Dict[str, Any]]
+
+logger = logging.getLogger("sportsbankzu.amostra_ledger")
+
+# #260: janela maxima entre o kickoff da linha antiga e o da nova para
+# considerar remarcacao. Acima disso, falso negativo deliberado (ver
+# docstring de `remover_remarcados`).
+_JANELA_REMARCACAO_DIAS = 14
 
 
 def so_pre_jogo(linhas: Linhas) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
@@ -88,6 +97,93 @@ def filtrar_amostra(linhas: Linhas, campo: str
     mantidas, c1 = so_pre_jogo(linhas)
     mantidas, c2 = fora_da_janela_contaminada(mantidas, campo)
     return mantidas, {**c1, **c2}
+
+
+def _base_e_epoch(match_id: Any) -> Tuple[Optional[str], Optional[float]]:
+    """Base = tudo antes do sufixo epoch (`league_id-Casa-Fora-`); epoch = o
+    sufixo, como numero. `None, None` quando o sufixo nao e um epoch (mesma
+    guarda de `kickoff_da_linha`: `-todays-`, sufixo nao numerico, ou nao
+    finito) — a linha nunca entra em `por_base` e portanto nunca e usada
+    para remarcar, nem e candidata a remarcacao (proibicao 5: mesma
+    convencao `rsplit("-", 1)` de `kickoff_da_linha`, nao reimplementada)."""
+    s = str(match_id)
+    if "-todays-" in s:
+        return None, None
+    partes = s.rsplit("-", 1)
+    if len(partes) != 2:
+        return None, None
+    base, ts_str = partes
+    try:
+        ts = float(ts_str)
+    except ValueError:
+        return None, None
+    if not math.isfinite(ts):
+        return None, None
+    return base, ts
+
+
+def remover_remarcados(linhas: Linhas) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """#260 — jogo remarcado (FootyStats move o kickoff; o cron gera um
+    match_id novo com epoch maior) deixa a linha do match_id ANTIGO
+    pendente para sempre: o kickoff antigo nunca aconteceu, entao o cron de
+    desfechos nunca a resolve. Mora aqui, ao lado de `filtrar_amostra` —
+    mesmo padrao (par mantidas/descartadas sobre a mesma lista de dicts de
+    linha, sem tocar o banco) — e nao em `ledger_leitura.py`, que so
+    orquestra a consulta e a montagem do JSON de saida.
+
+    Linha L sai quando existe outra linha M na mesma lista com:
+      (a) a MESMA base de match_id (tudo antes do sufixo epoch);
+      (b) epoch de M MAIOR que o de L (M e uma geracao mais nova);
+      (c) kickoff de M no maximo `_JANELA_REMARCACAO_DIAS` dias DEPOIS do
+          kickoff de L;
+      (d) L SEM desfecho (`outcome` nulo).
+    Com desfecho, L fica sempre — outcome preenchido significa que aquele
+    kickoff aconteceu de verdade, entao e um jogo legitimo (ex.: ida/volta
+    entre os mesmos times), nunca remarcacao.
+
+    Bordas (spec #260): base sem epoch parseavel -> L nunca e remarcada, e
+    nunca serve de M para remarcar outra linha (fica de fora de `por_base`);
+    duas linhas com o MESMO epoch -> nao e remarcacao (mesma geracao, ex.:
+    dois mercados do mesmo match_id); M fora da janela de
+    `_JANELA_REMARCACAO_DIAS` -> L fica pendente (falso negativo deliberado,
+    limitacao conhecida: uma remarcacao para mais de 14 dias no futuro nao e
+    detectada — a regra prefere isso a arriscar fundir dois jogos
+    genuinamente distintos).
+
+    `kickoff_da_linha` (unica regra de kickoff, #252-c) resolve o kickoff de
+    cada linha a partir de `kickoff_utc` ou do sufixo epoch — nao reimplementada
+    aqui (proibicao 5)."""
+    por_base: Dict[str, List[Dict[str, Any]]] = {}
+    info: Dict[int, Tuple[Optional[str], Optional[float]]] = {}
+    for ln in linhas:
+        base, epoch = _base_e_epoch(ln.get("match_id"))
+        info[id(ln)] = (base, epoch)
+        if base is not None:
+            por_base.setdefault(base, []).append(ln)
+
+    mantidas: List[Dict[str, Any]] = []
+    removidas: List[Dict[str, Any]] = []
+    for ln in linhas:
+        base, epoch = info[id(ln)]
+        remarcada = False
+        if base is not None and ln.get("outcome") is None:
+            kickoff_l = kickoff_da_linha(ln.get("match_id"), ln.get("kickoff_utc"))
+            if kickoff_l is not None:
+                for outra in por_base[base]:
+                    if outra is ln:
+                        continue
+                    _, epoch_m = info[id(outra)]
+                    if epoch_m is None or epoch_m <= epoch:
+                        continue
+                    kickoff_m = kickoff_da_linha(outra.get("match_id"), outra.get("kickoff_utc"))
+                    if kickoff_m is None:
+                        continue
+                    diff = kickoff_m - kickoff_l
+                    if timedelta(0) < diff <= timedelta(days=_JANELA_REMARCACAO_DIAS):
+                        remarcada = True
+                        break
+        (removidas if remarcada else mantidas).append(ln)
+    return mantidas, removidas
 
 
 def descrever(c: Dict[str, int]) -> str:

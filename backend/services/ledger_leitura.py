@@ -21,6 +21,7 @@ por isso `retorno` sai `null` com `motivo`, nunca um numero inventado.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,8 +29,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.modeling.calibragem.repositorio import (
     classificar_familia, escolher_ultima_geracao,
 )
-from backend.services.amostra_ledger import filtrar_amostra, kickoff_da_linha
+from backend.services.amostra_ledger import (
+    _JANELA_REMARCACAO_DIAS, filtrar_amostra, kickoff_da_linha, remover_remarcados,
+)
 from backend.services.brier_service import MIN_N, _brier
+
+logger = logging.getLogger("sportsbankzu.ledger_leitura")
 
 _FAMILIAS = ("Over/Under", "BTTS", "Corners", "Cards", "1X2", "Double Chance")
 _PICKS_CONTADOS = ("SAFE", "NEUTRO_QUALIFICADO")     # o talao, spec §4.2 estado `vale`
@@ -78,11 +83,29 @@ def _buscar_janela(inicio: datetime, fim: datetime) -> List[Dict[str, Any]]:
     profundidade, nao redundancia morta): um teste com dublê de cursor nao
     interpreta o texto do SQL (so devolve linhas fixas), e uma consulta
     futura que esqueca a clausula nao pode deixar NO_BET vazar — spec §4.2,
-    "NO_BET nunca"."""
+    "NO_BET nunca".
+
+    #260 (fix round 1): a consulta busca `published_at` ate
+    `fim + _JANELA_REMARCACAO_DIAS` dias, nao so `fim`. A folga extra existe
+    SO para `remover_remarcados` enxergar a geracao NOVA de um jogo
+    remarcado — que pode ter sido publicada DEPOIS de `fim` (ex.: dia=21/09
+    corta em 22/09 03:00Z, mas o pick novo do jogo remarcado para 22/09 e
+    publicado as 09:00Z do dia 22, fora da janela antiga). Sem essa folga, a
+    funcao nunca ve o par antigo/novo e o pick orfao (outcome nulo pra
+    sempre) continua aparecendo. E seguro admitir essas linhas extras
+    porque toda linha alcancada so pela folga tem `published_at >= fim` e,
+    como a publicacao e sempre anterior ao kickoff (#252,
+    `escolher_ultima_geracao`), seu `kickoff_utc > published_at >= fim` —
+    os readers (`dia`/`agregado`/`picks`) SEMPRE filtram por
+    `kickoff_utc < fim`, entao essas linhas nunca apareceriam na saida de
+    qualquer forma. Ainda assim sao descartadas logo apos
+    `remover_remarcados`, abaixo, para restaurar o contrato original desta
+    funcao (retornar so `published_at` dentro de `[inicio, fim)`)."""
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(_SQL_JANELA, (inicio, fim))
+        fim_consulta = fim + timedelta(days=_JANELA_REMARCACAO_DIAS)
+        cur.execute(_SQL_JANELA, (inicio, fim_consulta))
         brutas = [
             {"match_id": r[0], "league_id": r[1] or "", "market": r[2],
              "selection": r[3],
@@ -103,6 +126,19 @@ def _buscar_janela(inicio: datetime, fim: datetime) -> List[Dict[str, Any]]:
     for l in resultado:
         if l.get("kickoff_utc") is None:
             l["kickoff_utc"] = kickoff_da_linha(l.get("match_id"), None)
+    # #260: jogo remarcado (kickoff antigo nunca aconteceu) sai de toda
+    # leitura — sem isso o pick antigo fica "pendente" para sempre. Precisa
+    # rodar ANTES da restauracao do contrato de `fim` abaixo, senao a
+    # geracao nova (admitida so pela folga) ja teria sumido e a funcao
+    # nunca veria o par antigo/novo.
+    resultado, removidos = remover_remarcados(resultado)
+    if removidos:
+        logger.info(
+            "260 remarcados removidos da leitura: %d linha(s) — %s",
+            len(removidos), sorted({l.get("match_id") for l in removidos}),
+        )
+    # Restaura o contrato original: so published_at dentro de [inicio, fim).
+    resultado = [l for l in resultado if l["published_at"] < fim]
     return resultado
 
 
