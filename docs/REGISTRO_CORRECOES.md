@@ -14412,3 +14412,52 @@ Acerto do item 1 = mercado E mínimo corretos (meio acerto não conta). Passa po
 
 ### Fechamento
 Rodada 2 passou nos dois perfis (resultado no #257-a, apurado em 2026-09-21). Lote A–C + acessório + Task 38 + docs pushado de uma vez para `main` em 2026-09-21; CI e validação em produção registrados no ledger da fase (`progress.md`). Reformulação do frontend concluída (spec §8, fases 0–6). Dívidas nomeadas: M5 (cabeçalho fixo do feed, commit isolado 24–48 h após o push estável, com recaptura das referências do feed); quatro tipos de auditoria órfãos em `matchDetailTypes.ts`; achados (a)–(c) da rodada 2 no #257-a.
+
+## 259 — Nome da liga no card saía como slug para três ligas (Brasileirão A e B, Premiership)
+
+**Data:** 2026-09-22 | **Arquivos:** `frontend/next/src/lib/leagues.ts`, `frontend/next/src/lib/normalizeMatch.ts`, `frontend/next/tests/unit/normalizeMatch.ligas.test.ts` | **Severidade:** Baixa | **Status:** Corrigido
+
+### Problema identificado
+Achado do dono em produção (2026-09-21): o card de Cuiabá × Náutico mostrava "brasileirao-serie-b, 21:30" no lugar de "Brasileirão Série B, 21:30". Medido no código: 3 dos 22 ids que o backend devolve (`brasileirao-serie-a`, `brasileirao-serie-b`, `premiership`) não resolviam para o nome do catálogo; os outros 19 resolviam.
+
+### Causa raiz
+`normalizeMatch.ts` traduzia id do backend → id do frontend por uma tabela `LEAGUE_ID_ALIASES` escrita à mão, cópia divergente do mapa oficial `FRONTEND_TO_BACKEND_LEAGUE_ID` de `leagues.ts` (proibição 5: duas fontes para a mesma verdade). As três ligas entraram no mapa oficial e nunca na cópia.
+
+### Correções aplicadas (com camadas)
+1. `leagues.ts`: `BACKEND_TO_FRONTEND_LEAGUE_ID` derivado por `Object.entries` do mapa oficial, mais o apelido legado `liga-nos` (a cópia antiga o aceitava ao lado de `primeira-liga`); `toFrontendLeagueId()` como inverso de `toBackendLeagueId()`, devolvendo o próprio id quando desconhecido (#250: nunca inventar liga).
+2. `normalizeMatch.ts`: tabela à mão apagada; usa `toFrontendLeagueId`. `grep LEAGUE_ID_ALIASES src/` → vazio. O apelido `primera-a` da tabela antiga não foi reproduzido: nenhum produtor o emite (backend usa `colombian-primera-a`), apelido morto.
+3. Teste `normalizeMatch.ligas.test.ts`: uma asserção por liga de `AVAILABLE_LEAGUES` (22) exigindo `leagueName === name` para o id do backend, mais id desconhecido devolvendo o id. O implementador usou `AVAILABLE_LEAGUES` em vez de `ACTIVE_LEAGUES` do brief porque `scotland-premiership` está inativa e o brief exigia provar as três falhas — desvio aceito, mais abrangente.
+
+### Etapa 2-bis (contratos de saída)
+Nenhum campo escrito. `Match.leagueName` é lido por `toJogoView` → `CardJogo`/`Detalhe`/Hero; só muda de slug para nome nas três ligas. `Match.leagueId` (id do frontend) inalterado para as 19 que já resolviam; para as três, passa a ser o id do frontend (`brazil-serie-a` etc.) em vez do slug, que é o que `LigaChips`/`?liga=` já esperavam.
+
+### Prova empírica
+Teste novo vermelho antes do fix exatamente nas três ligas (saída no relatório `task-259-report.md`), verde depois: Vitest 27 arquivos / 186 testes (re-executado pelo controller). Lints, `tsc` sem cache, build 23 rotas, Playwright `jogos` + `multi-mercado` chromium 13 aprovados / 2 skipped. Validação em produção após o deploy: card da Série B com o nome por extenso (registrado no ledger `pos-corte`).
+
+### Lição aprendida
+Toda tabela "espelho" escrita à mão diverge com o tempo; a única cópia legítima é derivada em código da fonte. O incidente colateral do implementador (regex Unicode corrompida ao reconstruir a versão pré-fix para a prova vermelha, detectada no `git diff` e restaurada byte a byte antes do commit; o controller conferiu que o diff commitado só toca o bloco de alias) reforça a regra de prova: capturar o vermelho por `git stash`-free checkout do arquivo antigo em cópia temporária, nunca editando o arquivo vivo.
+
+## 261 — Aba Hoje mostra o desfecho do ledger em jogo encerrado
+
+**Data:** 2026-09-22 | **Arquivos:** `frontend/next/src/app/jogos/Feed.tsx`, `frontend/next/src/lib/ledgerCasamento.ts`, `frontend/next/src/lib/jogoViewOntem.ts`, `frontend/next/src/lib/feedUrl.ts`, `frontend/next/e2e/hoje-desfecho.spec.ts`, fixtures reais em `tests/unit/fixtures/producao-2026-09-21-cuiaba-nautico-*.json`, `docs/superpowers/specs/2026-09-15-reformulacao-frontend-design.md` (emenda §4.2) | **Severidade:** Média | **Status:** Implementado
+
+### Problema identificado
+Achado do dono (2026-09-21): Cuiabá × Náutico encerrado na aba Hoje dizia "resultado ainda não conferido", mas o ledger já tinha o desfecho (Under 3.5 fechou, escanteios fecharam). A spec §4.2 só previa a faixa `✓ fechou com` na aba Ontem; Hoje lia só o feed. Decisão do dono: "todos entram". Emenda §4.2 escrita pelo controller antes do despacho.
+
+### Causa raiz
+Escopo original da reformulação: `ontem`/`ontem_sem_desfecho` eram estados da aba Ontem, alimentados por `/ledger/dia`; a aba Hoje derivava `ontem_sem_desfecho` de `status = finished` sem consultar o ledger.
+
+### Correções aplicadas (com camadas)
+1. **Casamento sem id cru** (`lib/ledgerCasamento.ts`, `mesmoJogo(view, pick)`): liga via `toBackendLeagueId`, kickoff por epoch (do `kickoff_utc` ou do sufixo do `match_id`), times normalizados (minúsculas, sem acento, sem espaços/hífens). Os dois produtores grafam o id de forma diferente (feed `liga-Casa-Fora-1798920000`, ledger `liga-Casa Fora-1789415100.0`), então comparar id é proibido pela emenda; teste com pares sintéticos que só diferem no formato do epoch.
+2. **Uma regra de desfecho** (`resultadoDoLedger(talao, picksDoJogo)` extraída de `toJogoViewOntem`): acha o pick do mercado do talão por texto formatado (`formatarSelecaoLedger`) e monta `{acertou, detalhe}`; a aba Ontem passa a usar a mesma função (testes existentes de Ontem intocados e verdes = prova de equivalência).
+3. **Feed, só no ramo hoje, só com encerrado** (`aplicarDesfechosDeHoje`): se alguma view está em `ontem_sem_desfecho`, chama `getLedgerDia(diaISOHoje(agora))` sob o mesmo guard de geração; com pick casado e `outcome` presente, a view vira `ontem` com a faixa; ledger fora do ar ou sem pick → fica `ontem_sem_desfecho`, sem erro na tela. `diaISOHoje` reusa `diaISOEmBrt` extraída de `diaISOOntem`.
+4. **Prova com dado real:** par Cuiabá × Náutico capturado de `/fixtures?date=2026-09-21` e `/ledger/dia?data=2026-09-21` (READMEs com origem). O controller conferiu que `mesmoJogo` casa 3 de 3 picks e que o texto formatado coincide no mercado comum ("Cartões Over 2.5"); os outros mercados do feed diferem de linha porque `/fixtures` recalcula após o jogo (Escanteios Over 6.5 no feed de 22/09 contra Over 4.5 publicado pré-apito) — o que confirma que o desfecho tem de vir do ledger, nunca do feed recalculado. Como nenhum pick real do dia era SAFE/NQ, o cenário da faixa no e2e usa um fixture adaptado do mesmo jogo, declarado como adaptado em `e2e/fixtures/feed-hoje-encerrado.README.md`.
+
+### Etapa 2-bis (contratos de saída)
+Nenhum campo escrito. Consumidor novo de `/ledger/dia`: a aba Hoje, uma chamada extra por carga só quando há jogo encerrado sem desfecho. `JogoView.resultado`/`estado` já eram lidos por `CardJogo`/`Detalhe`; a aba Hoje passa a produzir `ontem` como a aba Ontem produz.
+
+### Prova empírica
+Vitest 30 arquivos / 205 testes; lints; `tsc` sem cache; build 23 rotas; Playwright chromium contra build de produção 65 aprovados / 2 skipped; mobile `hoje-desfecho` + `jogos` 13 aprovados / 1 skipped; visual desktop e mobile 9 aprovados / 0 diffs (referências não tocadas; os fixtures do visual não têm jogo encerrado). Diff visual anexado em `.superpowers/sdd/pos-corte/261-visual/` (390 e 1440 px): faixa `✓ fechou com 8 escanteios` sob o talão, sem linha de stake. Portão re-executado pelo controller sobre `d11456e`: idêntico, com o visual em 8 aprovados / 1 falha na primeira execução e 1 flaky em 3 repetições — o diff (0,01 dos pixels) é o anel de foco do `aside` do painel, que recebe `focus()` ao abrir `?jogo=` e ora entra no screenshot, ora não. Pré-existente (mesma origem do 8/1 visto no lote do corte, #258), sem relação com esta mudança; dívida nomeada: estabilizar o teste `painel (desktop)` esperando o foco antes do screenshot (edição de teste, ruling do dono).
+
+### Lição aprendida
+Quando dois produtores descrevem o mesmo objeto (feed recalculado × ledger publicado), o casamento tem de ser por atributos estáveis (liga, kickoff, times) e o dado de verdade tem de vir do produtor que congela (o ledger). O feed recalculado depois do jogo já mudava a linha do mercado no mesmo dia.

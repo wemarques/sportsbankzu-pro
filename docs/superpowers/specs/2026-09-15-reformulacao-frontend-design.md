@@ -126,6 +126,8 @@ Estado: **tudo na URL** — `?dia=`, `?liga=`, `?jogo=` (o talão selecionado é
 | `ontem` | data passada, com desfecho | faixa `✓ fechou com 8 escanteios` (texto) ou `× fechou com 5` (contra-texto) |
 | `ontem_sem_desfecho` | data passada, sem desfecho | talão sem faixa, "resultado ainda não conferido" em `texto-apagado` |
 
+**Emenda 2026-09-22 (#261, decisão do dono após a rodada 2):** os estados `ontem` e `ontem_sem_desfecho` valem também na aba **Hoje** para jogo já encerrado (`status = finished` ou kickoff há mais de 3 h). Em Hoje, o talão continua vindo do feed (`/api/matches/fetch`); o desfecho vem de `/ledger/dia` do próprio dia, casado por liga + kickoff + times, nunca por igualdade crua de id (os dois produtores grafam o id de forma diferente). Com desfecho no ledger para o mercado do talão → `ontem` com a mesma faixa `✓ fechou com` / `× fechou com`; sem desfecho ainda → `ontem_sem_desfecho`. O ledger de hoje só é consultado quando existe ao menos um jogo encerrado no feed.
+
 `CardJogo` é um switch sobre esse enum. Contrato: um `type JogoView` e um teste de snapshot com fixture real de payload.
 
 ### 4.3 Detalhe (`/jogos/[id]`)
