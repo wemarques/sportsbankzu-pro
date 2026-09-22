@@ -55,6 +55,22 @@ export function formatarSelecaoLedger(market: string, selection: string): string
   }
 }
 
+/**
+ * #261 — extraído de `toJogoViewOntem` para reuso no enriquecimento da aba
+ * Hoje (`app/jogos/Feed.tsx`): mesma regra, um lugar só. Acha, entre os picks
+ * do jogo, o que corresponde ao talão (por `mercado` formatado — o ledger não
+ * grava `display_label`, só `market`/`selection`; `formatarSelecaoLedger`
+ * reconstrói o mesmo texto que `toPick`/`fmtMercado` produzem do lado do
+ * feed) e monta o resultado a partir do `outcome`/`detail` publicados. Sem
+ * talão, sem pick casado ou sem `outcome` ainda → `null` (sem desfecho).
+ */
+export function resultadoDoLedger(talao: PickView | null, picksDoJogo: LedgerPick[]): JogoView["resultado"] {
+  if (!talao) return null;
+  const pick = picksDoJogo.find((p) => formatarSelecaoLedger(p.market, p.selection) === talao.mercado);
+  if (!pick || pick.outcome == null) return null;
+  return { acertou: pick.outcome === 1, detalhe: pick.detail ?? "" };
+}
+
 export function agruparPorJogo(picks: LedgerPick[]): Map<string, LedgerPick[]> {
   const mapa = new Map<string, LedgerPick[]>();
   for (const p of picks) {
@@ -90,10 +106,7 @@ export function toJogoViewOntem(
     }));
   const picks = pares.map((x) => x.view);
   const { talao, segundo } = escolherTalao(picks);
-  const parDoTalao = talao ? pares.find((x) => x.view === talao) : undefined;
-  const resultado = parDoTalao && parDoTalao.raw.outcome != null
-    ? { acertou: parDoTalao.raw.outcome === 1, detalhe: parDoTalao.raw.detail ?? "" }
-    : null;
+  const resultado = resultadoDoLedger(talao, picksDoJogo);
   const estado: JogoView["estado"] = talao ? (resultado ? "ontem" : "ontem_sem_desfecho") : "direcao";
 
   return {

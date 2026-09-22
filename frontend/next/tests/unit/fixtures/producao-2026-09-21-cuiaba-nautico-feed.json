@@ -1,0 +1,78 @@
+{
+  "id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+  "leagueId": "brasileirao-serie-b",
+  "leagueName": "Brasileirao Serie B",
+  "homeTeam": {
+    "name": "Cuiabá",
+    "logo": "",
+    "form": [],
+    "rating": 0
+  },
+  "awayTeam": {
+    "name": "Náutico",
+    "logo": "",
+    "form": [],
+    "rating": 0
+  },
+  "datetime": "2026-09-22T00:30:00Z",
+  "status": "finished",
+  "score": {
+    "home": 3,
+    "away": 0,
+    "halftime": {
+      "home": 1,
+      "away": 0
+    }
+  },
+  "odds": {
+    "home": 2.05,
+    "draw": 3.0,
+    "away": 3.4,
+    "over25": 2.38,
+    "under25": 1.62,
+    "bttsYes": 1.97,
+    "bttsNo": 1.75
+  },
+  "stats": {
+    "avgGoals": 2.0,
+    "rejected_insights": []
+  },
+  "mercados": [
+    {
+      "mercado": "Escanteios Over 6.5",
+      "status": "NEUTRO",
+      "prob_min": 67,
+      "prob_max": 69,
+      "odd_minima": 1.44,
+      "classification": "NEUTRO",
+      "reason_codes": ["NO_ODDS_AVAILABLE", "HIGH_CALIBRATED_PROB"],
+      "data_quality_score": 1.0,
+      "odds_available": false,
+      "ev": null,
+      "edge": null,
+      "fair_odd": 1.44,
+      "book_odd": null,
+      "calibrated_probability": 0.6964,
+      "raw_probability": 0.7531
+    },
+    {
+      "mercado": "Cartoes Over 2.5",
+      "status": "NEUTRO",
+      "prob_min": 73,
+      "prob_max": 75,
+      "odd_minima": 1.32,
+      "classification": "NEUTRO",
+      "reason_codes": ["NO_ODDS_AVAILABLE", "HIGH_CALIBRATED_PROB"],
+      "data_quality_score": 0.65,
+      "odds_available": false,
+      "ev": null,
+      "edge": null,
+      "fair_odd": 1.32,
+      "book_odd": null,
+      "calibrated_probability": 0.7561,
+      "raw_probability": 0.809
+    }
+  ],
+  "source": "footystats",
+  "lastUpdated": "2026-09-22T03:45:16.304583"
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "match_id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+    "league_id": "brasileirao-serie-b",
+    "kickoff_utc": "2026-09-22T00:30:00+00:00",
+    "familia": "Corners",
+    "market": "Corners",
+    "selection": "Corners Over 4.5",
+    "published_prob": 0.7792396796115896,
+    "fair_odd": 1.28,
+    "book_odd": null,
+    "classification": "NEUTRO",
+    "outcome": 1,
+    "detail": "11 escanteios"
+  },
+  {
+    "match_id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+    "league_id": "brasileirao-serie-b",
+    "kickoff_utc": "2026-09-22T00:30:00+00:00",
+    "familia": "Cards",
+    "market": "Cards",
+    "selection": "Over 2.5",
+    "published_prob": 0.7611542553267344,
+    "fair_odd": 1.31,
+    "book_odd": null,
+    "classification": "NEUTRO",
+    "outcome": 0,
+    "detail": "2 cartões"
+  },
+  {
+    "match_id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+    "league_id": "brasileirao-serie-b",
+    "kickoff_utc": "2026-09-22T00:30:00+00:00",
+    "familia": "Over/Under",
+    "market": "Over/Under",
+    "selection": "Under 3.5",
+    "published_prob": 0.7582629313846995,
+    "fair_odd": 1.32,
+    "book_odd": null,
+    "classification": "NEUTRO",
+    "outcome": 1,
+    "detail": "3 gols"
+  }
+]

@@ -1,0 +1,42 @@
+{
+  "matches": [
+    {
+      "id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+      "footystatsId": 8469514,
+      "leagueId": "brasileirao-serie-b",
+      "leagueName": "Brasileirao Serie B",
+      "homeTeam": { "name": "Cuiabá", "logo": "", "form": [], "rating": 0 },
+      "awayTeam": { "name": "Náutico", "logo": "", "form": [], "rating": 0 },
+      "datetime": "2026-09-22T00:30:00Z",
+      "stadium": "Arena Pantanal",
+      "status": "finished",
+      "score": { "home": 3, "away": 0 },
+      "period": null,
+      "minute": null,
+      "odds": { "home": 2.05, "draw": 3.0, "away": 3.4, "over25": 2.38, "under25": 1.62, "bttsYes": 1.97, "bttsNo": 1.75 },
+      "stats": { "homeWinProb": 43.7, "drawProb": 29.9, "awayWinProb": 26.4, "avgGoals": 2.0, "bttsProb": 44.4, "over25Prob": 38.1 },
+      "h2h": { "totalMatches": 2, "homeWins": 2, "draws": 0, "awayWins": 0, "avgGoals": 2.0 },
+      "mercados": [
+        {
+          "mercado": "Escanteios Over 6.5",
+          "status": "SAFE",
+          "prob_min": 56,
+          "prob_max": 58,
+          "odd_minima": 1.67,
+          "classification": "SAFE",
+          "reason_codes": ["POSITIVE_EV", "STRONG_EDGE"],
+          "data_quality_score": 1.0,
+          "odds_available": true,
+          "ev": 0.05,
+          "edge": 0.1,
+          "fair_odd": 1.67,
+          "book_odd": 1.75,
+          "calibrated_probability": 0.585,
+          "raw_probability": 0.62
+        }
+      ],
+      "source": "footystats",
+      "lastUpdated": "2026-09-22T03:45:16.304583"
+    }
+  ]
+}

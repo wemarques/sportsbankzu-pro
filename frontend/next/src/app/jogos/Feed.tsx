@@ -5,9 +5,10 @@ import { getMatchesByLeague } from "@/lib/api";
 import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
-import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, type Dia } from "@/lib/feedUrl";
-import { getLedgerDia } from "@/lib/ledgerApi";
-import { agruparPorJogo, toJogoViewOntem } from "@/lib/jogoViewOntem";
+import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, diaISOHoje, type Dia } from "@/lib/feedUrl";
+import { getLedgerDia, type LedgerPick } from "@/lib/ledgerApi";
+import { agruparPorJogo, toJogoViewOntem, resultadoDoLedger } from "@/lib/jogoViewOntem";
+import { mesmoJogo } from "@/lib/ledgerCasamento";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
 import { useMediaDasLigas } from "@/hooks/useMediaDasLigas";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -20,6 +21,24 @@ import { LigaChips } from "@/components/feed/LigaChips";
 import { CardJogo } from "@/components/feed/CardJogo";
 import { ResumoDoDia } from "@/components/feed/ResumoDoDia";
 import { Detalhe } from "@/components/detalhe/Detalhe";
+
+/**
+ * #261 — aba Hoje, jogo encerrado: o talão continua vindo do feed
+ * (`/api/matches/fetch`); o desfecho vem do `/ledger/dia` do próprio dia,
+ * casado por liga + kickoff + times (`mesmoJogo`, nunca por id cru — spec
+ * emenda #261 §4.2). Sem pick casado ou sem `outcome` ainda, a view fica
+ * como está (`ontem_sem_desfecho`); com desfecho pro mercado do talão, vira
+ * `ontem` com a mesma faixa que a aba Ontem usa (`resultadoDoLedger`, mesma
+ * função, sem duplicar).
+ */
+function aplicarDesfechosDeHoje(views: JogoView[], picks: LedgerPick[]): JogoView[] {
+  return views.map((v) => {
+    if (v.estado !== "ontem_sem_desfecho") return v;
+    const picksDoJogo = picks.filter((p) => mesmoJogo(v, p));
+    const resultado = resultadoDoLedger(v.talao, picksDoJogo);
+    return resultado ? { ...v, estado: "ontem" as const, resultado } : v;
+  });
+}
 
 export function Feed() {
   const router = useRouter();
@@ -70,9 +89,17 @@ export function Feed() {
       if (minha !== geracao.current) return;   // outra carga mais nova ja partiu: esta e obsoleta
       if (res._error) throw new Error(res._error.message);
       const agora = new Date();
-      const views = deduplicateMatches((res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)))
+      let views = deduplicateMatches((res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)))
         .map((m: Match) => toJogoView(m, agora))
         .sort((a, b) => Number(b.estado === "em_jogo") - Number(a.estado === "em_jogo") || a.kickoffIso.localeCompare(b.kickoffIso));
+      // #261 — so no ramo hoje, so quando ha jogo encerrado sem desfecho ainda.
+      // Ledger fora do ar: views ficam como estao, sem erro na tela (o feed e
+      // a fonte primaria; o ledger e enriquecimento).
+      if (url.dia === "hoje" && views.some((v) => v.estado === "ontem_sem_desfecho")) {
+        const rLedger = await getLedgerDia(diaISOHoje(agora));
+        if (minha !== geracao.current) return;
+        if (rLedger.ok) views = aplicarDesfechosDeHoje(views, rLedger.dados.picks);
+      }
       ultimoBom.current = views; setJogos(views); setCarimbo(fmtHora(agora.toISOString())); setErro(false);
     } catch {
       if (minha !== geracao.current) return;

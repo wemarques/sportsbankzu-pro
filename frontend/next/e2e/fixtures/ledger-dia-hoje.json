@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "data": "2026-09-22",
+  "picks": [
+    {
+      "match_id": "brasileirao-serie-b-Cuiabá-Náutico-1790037000.0",
+      "league_id": "brasileirao-serie-b",
+      "kickoff_utc": "2026-09-22T00:30:00+00:00",
+      "familia": "Corners",
+      "market": "Corners",
+      "selection": "Corners Over 6.5",
+      "published_prob": 0.585,
+      "fair_odd": 1.67,
+      "book_odd": 1.75,
+      "classification": "SAFE",
+      "outcome": 1,
+      "detail": "8 escanteios"
+    }
+  ],
+  "resumo": { "picks": 1, "acertos": 1, "jogos": 1, "resolvidos": 1 },
+  "semana": {},
+  "mes": {}
+}
