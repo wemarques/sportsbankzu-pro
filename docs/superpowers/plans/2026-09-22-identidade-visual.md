@@ -635,7 +635,7 @@ Atenção: `deduplicateMatches` continua sendo aplicado por lote; a dedup ENTRE 
 
 A condição do vazio já é `!carregando && visiveis.length === 0 && !erro` (só com todos os lotes). Conferir que a aba Ontem (`carregarOntem`) também mostra esqueleto: envolver `carregarOntem` com o mesmo `setCarregando(true)`/timer (uma chamada só; `lotesLidos` fica 0 e `numeroDeLotes(1)`), usando `CARREGANDO.buscando("ontem")`.
 
-- [ ] **Step 5: `/jogos/[id]` e `/desempenho`.** Em `src/app/jogos/[id]/page.tsx` (leitura antes de editar), onde hoje o componente retorna `null`/texto enquanto busca o jogo, renderizar `<EsqueletoDetalhe />` mais `<p role="status" className="sr-only">{CARREGANDO.buscando("hoje")}</p>`; em `Painel.tsx`, onde `dados === null && !erro`, renderizar `<EsqueletoDesempenho />`. Se `[id]/page.tsx` não tiver estado de carga explícito (jogo vem síncrono de cache), registrar no relatório e não inventar um.
+- [ ] **Step 5: `/jogos/[id]` e `/desempenho`.** Em `src/app/jogos/[id]/page.tsx` (leitura antes de editar), onde hoje o componente retorna `null`/texto enquanto busca o jogo, renderizar `<EsqueletoDetalhe />` mais `<p role="status" className="sr-only">{CARREGANDO.buscando("hoje")}</p>`; em `Painel.tsx`, onde `dados === null && !erro`, renderizar `<EsqueletoDesempenho />`. `[id]/page.tsx` tem `carregando` (linha 25) e hoje devolve `null` na linha 53 enquanto busca: é ali que entra o esqueleto.
 
 - [ ] **Step 6: E2E de honestidade** — `e2e/carregando.spec.ts`:
 
@@ -649,9 +649,9 @@ async function feedPorCamadas(page: import("@playwright/test").Page) {
   await stub(page, { vazio: true });
   await page.route("**/api/matches/fetch**", async (route) => {
     const u = new URL(route.request().url()); const liga = u.searchParams.get("leagues") ?? "";
-    const espera = liga === "premier-league" ? 1000 : liga === "championship" ? 3000 : 5000;
+    const espera = liga === "championship" ? 1000 : liga === "la-liga" ? 3000 : 5000;
     await new Promise((r) => setTimeout(r, espera));
-    const corpo = liga === "premier-league" ? { matches: feed.matches.filter((m) => m.leagueId === "premier-league") } : { matches: [] };
+    const corpo = liga === "championship" ? { matches: feed.matches.filter((m) => m.leagueId === "championship") } : { matches: [] };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo) });
   });
 }
@@ -685,7 +685,7 @@ test("prefers-reduced-motion desliga a animacao do esqueleto", async ({ page }) 
 });
 ```
 
-Nota: o fixture `feed.json` precisa ter `leagueId: "premier-league"` em ao menos um jogo — conferir com `grep -c premier-league e2e/fixtures/feed.json`; se não tiver, usar a liga que tiver (`championship`) trocando os dois nomes no helper. Rodar chromium (prod) → PASS; mobile → PASS.
+Nota: `feed.json` tem jogos de `championship` (2) e `la-liga` (2), conferido em 2026-09-22; o helper usa `championship` como primeiro lote. Rodar chromium (prod) → PASS; mobile → PASS.
 
 - [ ] **Step 7: Portão + screenshots (390/1440 do esqueleto com a frase de progresso, capturados com o feed atrasado) + commit**
 ```bash
@@ -699,7 +699,7 @@ git commit -m "feat(front): feed por camadas com esqueleto honesto e frase de pr
 
 **Files:**
 - Create: `frontend/next/src/components/marca/EstadoVazio.tsx`
-- Modify: `frontend/next/src/app/jogos/Feed.tsx` (bloco `VAZIOS.diaSemJogos`), `frontend/next/src/components/marca/Hero.tsx` (bloco `HERO.semTalao`), `frontend/next/src/app/desempenho/Painel.tsx` (bloco `DESEMPENHO.semPicksFechados`), `frontend/next/src/app/banca/page.tsx` ou o componente que mostra a banca indefinida (localizar com `grep -rn "indefinida\|definaBanca" src/app/banca src/components`)
+- Modify: `frontend/next/src/app/jogos/Feed.tsx` (bloco `VAZIOS.diaSemJogos`), `frontend/next/src/components/marca/Hero.tsx` (bloco `HERO.semTalao`), `frontend/next/src/app/desempenho/Painel.tsx` (bloco `DESEMPENHO.semPicksFechados`), `frontend/next/src/app/banca/FormBanca.tsx` (localizar a frase de banca indefinida com `grep -n "BANCA\." src/app/banca/FormBanca.tsx` e a chave correspondente em `copy.ts`; se `/banca` não tiver frase de estado vazio, registrar no relatório e não inventar uma)
 - Test: `frontend/next/tests/unit/EstadoVazio.test.tsx`
 
 **Interfaces:**
