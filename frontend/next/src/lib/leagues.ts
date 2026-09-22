@@ -667,7 +667,7 @@ export const SAFE_BET_TAG_CONFIG: Record<
 /* ------------------------------------------------------------------ */
 
 /**
- * #250 — ESPELHO EXATO de `backend/config/leagues_config.py::LEAGUE_ID_ALIASES`.
+ * #250 — ESPELHO EXATO da tabela de alias de liga em `backend/config/leagues_config.py`.
  *
  * Direcao: id do FRONTEND (prefixado, o mesmo de AVAILABLE_LEAGUES[].id)
  * -> slug do BACKEND (o id de LEAGUES_CONFIG, que a FootyStats usa).
@@ -725,4 +725,30 @@ export function toBackendLeagueId(leagueId: string): string {
   if (mapped) return mapped;
   if (BACKEND_LEAGUE_IDS.has(leagueId)) return leagueId;
   return leagueId;
+}
+
+/**
+ * #259 — mapa reverso DERIVADO de `FRONTEND_TO_BACKEND_LEAGUE_ID` (backend -> frontend).
+ * Substitui a tabela de alias que `normalizeMatch.ts` mantinha escrita a mao
+ * (proibicao 5 do CLAUDE.md: nao duplicar) e que divergia deste mapa oficial em 3 dos 22
+ * slugs (`brasileirao-serie-a`, `brasileirao-serie-b`, `premiership` saiam sem traducao).
+ *
+ * `liga-nos` e adicionado a mao: e o slug legado que a tabela antiga aceitava ao lado de
+ * `primeira-liga` (ambos -> `portugal-liga-nos`), mas o mapa oficial so guarda o atual
+ * (`primeira-liga`) como valor — a derivacao automatica nao cobre o legado.
+ */
+export const BACKEND_TO_FRONTEND_LEAGUE_ID: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(FRONTEND_TO_BACKEND_LEAGUE_ID).map(([frontendId, backendId]) => [backendId, frontendId]),
+  ),
+  "liga-nos": "portugal-liga-nos",
+};
+
+/**
+ * #259 — id do backend -> id do frontend (inverso de `toBackendLeagueId`).
+ * Desconhecido devolve o proprio id (nunca inventa liga, #250).
+ */
+export function toFrontendLeagueId(leagueId: string): string {
+  if (!leagueId) return leagueId;
+  return BACKEND_TO_FRONTEND_LEAGUE_ID[leagueId] ?? leagueId;
 }

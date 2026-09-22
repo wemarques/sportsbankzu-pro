@@ -3,7 +3,7 @@
  * app/dashboard/page.tsx sem alteracao de comportamento. Fase 2 da spec de
  * reformulacao: primeiro testavel, depois redesenhado.
  */
-import { AVAILABLE_LEAGUES, type Match } from "@/lib/leagues";
+import { AVAILABLE_LEAGUES, toFrontendLeagueId, type Match } from "@/lib/leagues";
 
 export function safeOdd(value?: number, fallback = 0) {
   if (!value || value <= 0) return fallback;
@@ -147,29 +147,8 @@ export function normalizeMatch(item: any, leagueId: string, idx: number): Match 
     ?? item.away ?? "Away";
   // Heuristic: correct leagueId when backend returns wrong/missing (e.g. Danish teams in EPL group)
   const inferred = inferLeagueFromTeams(home, away);
-  // Backend config uses short IDs, frontend uses prefixed IDs
-  const LEAGUE_ID_ALIASES: Record<string, string> = {
-    "superliga": "denmark-superliga",
-    "league-one": "england-league-one",
-    "ligue-1": "france-ligue-1",
-    "bundesliga": "germany-bundesliga",
-    "2-bundesliga": "germany-2-bundesliga",
-    "serie-a": "italy-serie-a",
-    "serie-b": "italy-serie-b",
-    "la-liga": "spain-la-liga",
-    "eredivisie": "netherlands-eredivisie",
-    "liga-nos": "portugal-liga-nos",
-    "primeira-liga": "portugal-liga-nos",
-    "super-lig": "turkey-super-lig",
-    "mls": "usa-mls",
-    "liga-mx": "mexico-liga-mx",
-    "primera-division": "primera-division",
-    "primera-a": "colombia-primera-a",
-    "colombian-primera-a": "colombia-primera-a",
-    "a-league": "a-league",
-    "pro-league": "pro-league",
-  };
-  const normalizedLid = LEAGUE_ID_ALIASES[leagueId] ?? leagueId;
+  // #259: mapa derivado de FRONTEND_TO_BACKEND_LEAGUE_ID (lib/leagues.ts) — fonte unica.
+  const normalizedLid = toFrontendLeagueId(leagueId);
   const resolvedLeagueId = inferred ?? normalizedLid;
   const dt = item.match_date ?? item.datetime ?? new Date().toISOString();
   const league = AVAILABLE_LEAGUES.find((l) => l.id === resolvedLeagueId);
