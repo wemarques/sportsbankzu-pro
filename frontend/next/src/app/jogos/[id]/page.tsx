@@ -53,7 +53,7 @@ function DetalhePagina() {
 
   if (carregando) {
     return (
-      <div className="mx-auto max-w-[700px] px-4 py-4">
+      <div className="mx-auto max-w-[700px] px-4 py-4" aria-busy="true">
         <p role="status" className="sr-only">{CARREGANDO.buscando("hoje")}</p>
         <EsqueletoDetalhe />
       </div>

@@ -30,10 +30,18 @@ test("cards do primeiro lote aparecem antes dos demais; progresso conta; vazio s
 });
 test("todos os lotes vazios: 'Nenhum jogo' so depois do ultimo lote", async ({ page }) => {
   await stub(page, { vazio: true });
+  // 13 ligas ativas, MAX_CONCURRENT=4, 2000ms por lote: a 1a onda (4 lotes)
+  // chega em ~2000ms, a ultima (4a onda) so em ~8000ms.
   await page.route("**/api/matches/fetch**", async (route) => { await new Promise((r) => setTimeout(r, 2000)); await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matches: [] }) }); });
   await page.goto("/jogos");
   await expect(page.locator("[data-esqueleto]")).toBeVisible();
   await expect(page.getByText(/Nenhum jogo nas ligas/)).toHaveCount(0);
+  // #262 fix round 1, item 5 — a 1a onda ja voltou (vazia) e a carga ainda
+  // nao terminou: nem "Nenhum jogo" pode aparecer, nem o esqueleto pode
+  // sumir so porque os lotes que ja chegaram estao vazios.
+  await page.waitForTimeout(3500);
+  await expect(page.getByText(/Nenhum jogo nas ligas/)).toHaveCount(0);
+  await expect(page.locator("[data-esqueleto]")).toBeVisible();
   await expect(page.getByText(/Nenhum jogo nas ligas/)).toBeVisible({ timeout: 15000 });
   await expect(page.locator("[data-esqueleto]")).toHaveCount(0);
 });
@@ -43,4 +51,15 @@ test("prefers-reduced-motion desliga a animacao do esqueleto", async ({ page }) 
   await page.goto("/jogos");
   const nome = await page.locator(".sb-esqueleto").first().evaluate((el) => getComputedStyle(el).animationName);
   expect(nome).toBe("none");
+});
+test("dia sem jogos nao pisca esqueleto de novo ao trocar de aba (#262 fix round 1, item 6)", async ({ page }) => {
+  await stub(page, { vazio: true });
+  await page.goto("/jogos");
+  await expect(page.getByText(/Nenhum jogo nas ligas/)).toBeVisible();
+  await page.getByRole("tab", { name: "Amanhã" }).click();
+  await expect(page.getByText(/Nenhum jogo nas ligas/)).toBeVisible();
+  await page.getByRole("tab", { name: "Hoje" }).click();
+  await expect(page.locator("[data-esqueleto]")).toHaveCount(0);
+  await page.waitForTimeout(1000);
+  await expect(page.locator("[data-esqueleto]")).toHaveCount(0);
 });
