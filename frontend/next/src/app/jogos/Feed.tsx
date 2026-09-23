@@ -221,7 +221,7 @@ export function Feed() {
             cima; dia nunca lido: so aparece quando a carga termina, como antes. */}
         {visiveis.length === 0 && !erro && (!carregando || !cargaFria.current) && (
           <EstadoVazio>
-            <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+            <p>
               {VAZIOS.diaSemJogos(fmtDataCurta(new Date().toISOString()))}{" "}
               <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} replace className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
             </p>

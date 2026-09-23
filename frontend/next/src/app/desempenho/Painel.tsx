@@ -37,10 +37,12 @@ function BlocoRetorno({ periodo, familia, liga }: { periodo: Periodo; familia: s
 
   if (banca == null) {
     return (
-      <p className="text-[14px] text-[var(--sb-texto-apagado)]">
-        {DESEMPENHO.definaBanca}{" "}
-        <Link href="/banca" className="sb-foco underline">definir banca</Link>
-      </p>
+      <EstadoVazio>
+        <p>
+          {DESEMPENHO.definaBanca}{" "}
+          <Link href="/banca" className="sb-foco underline">definir banca</Link>
+        </p>
+      </EstadoVazio>
     );
   }
   if (semPicks) return <p className="text-[14px] text-[var(--sb-texto-apagado)]">{DESEMPENHO.retornoSemPicks}</p>;
@@ -99,7 +101,7 @@ export function Painel() {
 
       {semPicksFechados ? (
         <EstadoVazio>
-          <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+          <p>
             {DESEMPENHO.semPicksFechados} —{" "}
             <Link href={escreverDesempenhoUrl({ ...url, periodo: periodoMaior })} className="sb-foco underline">
               ver {periodoMaior === "30d" ? "30 dias" : "a temporada"}
