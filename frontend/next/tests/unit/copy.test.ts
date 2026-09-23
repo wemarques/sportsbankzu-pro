@@ -106,3 +106,5 @@ describe("HERO (#257) — headline, CTAs e frase de vazio", () => {
     expect(HERO.semTalao).toBe("Sem talão publicado hoje ou ontem.");
   });
 });
+
+it("#262 carimbo", () => { expect(C.CARIMBO.lidoAs("19:04")).toBe("lido às 19:04"); });

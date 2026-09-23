@@ -161,3 +161,6 @@ export const VAZIOS = {
   resultadoPendente: "resultado ainda não conferido",
   recomendacaoPreJogo: "recomendação pré-jogo",
 };
+
+/** #262 — carimbo de leitura no topo do conteudo de /jogos e /desempenho. */
+export const CARIMBO = { lidoAs: (hora: string) => `lido às ${hora}` } as const;

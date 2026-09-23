@@ -42,3 +42,19 @@ test("painel de detalhe fica abaixo do cabecalho ao rolar (1440x700)", async ({ 
   const box = await page.getByRole("complementary", { name: "detalhe do jogo" }).boundingBox();
   expect(box!.y).toBeGreaterThanOrEqual(56);
 });
+
+test.describe("carimbo de leitura e da rota, nao do cabecalho (#262 §1)", () => {
+  for (const rota of ["/jogos", "/desempenho"]) {
+    test(`presente em ${rota}`, async ({ page }) => {
+      await stub(page); await page.goto(rota);
+      await expect(page.locator("[data-carimbo]")).toHaveText(/^lido às \d{2}:\d{2}$/);
+      await expect(page.getByRole("banner").locator("[data-carimbo]")).toHaveCount(0);
+    });
+  }
+  for (const rota of ["/banca", "/glossario", "/"]) {
+    test(`ausente em ${rota}`, async ({ page }) => {
+      await stub(page); await page.goto(rota);
+      await expect(page.locator("[data-carimbo]")).toHaveCount(0);
+    });
+  }
+});

@@ -14,7 +14,7 @@ import { useMediaDasLigas } from "@/hooks/useMediaDasLigas";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useLivePolling } from "@/hooks/useLivePolling";
 import { fmtHora, fmtDataCurta } from "@/lib/formato";
-import { VAZIOS } from "@/lib/copy";
+import { VAZIOS, CARIMBO } from "@/lib/copy";
 import Link from "next/link";
 import { DiaTabs } from "@/components/feed/DiaTabs";
 import { LigaChips } from "@/components/feed/LigaChips";
@@ -124,6 +124,7 @@ export function Feed() {
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-3 text-[var(--sb-texto)] lg:grid lg:grid-cols-[minmax(340px,1fr)_minmax(420px,1.2fr)] lg:gap-6">
       <div>
+        {carimbo && <p className="tnum text-right text-[12px] text-[var(--sb-texto-apagado)]" data-carimbo>{CARIMBO.lidoAs(carimbo)}</p>}
         <DiaTabs dia={url.dia} onChange={(dia) => ir({ dia, jogo: null })} />
         <LigaChips ligas={ligas} ativa={url.liga} onChange={(liga) => ir({ liga, jogo: null })} />
         {url.dia === "ontem" && <ResumoDoDia resumo={resumoOntem} />}

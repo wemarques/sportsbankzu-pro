@@ -7,8 +7,8 @@ import { getLedgerAgregado, getLedgerPicks, type LedgerAgregado } from "@/lib/le
 import { retornoRetroativo } from "@/lib/retornoRetroativo";
 import { lerDesempenhoUrl, escreverDesempenhoUrl, periodoPorExtenso, type Periodo } from "@/lib/desempenhoUrl";
 import { ACTIVE_LEAGUES } from "@/lib/leagues";
-import { fmtPct, fmtReais } from "@/lib/formato";
-import { fraseAcerto, DESEMPENHO } from "@/lib/copy";
+import { fmtPct, fmtReais, fmtHora } from "@/lib/formato";
+import { fraseAcerto, DESEMPENHO, CARIMBO } from "@/lib/copy";
 import { TabelaSegmentos } from "@/components/desempenho/TabelaSegmentos";
 import { GraficoCalibracao } from "@/components/desempenho/GraficoCalibracao";
 
@@ -56,13 +56,14 @@ export function Painel() {
   const url = useMemo(() => lerDesempenhoUrl(params), [params]);
   const [dados, setDados] = useState<LedgerAgregado | null>(null);
   const [erro, setErro] = useState(false);
+  const [carimbo, setCarimbo] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
     getLedgerAgregado(url.periodo, url.familia ?? undefined, url.liga ?? undefined).then((r) => {
       if (!vivo) return;
       if (!r.ok) { setErro(true); return; }
-      setErro(false); setDados(r.dados);
+      setErro(false); setDados(r.dados); setCarimbo(fmtHora(new Date().toISOString()));
     });
     return () => { vivo = false; };
   }, [url.periodo, url.familia, url.liga]);
@@ -80,6 +81,7 @@ export function Painel() {
 
   return (
     <div className="mx-auto max-w-[900px] px-4 py-6 text-[var(--sb-texto)]">
+      {carimbo && <p className="tnum text-right text-[12px] text-[var(--sb-texto-apagado)]" data-carimbo>{CARIMBO.lidoAs(carimbo)}</p>}
       <h1 className="font-[family-name:var(--font-slab)] text-[28px] font-bold">Desempenho</h1>
       <div role="tablist" aria-label="período" className="mt-3 flex gap-1 border-b border-[var(--sb-linha)]">
         {(["7d", "30d", "temporada"] as Periodo[]).map((p) => (
