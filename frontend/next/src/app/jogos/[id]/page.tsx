@@ -7,6 +7,7 @@ import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
+import { type Dia } from "@/lib/feedUrl";
 import { VAZIOS, CARREGANDO } from "@/lib/copy";
 import { Detalhe } from "@/components/detalhe/Detalhe";
 import { EsqueletoDetalhe } from "@/components/detalhe/EsqueletoDetalhe";
@@ -24,10 +25,8 @@ function DetalhePagina() {
   const confianca = useLeagueClassifications();
   const [jogo, setJogo] = useState<JogoView | null>(null);
   const [carregando, setCarregando] = useState(true);
-  // #262 fix wave — dia (chave da API) que o loop DIAS_API esta buscando no
-  // momento; o rotulo pt-BR ("hoje"/"amanha") e derivado so no JSX abaixo,
-  // na mesma linha do className, para nao duplicar a palavra "amanha" fora
-  // do allowlist do lint:accents.
+  // #262 fix wave (round 2) — dia (chave da API) que o loop DIAS_API esta
+  // buscando no momento; o rotulo pt-BR e derivado abaixo, antes do return.
   const [diaAtualApi, setDiaAtualApi] = useState<(typeof DIAS_API)[number]>("today");
 
   useEffect(() => {
@@ -58,10 +57,15 @@ function DetalhePagina() {
     return () => { vivo = false; };
   }, [id]);
 
+  // #262 fix wave (round 2) — "amanha" e valor do tipo Dia, nao texto exibido:
+  // esta na allowlist do lint:accents (app/jogos/[id]/page.tsx:amanha), como
+  // as demais ocorrencias do mesmo padrao em lib/feedUrl.ts e DiaTabs.tsx.
+  const diaAtual: Dia = diaAtualApi === "today" ? "hoje" : "amanha";
+
   if (carregando) {
     return (
       <div className="mx-auto max-w-[700px] px-4 py-4" aria-busy="true">
-        <p role="status" className="sr-only">{CARREGANDO.buscando(diaAtualApi === "today" ? "hoje" : "amanha")}</p>
+        <p role="status" className="sr-only">{CARREGANDO.buscando(diaAtual)}</p>
         <EsqueletoDetalhe />
       </div>
     );
