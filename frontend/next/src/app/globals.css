@@ -159,6 +159,7 @@
   --sb-tinta-do-talao: #1B1710;
   --sb-tinta-apoiada: #4A4436;
   --sb-confianca: #4FB3BF;
+  --sb-marca: #4FB3BF;
   --sb-contra-texto: #E8665A;
   --sb-contra: #E0533F;
   --sb-raio-talao: 4px;
@@ -166,6 +167,10 @@
 }
 .tnum { font-variant-numeric: tabular-nums; }
 .sb-foco:focus-visible { outline: 2px solid var(--sb-texto); outline-offset: 2px; }
+/* #262 — superficie com profundidade (spec §2: painel sobre tinta + borda + sombra baixa). Talao NAO usa. */
+.sb-card { background: var(--sb-painel); border: 1px solid var(--sb-linha); border-radius: var(--sb-raio-painel); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+/* #262 — sublinhado na cor da casa; o texto do link continua na cor do texto. */
+a { text-decoration-color: var(--sb-marca); }
 .sb-talao::before, .sb-talao::after {
   content: ""; position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px;
   border-radius: 50%; background: var(--sb-painel);

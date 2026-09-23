@@ -6,7 +6,7 @@ export function LigaChips({ ligas, ativa, onChange }: { ligas: { id: string; nom
       <div className="flex gap-2 overflow-x-auto whitespace-nowrap py-2 [scrollbar-width:none]" aria-label="ligas">
         {todas.map((l) => (
           <button key={l.id} type="button" aria-pressed={l.id === ativa} onClick={() => onChange(l.id)}
-            className="sb-foco rounded-full border border-[var(--sb-linha)] px-3 py-1 text-[13px] aria-pressed:border-[var(--sb-texto)] aria-pressed:bg-[var(--sb-hover)]">
+            className="sb-foco rounded-full border border-[var(--sb-linha)] bg-[var(--sb-painel)] px-3 py-1 text-[13px] hover:bg-[var(--sb-hover)] aria-pressed:border-[var(--sb-marca)] aria-pressed:text-[var(--sb-marca)]">
             {l.nome}
           </button>
         ))}

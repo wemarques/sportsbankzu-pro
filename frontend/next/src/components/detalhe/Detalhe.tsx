@@ -20,7 +20,7 @@ export function Detalhe({ jogo, confianca }: { jogo: JogoView; confianca: League
   }, [jogo.ligaId]);
 
   return (
-    <div className="rounded-[var(--sb-raio-painel)] border border-[var(--sb-linha)] bg-[var(--sb-painel)] p-4">
+    <div className="sb-card p-4">
       <header className="flex items-baseline justify-between gap-3">
         <h2 className="font-[family-name:var(--font-slab)] text-[22px] font-semibold">{jogo.casa} × {jogo.fora}</h2>
         <span className="tnum text-[13px] text-[var(--sb-texto-apagado)]">{jogo.ligaNome}, {fmtDataCurta(jogo.kickoffIso)}, {fmtHora(jogo.kickoffIso)}</span>

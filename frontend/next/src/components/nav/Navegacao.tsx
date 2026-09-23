@@ -27,7 +27,7 @@ export function Navegacao() {
             <Link
               href={item.href}
               aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              className="sb-foco block rounded-[var(--sb-raio-painel)] px-3 py-2 text-center text-[13px] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--sb-texto)] lg:text-left lg:text-[14px]"
+              className="sb-foco block rounded-[var(--sb-raio-painel)] px-3 py-2 text-center text-[13px] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--sb-marca)] lg:text-left lg:text-[14px]"
             >
               {item.rotulo}
             </Link>

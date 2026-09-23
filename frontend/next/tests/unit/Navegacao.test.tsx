@@ -24,4 +24,12 @@ describe("Navegacao (#257, spec §3)", () => {
     const { container } = render(<Navegacao />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("#262: o item ativo leva teal, os demais nao", () => {
+    pathname = "/banca";
+    render(<Navegacao />);
+    const banca = screen.getByRole("link", { name: "Banca" });
+    expect(banca.className).toContain("aria-[current=page]:text-[var(--sb-marca)]");
+    expect(banca.className).not.toContain("aria-[current=page]:text-[var(--sb-texto)]");
+  });
 });

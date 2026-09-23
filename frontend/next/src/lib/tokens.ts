@@ -13,6 +13,8 @@ export const TOKENS = {
   "tinta-do-talao": "#1B1710",
   "tinta-apoiada": "#4A4436",
   confianca: "#4FB3BF",
+  // #262 — "a casa": marca, navegação ativa, seleção. Mesmo hex de confianca, token distinto de propósito.
+  marca: "#4FB3BF",
   "contra-texto": "#E8665A",
   contra: "#E0533F",
 } as const;
@@ -34,6 +36,9 @@ export const PARES_PERMITIDOS: ReadonlyArray<readonly [NomeToken, NomeToken, num
   ["confianca", "tinta", 4.5],
   ["confianca", "painel", 4.5],
   ["confianca", "hover", 4.5],
+  ["marca", "tinta", 4.5],
+  ["marca", "painel", 4.5],
+  ["marca", "hover", 4.5],
   ["contra-texto", "tinta", 4.5],
   ["contra-texto", "painel", 4.5],
   ["contra-texto", "hover", 4.5],

@@ -52,7 +52,7 @@ export function CardJogo({ jogo, confianca, selecionado, onAbrir, hrefDetalhe, m
   })();
   return (
     <article data-estado={jogo.estado} data-selecionado={selecionado} aria-current={selecionado ? "true" : undefined}
-      className="space-y-2 rounded-[var(--sb-raio-painel)] border border-[var(--sb-linha)] bg-[var(--sb-painel)] p-4 hover:bg-[var(--sb-hover)] data-[selecionado=true]:border-[var(--sb-texto)]">
+      className="sb-card space-y-2 p-4 hover:bg-[var(--sb-hover)] data-[selecionado=true]:border-[var(--sb-marca)]">
       <header className="flex items-baseline justify-between gap-3">
         <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">
           <Link href={hrefDetalhe} className="sb-foco"

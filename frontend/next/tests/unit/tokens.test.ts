@@ -37,4 +37,13 @@ describe("tokens (#254, spec §2)", () => {
       expect(css, `--sb-${nome}`).toContain(`--sb-${nome}: ${hex};`);
     }
   });
+
+  it("#262: marca existe, e o mesmo hex de confianca, e passa sobre tinta/painel/hover", () => {
+    expect(TOKENS.marca).toBe(TOKENS.confianca);
+    for (const fundo of ["tinta", "painel", "hover"] as const) {
+      expect(contraste(TOKENS.marca, TOKENS[fundo])).toBeGreaterThanOrEqual(4.5);
+      expect(PARES_PERMITIDOS.some(([t, f]) => t === "marca" && f === fundo)).toBe(true);
+    }
+    expect(PARES_PERMITIDOS.some(([t, f]) => t === "marca" && f === "talao")).toBe(false);
+  });
 });
