@@ -74,15 +74,16 @@ export function Feed() {
   // Comeca true (fix round 1, item 2): o esqueleto tem que pintar na carga
   // fria inicial, antes de qualquer `set` ligado a `carregar`.
   const cargaFria = useRef(true);
-  // #262 fix round 1, item 6 — leitura boa e "ja tivemos UMA resposta
-  // completa sem erro", nao "a lista nao esta vazia": um dia legitimamente
-  // sem jogos tem ultimoBom.current.length===0 para sempre, e cada poll
-  // voltava a tratar isso como carga fria (esqueleto piscando). Uma vez
-  // true, fica true pelo resto da sessao — nunca reseta.
-  const jaHouveRespostaCompleta = useRef(false);
+  // #262 fix round 2, item A — leitura boa e POR DIA, nao um booleano global
+  // (fix round 1 marcava `jaHouveRespostaCompleta` uma vez pra sessao
+  // inteira: trocar de aba depois de um dia lido vazio herdava "leitura boa"
+  // de outro dia e deixava a area em branco — sem esqueleto, sem "Nenhum
+  // jogo" — durante toda a carga do dia novo). Um dia entra no set no fim de
+  // uma carga completa sem erro; nunca sai.
+  const diasLidos = useRef(new Set<Dia>());
 
   const carregarOntem = useCallback(async (minha: number) => {
-    cargaFria.current = !jaHouveRespostaCompleta.current;
+    cargaFria.current = !diasLidos.current.has("ontem");
     setCarregando(true); setLotesLidos(0);
     setMostrarProgresso(false);
     if (timerProgresso.current) clearTimeout(timerProgresso.current);
@@ -103,7 +104,7 @@ export function Feed() {
     }).sort((a, b) => a.kickoffIso.localeCompare(b.kickoffIso));
     ultimoBom.current = views; setJogos(views); setResumoOntem(r.dados.resumo);
     setCarimbo(fmtHora(new Date().toISOString())); setErro(false);
-    jaHouveRespostaCompleta.current = true;
+    diasLidos.current.add("ontem");
     setCarregando(false); if (timerProgresso.current) clearTimeout(timerProgresso.current); setMostrarProgresso(false);
   }, [ligas]);
 
@@ -113,10 +114,9 @@ export function Feed() {
     const date = diaParaApi(url.dia);
     if (!date) { setJogos([]); setCarregando(false); return; }
     setCarregando(true); setLotesLidos(0);
-    // #262 fix round 1, item 6 — leitura boa = ja tivemos alguma resposta
-    // completa (mesmo vazia), nao "a lista nao esta vazia" (ver declaracao
-    // de jaHouveRespostaCompleta acima).
-    const temLeituraBoa = jaHouveRespostaCompleta.current;
+    // #262 fix round 2, item A — leitura boa = este DIA especifico ja teve
+    // uma carga completa sem erro (ver declaracao de diasLidos acima).
+    const temLeituraBoa = diasLidos.current.has(url.dia);
     cargaFria.current = !temLeituraBoa;
     // #262 fix round 1, item 1 — numeroDeLotes(ligas.length) calculado uma
     // vez aqui e usado para o clamp de `lidos` abaixo: getMatchesByLeague
@@ -128,10 +128,15 @@ export function Feed() {
     timerProgresso.current = setTimeout(() => { if (minha === geracao.current) setMostrarProgresso(true); }, 1500);
     let acumulado: JogoView[] = temLeituraBoa ? ultimoBom.current : [];
     let lidos = 0;
+    // #262 fix round 2, item D — flag propria pro "e o primeiro lote deste
+    // carregamento", independente do clamp de `lidos` (Math.min): antes
+    // usava `lidos === 1`, que dependia do valor clampado coincidir com 1.
+    let primeiroLote = true;
     try {
       const res = await getMatchesByLeague(ligas.map((l) => l.id).join(","), date, (lote) => {
         if (minha !== geracao.current) return;
         lidos = Math.min(lidos + 1, numLotes); setLotesLidos(lidos);
+        const ehPrimeiroLote = primeiroLote; primeiroLote = false;
         // #262 fix round 1, item 3 — hora de CHEGADA deste lote, nao a hora
         // em que o fetch comecou (que ficava cada vez mais velha a cada
         // lote, fazendo o carimbo "retroceder" perto do fim da carga).
@@ -142,8 +147,15 @@ export function Feed() {
         // a lista antiga fica na tela ate a carga terminar (troca sem piscar).
         if (!temLeituraBoa) {
           acumulado = mesclarLote(acumulado, novas); setJogos(acumulado);
-          ultimoBom.current = acumulado; setCarimbo(fmtHora(agoraLote.toISOString()));
-        } else acumulado = mesclarLote(lidos === 1 ? [] : acumulado, novas);
+          // #262 fix round 2 (achado ao medir o item A) — um lote com
+          // `_error` nao e "uma leitura boa daquela liga" (principio do
+          // ruling original do #254-b): commitar em ultimoBom.current mesmo
+          // assim destruía o ultimo feed bom de OUTRO dia antes de saber se
+          // a carga desta ia falhar (jogos.spec.ts "backend fora" — a lista
+          // de hoje sumia ao trocar para amanha com erro, antes mesmo do
+          // catch). So os lotes sem erro viram o novo "ultimo bom".
+          if (!lote._error) { ultimoBom.current = acumulado; setCarimbo(fmtHora(agoraLote.toISOString())); }
+        } else acumulado = mesclarLote(ehPrimeiroLote ? [] : acumulado, novas);
       });
       if (minha !== geracao.current) return;
       if (res._error) throw new Error(res._error.message);
@@ -158,7 +170,7 @@ export function Feed() {
         if (rLedger.ok) views = aplicarDesfechosDeHoje(views, rLedger.dados.picks);
       }
       ultimoBom.current = views; setJogos(views); setCarimbo(fmtHora(fim.toISOString())); setErro(false);
-      jaHouveRespostaCompleta.current = true;
+      diasLidos.current.add(url.dia);
     } catch {
       if (minha !== geracao.current) return;
       setErro(true); setJogos(ultimoBom.current);
@@ -203,7 +215,10 @@ export function Feed() {
             {carimbo && <span className="ml-2 text-[var(--sb-texto-apagado)]">{VAZIOS.carimbo(carimbo)}</span>}
           </p>
         )}
-        {!carregando && visiveis.length === 0 && !erro && (
+        {/* #262 fix round 2, item A — dia ja lido (nao carga fria): a mensagem de
+            vazio fica na tela durante a recarga, sem sumir e sem esqueleto por
+            cima; dia nunca lido: so aparece quando a carga termina, como antes. */}
+        {visiveis.length === 0 && !erro && (!carregando || !cargaFria.current) && (
           <p className="my-6 text-[14px] text-[var(--sb-texto-apagado)]">
             {VAZIOS.diaSemJogos(fmtDataCurta(new Date().toISOString()))}{" "}
             <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} replace className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
