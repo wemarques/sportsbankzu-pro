@@ -21,7 +21,7 @@ export function FormBanca() {
   // consequencia: o maior stake que um pick SAFE sugeriria hoje (prob 0,60, odd 1,90 → cap de 5%)
   const teto = banca != null ? calcStake(0.6, 1.9, banca, "SAFE") : null;
   return (
-    <form onSubmit={salvar} className="max-w-[70ch] space-y-3 text-[var(--sb-texto)]">
+    <form onSubmit={salvar} className="sb-card max-w-[70ch] space-y-3 p-4 text-[var(--sb-texto)]">
       <label className="block text-[16px]" htmlFor="banca">Sua banca</label>
       <input id="banca" ref={ref} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)}
         className="sb-foco tnum w-full rounded-[var(--sb-raio-painel)] border border-[var(--sb-linha)] bg-[var(--sb-painel)] px-3 py-2 text-[22px]" placeholder="R$ 0,00" />

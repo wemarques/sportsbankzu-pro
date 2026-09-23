@@ -24,6 +24,11 @@ function DetalhePagina() {
   const confianca = useLeagueClassifications();
   const [jogo, setJogo] = useState<JogoView | null>(null);
   const [carregando, setCarregando] = useState(true);
+  // #262 fix wave — dia (chave da API) que o loop DIAS_API esta buscando no
+  // momento; o rotulo pt-BR ("hoje"/"amanha") e derivado so no JSX abaixo,
+  // na mesma linha do className, para nao duplicar a palavra "amanha" fora
+  // do allowlist do lint:accents.
+  const [diaAtualApi, setDiaAtualApi] = useState<(typeof DIAS_API)[number]>("today");
 
   useEffect(() => {
     let vivo = true;
@@ -33,6 +38,8 @@ function DetalhePagina() {
     async function carregar() {
       setCarregando(true);
       for (const date of DIAS_API) {
+        if (!vivo) return;
+        setDiaAtualApi(date);
         try {
           const res = await getMatchesByLeague(ligas, date);
           if (!vivo) return;
@@ -54,7 +61,7 @@ function DetalhePagina() {
   if (carregando) {
     return (
       <div className="mx-auto max-w-[700px] px-4 py-4" aria-busy="true">
-        <p role="status" className="sr-only">{CARREGANDO.buscando("hoje")}</p>
+        <p role="status" className="sr-only">{CARREGANDO.buscando(diaAtualApi === "today" ? "hoje" : "amanha")}</p>
         <EsqueletoDetalhe />
       </div>
     );
@@ -78,5 +85,5 @@ function DetalhePagina() {
 }
 
 export default function Page() {
-  return <main className="min-h-screen bg-[var(--sb-tinta)]"><DetalhePagina /></main>;
+  return <main className="min-h-[calc(100vh-56px)] bg-[var(--sb-tinta)]"><DetalhePagina /></main>;
 }

@@ -44,3 +44,12 @@ export function diaISOOntem(agora: Date): string {
 export function diaISOHoje(agora: Date): string {
   return diaISOEmBrt(agora, 0);
 }
+
+/** #262 fix wave — chave de `diasLidos` (Feed.tsx) pela data ISO do dia do
+ * operador em BRT, nao pelo rotulo da aba: evita colisao entre "hoje" de uma
+ * carga e "hoje" do dia seguinte sem refresh de pagina. */
+export function chaveDoDia(dia: Dia, agora: Date): string {
+  if (dia === "ontem") return diaISOOntem(agora);
+  if (dia === "hoje") return diaISOHoje(agora);
+  return diaISOEmBrt(agora, -1);
+}

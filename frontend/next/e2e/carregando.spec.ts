@@ -18,6 +18,8 @@ test("cards do primeiro lote aparecem antes dos demais; progresso conta; vazio s
   await feedPorCamadas(page);
   await page.goto("/jogos");
   await expect(page.locator("[data-esqueleto]")).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.locator("[data-progresso]")).toHaveCount(0);
   await expect(page.locator("[data-progresso]")).toContainText(/buscando os jogos de hoje: \d+ de \d+ ligas lidas/, { timeout: 2500 });
   await expect(page.locator("article").first()).toBeVisible({ timeout: 2500 });
   await expect(page.getByText(/Nenhum jogo nas ligas/)).toHaveCount(0);

@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SessionProvider>
           <ThemeProvider>
             <Cabecalho />
-            <div className="min-h-screen bg-[var(--sb-tinta)] pt-14 lg:flex">
+            <div className="min-h-[calc(100vh-56px)] bg-[var(--sb-tinta)] pt-14 lg:flex">
               <AncoraDoHash />
               <Navegacao />
               <div className="flex-1 pb-16 lg:pb-0">{children}</div>

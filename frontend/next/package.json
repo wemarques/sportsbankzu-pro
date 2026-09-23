@@ -5,6 +5,7 @@
   "scripts": {
     "lint:accents": "node scripts/check-accents.mjs",
     "lint:fonts": "node scripts/check-fonts.mjs",
+    "icones:gerar": "node scripts/gerar-icones.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

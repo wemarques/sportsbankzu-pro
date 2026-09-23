@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { HERO } from "@/lib/copy";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -26,7 +27,7 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0a" }}>
       <div style={{ width: "100%", maxWidth: 400, padding: 32, background: "#1a1a1a", borderRadius: 12, border: "1px solid #333" }}>
-        <h1 style={{ textAlign: "center", color: "#fff", marginBottom: 8 }}>SportsBankZu Pro</h1>
+        <h1 style={{ textAlign: "center", color: "#fff", marginBottom: 8 }}>{HERO.ctaEntrar}</h1>
         <p style={{ textAlign: "center", color: "#888", marginBottom: 24, fontSize: 14 }}>Acesse sua conta</p>
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: 16 }}>

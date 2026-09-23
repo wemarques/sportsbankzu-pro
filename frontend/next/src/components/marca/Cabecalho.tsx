@@ -7,10 +7,15 @@ import { fmtDataPorExtenso, proximaMeiaNoiteBrt } from "@/lib/formato";
 import { MARCA } from "@/lib/copy";
 
 /** #262 — barra fixa de 56 px em todas as rotas: marca + data do operador (BRT).
- * O carimbo de leitura NAO mora aqui (spec §1): e da rota. */
+ * O carimbo de leitura NAO mora aqui (spec §1): e da rota.
+ * Data e so-cliente (#262 fix wave): a rota e pre-renderizada no build e a data ficaria
+ * velha no primeiro paint. Enquanto `agora` e null, renderiza um placeholder de largura
+ * fixa para nao deslocar a barra; o timer de virada de meia-noite so roda apos o mount. */
 export function Cabecalho() {
-  const [agora, setAgora] = useState(() => new Date());
+  const [agora, setAgora] = useState<Date | null>(null);
+  useEffect(() => { setAgora(new Date()); }, []);
   useEffect(() => {
+    if (!agora) return;
     const t = setTimeout(() => setAgora(new Date()), proximaMeiaNoiteBrt(agora).getTime() - agora.getTime() + 1000);
     return () => clearTimeout(t);
   }, [agora]);
@@ -20,7 +25,11 @@ export function Cabecalho() {
         <MonogramaSBZ tamanho={22} />
         <span className={`${fonteMarca.className} text-[22px] font-bold leading-none tracking-tight text-[var(--sb-texto)]`}>{MARCA.parte1}<span className="text-[var(--sb-marca)]">{MARCA.parte2}</span></span>
       </Link>
-      <span className="hidden text-[14px] text-[var(--sb-texto-apagado)] sm:block">{fmtDataPorExtenso(agora)}</span>
+      {agora ? (
+        <span className="hidden text-[14px] text-[var(--sb-texto-apagado)] sm:block">{fmtDataPorExtenso(agora)}</span>
+      ) : (
+        <span aria-hidden="true" className="hidden sm:block w-[180px]" />
+      )}
     </header>
   );
 }

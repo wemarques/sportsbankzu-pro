@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { HERO } from "@/lib/copy";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -29,7 +30,7 @@ export default function RegisterPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0a" }}>
       <div style={{ width: "100%", maxWidth: 400, padding: 32, background: "#1a1a1a", borderRadius: 12, border: "1px solid #333" }}>
-        <h1 style={{ textAlign: "center", color: "#fff", marginBottom: 8 }}>SportsBankZu Pro</h1>
+        <h1 style={{ textAlign: "center", color: "#fff", marginBottom: 8 }}>{HERO.ctaCriarConta}</h1>
         <p style={{ textAlign: "center", color: "#888", marginBottom: 24, fontSize: 14 }}>Criar conta gratuita</p>
         <form onSubmit={handleRegister}>
           <div style={{ marginBottom: 16 }}>

@@ -6,7 +6,7 @@ import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
 import { mesclarLote, quantosEsqueletos } from "@/lib/lotesFeed";
-import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, diaISOHoje, type Dia } from "@/lib/feedUrl";
+import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, diaISOHoje, chaveDoDia } from "@/lib/feedUrl";
 import { getLedgerDia, type LedgerPick } from "@/lib/ledgerApi";
 import { agruparPorJogo, toJogoViewOntem, resultadoDoLedger } from "@/lib/jogoViewOntem";
 import { mesmoJogo } from "@/lib/ledgerCasamento";
@@ -81,10 +81,14 @@ export function Feed() {
   // de outro dia e deixava a area em branco — sem esqueleto, sem "Nenhum
   // jogo" — durante toda a carga do dia novo). Um dia entra no set no fim de
   // uma carga completa sem erro; nunca sai.
-  const diasLidos = useRef(new Set<Dia>());
+  // #262 fix wave — chaveado pela data ISO do dia (chaveDoDia), nao pelo
+  // rotulo da aba: "hoje" de uma carga e "hoje" apos a virada de dia BRT sem
+  // refresh de pagina sao dias diferentes.
+  const diasLidos = useRef(new Set<string>());
 
   const carregarOntem = useCallback(async (minha: number) => {
-    cargaFria.current = !diasLidos.current.has("ontem");
+    const chave = chaveDoDia("ontem", new Date());
+    cargaFria.current = !diasLidos.current.has(chave);
     setCarregando(true); setLotesLidos(0);
     setMostrarProgresso(false);
     if (timerProgresso.current) clearTimeout(timerProgresso.current);
@@ -105,7 +109,7 @@ export function Feed() {
     }).sort((a, b) => a.kickoffIso.localeCompare(b.kickoffIso));
     ultimoBom.current = views; setJogos(views); setResumoOntem(r.dados.resumo);
     setCarimbo(fmtHora(new Date().toISOString())); setErro(false);
-    diasLidos.current.add("ontem");
+    diasLidos.current.add(chave);
     setCarregando(false); if (timerProgresso.current) clearTimeout(timerProgresso.current); setMostrarProgresso(false);
   }, [ligas]);
 
@@ -117,7 +121,9 @@ export function Feed() {
     setCarregando(true); setLotesLidos(0);
     // #262 fix round 2, item A — leitura boa = este DIA especifico ja teve
     // uma carga completa sem erro (ver declaracao de diasLidos acima).
-    const temLeituraBoa = diasLidos.current.has(url.dia);
+    // #262 fix wave — chave calculada uma vez no inicio da carga (chaveDoDia).
+    const chave = chaveDoDia(url.dia, new Date());
+    const temLeituraBoa = diasLidos.current.has(chave);
     cargaFria.current = !temLeituraBoa;
     // #262 fix round 1, item 1 — numeroDeLotes(ligas.length) calculado uma
     // vez aqui e usado para o clamp de `lidos` abaixo: getMatchesByLeague
@@ -171,7 +177,7 @@ export function Feed() {
         if (rLedger.ok) views = aplicarDesfechosDeHoje(views, rLedger.dados.picks);
       }
       ultimoBom.current = views; setJogos(views); setCarimbo(fmtHora(fim.toISOString())); setErro(false);
-      diasLidos.current.add(url.dia);
+      diasLidos.current.add(chave);
     } catch {
       if (minha !== geracao.current) return;
       setErro(true); setJogos(ultimoBom.current);
@@ -236,10 +242,10 @@ export function Feed() {
             </div>
           ))}
           {carregando && cargaFria.current && (
-            <div aria-busy="true" data-esqueleto>
+            <div data-esqueleto>
               <p role="status" className="sr-only">{textoCarregando}</p>
               <div className="space-y-3">{Array.from({ length: quantosEsqueletos(numLotes - lotesLidos) }, (_, i) => <EsqueletoCard key={i} />)}</div>
-              {mostrarProgresso && <p className="mt-2 text-[13px] text-[var(--sb-texto-apagado)]" data-progresso>{textoCarregando}</p>}
+              {mostrarProgresso && <p aria-hidden="true" className="mt-2 text-[13px] text-[var(--sb-texto-apagado)]" data-progresso>{textoCarregando}</p>}
             </div>
           )}
         </div>

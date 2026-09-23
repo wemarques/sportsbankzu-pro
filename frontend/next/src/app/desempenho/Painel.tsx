@@ -110,24 +110,24 @@ export function Painel() {
         </EstadoVazio>
       ) : (
         <>
-          <section className="mt-6">
+          <section className="sb-card p-4 mt-6">
             <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{DESEMPENHO.tituloAcerto}</h2>
             <p className="tnum text-[16px]">{fraseAcerto(dados.acerto.acertos, dados.acerto.resolvidos, dados.acerto.jogos)}</p>
           </section>
 
-          <section className="mt-4">
+          <section className="sb-card p-4 mt-4">
             <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{DESEMPENHO.tituloRetorno}</h2>
             <BlocoRetorno periodo={url.periodo} familia={url.familia} liga={url.liga} />
           </section>
 
-          <section className="mt-6"><div className="overflow-x-auto"><TabelaSegmentos titulo="Por família" linhas={dados.por_familia} /></div></section>
+          <section className="sb-card p-4 mt-6"><div className="overflow-x-auto"><TabelaSegmentos titulo="Por família" linhas={dados.por_familia} /></div></section>
 
-          <section className="mt-6">
+          <section className="sb-card p-4 mt-6">
             <h2 className="font-[family-name:var(--font-slab)] text-[18px] font-semibold">{DESEMPENHO.tituloCalibracao}</h2>
             <GraficoCalibracao buckets={dados.buckets} />
           </section>
 
-          <section className="mt-6">
+          <section className="sb-card p-4 mt-6">
             <div className="overflow-x-auto"><TabelaSegmentos titulo="Por liga" linhas={dados.por_liga} /></div>
           </section>
         </>
