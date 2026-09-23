@@ -150,7 +150,7 @@ export function Feed() {
         </div>
       </div>
       {!isMobile && aberto && (
-        <aside aria-label="detalhe do jogo" className="sticky top-4 self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto" ref={painelRef} tabIndex={-1}>
+        <aside aria-label="detalhe do jogo" className="sticky top-[calc(56px+1rem)] self-start lg:max-h-[calc(100vh-56px-2rem)] lg:overflow-y-auto" ref={painelRef} tabIndex={-1}>
           <Detalhe jogo={aberto} confianca={confianca.get(aberto.ligaId)} />
         </aside>
       )}

@@ -27,3 +27,17 @@ export function fmtDataCurta(iso: string): string {
 export function fmtLigaHora(liga: string, iso: string): string {
   return `${liga}, ${fmtHora(iso)}`;
 }
+
+/** #262 — "terça, 22 de setembro" no dia do operador (BRT). Sem ano, sem "-feira". */
+export function fmtDataPorExtenso(agora: Date): string {
+  const partes = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: FUSO }).formatToParts(agora);
+  const pegar = (t: string) => partes.find((p) => p.type === t)?.value ?? "";
+  return `${pegar("weekday").replace("-feira", "")}, ${pegar("day")} de ${pegar("month")}`;
+}
+/** #262 — proximo 00:00 BRT (= 03:00Z, UTC-3 fixo), para o cabecalho virar a data sem refresh. */
+export function proximaMeiaNoiteBrt(agora: Date): Date {
+  const DESLOC = 3 * 3600_000;
+  const brt = new Date(agora.getTime() - DESLOC);
+  const meiaNoiteBrt = Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), brt.getUTCDate() + 1);
+  return new Date(meiaNoiteBrt + DESLOC);
+}

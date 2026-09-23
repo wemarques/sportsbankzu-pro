@@ -143,6 +143,9 @@ export const DESEMPENHO = {
 
 export const NAVEGACAO = { jogos: "Jogos", banca: "Banca", desempenho: "Desempenho", glossario: "Glossário", rotuloNav: "navegação principal" } as const;
 
+/** #262 — marca no cabecalho (spec §1): nome inteiro sempre; "zu" e a parte em teal. */
+export const MARCA = { parte1: "sportsbank", parte2: "zu", nome: "sportsbankzu", ariaLink: "sportsbankzu, ir para os jogos" } as const;
+
 export const VAZIOS = {
   diaSemJogos: (data: string) => `Nenhum jogo nas ligas escolhidas em ${data}.`,
   proximoDia: (dia: string) => `próximo dia com picks: ${dia}`,

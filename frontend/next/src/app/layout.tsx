@@ -4,6 +4,7 @@ import { ThemeProvider } from "../components/theme-provider";
 import { SessionProvider } from "../components/SessionProvider";
 import { Navegacao } from "@/components/nav/Navegacao";
 import { AncoraDoHash } from "@/components/nav/AncoraDoHash";
+import { Cabecalho } from "@/components/marca/Cabecalho";
 
 const slab = Zilla_Slab({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-slab", display: "swap" });
 const sans = Source_Sans_3({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-sans", display: "swap" });
@@ -19,7 +20,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <SessionProvider>
           <ThemeProvider>
-            <div className="min-h-screen bg-[var(--sb-tinta)] lg:flex">
+            <Cabecalho />
+            <div className="min-h-screen bg-[var(--sb-tinta)] pt-14 lg:flex">
               <AncoraDoHash />
               <Navegacao />
               <div className="flex-1 pb-16 lg:pb-0">{children}</div>

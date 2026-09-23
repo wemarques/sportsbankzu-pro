@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtReais, fmtOdd, fmtDelta, fmtPct, fmtHora, fmtLigaHora, fmtDataCurta } from "@/lib/formato";
+import { fmtReais, fmtOdd, fmtDelta, fmtPct, fmtHora, fmtLigaHora, fmtDataCurta, fmtDataPorExtenso, proximaMeiaNoiteBrt } from "@/lib/formato";
 
 describe("formato pt-BR (#254)", () => {
   it("reais com milhar e virgula", () => {
@@ -24,5 +24,19 @@ describe("formato pt-BR (#254)", () => {
     expect(fmtHora("2026-09-09T23:30:00Z")).toBe("20:30");
     expect(fmtDataCurta("2026-09-09T23:30:00Z")).toBe("09/09");
     expect(fmtLigaHora("MLS", "2026-09-09T23:30:00Z")).toBe("MLS, 20:30");
+  });
+});
+
+describe("data por extenso em BRT (#262, spec §1)", () => {
+  it("terca 22/09 as 23:30 BRT (02:30Z do dia 23) ainda e terca, 22", () => {
+    expect(fmtDataPorExtenso(new Date("2026-09-23T02:30:00Z"))).toBe("terça, 22 de setembro");
+  });
+  it("as 00:00 BRT (03:00Z) vira quarta, 23; domingo e sabado sem '-feira'", () => {
+    expect(fmtDataPorExtenso(new Date("2026-09-23T03:00:00Z"))).toBe("quarta, 23 de setembro");
+    expect(fmtDataPorExtenso(new Date("2026-09-20T15:00:00Z"))).toBe("domingo, 20 de setembro");
+  });
+  it("proxima meia-noite BRT e o proximo 03:00Z", () => {
+    expect(proximaMeiaNoiteBrt(new Date("2026-09-23T02:30:00Z")).toISOString()).toBe("2026-09-23T03:00:00.000Z");
+    expect(proximaMeiaNoiteBrt(new Date("2026-09-23T03:00:00Z")).toISOString()).toBe("2026-09-24T03:00:00.000Z");
   });
 });

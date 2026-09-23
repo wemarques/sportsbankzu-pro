@@ -1,0 +1,31 @@
+"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { fonteMarca } from "@/components/marca/fonteMarca";
+import { MonogramaSBZ } from "@/components/marca/MonogramaSBZ";
+import { fmtDataPorExtenso, proximaMeiaNoiteBrt } from "@/lib/formato";
+import { MARCA } from "@/lib/copy";
+
+/** #262 — barra fixa de 56 px em todas as rotas: marca + data do operador (BRT).
+ * O carimbo de leitura NAO mora aqui (spec §1): e da rota. */
+export function Cabecalho() {
+  const [agora, setAgora] = useState(() => new Date());
+  useEffect(() => {
+    const t = setTimeout(() => setAgora(new Date()), proximaMeiaNoiteBrt(agora).getTime() - agora.getTime() + 1000);
+    return () => clearTimeout(t);
+  }, [agora]);
+  return (
+    <header role="banner" className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--sb-linha)] bg-[var(--sb-painel)] px-4">
+      <div className="flex items-center gap-2">
+        {/* MonogramaSBZ desenha "SBZ" como <text> SVG mesmo decorativo (aria-hidden nao
+         * tira do textContent) — fica fora do <Link> para o link.textContent/e2e toHaveText
+         * ficarem so com o wordmark "sportsbankzu" (visual identico, icone+texto lado a lado). */}
+        <MonogramaSBZ tamanho={22} />
+        <Link href="/jogos" aria-label={MARCA.ariaLink} className="sb-foco no-underline">
+          <span className={`${fonteMarca.className} text-[22px] font-bold leading-none tracking-tight text-[var(--sb-texto)]`}>{MARCA.parte1}<span className="text-[var(--sb-marca)]">{MARCA.parte2}</span></span>
+        </Link>
+      </div>
+      <span className="hidden text-[14px] text-[var(--sb-texto-apagado)] sm:block">{fmtDataPorExtenso(agora)}</span>
+    </header>
+  );
+}
