@@ -3,15 +3,21 @@
 import { chromium } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
 const svg = readFileSync("public/marca/sbz.svg", "utf8");
-const html = `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap"><style>body{margin:0;background:#15161A}#m{display:block}</style><div id="m">${svg}</div>`;
+const html = `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap"><style>body{margin:0;background:transparent}#m{display:block}</style><div id="m">${svg}</div>`;
 const alvos = [["src/app/icon.png", 32], ["src/app/apple-icon.png", 180], ["public/marca/icon-192.png", 192], ["public/marca/icon-512.png", 512]];
 mkdirSync("public/marca", { recursive: true });
 const b = await chromium.launch(); const p = await b.newPage();
 await p.setContent(html); await p.evaluate(() => document.fonts.ready);
+const fonteCarregada = await p.evaluate(() => document.fonts.check('700 30px "Barlow Condensed"'));
+if (!fonteCarregada) {
+  console.error("Barlow Condensed 700 nao carregou — abortando para nao gerar icones com fallback Arial.");
+  await b.close();
+  process.exit(1);
+}
 for (const [saida, px] of alvos) {
   await p.setViewportSize({ width: px, height: px });
   await p.evaluate((px) => { const s = document.querySelector("svg"); s.setAttribute("width", String(px)); s.setAttribute("height", String(px)); }, px);
-  await p.locator("svg").screenshot({ path: saida, omitBackground: false });
+  await p.locator("svg").screenshot({ path: saida, omitBackground: true });
   console.log("gerado", saida, px);
 }
 await b.close();
