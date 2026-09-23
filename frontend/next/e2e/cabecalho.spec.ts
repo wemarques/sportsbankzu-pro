@@ -8,7 +8,13 @@ for (const rota of ["/", "/jogos", "/banca", "/desempenho", "/glossario", "/logi
     await page.goto(rota);
     const banner = page.getByRole("banner");
     await expect(banner).toBeVisible();
-    await expect(banner.getByRole("link", { name: "sportsbankzu, ir para os jogos" })).toHaveText("sportsbankzu");
+    // #262 fix round 1 — o monograma volta para DENTRO do <Link> (spec §1: nome "precedido
+    // do monograma", ambos clicaveis); toHaveText no link inteiro pegaria "SBZ" + o nome
+    // (mesma causa do ajuste no teste unitario). Nome acessivel + span do wordmark, nao o
+    // link inteiro.
+    const link = banner.getByRole("link", { name: "sportsbankzu, ir para os jogos" });
+    await expect(link).toHaveAccessibleName("sportsbankzu, ir para os jogos");
+    await expect(link.locator("span").first()).toHaveText("sportsbankzu");
     const box = await banner.boundingBox();
     expect(box?.y).toBe(0); expect(Math.round(box?.height ?? 0)).toBe(56);
   });

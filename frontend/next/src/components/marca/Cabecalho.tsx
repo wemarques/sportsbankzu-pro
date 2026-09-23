@@ -16,15 +16,10 @@ export function Cabecalho() {
   }, [agora]);
   return (
     <header role="banner" className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--sb-linha)] bg-[var(--sb-painel)] px-4">
-      <div className="flex items-center gap-2">
-        {/* MonogramaSBZ desenha "SBZ" como <text> SVG mesmo decorativo (aria-hidden nao
-         * tira do textContent) — fica fora do <Link> para o link.textContent/e2e toHaveText
-         * ficarem so com o wordmark "sportsbankzu" (visual identico, icone+texto lado a lado). */}
+      <Link href="/jogos" aria-label={MARCA.ariaLink} className="sb-foco flex items-center gap-2 no-underline">
         <MonogramaSBZ tamanho={22} />
-        <Link href="/jogos" aria-label={MARCA.ariaLink} className="sb-foco no-underline">
-          <span className={`${fonteMarca.className} text-[22px] font-bold leading-none tracking-tight text-[var(--sb-texto)]`}>{MARCA.parte1}<span className="text-[var(--sb-marca)]">{MARCA.parte2}</span></span>
-        </Link>
-      </div>
+        <span className={`${fonteMarca.className} text-[22px] font-bold leading-none tracking-tight text-[var(--sb-texto)]`}>{MARCA.parte1}<span className="text-[var(--sb-marca)]">{MARCA.parte2}</span></span>
+      </Link>
       <span className="hidden text-[14px] text-[var(--sb-texto-apagado)] sm:block">{fmtDataPorExtenso(agora)}</span>
     </header>
   );

@@ -10,7 +10,8 @@ describe("Cabecalho (#262, spec §1)", () => {
     const banner = screen.getByRole("banner");
     const link = screen.getByRole("link", { name: "sportsbankzu, ir para os jogos" });
     expect(link).toHaveAttribute("href", "/jogos");
-    expect(link.textContent).toBe("sportsbankzu");
+    expect(link).toHaveAccessibleName("sportsbankzu, ir para os jogos");
+    expect(link.querySelector("span")).toHaveTextContent("sportsbankzu");
     expect(banner).toHaveTextContent("terça, 22 de setembro");
   });
   it("vira a data no cliente a meia-noite BRT, sem refresh", () => {
