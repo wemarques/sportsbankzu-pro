@@ -11,6 +11,7 @@ import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { fraseAcertoHero, HERO } from "@/lib/copy";
 import { CardJogo } from "@/components/feed/CardJogo";
 import { fonteMarca } from "@/components/marca/fonteMarca";
+import { EstadoVazio } from "@/components/marca/EstadoVazio";
 
 const MIN_N_HERO = 20; // mesmo piso do backend, MIN_N_BRIER (#079)
 
@@ -118,7 +119,11 @@ export function Hero() {
             hrefDetalhe={`/jogos/${encodeURIComponent(jogoProva.id)}`} media={null} semConfianca />
         </div>
       )}
-      {!jogoProva && semProva && <p className="text-[13px] text-[var(--sb-texto-apagado)]">{HERO.semTalao}</p>}
+      {!jogoProva && semProva && (
+        <EstadoVazio>
+          <p className="text-[13px] text-[var(--sb-texto-apagado)]">{HERO.semTalao}</p>
+        </EstadoVazio>
+      )}
     </section>
   );
 }

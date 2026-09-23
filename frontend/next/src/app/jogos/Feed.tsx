@@ -23,6 +23,7 @@ import { CardJogo } from "@/components/feed/CardJogo";
 import { EsqueletoCard } from "@/components/feed/EsqueletoCard";
 import { ResumoDoDia } from "@/components/feed/ResumoDoDia";
 import { Detalhe } from "@/components/detalhe/Detalhe";
+import { EstadoVazio } from "@/components/marca/EstadoVazio";
 
 /**
  * #261 — aba Hoje, jogo encerrado: o talão continua vindo do feed
@@ -219,10 +220,12 @@ export function Feed() {
             vazio fica na tela durante a recarga, sem sumir e sem esqueleto por
             cima; dia nunca lido: so aparece quando a carga termina, como antes. */}
         {visiveis.length === 0 && !erro && (!carregando || !cargaFria.current) && (
-          <p className="my-6 text-[14px] text-[var(--sb-texto-apagado)]">
-            {VAZIOS.diaSemJogos(fmtDataCurta(new Date().toISOString()))}{" "}
-            <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} replace className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
-          </p>
+          <EstadoVazio>
+            <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+              {VAZIOS.diaSemJogos(fmtDataCurta(new Date().toISOString()))}{" "}
+              <Link href={escreverFeedUrl({ ...url, dia: url.dia === "hoje" ? "amanha" : "hoje" })} replace className="sb-foco underline">{VAZIOS.proximoDia(url.dia === "hoje" ? "amanhã" : "hoje")}</Link>
+            </p>
+          </EstadoVazio>
         )}
         <div className="space-y-3 py-3" aria-busy={carregando}>
           {visiveis.map((j) => (

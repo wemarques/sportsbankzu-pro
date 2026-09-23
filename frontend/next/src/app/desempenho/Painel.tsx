@@ -12,6 +12,7 @@ import { fraseAcerto, DESEMPENHO, CARIMBO } from "@/lib/copy";
 import { TabelaSegmentos } from "@/components/desempenho/TabelaSegmentos";
 import { GraficoCalibracao } from "@/components/desempenho/GraficoCalibracao";
 import { EsqueletoDesempenho } from "@/app/desempenho/EsqueletoDesempenho";
+import { EstadoVazio } from "@/components/marca/EstadoVazio";
 
 const ROTULO: Record<Periodo, string> = { "7d": "7 dias", "30d": "30 dias", temporada: "Temporada" };
 
@@ -97,12 +98,14 @@ export function Painel() {
       </div>
 
       {semPicksFechados ? (
-        <p className="my-6 text-[14px] text-[var(--sb-texto-apagado)]">
-          {DESEMPENHO.semPicksFechados} —{" "}
-          <Link href={escreverDesempenhoUrl({ ...url, periodo: periodoMaior })} className="sb-foco underline">
-            ver {periodoMaior === "30d" ? "30 dias" : "a temporada"}
-          </Link>
-        </p>
+        <EstadoVazio>
+          <p className="text-[14px] text-[var(--sb-texto-apagado)]">
+            {DESEMPENHO.semPicksFechados} —{" "}
+            <Link href={escreverDesempenhoUrl({ ...url, periodo: periodoMaior })} className="sb-foco underline">
+              ver {periodoMaior === "30d" ? "30 dias" : "a temporada"}
+            </Link>
+          </p>
+        </EstadoVazio>
       ) : (
         <>
           <section className="mt-6">
