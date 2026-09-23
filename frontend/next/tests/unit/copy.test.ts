@@ -108,3 +108,12 @@ describe("HERO (#257) — headline, CTAs e frase de vazio", () => {
 });
 
 it("#262 carimbo", () => { expect(C.CARIMBO.lidoAs("19:04")).toBe("lido às 19:04"); });
+
+it("#262 carregando: progresso com numeros dinamicos e sem latencia na frase", () => {
+  expect(C.CARREGANDO.buscando("hoje")).toBe("buscando os jogos de hoje");
+  expect(C.CARREGANDO.buscando("amanha")).toBe("buscando os jogos de amanhã");
+  expect(C.CARREGANDO.progresso("ontem", 4, 13)).toBe("buscando os jogos de ontem: 4 de 13 ligas lidas");
+  expect(C.CARREGANDO.progresso("hoje", 1, 1)).toBe("buscando os jogos de hoje: 1 de 1 liga lida");
+  expect(C.CARREGANDO.desempenho).toBe("buscando o desempenho");
+  expect(JSON.stringify(C.CARREGANDO)).not.toMatch(/segundo/);
+});

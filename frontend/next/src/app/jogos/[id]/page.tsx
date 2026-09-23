@@ -7,8 +7,9 @@ import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
 import { useLeagueClassifications } from "@/hooks/useLeagueClassifications";
-import { VAZIOS } from "@/lib/copy";
+import { VAZIOS, CARREGANDO } from "@/lib/copy";
 import { Detalhe } from "@/components/detalhe/Detalhe";
+import { EsqueletoDetalhe } from "@/components/detalhe/EsqueletoDetalhe";
 
 const DIAS_API = ["today", "tomorrow"] as const;
 
@@ -50,7 +51,14 @@ function DetalhePagina() {
     return () => { vivo = false; };
   }, [id]);
 
-  if (carregando) return null;
+  if (carregando) {
+    return (
+      <div className="mx-auto max-w-[700px] px-4 py-4">
+        <p role="status" className="sr-only">{CARREGANDO.buscando("hoje")}</p>
+        <EsqueletoDetalhe />
+      </div>
+    );
+  }
 
   if (!jogo) {
     return (

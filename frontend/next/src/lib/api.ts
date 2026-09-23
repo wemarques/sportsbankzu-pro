@@ -73,6 +73,11 @@ const LEAGUES_PER_BATCH = 1;
  */
 const MAX_CONCURRENT = 4;
 
+/** #262 — total de lotes que `getMatchesByLeague` vai emitir via `onBatchReady`. */
+export function numeroDeLotes(nLigas: number): number {
+  return Math.ceil(nLigas / LEAGUES_PER_BATCH);
+}
+
 /**
  * Run async tasks with a concurrency limit (semaphore pattern).
  * Returns PromiseSettledResult[] in the same order as input.

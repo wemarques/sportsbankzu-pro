@@ -164,3 +164,12 @@ export const VAZIOS = {
 
 /** #262 — carimbo de leitura no topo do conteudo de /jogos e /desempenho. */
 export const CARIMBO = { lidoAs: (hora: string) => `lido às ${hora}` } as const;
+
+/** #262 — carregamento honesto (spec §3): nunca um numero de latencia; numeros sempre calculados. */
+const DIA_EXTENSO = { ontem: "ontem", hoje: "hoje", amanha: "amanhã" } as const;
+export const CARREGANDO = {
+  buscando: (dia: "ontem" | "hoje" | "amanha") => `buscando os jogos de ${DIA_EXTENSO[dia]}`,
+  progresso: (dia: "ontem" | "hoje" | "amanha", lidas: number, n: number) =>
+    `buscando os jogos de ${DIA_EXTENSO[dia]}: ${lidas} de ${n} ${n === 1 ? "liga lida" : "ligas lidas"}`,
+  desempenho: "buscando o desempenho",
+} as const;

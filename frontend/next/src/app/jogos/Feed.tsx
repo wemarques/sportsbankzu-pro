@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getMatchesByLeague } from "@/lib/api";
+import { getMatchesByLeague, numeroDeLotes } from "@/lib/api";
 import { ACTIVE_LEAGUES, toBackendLeagueId, type Match } from "@/lib/leagues";
 import { normalizeMatch, deduplicateMatches } from "@/lib/normalizeMatch";
 import { toJogoView, type JogoView } from "@/lib/jogoView";
+import { mesclarLote, quantosEsqueletos } from "@/lib/lotesFeed";
 import { lerFeedUrl, escreverFeedUrl, diaParaApi, diaISOOntem, diaISOHoje, type Dia } from "@/lib/feedUrl";
 import { getLedgerDia, type LedgerPick } from "@/lib/ledgerApi";
 import { agruparPorJogo, toJogoViewOntem, resultadoDoLedger } from "@/lib/jogoViewOntem";
@@ -14,11 +15,12 @@ import { useMediaDasLigas } from "@/hooks/useMediaDasLigas";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useLivePolling } from "@/hooks/useLivePolling";
 import { fmtHora, fmtDataCurta } from "@/lib/formato";
-import { VAZIOS, CARIMBO } from "@/lib/copy";
+import { VAZIOS, CARIMBO, CARREGANDO } from "@/lib/copy";
 import Link from "next/link";
 import { DiaTabs } from "@/components/feed/DiaTabs";
 import { LigaChips } from "@/components/feed/LigaChips";
 import { CardJogo } from "@/components/feed/CardJogo";
+import { EsqueletoCard } from "@/components/feed/EsqueletoCard";
 import { ResumoDoDia } from "@/components/feed/ResumoDoDia";
 import { Detalhe } from "@/components/detalhe/Detalhe";
 
@@ -61,13 +63,30 @@ export function Feed() {
   const [resumoOntem, setResumoOntem] = useState<{ picks: number; acertos: number; jogos: number; resolvidos: number } | null>(null);
   const ultimoBom = useRef<JogoView[]>([]);
   const geracao = useRef(0);
+  const [lotesLidos, setLotesLidos] = useState(0);
+  const [mostrarProgresso, setMostrarProgresso] = useState(false);
+  const timerProgresso = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #262 fix round 2 — sinaliza "carga fria em andamento" (sem leitura boa ao
+  // iniciar) para o esqueleto. Nao pode mais ler ultimoBom.current.length===0
+  // porque a correcao do #254-b (ultimoBom.current sincronizado lote a lote)
+  // faz esse comprimento virar >0 assim que o 1o lote com jogos chega, o que
+  // esconderia o esqueleto/progresso antes do fim da carga (quebra §3).
+  const cargaFria = useRef(false);
 
   const carregarOntem = useCallback(async (minha: number) => {
-    setCarregando(true);
+    cargaFria.current = ultimoBom.current.length === 0;
+    setCarregando(true); setLotesLidos(0);
+    setMostrarProgresso(false);
+    if (timerProgresso.current) clearTimeout(timerProgresso.current);
+    timerProgresso.current = setTimeout(() => { if (minha === geracao.current) setMostrarProgresso(true); }, 1500);
     const data = diaISOOntem(new Date());
     const r = await getLedgerDia(data);
     if (minha !== geracao.current) return;   // outra carga mais nova ja partiu
-    if (r.ok === false) { setErro(true); setJogos(ultimoBom.current); setCarregando(false); return; }
+    if (r.ok === false) {
+      setErro(true); setJogos(ultimoBom.current);
+      setCarregando(false); if (timerProgresso.current) clearTimeout(timerProgresso.current); setMostrarProgresso(false);
+      return;
+    }
     const porJogo = agruparPorJogo(r.dados.picks);
     const views = Array.from(porJogo.entries()).map(([matchId, picksDoJogo]) => {
       const leagueId = picksDoJogo[0].league_id;
@@ -75,7 +94,8 @@ export function Feed() {
       return toJogoViewOntem(matchId, liga?.id ?? leagueId, liga?.nome ?? leagueId, picksDoJogo);
     }).sort((a, b) => a.kickoffIso.localeCompare(b.kickoffIso));
     ultimoBom.current = views; setJogos(views); setResumoOntem(r.dados.resumo);
-    setCarimbo(fmtHora(new Date().toISOString())); setErro(false); setCarregando(false);
+    setCarimbo(fmtHora(new Date().toISOString())); setErro(false);
+    setCarregando(false); if (timerProgresso.current) clearTimeout(timerProgresso.current); setMostrarProgresso(false);
   }, [ligas]);
 
   const carregar = useCallback(async () => {
@@ -83,18 +103,31 @@ export function Feed() {
     if (url.dia === "ontem") { await carregarOntem(minha); return; }
     const date = diaParaApi(url.dia);
     if (!date) { setJogos([]); setCarregando(false); return; }
-    setCarregando(true);
+    setCarregando(true); setLotesLidos(0);
+    const temLeituraBoa = ultimoBom.current.length > 0;
+    cargaFria.current = !temLeituraBoa;
+    setMostrarProgresso(false);
+    if (timerProgresso.current) clearTimeout(timerProgresso.current);
+    timerProgresso.current = setTimeout(() => { if (minha === geracao.current) setMostrarProgresso(true); }, 1500);
+    const agora = new Date();
+    let acumulado: JogoView[] = temLeituraBoa ? ultimoBom.current : [];
+    let lidos = 0;
     try {
-      const res = await getMatchesByLeague(ligas.map((l) => l.id).join(","), date);
-      if (minha !== geracao.current) return;   // outra carga mais nova ja partiu: esta e obsoleta
+      const res = await getMatchesByLeague(ligas.map((l) => l.id).join(","), date, (lote) => {
+        if (minha !== geracao.current) return;
+        lidos += 1; setLotesLidos(lidos);
+        const novas = deduplicateMatches((lote.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)))
+          .map((m: Match) => toJogoView(m, agora));
+        // Sem leitura boa, a lista cresce lote a lote (spec §3, "por camadas"); com leitura boa,
+        // a lista antiga fica na tela ate a carga terminar (troca sem piscar).
+        if (!temLeituraBoa) {
+          acumulado = mesclarLote(acumulado, novas); setJogos(acumulado);
+          ultimoBom.current = acumulado; setCarimbo(fmtHora(new Date().toISOString()));
+        } else acumulado = mesclarLote(lidos === 1 ? [] : acumulado, novas);
+      });
+      if (minha !== geracao.current) return;
       if (res._error) throw new Error(res._error.message);
-      const agora = new Date();
-      let views = deduplicateMatches((res.matches ?? []).map((m, i) => normalizeMatch(m, (m as { leagueId?: string }).leagueId ?? "", i)))
-        .map((m: Match) => toJogoView(m, agora))
-        .sort((a, b) => Number(b.estado === "em_jogo") - Number(a.estado === "em_jogo") || a.kickoffIso.localeCompare(b.kickoffIso));
-      // #261 — so no ramo hoje, so quando ha jogo encerrado sem desfecho ainda.
-      // Ledger fora do ar: views ficam como estao, sem erro na tela (o feed e
-      // a fonte primaria; o ledger e enriquecimento).
+      let views = acumulado;
       if (url.dia === "hoje" && views.some((v) => v.estado === "ontem_sem_desfecho")) {
         const rLedger = await getLedgerDia(diaISOHoje(agora));
         if (minha !== geracao.current) return;
@@ -104,7 +137,9 @@ export function Feed() {
     } catch {
       if (minha !== geracao.current) return;
       setErro(true); setJogos(ultimoBom.current);
-    } finally { if (minha === geracao.current) setCarregando(false); }
+    } finally {
+      if (minha === geracao.current) { setCarregando(false); if (timerProgresso.current) clearTimeout(timerProgresso.current); setMostrarProgresso(false); }
+    }
   }, [url.dia, ligas, carregarOntem]);
 
   useEffect(() => { carregar(); }, [carregar]);
@@ -117,6 +152,12 @@ export function Feed() {
     push ? router.push(href) : router.replace(href);
   };
   const visiveis = url.liga === "todas" ? jogos : jogos.filter((j) => j.ligaId === url.liga || j.ligaId.endsWith(url.liga));
+  // #262 — a aba Ontem e uma chamada so (o ledger do dia), sem progresso por
+  // liga: numeroDeLotes(1), e a frase fica sempre "buscando", nunca "progresso".
+  const numLotes = url.dia === "ontem" ? numeroDeLotes(1) : numeroDeLotes(ligas.length);
+  const textoCarregando = url.dia === "ontem" || !mostrarProgresso
+    ? CARREGANDO.buscando(url.dia)
+    : CARREGANDO.progresso(url.dia, lotesLidos, numLotes);
   const aberto = visiveis.find((j) => j.id === url.jogo) ?? null;
   const painelRef = useRef<HTMLElement>(null);
   useEffect(() => { if (aberto) painelRef.current?.focus(); }, [aberto?.id]);
@@ -148,6 +189,13 @@ export function Feed() {
                 onAbrir={isMobile ? undefined : (id) => ir({ jogo: id }, true)} />
             </div>
           ))}
+          {carregando && cargaFria.current && (
+            <div aria-busy="true" data-esqueleto>
+              <p role="status" className="sr-only">{textoCarregando}</p>
+              <div className="space-y-3">{Array.from({ length: quantosEsqueletos(numLotes - lotesLidos) }, (_, i) => <EsqueletoCard key={i} />)}</div>
+              {mostrarProgresso && <p className="mt-2 text-[13px] text-[var(--sb-texto-apagado)]" data-progresso>{textoCarregando}</p>}
+            </div>
+          )}
         </div>
       </div>
       {!isMobile && aberto && (

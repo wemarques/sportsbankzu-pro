@@ -176,3 +176,8 @@ a { text-decoration-color: var(--sb-marca); }
   border-radius: 50%; background: var(--sb-painel);
 }
 .sb-talao::before { left: -7px; } .sb-talao::after { right: -7px; }
+
+/* #262 — blocos do esqueleto: apagado a 30 %, pulsando devagar; sem movimento com reduced-motion. */
+.sb-esqueleto { border-radius: 3px; background: var(--sb-texto-apagado); opacity: 0.3; animation: sb-pulsa 1.6s ease-in-out infinite; }
+@keyframes sb-pulsa { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) { .sb-esqueleto { animation: none; } }

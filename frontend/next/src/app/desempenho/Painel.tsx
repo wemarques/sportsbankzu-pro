@@ -11,6 +11,7 @@ import { fmtPct, fmtReais, fmtHora } from "@/lib/formato";
 import { fraseAcerto, DESEMPENHO, CARIMBO } from "@/lib/copy";
 import { TabelaSegmentos } from "@/components/desempenho/TabelaSegmentos";
 import { GraficoCalibracao } from "@/components/desempenho/GraficoCalibracao";
+import { EsqueletoDesempenho } from "@/app/desempenho/EsqueletoDesempenho";
 
 const ROTULO: Record<Periodo, string> = { "7d": "7 dias", "30d": "30 dias", temporada: "Temporada" };
 
@@ -71,7 +72,7 @@ export function Painel() {
   const ir = (mudanca: Partial<typeof url>) => router.replace(escreverDesempenhoUrl({ ...url, ...mudanca }));
 
   if (erro) return <p className="p-4 text-[14px]">Os dados de desempenho não carregaram.</p>;
-  if (!dados) return null;
+  if (!dados) return <div className="mx-auto max-w-[900px] px-4 py-6"><EsqueletoDesempenho /></div>;
 
   // #256: nunca dividir por resolvidos == 0 — jogos == 0 implica resolvidos
   // == 0 (jogos so existe entre picks resolvidos), checar resolvidos e o
