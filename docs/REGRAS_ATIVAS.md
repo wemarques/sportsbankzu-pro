@@ -1638,3 +1638,5 @@ de portao sem apagar `tsconfig.tsbuildinfo` antes (#257-a).
 `frontend/next/src/lib/retornoRetroativo.ts`, `frontend/next/src/app/desempenho/Painel.tsx`,
 `frontend/next/src/components/nav/Navegacao.tsx`, `frontend/next/src/middleware.ts`,
 `frontend/next/src/app/page.tsx`, `frontend/next/src/components/marca/Hero.tsx`.
+
+**(#262) Carregamento honesto no frontend.** Nenhum estado vazio por tempo: "Nenhum jogo" só depois da última resposta. Esqueleto só quando o dia nunca foi lido; dia já lido mantém a lista (ou a mensagem de vazio) durante a recarga. Nenhum número de latência na copy; contagens sempre calculadas. Lote com `_error` nunca vira "último bom". Prova por e2e com asserções tomadas em voo, nunca só no fim.
