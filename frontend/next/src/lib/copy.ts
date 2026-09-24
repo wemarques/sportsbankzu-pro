@@ -154,7 +154,6 @@ export const VAZIOS = {
   feedNaoCarregou: (dia: "ontem" | "hoje" | "amanha" = "hoje") =>
     `Os jogos ${dia === "ontem" ? "de ontem" : dia === "amanha" ? "de amanhã" : "de hoje"} não carregaram.`,
   tentarDeNovo: "Tentar de novo",
-  carimbo: (hora: string) => `de ${hora}`,
   ligaSemDados: (liga: string) => `${liga}: sem dados da rodada`,
   jogoNaoEncontrado: "jogo não encontrado",
   verFeedDeHoje: "ver os jogos de hoje",

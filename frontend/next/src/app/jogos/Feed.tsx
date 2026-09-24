@@ -219,7 +219,6 @@ export function Feed() {
         {erro && (
           <p className="my-2 text-[14px]" role="status">
             {VAZIOS.feedNaoCarregou(url.dia)} <button onClick={carregar} className="sb-foco underline">{VAZIOS.tentarDeNovo}</button>
-            {carimbo && <span className="ml-2 text-[var(--sb-texto-apagado)]">{VAZIOS.carimbo(carimbo)}</span>}
           </p>
         )}
         {/* #262 fix round 2, item A — dia ja lido (nao carga fria): a mensagem de

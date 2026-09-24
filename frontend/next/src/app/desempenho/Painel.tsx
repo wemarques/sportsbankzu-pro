@@ -37,7 +37,7 @@ function BlocoRetorno({ periodo, familia, liga }: { periodo: Periodo; familia: s
 
   if (banca == null) {
     return (
-      <EstadoVazio>
+      <EstadoVazio tamanho={32}>
         <p>
           {DESEMPENHO.definaBanca}{" "}
           <Link href="/banca" className="sb-foco underline">definir banca</Link>
